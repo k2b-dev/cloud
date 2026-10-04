@@ -12,6 +12,7 @@ import { qr } from "@k2b/stdlib/qr";
 import {
   announce,
   Button,
+  ButtonLink,
   dialogCore,
   PanelDialog,
   PinInput,
@@ -69,6 +70,8 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
   let closeDialog: (() => void) | undefined;
   let dialogBody: HTMLDivElement | undefined;
   let disposed = false;
+  // Counts closed dialogs: an answer that arrives after its dialog closed changes nothing.
+  let generation = 0;
 
   const remember = (value: z.infer<typeof ResumeSchema> | null) => {
     try {
@@ -157,11 +160,6 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
           finish({ kind: status.attemptsLeft === 0 ? "locked" : "cancelled" });
           return false;
         }
-        // An unclaimed link cannot be claimed after its window; the server would refuse the phone.
-        if (status.state === "pending" && Date.parse(status.claimUntil) <= Date.now()) {
-          finish({ kind: "expired" });
-          return false;
-        }
         setPairing((current) => (current.kind === "waiting" && current.id === id ? { ...current, status } : current));
         return true;
       },
@@ -180,13 +178,14 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
 
   const start = async () => {
     if (busy()) return;
+    const run = generation;
     setBusy(true);
     setCode("");
     setWrongCode(undefined);
     setPairing({ kind: "starting" });
     try {
       const result = await parsed(await pwaApi.pairings.$post(undefined, approvalRequestOptions()), PwaPairingStartResultSchema);
-      if (disposed || !closeDialog) {
+      if (disposed || run !== generation) {
         // The dialog closed while the pairing started: nobody can enter its code.
         void cancelPending(result.id);
         return;
@@ -202,36 +201,39 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       });
       watch(result.id, result.expiresAt);
     } catch (cause) {
-      if (!disposed) fail(cause);
+      if (!disposed && run === generation) fail(cause);
     } finally {
-      if (!disposed) setBusy(false);
+      if (!disposed && run === generation) setBusy(false);
     }
   };
 
   const confirm = async () => {
     const current = pairing();
     if (current.kind !== "waiting" || busy() || code().length !== 6) return;
-    const attemptsLeft = current.status?.attemptsLeft ?? PWA_LIMITS.confirmAttempts;
+    const run = generation;
     setBusy(true);
     try {
       await checked(
         await pwaApi.pairings[":id"].confirm.$post({ param: { id: current.id }, json: { code: code() } }, approvalRequestOptions()),
       );
-      if (!disposed) awaitCompletion(current.id, current.expiresAt, current.status?.device?.name ?? "");
+      if (!disposed && run === generation) awaitCompletion(current.id, current.expiresAt, current.status?.device?.name ?? "");
     } catch (cause) {
-      if (disposed) return;
+      if (disposed || run !== generation) return;
       if (cause instanceof ApprovalError && cause.code === "WRONG_CODE") {
-        const left = Math.max(0, attemptsLeft - 1);
+        const left = Math.max(0, (current.status?.attemptsLeft ?? PWA_LIMITS.confirmAttempts) - 1);
         setCode("");
         setWrongCode(left);
         setPairing({ ...current, status: current.status ? { ...current.status, attemptsLeft: left } : null });
-        dialogBody?.querySelector<HTMLInputElement>(".k2b-pin-input input")?.focus();
-      } else if (cause instanceof ApprovalError && cause.code === "EXPIRED" && attemptsLeft <= 1) {
-        // The last wrong code cancels the pairing on the server.
+        focusTarget()?.focus();
+      } else if (cause instanceof ApprovalError && cause.code === "EXPIRED" && cause.attemptsLeft === 0) {
+        // The last wrong code cancels the pairing on the server, which says so; any other end is an expiry.
         finish({ kind: "locked" });
+      } else if (!(cause instanceof ApprovalError) || cause.status >= 500 || cause.status === 429) {
+        // No answer about the code: the pairing stays open, so the same code can be sent again.
+        toast.error(t().pwaFailed);
       } else fail(cause);
     } finally {
-      if (!disposed) setBusy(false);
+      if (!disposed && run === generation) setBusy(false);
     }
   };
 
@@ -287,6 +289,11 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
 
   /** Only a code on its way to the server holds the dialog open; everything else may be cancelled. */
   const confirming = () => busy() && step() === "code";
+  /** The first task of the current screen: the code's first digit, or the screen's main button. */
+  const focusTarget = () =>
+    step() === "code"
+      ? (dialogBody?.querySelector<HTMLElement>(".k2b-pin-input input") ?? null)
+      : (dialogBody?.closest(".k2b-panel-dialog")?.querySelector<HTMLElement>("[data-pairing-focus]") ?? null);
   const requestClose = () => {
     if (!confirming()) closeDialog?.();
   };
@@ -309,6 +316,8 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
           ...panelDialogFixedOptions,
           // Without the QR code the tallest step is the code entry, so the frame is shorter.
           panelClassName: `${panelDialogFixedOptions.panelClassName} app-pairing-dialog${qrCode ? "" : " is-copy-only"}`,
+          // The step owns focus, also when the first answer arrives before the dialog's first frame.
+          initialFocus: focusTarget,
         },
       )
       .then(() => {
@@ -316,6 +325,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
         closeDialog = undefined;
         // Leaving the page keeps the pairing, so a reload of this tab resumes it.
         if (disposed) return;
+        generation += 1;
         const current = pairing();
         // Closing is cancelling: an open pairing must not stay claimable.
         stop();
@@ -323,6 +333,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
         if (current.kind === "waiting") void cancelPending(current.id);
         setCode("");
         setWrongCode(undefined);
+        setBusy(false);
         setPairing({ kind: "starting" });
       });
     if (resume) {
@@ -399,13 +410,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       if (current === "code") announce(t().pwaClaimed({ name: waiting()?.status?.device?.name ?? "" }));
       else if (current === "link") announce(showQr() ? t().pwaScanOrCopy : t().pwaCopyOnPhone);
       else if (result) announce(current === "done" ? `${result.text} ${t().pwaPaired}` : result.text);
-      queueMicrotask(() => {
-        const target =
-          current === "code"
-            ? dialogBody?.querySelector<HTMLElement>(".k2b-pin-input input")
-            : dialogBody?.closest(".k2b-panel-dialog")?.querySelector<HTMLElement>("[data-pairing-focus]");
-        target?.focus();
-      });
+      queueMicrotask(() => focusTarget()?.focus());
     }),
   );
 
@@ -446,12 +451,13 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
                   <Show
                     when={showQr()}
                     fallback={
-                      <p class={secondary}>
-                        {t().pwaNoAppOnPhone}{" "}
-                        <a href="/pwa/" class="font-medium text-primary hover:underline">
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <p class={secondary}>{t().pwaNoAppOnPhone}</p>
+                        <ButtonLink href="/pwa/" variant="secondary" size="sm">
+                          <i class="ti ti-download" aria-hidden="true" />
                           {t().pwaInstall}
-                        </a>
-                      </p>
+                        </ButtonLink>
+                      </div>
                     }
                   >
                     <p class={secondary}>{t().pwaNoAppYet}</p>
@@ -576,6 +582,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
                 <Button
                   size="sm"
                   variant="ghost"
+                  aria-label={t().pwaRemoveDevice({ name: device.name })}
                   loading={removing() === device.id}
                   disabled={Boolean(removing())}
                   onClick={() => remove(device)}
