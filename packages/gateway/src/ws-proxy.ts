@@ -123,6 +123,9 @@ export const tryUpgradeWebSocket = (
   if (cookie) forwardedHeaders.Cookie = cookie;
   const auth = req.headers.get("authorization");
   if (auth) forwardedHeaders.Authorization = auth;
+  // Applications refuse a session-authenticated socket from another origin.
+  const origin = req.headers.get("origin");
+  if (origin) forwardedHeaders.Origin = origin;
   forwardedHeaders["X-Forwarded-Host"] = url.host;
   forwardedHeaders["X-Forwarded-Proto"] = url.protocol.replace(":", "");
 

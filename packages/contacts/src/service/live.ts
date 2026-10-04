@@ -14,7 +14,8 @@ export type ContactChange = ContactLiveEvent extends infer Event ? (Event extend
 
 /**
  * Writes one change in `tx`, the transaction that makes it. Call it while the
- * book and contact it names still exist in `tx`.
+ * book and contact it names still exist in `tx`. A change of who may read the
+ * book is published as an access change, so open pages check it at once.
  */
 export const publishContactChange = async (tx: SQL, change: ContactChange): Promise<void> => {
   const contactId = "contactId" in change ? change.contactId : null;
@@ -30,7 +31,7 @@ export const publishContactChange = async (tx: SQL, change: ContactChange): Prom
     ...(contactId ? { contactId: ids.contact } : {}),
     at: new Date().toISOString(),
   });
-  await contactsLive.publish(tx, { key: change.bookId, data });
+  await contactsLive.publish(tx, { key: change.bookId, data, ...(change.type === "access.changed" ? { access: true as const } : {}) });
 };
 
 const withTimeout = async <T>(operation: Promise<T>): Promise<T> => {
@@ -47,16 +48,13 @@ const withTimeout = async <T>(operation: Promise<T>): Promise<T> => {
   }
 };
 
-export const latestContactLiveCursor = (): Promise<string> => withTimeout(contactsLive.cursor());
-
 /**
  * SSR stays available when the live transport is slow or down. `null` makes
- * the island subscribe without a cursor, so the socket resolves the head once
- * the transport answers instead of replaying from sequence 0.
+ * the island subscribe without a cursor, at the current position.
  */
 export const captureContactLiveCursor = async (): Promise<string | null> => {
   try {
-    return await latestContactLiveCursor();
+    return await withTimeout(contactsLive.cursor());
   } catch (error) {
     log.warn("Failed to capture the Contacts live cursor", { error: error instanceof Error ? error.message : String(error) });
     return null;

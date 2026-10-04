@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Deprecations and migrations
@@ -32,13 +32,20 @@ A moved contact now arrives as a deletion in its source book and a creation in
 its target book, so a reader of one book does not learn the other. Another tab
 that shows the moved contact closes its details instead of following it.
 
-## Reading live updates with subscribe() is interim
+## Live updates are served by routes(); subscribe() is removed
 
-`defineLive()` from `@k2b/cloud/events` returns `subscribe()` so that an
-application's own socket can read its live updates. It is interim: a later
-release replaces it with shared live routes and removes it. Build new sockets
-on it only if you can follow that migration; see
-[Live updates](/en/docs/automation/live-updates#read-the-updates-for-a-socket).
+`defineLive()` from `@k2b/cloud/events` returns `routes(channels)`, the
+application's live socket, instead of the interim `subscribe()`. Declare a
+channel for each kind of subscription, mount `routes(channels)` at
+`/api/<application ID>/live`, and subscribe from the browser with
+`liveConnection()` from `@k2b/cloud/browser/live`. Remove the socket that
+read `subscribe()`. See [Live updates](/en/docs/automation/live-updates) and
+[Realtime UI](/en/docs/frontend/realtime-ui).
+
+Contacts moved to `/api/contacts/live` with the channels `book` and `all`. For
+one release, `/api/contacts/ws` answers tabs that were open during the upgrade
+with a request to load the page again; such a tab reloads once. The next
+release removes it.
 
 ## The legacy Files app is removed
 

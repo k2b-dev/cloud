@@ -47,7 +47,9 @@ const setup = (upgrade = true) => {
   (globalThis as { WebSocket: unknown }).WebSocket = FakeUpstream;
   let data: GatewaySocket["data"] | null = null;
   const response = tryUpgradeWebSocket(
-    new Request("http://cloud.test/api/mail/ws", { headers: { Upgrade: "websocket", Cookie: "session_token=test" } }),
+    new Request("http://cloud.test/api/mail/ws", {
+      headers: { Upgrade: "websocket", Cookie: "session_token=test", Origin: "http://cloud.test" },
+    }),
     {
       upgrade: (_request, options) => {
         data = options?.data ?? null;
@@ -78,6 +80,18 @@ afterEach(() => {
 });
 
 describe("gateway WebSocket proxy", () => {
+  test("forwards the credentials and the browser's origin to the application", () => {
+    setup();
+    expect(FakeUpstream.instances[0]!.options).toEqual({
+      headers: {
+        Cookie: "session_token=test",
+        Origin: "http://cloud.test",
+        "X-Forwarded-Host": "cloud.test",
+        "X-Forwarded-Proto": "http",
+      },
+    });
+  });
+
   test.each([
     [1005, 1000],
     [1006, 1012],

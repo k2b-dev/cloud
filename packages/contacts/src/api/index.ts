@@ -32,7 +32,9 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
 import { contactsService } from "../service";
-import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "../service/access";
+import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, getActorBookPermission, permissionFromScopes } from "../service/access";
+import { contactsLive } from "../service/live";
+import { contactsLiveChannels } from "../service/live-channels";
 import { contactsApiErrorMessage, contactsMessages, notFoundError } from "../service/messages";
 import {
   projectBooks,
@@ -51,7 +53,7 @@ import { isUuid } from "../service/shared";
 import type { ContactBook } from "../service/types";
 import * as vcard from "../service/vcard";
 import { isSafeWebsiteUrl, resolveContactName } from "../shared";
-import wsRoutes from "../ws";
+import legacyLiveRoutes from "../ws";
 
 const documentRoute = (options: Parameters<typeof describeRoute>[0]) => describeRoute(options) as MiddlewareHandler<AuthContext>;
 
@@ -60,22 +62,6 @@ const MAX_IMPORT_CONTACTS = contactsService.import.MAX_IMPORT_CONTACTS;
 const MAX_IMPORT_CONTENT_CHARS = contactsService.import.MAX_IMPORT_CONTENT_CHARS;
 const MAX_IMPORT_BODY_BYTES = contactsService.import.MAX_IMPORT_BODY_BYTES;
 const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color must be a #RRGGBB hex value");
-
-const PERMISSION_RANK: Record<PermissionLevel, number> = {
-  none: 0,
-  read: 1,
-  write: 2,
-  admin: 3,
-};
-
-const permissionFromScopes = (scopes: string[]): PermissionLevel => {
-  if (scopes.includes("admin")) return "admin";
-  if (scopes.includes("write")) return "write";
-  if (scopes.includes("read")) return "read";
-  return "none";
-};
-
-const minPermission = (a: PermissionLevel, b: PermissionLevel): PermissionLevel => (PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b);
 
 const localizeApiError = async (c: Context, next: () => Promise<void>) => {
   await next();
@@ -560,35 +546,7 @@ const requireInternalBookAccess = async (c: Context<AuthContext>, bookId: string
     };
   }
 
-  if (subject.user && hasRole(subject.user, "admin")) {
-    return { book, bookId, permission: "admin" as PermissionLevel, user: subject.user, error: null as ApiErrorResponse | null };
-  }
-
-  if (
-    subject.serviceAccount?.kind === "resource_bound" &&
-    (subject.serviceAccount.appId !== CONTACTS_APP_ID ||
-      subject.serviceAccount.resourceType !== CONTACT_BOOK_RESOURCE_TYPE ||
-      subject.serviceAccount.resourceId !== bookId)
-  ) {
-    return {
-      book: null,
-      bookId: null,
-      permission: "none" as PermissionLevel,
-      user: subject.user,
-      error: await respond(c, fail(err.forbidden("Access denied"))),
-    };
-  }
-
-  let permission = await contactsService.book.permission.get({
-    bookId,
-    subject: subject.subject,
-  });
-
-  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
-  if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
-    permission = minPermission(permission, permissionFromScopes(subject.serviceAccountScopes));
-  }
-
+  const permission = await getActorBookPermission({ bookId, actor: c.get("actor"), subject: subject.subject });
   if (!hasPermission(permission, requiredLevel)) {
     return {
       book: null,
@@ -822,7 +780,8 @@ const resolveApi = new Hono<AuthContext>().use(auth.requireRole("authenticated")
 
 /** Contacts API routes for authenticated users and scoped resource credentials. */
 const app = new Hono<AuthContext>()
-  .route("/ws", wsRoutes)
+  .route("/live", contactsLive.routes(contactsLiveChannels))
+  .route("/ws", legacyLiveRoutes)
   .use(rateLimit())
   .route("/resolve", resolveApi)
   .use(localizeApiError)

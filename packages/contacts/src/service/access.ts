@@ -1,3 +1,4 @@
+import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -8,6 +9,7 @@ import {
   type PermissionLevel,
   type Principal,
   paginateItems,
+  type RequestActor,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
 import {
@@ -418,6 +420,47 @@ export const getBookPermission = async (config: { bookId: string; subject: Acces
     accessIds,
     subject: config.subject,
   });
+};
+
+const PERMISSION_RANK: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
+
+export const permissionFromScopes = (scopes: readonly string[]): PermissionLevel => {
+  if (scopes.includes("admin")) return "admin";
+  if (scopes.includes("write")) return "write";
+  if (scopes.includes("read")) return "read";
+  return "none";
+};
+
+export const minPermission = (a: PermissionLevel, b: PermissionLevel): PermissionLevel =>
+  PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b;
+
+/**
+ * The permission of a request's actor on one existing book: administrators
+ * hold every book, a resource-bound key only its own, and every service account
+ * that does not act as its user is capped by its credential scopes. The API and
+ * the live channels decide with this one function.
+ */
+export const getActorBookPermission = async (config: {
+  bookId: string;
+  actor: RequestActor;
+  subject: AccessSubject;
+}): Promise<PermissionLevel> => {
+  const { actor } = config;
+  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+  if (user && hasRole(user, "admin")) return "admin";
+  const account = actor.kind === "service_account" ? actor.serviceAccount : null;
+  if (
+    account?.kind === "resource_bound" &&
+    (account.appId !== CONTACTS_APP_ID || account.resourceType !== CONTACT_BOOK_RESOURCE_TYPE || account.resourceId !== config.bookId)
+  ) {
+    return "none";
+  }
+  const permission = await getBookPermission({ bookId: config.bookId, subject: config.subject });
+  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
+  if (actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated") {
+    return minPermission(permission, permissionFromScopes(actor.scopes));
+  }
+  return permission;
 };
 
 /**

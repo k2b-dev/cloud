@@ -2,8 +2,6 @@ import type { ContactLiveEvent } from "../../live-events";
 
 const CONTACTS_LIVE_INVALIDATION_EVENT = "contacts:live-invalidation";
 
-type ContactsLiveInvalidation = ContactLiveEvent | { type: "scope.changed" };
-
 type ContactsLiveOwner = "results" | "detail" | "notes";
 
 type ContactsLiveSelection = {
@@ -12,51 +10,11 @@ type ContactsLiveSelection = {
 };
 
 type ContactsLiveInvalidationDispatch = {
-  invalidation: ContactsLiveInvalidation;
+  invalidation: ContactLiveEvent;
   cover: (owner: ContactsLiveOwner, work: Promise<void>) => void;
 };
 
-type ContactsLiveApplyControls = {
-  markApplied: (cursor: string) => void;
-  terminate: (error: { code: string; message: string }) => void;
-};
-
-type ContactsLiveApplyQueueOptions = {
-  apply: (event: ContactLiveEvent, controls: ContactsLiveApplyControls) => Promise<boolean | void>;
-  onFailure: (error: unknown, controls: ContactsLiveApplyControls) => void | Promise<void>;
-};
-
-export const createContactsLiveApplyQueue = (options: ContactsLiveApplyQueueOptions) => {
-  let queue = Promise.resolve();
-  let stopped = false;
-
-  const enqueue = (event: ContactLiveEvent, cursor: string, controls: ContactsLiveApplyControls): Promise<void> => {
-    const apply = queue.then(async () => {
-      if (stopped) return;
-      const applied = await options.apply(event, controls);
-      if (applied === false || stopped) {
-        stopped = true;
-        return;
-      }
-      controls.markApplied(cursor);
-    });
-    queue = apply.catch(async (error) => {
-      if (stopped) return;
-      stopped = true;
-      await options.onFailure(error, controls);
-    });
-    return queue;
-  };
-
-  return {
-    enqueue,
-    stop: () => {
-      stopped = true;
-    },
-  };
-};
-
-const requiredContactsLiveOwners = (invalidation: ContactsLiveInvalidation, selection: ContactsLiveSelection): ContactsLiveOwner[] => {
+const requiredContactsLiveOwners = (invalidation: ContactLiveEvent, selection: ContactsLiveSelection): ContactsLiveOwner[] => {
   if (requiresContactsResultsRefresh(invalidation)) {
     if (selection.bookId && selection.contactId && requiresSelectedContactRefresh(invalidation, selection.bookId)) {
       return ["results", "detail"];
@@ -69,10 +27,7 @@ const requiredContactsLiveOwners = (invalidation: ContactsLiveInvalidation, sele
   return [];
 };
 
-export const dispatchContactsLiveInvalidation = async (
-  invalidation: ContactsLiveInvalidation,
-  selection: ContactsLiveSelection,
-): Promise<void> => {
+export const dispatchContactsLiveInvalidation = async (invalidation: ContactLiveEvent, selection: ContactsLiveSelection): Promise<void> => {
   const pending = new Map<ContactsLiveOwner, Promise<void>[]>();
   window.dispatchEvent(
     new CustomEvent<ContactsLiveInvalidationDispatch>(CONTACTS_LIVE_INVALIDATION_EVENT, {
@@ -94,7 +49,7 @@ export const dispatchContactsLiveInvalidation = async (
 
 export const listenForContactsLiveInvalidation = (
   owner: ContactsLiveOwner,
-  listener: (event: ContactsLiveInvalidation) => void | Promise<void>,
+  listener: (event: ContactLiveEvent) => void | Promise<void>,
 ): (() => void) => {
   const handler = (event: Event) => {
     const dispatch = (event as CustomEvent<ContactsLiveInvalidationDispatch>).detail;
@@ -109,15 +64,14 @@ export const listenForContactsLiveInvalidation = (
   return () => window.removeEventListener(CONTACTS_LIVE_INVALIDATION_EVENT, handler);
 };
 
-export const requiresContactsShellRefresh = (event: ContactsLiveInvalidation): boolean =>
-  event.type === "scope.changed" || event.type.startsWith("book.") || event.type === "access.changed" || event.type === "tags.changed";
+export const requiresContactsShellRefresh = (event: ContactLiveEvent): boolean =>
+  event.type.startsWith("book.") || event.type === "access.changed" || event.type === "tags.changed";
 
-export const requiresContactsResultsRefresh = (event: ContactsLiveInvalidation): boolean =>
+export const requiresContactsResultsRefresh = (event: ContactLiveEvent): boolean =>
   event.type.startsWith("contact.") || event.type === "contacts.imported" || event.type === "contacts.changed";
 
 /** Returns whether an open contact may have changed or become inaccessible. */
-export const requiresSelectedContactRefresh = (event: ContactsLiveInvalidation, bookId: string): boolean => {
-  if (event.type === "scope.changed") return true;
+export const requiresSelectedContactRefresh = (event: ContactLiveEvent, bookId: string): boolean => {
   if (event.type === "notes.changed") return false;
   return event.bookId === bookId;
 };
