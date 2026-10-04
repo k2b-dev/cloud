@@ -32,6 +32,14 @@ A moved contact now arrives as a deletion in its source book and a creation in
 its target book, so a reader of one book does not learn the other. Another tab
 that shows the moved contact closes its details instead of following it.
 
+## `subscribe()` of live updates is interim
+
+`defineLive()` from `@k2b/cloud/events` returns `subscribe()` so that an
+application's own socket can read its live updates. It is interim: a later
+release replaces it with shared live routes and removes it. Build new sockets
+on it only if you can follow that migration; see
+[Live updates](/en/docs/automation/live-updates#read-the-updates-for-a-socket).
+
 ## The legacy Files app is removed
 
 Files (legacy), the `files` application with the `cloud-app-files` image and

@@ -122,7 +122,8 @@ export const startLiveOutbox = async (startedAppId: string): Promise<(() => Prom
 /**
  * Live updates of one application: hints, optionally with data, for its own
  * open tabs. Define them once at module scope; `app.start()` then publishes the
- * rows that `publish()` writes.
+ * rows that `publish()` writes. `appId` is required and must be the ID that the
+ * process starts; it is never derived from the process.
  */
 export const defineLive = <const Event extends z.ZodType>(definition: { appId: string; event: Event }) => {
   const { appId, event } = definition;
@@ -147,7 +148,10 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
     wake: (): void => dispatchers.get(appId)?.(),
     /** The topic head. Read it before loading the snapshot it belongs to. */
     cursor: (): Promise<string> => liveTopics()(appId).head(),
-    /** Updates after `after`, shared by every subscriber in this process. */
+    /**
+     * Updates after `after`, shared by every subscriber in this process.
+     * Interim: a later release replaces it with shared live routes and removes it.
+     */
     async *subscribe(options: { after?: string; signal?: AbortSignal } = {}): AsyncGenerator<LiveUpdate<z.output<Event>>> {
       for await (const update of liveTopics()(appId).hub().subscribe(options)) {
         const envelope = LiveEnvelopeSchema.safeParse(update.data);

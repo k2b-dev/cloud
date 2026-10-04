@@ -35,8 +35,9 @@ export const inventoryLive = defineLive({
 });
 ```
 
-`appId` is the ID from the application's declaration; `app.start()` refuses
-to start when a definition names another application. Define the updates once,
+`appId` is required and is the ID from the application's declaration. Cloud
+does not derive it from the process, and `app.start()` refuses to start when a
+definition names another application. Define the updates once,
 at module scope, in a module that the application imports before
 `app.start()`. `app.start()` then publishes the pending updates from every
 replica. Writing an update needs no started application, so tests can call the
@@ -78,10 +79,11 @@ or finds no row should return before `publish()`.
 
 ## Read the updates for a socket
 
-`subscribe()` is interim: it reads the updates for the application's own
-socket until Cloud provides shared live routes for sockets. A later release
-can replace it; [Deprecations](/en/docs/reference/deprecations-and-migrations)
-then names the migration.
+`subscribe()` is interim, not a long-term API: it reads the updates for the
+application's own socket until Cloud provides shared live routes for sockets.
+A later release replaces it with those routes and removes it;
+[Deprecations](/en/docs/reference/deprecations-and-migrations) names the
+migration.
 
 ```ts
 // SSR: capture the cursor before the snapshot it belongs to.
