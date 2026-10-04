@@ -1,19 +1,30 @@
 import type { PwaDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Paper } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Paper, Placeholder } from "@k2b/ui";
 import { accountsMessages } from "../../messages";
 import RemoveAppDevice from "./RemoveAppDevice.island";
 
 type Props = {
   userId: string;
-  devices: PwaDeviceView[];
+  /** Null when the phones could not be loaded. */
+  devices: PwaDeviceView[] | null;
   locale: string;
 };
 
-/** The person's phones in the mobile app. Renders nothing while there are none, so it stays absent until the app ships. */
+/**
+ * The person's phones in the mobile app. Renders nothing while there are none, so it stays absent until the app ships;
+ * a failed load shows an error instead of hiding a phone an administrator may need to remove.
+ */
 export default function AppDevicesSection(props: Props) {
-  if (props.devices.length === 0) return null;
   const { locale, t } = accountsMessages.resolve([props.locale]);
+  if (props.devices === null)
+    return (
+      <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-app-devices">
+        <h2 class="text-base font-semibold text-primary">{t.appDevices}</h2>
+        <Placeholder surface="paper" state="error" description={<>{t.appDevicesUnavailable}</>} />
+      </div>
+    );
+  if (props.devices.length === 0) return null;
   const platform = (value: PwaDeviceView["platform"]) =>
     value === "ios" ? t.platformIos : value === "android" ? t.platformAndroid : t.platformOther;
   const columns: DataTableColumn<PwaDeviceView>[] = [

@@ -37,7 +37,9 @@ const UserDeviceParamSchema = z.object({ id: z.uuid(), deviceId: z.uuid() });
 const UserDevicesResponseSchema = z.object({ devices: z.array(AppDeviceViewSchema) });
 const UserAppDevicesResponseSchema = z.object({ devices: z.array(PwaDeviceViewSchema) });
 const AppDeviceRemovalResponseSchema = z.object({
-  revoked: z.boolean().describe("True only for the call that removed the phone; repeating the call answers false"),
+  revoked: z
+    .boolean()
+    .describe("True only for the call that removed the phone; repeating the call answers false until the removed phone is purged"),
 });
 
 // Admin PATCH accepts the same profile fields plus `mail`. Defined standalone
@@ -744,13 +746,13 @@ const app = new Hono<AuthContext>()
       tags: ["Users"],
       summary: "Remove a phone from the mobile app",
       description:
-        "Remove one of the account's phones from the mobile app (preview) and end its app sessions at once (admin only). The phone shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`.",
+        "Remove one of the account's phones from the mobile app (preview) and end its app sessions at once (admin only). The phone shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed phone is purged, 30 days after removal at the earliest, the call answers 404.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(AppDeviceRemovalResponseSchema, "Phone removed, or already removed"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
-        404: jsonResponse(ErrorResponseSchema, "User or phone not found"),
+        404: jsonResponse(ErrorResponseSchema, "User or phone not found, or the removed phone was purged"),
       },
     }),
     v("param", UserDeviceParamSchema),

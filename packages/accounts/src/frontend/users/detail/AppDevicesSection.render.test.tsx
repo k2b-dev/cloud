@@ -34,7 +34,7 @@ const phones: PwaDeviceView[] = [
   },
 ];
 
-const render = (devices: PwaDeviceView[], locale = "en") =>
+const render = (devices: PwaDeviceView[] | null, locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -70,5 +70,12 @@ describe("App devices on the user detail page", () => {
     const html = render([]);
     expect(html).not.toContain("App devices");
     expect(html).not.toContain("<h2");
+  });
+
+  test("shows an error instead of hiding phones when they could not be loaded", () => {
+    const html = render(null);
+    expect(html).toContain("App devices");
+    expect(html).toContain("Phones in the mobile app could not be loaded. Refresh the page.");
+    expect(html).not.toContain("Remove phone");
   });
 });

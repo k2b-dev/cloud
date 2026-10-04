@@ -100,8 +100,8 @@ export default ssr<AuthContext>(async (c) => {
     }),
     // Null renders an explicit error state instead of hiding a device an admin may need to revoke.
     appApproval.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
-    // Phones in the mobile app; the section stays hidden while there are none.
-    pwaDevices.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id),
+    // Phones in the mobile app; hidden while there are none, null renders an explicit error state.
+    pwaDevices.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
   ]);
   const showDevices = Boolean(approvalConfig?.enabled) || devices === null || devices.length > 0;
 

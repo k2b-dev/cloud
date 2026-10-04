@@ -15,7 +15,9 @@ Cloud lists two kinds of paired phones separately:
 - **Sign-in devices** approve sign-ins for an account through an
   authenticator such as Cloud Login. Most of this page covers them.
 - **App devices** are phones paired with the mobile app (preview). Each one
-  holds its own app session. See [Remove an app device for someone](#remove-an-app-device-for-someone).
+  holds its own app session. You pair and remove your own phones under **App**
+  in your profile menu (`/me/app`); for administrators, see
+  [Remove an app device for someone](#remove-an-app-device-for-someone).
 
 Removing one kind never affects the other.
 
@@ -103,7 +105,7 @@ with its name, when it was paired and when it was last used.
 The device can no longer approve sign-ins for that account, including a
 request it already approved but that has not finished. Sessions it already
 approved stay signed in until they expire; Accounts has no action that ends
-another account's sessions. Cloud records the revocation in the audit log and
+another account's web sessions. Cloud records the revocation in the audit log and
 notifies the person if it can reach them by email or browser notification.
 To set up a replacement, use [Help someone pair a device](#help-someone-pair-a-device).
 
@@ -122,7 +124,8 @@ recovery. A synced passkey is not a backup of the authenticator's local vault.
 When someone loses a phone that is paired with the mobile app, an
 administrator opens **Accounts → Users → the user**. **App devices** lists each
 paired phone with its name, platform, when it was paired and when it was last
-used. The section appears only while the account has at least one paired phone.
+used. The section appears only while the account has at least one paired phone,
+or with an error when the phones could not be loaded.
 
 1. Find the phone by name and last use.
 2. Choose the remove button in its row, then **Remove phone** to confirm.

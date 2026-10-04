@@ -171,15 +171,18 @@ name requirements and CLI examples.
 
 Administrators list and remove another account's phones in the mobile app
 through the Accounts API. Both routes require the `admin` role. An
-administrator's own app session never carries that role, so a phone cannot
-call them.
+administrator's own app session never carries that role, so the mobile app
+cannot call them. A web session in the phone's browser is independent of the
+app and keeps its role until it ends; removing the phone does not end it.
 
 | Method and path below `/api/accounts/users` | Result |
 | --- | --- |
 | `GET /:id/app-devices` | `{ devices }` with `id`, `name`, `platform` (`ios`, `android` or `other`), `createdAt`, `lastUsedAt` and `current` (always `false` here) |
 | `DELETE /:id/app-devices/:deviceId` | `{ revoked }`: `true` for the call that removed the phone, `false` when it was already removed |
 
-An unknown account or a phone of another account answers `404`. Removal ends
+An unknown account or a phone of another account answers `404`. Cloud purges a
+removed phone 30 days after removal at the earliest; from then on, repeating
+the removal also answers `404`. Removal ends
 the phone's app sessions in the same transaction, so every application's
 validator rejects them at once; the app then shows that the phone was signed
 out. Cloud audits the removal as `auth.pwa.device.revoke` with the
