@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -268,6 +268,54 @@ test.skipIf(isServer)("reply and forward Commands name an untitled conversation 
     ]);
   } finally {
     dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a saved summary is announced to screen readers, with no toast", async () => {
+  const dom = createDomTestHarness();
+  const { prompts, toast } = await import("@k2b/ui");
+  const form = spyOn(prompts, "form").mockResolvedValue({ summary: "Numbers agreed, invoice next week." });
+  const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+  const originalFetch = globalThis.fetch;
+  const puts: unknown[] = [];
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "PUT") return Response.json({ items: [] });
+      puts.push(JSON.parse(String(init.body)));
+      return Response.json({ summary: "Numbers agreed, invoice next week.", summaryRevision: 2, conversationRevision: 1 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  let saved = false;
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        conversationSummary: { summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 },
+        onSummarySaved: async () => {
+          saved = true;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit summary"]')!.click();
+    await waitFor(() => saved);
+    await Bun.sleep(150);
+
+    expect(puts).toEqual([{ expectedSummaryRevision: 1, summary: "Numbers agreed, invoice next week." }]);
+    // The summary card shows the text; only a screen reader hears that it was saved.
+    expect([...dom.document.querySelectorAll('[data-k2b-live] [role="status"] > div')].map((line) => line.textContent)).toEqual([
+      "Summary saved",
+    ]);
+    expect(successes).not.toHaveBeenCalled();
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    form.mockRestore();
+    successes.mockRestore();
     dom.cleanup();
   }
 });

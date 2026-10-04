@@ -71,8 +71,9 @@ progress is measurable.
 Choose one channel per outcome:
 
 - no visible success message when the result shows where the user acted;
-  announce it politely for screen readers when the focused control does not
-  say it, for example after a shortcut or when the control was replaced;
+  call `announce()` from `@k2b/ui` so screen readers hear it when the focused
+  control does not say it, for example after a shortcut or when the control
+  was replaced;
 - `toast.success()` when the effect is not on screen, including an item the
   active filter now hides, with Undo where it exists;
 - `toast.error()` with a Retry action when a single action failed and

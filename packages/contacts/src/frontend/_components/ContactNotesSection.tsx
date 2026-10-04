@@ -1,6 +1,6 @@
 import { dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Avatar, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Avatar, announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactNote } from "../../service";
@@ -111,10 +111,12 @@ export default function ContactNotesSection(props: Props) {
       if (!res.ok) throw new Error(await readErrorMessage(res, t().addNoteFailed));
       return { target, note: await res.json() };
     },
-    // The new note appears in the list; a failure stays under the composer, which keeps the draft.
+    // The new note appears in the list and the composer closes, so a screen reader is told. A failure stays under the
+    // composer, which keeps the draft.
     onSuccess: ({ target }) => {
       if (source() === createContactQuerySource(target)) {
         setComposerOpen(false);
+        announce(t().commentAdded);
       }
       reconcile(target);
     },
@@ -136,10 +138,12 @@ export default function ContactNotesSection(props: Props) {
       if (!res.ok) throw new Error(await readErrorMessage(res, t().updateNoteFailed));
       return { target, note: await res.json() };
     },
-    // The note shows its new text; a failure stays under the edit composer, which keeps the text.
+    // The note shows its new text and the edit composer that had focus closes, so a screen reader is told. A failure
+    // stays under the edit composer, which keeps the text.
     onSuccess: ({ target }) => {
       if (source() === createContactQuerySource(target)) {
         setEditingId(null);
+        announce(t().commentUpdated);
       }
       reconcile(target);
     },
@@ -160,7 +164,11 @@ export default function ContactNotesSection(props: Props) {
       if (!res.ok) throw new Error(await readErrorMessage(res, t().deleteNoteFailed));
       return target;
     },
-    onSuccess: (target) => reconcile(target),
+    // The note leaves the list together with its delete button, which had focus, so a screen reader is told.
+    onSuccess: (target) => {
+      if (source() === createContactQuerySource(target)) announce(t().commentDeleted);
+      reconcile(target);
+    },
     onError: (err) => toast.error(err.message),
   });
 

@@ -1,10 +1,10 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Tag } from "@k2b/ui";
+import { announce, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
-import { announceStatus, type RetryToast } from "../../../lib/feedback";
+import type { RetryToast } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
@@ -73,7 +73,7 @@ export default function ItemRow(props: ItemRowProps) {
       // A row the list's filters now hide has left the list, so it is confirmed with Undo. A row that stays shows its
       // new state, but the refresh renders it again and its focus is lost, so a screen reader is told.
       void invalidateSpacesData().then(
-        () => (isListed(change.itemId) ? announceStatus(completed ? t.itemCompleted : t.itemReopened) : confirmCompletion(change, t)),
+        () => (isListed(change.itemId) ? announce(completed ? t.itemCompleted : t.itemReopened) : confirmCompletion(change, t)),
         () => retryToast(t.listRefreshFailed, t.retry, refreshList),
       );
     },

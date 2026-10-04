@@ -1,4 +1,5 @@
 import {
+  announce,
   Button,
   ButtonLink,
   createHoverPreview,
@@ -200,6 +201,36 @@ exportToast.update("Archive ready", {
           Dismiss all
         </Button>
       </div>
+    </DemoCard>
+  );
+};
+
+const AnnounceDemo = () => {
+  const [last, setLast] = createSignal<string | null>(null);
+  const say = (message: string, politeness: "polite" | "assertive") => {
+    announce(message, { politeness });
+    setLast(`${politeness}: ${message}`);
+  };
+
+  return (
+    <DemoCard
+      id="announce"
+      chip={{ kind: "component", name: "announce", from: "@k2b/ui" }}
+      description="Tells screen readers about an outcome the screen shows but the focused control does not say. Nothing appears and nothing moves; the line below only mirrors what a screen reader hears."
+      code={`// A comment posted from a composer that then closes.
+announce("Comment posted");
+// Rare: an outcome that must interrupt and has no visible counterpart.
+announce("Connection lost, changes are kept on this device", { politeness: "assertive" });`}
+    >
+      <div class="ui-demo-row">
+        <Button variant="secondary" onClick={() => say("Comment posted", "polite")}>
+          Polite
+        </Button>
+        <Button variant="secondary" onClick={() => say("Connection lost, changes are kept on this device", "assertive")}>
+          Assertive
+        </Button>
+      </div>
+      <p class="text-sm text-dimmed">{last() ?? "Nothing announced yet"}</p>
     </DemoCard>
   );
 };
@@ -565,6 +596,7 @@ const demos: DemoSection = {
   toast: () => (
     <DemoGrid columns="one">
       <ToastDemo />
+      <AnnounceDemo />
     </DemoGrid>
   ),
   tooltip: () => (

@@ -61,7 +61,7 @@ See the [TextInput guide](https://cloud.k2b.dev/en/ui/input/text) for details.
 | Inputs | Text fields, selectors, date pickers, file inputs |
 | Layout | Panels, settings, split panes, floating windows |
 | Surfaces | Cards, avatars, badges, empty states |
-| Feedback | Dialogs, prompts, tooltips, toasts |
+| Feedback | Dialogs, prompts, tooltips, toasts, screen-reader announcements |
 | Content | Tables, charts, calendars, Markdown, file previews |
 | Chat | Timeline, messages, composer, context usage |
 | Widgets | Dashboard summaries, lists, statistics |

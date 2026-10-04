@@ -1,5 +1,6 @@
 import { getK2bPortalRoot } from "../internal/portal";
 import { resolveUiMessages } from "../intl/messages";
+import { announce, ensureLiveRegions } from "./announce";
 
 export type ToastVariant = "default" | "success" | "error";
 
@@ -53,12 +54,8 @@ const READ_MAX_MS = 12_000;
 const REACHABLE_MS = 8_000;
 /** An error longer than this stays until it is closed, so it can be read and copied. */
 const STICKY_ERROR_CHARACTERS = 120;
-/** A live region needs a moment between being found and being written to. */
-const ANNOUNCE_DELAY_MS = 100;
-const ANNOUNCEMENT_LIFETIME_MS = 7_000;
 export const K2B_TOAST_CONTAINER_ID = "k2b-ui-toast-container";
 const CONTAINER_ATTRIBUTE = "data-k2b-toast-container";
-const LIVE_ATTRIBUTE = "data-k2b-toast-live";
 
 type VariantStyle = {
   tone: "info" | "success" | "danger";
@@ -149,50 +146,11 @@ function setHold(holds: Set<HTMLElement>, card: HTMLElement, held: boolean): voi
   if (!held) enforceCap();
 }
 
-const VISUALLY_HIDDEN =
-  "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;";
-
-/**
- * Two persistent, empty live regions beside the rail: polite for every toast, assertive for errors. A region that
- * already exists when its text arrives is announced reliably, unlike one inserted with its text already inside.
- * They sit outside the rail because the rail moves into a fresh top-layer element for every toast.
- */
-const ensureLiveRegions = (root: HTMLElement): HTMLElement => {
-  const existing = Array.from(root.children).find((child) => child.hasAttribute(LIVE_ATTRIBUTE));
-  if (existing instanceof HTMLElement) return existing;
-  const live = document.createElement("div");
-  live.setAttribute(LIVE_ATTRIBUTE, "");
-  live.style.cssText = VISUALLY_HIDDEN;
-  for (const assertive of [false, true]) {
-    const region = document.createElement("div");
-    region.setAttribute("role", assertive ? "alert" : "status");
-    region.setAttribute("aria-live", assertive ? "assertive" : "polite");
-    // Both roles are atomic by default, which would read every line still in the region again with each new one.
-    region.setAttribute("aria-atomic", "false");
-    region.dataset.politeness = assertive ? "assertive" : "polite";
-    live.appendChild(region);
-  }
-  root.appendChild(live);
-  return live;
-};
-
-/** Each announcement is its own line, so a burst of toasts or a repeated message is still read. */
-const announce = (root: HTMLElement | null, text: string, assertive: boolean): void => {
-  if (!root || !text) return;
-  const region = ensureLiveRegions(root).querySelector<HTMLElement>(`[data-politeness="${assertive ? "assertive" : "polite"}"]`);
-  if (!region) return;
-  const line = document.createElement("div");
-  line.textContent = text;
-  setTimeout(() => {
-    region.appendChild(line);
-    setTimeout(() => line.remove(), ANNOUNCEMENT_LIFETIME_MS);
-  }, ANNOUNCE_DELAY_MS);
-};
-
 const ensureContainer = (): HTMLElement | null => {
   if (typeof document === "undefined") return null;
+  // The shared live regions exist before the first toast's text arrives.
+  ensureLiveRegions(document);
   const root = getK2bPortalRoot();
-  ensureLiveRegions(root);
   let container = root.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
   if (container) return container;
 
@@ -419,7 +377,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const spoken = () => (currentVariant === "error" ? `${resolveUiMessages().error}: ${text()}` : text());
   const say = () => {
     lastAnnouncement = spoken();
-    announce(item.slot.parentElement?.parentElement ?? null, lastAnnouncement, currentVariant === "error");
+    announce(lastAnnouncement, { politeness: currentVariant === "error" ? "assertive" : "polite" });
   };
 
   const clearDismissTimer = () => {

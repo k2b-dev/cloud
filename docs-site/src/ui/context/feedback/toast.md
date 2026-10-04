@@ -1,6 +1,6 @@
 # Toast
 
-`toast` shows transient feedback in a responsive stack. The application supplies the message and decides whether the result is informational, successful, or failed.
+`toast` shows transient feedback in a responsive stack. The application supplies the message and decides whether the result is informational, successful, or failed. `announce` tells screen readers about an outcome without showing anything, through the same live regions.
 
 A toast is one calm line: a tone glyph, the message, an optional text action, and a close button. Each tone has its own glyph shape (`ti-info-circle`, `ti-circle-check`, `ti-alert-circle`), so tones differ by more than colour. Like dialogs and the Files upload panel, a toast is a floating layer: it has a hairline border and the soft `--k2b-shadow-toast`, the one documented exception to inward-only depth.
 
@@ -10,13 +10,13 @@ Use a toast after a non-blocking action when the user can continue without respo
 
 | Outcome | Feedback |
 | --- | --- |
-| Success that shows where the user acted: a ticked item that stays in view, a new comment, a card dropped in place, a saved field | No visible message; the changed screen is the confirmation. When the focused control does not say what changed, because a shortcut acted, the control was busy, or it was replaced, announce the result in a polite status region. |
+| Success that shows where the user acted: a ticked item that stays in view, a new comment, a card dropped in place, a saved field | No visible message; the changed screen is the confirmation. When the focused control does not say what changed, because a shortcut acted, the control was busy, or it was replaced, call `announce` with the result. |
 | Success whose effect is not on screen: sent, moved elsewhere, an item the active filter now hides, a card a shortcut moved to another column, created outside the current view, finished in the background | `toast.success`, with an Undo action when the operation can be undone. |
 | A single action failed and the user can try again: a toggle, a move, a save, a refresh after a saved change | `toast.error` that names what failed, with a Retry action when repeating the same request is safe. |
 | Input that blocks a form or composer, or a failed save from a dialog | An inline error next to the field or in the dialog, such as the field's `error` state or `InlineGuidance`. The dialog stays open until the server answers, so the input stays. |
 | A destructive action, or a failure that cannot be recovered and needs a decision | A dialog: `prompts.confirm` before the action, `prompts.error` when the user must read the failure before continuing. |
 
-Toasts confirm only what the user cannot see. A toast for every visible change teaches people to ignore the rail, including its errors. An error dialog for a one-click action interrupts more than the failure deserves: the toast names it and offers the retry. "Visible" includes screen readers: a change that only the screen shows still needs a polite status message when focus is elsewhere.
+Toasts confirm only what the user cannot see. A toast for every visible change teaches people to ignore the rail, including its errors. An error dialog for a one-click action interrupts more than the failure deserves: the toast names it and offers the retry. "Visible" includes screen readers: a change that only the screen shows still needs a polite announcement when focus is elsewhere.
 
 Retry repeats the failed request with the intent captured when it started: the target, such as the item or Space ID, the values, and any follow-up such as a return address. It then still applies to the same object after the user has moved on. Offer it when repeating cannot do harm, such as setting a value, deleting, refreshing, or a request with an idempotency key, or when the input would otherwise be lost because its form or picker has already closed. In that second case, a create without an idempotency key can create the object twice if the first request reached the server, the same risk as entering it again.
 
@@ -57,6 +57,8 @@ A toast over a modal dialog is not announced and cannot be reached until the dia
 
 ```ts
 import {
+  announce,
+  type AnnounceOptions,
   isPointInsideToast,
   toast,
   type ToastHandle,
@@ -127,6 +129,23 @@ upload.dismiss();
 
 Use `toast.dismissAll()` when navigation or a major context change would make existing messages stale.
 
+## Announce without a toast
+
+`announce(message)` reads a message to screen readers and shows nothing, so the layout never changes. Use it for a result the screen shows but the focused control does not say: a comment posted from a composer that then closes or clears, a note deleted together with the button that had focus, a summary saved from a form that returned focus to its opener, a task assigned with a keyboard shortcut.
+
+```ts
+announce("Comment posted");
+announce("Assigned to you");
+```
+
+| Option | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `politeness` | `"polite" \| "assertive"` | `"polite"` | `polite` waits until the screen reader is idle; `assertive` interrupts it. |
+
+Announce an outcome only after the server has confirmed it, and only once: when a follow-up refresh fails, the error toast says that the change was saved, so skip the announcement. A failure that the user must act on belongs in an error toast, which is already announced assertively with the error word, or in an inline error with `role="alert"`, such as a field's `error` or the `Discussion.Composer` reason. Calling `announce` as well would read it twice. Reserve `assertive` for the rare outcome that must interrupt and has no visible counterpart.
+
+The message is the app's own localized text and names the outcome ("Comment deleted"), like a toast message. `announce` and every toast write to one pair of live regions per document, polite and assertive, so neither creates a second region. Each message is its own line, so the same message twice is read twice. While a modal dialog is open, the browser makes the regions inert like the rest of the page, so report work inside a dialog in the dialog itself. Calls without `document`, including during SSR, do nothing.
+
 ## Custom content in the rail
 
 When feedback needs more than a description, a bar, and one action, such as a
@@ -175,7 +194,7 @@ Do not place a destructive action in a toast. Ask for confirmation before the op
 
 ## Accessibility
 
-The rail is a region named "Notifications" ("Benachrichtigungen"). Two persistent, empty live regions beside it announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, each time only if its message changed; it is not announced at every update. A change to the error variant is announced even when the text stays the same. The regions are not atomic, so each announcement is read once on its own.
+The rail is a region named "Notifications" ("Benachrichtigungen"). Two persistent, empty live regions outside it, shared with `announce`, announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, each time only if its message changed; it is not announced at every update. A change to the error variant is announced even when the text stays the same. The regions are not atomic, so each announcement is read once on its own.
 
 A toast closes only through its close button, through Escape while it has focus, through its link action, or when its time runs out. Clicking the text does not close it, so an error message can be selected and copied. When a focused toast closes, focus moves to the next toast or back to where it was before the toast appeared. When an update replaces or removes the focused action, focus stays in the toast, on the new action or on the close button.
 
