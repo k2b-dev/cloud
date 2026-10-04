@@ -1,5 +1,3 @@
-import type { NoteDeletePermission } from "./note-delete-permission";
-import type { PresentationMode } from "./presentation-mode";
 import { STREAM_CURSOR_PATTERN } from "./yjs";
 
 export const NOTEBOOKS_WORKSPACE_WS_TYPE = {
@@ -10,42 +8,16 @@ export const NOTEBOOKS_WORKSPACE_WS_TYPE = {
   revoked: "notes.workspace.revoked",
 } as const;
 
-export type NotebookWorkspaceNotebook = {
+/**
+ * Workspace events are invalidation hints: every reader refetches through the
+ * permission-aware HTTP routes, so an event names what changed and nothing
+ * more. Note text or titles would reach readers whose access has ended, and a
+ * long note would exceed the topic's payload limit and lose its hint.
+ */
+type NotebookWorkspaceNoteRef = {
   id: string;
   shortId: string;
-  name: string;
-  description: string | null;
-  icon: string | null;
-  homepageNoteId: string | null;
-  homepageNoteShortId: string | null;
-  defaultPresentationMode: PresentationMode;
-  defaultNoteTitleTemplate: string;
-  noteDeletePermission: NoteDeletePermission;
-  createdBy: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type NotebookWorkspaceNote = {
-  id: string;
-  shortId: string;
-  notebookId: string;
-  parentId: string | null;
-  title: string;
-  position: number;
-  hasChildren: boolean;
-  yjsSnapshotAt: string | null;
-  /** Older retained events predate the recovery marker. */
   historyIncomplete?: boolean;
-  contentMd: string | null;
-  createdBy: string | null;
-  createdAt: string;
-  updatedAt: string;
-  lockedAt: string | null;
-};
-
-type NotebookWorkspaceEventNote = NotebookWorkspaceNote & {
-  parentShortId: string | null;
 };
 
 export type NotebookWorkspaceInvalidationScope = "notebook" | "tree" | "tags" | "references" | "permissions";
@@ -55,19 +27,12 @@ export type NotebookWorkspaceEvent =
       v: 1;
       type: "notebook.updated";
       notebookId: string;
-      notebook: NotebookWorkspaceNotebook;
     }
   | {
       v: 1;
-      type: "note.created";
+      type: "note.created" | "note.updated";
       notebookId: string;
-      note: NotebookWorkspaceEventNote;
-    }
-  | {
-      v: 1;
-      type: "note.updated";
-      notebookId: string;
-      note: NotebookWorkspaceEventNote;
+      note: NotebookWorkspaceNoteRef;
     }
   | {
       v: 1;
@@ -105,13 +70,12 @@ export type PublicNotebookWorkspaceEvent =
       v: 1;
       type: "notebook.updated";
       notebookId: string;
-      notebook: Omit<NotebookWorkspaceNotebook, "shortId" | "homepageNoteShortId">;
     }
   | {
       v: 1;
       type: "note.created" | "note.updated";
       notebookId: string;
-      note: Omit<NotebookWorkspaceEventNote, "shortId" | "parentShortId">;
+      note: Omit<NotebookWorkspaceNoteRef, "shortId">;
     }
   | {
       v: 1;
@@ -150,6 +114,44 @@ export type PublicNotebookWorkspaceEvent =
  */
 export const isPermissionInvalidation = (event: NotebookWorkspaceEvent): boolean =>
   event.type === "workspace.invalidated" && event.scopes.includes("permissions");
+
+/**
+ * Project a stored event for one reader: internal ids become short ids, and a
+ * favorite reaches only the person who set it (`null` means skip the event).
+ * The projection names its fields, so an older retained event that still
+ * carries note text or notebook fields loses them here.
+ */
+export const toPublicWorkspaceEvent = (
+  event: NotebookWorkspaceEvent,
+  reader: { notebookShortId: string; userId: string | null },
+): PublicNotebookWorkspaceEvent | null => {
+  const notebookId = reader.notebookShortId;
+  const treeChanged = (): PublicNotebookWorkspaceEvent => ({
+    v: 1,
+    type: "workspace.invalidated",
+    notebookId,
+    reason: "unknown",
+    scopes: ["tree"],
+  });
+  switch (event.type) {
+    case "notebook.updated":
+      return { v: 1, type: event.type, notebookId };
+    case "note.created":
+    case "note.updated":
+      return { v: 1, type: event.type, notebookId, note: { id: event.note.shortId, historyIncomplete: event.note.historyIncomplete } };
+    case "note.deleted":
+      return { v: 1, type: event.type, notebookId, noteId: event.shortId };
+    case "note.favorite.changed":
+      if (event.userId !== reader.userId) return null;
+      if (!event.shortId) return treeChanged();
+      return { v: 1, type: event.type, notebookId, noteId: event.shortId, userId: event.userId, favorite: event.favorite };
+    case "note.comments.changed":
+      if (!event.noteShortId) return treeChanged();
+      return { v: 1, type: event.type, notebookId, noteId: event.noteShortId };
+    case "workspace.invalidated":
+      return { ...event, notebookId };
+  }
+};
 
 export const notebooksWorkspace = {
   wsType: NOTEBOOKS_WORKSPACE_WS_TYPE,

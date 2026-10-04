@@ -8,12 +8,7 @@ import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import { z } from "zod";
 import { SHORT_ID_REGEX } from "./lib/short-id";
-import {
-  isPermissionInvalidation,
-  type NotebookWorkspaceEvent,
-  notebooksWorkspace,
-  type PublicNotebookWorkspaceEvent,
-} from "./lib/workspace-events";
+import { isPermissionInvalidation, notebooksWorkspace, toPublicWorkspaceEvent } from "./lib/workspace-events";
 import { notebooksYjs } from "./lib/yjs";
 import { notebooksService } from "./service";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "./service/presence";
@@ -889,54 +884,6 @@ const startNoteAccessWatch = (ctx: WsContext, notebookId: string) => {
   })();
 };
 
-const toPublicWorkspaceEvent = async (event: NotebookWorkspaceEvent, notebookShortId: string): Promise<PublicNotebookWorkspaceEvent> => {
-  if (event.type === "notebook.updated") {
-    const { shortId, homepageNoteShortId, ...notebook } = event.notebook;
-    return {
-      ...event,
-      notebookId: notebookShortId,
-      notebook: { ...notebook, id: shortId, homepageNoteId: homepageNoteShortId },
-    };
-  }
-
-  if (event.type === "note.created" || event.type === "note.updated") {
-    const { shortId, parentShortId, ...note } = event.note;
-    return {
-      ...event,
-      notebookId: notebookShortId,
-      note: {
-        ...note,
-        id: shortId,
-        notebookId: notebookShortId,
-        parentId: parentShortId,
-      },
-    };
-  }
-
-  if (event.type === "note.deleted") {
-    const { shortId, ...rest } = event;
-    return { ...rest, notebookId: notebookShortId, noteId: shortId };
-  }
-
-  if (event.type === "note.favorite.changed") {
-    const { shortId, ...rest } = event;
-    if (!shortId) {
-      return { v: 1, type: "workspace.invalidated", notebookId: notebookShortId, reason: "unknown", scopes: ["tree"] };
-    }
-    return { ...rest, notebookId: notebookShortId, noteId: shortId };
-  }
-
-  if (event.type === "note.comments.changed") {
-    const { noteShortId, ...rest } = event;
-    if (!noteShortId) {
-      return { v: 1, type: "workspace.invalidated", notebookId: notebookShortId, reason: "unknown", scopes: ["tree"] };
-    }
-    return { ...rest, notebookId: notebookShortId, noteId: noteShortId };
-  }
-
-  return { ...event, notebookId: notebookShortId };
-};
-
 const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortId: string, afterCursor: string | null) => {
   stopWorkspaceStream(ctx);
   const abort = new AbortController();
@@ -951,11 +898,9 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
         signal: abort.signal,
       })) {
         if (abort.signal.aborted || ctx.workspaceNotebookId !== notebookId) break;
-        send(ctx.socket, WORKSPACE_WS_TYPE.event, {
-          notebookId: notebookShortId,
-          cursor: event.cursor,
-          event: await toPublicWorkspaceEvent(event.data, notebookShortId),
-        });
+        const publicEvent = toPublicWorkspaceEvent(event.data, { notebookShortId, userId: ctx.user?.id ?? null });
+        if (!publicEvent) continue;
+        send(ctx.socket, WORKSPACE_WS_TYPE.event, { notebookId: notebookShortId, cursor: event.cursor, event: publicEvent });
         // The client was told; now re-check on the server, which is the side
         // that decides. Previously this event was forwarded and nothing else.
         if (isPermissionInvalidation(event.data) && !(await revalidateWorkspaceAccess(ctx))) break;
