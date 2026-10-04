@@ -279,6 +279,14 @@ export const reapTerminalRecordEventOutbox = async (
       WHERE failure.base_id = deleted.base_id
         AND failure.consumer_group = 'record-event-outbox'
         AND failure.event_id = deleted.id::text
+    ), expired_consumer_failures AS (
+      -- A consumer failure can only be replayed with its event's snapshot,
+      -- which leaves with the delivered event. Its first attempt follows that
+      -- delivery after the queue wait, so the failure expires on the same
+      -- clock instead of staying listed as replayable forever.
+      DELETE FROM grids.record_event_delivery_failures
+      WHERE consumer_group <> 'record-event-outbox'
+        AND first_seen_at < now() - (${Math.max(deliveredRetentionDays, 0)} * interval '1 day')
     )
     SELECT id::text AS id FROM deleted
   `;

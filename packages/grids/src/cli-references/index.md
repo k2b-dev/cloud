@@ -404,7 +404,8 @@ cld grids records upsert-external-batch Authors \
 
 For resumable connector sync, save the opaque cursor returned by `records changes`. The feed reports committed public Record identities,
 event types, versions, and deletion times from the last 30 days; read each current Record separately for its field values. `--table` narrows
-the Base feed, while `--all --max-events` bounds catch-up work. If a cursor has expired, perform a fresh full Record scan and start again from
+the Base feed, while `--all --max-events` bounds catch-up work. A change appears once every earlier write transaction has ended, so a long
+import delays the changes after it instead of being skipped. If a cursor has expired, perform a fresh full Record scan and start again from
 the new feed position.
 
 ```bash

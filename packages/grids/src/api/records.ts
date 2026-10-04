@@ -186,7 +186,7 @@ export const recordsRoutes = new Hono<AuthContext>()
       tags: ["Grids:Record"],
       summary: "Resume bounded Record changes for a Base",
       description:
-        "Returns committed Record change receipts for the last 30 days. Save the returned cursor and reread current Records separately.",
+        "Returns committed Record change receipts for the last 30 days. A change appears once every earlier write transaction has ended, so the cursor never passes it. Save the returned cursor and reread current Records separately.",
       responses: {
         200: jsonResponse(PublicRecordChangeFeedPageSchema, "Record change page"),
         400: jsonResponse(ErrorResponseSchema, "Invalid cursor or Table"),

@@ -512,8 +512,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Return permission-safe workflow YAML autocomplete items": "Berechtigungssichere Autovervollständigungen für Workflow-YAML zurückgeben",
   "Returns a bounded impact at one observation time. Reaching the floor never deletes a Record or File.":
     "Liefert eine begrenzte Auswirkung zu einem Beobachtungszeitpunkt. Das Erreichen der Mindestaufbewahrung löscht nie einen Datensatz oder eine Datei.",
-  "Returns public Record identities and versions from the last 30 days. Save the cursor and read current Record values separately.":
-    "Liefert öffentliche Datensatzidentitäten und -versionen der letzten 30 Tage. Speichere den Cursor und lies aktuelle Datensatzwerte separat.",
+  "Returns public Record identities and versions from the last 30 days. A change appears once every earlier write has ended, so the cursor never passes it. Save the cursor and read current Record values separately.":
+    "Liefert öffentliche Datensatzidentitäten und -versionen der letzten 30 Tage. Eine Änderung erscheint erst, wenn jeder frühere Schreibvorgang beendet ist; der Cursor überspringt sie also nie. Speichere den Cursor und lies aktuelle Datensatzwerte separat.",
   "Revision to restore": "Wiederherzustellende Revision",
   "Revoke a direct Grids resource grant": "Eine direkte Freigabe für eine Grids-Ressource widerrufen",
   "Revoke a public document link": "Einen öffentlichen Dokumentlink widerrufen",

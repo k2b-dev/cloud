@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-27
+updated: 2026-10-04
 ---
 
 # Grids
@@ -730,8 +730,11 @@ changes`. The feed reports committed Record identities, event types, versions,
 and deletion times for the last 30 days; it does not return field values or
 replace a current Record read. Every page rechecks Base Read access, and an
 optional `--table` narrows the feed without creating a separate permission
-boundary. If a cursor has expired, perform a new full scan instead of guessing
-which changes were missed. Use `--all --max-events N` for a bounded catch-up.
+boundary. A change appears once every earlier write transaction on the
+PostgreSQL server has ended, so a long import delays the changes after it
+instead of being skipped. If a cursor has expired, perform a new full scan
+instead of guessing which changes were missed. Use `--all --max-events N` for a
+bounded catch-up.
 
 Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
@@ -748,7 +751,10 @@ before switching an existing installation. Start Core before Grids.
 
 Record events are committed in PostgreSQL before background publication.
 Workflow dispatch failures retry up to 20 times and remain in PostgreSQL for
-inspection. Delayed retries return to the queue behind other work, so a broken
+inspection and replay for 30 days, as long as the record state they replay is
+kept. A transaction left open on the PostgreSQL server, for example an idle
+session in a transaction, delays the Record change feed until it ends; nothing
+is lost. Delayed retries return to the queue behind other work, so a broken
 workflow does not block its partition throughout the retry period. Transport
 failures have a separate Sync dead-letter queue.
 

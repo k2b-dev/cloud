@@ -5,10 +5,20 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Deprecations and migrations
+
+## Grids change-feed cursors need one rescan
+
+`cld grids records changes` and its HTTP route used to resume after the start
+time of a write transaction. A long write that started earlier but committed
+later, such as an import, could be skipped. The feed now resumes after the
+writing transaction and returns a change only once every earlier write has
+ended. Cursors saved before the upgrade answer `409` once: perform a full
+Record scan and continue with the new cursor, as for an expired cursor. See
+[Grids](/en/apps/grids#automate-grids-from-the-terminal).
 
 ## Contacts writes live updates through the platform outbox
 

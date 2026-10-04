@@ -9,19 +9,30 @@ export const RECORD_CHANGE_FEED_RETENTION_DAYS = 30;
 export const RECORD_CHANGE_FEED_MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 const MAX_CURSOR_LENGTH = 2_000;
+// The signing domain stays stable across cursor versions, so a version-1
+// cursor still verifies and earns the documented rescan instead of a 400.
 const CURSOR_SIGNATURE_DOMAIN = "grids:record-change-feed-cursor:v1\0";
 
-const CursorSchema = z
-  .object({
-    v: z.literal(1),
-    f: z.string().length(43),
-    at: z.string().datetime({ offset: true }),
-    id: z.string().uuid(),
-  })
-  .strict();
+/**
+ * Version 1 resumed after a transaction start time and skipped transactions
+ * that started earlier but committed later. Version 2 resumes after the
+ * writing transaction ID; `at` only bounds the retention window.
+ */
+const CursorSchema = z.discriminatedUnion("v", [
+  z.object({ v: z.literal(1), f: z.string().length(43), at: z.string().datetime({ offset: true }), id: z.string().uuid() }).strict(),
+  z
+    .object({
+      v: z.literal(2),
+      f: z.string().length(43),
+      t: z.string().regex(/^[1-9][0-9]{0,19}$/),
+      id: z.string().uuid(),
+      at: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+]);
 
 export type RecordChangeFeedScope = { baseId: string; tableId?: string | null };
-export type RecordChangeFeedCursor = { occurredAt: string; eventId: string };
+export type RecordChangeFeedCursor = { txid: string; eventId: string; occurredAt: string };
 
 export type RecordChangeFeedItem = {
   baseId: string;
@@ -42,6 +53,7 @@ export type RecordChangeFeedPage = {
 
 type ChangeRow = {
   event_id: string;
+  txid: string;
   base_short_id: string;
   table_short_id: string;
   record_short_id: string;
@@ -73,17 +85,18 @@ export const encodeRecordChangeFeedCursor = (
   key = signingKey(),
 ): string => {
   const payload = Buffer.from(
-    JSON.stringify({ v: 1, f: fingerprint(scope), at: boundary.occurredAt, id: boundary.eventId }),
+    JSON.stringify({ v: 2, f: fingerprint(scope), t: boundary.txid, id: boundary.eventId, at: boundary.occurredAt }),
     "utf8",
   ).toString("base64url");
   return `${payload}.${signature(payload, key)}`;
 };
 
+/** Returns `"expired"` for a valid cursor that can no longer resume the feed. */
 export const decodeRecordChangeFeedCursor = (
   value: string | null | undefined,
   scope: RecordChangeFeedScope,
   key = signingKey(),
-): RecordChangeFeedCursor | null => {
+): RecordChangeFeedCursor | "expired" | null => {
   if (!value || value.length > MAX_CURSOR_LENGTH) return null;
   try {
     const [payload, suppliedSignature, extra] = value.split(".");
@@ -93,7 +106,8 @@ export const decodeRecordChangeFeedCursor = (
     if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
     const parsed = CursorSchema.safeParse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
     if (!parsed.success || parsed.data.f !== fingerprint(scope)) return null;
-    return { occurredAt: parsed.data.at, eventId: parsed.data.id };
+    if (parsed.data.v === 1) return "expired";
+    return { txid: parsed.data.t, eventId: parsed.data.id, occurredAt: parsed.data.at };
   } catch {
     return null;
   }
@@ -116,12 +130,14 @@ export const listRecordChanges = async (params: {
   if (params.cursor && !boundary) return fail(err.badInput(messages.invalidChangeFeedCursor));
 
   const cutoff = new Date((params.now ?? new Date()).getTime() - RECORD_CHANGE_FEED_RETENTION_DAYS * 24 * 60 * 60 * 1_000);
-  if (boundary && new Date(boundary.occurredAt).getTime() < cutoff.getTime()) {
-    return fail(err.conflict(messages.expiredChangeFeedCursor));
+  if (boundary === "expired" || (boundary && new Date(boundary.occurredAt).getTime() < cutoff.getTime())) {
+    // `err.conflict` phrases a duplicate ("… already exists"); this is a rescan instruction.
+    return fail({ code: "CONFLICT", message: messages.expiredChangeFeedCursor, status: 409 });
   }
 
   const rows = await sql<ChangeRow[]>`
     SELECT outbox.id::text AS event_id,
+           outbox.txid::text AS txid,
            base.short_id AS base_short_id,
            table_ref.short_id AS table_short_id,
            record.short_id AS record_short_id,
@@ -138,8 +154,12 @@ export const listRecordChanges = async (params: {
       AND outbox.created_at >= ${cutoff.toISOString()}::timestamptz
       AND snapshot.event_type <> 'comment.created'
       ${params.scope.tableId ? sql`AND outbox.table_id = ${params.scope.tableId}::uuid` : sql``}
-      ${boundary ? sql`AND (outbox.created_at, outbox.id) > (${boundary.occurredAt}::timestamptz, ${boundary.eventId}::uuid)` : sql``}
-    ORDER BY outbox.created_at, outbox.id
+      -- Every transaction below the snapshot's xmin has ended, so no change
+      -- can still appear behind the returned cursor. A newer committed change
+      -- waits while an older write transaction is open.
+      AND outbox.txid < pg_snapshot_xmin(pg_current_snapshot())
+      ${boundary ? sql`AND (outbox.txid, outbox.id) > (${boundary.txid}::xid8, ${boundary.eventId}::uuid)` : sql``}
+    ORDER BY outbox.txid, outbox.id
     LIMIT ${limit + 1}
   `;
 
@@ -158,7 +178,7 @@ export const listRecordChanges = async (params: {
   );
   const last = pageRows.at(-1);
   const cursor = last
-    ? encodeRecordChangeFeedCursor(params.scope, { occurredAt: iso(last.occurred_at), eventId: last.event_id }, key)
+    ? encodeRecordChangeFeedCursor(params.scope, { txid: last.txid, eventId: last.event_id, occurredAt: iso(last.occurred_at) }, key)
     : (params.cursor ?? null);
   return ok({ items, cursor, hasMore, retentionDays: RECORD_CHANGE_FEED_RETENTION_DAYS });
 };

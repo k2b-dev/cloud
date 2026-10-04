@@ -668,7 +668,7 @@ describe("classic resource route contracts", () => {
 
         const expiredCursor = encodeRecordChangeFeedCursor(
           { baseId: fixture.baseId, tableId: null },
-          { occurredAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000).toISOString(), eventId: testUuid() },
+          { txid: "1", occurredAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000).toISOString(), eventId: testUuid() },
           process.env.APP_SECRET!,
         );
         expect((await app.request(`${feedPath}?cursor=${encodeURIComponent(expiredCursor)}`, bearer(fixture.tokens.read))).status).toBe(
