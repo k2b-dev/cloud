@@ -152,7 +152,7 @@ describe("Spaces live updates in an open page", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  test("changes of several items refresh every open detail; a resync reloads all data", async () => {
+  test("changes of several items refresh every open detail", async () => {
     // The first refresh is slow, so the next two changes wait and arrive together.
     let release!: () => void;
     const slow = new Promise<void>((resolve) => (release = resolve));
@@ -173,12 +173,59 @@ describe("Spaces live updates in an open page", () => {
     release();
     await settle();
     expect(refreshed.sort()).toEqual(["detail", "detail:Item01", "view", "view:Item01"]);
+    expect(reload).not.toHaveBeenCalled();
+  });
 
-    refreshed.length = 0;
+  test("a resync reloads the page, because the missed updates may have renamed the Space or changed access", async () => {
+    const refreshed = recordRefreshes();
+    await mount("s6t.spaces.1");
+    socket().open();
     socket().message({ t: "resync", id: "1", cursor: "s6t.spaces.9" });
     await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(refreshed).toEqual([]);
+  });
+
+  test("a page that just reloaded still catches up its data and offers a manual reload", async () => {
+    await mount("s6t.spaces.1");
+    socket().open();
+    socket().message({ t: "event", id: "1", cursor: "s6t.spaces.2", data: { type: "space.updated" } });
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // The reloaded page misses updates and receives a resync; it does not reload again.
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    const refreshed = recordRefreshes();
+    await mount("s6t.spaces.2");
+    socket().open();
+    socket().message({ t: "resync", id: "1", cursor: "s6t.spaces.9" });
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
     expect(refreshed.sort()).toEqual(["detail", "view", "wormholes"]);
-    expect(reload).not.toHaveBeenCalled();
+    expect(dom.document.body.textContent).toContain("Live updates are unavailable right now");
+
+    // An item change that arrives in one batch with an access change is not lost either: a slow refresh
+    // holds back the next two changes until they apply together.
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    let blocking = true;
+    cleanups.push(
+      subscribeToSpacesDataInvalidation(["wormholes"], async () => {
+        if (!blocking) return;
+        blocking = false;
+        await slow;
+      }),
+    );
+    refreshed.length = 0;
+    socket().message({ t: "event", id: "1", cursor: "s6t.spaces.10", data: { type: "wormhole.created" } });
+    socket().message({ t: "event", id: "1", cursor: "s6t.spaces.11", data: { type: "item.updated", itemId: "Item01" } });
+    socket().message({ t: "event", id: "1", cursor: "s6t.spaces.12", data: { type: "access.changed" } });
+    release();
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(refreshed.sort()).toEqual(["detail", "view", "view", "wormholes", "wormholes"]);
+    returnToTab();
+    expect(socket().sent[0]?.after).toBe("s6t.spaces.12");
   });
 
   test("a changed Space or access reloads the page, at most once", async () => {

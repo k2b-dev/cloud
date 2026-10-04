@@ -17,7 +17,6 @@
   "dependencies": {
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
-    "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
     "dayjs": "catalog:",

@@ -107,7 +107,7 @@ Per replica, the built-in applications reserve:
 | Mail | 10 | `mail:invalidations` 1 GiB, automation backfill pump 64 MiB | 1.7 GiB |
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
-| Spaces | 0 | item events 1 GiB | 1 GiB |
+| Spaces | 0 | `cloud:live:spaces` 65 MiB, previous item events 1 GiB until a later release removes them | 1.1 GiB |
 | Pulse | 5 | none | 330 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
 

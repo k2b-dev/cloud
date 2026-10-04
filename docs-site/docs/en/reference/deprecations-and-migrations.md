@@ -23,7 +23,10 @@ which reads the topic `cloud:live:spaces` and checks the reader's access when
 it delivers an update. For one release, `/api/spaces/ws` answers tabs that were
 open during the upgrade with a request to load the page again; such a tab
 reloads once. While replicas of both versions run, a change handled by an older
-replica reaches a new tab only after its next reload. Nothing writes the
+replica reaches a new tab only after its next reload, and a tab whose page and
+socket come from replicas of different versions can reload and then show "Live
+updates are unavailable right now" until the rollout finishes; reloading the
+page after the rollout restores live updates. Nothing writes the
 previous topic, `cloud:spaces:events:items`, anymore. Its events expire after
 24 hours, but its stream keeps its 1 GiB reservation until the next release
 removes it together with `/api/spaces/ws`; see
