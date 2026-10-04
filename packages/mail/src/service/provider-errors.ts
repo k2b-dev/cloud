@@ -143,10 +143,17 @@ const PROVIDER_TIMEOUT_CODES = new Set([
 ]);
 
 /**
- * The provider did not answer before a timeout, including in a failed IMAP and SMTP verification.
- * Unlike a refused or dropped connection, each such attempt holds its job for the whole timeout.
+ * The provider's mailbox server did not answer before a timeout. Unlike a refused or dropped
+ * connection, each such attempt holds its job for the whole timeout. Counts the cause of an error,
+ * such as the socket timeout behind ImapFlow's NoConnection for a command whose reply never came,
+ * and the IMAP failure of a failed IMAP and SMTP verification, but not its SMTP failure.
  */
 export const isProviderTimeout = (error: unknown): boolean => {
-  const code = (error as { code?: unknown } | null)?.code;
-  return (typeof code === "string" && PROVIDER_TIMEOUT_CODES.has(code)) || verificationFailures(error).some(isProviderTimeout);
+  let current = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    const value = current as { code?: unknown; cause?: unknown; imapFailure?: unknown };
+    if (typeof value.code === "string" && PROVIDER_TIMEOUT_CODES.has(value.code)) return true;
+    current = value.code === "PROVIDER_TRANSPORT_VERIFICATION_FAILED" ? value.imapFailure : value.cause;
+  }
+  return false;
 };

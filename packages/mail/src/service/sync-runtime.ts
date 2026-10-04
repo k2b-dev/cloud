@@ -49,6 +49,7 @@ import {
   providerBusyRetryAfterMs,
   recordProviderFailure,
   recordProviderReachable,
+  releaseProviderLease,
 } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
@@ -2296,9 +2297,7 @@ export const syncFolderBatch = async (
     }
     throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
   await recordProviderReachable(folder.remote_resource_id);
   // Queued only after the provider lease is released: a hydration job that starts while this
@@ -2671,6 +2670,8 @@ export const hydrateMessageBatch = async (
                 },
                 signal,
               );
+              // The provider answered, unlike a batch that found no body to fetch and did not connect.
+              await recordProviderReachable(message.remote_resource_id);
               // The live connection returned no source for these UIDs. Each such fetch uses one
               // attempt, so a message the provider keeps listing without a source ends as failed.
               missing = candidates.filter((candidate) => !delivered.has(candidate.id));
@@ -2700,11 +2701,8 @@ export const hydrateMessageBatch = async (
         await recordProviderFailure(message.remote_resource_id, error);
         throw error;
       } finally {
-        await mailProviderOperationMutex()
-          .release(lock)
-          .catch(() => false);
+        await releaseProviderLease(lock);
       }
-      await recordProviderReachable(message.remote_resource_id);
       // Folder reconciliation retires the references of messages the provider deleted.
       if (batch.missingFromUid !== null) await enqueueFolderReconciliation(message.folder_id, batch.missingFromUid);
       if (batch.targetError) throw batch.targetError;
@@ -2827,9 +2825,7 @@ export const executeBindingRediscovery = async (
     await recordProviderFailure(binding.remote_resource_id, error);
     throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
   await recordProviderReachable(binding.remote_resource_id);
   return result;

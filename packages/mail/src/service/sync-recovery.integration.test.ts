@@ -13,7 +13,12 @@ import { loadImapPushPlan } from "./imap-push-runtime";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { createProviderConnection, replaceProviderConnection } from "./provider-connections";
-import { recordProviderReachable } from "./provider-operation-lock";
+import {
+  acquireProviderLease,
+  MAIL_PROVIDER_OPERATION_LEASE_MS,
+  recordProviderReachable,
+  releaseProviderLease,
+} from "./provider-operation-lock";
 import { claimFence, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -260,6 +265,16 @@ suite("mail sync recovery", () => {
     } finally {
       verify.mockRestore();
     }
+    // The provider answered the new connection's verification, so the pause after the timeout no
+    // longer holds back the binding's verification that the change requires.
+    const verification = await acquireProviderLease({
+      resource: fixture.resourceId,
+      waiter: "credential-verification",
+      priority: "sync",
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    expect(verification.lock).not.toBeNull();
+    await releaseProviderLease(verification.lock!);
     const reason = "Provider credentials changed; verify the remote resource again";
     expect(await transportState(fixture)).toMatchObject({
       resource_status: "connection_required",

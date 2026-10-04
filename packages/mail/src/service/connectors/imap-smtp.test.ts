@@ -5,6 +5,7 @@ import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import nodemailer from "nodemailer";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import type { ProviderConnectionInput } from "../../contracts";
+import { isProviderTimeout } from "../provider-errors";
 import { EndpointPolicyError } from "./endpoint-policy";
 import {
   assertProviderKeywordsSupported,
@@ -149,9 +150,35 @@ describe("IMAP connection failures", () => {
     const session = sessionFor(server.port);
     try {
       // ImapFlow fails a command whose connection closed with NoConnection; mail commands classify that code as transport ambiguity.
-      await expect(runImapSession(session, (client) => client.mailboxOpen("INBOX"))).rejects.toMatchObject({ code: "NoConnection" });
+      const rejected = await runImapSession(session, (client) => client.mailboxOpen("INBOX")).catch((error: unknown) => error);
+      expect(rejected).toMatchObject({ code: "NoConnection", cause: { code: "ETIMEOUT" } });
       expect(session.failure()).toMatchObject({ code: "ETIMEOUT" });
       expect(session.client.usable).toBe(false);
+      // The socket timeout behind it means the provider did not answer, which pauses the mailbox's provider work.
+      expect(isProviderTimeout(rejected)).toBe(true);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("names the socket timeout as the cause of a command that never gets a reply over a shared connection", async () => {
+    const server = stallingServer("SELECT");
+    const config: ProviderConnectionInput = {
+      name: "Stalling fixture",
+      email: "stalling@example.test",
+      username: "stalling@example.test",
+      imap: { host: "imap.example.test", port: 993, tlsMode: "implicit" },
+      smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" },
+      secret: { kind: "password", password: "fixture" },
+    };
+    try {
+      const rejected = await withSharedImapSession(
+        config,
+        async () => sessionFor(server.port),
+        (session) => imapSmtpConnector.getMessageState(session, { folderPath: "INBOX", uidValidity: "10", uid: 7 }),
+      ).catch((error: unknown) => error);
+      expect(rejected).toMatchObject({ code: "NoConnection", cause: { code: "ETIMEOUT" } });
+      expect(isProviderTimeout(rejected)).toBe(true);
     } finally {
       server.stop(true);
     }

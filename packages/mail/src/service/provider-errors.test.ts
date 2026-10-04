@@ -126,7 +126,7 @@ describe("provider connection failures", () => {
     expect(isTransientProviderFailure(verification())).toBe(false);
   });
 
-  test("count only a provider that did not answer before a timeout as timed out, also behind a verification", () => {
+  test("count only a mailbox server that did not answer before a timeout as timed out", () => {
     for (const code of ["ENDPOINT_DNS_TIMEOUT", "CONNECT_TIMEOUT", "GREETING_TIMEOUT", "UPGRADE_TIMEOUT", "ETIMEDOUT", "ETIMEOUT"]) {
       expect(isProviderTimeout(failure(code))).toBe(true);
     }
@@ -137,9 +137,18 @@ describe("provider connection failures", () => {
     expect(isProviderTimeout(Object.assign(new Error("Command failed"), { authenticationFailed: true, serverResponseCode: "LIMIT" }))).toBe(
       false,
     );
-    const verification = (...failures: unknown[]) =>
-      Object.assign(new Error("IMAP: ...; SMTP: ..."), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", failures });
+    // ImapFlow rejects a command whose reply never came with NoConnection; the socket timeout is its cause.
+    expect(isProviderTimeout(Object.assign(failure("NoConnection"), { cause: failure("ETIMEOUT") }))).toBe(true);
+    expect(isProviderTimeout(Object.assign(failure("NoConnection"), { cause: failure("ECONNRESET") }))).toBe(false);
+    // Only the IMAP half of a failed verification counts: an SMTP server that does not answer says nothing about the mailbox.
+    const verification = (imapFailure: unknown, ...smtpFailures: unknown[]) =>
+      Object.assign(new Error("IMAP: ...; SMTP: ..."), {
+        code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED",
+        failures: [imapFailure, ...smtpFailures].filter(Boolean),
+        imapFailure,
+      });
     expect(isProviderTimeout(verification(failure("CONNECT_TIMEOUT"), failure("ECONNREFUSED")))).toBe(true);
     expect(isProviderTimeout(verification(failure("ECONNREFUSED")))).toBe(false);
+    expect(isProviderTimeout(verification(null, failure("ETIMEDOUT")))).toBe(false);
   });
 });
