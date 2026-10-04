@@ -22,6 +22,7 @@ type FolderEvidence = {
   parentRelativePath: string | null;
   name: string;
   role: RemoteFolder["role"];
+  providerCollection: boolean;
   remotePath: string;
   delimiter: string | null;
   selectable: boolean;
@@ -110,6 +111,7 @@ const buildScopeEvidence = async (params: {
     parentRelativePath: folder.parentPath,
     name: folder.name,
     role: folder.role,
+    providerCollection: folder.providerCollection === true,
     remotePath: folder.path,
     delimiter: folder.delimiter,
     selectable: folder.selectable,
@@ -330,6 +332,7 @@ const upsertProjectedFolder = async (params: {
         stable_key = ${params.stableKey},
         name = ${params.folder.name},
         role = ${params.folder.role},
+        provider_collection = ${params.folder.providerCollection},
         selectable = ${params.folder.selectable},
         discovery_generation = ${params.discoveryGeneration},
         discovery_state = 'active',
@@ -347,8 +350,8 @@ const upsertProjectedFolder = async (params: {
     "folder",
     (db, shortId) => db<{ id: string }[]>`
     INSERT INTO mail.folders (
-      short_id, remote_resource_id, stable_key, name, role, selectable, selected_for_sync,
-      show_in_sidebar, discovery_generation, discovery_state, sync_status
+      short_id, remote_resource_id, stable_key, name, role, provider_collection, selectable, selected_for_sync,
+      display, discovery_generation, discovery_state, sync_status
     )
     VALUES (
       ${shortId},
@@ -356,9 +359,12 @@ const upsertProjectedFolder = async (params: {
       ${params.stableKey},
       ${params.folder.name},
       ${params.folder.role},
+      ${params.folder.providerCollection},
       ${params.folder.selectable},
       ${readable},
-      ${!params.folder.selectable || params.folder.subscribed},
+      -- A new folder shows its mail everywhere, subscribed or not: a hidden one would keep its mail
+      -- out of All mail and the work views, and unsubscribed shared folders and even INBOX are common.
+      'everywhere',
       ${params.discoveryGeneration},
       'active',
       ${readable ? "pending" : "excluded"}

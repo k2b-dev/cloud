@@ -10,6 +10,50 @@ updated: 2026-10-04
 
 # Deprecations and migrations
 
+## Mail folders choose where their mail appears
+
+A Mail folder's sidebar switch became a display with three values:
+`everywhere`, `folder_only`, and `hidden`. A conversation whose mail lies only
+in `folder_only` or `hidden` folders leaves All mail, the work views except
+Assigned to me and Send problems, their counts, the cross-mailbox overview, and
+the agent tools that list them; search and saved views still find it. See
+[Mail](/en/apps/mail#choose-where-a-folders-mail-appears).
+
+Folders that were hidden from the sidebar keep their mail out of those views
+from now on, including folders older versions hid on discovery because they
+were not subscribed. Set such a folder to `everywhere` if its mail should appear
+there again. Newly discovered folders now always start as `everywhere`, also
+when the account does not subscribe to them, so new shared folders and an
+unsubscribed INBOX keep their mail in the views.
+
+Gmail's All Mail, Important, and Starred never decide where mail appears, so
+hiding them changes nothing. Mail recognizes Important and Starred at its next
+folder discovery, which runs for every connected mailbox within 15 minutes of
+the first start. Until then a hidden Important or Starred folder keeps
+conversations that lie only there and in All Mail out of the views.
+
+The first Mail start after this update adds `mail.folders.display`, filled from
+`mail.folders.show_in_sidebar` (a shown folder becomes `everywhere`, a hidden
+one `hidden`), and `mail.folders.provider_collection`. `show_in_sidebar` stays
+and Mail keeps it current, so replicas can be replaced one by one and an older
+image runs on the database without SQL. An older image shows `folder_only`
+folders like `everywhere` ones and keeps every conversation in the views; its
+own sidebar changes reach the newer version only through `show_in_sidebar`, not
+the display. A later release drops `show_in_sidebar`.
+
+`showInSidebar: false` in the `create_folder` command and
+`cld mail folder create --hide-in-sidebar` now create a `hidden` folder.
+
+| Old | New |
+| --- | --- |
+| `PATCH .../folders/{folderId}` with `{"showInSidebar": false}` | `{"display": "hidden"}` (or `everywhere`, `folder_only`) |
+| `showInSidebar` in folder lists | `display`, `effectiveDisplay`, `displayInheritedFromFolderId`, `displayNeutral` |
+| `cld mail folder hide <folder-id>` | `cld mail folder display set hidden <folder-id>` |
+| `cld mail folder show <folder-id>` | `cld mail folder display set everywhere <folder-id>` |
+
+Agents set the display with the `folder.display.set` action; `folder.list`
+returns it.
+
 ## Grids change-feed cursors need one rescan
 
 `cld grids records changes` and its HTTP route used to resume after the start

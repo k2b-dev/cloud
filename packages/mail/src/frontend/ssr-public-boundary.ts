@@ -146,7 +146,10 @@ export const projectMailboxPageData = async (data: MailboxPageData, loadPublicId
   const activity = await activityPublic.projectActivityItems(data.activity, loadPublicIds);
   const paths: Path[] = [{ table: "mailboxes", segments: ["mailbox", "id"] }];
   addResourceList(paths, "folders", ["folders"], data.folders);
-  data.folders.forEach((item, index) => add(paths, "folders", ["folders", index, "parentId"], item.parentId));
+  data.folders.forEach((item, index) => {
+    add(paths, "folders", ["folders", index, "parentId"], item.parentId);
+    add(paths, "folders", ["folders", index, "displayInheritedFromFolderId"], item.displayInheritedFromFolderId);
+  });
   addResourceList(paths, "senderIdentities", ["identities"], data.identities);
   data.identities.forEach((item, index) => {
     add(paths, "composeTemplates", ["identities", index, "defaultSignatureTemplateId"], item.defaultSignatureTemplateId);

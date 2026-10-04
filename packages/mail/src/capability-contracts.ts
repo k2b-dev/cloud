@@ -4,6 +4,7 @@ import {
   composeSafetyApprovalSchema,
   composeSafetyReviewSchema,
   draftEditableContentInputSchema,
+  folderDisplaySchema,
   MAIL_CONVERSATION_BATCH_LIMIT,
   type MailSearchExpression,
   mailAddressSchema,
@@ -273,6 +274,10 @@ export const FolderDataSchema = z
     title: z.string().min(1).max(240),
     role: z.string().min(1),
     selectable: z.boolean(),
+    display: folderDisplaySchema,
+    effectiveDisplay: folderDisplaySchema,
+    displayInheritedFromFolderId: ResourceShortIdSchema.nullable(),
+    displayNeutral: z.boolean(),
     total: z.number().int().nonnegative(),
     unread: z.number().int().nonnegative(),
     ...OptionalResourceLinksShape,
@@ -280,6 +285,23 @@ export const FolderDataSchema = z
   .strict();
 export const FolderListDataSchema = z.array(FolderDataSchema).max(100);
 export const FolderListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...VocabularyPageInputShape }).strict();
+export const FolderDisplaySetInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    folderId: ResourceShortIdSchema.describe("Folder ID returned by folder.list."),
+    display: folderDisplaySchema.describe(
+      "everywhere shows the folder's mail in All mail and the work views; folder_only keeps it inside the folder; hidden also hides the folder.",
+    ),
+  })
+  .strict();
+export const FolderDisplayDataSchema = z
+  .object({
+    folderId: ResourceShortIdSchema,
+    display: folderDisplaySchema,
+    effectiveDisplay: folderDisplaySchema,
+    displayInheritedFromFolderId: ResourceShortIdSchema.nullable(),
+  })
+  .strict();
 
 export const ConversationDataSchema = compactResourceViewSchema("mail.conversation")
   .extend({
@@ -358,6 +380,7 @@ export const AttachmentSearchMatchDataSchema = z
   })
   .strict();
 export const ConversationSearchItemDataSchema = ConversationDataSchema.extend({
+  folderPath: z.string().max(500).nullable(),
   attachmentMatch: AttachmentSearchMatchDataSchema.nullable(),
 }).strict();
 export const ConversationSearchDataSchema = z.array(ConversationSearchItemDataSchema).max(100);

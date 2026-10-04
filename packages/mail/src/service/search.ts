@@ -4,12 +4,20 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";
+import { mailFolderPaths } from "../folder-tree";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
 import { hasSendProblem } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
+import {
+  type AggregatedViewScope,
+  isDisplayNeutral,
+  loadAggregatedViewScope,
+  loadFolderDisplayEntries,
+  staysInAggregatedViews,
+} from "./folder-display";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
 const log = logger("mail:search");
@@ -47,6 +55,11 @@ export type MessageSearchHit = {
   revision: number;
   updatedAt: string;
   sourceFolderId: string | null;
+  /**
+   * The full path, such as `Shared / Support`, of the one folder the result's mail is filed in, ignoring
+   * Sent, Drafts, Trash, Junk and provider collections; null when it lies in several such folders.
+   */
+  folderPath: string | null;
   unreadFolderIds: string[];
   rank: number;
 };
@@ -724,7 +737,19 @@ const parseStringRows = (value: unknown[] | string): string[] => {
 const participantLabelsSchema = z.array(z.string().trim().min(1));
 const parseParticipantLabels = (value: unknown[] | string): string[] => participantLabelsSchema.parse(parseStringRows(value));
 
-const mapHit = (row: DbSearchHit): MessageSearchHit => ({
+type ResultFolders = { paths: ReadonlyMap<string, string>; neutral: ReadonlySet<string> };
+
+/**
+ * The folder a result's mail is filed in: its one folder that is not neutral, so Gmail's All Mail or
+ * one's own reply in Sent does not hide where a conversation lies; otherwise its only folder.
+ */
+const resultFolderPath = (folderIds: readonly string[], folders: ResultFolders): string | null => {
+  const filed = folderIds.filter((id) => !folders.neutral.has(id));
+  const folderId = filed.length === 1 ? filed[0] : folderIds.length === 1 ? folderIds[0] : undefined;
+  return folderId ? (folders.paths.get(folderId) ?? null) : null;
+};
+
+const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => ({
   id: row.id,
   conversationId: row.conversation_id,
   primaryReference: row.primary_reference,
@@ -762,6 +787,7 @@ const mapHit = (row: DbSearchHit): MessageSearchHit => ({
   revision: Number(row.revision),
   updatedAt: (row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)).toISOString(),
   sourceFolderId: row.source_folder_id,
+  folderPath: resultFolderPath(parseStringRows(row.active_folder_ids), folders),
   unreadFolderIds: parseStringRows(row.unread_folder_ids),
   rank: Number(row.rank),
 });
@@ -799,6 +825,7 @@ const runSearch = async (params: {
   currentUserId: string | null;
   groupByConversation: boolean;
   excludedFolderIds: readonly string[];
+  aggregatedScope: AggregatedViewScope | null;
   lapsedAssignees: readonly LapsedAssignee[];
   sendProblems: boolean;
 }): Promise<DbSearchHit[]> => {
@@ -814,6 +841,8 @@ const runSearch = async (params: {
       SELECT value::uuid FROM jsonb_array_elements_text(${params.excludedFolderIds}::jsonb)
     ))
   `;
+  const aggregatedScope = (conversationId: SqlFragment) =>
+    params.aggregatedScope ? staysInAggregatedViews(conversationId, params.aggregatedScope) : sql`true`;
   const indexedSeedCte = indexedSeed ? sql`indexed_seed AS MATERIALIZED (${compileIndexedSeed(indexedSeed, params.mailboxId)}),` : sql``;
   const useConversationSeed = conversationOnly;
   const conversationSeedCte = useConversationSeed
@@ -825,6 +854,7 @@ const runSearch = async (params: {
             AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`, params.lapsedAssignees)})
             -- Only conversations the list can show take a place on the page; one without a visible
             -- message would otherwise end the page early.
+            AND ${aggregatedScope(sql`seed_conversation.id`)}
             AND EXISTS (
               SELECT 1
               FROM mail.conversation_messages seed_link
@@ -975,6 +1005,7 @@ const runSearch = async (params: {
       WHERE ${sourceMailboxPredicate}
         AND mc.mailbox_id = ${params.mailboxId}::uuid
         AND ${candidateVisibility}
+        AND ${aggregatedScope(sql`cm.conversation_id`)}
         AND (${useConversationSeed || indexedSeedCoversExpression ? sql`true` : predicate})
         ${messageNewestPage}
     ),
@@ -1365,6 +1396,7 @@ const executeSearchWithFallback = async (params: {
   currentUserId: string | null;
   groupByConversation: boolean;
   excludedFolderIds: readonly string[];
+  aggregatedScope: AggregatedViewScope | null;
   lapsedAssignees: readonly LapsedAssignee[];
   sendProblems: boolean;
 }): Promise<Result<{ rows: DbSearchHit[]; backend: SearchCursor["backend"] }>> => {
@@ -1389,6 +1421,12 @@ const searchesUnassigned = (expression: MailSearchExpression): boolean => {
   return expression.type === "assignee" && expression.userId === null;
 };
 
+/** Full folder paths of one mailbox, the way the folder list shows them, and its neutral folders. */
+const loadResultFolders = async (mailboxId: string): Promise<ResultFolders> => {
+  const entries = await loadFolderDisplayEntries(sql, sql`${mailboxId}::uuid`);
+  return { paths: mailFolderPaths(entries), neutral: new Set(entries.filter(isDisplayNeutral).map((entry) => entry.id)) };
+};
+
 export const searchMessages = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1397,6 +1435,8 @@ export const searchMessages = async (params: {
   excludedFolderIds?: readonly string[];
   /** Limit the results to messages whose send needs attention, including ones no folder holds yet. */
   sendProblems?: boolean;
+  /** List a view that mixes folders: leave out conversations whose mail is kept inside its folders. */
+  aggregatedView?: boolean;
 }): Promise<Result<MessageSearchPage>> => {
   const expression = params.request.expression;
   const complexity = validateSearchComplexity(expression);
@@ -1408,7 +1448,8 @@ export const searchMessages = async (params: {
   const groupByConversation = params.groupByConversation !== false;
   const excludedFolderIds = [...new Set(params.excludedFolderIds ?? [])].sort();
   const sendProblems = params.sendProblems === true;
-  // Only a Send problems list adds its scope, so cursors of every other search stay valid.
+  const aggregatedView = params.aggregatedView === true;
+  // Only a Send problems list or a view that mixes folders adds its scope, so cursors of every other search stay valid.
   const queryHash = sha256Json({
     mailboxId: params.mailboxId,
     expression,
@@ -1416,6 +1457,7 @@ export const searchMessages = async (params: {
     groupByConversation,
     excludedFolderIds,
     ...(sendProblems ? { sendProblems } : {}),
+    ...(aggregatedView ? { aggregatedView } : {}),
   });
   const cursor = decodeCursor(params.request.cursor, sort, queryHash);
   if (!cursor.ok) return cursor;
@@ -1425,7 +1467,10 @@ export const searchMessages = async (params: {
     if (cursor.data.backend === "native") backend = "native";
     else return fail(err.badInput("Search ranking changed; restart this search from the first page"));
   }
-  const lapsedAssignees = searchesUnassigned(expression) ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
+  const [lapsedAssignees, aggregatedScope] = await Promise.all([
+    searchesUnassigned(expression) ? listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [],
+    aggregatedView ? loadAggregatedViewScope([params.mailboxId]) : null,
+  ]);
   const execution = await executeSearchWithFallback({
     mailboxId: params.mailboxId,
     expression,
@@ -1436,6 +1481,7 @@ export const searchMessages = async (params: {
     currentUserId,
     groupByConversation,
     excludedFolderIds,
+    aggregatedScope,
     lapsedAssignees,
     sendProblems,
   });
@@ -1444,7 +1490,8 @@ export const searchMessages = async (params: {
   backend = execution.data.backend;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const items = pageRows.map(mapHit);
+  const folders = pageRows.length > 0 ? await loadResultFolders(params.mailboxId) : { paths: new Map(), neutral: new Set<string>() };
+  const items = pageRows.map((row) => mapHit(row, folders));
   const last = items.at(-1);
   const lastRow = pageRows.at(-1);
   return ok({

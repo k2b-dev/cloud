@@ -246,14 +246,21 @@ cld --json mail folder rename <folder-id> "Cloud Reviewed" --wait
 cld --json mail folder delete <folder-id> --yes --wait
 ```
 
-Cloud sidebar visibility is a local mailbox setting. It does not subscribe, unsubscribe, delete, or stop synchronizing the provider folder:
+A folder's display decides where its mail appears in Cloud Mail, for everyone in the mailbox. It requires mailbox administration and does not subscribe, unsubscribe, delete, or stop synchronizing the provider folder:
 
 ```bash
-cld --json mail folder hide <folder-id>
-cld --json mail folder show <folder-id>
+cld --json mail folder display set folder_only <folder-id>
+cld --json mail folder display set hidden <folder-id>
+cld --json mail folder display set everywhere <folder-id>
 ```
 
-Use `cld --json mail folders` to inspect the canonical hierarchy, discovery state, provider subscription, and sidebar state. Shared or other-user folders remain part of this connected account. Commands fail closed when the current provider rights do not permit a requested create, rename, or delete.
+- `everywhere` shows the folder's conversations in the folder, in All mail, and in the work views.
+- `folder_only` keeps them inside the folder. They leave All mail, Needs action, Waiting, Later, Done, Unassigned, Recently active, the cross-mailbox overview, and their counts, but stay in Assigned to me, Send problems, search, and saved views.
+- `hidden` does the same and also hides the folder in the sidebar.
+
+Subfolders inherit the stricter of their own and their parent's display. A conversation leaves the views only when one of its messages lies in a `folder_only` or `hidden` folder and none lies in an `everywhere` folder; Sent, Drafts, Trash, Junk, and provider collections such as Gmail's All Mail, Important, and Starred do not count.
+
+Use `cld --json mail folders` to inspect the canonical hierarchy, discovery state, provider subscription, and display; `DISPLAY` marks an inherited display. Shared or other-user folders remain part of this connected account. Commands fail closed when the current provider rights do not permit a requested create, rename, or delete.
 
 For providers with missing or ambiguous special-use metadata, map a semantic role without renaming the provider folder:
 

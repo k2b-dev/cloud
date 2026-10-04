@@ -2,7 +2,7 @@ import { buildMailFolderTree, type MailFolderTreeNode } from "../../folder-tree"
 import type { MailFolderView } from "../../service/messages";
 
 const visibleNode = <T extends MailFolderView>(node: MailFolderTreeNode<T>): MailFolderTreeNode<T> | null => {
-  if (!node.folder.showInSidebar || node.folder.discoveryState !== "active" || node.folder.role === "all") return null;
+  if (node.folder.display === "hidden" || node.folder.discoveryState !== "active" || node.folder.role === "all") return null;
   const children = node.children.flatMap((child) => {
     const visible = visibleNode(child);
     return visible ? [visible] : [];
@@ -24,7 +24,7 @@ export const flattenMailFolderTree = <T extends MailFolderView>(
 ): Array<{ folder: T; depth: number; hiddenByParent: boolean }> =>
   nodes.flatMap((node) => [
     { folder: node.folder, depth, hiddenByParent },
-    ...flattenMailFolderTree(node.children, depth + 1, hiddenByParent || !node.folder.showInSidebar),
+    ...flattenMailFolderTree(node.children, depth + 1, hiddenByParent || node.folder.display === "hidden"),
   ]);
 
 export const excludeMailFolderTreeRoles = <T extends MailFolderView>(

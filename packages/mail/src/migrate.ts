@@ -85,6 +85,25 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS message_contents_hydration_claim_idx ON mail.message_contents USING btree (hydration_claimed_at)
     WHERE hydration_status = 'hydrating'
   `.simple();
+  // Folders the provider fills from the others (Gmail's Important and Starred). Discovery sets it.
+  await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS provider_collection boolean DEFAULT false NOT NULL`.simple();
+  // A folder's display replaces its sidebar switch: shown folders keep their mail everywhere, hidden
+  // ones stay hidden. The backfill runs once, when the column appears. show_in_sidebar stays, and Mail
+  // keeps it current, so an older Mail image still starts on this database and reads hidden folders.
+  await tx`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'mail' AND table_name = 'folders' AND column_name = 'display'
+      ) THEN
+        ALTER TABLE mail.folders ADD COLUMN display text DEFAULT 'everywhere' NOT NULL
+          CONSTRAINT folders_display_check CHECK (display IN ('everywhere', 'folder_only', 'hidden'));
+        UPDATE mail.folders SET display = 'hidden' WHERE NOT show_in_sidebar;
+      END IF;
+    END
+    $$
+  `.simple();
 };
 
 const migrationErrorCode = (error: unknown): string | null => {

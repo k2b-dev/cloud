@@ -1547,7 +1547,7 @@ const finishFolderOperation = async (
       if (command.kind === "create_folder" && folderId && operation.showInSidebar !== null) {
         await sql`
           UPDATE mail.folders
-          SET show_in_sidebar = ${operation.showInSidebar}, updated_at = now()
+          SET display = ${operation.showInSidebar ? "everywhere" : "hidden"}, show_in_sidebar = ${operation.showInSidebar}, updated_at = now()
           WHERE id = ${folderId}::uuid
         `;
       }

@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Mail
@@ -49,6 +49,44 @@ The email provider remains the source for portable mail state. Mail keeps a
 synchronized Cloud copy for search, collaboration, durable commands, and
 observable delivery. Credentials and refresh tokens are stored as write-only
 secrets.
+
+## Choose where a folder's mail appears
+
+Each folder has one display setting, the same for everyone in the mailbox:
+
+| Display | Sidebar | All mail, work views, and their counts | Search and saved views |
+| --- | --- | --- | --- |
+| Everywhere (`everywhere`) | Shown | Included | Found |
+| Only in the folder (`folder_only`) | Shown | Left out | Found |
+| Hidden (`hidden`) | Hidden | Left out | Found |
+
+Use **Only in the folder** for shared or team folders whose mail should not
+fill the shared work lists. The folder itself still lists its conversations and
+counts its unread mail, and **Assigned to me** and **Send problems** keep every
+conversation. Search results from the API, `cld`, and agent tools name the
+folder each result is filed in. The views left
+out are All mail, Needs action, Waiting, Later, Done, Unassigned, Recently
+active, and the cross-mailbox overview; agent tools follow the same rule.
+
+A subfolder uses its parent's display when that one is stricter: it can keep
+more mail inside, never less. A conversation leaves those views only when one
+of its messages lies in an **Only in the folder** or **Hidden** folder and none
+lies in an **Everywhere** folder. Sent, Drafts, Trash, Junk, and the provider's
+collections such as Gmail's All Mail, Important, and Starred do not count. With
+Gmail, a conversation labelled only `Shared` stays in that folder although it
+is also in All Mail and holds your reply in Sent; once a message of it arrives
+in the Inbox, it appears everywhere again.
+
+Mailbox administrators change the display with
+`PATCH /api/mail/mailboxes/{mailboxId}/folders/{folderId}` and
+`{"display": "folder_only"}`, `cld mail folder display set folder_only <folder-id>`,
+or the agent action `folder.display.set`. The folder settings in Mail show and
+hide folders and mark folders whose mail stays inside them. Sent, Drafts,
+Trash, Junk, and provider collections cannot be set to `folder_only`, because
+they never decide where mail appears. `GET /api/mail/mailboxes/{mailboxId}/folders`
+and `cld mail folders` show each folder's own display, the effective one, and
+the parent it comes from. Newly discovered folders show their mail everywhere,
+whether or not the account subscribes to them.
 
 ## Delete and restore a mailbox
 

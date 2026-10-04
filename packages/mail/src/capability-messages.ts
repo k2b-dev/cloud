@@ -126,6 +126,21 @@ const catalog = i18n.define({
       tagUpdated: ({ tag }: { tag: string }) => `Updated mailbox tag ${tag}.`,
       tagRenamed: ({ tag }: { tag: string }) => `Renamed mailbox tag to ${tag}.`,
       tagColorChanged: ({ tag }: { tag: string }) => `Changed the color of mailbox tag ${tag}.`,
+      folder: "Folder",
+      currentFolderDisplay: "Mail appears now",
+      newFolderDisplay: "Mail will appear",
+      folderDisplay: ({ display }: { display: "everywhere" | "folder_only" | "hidden" }): string =>
+        display === "everywhere" ? "Everywhere" : display === "folder_only" ? "Only in the folder" : "Hidden",
+      setFolderDisplayReview: ({ folder }: { folder: string }) =>
+        `Change where mail from “${folder}” appears for everyone in this mailbox.`,
+      folderDisplaySet: ({ folder, display }: { folder: string; display: "everywhere" | "folder_only" | "hidden" }): string =>
+        display === "everywhere"
+          ? `Mail from “${folder}” now appears everywhere.`
+          : display === "folder_only"
+            ? `Mail from “${folder}” now stays in its folder.`
+            : `“${folder}” is now hidden, and its mail stays in the folder.`,
+      folderDisplayInherited: ({ folder, parent }: { folder: string; parent: string }) =>
+        `Saved for “${folder}”. Its parent “${parent}” keeps a stricter setting, which still applies.`,
       unnamedAttachment: "Unnamed attachment",
       commentBy: ({ author }: { author: string }) => `Comment by ${author}`,
       conversationComment: "Conversation comment",
@@ -299,6 +314,19 @@ const catalog = i18n.define({
       tagUpdated: ({ tag }) => `Postfach-Tag ${tag} aktualisiert.`,
       tagRenamed: ({ tag }) => `Postfach-Tag in ${tag} umbenannt.`,
       tagColorChanged: ({ tag }) => `Farbe des Postfach-Tags ${tag} geändert.`,
+      folder: "Ordner",
+      currentFolderDisplay: "E-Mails erscheinen jetzt",
+      newFolderDisplay: "E-Mails erscheinen künftig",
+      folderDisplay: ({ display }) => (display === "everywhere" ? "Überall" : display === "folder_only" ? "Nur im Ordner" : "Ausgeblendet"),
+      setFolderDisplayReview: ({ folder }) => `Festlegen, wo E-Mails aus „${folder}“ für alle in diesem Postfach erscheinen.`,
+      folderDisplaySet: ({ folder, display }) =>
+        display === "everywhere"
+          ? `E-Mails aus „${folder}“ erscheinen jetzt überall.`
+          : display === "folder_only"
+            ? `E-Mails aus „${folder}“ bleiben jetzt im Ordner.`
+            : `„${folder}“ ist jetzt ausgeblendet, seine E-Mails bleiben im Ordner.`,
+      folderDisplayInherited: ({ folder, parent }) =>
+        `Für „${folder}“ gespeichert. Der übergeordnete Ordner „${parent}“ hat eine strengere Einstellung, die weiter gilt.`,
       unnamedAttachment: "Anhang ohne Namen",
       commentBy: ({ author }) => `Kommentar von ${author}`,
       conversationComment: "Kommentar zur Unterhaltung",

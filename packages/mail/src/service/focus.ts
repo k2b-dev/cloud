@@ -6,6 +6,7 @@ import { isCurrentActorActive, mailboxAccessPrincipalCondition } from "./access"
 import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
+import { type AggregatedViewScope, loadAggregatedViewScope, staysInAggregatedViews } from "./folder-display";
 import { isFollowUpConversation, isTrashOrJunkFolder } from "./follow-up-scope";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -106,10 +107,14 @@ export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_
 
 /**
  * Every focus list and count covers open conversations only, so each readable conversation
- * carries whether it belongs in the follow-up views; Done ones skip that check.
+ * carries whether it belongs in the follow-up views; Done ones skip that check. It also carries
+ * whether it belongs in views that mix folders, which leave out mail kept inside its folder.
  */
-const readableConversations = (context: MailRequestContext) => sql`
-  SELECT c.*, CASE WHEN c.work_status <> 'done' THEN ${isFollowUpConversation(sql`c.id`)} ELSE false END AS follow_up
+const readableConversations = (context: MailRequestContext, scope: AggregatedViewScope) => sql`
+  SELECT
+    c.*,
+    CASE WHEN c.work_status <> 'done' THEN ${isFollowUpConversation(sql`c.id`)} ELSE false END AS follow_up,
+    ${staysInAggregatedViews(sql`c.id`, scope)} AS aggregated
   FROM mail.conversations c
   JOIN (${readableMailboxes(context)}) readable ON readable.mailbox_id = c.mailbox_id
   WHERE EXISTS (
@@ -126,9 +131,12 @@ const readableConversations = (context: MailRequestContext) => sql`
 
 const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
 
-/** A mailbox counts unread mail outside Trash and Junk, like All mail, and the conversations that need action. */
-const mailboxCountQuery = (context: MailRequestContext) => sql<DbMailboxCounts[]>`
-  WITH readable_conversations AS (${readableConversations(context)})
+/**
+ * A mailbox counts unread mail outside Trash and Junk, like All mail, and the conversations that need
+ * action; both leave out conversations whose mail is kept inside its folders.
+ */
+const mailboxCountQuery = (context: MailRequestContext, scope: AggregatedViewScope) => sql<DbMailboxCounts[]>`
+  WITH readable_conversations AS (${readableConversations(context, scope)})
   SELECT c.mailbox_id,
     COUNT(*) FILTER (WHERE EXISTS (
       SELECT 1 FROM mail.conversation_messages cm
@@ -138,14 +146,20 @@ const mailboxCountQuery = (context: MailRequestContext) => sql<DbMailboxCounts[]
         AND NOT ${isTrashOrJunkFolder(sql`mp.folder_id`)}
     ))::int AS unread,
     COUNT(*) FILTER (WHERE c.work_status = 'needs_action' AND ${visibleNow} AND c.follow_up)::int AS needs_action
-  FROM readable_conversations c GROUP BY c.mailbox_id
+  FROM readable_conversations c
+  WHERE c.aggregated
+  GROUP BY c.mailbox_id
 `;
+
+/** The scope of every mailbox the request may read. */
+const readableAggregatedViewScope = async (context: MailRequestContext): Promise<AggregatedViewScope> =>
+  loadAggregatedViewScope((await readableMailboxes(context)).map((row) => row.mailbox_id));
 
 export const listMailboxCounts = async (context: MailRequestContext): Promise<Result<MailFocusMailboxCounts[]>> => {
   if (!(await isCurrentActorActive(context)) || capByCredentialScopes(context, "read") === "none") {
     return fail(err.forbidden("Access denied"));
   }
-  const rows = await mailboxCountQuery(context);
+  const rows = await mailboxCountQuery(context, await readableAggregatedViewScope(context));
   return ok(rows.map((row) => ({ mailboxId: row.mailbox_id, unread: row.unread, needsAction: row.needs_action })));
 };
 
@@ -173,13 +187,17 @@ export const listFocusConversations = async (params: {
   const cursor = decodeCursor(params.cursor, view, userId);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
-  const readable = await readableMailboxes(params.context);
-  const unassigned = isUnassignedConversation(await listLapsedAssignees({ mailboxIds: readable.map((row) => row.mailbox_id) }));
+  const readableMailboxIds = (await readableMailboxes(params.context)).map((row) => row.mailbox_id);
+  const [lapsedAssignees, scope] = await Promise.all([
+    listLapsedAssignees({ mailboxIds: readableMailboxIds }),
+    loadAggregatedViewScope(readableMailboxIds),
+  ]);
+  const unassigned = isUnassignedConversation(lapsedAssignees);
   const shown = sql`NOT (c.mailbox_id = ANY(${toPgUuidArray(params.excludedMailboxIds)}::uuid[]))`;
 
   const [rows, countRows, mailboxCountRows] = await Promise.all([
     sql<DbFocusItem[]>`
-      WITH readable_conversations AS (${readableConversations(params.context)})
+      WITH readable_conversations AS (${readableConversations(params.context, scope)})
       SELECT
         c.id,
         c.mailbox_id,
@@ -231,9 +249,9 @@ export const listFocusConversations = async (params: {
         AND ${shown}
         AND (
           (${view} = 'mine' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})
-          OR (${view} = 'unassigned' AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
+          OR (${view} = 'unassigned' AND c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
           OR (${view} = 'waiting' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})
-          OR (${view} = 'all' AND c.work_status <> 'done' AND ${visibleNow})
+          OR (${view} = 'all' AND c.aggregated AND c.work_status <> 'done' AND ${visibleNow})
         )
         AND (
           ${cursor.data?.id ?? null}::uuid IS NULL
@@ -243,16 +261,16 @@ export const listFocusConversations = async (params: {
       LIMIT ${limit + 1}
     `,
     sql<Array<{ mine: number; unassigned: number; waiting: number; all: number }>>`
-      WITH readable_conversations AS (${readableConversations(params.context)})
+      WITH readable_conversations AS (${readableConversations(params.context, scope)})
       SELECT
         COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
-        COUNT(*) FILTER (WHERE ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
+        COUNT(*) FILTER (WHERE c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
         COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
-        COUNT(*) FILTER (WHERE c.work_status <> 'done' AND ${visibleNow})::int AS all
+        COUNT(*) FILTER (WHERE c.aggregated AND c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
       WHERE c.follow_up AND ${shown}
     `,
-    mailboxCountQuery(params.context),
+    mailboxCountQuery(params.context, scope),
   ]);
 
   const hasMore = rows.length > limit;

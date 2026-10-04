@@ -78,12 +78,12 @@ Prüfe jede Identität mit dem verbundenen Konto und einem Empfänger für eine 
 
 Unter **Ordner** kannst du einen Ordner auf oberster Ebene oder bei entsprechender Anbieterberechtigung einen Unterordner erstellen, geeignete Anbieterordner umbenennen oder löschen, sie beim Anbieter abonnieren oder abbestellen und in der Cloud-Navigation ein- oder ausblenden.
 
-- **In Mail anzeigen** ändert nur die Navigation.
+- **In Mail anzeigen** und **In Mail ausblenden** gelten in der Cloud für alle im Postfach. Ein ausgeblendeter Ordner verschwindet mit seinen Unterordnern aus der Seitenleiste, und Unterhaltungen, deren E-Mails nur dort liegen, fehlen in „Alle E-Mails“, den Arbeitsansichten außer **Mir zugewiesen** und **Versandprobleme** und deren Zählern; die Suche findet sie weiterhin.
 - **Beim Anbieter abonnieren** ändert die IMAP-Subscription.
 - Anbieterrechte bestimmen, welche gemeinsamen oder fremden Ordner sichtbar und veränderbar sind.
 - Die Synchronisierung folgt dem Postfachumfang und wird nicht durch den Navigationsschalter gesteuert.
 
-Nur leere, ungeschützte Ordner ohne Unterordner können beim Anbieter gelöscht werden. Ein dauerhafter Ordnervorgang läuft nach Verlassen der Einstellungen weiter; Mail erkennt den Anbieterzustand neu, bevor das Ergebnis bestätigt wird. Das Aktionsmenü bietet **In Mail anzeigen** oder **Aus Mail ausblenden**. Daneben steht **Sichtbar**, **Ausgeblendet**, **Nicht verfügbar** oder **Prüfung erforderlich**, damit Sichtbarkeit nicht versehentlich bei Anbieteraktionen geändert wird.
+Nur leere, ungeschützte Ordner ohne Unterordner können beim Anbieter gelöscht werden. Ein dauerhafter Ordnervorgang läuft nach Verlassen der Einstellungen weiter; Mail erkennt den Anbieterzustand neu, bevor das Ergebnis bestätigt wird. Das Aktionsmenü bietet **In Mail anzeigen** oder **In Mail ausblenden**. Daneben steht **Sichtbar**, **Nur im Ordner**, **Ausgeblendet**, **Nicht verfügbar** oder **Prüfung erforderlich**, damit Sichtbarkeit nicht versehentlich bei Anbieteraktionen geändert wird.
 
 **Spezielle Ordnerzuordnungen** oberhalb der Hierarchie bestimmen die aktiven auswählbaren Ordner für Gesendet, Entwürfe, Archiv, Papierkorb und Junk. Der Posteingang wird vom Anbieter erkannt. Eine falsche oder fehlende Zuordnung kann die zugehörige Unterhaltungsaktion oder Abbildung gesendeter Nachrichten und Entwürfe verhindern.
 

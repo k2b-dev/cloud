@@ -28,6 +28,7 @@ import * as conversationSummaries from "./conversation-summary";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
 import { latestMailInvalidationCursor } from "./events";
+import { isAggregatedListing } from "./folder-display";
 import { FOLLOW_UP_VIEWS } from "./follow-up-scope";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
@@ -501,6 +502,7 @@ const loadListItems = async (params: {
       groupByConversation: params.listMode === "conversations",
       excludedFolderIds: params.excludedFolderIds,
       sendProblems,
+      aggregatedView: !params.searchExpression && !params.savedView && isAggregatedListing(params.folderId, params.activeView),
     });
     if (!result.ok) {
       return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed" };
