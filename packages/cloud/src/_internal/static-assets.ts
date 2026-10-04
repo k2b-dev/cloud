@@ -33,6 +33,15 @@ function acceptsEncoding(header: string | null, encoding: "br" | "gzip"): boolea
   });
 }
 
+/** `If-None-Match` names the current file: a list of tags, possibly weak, or `*`. */
+function matchesEtag(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  return header.split(",").some((part) => {
+    const tag = part.trim();
+    return tag === "*" || tag === etag || tag === `W/${etag}`;
+  });
+}
+
 async function encodedFile(path: string, encoding: "br" | "gzip"): Promise<Bun.BunFile | null> {
   const suffix = encoding === "br" ? ".br" : ".gz";
   const file = Bun.file(`${path}${suffix}`);
@@ -72,13 +81,19 @@ export function servePublicAsset(isDevelopment: boolean) {
       }
     }
 
+    // Development rebuilds files in place under the same address, so the browser asks again on every use; an
+    // unchanged file then costs one round trip instead of its whole size on every page.
+    const etag = `"${selectedEncoding ?? "identity"}-${selected.size.toString(36)}-${selected.lastModified.toString(36)}"`;
     const headers = new Headers({
-      "Cache-Control": isDevelopment ? "no-store" : "public, max-age=31536000, immutable",
-      "Content-Length": String(selected.size),
-      "Content-Type": sourceFile.type || "application/octet-stream",
+      "Cache-Control": isDevelopment ? "no-cache" : "public, max-age=31536000, immutable",
+      ETag: etag,
       Vary: "Accept-Encoding",
     });
 
+    if (matchesEtag(c.req.header("If-None-Match") ?? null, etag)) return new Response(null, { status: 304, headers });
+
+    headers.set("Content-Length", String(selected.size));
+    headers.set("Content-Type", sourceFile.type || "application/octet-stream");
     if (selectedEncoding) headers.set("Content-Encoding", selectedEncoding);
 
     return new Response(c.req.method === "HEAD" ? null : selected, { headers });
