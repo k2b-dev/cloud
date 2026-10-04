@@ -5,7 +5,7 @@ section: Automation
 order: 600
 description: Choose the smallest execution model that preserves the work and recovery guarantees you need.
 tags: [automation, jobs, workflows]
-updated: 2026-09-07
+updated: 2026-10-03
 ---
 
 # Automation
@@ -27,6 +27,7 @@ idempotency, retention, and operational state that simple work does not need.
 | Control receive, leases, and dead letters | NATS-backed and at least once; the app settles each delivery | [Queues](/en/docs/automation/jobs-and-queues#use-a-queue) |
 | Run recurring work | Durable schedule state; occurrences may repeat during handover | [Schedulers](/en/docs/automation/schedulers) |
 | Replay events or update connected clients | Retained consumer stream or best-effort live fan-out | [Topics and live events](/en/docs/automation/topics-and-live-events) |
+| Tell the application's open tabs about a committed change | Written in the domain transaction; published at least once, in order per key | [Live updates](/en/docs/automation/live-updates) |
 | Coordinate app instances briefly | Expiring NATS state, never the domain source of truth | [Coordination primitives](/en/docs/automation/coordination-primitives) |
 | Explain and recover a user-authored process | Immutable plan, durable run, outcomes, and effect journal | [Workflow overview](/en/docs/automation/workflow-overview) |
 

@@ -1,8 +1,12 @@
+import { logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { create as createContact } from "./contacts";
+import { publishContactChange } from "./live";
 import type { CreateContactInput } from "./types";
 import * as vcard from "./vcard";
+
+const log = logger("contacts:import");
 
 export const MAX_IMPORT_CONTACTS = 1_000;
 export const MAX_IMPORT_CONTENT_CHARS = 10_000_000;
@@ -82,17 +86,32 @@ export const commit = async (config: {
   let created = 0;
   const failures: string[] = [];
 
-  for (const candidate of config.candidates) {
-    const parsed = config.validateCandidate(candidate);
-    if (!parsed.ok) {
-      failures.push(parsed.error.message);
-      continue;
+  try {
+    for (const candidate of config.candidates) {
+      const parsed = config.validateCandidate(candidate);
+      if (!parsed.ok) {
+        failures.push(parsed.error.message);
+        continue;
+      }
+
+      const result = await createContact({ bookId: config.bookId, data: parsed.data, announce: false });
+      if (result.ok) created++;
+      else failures.push(result.error.message);
     }
-
-    const result = await createContact({ bookId: config.bookId, data: parsed.data });
-    if (result.ok) created++;
-    else failures.push(result.error.message);
+  } finally {
+    // Each create commits on its own, so the import's one update follows them, even when a
+    // later candidate throws. A process stop before it loses the update; open tabs show the
+    // imported contacts after their next reload.
+    if (created > 0) await announceImport(config.bookId);
   }
-
   return { created, failures };
+};
+
+/** The contacts are committed: a failed update must not turn the import into an error. */
+const announceImport = async (bookId: string): Promise<void> => {
+  try {
+    await sql.begin((tx) => publishContactChange(tx, { type: "contacts.imported", bookId }));
+  } catch (error) {
+    log.warn("Failed to write the Contacts import update", { bookId, error: error instanceof Error ? error.message : String(error) });
+  }
 };

@@ -18,6 +18,7 @@ import {
 } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { publishContactChange } from "./live";
 import { conflictError, contactsMessages, notFoundError } from "./messages";
 import { isUuid } from "./shared";
 
@@ -60,10 +61,13 @@ export const addBookAccess = async (bookId: string, accessId: string, locale?: s
   }
 
   try {
-    await sql`
-      INSERT INTO contacts.book_access (book_id, access_id)
-      VALUES (${bookId}::uuid, ${accessId}::uuid)
-    `;
+    await sql.begin(async (tx) => {
+      await tx`
+        INSERT INTO contacts.book_access (book_id, access_id)
+        VALUES (${bookId}::uuid, ${accessId}::uuid)
+      `;
+      await publishContactChange(tx, { type: "access.changed", bookId });
+    });
     return ok();
   } catch (error: unknown) {
     const dbError = error as { code?: string };
@@ -278,6 +282,7 @@ export const removeBookAccess = async (bookId: string, accessId: string): Promis
       return fail(err.notFound("Access entry for this book"));
     }
 
+    await publishContactChange(tx, { type: "access.changed", bookId });
     return ok();
   });
 };
@@ -333,6 +338,7 @@ export const updateBookAccessPermission = async (config: {
       return fail(err.notFound("Access entry for this book"));
     }
 
+    await publishContactChange(tx, { type: "access.changed", bookId: config.bookId });
     return ok();
   });
 };

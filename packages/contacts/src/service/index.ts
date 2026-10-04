@@ -1,16 +1,14 @@
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { type AccessSubject, type PermissionLevel, paginate, paginateItems } from "@k2b/cloud/server";
-import { ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import type { ContactServiceEventData } from "../live-events";
+import type { PageParams, Paginated } from "@k2b/stdlib";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
 import * as contactLookup from "./contact-lookup";
 import * as contacts from "./contacts";
-import { publishContactEvent } from "./events";
 import * as favorites from "./favorites";
 import * as imports from "./imports";
+import { contactsLive } from "./live";
 import * as notes from "./notes";
-import { projectContactEventIds } from "./public-resources";
 import * as tags from "./tags";
 import type {
   ContactBook,
@@ -25,14 +23,10 @@ import type {
   UpdateContactTagInput,
 } from "./types";
 
-const withEvent = async <T>(
-  operation: Promise<Result<T>>,
-  event: ContactServiceEventData | ((data: T) => ContactServiceEventData),
-): Promise<Result<T>> => {
+/** Domain writes publish their live update in their own transaction; this only skips the dispatcher's next poll. */
+const wake = async <T>(operation: Promise<T>): Promise<T> => {
   const result = await operation;
-  if (result.ok) {
-    await publishContactEvent(typeof event === "function" ? event(result.data) : event);
-  }
+  contactsLive.wake();
   return result;
 };
 
@@ -74,16 +68,9 @@ export const contactsService = {
     listPage: books.listPage,
     findReadableByName: books.findReadableByName,
     get: (config: { id: string }): Promise<ContactBook | null> => books.get({ id: config.id }),
-    create: (config: { data: CreateBookInput; creatorId: string }) =>
-      withEvent(books.create(config), (book) => ({ type: "book.created", bookId: book.id })),
-    update: (config: { id: string; data: UpdateBookInput }) => withEvent(books.update(config), { type: "book.updated", bookId: config.id }),
-    remove: async (config: { id: string }) => {
-      const event = { type: "book.deleted" as const, bookId: config.id };
-      const publicEvent = await projectContactEventIds({ ...event, at: new Date().toISOString() });
-      const result = await books.remove(config);
-      if (result.ok) await publishContactEvent(event, publicEvent);
-      return result;
-    },
+    create: (config: { data: CreateBookInput; creatorId: string }) => wake(books.create(config)),
+    update: (config: { id: string; data: UpdateBookInput }) => wake(books.update(config)),
+    remove: (config: { id: string }) => wake(books.remove(config)),
     admin: {
       list: async (config: { pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<ContactBookAdminListItem>> => {
         const { page, perPage, offset } = paginate(config.pagination);
@@ -116,13 +103,10 @@ export const contactsService = {
         };
       }): Promise<Paginated<AccessEntry>> => books.access.list(config),
       grant: (config: { bookId: string; principal: AccessEntry["principal"]; permission: PermissionLevel }) =>
-        withEvent(books.access.grant(config), { type: "access.changed", bookId: config.bookId }),
-      update: (config: { bookId: string; accessId: string; permission: PermissionLevel }) =>
-        withEvent(books.access.update(config), { type: "access.changed", bookId: config.bookId }),
-      remove: (config: { bookId: string; accessId: string }) =>
-        withEvent(books.access.remove(config), { type: "access.changed", bookId: config.bookId }),
-      add: (config: { bookId: string; accessId: string }) =>
-        withEvent(books.access.add(config), { type: "access.changed", bookId: config.bookId }),
+        wake(books.access.grant(config)),
+      update: (config: { bookId: string; accessId: string; permission: PermissionLevel }) => wake(books.access.update(config)),
+      remove: (config: { bookId: string; accessId: string }) => wake(books.access.remove(config)),
+      add: (config: { bookId: string; accessId: string }) => wake(books.access.add(config)),
       count: (config: { bookId: string }) => books.access.count(config),
       guard: (config: { bookId: string; accessId: string }) => books.access.guard(config),
       apiKeys: {
@@ -137,13 +121,10 @@ export const contactsService = {
     get: tags.get,
     listPage: tags.listPage,
     listForBooks: (config: { bookIds: string[] }) => tags.listForBooks(config),
-    create: (config: { bookId: string; data: CreateContactTagInput }) =>
-      withEvent(tags.create(config), { type: "tags.changed", bookId: config.bookId }),
-    update: (config: { bookId: string; id: string; data: UpdateContactTagInput }) =>
-      withEvent(tags.update(config), { type: "tags.changed", bookId: config.bookId }),
-    remove: (config: { bookId: string; id: string }) => withEvent(tags.remove(config), { type: "tags.changed", bookId: config.bookId }),
-    changeAssignments: (config: Parameters<typeof tags.changeAssignments>[0]) =>
-      withEvent(tags.changeAssignments(config), { type: "contact.updated", bookId: config.bookId, contactId: config.contactId }),
+    create: (config: { bookId: string; data: CreateContactTagInput }) => wake(tags.create(config)),
+    update: (config: { bookId: string; id: string; data: UpdateContactTagInput }) => wake(tags.update(config)),
+    remove: (config: { bookId: string; id: string }) => wake(tags.remove(config)),
+    changeAssignments: (config: Parameters<typeof tags.changeAssignments>[0]) => wake(tags.changeAssignments(config)),
   },
   contact: {
     list: (config: { bookId: string; pagination?: PageParams; filter?: import("./types").ContactListFilter }) => contacts.list(config),
@@ -152,52 +133,20 @@ export const contactsService = {
     findByDisplayName: contacts.findByDisplayName,
     getMany: (config: { bookId: string; ids: string[] }) => contacts.getMany(config),
     tree: (config: { bookId: string; id: string }) => contacts.tree(config),
-    create: (config: { bookId: string; data: CreateContactInput }) =>
-      withEvent(contacts.create(config), (contact) => ({ type: "contact.created", bookId: config.bookId, contactId: contact.id })),
-    createIdempotent: async (config: Parameters<typeof contacts.createIdempotent>[0]) => {
-      const result = await contacts.createIdempotent(config);
-      if (!result.ok) return result;
-      if (!result.data.replayed) {
-        await publishContactEvent({ type: "contact.created", bookId: config.bookId, contactId: result.data.id });
-      }
-      return ok(result.data);
-    },
-    update: (config: { bookId: string; id: string; data: UpdateContactInput; expectedUpdatedAt?: string }) =>
-      withEvent(contacts.update(config), { type: "contact.updated", bookId: config.bookId, contactId: config.id }),
-    move: (config: { sourceBookId: string; targetBookId: string; id: string; expectedUpdatedAt?: string }) =>
-      withEvent(contacts.move(config), {
-        type: "contact.moved",
-        sourceBookId: config.sourceBookId,
-        targetBookId: config.targetBookId,
-        contactId: config.id,
-      }),
-    remove: async (config: { bookId: string; id: string; expectedUpdatedAt?: string }) => {
-      const event = { type: "contact.deleted" as const, bookId: config.bookId, contactId: config.id };
-      const publicEvent = await projectContactEventIds({ ...event, at: new Date().toISOString() });
-      const result = await contacts.remove(config);
-      if (result.ok) await publishContactEvent(event, publicEvent);
-      return result;
-    },
+    create: (config: { bookId: string; data: CreateContactInput }) => wake(contacts.create(config)),
+    createIdempotent: (config: Parameters<typeof contacts.createIdempotent>[0]) => wake(contacts.createIdempotent(config)),
+    update: (config: { bookId: string; id: string; data: UpdateContactInput; expectedUpdatedAt?: string }) => wake(contacts.update(config)),
+    move: (config: { sourceBookId: string; targetBookId: string; id: string; expectedUpdatedAt?: string }) => wake(contacts.move(config)),
+    remove: (config: { bookId: string; id: string; expectedUpdatedAt?: string }) => wake(contacts.remove(config)),
     bulk: {
-      addTags: (config: { bookId: string; ids: string[]; tagIds: string[] }) =>
-        withEvent(contacts.addTags(config), { type: "contacts.changed", bookId: config.bookId }),
-      remove: (config: { bookId: string; ids: string[] }) =>
-        withEvent(contacts.removeMany(config), { type: "contacts.changed", bookId: config.bookId }),
-      move: async (config: { sourceBookId: string; targetBookId: string; ids: string[] }) => {
-        const result = await contacts.moveMany(config);
-        if (result.ok) {
-          await Promise.all([
-            publishContactEvent({ type: "contacts.changed", bookId: config.sourceBookId }),
-            publishContactEvent({ type: "contacts.changed", bookId: config.targetBookId }),
-          ]);
-        }
-        return result;
-      },
+      addTags: (config: { bookId: string; ids: string[]; tagIds: string[] }) => wake(contacts.addTags(config)),
+      remove: (config: { bookId: string; ids: string[] }) => wake(contacts.removeMany(config)),
+      move: (config: { sourceBookId: string; targetBookId: string; ids: string[] }) => wake(contacts.moveMany(config)),
     },
     duplicates: {
       list: (config: { bookId: string; limit?: number }) => contacts.findDuplicates(config),
       merge: (config: { bookId: string; keepId: string; removeId: string; keepUpdatedAt: string; removeUpdatedAt: string }) =>
-        withEvent(contacts.mergeDuplicate(config), { type: "contacts.changed", bookId: config.bookId }),
+        wake(contacts.mergeDuplicate(config)),
     },
     search: (config: {
       subject: AccessSubject;
@@ -216,27 +165,16 @@ export const contactsService = {
         authorUserId: string;
         authorDisplayName: string;
         data: CreateContactNoteInput;
-      }) => withEvent(notes.create(config), { type: "notes.changed", bookId: config.bookId, contactId: config.contactId }),
-      createIdempotent: async (config: Parameters<typeof notes.createIdempotent>[0]) => {
-        const result = await notes.createIdempotent(config);
-        if (result.ok && !result.data.replayed) {
-          await publishContactEvent({ type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
-        }
-        return result;
-      },
+      }) => wake(notes.create(config)),
+      createIdempotent: (config: Parameters<typeof notes.createIdempotent>[0]) => wake(notes.createIdempotent(config)),
       update: (config: { bookId: string; contactId: string; noteId: string; authorUserId: string; data: UpdateContactNoteInput }) =>
-        withEvent(notes.update(config), { type: "notes.changed", bookId: config.bookId, contactId: config.contactId }),
-      remove: (config: { bookId: string; contactId: string; noteId: string; authorUserId: string }) =>
-        withEvent(notes.remove(config), { type: "notes.changed", bookId: config.bookId, contactId: config.contactId }),
+        wake(notes.update(config)),
+      remove: (config: { bookId: string; contactId: string; noteId: string; authorUserId: string }) => wake(notes.remove(config)),
     },
   },
   import: {
     ...imports,
-    commit: async (config: Parameters<typeof imports.commit>[0]) => {
-      const result = await imports.commit(config);
-      if (result.created > 0) await publishContactEvent({ type: "contacts.imported", bookId: config.bookId });
-      return result;
-    },
+    commit: (config: Parameters<typeof imports.commit>[0]) => wake(imports.commit(config)),
   },
 };
 

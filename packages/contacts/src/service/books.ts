@@ -18,6 +18,7 @@ import {
   removeBookAccess,
   updateBookAccessPermission,
 } from "./access";
+import { contactsLive, publishContactChange } from "./live";
 import { isUuid } from "./shared";
 import type { ContactBook, ContactBookAdminListItem, CreateBookInput, UpdateBookInput } from "./types";
 
@@ -337,7 +338,8 @@ export const get = async (config: { id: string }): Promise<ContactBook | null> =
 };
 
 /**
- * Creates a manual book and grants admin access to the creator.
+ * Creates a manual book and grants admin access to the creator. The grant
+ * writes the live update: it is the change that makes the book visible.
  */
 export const create = async (config: { data: CreateBookInput; creatorId: string }): Promise<Result<ContactBook>> => {
   const row = await withShortId("book", async (shortId) => {
@@ -379,15 +381,19 @@ export const update = async (config: { id: string; data: UpdateBookInput }): Pro
   const name = config.data.name ?? existing.name;
   const description = config.data.description === undefined ? existing.description : config.data.description;
 
-  const [row] = await sql<DbBook[]>`
-    UPDATE contacts.books
-    SET
-      name = ${name},
-      description = ${description},
-      updated_at = now()
-    WHERE id = ${config.id}::uuid
-    RETURNING id, name, description, created_at, updated_at
-  `;
+  const row = await sql.begin(async (tx) => {
+    const [updated] = await tx<DbBook[]>`
+      UPDATE contacts.books
+      SET
+        name = ${name},
+        description = ${description},
+        updated_at = now()
+      WHERE id = ${config.id}::uuid
+      RETURNING id, name, description, created_at, updated_at
+    `;
+    if (updated) await publishContactChange(tx, { type: "book.updated", bookId: config.id });
+    return updated;
+  });
 
   if (!row) return fail(err.internal("Failed to update book"));
   return ok(mapBook(row));
@@ -399,15 +405,23 @@ export const update = async (config: { id: string; data: UpdateBookInput }): Pro
 export const remove = async (config: { id: string }): Promise<Result<void>> => {
   if (!isUuid(config.id)) return fail(err.notFound("Book"));
 
-  const result = await sql.begin(async (tx) => {
+  const deleted = await sql.begin(async (tx) => {
     await tx`DELETE FROM contacts.contact_favorites WHERE book_id = ${config.id}`;
-    return tx`
+    const [book] = await tx<{ short_id: string }[]>`
       DELETE FROM contacts.books
       WHERE id = ${config.id}::uuid
+      RETURNING short_id
     `;
+    if (book) {
+      await contactsLive.publish(tx, {
+        key: config.id,
+        data: { type: "book.deleted", bookId: book.short_id, at: new Date().toISOString() },
+      });
+    }
+    return Boolean(book);
   });
 
-  if (result.count === 0) return fail(err.notFound("Book"));
+  if (!deleted) return fail(err.notFound("Book"));
   await serviceAccounts.deleteForResource({
     appId: CONTACTS_APP_ID,
     resourceType: CONTACT_BOOK_RESOURCE_TYPE,

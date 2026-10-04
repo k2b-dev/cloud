@@ -3,9 +3,7 @@ import {
   CONTACTS_LIVE_WS_TYPE,
   ContactLiveClientMessageSchema,
   classifyContactScopeChange,
-  contactEventBookIds,
   parseContactLiveServerMessage,
-  projectContactEvent,
 } from "./live-events";
 
 const BOOK_ID = "11111111-1111-4111-8111-111111111111";
@@ -94,45 +92,6 @@ describe("Contacts live protocol", () => {
         JSON.stringify({ type: CONTACTS_LIVE_WS_TYPE.scopeChanged, payload: { change: "unknown", bookId: BOOK_ID } }),
       ),
     ).toBeNull();
-  });
-
-  test("identifies both books affected by a move", () => {
-    expect(
-      contactEventBookIds({
-        type: "contact.moved",
-        sourceBookId: BOOK_ID,
-        targetBookId: OTHER_BOOK_ID,
-        contactId: CONTACT_ID,
-        at: AT,
-      }),
-    ).toEqual([BOOK_ID, OTHER_BOOK_ID]);
-    expect(contactEventBookIds({ type: "contacts.imported", bookId: BOOK_ID, at: AT })).toEqual([BOOK_ID]);
-    expect(contactEventBookIds({ type: "contacts.changed", bookId: BOOK_ID, at: AT })).toEqual([BOOK_ID]);
-  });
-
-  test("does not expose unreadable move endpoints", () => {
-    const moved = {
-      type: "contact.moved",
-      sourceBookId: BOOK_ID,
-      targetBookId: OTHER_BOOK_ID,
-      contactId: CONTACT_ID,
-      at: AT,
-    } as const;
-
-    expect(projectContactEvent(moved, new Set([BOOK_ID]))).toEqual({
-      type: "contact.deleted",
-      bookId: BOOK_ID,
-      contactId: CONTACT_ID,
-      at: AT,
-    });
-    expect(projectContactEvent(moved, new Set([OTHER_BOOK_ID]))).toEqual({
-      type: "contact.created",
-      bookId: OTHER_BOOK_ID,
-      contactId: CONTACT_ID,
-      at: AT,
-    });
-    expect(projectContactEvent(moved, new Set())).toBeNull();
-    expect(projectContactEvent(moved, new Set([BOOK_ID, OTHER_BOOK_ID]))).toEqual(moved);
   });
 
   test("distinguishes gained and lost collection access", () => {

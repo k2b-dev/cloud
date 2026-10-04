@@ -5,6 +5,7 @@ import { sql } from "bun";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
 import { mayReadAcrossBooks } from "./access";
+import { contactsLive, publishContactChange } from "./live";
 import { emptyToNull, isUuid, type SqlExecutor, toDateOnly, toPgUuidArray } from "./shared";
 import * as tags from "./tags";
 import { buildContactTree, type ContactTreeRow } from "./tree";
@@ -1085,9 +1086,10 @@ export const tree = async (config: { bookId: string; id: string }): Promise<Cont
 };
 
 /**
- * Creates one manual contact and all optional child entries.
+ * Creates one manual contact and all optional child entries. An import
+ * passes `announce: false` and publishes one update for the whole batch.
  */
-export const create = async (config: { bookId: string; data: CreateContactInput }): Promise<Result<Contact>> => {
+export const create = async (config: { bookId: string; data: CreateContactInput; announce?: false }): Promise<Result<Contact>> => {
   if (!isUuid(config.bookId)) return fail(err.notFound("Book"));
 
   const fields = buildCreateFields(config.data);
@@ -1153,6 +1155,9 @@ export const create = async (config: { bookId: string; data: CreateContactInput 
       );
       if (prepared.data.tagIds !== null) {
         await tags.replaceAssignments({ contactId: inserted.id, tagIds: prepared.data.tagIds, db: tx });
+      }
+      if (config.announce !== false) {
+        await publishContactChange(tx, { type: "contact.created", bookId: config.bookId, contactId: inserted.id });
       }
       return inserted;
     }),
@@ -1244,6 +1249,7 @@ export const createIdempotent = async (config: {
       if (prepared.data.tagIds !== null) {
         await tags.replaceAssignments({ contactId: inserted.id, tagIds: prepared.data.tagIds, db: tx });
       }
+      await publishContactChange(tx, { type: "contact.created", bookId: config.bookId, contactId: inserted.id });
       return ok({ contactId: inserted.id, resultLabel, replayed: false });
     }),
   );
@@ -1342,6 +1348,7 @@ export const update = async (config: {
     if (prepared.data.tagIds !== null) {
       await tags.replaceAssignments({ contactId: updated.id, tagIds: prepared.data.tagIds, db: tx });
     }
+    await publishContactChange(tx, { type: "contact.updated", bookId: config.bookId, contactId: updated.id });
     return updated;
   });
 
@@ -1418,7 +1425,11 @@ export const move = async (config: {
         AND book_id = ${config.sourceBookId}::uuid
       RETURNING id
     `;
-    return moved ?? null;
+    if (!moved) return null;
+    // Two updates, one per book: a reader of one book does not learn the other.
+    await publishContactChange(tx, { type: "contact.deleted", bookId: config.sourceBookId, contactId: moved.id });
+    await publishContactChange(tx, { type: "contact.created", bookId: config.targetBookId, contactId: moved.id });
+    return moved;
   });
 
   if (row === "stale") return fail(err.conflict("Contact changed since it was read"));
@@ -1438,8 +1449,8 @@ export const remove = async (config: { bookId: string; id: string; expectedUpdat
     return fail(err.notFound("Contact"));
   }
 
-  const result = await sql.begin(async (tx) => {
-    const deleted = await tx`
+  const deleted = await sql.begin(async (tx) => {
+    const [contact] = await tx<{ short_id: string; book_short_id: string }[]>`
       DELETE FROM contacts.contacts
       WHERE id = ${config.id}::uuid
         AND book_id = ${config.bookId}::uuid
@@ -1447,18 +1458,22 @@ export const remove = async (config: { bookId: string; id: string; expectedUpdat
           ${config.expectedUpdatedAt ?? null}::timestamptz IS NULL
           OR date_trunc('milliseconds', updated_at) = ${config.expectedUpdatedAt ?? null}::timestamptz
         )
+      RETURNING short_id, (SELECT short_id FROM contacts.books WHERE id = book_id) AS book_short_id
     `;
-    if (deleted.count > 0) {
-      await tx`
-        DELETE FROM contacts.contact_favorites
-        WHERE book_id = ${config.bookId}
-          AND contact_id = ${config.id}::uuid
-      `;
-    }
-    return deleted;
+    if (!contact) return false;
+    await tx`
+      DELETE FROM contacts.contact_favorites
+      WHERE book_id = ${config.bookId}
+        AND contact_id = ${config.id}::uuid
+    `;
+    await contactsLive.publish(tx, {
+      key: config.bookId,
+      data: { type: "contact.deleted", bookId: contact.book_short_id, contactId: contact.short_id, at: new Date().toISOString() },
+    });
+    return true;
   });
 
-  if (result.count === 0) {
+  if (!deleted) {
     const [existing] = await sql<{ id: string }[]>`
       SELECT id FROM contacts.contacts WHERE id = ${config.id}::uuid AND book_id = ${config.bookId}::uuid
     `;
@@ -1514,6 +1529,7 @@ export const addTags = async (config: { bookId: string; ids: string[]; tagIds: s
       SET updated_at = now()
       WHERE id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
     `;
+    await publishContactChange(tx, { type: "contacts.changed", bookId: config.bookId });
     return rows.length;
   });
 
@@ -1545,6 +1561,7 @@ export const removeMany = async (config: { bookId: string; ids: string[] }): Pro
       WHERE book_id = ${config.bookId}::uuid
         AND id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
     `;
+    await publishContactChange(tx, { type: "contacts.changed", bookId: config.bookId });
     return rows.length;
   });
 
@@ -1607,6 +1624,8 @@ export const moveMany = async (config: { sourceBookId: string; targetBookId: str
       SET book_id = ${config.targetBookId}::uuid, updated_at = now()
       WHERE id = ANY(${toPgUuidArray(normalized.data)}::uuid[])
     `;
+    await publishContactChange(tx, { type: "contacts.changed", bookId: config.sourceBookId });
+    await publishContactChange(tx, { type: "contacts.changed", bookId: config.targetBookId });
     return rows.length;
   });
 
@@ -1845,6 +1864,7 @@ export const mergeDuplicate = async (config: {
       WHERE book_id = ${config.bookId} AND contact_id = ${duplicate.id}::uuid
     `;
     await tx`DELETE FROM contacts.contacts WHERE id = ${duplicate.id}::uuid AND book_id = ${config.bookId}::uuid`;
+    await publishContactChange(tx, { type: "contacts.changed", bookId: config.bookId });
     return true;
   });
   if (!merged) return fail(err.conflict("Contacts changed while merging; review them again"));

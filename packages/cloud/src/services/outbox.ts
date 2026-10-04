@@ -12,7 +12,8 @@ import { logger } from "./logging";
  *
  * Required columns: `id uuid`, `attempts int`, `next_attempt_at timestamptz`,
  * `claimed_until timestamptz`, `delivered_at timestamptz`, `last_error text`,
- * `created_at timestamptz`. `maxAttempts` additionally needs `dead_at`.
+ * `created_at timestamptz`. `maxAttempts` additionally needs `dead_at`;
+ * `onDelivered: "delete"` needs no `delivered_at`.
  */
 
 const DEFAULT_CLAIM_MS = 30_000;
@@ -38,6 +39,12 @@ export type PgOutboxConfig<Row extends OutboxRow> = {
    * row with the same value blocks later ones until it is delivered or dead.
    */
   orderBy?: string;
+  /** Fixed column values every claimed row matches, e.g. `{ kind: "live", app_id: "contacts" }`. */
+  where?: Readonly<Record<string, string>>;
+  /** Insertion-order column that orders and gates claims instead of `(created_at, id)`. */
+  sequence?: string;
+  /** Delete a published row instead of setting `delivered_at`; every row in the table is then pending. */
+  onDelivered?: "delete";
   /** Mark rows dead after this many failed attempts (requires `dead_at`). */
   maxAttempts?: number;
   claimMs?: number;
@@ -67,8 +74,15 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const claimMs = config.claimMs ?? DEFAULT_CLAIM_MS;
   const batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
   const log = logger(config.name);
+  const sequence = config.sequence ? identifier(config.sequence, "sequence column") : null;
+  const deleteDelivered = config.onDelivered === "delete";
   const notDead = maxAttempts === null ? sql`` : sql`AND dead_at IS NULL`;
   const earlierNotDead = maxAttempts === null ? sql`` : sql`AND earlier.dead_at IS NULL`;
+  const pending = deleteDelivered ? sql`` : sql`AND delivered_at IS NULL`;
+  const earlierPending = deleteDelivered ? sql`` : sql`AND earlier.delivered_at IS NULL`;
+  const filters = Object.entries(config.where ?? {}).map(([column, value]) => ({ column: identifier(column, "filter column"), value }));
+  const matches = (alias: "current" | "earlier") =>
+    filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${column} = ${value}`, sql``);
 
   const claim: PgOutbox<Row>["claim"] = async (limit = batchSize) => {
     const cap = Math.min(Math.max(limit, 1), batchSize);
@@ -80,9 +94,14 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
             SELECT 1
             FROM ${table} earlier
             WHERE earlier.${orderBy} = current.${orderBy}
-              AND earlier.delivered_at IS NULL
+              ${earlierPending}
               ${earlierNotDead}
-              AND (earlier.created_at, earlier.id) < (current.created_at, current.id)
+              ${matches("earlier")}
+              AND ${
+                sequence === null
+                  ? sql`(earlier.created_at, earlier.id) < (current.created_at, current.id)`
+                  : sql`earlier.${sequence} < current.${sequence}`
+              }
           )
         `;
     // One statement: the CTE claim and the update commit atomically.
@@ -90,12 +109,13 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       WITH candidates AS MATERIALIZED (
         SELECT current.id
         FROM ${table} current
-        WHERE current.delivered_at IS NULL
-          ${notDead}
-          AND current.next_attempt_at <= now()
+        WHERE current.next_attempt_at <= now()
           AND (current.claimed_until IS NULL OR current.claimed_until <= now())
+          ${pending}
+          ${notDead}
+          ${matches("current")}
           ${ordered}
-        ORDER BY current.next_attempt_at, current.created_at, current.id
+        ORDER BY current.next_attempt_at, ${sequence === null ? sql`current.created_at, current.id` : sql`current.${sequence}`}
         LIMIT ${cap}
         FOR UPDATE SKIP LOCKED
       )
@@ -110,10 +130,14 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const dispatch: PgOutbox<Row>["dispatch"] = async (row, publish = config.publish) => {
     try {
       await publish(row);
+      if (deleteDelivered) {
+        await sql`DELETE FROM ${table} WHERE id = ${row.id}::uuid AND attempts = ${row.attempts}`;
+        return;
+      }
       await sql`
         UPDATE ${table}
         SET delivered_at = now(), claimed_until = NULL, last_error = NULL
-        WHERE id = ${row.id}::uuid AND delivered_at IS NULL ${notDead} AND attempts = ${row.attempts}
+        WHERE id = ${row.id}::uuid ${pending} ${notDead} AND attempts = ${row.attempts}
       `;
     } catch (error) {
       const attempts = row.attempts + 1;
@@ -127,7 +151,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
             claimed_until = NULL,
             ${dead}
             last_error = ${message.slice(0, 1_000)}
-        WHERE id = ${row.id}::uuid AND delivered_at IS NULL ${notDead} AND attempts = ${row.attempts}
+        WHERE id = ${row.id}::uuid ${pending} ${notDead} AND attempts = ${row.attempts}
       `;
       log.warn("Outbox delivery failed", { outboxId: row.id, attempts, error: message });
     }
@@ -140,12 +164,14 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     reconcileRequested = true;
     if (activeReconcile) return activeReconcile;
     activeReconcile = (async () => {
-      const deadExpired = maxAttempts === null ? sql`` : sql`OR dead_at < now() - ${DEAD_RETENTION}::interval`;
-      await sql`
-        DELETE FROM ${table}
-        WHERE delivered_at < now() - ${DELIVERED_RETENTION}::interval
-           ${deadExpired}
-      `;
+      if (!deleteDelivered) {
+        const deadExpired = maxAttempts === null ? sql`` : sql`OR dead_at < now() - ${DEAD_RETENTION}::interval`;
+        await sql`
+          DELETE FROM ${table}
+          WHERE delivered_at < now() - ${DELIVERED_RETENTION}::interval
+             ${deadExpired}
+        `;
+      }
       let processed = 0;
       let rows: Row[];
       do {
