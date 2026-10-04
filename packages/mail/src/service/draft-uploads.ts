@@ -14,7 +14,8 @@ import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
 import { requireDraftLeaseAvailable } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
-import { draftAttachmentCapacity, getDraft, sanitizeContentType, sanitizeFilename } from "./drafts";
+import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
+import { draftAttachmentCapacity, getDraft, sanitizeContentType, sanitizeFilename, wakeDraftProjection } from "./drafts";
 
 export const DRAFT_UPLOAD_CHUNK_BYTES = 1024 * 1024;
 const DRAFT_UPLOAD_TTL_HOURS = 24;
@@ -448,10 +449,11 @@ export const finalizeDraftAttachmentUpload = async (params: {
           }}::jsonb
         )
       `;
+      await queueDraftProjectionInTransaction({ db: tx, draftId });
       return ok();
     });
     if (!result.ok) return result;
-    return getDraft(params.context, params.mailboxId, params.draftId);
+    return wakeDraftProjection(await getDraft(params.context, params.mailboxId, params.draftId));
   } catch {
     return fail(err.internal("Failed to finalize attachment upload"));
   }

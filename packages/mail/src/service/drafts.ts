@@ -75,7 +75,7 @@ type DraftActor = Extract<ActorRef, { kind: "user" | "service_account" | "workfl
 type MutableActor = Extract<DraftActor, { kind: "user" | "service_account" }>;
 const log = logger("mail:drafts");
 
-const wakeDraftProjection = async <T extends { id: string }>(result: Result<T>): Promise<Result<T>> => {
+export const wakeDraftProjection = async <T extends { id: string }>(result: Result<T>): Promise<Result<T>> => {
   if (!result.ok) return result;
   try {
     await enqueueDraftProjection(result.data.id);

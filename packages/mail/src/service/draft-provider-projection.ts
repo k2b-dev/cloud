@@ -291,7 +291,11 @@ const loadCurrentExecution = async (params: { mailboxId: string; folderId: strin
   return { execution: execution.data, folder, runtime: runtimeSnapshot.runtime };
 };
 
-const claimExportSnapshot = async (snapshotId: string): Promise<DbProjection | null> =>
+/**
+ * Claims an export snapshot. When the draft changed since the snapshot was queued, it also queues the
+ * export of the current revision and returns it as the follow-up the caller submits.
+ */
+const claimExportSnapshot = async (snapshotId: string): Promise<{ snapshot: DbProjection | null; followUpSnapshotId: string | null }> =>
   sql.begin(async (tx) => {
     const [candidate] = await tx<DbProjection[]>`
       SELECT *
@@ -301,11 +305,11 @@ const claimExportSnapshot = async (snapshotId: string): Promise<DbProjection | n
         AND state IN ('prepared', 'appending', 'retiring')
       FOR UPDATE
     `;
-    if (!candidate) return null;
+    if (!candidate) return { snapshot: null, followUpSnapshotId: null };
     if (!candidate.draft_id || candidate.cloud_revision == null) {
       throw Object.assign(new Error("Export snapshot is missing its Cloud identity"), { code: "INVALID_DRAFT_SNAPSHOT" });
     }
-    if (candidate.state === "retiring") return candidate;
+    if (candidate.state === "retiring") return { snapshot: candidate, followUpSnapshotId: null };
     const draft = await loadDraftContent(candidate.draft_id, tx);
     if (!draft) {
       await tx`
@@ -314,20 +318,20 @@ const claimExportSnapshot = async (snapshotId: string): Promise<DbProjection | n
             last_error_message = 'The Cloud draft no longer exists'
         WHERE id = ${candidate.id}::uuid
       `;
-      return null;
+      return { snapshot: null, followUpSnapshotId: null };
     }
     if (draft.revision !== Number(candidate.cloud_revision)) {
-      await queueDraftProjectionInTransaction({ db: tx, draftId: candidate.draft_id });
-      if (candidate.provider_effect_started_at) return candidate;
+      const followUpSnapshotId = await queueDraftProjectionInTransaction({ db: tx, draftId: candidate.draft_id });
+      if (candidate.provider_effect_started_at) return { snapshot: candidate, followUpSnapshotId };
       await tx`
         UPDATE mail.draft_provider_snapshots
         SET state = 'retired', completed_at = now(), last_error_code = 'DRAFT_REVISION_SUPERSEDED',
             last_error_message = 'A newer Cloud revision superseded this snapshot'
         WHERE id = ${candidate.id}::uuid
       `;
-      return null;
+      return { snapshot: null, followUpSnapshotId };
     }
-    return candidate;
+    return { snapshot: candidate, followUpSnapshotId: null };
   });
 
 const ensureSnapshotMimeBlob = async (snapshot: DbProjection): Promise<{ blobId: string; byteLength: number }> => {
@@ -394,7 +398,7 @@ const activateExportSnapshot = async (params: {
   uid: number;
   transportGeneration: number;
   secretRevision: number;
-}): Promise<DbProjection[]> =>
+}): Promise<{ retire: DbProjection[]; followUpSnapshotId: string | null }> =>
   sql.begin(async (tx) => {
     const [current] = await tx<{ revision: string | number; state: string }[]>`
       SELECT revision, state
@@ -420,10 +424,11 @@ const activateExportSnapshot = async (params: {
         WHERE id = ${params.snapshot.id}::uuid
         RETURNING *
       `;
-      if (current?.state === "draft" && params.snapshot.draft_id) {
-        await queueDraftProjectionInTransaction({ db: tx, draftId: params.snapshot.draft_id });
-      }
-      return superseded ? [superseded] : [];
+      const followUpSnapshotId =
+        current?.state === "draft" && params.snapshot.draft_id
+          ? await queueDraftProjectionInTransaction({ db: tx, draftId: params.snapshot.draft_id })
+          : null;
+      return { retire: superseded ? [superseded] : [], followUpSnapshotId };
     }
     const [previous] = await tx<DbProjection[]>`
       SELECT *
@@ -458,7 +463,7 @@ const activateExportSnapshot = async (params: {
         completed_at = now()
       WHERE id = ${params.snapshot.id}::uuid
     `;
-    return previous ? [previous] : [];
+    return { retire: previous ? [previous] : [], followUpSnapshotId: null };
   });
 
 const retireRemoteSnapshot = async (params: {
@@ -518,8 +523,30 @@ const retireRemoteSnapshot = async (params: {
 };
 
 const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Promise<void>): Promise<void> => {
-  const snapshot = await claimExportSnapshot(snapshotId);
-  if (!snapshot || !snapshot.draft_id) return;
+  const claimed = await claimExportSnapshot(snapshotId);
+  const followUp = { snapshotId: claimed.followUpSnapshotId };
+  try {
+    if (claimed.snapshot?.draft_id) await exportClaimedSnapshot(claimed.snapshot, jobHeartbeat, followUp);
+  } finally {
+    // The draft changed while this job exported an older revision. The current revision goes out once
+    // this job released the provider, not with the next maintenance sweep: the change may not have
+    // woken an export of its own, and one it woke met this job's provider lease.
+    if (followUp.snapshotId) {
+      await submitExport(followUp.snapshotId).catch((error: unknown) =>
+        log.warn("Draft export follow-up enqueue failed; the reconciliation sweep will retry it", {
+          snapshotId: followUp.snapshotId,
+          error,
+        }),
+      );
+    }
+  }
+};
+
+const exportClaimedSnapshot = async (
+  snapshot: DbProjection,
+  jobHeartbeat: () => Promise<void>,
+  followUp: { snapshotId: string | null },
+): Promise<void> => {
   const roleFolder = await resolveRoleFolder(snapshot.mailbox_id, "drafts");
   if (!roleFolder.ok) throw Object.assign(new Error(roleFolder.error.message), { code: roleFolder.error.code });
   const initial = await loadCurrentExecution({
@@ -530,7 +557,7 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
   // Saving a draft to the provider ranks with user commands.
   const { lock, retryAfterMs } = await acquireProviderLease({
     resource: initial.execution.remoteResourceId!,
-    waiter: `draft-export:${snapshotId}`,
+    waiter: `draft-export:${snapshot.id}`,
     priority: "command",
     ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
   });
@@ -628,7 +655,9 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           WHERE id = ${snapshot.id}::uuid
         `;
           }
-          if (latestDraft) await sql.begin((tx) => queueDraftProjectionInTransaction({ db: tx, draftId: snapshot.draft_id! }));
+          if (latestDraft) {
+            followUp.snapshotId = await sql.begin((tx) => queueDraftProjectionInTransaction({ db: tx, draftId: snapshot.draft_id! }));
+          }
           return;
         }
         if (latestDraft.state !== "draft") {
@@ -719,7 +748,7 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           });
         }
 
-        const snapshotsToRetire = await activateExportSnapshot({
+        const activated = await activateExportSnapshot({
           snapshot,
           remoteResourceId: current.execution.remoteResourceId!,
           bindingId: current.execution.bindingId!,
@@ -729,7 +758,8 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           transportGeneration: fence.generation,
           secretRevision: current.execution.secretRevision!,
         });
-        for (const previous of snapshotsToRetire) {
+        followUp.snapshotId = activated.followUpSnapshotId ?? followUp.snapshotId;
+        for (const previous of activated.retire) {
           await assertLeaseActive();
           await assertMailboxTransportFence(fence);
           await retireRemoteSnapshot({

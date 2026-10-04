@@ -91,6 +91,8 @@ const createProvider = (kind: ProviderKind) => {
   let searches = 0;
   // Recipients the SMTP server refuses at RCPT while it accepts the others.
   const refusedRecipients = new Set<string>();
+  // Runs while the next append to the Drafts folder is in flight, before the server stores the message.
+  let duringNextDraftAppend: ((source: Buffer) => Promise<void>) | null = null;
 
   const folder = (path: string): StoredFolder => {
     const found = folders.get(path);
@@ -224,7 +226,13 @@ const createProvider = (kind: ProviderKind) => {
     }),
     spyOn(imapSmtpConnector, "appendSource").mockImplementation(async (_config, path, source, _length, flags, internalDate) => {
       appends.push(path);
-      const stored = await store(await readAll(source), path, flags ?? [], internalDate ?? undefined);
+      const bytes = await readAll(source);
+      const during = path === draftsPath ? duringNextDraftAppend : null;
+      if (during) {
+        duringNextDraftAppend = null;
+        await during(bytes);
+      }
+      const stored = await store(bytes, path, flags ?? [], internalDate ?? undefined);
       return { uidValidity: folder(path).uidValidity, uid: stored.uid };
     }),
     spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (_config, path, messageId) => {
@@ -297,6 +305,9 @@ const createProvider = (kind: ProviderKind) => {
     },
     refuseRecipient: (address: string) => {
       refusedRecipients.add(address);
+    },
+    duringNextDraftAppend: (work: (source: Buffer) => Promise<void>) => {
+      duringNextDraftAppend = work;
     },
     submissions: () => submissions,
     searches: () => searches,
@@ -2076,11 +2087,10 @@ suite("mail sent message projection", () => {
       provider.restore();
     }
   });
+  // Waits only for the projection jobs Mail submitted itself: work that would wait for the maintenance sweep fails the test.
   const settleDraftImports = (mailboxId: string) =>
     waitFor(
       async () => {
-        // Picks up projection work the maintenance sweep would submit, such as the export of an attachment change.
-        await submitDueDraftProjectionWork();
         const [pending] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
         WHERE mailbox_id = ${mailboxId}::uuid
@@ -2301,6 +2311,88 @@ suite("mail sent message projection", () => {
         SELECT count(*)::int AS count FROM mail.draft_attachments WHERE draft_id = ${created.data.id}::uuid AND removed_at IS NULL
       `;
       expect(attachments?.count).toBe(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  const providerDrafts = async (provider: Provider) =>
+    Promise.all(
+      [...provider.folder(provider.draftsPath).entries.values()].map(async (message) => {
+        const parsed = await simpleParser(message.source);
+        return {
+          revision: String(parsed.headers.get("x-cloud-draft-revision") ?? ""),
+          body: parsed.text?.trim() ?? "",
+          attachments: parsed.attachments.map((attachment) => attachment.filename),
+        };
+      }),
+    );
+
+  test("an attachment finished in Mail reaches the provider's Drafts folder without the maintenance sweep", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Notes attached later");
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await providerDrafts(provider)).toEqual([{ revision: String(draft.revision), body: "The report is ready.", attachments: [] }]);
+
+      const upload = await createDraftAttachmentUpload({
+        context,
+        mailboxId: mailbox.mailboxId,
+        draftId: draft.id,
+        input: { filename: "notes.txt", contentType: "text/plain", byteLength: 5 },
+      });
+      if (!upload.ok) throw new Error(upload.error.message);
+      const appended = await appendDraftAttachmentUpload({
+        context,
+        mailboxId: mailbox.mailboxId,
+        draftId: draft.id,
+        uploadId: upload.data.id,
+        offset: 0,
+        bytes: Buffer.from("notes"),
+      });
+      if (!appended.ok) throw new Error(appended.error.message);
+      const attached = await finalizeDraftAttachmentUpload({
+        context,
+        mailboxId: mailbox.mailboxId,
+        draftId: draft.id,
+        uploadId: upload.data.id,
+        expectedRevision: draft.revision,
+      });
+      if (!attached.ok) throw new Error(attached.error.message);
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await providerDrafts(provider)).toEqual([
+        { revision: String(attached.data.revision), body: "The report is ready.", attachments: ["notes.txt"] },
+      ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft that changes while its copy is appended gets its current revision exported without the maintenance sweep", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      // A change that commits while the first copy is in flight and wakes no export of its own, as when
+      // its wake fails and Mail leaves the export to the sweep.
+      let changed = false;
+      provider.duringNextDraftAppend(async (source) => {
+        const draftId = /^X-Cloud-Draft-ID: *(\S+)/im.exec(source.toString("utf8"))?.[1];
+        if (!draftId) throw new Error("The appended draft carries no Cloud draft ID");
+        await sql`
+          UPDATE mail.drafts SET body_markdown = 'Changed during the append.', revision = revision + 1
+          WHERE id = ${draftId}::uuid
+        `;
+        changed = true;
+      });
+      const draft = await newDraft(mailbox, "Changed mid-append");
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(changed).toBe(true);
+      expect(await providerDrafts(provider)).toEqual([
+        { revision: String(draft.revision + 1), body: "Changed during the append.", attachments: [] },
+      ]);
     } finally {
       provider.restore();
     }
