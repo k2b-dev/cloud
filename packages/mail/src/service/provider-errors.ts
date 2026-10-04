@@ -129,3 +129,31 @@ export const isTransientProviderFailure = (error: unknown): boolean => {
   const failures = verificationFailures(error);
   return isTemporaryLoginFailure(error) || (failures.length > 0 && failures.every(isTransientProviderFailure));
 };
+
+// Codes of a provider that did not answer in time, so the attempt waited for a timeout before it
+// failed: a host that drops connection attempts, a server that sends no greeting or does not
+// finish the TLS upgrade, or a connection whose replies stop.
+const PROVIDER_TIMEOUT_CODES = new Set([
+  "ENDPOINT_DNS_TIMEOUT",
+  "CONNECT_TIMEOUT",
+  "GREETING_TIMEOUT",
+  "UPGRADE_TIMEOUT",
+  "ETIMEDOUT",
+  "ETIMEOUT",
+]);
+
+/**
+ * The provider's mailbox server did not answer before a timeout. Unlike a refused or dropped
+ * connection, each such attempt holds its job for the whole timeout. Counts the cause of an error,
+ * such as the socket timeout behind ImapFlow's NoConnection for a command whose reply never came,
+ * and the IMAP failure of a failed IMAP and SMTP verification, but not its SMTP failure.
+ */
+export const isProviderTimeout = (error: unknown): boolean => {
+  let current = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    const value = current as { code?: unknown; cause?: unknown; imapFailure?: unknown };
+    if (typeof value.code === "string" && PROVIDER_TIMEOUT_CODES.has(value.code)) return true;
+    current = value.code === "PROVIDER_TRANSPORT_VERIFICATION_FAILED" ? value.imapFailure : value.cause;
+  }
+  return false;
+};

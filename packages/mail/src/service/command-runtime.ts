@@ -43,6 +43,8 @@ import {
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
   providerBusyRetryAfterMs,
+  recordProviderFailure,
+  releaseProviderLease,
 } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
@@ -1728,10 +1730,11 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
         }
       },
     });
+  } catch (error) {
+    await recordProviderFailure(operation.binding.remote_resource_id, error);
+    throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
   return RAN;
 };
@@ -1764,10 +1767,11 @@ const withMutationLease = async (
         await work(assertLeaseActive);
       },
     });
+  } catch (error) {
+    await recordProviderFailure(remoteResourceId, error);
+    throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
   return RAN;
 };
@@ -3420,9 +3424,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
     }
     throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
 };
 

@@ -33,6 +33,8 @@ import {
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
   providerBusyRetryAfterMs,
+  recordProviderFailure,
+  releaseProviderLease,
 } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
@@ -741,10 +743,11 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
         }
       },
     });
+  } catch (error) {
+    await recordProviderFailure(initial.execution.remoteResourceId!, error);
+    throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
 };
 
@@ -1523,10 +1526,11 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
         await notifyMailInvalidations();
       },
     });
+  } catch (error) {
+    await recordProviderFailure(current.execution.remoteResourceId!, error);
+    throw error;
   } finally {
-    await mailProviderOperationMutex()
-      .release(lock)
-      .catch(() => false);
+    await releaseProviderLease(lock);
   }
 };
 

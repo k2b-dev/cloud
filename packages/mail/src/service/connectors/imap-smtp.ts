@@ -154,10 +154,22 @@ const throwIfAborted = (signal: AbortSignal | undefined): void => {
 };
 
 /**
+ * Names the failure of the session's connection as the cause of a rejection that only says the
+ * connection is gone. ImapFlow rejects a command whose reply never arrived before the socket
+ * timeout with NoConnection; the timeout itself is the connection's failure.
+ */
+const withConnectionFailure = (error: unknown, session: ImapSession): unknown => {
+  const failure = session.failure();
+  if (failure && failure !== error && error instanceof Error && error.cause === undefined) error.cause = failure;
+  return error;
+};
+
+/**
  * Connects, runs one operation, and disposes the client. ImapFlow rejects the commands of a failed
  * connection, but some, such as NOOP, resolve anyway, so an operation that completed over a failed
  * connection is rejected with the failure. A rejection of the operation itself stays as it is: it
- * carries what the operation knows, such as whether an APPEND may already have taken effect.
+ * carries what the operation knows, such as whether an APPEND may already have taken effect. Its
+ * `cause` is the connection's failure, such as a socket timeout, when one is known.
  */
 export const runImapSession = async <T>(
   session: ImapSession,
@@ -175,6 +187,8 @@ export const runImapSession = async <T>(
     const failure = session.failure();
     if (failure) throw failure;
     return result;
+  } catch (error) {
+    throw withConnectionFailure(error, session);
   } finally {
     signal?.removeEventListener("abort", abort);
     await disposeImapClient(client);
@@ -238,6 +252,8 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
       const failure = session.failure();
       if (failure) throw failure;
       return result;
+    } catch (error) {
+      throw withConnectionFailure(error, session);
     } finally {
       signal?.removeEventListener("abort", abort);
     }
@@ -627,7 +643,12 @@ export const transportDiagnostic = (
 export const verifyImapSmtpTransports = async (
   config: ProviderConnectionInput,
   signal?: AbortSignal,
-): Promise<{ verification: ConnectorVerification | null; diagnostics: ProviderTransportDiagnostics; failures: unknown[] }> => {
+): Promise<{
+  verification: ConnectorVerification | null;
+  diagnostics: ProviderTransportDiagnostics;
+  failures: unknown[];
+  imapFailure: unknown;
+}> => {
   const checkedAt = new Date().toISOString();
   const [imap, smtp] = await Promise.allSettled([
     verifyImap(config, signal),
@@ -639,11 +660,14 @@ export const verifyImapSmtpTransports = async (
     smtp: transportDiagnostic(smtp, secrets),
   } satisfies ProviderTransportDiagnostics;
   const failures = [imap, smtp].flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
-  if (imap.status === "rejected" || smtp.status === "rejected") return { verification: null, diagnostics, failures };
+  if (imap.status === "rejected" || smtp.status === "rejected") {
+    return { verification: null, diagnostics, failures, imapFailure: imap.status === "rejected" ? imap.reason : null };
+  }
   const accountId = sha256(`${config.imap.host.toLowerCase()}\n${imap.value.authenticatedPrincipal.toLowerCase()}`);
   return {
     diagnostics,
     failures,
+    imapFailure: null,
     verification: {
       authenticatedPrincipal: imap.value.authenticatedPrincipal,
       serverIdentity: imap.value.serverIdentity,
@@ -876,11 +900,13 @@ const verify = async (config: ProviderConnectionInput, signal?: AbortSignal): Pr
   const result = await verifyImapSmtpTransports(config, signal);
   if (result.verification) return result.verification;
   const summary = `IMAP: ${result.diagnostics.imap.message}; SMTP: ${result.diagnostics.smtp.message}`;
-  // The original failures let callers tell a provider that is down from one that rejects the account.
+  // The original failures let callers tell a provider that is down from one that rejects the account,
+  // and the IMAP failure one whose mailbox server does not answer from one whose SMTP server does not.
   throw Object.assign(new Error(summary), {
     code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED",
     diagnostics: result.diagnostics,
     failures: result.failures,
+    imapFailure: result.imapFailure,
   });
 };
 

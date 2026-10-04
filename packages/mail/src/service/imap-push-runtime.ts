@@ -10,6 +10,7 @@ import { safeErrorDetail } from "./error-messages";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
+import { recordProviderReachable } from "./provider-operation-lock";
 import { enqueueBindingRediscovery, enqueueFolderReconciliation, enqueueFolderSync } from "./sync-runtime";
 
 const log = logger("mail:imap-push");
@@ -39,6 +40,7 @@ const FULL_RECONCILE_INTERVAL_MS = 6 * 60 * 60_000;
 export type ImapPushBindingPlan = {
   bindingId: string;
   mailboxId: string;
+  remoteResourceId: string;
   connectionId: string;
   secretRevision: number;
   imapHost: string;
@@ -169,6 +171,8 @@ type ImapPushRuntimeDependencies = {
   enqueueReconciliation(folderId: string, fromUid: number): Promise<void>;
   enqueueRediscovery(bindingId: string): Promise<void>;
   loadReconnectBudget(plan: ImapPushBindingPlan): Promise<ImapReconnectBudget>;
+  /** The provider answered: closes the remote mailbox's provider breaker, so its waiting syncs run now. */
+  recordProviderReachable(remoteResourceId: string): Promise<void>;
   leaderMutex: Mutex;
   permits: PermitPool;
   sleep(ms: number, signal: AbortSignal): Promise<void>;
@@ -277,6 +281,7 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
     {
       binding_id: string;
       mailbox_id: string;
+      remote_resource_id: string;
       connection_id: string;
       secret_revision: number;
       imap_host: string;
@@ -290,6 +295,7 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
     SELECT
       binding.id AS binding_id,
       resource.mailbox_id,
+      resource.id AS remote_resource_id,
       connection.id AS connection_id,
       connection.secret_revision,
       connection.imap_host,
@@ -339,6 +345,7 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
   return rows.map((row) => ({
     bindingId: row.binding_id,
     mailboxId: row.mailbox_id,
+    remoteResourceId: row.remote_resource_id,
     connectionId: row.connection_id,
     secretRevision: row.secret_revision,
     imapHost: row.imap_host,
@@ -878,6 +885,7 @@ export const runImapPushBinding = async (
               await closeActiveListener();
               return;
             }
+            await dependencies.recordProviderReachable(plan.remoteResourceId);
             activeMode = activeListener.mode;
             await assertLeaseActive();
             if (activeListener.mode === "poll") {
@@ -1007,6 +1015,7 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   enqueueReconciliation: enqueueFolderReconciliation,
   enqueueRediscovery: enqueueBindingRediscovery,
   loadReconnectBudget,
+  recordProviderReachable,
   get leaderMutex() {
     return listenerLeaderMutex();
   },
