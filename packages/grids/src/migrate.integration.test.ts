@@ -133,6 +133,52 @@ describe("grids schema migration", () => {
   );
 
   postgresTest(
+    "orders retained change-feed events by transaction without rewriting the outbox",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const fresh = await schemaSnapshot(database);
+        const fixture = await insertCalculationFixture(database);
+        const [record] = await database<Array<{ tableId: string }>>`
+          SELECT table_id::text AS "tableId" FROM grids.records WHERE id = ${fixture.recordId}::uuid`;
+        const enqueue = async () => {
+          const [row] = await database<Array<{ id: string }>>`
+            SELECT grids.enqueue_record_event(${record!.tableId}::uuid, ${fixture.recordId}::uuid,
+              '{"v":1,"type":"record.updated","version":1,"changedFieldIds":[],"actorId":null}'::jsonb)::text AS id`;
+          return row!.id;
+        };
+        // The schema before the change feed paged by transaction.
+        await database`ALTER TABLE grids.record_event_outbox DROP COLUMN txid`.simple();
+        await database`CREATE INDEX idx_grids_record_event_outbox_feed_base
+          ON grids.record_event_outbox USING btree (base_id, created_at, id)`.simple();
+        await database`CREATE INDEX idx_grids_record_event_outbox_feed_table
+          ON grids.record_event_outbox USING btree (base_id, table_id, created_at, id)`.simple();
+        const retained = [await enqueue(), await enqueue()];
+        const storage = async () => {
+          const [row] = await database<Array<{ file: number }>>`
+            SELECT relfilenode::int AS file FROM pg_class WHERE oid = 'grids.record_event_outbox'::regclass`;
+          return row!.file;
+        };
+        const before = await storage();
+
+        await migrate(database);
+
+        expect(await storage()).toBe(before);
+        expect(await schemaSnapshot(database)).toEqual(fresh);
+        const next = await enqueue();
+        const rows = await database<Array<{ id: string; txid: string }>>`
+          SELECT id::text, txid::text FROM grids.record_event_outbox ORDER BY txid, id`;
+        const upgradeTxid = rows.find((row) => row.id === retained[0])!.txid;
+        expect(rows.filter((row) => row.txid === upgradeTxid).map((row) => row.id)).toEqual(retained.toSorted());
+        expect(rows.at(-1)).toMatchObject({ id: next });
+        expect(BigInt(rows.at(-1)!.txid)).toBeGreaterThan(BigInt(upgradeTxid));
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
     "adds unchecked output status on existing schemas and stays idempotent",
     async () => {
       await withIsolatedDatabase(async (database) => {

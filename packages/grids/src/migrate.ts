@@ -1064,6 +1064,7 @@ const defineSchema = async (sql: SQL): Promise<void> => {
       delivered_at timestamp with time zone,
       dead_at timestamp with time zone,
       created_at timestamp with time zone DEFAULT now() NOT NULL,
+      txid xid8 DEFAULT pg_current_xact_id() NOT NULL,
       CONSTRAINT record_event_outbox_attempts_check CHECK ((attempts >= 0)),
       CONSTRAINT record_event_outbox_base_id_fkey FOREIGN KEY (base_id) REFERENCES grids.bases(id) ON DELETE CASCADE,
       CONSTRAINT record_event_outbox_pkey PRIMARY KEY (id),
@@ -1077,11 +1078,29 @@ const defineSchema = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_delivered ON grids.record_event_outbox USING btree (delivered_at) WHERE (status = 'delivered'::text)
   `.simple();
+  // The change feed pages by writing transaction, not by transaction start
+  // time. The default is stable, so adding the column stores the upgrade's own
+  // transaction ID once for every existing row instead of rewriting the table;
+  // all of those rows committed before it. Only the upgrade takes this lock.
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base ON grids.record_event_outbox USING btree (base_id, created_at, id)
+    DO $upgrade$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_attribute
+        WHERE attrelid = 'grids.record_event_outbox'::regclass AND attname = 'txid' AND NOT attisdropped
+      ) THEN
+        ALTER TABLE grids.record_event_outbox ADD COLUMN txid xid8 DEFAULT pg_current_xact_id() NOT NULL;
+        DROP INDEX IF EXISTS grids.idx_grids_record_event_outbox_feed_base;
+        DROP INDEX IF EXISTS grids.idx_grids_record_event_outbox_feed_table;
+      END IF;
+    END;
+    $upgrade$
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table ON grids.record_event_outbox USING btree (base_id, table_id, created_at, id)
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base ON grids.record_event_outbox USING btree (base_id, txid, created_at, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table ON grids.record_event_outbox USING btree (base_id, table_id, txid, created_at, id)
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_pending ON grids.record_event_outbox USING btree (next_attempt_at, created_at) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]))
