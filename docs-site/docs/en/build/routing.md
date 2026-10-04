@@ -5,7 +5,7 @@ section: Build an app
 order: 140
 description: Publish route prefixes and make an application reachable through the gateway.
 tags: [applications, routing, gateway, registry]
-updated: 2026-08-12
+updated: 2026-10-04
 ---
 
 # Routes and service discovery
@@ -34,6 +34,10 @@ public paths declare those exact paths.
 
 See [Route conventions](/en/docs/reference/route-conventions) for the standard
 prefixes, reserved paths, and matching rules.
+
+Do not list `/pwa` paths. An application adds pages to the mobile app with
+`defineApp({ pwa })`, which declares `/pwa/<id>` for it; see
+[Pages in the mobile app](/en/docs/frontend/mobile-app-pages) (preview).
 
 > **Do not serve HTML below `/public`.** Cloud handles `/public/*` before the
 > application router and returns a terminal asset response. Use a separate
@@ -89,7 +93,7 @@ Check the path in this order:
 3. Resolve `baseUrl` from the gateway container.
 4. Confirm the prefix is listed in `routes`.
 5. Confirm the same path is mounted in Hono.
-6. Check for a duplicate-prefix warning in gateway logs.
+6. Check for a duplicate-prefix or reserved-prefix warning in gateway logs.
 
 Use the target deployment's application and gateway health or log commands for
 the first two checks. Repository-specific development commands are maintainer

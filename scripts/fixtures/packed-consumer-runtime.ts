@@ -21,7 +21,8 @@ try {
     const entry = await getApp("inventory");
     if (entry) {
       assert.equal(entry.baseUrl, baseUrl);
-      assert.deepEqual(entry.routes, ["/api/inventory"]);
+      assert.deepEqual(entry.routes, ["/api/inventory", "/pwa/inventory"]);
+      assert.deepEqual(entry.pwa, { href: "/pwa/inventory" });
       const response = await fetch(`${baseUrl}/api/inventory/health`).catch(() => null);
       if (response) {
         assert.equal(response.status, 200);
@@ -33,12 +34,19 @@ try {
     await Bun.sleep(250);
   }
   assert.ok(ready, "Packed app must register and serve its declared route");
+  // Without an app session the part sends the phone to Core to renew it, and back to the same page.
+  const part = await fetch(`${baseUrl}/pwa/inventory?shelf=a`, { redirect: "manual" });
+  assert.equal(part.status, 302);
+  assert.equal(part.headers.get("Location"), "/pwa/_auth/session/launch?to=%2Fpwa%2Finventory%3Fshelf%3Da");
+  assert.match(part.headers.get("Cache-Control") ?? "", /no-store/);
+  const relaunch = await fetch(`${baseUrl}/pwa/inventory?pwa_launch=1`, { redirect: "manual" });
+  assert.equal(relaunch.headers.get("Location"), "/pwa/?pwa=unavailable");
   child.kill("SIGTERM");
   assert.equal(await child.exited, 0, `Graceful shutdown failed: ${await output}`);
   assert.equal(await getApp("inventory"), null, "Shutdown must remove registry entry before exiting");
   const response = await fetch(`${baseUrl}/api/inventory/health`).catch(() => null);
   assert.equal(response, null, "Shutdown must close the HTTP listener");
-  console.log("Packed production app registered, served HTTP, exited 0 and removed its registry entry.");
+  console.log("Packed production app registered with its mobile app part, served HTTP, exited 0 and removed its registry entry.");
 } finally {
   clearTimeout(deadline);
   if (child.exitCode === null) child.kill("SIGKILL");

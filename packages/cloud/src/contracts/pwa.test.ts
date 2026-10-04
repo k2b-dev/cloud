@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { APP_APPROVAL_LIMITS } from "./app-approval";
-import { isPwaShellAvailable, PWA_LIMITS, PwaCompleteResultSchema, PwaPairingStatusSchema, pairingLink, parsePairingLink } from "./pwa";
+import {
+  isPwaPartId,
+  isPwaShellAvailable,
+  PWA_LIMITS,
+  PwaCompleteResultSchema,
+  PwaPairingStatusSchema,
+  pairingLink,
+  parsePairingLink,
+} from "./pwa";
 
 const origin = "https://cloud.example.test";
 const secret = "A".repeat(42) + "w";
@@ -12,6 +20,11 @@ describe("mobile app contract", () => {
     expect(isPwaShellAvailable([{ id: "pwa", routes: ["/public/pwa"] }])).toBeFalse();
     expect(isPwaShellAvailable([{ id: "spaces", routes: ["/pwa"] }])).toBeFalse();
     expect(isPwaShellAvailable([{ id: "pwa", routes: ["/pwa", "/public/pwa"] }])).toBeTrue();
+  });
+
+  test("a part needs a plain app id that the shell does not use", () => {
+    expect(["spaces", "time-tracking", "a1"].map(isPwaPartId)).toEqual([true, true, true]);
+    expect(["pwa", "settings", "offline", "_auth", "spaces/tasks", "Spaces", "", "1x"].map(isPwaPartId)).toEqual(Array(8).fill(false));
   });
 
   test("shared limits match Cloud Login", () => {

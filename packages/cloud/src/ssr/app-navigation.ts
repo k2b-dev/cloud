@@ -1,4 +1,5 @@
 import type { RuntimeAppMeta } from "../contracts/app";
+import { isPwaPartId } from "../contracts/pwa";
 import { hasRole, type Role, type User } from "../contracts/shared";
 import { resolveAppPresentation } from "../shared/app-presentation";
 
@@ -44,8 +45,12 @@ export type VisiblePwaPart = RuntimeAppMeta & { pwa: NonNullable<RuntimeAppMeta[
  */
 export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): VisiblePwaPart[] => {
   if (!user) return [];
+  // Like the gateway, which routes /pwa/<id> only to a valid part id that claims it.
   return apps
-    .filter((app): app is VisiblePwaPart => !!app.pwa && hasAnyRole(user, app.pwa.requiresRoles))
+    .filter(
+      (app): app is VisiblePwaPart =>
+        !!app.pwa && isPwaPartId(app.id) && app.routes.includes(app.pwa.href) && hasAnyRole(user, app.pwa.requiresRoles),
+    )
     .map((app) => resolveAppPresentation(app, locale))
     .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
 };

@@ -31,7 +31,8 @@ const { ssr } = defineApp({
   icon: "ti ti-box",
   description: "Invented test part",
   baseUrl: "http://inventory:3000",
-  routes: ["/pwa/inventory"],
+  routes: [],
+  pwa: {},
 });
 
 /** Invented demo account. */

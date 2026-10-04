@@ -1,3 +1,4 @@
+import { PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { isInternalPath } from "./request-boundary";
@@ -90,6 +91,9 @@ const fallbackPathTemplate = (appId: string, pathname: string): string =>
 
 // ─── Request proxying ────────────────────────────────────────────────────────
 
+/** Whether a request path lies in the mobile app's scope, segment-wise like the route trie. */
+const isPwaPath = (pathname: string): boolean => pathname.split("/").find(Boolean) === "pwa";
+
 export const proxyRequest = async (
   req: Request,
   table: RouteTable,
@@ -120,6 +124,13 @@ export const proxyRequest = async (
       status: 502,
       headers: { "Retry-After": "5" },
     });
+  }
+
+  // Only the mobile app shell serves a service worker below /pwa. Any other
+  // worker there could take over the shell's scope: a script at a bare part
+  // root such as /pwa/<id> may claim /pwa/ without Service-Worker-Allowed.
+  if (req.headers.get("Service-Worker") === "script" && isPwaPath(url.pathname) && match.appId !== PWA_SHELL_APP_ID) {
+    return new Response("Forbidden — only the mobile app serves a service worker below /pwa", { status: 403 });
   }
 
   // Track per-app stats
@@ -176,6 +187,10 @@ export const proxyRequest = async (
     const headers = new Headers(proxyRes.headers);
     // Internal telemetry channel — never surface it to the client.
     headers.delete(ROUTE_TEMPLATE_HEADER);
+    // Only Core may widen a service worker's scope (its root push worker). A
+    // worker from any other app stays inside its script's directory, so no app
+    // outside /pwa can register a worker for the mobile app's scope.
+    if (match.appId !== "core") headers.delete("Service-Worker-Allowed");
     headers.set("X-Gateway-App", match.appId);
     headers.set("X-Gateway-Ms", ms.toFixed(1));
 

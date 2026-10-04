@@ -11,6 +11,10 @@ export const PWA_AUTH_PATH = "/pwa/_auth";
 export const PWA_API_PATH = "/api/auth/pwa/v1";
 export const PWA_MANIFEST_PATH = "/pwa/manifest.webmanifest";
 export const PWA_SERVICE_WORKER_PATH = "/pwa/sw.js";
+/** Ids that can never own a part: the shell itself and its own pages `/pwa/settings` and `/pwa/offline`. */
+export const PWA_RESERVED_IDS = ["pwa", "settings", "offline"] as const;
+/** Whether the app with this id may have a part at `/pwa/<id>`: a plain app id that the shell does not reserve. */
+export const isPwaPartId = (id: string): boolean => /^[a-z][a-z0-9-]*$/.test(id) && !PWA_RESERVED_IDS.some((reserved) => reserved === id);
 /**
  * The page canvas of the app (`--k2b-surface-canvas` of `@k2b/ui`) in light and dark. App documents paint it
  * before any stylesheet loads and give it to the status bar.
