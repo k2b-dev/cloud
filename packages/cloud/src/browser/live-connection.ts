@@ -33,6 +33,8 @@ type Shared = { socket: LiveWebSocket; subscribers: Map<string, Subscriber>; nex
 
 const RETRY_DELAYS_MS = [1_000, 3_000, 9_000];
 const MAX_BATCH = 100;
+/** Events that may wait for `apply`; more collapse into one `resync`, which covers them. */
+const MAX_WAITING = 10 * MAX_BATCH;
 
 /** One socket per URL and page, shared by every subscription on it. */
 const shared = new Map<string, Shared>();
@@ -91,6 +93,8 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
     const { socket, subscribers } = connection;
     const id = String(++connection.next);
     let cursor = handlers.cursor;
+    /** The cursor of a `resync` that has not finished: a reconnect resumes after it. */
+    let resyncAt: string | null = null;
     let ended = false;
     let running = false;
     const work: Work<T>[] = [];
@@ -126,6 +130,7 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
             return;
           }
           cursor = item.kind === "events" ? (item.events.at(-1)?.cursor ?? cursor) : item.cursor;
+          if (item.kind === "resync" && resyncAt === item.cursor) resyncAt = null;
         }
       } finally {
         running = false;
@@ -136,10 +141,16 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
     const resync = (at: string) => {
       work.length = 0;
       work.push({ kind: "resync", cursor: at });
+      resyncAt = at;
     };
 
+    const waiting = () => work.reduce((count, item) => count + (item.kind === "events" ? item.events.length : 0), 0);
+
     const subscriber: Subscriber = {
-      frame: () => ({ t: "sub", id, channel, scope, ...(cursor ? { after: cursor } : {}) }),
+      frame: () => {
+        const after = resyncAt ?? cursor;
+        return { t: "sub", id, channel, scope, ...(after ? { after } : {}) };
+      },
       confirmed: false,
       receive: (message) => {
         if (ended) return;
@@ -164,7 +175,8 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
             return;
           }
           const last = work.at(-1);
-          if (last?.kind === "events" && last.events.length < MAX_BATCH) last.events.push({ data, cursor: message.cursor });
+          if (waiting() >= MAX_WAITING) resync(message.cursor);
+          else if (last?.kind === "events" && last.events.length < MAX_BATCH) last.events.push({ data, cursor: message.cursor });
           else work.push({ kind: "events", events: [{ data, cursor: message.cursor }] });
         }
         void drain();

@@ -103,6 +103,7 @@ export const tryUpgradeWebSocket = (
   server: { upgrade: (req: Request, options: { data: ProxyData; headers?: Record<string, string> }) => boolean },
   table: RouteTable,
   logFn: (msg: string, meta?: Record<string, unknown>) => void,
+  clientIp: string | null = null,
 ): Response | undefined => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
@@ -128,6 +129,8 @@ export const tryUpgradeWebSocket = (
   if (origin) forwardedHeaders.Origin = origin;
   forwardedHeaders["X-Forwarded-Host"] = url.host;
   forwardedHeaders["X-Forwarded-Proto"] = url.protocol.replace(":", "");
+  // As for HTTP: the application keys rate limits of bearer and anonymous sockets by the client's address.
+  if (clientIp) forwardedHeaders["X-Forwarded-For"] = clientIp;
 
   let upstreamSocket: WebSocket;
   try {

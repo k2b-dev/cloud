@@ -197,6 +197,64 @@ describe("liveConnection", () => {
     subscription.close();
   });
 
+  test("a reconnect during a resync resumes after the resync's cursor, so older events are not applied over the reload", async () => {
+    const live = recorder();
+    let release = () => {};
+    const handlers = live.handlers();
+    const subscription = liveConnection("/api/app/live").subscribe(
+      "item",
+      { key: "a" },
+      {
+        ...handlers,
+        resync: async () => {
+          await handlers.resync();
+          await new Promise<void>((resolve) => (release = resolve));
+        },
+      },
+    );
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.open();
+    socket.message({ t: "resync", id: "1", cursor: "s6t.app.8" });
+    await Bun.sleep(1);
+    socket.close(1012, "restart");
+    await elapse(Math.min(...timers.map((timer) => timer.delay).filter((delay) => delay < 10_000)));
+    const next = FakeWebSocket.instances[1] as FakeWebSocket;
+    next.open();
+    expect(next.sent[0]).toMatchObject({ after: "s6t.app.8" });
+    next.message({ t: "event", id: "1", cursor: "s6t.app.9", data: 9 });
+    release();
+    await Bun.sleep(5);
+    expect(live.log).toEqual(["resync", "apply:9"]);
+    subscription.close();
+  });
+
+  test("events that wait behind a slow apply are bounded: beyond ten batches they collapse into one resync", async () => {
+    const live = recorder();
+    let release = () => {};
+    const handlers = live.handlers();
+    const subscription = liveConnection("/api/app/live").subscribe(
+      "item",
+      { key: "a" },
+      {
+        ...handlers,
+        apply: async (events) => {
+          await handlers.apply(events);
+          if (events[0]?.data === 0) await new Promise<void>((resolve) => (release = resolve));
+        },
+      },
+    );
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.open();
+    socket.message({ t: "event", id: "1", cursor: "s6t.app.10", data: 0 });
+    await Bun.sleep(1);
+    for (let n = 1; n <= 1_001; n++) socket.message({ t: "event", id: "1", cursor: `s6t.app.${10 + n}`, data: n });
+    socket.message({ t: "event", id: "1", cursor: "s6t.app.2000", data: 2_000 });
+    release();
+    await Bun.sleep(5);
+    expect(live.log).toEqual(["apply:0", "resync", "apply:2000"]);
+    subscription.close();
+  });
+
   test("a failing apply retries after 1, 3 and 9 seconds, then reports live updates unavailable", async () => {
     const live = recorder();
     live.failNext(4);

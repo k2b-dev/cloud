@@ -2,7 +2,6 @@ import type { Topic, TopicConfig } from "@k2b/sync";
 import { type ServerWebSocket, type SQL, sql } from "bun";
 import { type Context, Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
-import { createMiddleware } from "hono/factory";
 import type { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
 import { type AuthContext, auth } from "../server/middleware/auth";
@@ -133,14 +132,22 @@ export const startLiveOutbox = async (startedAppId: string): Promise<(() => Prom
   };
 };
 
+/**
+ * The viewer of an authenticated request. Its ID separates every credential of
+ * one principal that can decide differently: an app session holds no `admin`
+ * role, and an API key or OAuth token is limited by its scopes.
+ */
 const viewerOf = <Env extends AuthContext>(c: Context<Env>): LiveViewer => {
   const accessSubject = c.get("accessSubject");
-  return {
-    id: accessSubject.type === "user" ? `user:${accessSubject.userId}` : `service_account:${accessSubject.serviceAccountId}`,
-    actor: c.get("actor"),
-    accessSubject,
-    scopes: c.get("credentialScopes") ?? [],
-  };
+  const scopes = c.get("credentialScopes") ?? [];
+  const principal = accessSubject.type === "user" ? `user:${accessSubject.userId}` : `service_account:${accessSubject.serviceAccountId}`;
+  const credential =
+    c.get("credentialKind") === "session"
+      ? c.get("sessionKind") === "app"
+        ? ":app"
+        : ""
+      : `:scopes=${[...new Set(scopes)].sort().join(",")}`;
+  return { id: `${principal}${credential}`, actor: c.get("actor"), accessSubject, scopes };
 };
 
 type ProbeEnv = AuthContext & { Bindings: { found: (viewer: LiveViewer) => void } };
@@ -170,13 +177,26 @@ const revalidator = (c: Context<AuthContext>) => {
   };
 };
 
-/** A session cookie travels with every page of the browser, so its socket must come from Cloud's own origin. */
-const requireCloudOrigin = createMiddleware<AuthContext>(async (c, next) => {
-  if (c.get("credentialKind") !== "session") return next();
-  const origin = c.req.header("Origin");
-  if (origin && origin === publicCloudOrigin(await settings.get<string>("app.url"))) return next();
-  return c.json({ code: "FORBIDDEN", message: "Live sockets signed in with a session must come from the Cloud origin" }, 403);
-});
+type Refusal = { code: "login_required" | "forbidden_origin" | "missing_scope"; message: string };
+
+/**
+ * Why the socket may not serve this request. The refusal is sent on an
+ * accepted socket, with close code 1008: the gateway accepts the browser's
+ * socket before it reaches the application and would turn a refused handshake
+ * into a retryable 1012.
+ */
+const refusalOf = async (c: Context<AuthContext>): Promise<Refusal | null> => {
+  if (!c.get("actor")) return { code: "login_required", message: "Sign in again to receive live updates." };
+  // A session cookie travels with every page of the browser, so its socket must come from Cloud's own origin.
+  if (c.get("credentialKind") === "session" && c.req.header("Origin") !== publicCloudOrigin(await settings.get<string>("app.url"))) {
+    return { code: "forbidden_origin", message: "Live sockets signed in with a session must come from the Cloud origin." };
+  }
+  const oauthScopes = c.get("oauthScopes");
+  if (oauthScopes && !oauthScopes.includes("read") && !oauthScopes.includes("admin")) {
+    return { code: "missing_scope", message: "Live updates need an OAuth token with the read scope." };
+  }
+  return null;
+};
 
 /**
  * Live updates of one application: hints, optionally with data, for its own
@@ -194,8 +214,9 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
      * rollback writes nothing, a commit publishes it at least once. Data above
      * 32 KiB becomes a reload hint for `key`; `data` must not hold anything a
      * reader of `key` may not see. `access: true` announces that who may read
-     * `key` changed: every replica checks its subscribers of `key` and its
-     * collections again before it delivers the update.
+     * `key` changed, in a row of its own before the data: every replica checks
+     * its subscribers of `key` again before it delivers the data, and its
+     * collections right after.
      */
     publish: async (
       tx: SQL,
@@ -205,8 +226,11 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
       // the browser parses it, and data that does not survive JSON fails this write.
       const data: unknown = input.data === undefined ? undefined : JSON.parse(JSON.stringify(input.data));
       if (data !== undefined) event.parse(data);
-      const envelope = JSON.stringify({ v: 1, k: input.key, d: data, a: input.access });
-      await tx`SELECT events.enqueue(${crypto.randomUUID()}::uuid, ${appId}, 'live', ${input.key}, ${envelope}::text::jsonb)`;
+      const enqueue = (envelope: LiveEnvelope) =>
+        tx`SELECT events.enqueue(${crypto.randomUUID()}::uuid, ${appId}, 'live', ${input.key}, ${JSON.stringify(envelope)}::text::jsonb)`;
+      // The access change is a row of its own, so data too large for the outbox cannot drop it.
+      if (input.access) await enqueue({ v: 1, k: input.key, a: true });
+      if (data !== undefined) await enqueue({ v: 1, k: input.key, d: data });
     },
     /** Publishes committed updates now instead of within the next second. Call it after the commit. */
     wake: (): void => dispatchers.get(appId)?.(),
@@ -215,7 +239,8 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
     /**
      * The live socket with these channels. Mount it once, at `/api/<app>/live`.
      * It authenticates like any API request; a session needs the Cloud origin
-     * and an OAuth token the `read` scope. Channels are passed here, not to
+     * and an OAuth token the `read` scope. A refused socket receives `error`
+     * and closes with 1008. Channels are passed here, not to
      * `defineLive()`, because they check access with the domain services that
      * themselves publish updates.
      */
@@ -230,10 +255,17 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
       return new Hono<AuthContext>().get(
         "/",
         rateLimit({ limitPerSecond: 5 }),
-        auth.requireRole("authenticated"),
-        requireCloudOrigin,
-        auth.requireOAuthScope("read", "admin"),
-        upgradeWebSocket((c) => {
+        auth.requireRole("*"),
+        upgradeWebSocket(async (c) => {
+          const refusal = await refusalOf(c);
+          if (refusal) {
+            return {
+              onOpen: (_event, ws) => {
+                ws.send(JSON.stringify({ t: "error", ...refusal }));
+                ws.close(1008, refusal.code);
+              },
+            };
+          }
           const viewer = viewerOf(c);
           const revalidate = revalidator(c);
           let connection: LiveConnectionHandle | null = null;

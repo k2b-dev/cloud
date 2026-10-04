@@ -50,12 +50,14 @@ onMount(() => {
 - `parse` validates each event. Data that does not parse loads the state again
   through `resync`.
 - `apply` receives up to 100 events in order. It must be idempotent: a
-  reconnect or a retry can repeat an event.
+  reconnect or a retry can repeat an event. When more than 1,000 events wait
+  for it, they collapse into one `resync`.
 - `resync` loads the canonical state again. Events that arrive meanwhile are
-  applied after it.
+  applied after it. A reconnect while it runs resumes after its cursor.
 - `revoked` ends the subscription: the resource is gone or no longer readable.
-- `unavailable` reports that live updates stopped: the session ended, or
-  `apply` or `resync` failed four times (after 1, 3, and 9 seconds).
+- `unavailable` reports that live updates stopped: the session ended, the
+  socket was refused, or `apply` or `resync` failed four times (after 1, 3,
+  and 9 seconds).
 
 The client owns the socket, visibility, reconnect backoff, connection
 deadlines, recovery when the tab or network returns, cursors, retries, and

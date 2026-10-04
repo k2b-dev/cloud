@@ -11,13 +11,16 @@ export const LIVE_LIMITS = {
   ringBytes: 32 * 1024 ** 2,
   fillWaitMs: 5_000,
   frameBytes: 16 * 1024,
-  pendingMessages: 8,
+  /** A reconnect sends every subscription at once, so a full set and a few `unsub` may wait. */
+  pendingMessages: 24,
   subscriptions: 16,
   keys: 1_000,
   socketsPerViewer: 16,
   sendBufferBytes: 256 * 1024,
   replayWaitMs: 10_000,
   cacheMs: 2_000,
+  /** A check that takes longer than a sweep round fails, so the 10-second bounds hold. */
+  checkMs: 10_000,
   cacheEntries: 50_000,
   viewersPerCall: 500,
   callsInFlight: 8,
@@ -28,9 +31,13 @@ export const LIVE_LIMITS = {
   progressMs: 30_000,
 };
 
-/** The principal a delivery is for. Authorization is per principal, not per credential. */
+/** Who a delivery is for. Viewers with the same `id` share access decisions. */
 export type LiveViewer = {
-  /** `user:<id>` or `service_account:<id>`. */
+  /**
+   * `user:<id>` or `service_account:<id>`, extended by everything of the
+   * credential that can change a read decision: `:app` for a phone's app
+   * session, the scopes of an API key or OAuth token.
+   */
   id: string;
   actor: RequestActor;
   accessSubject: AccessSubject;
@@ -41,7 +48,7 @@ export type LiveViewer = {
 export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
   /** The subscribe payload, validated on every `sub`. */
   scope: Scope;
-  /** Routing keys of the scope, at most 1,000; `null` when it does not exist or is not readable. */
+  /** Routing keys of the scope; Cloud follows the first 1,000. `null` when it does not exist or is not readable. */
   keys(scope: z.output<Scope>, viewer: LiveViewer): Promise<readonly string[] | null>;
   /** IDs of the viewers allowed to read `key`. Called with at most 500 viewers. */
   authorize(key: string, viewers: readonly LiveViewer[]): Promise<ReadonlySet<string>>;
@@ -102,13 +109,29 @@ type Subscription = {
   keys: Set<string>;
   /** Events at or below this sequence are not delivered. */
   from: number;
-  /** Live frames held back while the replay is written. */
+  /** Live frames held back while the replay is written, and their size. */
   backlog: string[] | null;
+  backlogBytes: number;
 };
 
 const log = logger("events:live");
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** Rejects when `run` has not settled within `LIVE_LIMITS.checkMs`. */
+const bounded = async <T>(what: string, run: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${what} did not answer within ${LIVE_LIMITS.checkMs} ms`)), LIVE_LIMITS.checkMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 /** Runs `run` for every item with at most `limit` in flight. */
 const eachLimited = async <T>(items: readonly T[], limit: number, run: (item: T) => Promise<void>): Promise<void> => {
@@ -186,24 +209,25 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
 
   const violation = (conn: Connection, code: string) => close(conn, 1008, code, "The live socket received an invalid message.");
 
+  const tooSlow = (conn: Connection) => {
+    log.warn("Live socket closed because the client reads too slowly", { appId });
+    close(conn, 1013, "backpressure", "The client reads live updates too slowly.");
+  };
+
   const write = (conn: Connection, text: string) => {
     if (conn.closed) return;
     conn.socket.send(text);
-    if (conn.socket.getBufferedAmount() > LIVE_LIMITS.sendBufferBytes) {
-      log.warn("Live socket closed because the client reads too slowly", { appId });
-      close(conn, 1013, "backpressure", "The client reads live updates too slowly.");
-    }
+    if (conn.socket.getBufferedAmount() > LIVE_LIMITS.sendBufferBytes) tooSlow(conn);
   };
 
-  /** Writes and waits while the send buffer is full, at most 10 seconds. */
-  const writeWaiting = async (conn: Connection, text: string): Promise<boolean> => {
+  /** Writes and waits while the send buffer is full, until `deadline`. */
+  const writeWaiting = async (conn: Connection, text: string, deadline: number): Promise<boolean> => {
     if (conn.closed) return false;
     conn.socket.send(text);
-    const deadline = Date.now() + LIVE_LIMITS.replayWaitMs;
     while (conn.socket.getBufferedAmount() > LIVE_LIMITS.sendBufferBytes) {
       if (conn.closed) return false;
       if (Date.now() > deadline) {
-        close(conn, 1013, "backpressure", "The client reads live updates too slowly.");
+        tooSlow(conn);
         return false;
       }
       await sleep(25);
@@ -211,9 +235,12 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     return !conn.closed;
   };
 
+  /** During a replay, live frames wait in a backlog that is bounded like the send buffer. */
   const send = (sub: Subscription, text: string) => {
-    if (sub.backlog) sub.backlog.push(text);
-    else write(sub.conn, text);
+    if (!sub.backlog) return write(sub.conn, text);
+    sub.backlog.push(text);
+    sub.backlogBytes += text.length;
+    if (sub.backlogBytes > LIVE_LIMITS.sendBufferBytes) tooSlow(sub.conn);
   };
 
   // ---------- index ----------
@@ -274,37 +301,49 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
   };
 
   const cacheKey = (channel: string, key: string, viewerId: string) => `${channel}\u0000${key}\u0000${viewerId}`;
+  /** Counts access updates; an answer requested before one is used, but not cached. */
+  let accessUpdates = 0;
 
-  /** Whether each viewer may read `key`: cached for 2 seconds unless `fresh`, one call per 500 uncached viewers. */
-  const decide = async (channel: string, key: string, viewers: readonly LiveViewer[], fresh = false): Promise<Map<string, boolean>> => {
+  type Decision = { decided: Map<string, boolean> /** When the oldest of them was requested. */; at: number };
+
+  /**
+   * Whether each viewer may read `key`: cached for 2 seconds from the request
+   * unless `fresh`, one call per 500 uncached viewers.
+   */
+  const decide = async (channel: string, key: string, viewers: readonly LiveViewer[], fresh = false): Promise<Decision> => {
     const decided = new Map<string, boolean>();
     const missing = new Map<string, LiveViewer>();
-    const now = Date.now();
+    let at = Date.now();
     for (const viewer of viewers) {
       const hit = fresh ? undefined : cache.get(cacheKey(channel, key, viewer.id));
-      if (hit && now - hit.at < LIVE_LIMITS.cacheMs) decided.set(viewer.id, hit.ok);
-      else missing.set(viewer.id, viewer);
+      if (hit && Date.now() - hit.at < LIVE_LIMITS.cacheMs) {
+        decided.set(viewer.id, hit.ok);
+        at = Math.min(at, hit.at);
+      } else missing.set(viewer.id, viewer);
     }
     const pending = [...missing.values()];
     for (let start = 0; start < pending.length; start += LIVE_LIMITS.viewersPerCall) {
       const part = pending.slice(start, start + LIVE_LIMITS.viewersPerCall);
-      const allowed = await limited(() => (channels[channel] as LiveChannel).authorize(key, part));
+      const asked = { at: Date.now(), updates: accessUpdates };
+      const allowed = await limited(() => bounded("authorize()", (channels[channel] as LiveChannel).authorize(key, part)));
       for (const viewer of part) {
         const ok = allowed.has(viewer.id);
+        decided.set(viewer.id, ok);
+        if (asked.updates !== accessUpdates) continue;
         const id = cacheKey(channel, key, viewer.id);
         cache.delete(id);
-        cache.set(id, { at: Date.now(), ok });
+        cache.set(id, { at: asked.at, ok });
         if (cache.size > LIVE_LIMITS.cacheEntries) cache.delete(cache.keys().next().value as string);
-        decided.set(viewer.id, ok);
       }
+      at = Math.min(at, asked.at);
     }
-    return decided;
+    return { decided, at };
   };
 
   const readableKeys = async (channel: string, keys: readonly string[], viewer: LiveViewer): Promise<string[]> => {
     const unique = [...new Set(keys)];
     const decided = await Promise.all(unique.map((key) => decide(channel, key, [viewer])));
-    return unique.filter((_, position) => decided[position]?.get(viewer.id) === true);
+    return unique.filter((_, position) => decided[position]?.decided.get(viewer.id) === true);
   };
 
   /** Checks every subscriber of `key` without the cache; denied viewers lose the key. */
@@ -312,7 +351,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     for (const [channel, viewers] of viewersOf(key)) {
       const subs = [...(index.get(key) ?? [])].filter((sub) => sub.channel === channel);
       try {
-        const decided = await decide(channel, key, viewers, true);
+        const { decided } = await decide(channel, key, viewers, true);
         for (const sub of subs) if (sub.keys.has(key) && decided.get(sub.conn.viewer.id) === false) loseKey(sub, key);
       } catch (error) {
         fail(
@@ -324,21 +363,47 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     }
   };
 
-  /** Runs `keys()` again for collection subscriptions; a changed key set reloads. */
+  /** The keys a subscription follows: the first 1,000, with a warning about the rest. */
+  const followed = (channel: string, keys: readonly string[]): readonly string[] => {
+    const unique = [...new Set(keys)];
+    if (unique.length <= LIVE_LIMITS.keys) return unique;
+    log.warn("A live subscription follows only the first keys of its scope", {
+      appId,
+      channel,
+      keys: unique.length,
+      limit: LIVE_LIMITS.keys,
+    });
+    return unique.slice(0, LIVE_LIMITS.keys);
+  };
+
+  /**
+   * Runs `keys()` again for collection subscriptions; a changed key set
+   * reloads. Only added keys are authorized: kept keys are checked at delivery
+   * and by the sweep.
+   */
   const refreshCollections = async () => {
     const subs = [...connections].flatMap((conn) => [...conn.subs.values()]).filter((sub) => sub.collection);
     const unchecked: Connection[] = [];
     let failure: unknown;
     await eachLimited(subs, LIVE_LIMITS.sweepInFlight, async (sub) => {
       try {
-        const keys = await (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer);
-        const next = keys === null ? null : new Set(await readableKeys(sub.channel, keys.slice(0, LIVE_LIMITS.keys), sub.conn.viewer));
+        const keys = await bounded("keys()", (channels[sub.channel] as LiveChannel).keys(sub.scope, sub.conn.viewer));
+        const listed = keys === null ? null : followed(sub.channel, keys);
+        const added =
+          listed === null
+            ? []
+            : await readableKeys(
+                sub.channel,
+                listed.filter((key) => !sub.keys.has(key)),
+                sub.conn.viewer,
+              );
         if (sub.conn.subs.get(sub.id) !== sub) return;
-        if (next === null) {
+        if (listed === null) {
           send(sub, frame.revoked(sub.id, "not_found"));
           removeSubscription(sub);
           return;
         }
+        const next = new Set([...listed.filter((key) => sub.keys.has(key)), ...added]);
         if (next.size === sub.keys.size && [...next].every((key) => sub.keys.has(key))) return;
         for (const key of sub.keys) if (!next.has(key)) unindexKey(sub, key);
         for (const key of next) if (!sub.keys.has(key)) indexKey(sub, key);
@@ -350,6 +415,29 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       }
     });
     fail(unchecked, failure, "collection keys");
+  };
+
+  /** One refresh at a time; requests while it runs share a single next run. */
+  let refreshing: Promise<void> | null = null;
+  let refreshAgain = false;
+  const refresh = (): Promise<void> => {
+    if (refreshing) {
+      refreshAgain = true;
+      return refreshing;
+    }
+    refreshing = (async () => {
+      try {
+        do {
+          refreshAgain = false;
+          await refreshCollections();
+        } while (refreshAgain && !stopping.signal.aborted);
+      } catch (error) {
+        log.error("Live collection refresh failed", { appId, error: message(error) });
+      } finally {
+        refreshing = null;
+      }
+    })();
+    return refreshing;
   };
 
   // ---------- follower and delivery ----------
@@ -372,7 +460,10 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     while (ring.length > LIVE_LIMITS.ringEvents || ringBytes > LIVE_LIMITS.ringBytes) ringBytes -= ring.shift()?.bytes ?? 0;
   };
 
-  const deliver = async (entry: Entry, decisions: Map<string, Promise<Map<string, boolean>>>) => {
+  /** Decisions of a batch, requested together before its first event is delivered. */
+  type Prefetched = Map<string, Promise<Decision>>;
+
+  const deliver = async (entry: Entry, decisions: Prefetched) => {
     // Remembered before the candidates are taken: a subscription that registers
     // from here on starts after this event and gets it from the ring instead.
     remember(entry);
@@ -388,10 +479,12 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       for (const [channel, candidates] of groups) {
         let decided: Map<string, boolean>;
         try {
-          decided = (await decisions.get(`${channel}\u0000${key}`)) ?? new Map();
+          const prefetched = await decisions.get(`${channel}\u0000${key}`);
+          // A decision older than the cache, for example behind a slow batch, is requested again.
+          decided = prefetched && Date.now() - prefetched.at < LIVE_LIMITS.cacheMs ? new Map(prefetched.decided) : new Map();
           // Subscriptions added after the batch started are checked on their own.
           const late = candidates.map((sub) => sub.conn.viewer).filter((viewer) => !decided.has(viewer.id));
-          if (late.length > 0) for (const [id, ok] of await decide(channel, key, late)) decided.set(id, ok);
+          if (late.length > 0) for (const [id, ok] of (await decide(channel, key, late)).decided) decided.set(id, ok);
         } catch (error) {
           fail(
             candidates.map((sub) => sub.conn),
@@ -410,12 +503,17 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     head = entry.seq;
   };
 
-  /** An access change: forget the key's decisions, check its subscribers and every collection, then deliver. */
+  /**
+   * An access change: forget the key's decisions and check its subscribers
+   * before the update is delivered. Collections run `keys()` again next to
+   * delivery, not in its way; a changed key set reloads them.
+   */
   const changeAccess = async (entry: Entry) => {
     const key = entry.key as string;
+    accessUpdates++;
     for (const id of [...cache.keys()]) if (id.includes(`\u0000${key}\u0000`)) cache.delete(id);
     await reauthorize(key);
-    await refreshCollections();
+    void refresh();
     await deliver(entry, new Map());
   };
 
@@ -433,7 +531,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     while (start < batch.length) {
       let end = start;
       while (end < batch.length && !batch[end]?.access && !batch[end]?.gap) end++;
-      const decisions = new Map<string, Promise<Map<string, boolean>>>();
+      const decisions: Prefetched = new Map();
       for (const entry of batch.slice(start, end)) {
         if (!entry.key) continue;
         for (const [channel, viewers] of viewersOf(entry.key)) {
@@ -510,6 +608,9 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       const target = topic.cursorSequence(await topic.head());
       let after = Math.max(0, target - LIVE_LIMITS.ringEvents);
       for (;;) {
+        // An attempt that failed halfway must not leave its events behind for the next one.
+        ring = [];
+        ringBytes = 0;
         try {
           const until = topic.cursorAt(target);
           for await (const event of topic.replay({ after: topic.cursorAt(after), until, signal: stopping.signal }))
@@ -517,8 +618,6 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
           break;
         } catch (error) {
           if (!(error instanceof RetentionGapError) || !error.resumeAfter) throw error;
-          ring = [];
-          ringBytes = 0;
           after = topic.cursorSequence(error.resumeAfter);
         }
       }
@@ -549,11 +648,27 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     }
   };
 
+  /**
+   * Writes the replay, then `ready` and the live frames held back meanwhile.
+   * A subscription that ends or loses a key during the replay gets nothing
+   * more of it: its `revoked` or `resync` waits in the backlog. The whole
+   * replay waits for a full send buffer at most 10 seconds.
+   */
   const replayTo = async (sub: Subscription, entries: Entry[]) => {
-    for (const entry of entries) if (!(await writeWaiting(sub.conn, frame.event(sub.id, entry)))) return;
-    if (sub.conn.subs.get(sub.id) === sub && !(await writeWaiting(sub.conn, frame.ready(sub.id, sub.from)))) return;
-    while (sub.backlog && sub.backlog.length > 0) if (!(await writeWaiting(sub.conn, sub.backlog.shift() as string))) return;
+    const deadline = Date.now() + LIVE_LIMITS.replayWaitMs;
+    for (const entry of entries) {
+      if (sub.conn.subs.get(sub.id) !== sub) break;
+      if (!sub.keys.has(entry.key as string)) continue;
+      if (!(await writeWaiting(sub.conn, frame.event(sub.id, entry), deadline))) return;
+    }
+    if (sub.conn.subs.get(sub.id) === sub && !(await writeWaiting(sub.conn, frame.ready(sub.id, sub.from), deadline))) return;
+    while (sub.backlog && sub.backlog.length > 0) {
+      const text = sub.backlog.shift() as string;
+      sub.backlogBytes -= text.length;
+      if (!(await writeWaiting(sub.conn, text, deadline))) return;
+    }
     sub.backlog = null;
+    sub.backlogBytes = 0;
   };
 
   const subscribe = async (conn: Connection, request: Extract<LiveClientMessage, { t: "sub" }>) => {
@@ -565,9 +680,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     if (!scope.success) return violation(conn, "invalid_scope");
     await whenStarted();
     const keys = await channel.keys(scope.data, conn.viewer);
-    if (keys && keys.length > LIVE_LIMITS.keys)
-      throw new Error(`Live channel "${request.channel}" returned more than ${LIVE_LIMITS.keys} keys`);
-    const readable = keys === null ? [] : await readableKeys(request.channel, keys, conn.viewer);
+    const readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
     // Not found and not readable look the same.
     if (keys === null || (readable.length === 0 && !channel.collection)) return write(conn, frame.revoked(request.id, "not_found"));
     const after = request.after === undefined ? null : sequenceOf(request.after);
@@ -579,7 +692,13 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     // the replay covers everything up to it, live delivery everything after it.
     const position = Math.max(head, ring.at(-1)?.seq ?? 0);
     const oldest = ring[0]?.seq ?? position + 1;
-    const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated);
+    // A collection cannot tell which keys it had before: an access update of a key it follows now,
+    // missed while it was away, may have added that key.
+    const missedAccess =
+      channel.collection === true &&
+      after !== null &&
+      ring.some((entry) => entry.access && entry.seq > after && entry.seq <= position && readable.includes(entry.key as string));
+    const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated || missedAccess);
     const sub: Subscription = {
       id: request.id,
       conn,
@@ -589,6 +708,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       keys: new Set(readable),
       from: after !== null && !resync && after > position ? after : position,
       backlog: null,
+      backlogBytes: 0,
     };
     conn.subs.set(sub.id, sub);
     for (const key of sub.keys) indexKey(sub, key);
@@ -633,7 +753,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       await eachLimited([...connections], LIVE_LIMITS.sweepInFlight, async (conn) => {
         if (conn.closed) return;
         try {
-          const viewer = await conn.revalidate();
+          const viewer = await bounded("The credential check", conn.revalidate());
           if (!viewer || viewer.id !== conn.viewer.id) close(conn, 1008, "session_expired", "The session ended.");
           else conn.viewer = viewer;
         } catch (error) {
@@ -643,7 +763,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       });
       fail(unchecked, failure, "credential check");
       await eachLimited([...index.keys()], LIVE_LIMITS.sweepInFlight, reauthorize);
-      if (round % LIVE_LIMITS.keysEveryRounds === 0) await refreshCollections();
+      if (round % LIVE_LIMITS.keysEveryRounds === 0) await refresh();
     } catch (error) {
       log.error("Live sweep failed", { appId, error: message(error) });
     } finally {

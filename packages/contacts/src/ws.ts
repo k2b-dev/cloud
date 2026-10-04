@@ -10,8 +10,9 @@ import { upgradeWebSocket } from "hono/bun";
 export default new Hono().get(
   "/",
   rateLimit({ keyBy: "ip", limitPerSecond: 5 }),
+  // Answers at once, so a socket that never subscribes holds nothing open.
   upgradeWebSocket(() => ({
-    onMessage: (_message, ws) => {
+    onOpen: (_event, ws) => {
       const payload = { code: "resync_required", message: "Contacts was updated. Reload the page." };
       ws.send(JSON.stringify({ type: "contacts.live.error", payload }));
       ws.close(1012, "resync_required");

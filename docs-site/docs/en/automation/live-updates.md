@@ -91,11 +91,15 @@ warehouse, publish it with `access: true`:
 await inventoryLive.publish(tx, { key: warehouseId, access: true });
 ```
 
-Before it delivers that update, every replica forgets its cached decisions
-for the key, checks the key's subscribers again, and runs `keys()` for its
-collections. A viewer who lost the key loses it at once, and a collection
-that gained a key loads its state again. `data` is optional; with it, viewers
-who keep access receive the update too.
+Every replica forgets its cached decisions for the key and checks the key's
+subscribers again before it delivers anything after the update, so a viewer
+who lost the key loses it at once. Right after, without holding up delivery,
+it runs `keys()` for its collections; a collection that gained a key loads its
+state again. Access updates that arrive while that runs share one more run.
+
+`data` is optional; with it, viewers who keep access receive the update too.
+`publish()` writes the access change as a row of its own before the data, so
+data above 32 KiB, which becomes a resync, does not lose it.
 
 ## Serve the channels
 
@@ -122,9 +126,9 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
 
 - `scope` validates the subscription the tab sends, for example one
   warehouse. An invalid scope ends the socket.
-- `keys(scope, viewer)` returns the keys that the subscription follows, 1 to
-  1,000 of them, or `null` when the resource does not exist or the viewer may
-  not read it.
+- `keys(scope, viewer)` returns the keys that the subscription follows, or
+  `null` when the resource does not exist or the viewer may not read it. Cloud
+  follows the first 1,000 keys and logs a warning about the rest.
 - `authorize(key, viewers)` returns the IDs of the viewers who may read `key`.
   Cloud calls it with up to 500 viewers at once, so check them together
   instead of one by one. Use the same permission service as the API.
@@ -136,19 +140,33 @@ The channels are passed to `routes()`, not to `defineLive()`: the services that
 decide access usually also publish updates, so the definition must not import
 them.
 
-A viewer carries `id` (`user:<id>` or `service_account:<id>`), `actor` and
-`accessSubject` as on an API request, and the credential's `scopes`.
-Authorization is cached per viewer, not per credential.
+A viewer carries `id`, `actor` and `accessSubject` as on an API request, and
+the credential's `scopes`. Use `accessSubject` for grants and `actor` for
+roles. `id` starts with `user:<id>` or `service_account:<id>` and adds
+everything of the credential that can change a decision: `:app` for a phone's
+app session, which never holds the `admin` role, and the scopes of an API key
+or OAuth token. Viewers with the same `id` share decisions, so a person's web
+tabs are checked together, but an API key without `read` never inherits the
+decision of another key of the same account.
 
 The socket authenticates like any API request: a session cookie, an API key,
-or an OAuth token.
+or an OAuth token. A socket that may not be served opens, receives `error`,
+and closes with `1008`, so the browser client stops instead of retrying. The
+gateway accepts the browser's socket before the application sees it, so a
+refused handshake would only reach the browser as a retryable `1012`.
 
-- A socket signed in with a session must come from the Cloud origin, the
-  origin of the `app.url` setting. Other origins receive `403`.
-- An OAuth token needs the `read` scope (or `admin`), as other read routes do.
-  Without it, the socket receives `403`.
-- One viewer can open 16 sockets per replica; a principal can open 5 per
-  second.
+| Code | Cause |
+| --- | --- |
+| `login_required` | No credential, or the session or token has ended |
+| `forbidden_origin` | A session from another origin than the one of the `app.url` setting |
+| `missing_scope` | An OAuth token without `read` (or `admin`), as on other read routes |
+
+An API key reads what the application's `authorize` allows for its scopes,
+as on the API.
+
+One viewer can open 16 sockets per replica. Opening sockets is limited to 5
+per second for each signed-in person, and for each client address for API
+keys, OAuth tokens, and requests without a credential.
 
 [Realtime UI](/en/docs/frontend/realtime-ui) subscribes from the browser.
 
@@ -191,27 +209,40 @@ changed, and a cursor outside the window all end there.
 | Change | Reaches the tab within |
 | --- | --- |
 | Update published with `access: true` | at once |
-| Access lost, while updates arrive | 2 seconds (the decision cache) |
+| Access lost, while updates arrive | 2 seconds (the decision cache, counted from the check) |
 | Access lost on a quiet subscription | 10 seconds (a sweep checks every key) |
+| Role or account change, such as a removed administrator | 10 seconds (the sweep loads the viewer again) |
 | Session or token ended | 10 seconds; the socket closes with `1008` |
 | Key gained through a group, without an update | 60 seconds (collections) |
 
+Updates that were already sent can still arrive after a revocation: what
+waits in the application's send buffer (256 KiB) and in the gateway, which
+holds up to 4 MiB for each browser socket.
+
 A viewer who loses access to a single-key subscription receives `revoked`
-with `access_denied`. A collection drops the key and receives `resync`. When
-`authorize` or the credential check throws, the socket closes with `1011` and
-nothing is skipped: the tab reconnects and resumes from its cursor.
+with `access_denied`; a replay in progress stops. A collection drops the key
+and receives `resync`. When `authorize`, `keys()`, or the credential check
+throws or does not answer within 10 seconds, the socket closes with `1011`
+and nothing is skipped: the tab reconnects and resumes from its cursor.
+
+A collection that comes back from its cursor receives `resync` when one of
+its keys had an access update meanwhile. A key it gained or lost through a
+group while it was away, without an update, shows at its next reload.
 
 ### Close codes
 
 | Code | Meaning | The browser client |
 | --- | --- | --- |
-| `1008` | Session ended, protocol violation | stops |
+| `1008` | Refused socket, session ended, protocol violation | stops |
 | `1011` | A check failed | reconnects with backoff |
 | `1012` | The replica stops | reconnects with backoff |
 | `1013` | The client reads too slowly (256 KiB waiting), or too many sockets or messages | reconnects with backoff |
 
-A message from the tab is at most 16 KiB; at most 8 may wait, and a socket
-holds at most 16 subscriptions.
+A message from the tab is at most 16 KiB, and a socket holds at most 16
+subscriptions. At most 24 messages may wait, so a reconnect can send every
+subscription at once. A replay waits at most 10 seconds in total for a full
+send buffer, and the updates that arrive meanwhile wait in a second buffer of
+at most 256 KiB.
 
 ## Know the guarantees
 
@@ -248,8 +279,10 @@ first built-in application that does.
 
 A replica that stops closes its sockets with `1012`; the tabs reconnect to
 another replica and resume from their cursors. Each replica reads the topic
-once to fill its window, not once per socket. Plan the send buffer as 256 KiB
-for each socket that reads too slowly.
+once to fill its window, not once per socket. Plan the send buffers for each
+socket that reads too slowly: 256 KiB in the application, twice that during
+a replay, and up to 4 MiB in the gateway, which closes the browser socket with
+`1013` above it.
 
 Continue with [Realtime UI](/en/docs/frontend/realtime-ui) for the browser,
 with [Topics and live events](/en/docs/automation/topics-and-live-events) for

@@ -48,7 +48,7 @@ const setup = (upgrade = true) => {
   let data: GatewaySocket["data"] | null = null;
   const response = tryUpgradeWebSocket(
     new Request("http://cloud.test/api/mail/ws", {
-      headers: { Upgrade: "websocket", Cookie: "session_token=test", Origin: "http://cloud.test" },
+      headers: { Upgrade: "websocket", Cookie: "session_token=test", Origin: "http://cloud.test", "X-Forwarded-For": "203.0.113.9" },
     }),
     {
       upgrade: (_request, options) => {
@@ -58,6 +58,7 @@ const setup = (upgrade = true) => {
     },
     buildRouteTable([{ prefix: "/api/mail", appId: "mail", baseUrl: "http://mail.test" }]),
     () => undefined,
+    "198.51.100.7",
   );
   return { response, data: () => data };
 };
@@ -80,7 +81,7 @@ afterEach(() => {
 });
 
 describe("gateway WebSocket proxy", () => {
-  test("forwards the credentials and the browser's origin to the application", () => {
+  test("forwards the credentials, the browser's origin, and its own view of the client address to the application", () => {
     setup();
     expect(FakeUpstream.instances[0]!.options).toEqual({
       headers: {
@@ -88,6 +89,7 @@ describe("gateway WebSocket proxy", () => {
         Origin: "http://cloud.test",
         "X-Forwarded-Host": "cloud.test",
         "X-Forwarded-Proto": "http",
+        "X-Forwarded-For": "198.51.100.7",
       },
     });
   });

@@ -6,8 +6,6 @@ import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, getActorBookPermission } f
 import * as books from "./books";
 import { resolvePublicId } from "./public-resources";
 
-const MAX_BOOKS = 1_000;
-
 /** Viewers who may read one book, decided like the Contacts API. Keys are internal book IDs. */
 const bookReaders = async (bookId: string, viewers: readonly LiveViewer[]): Promise<ReadonlySet<string>> => {
   const readers = new Set<string>();
@@ -28,7 +26,7 @@ const boundBookId = ({ actor }: LiveViewer): string | null =>
     ? (actor.serviceAccount.resourceId ?? null)
     : null;
 
-/** `book` follows one book; `all` follows every book its viewer can read. */
+/** `book` follows one book; `all` follows every book its viewer can read (Cloud follows the first 1,000). */
 export const contactsLiveChannels = {
   book: {
     scope: z.object({ book: ResourceShortIdSchema }).strict(),
@@ -42,7 +40,7 @@ export const contactsLiveChannels = {
     scope: z.object({}).strict(),
     collection: true as const,
     keys: async (_scope: unknown, viewer: LiveViewer) =>
-      (await books.list({ subject: viewer.accessSubject, boundBookId: boundBookId(viewer) })).slice(0, MAX_BOOKS).map((book) => book.id),
+      (await books.list({ subject: viewer.accessSubject, boundBookId: boundBookId(viewer) })).map((book) => book.id),
     authorize: bookReaders,
   },
 };

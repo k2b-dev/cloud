@@ -293,7 +293,7 @@ describe("live engine", () => {
     }
 
     const many = connect();
-    for (let n = 0; n <= LIVE_LIMITS.subscriptions; n++) many.send({ t: "sub", id: `s${n}`, channel: "item", scope: { key: "a" } });
+    for (let n = 0; n <= LIVE_LIMITS.pendingMessages; n++) many.send({ t: "unsub", id: `s${n}` });
     await until(() => many.socket.closes.length === 1);
     expect(many.socket.closes[0]).toEqual({ code: 1013, reason: "too_many_messages" });
 
@@ -317,7 +317,7 @@ describe("live engine", () => {
     expect(framesOf("all")).toEqual([{ t: "ready", id: "all", cursor: "s6t.app.0" }]);
   });
 
-  test("an access update checks subscribers and collections before it is delivered", async () => {
+  test("an access update checks the key's subscribers before it is delivered, and collections right after", async () => {
     const ada = connect();
     const bob = connect("bob");
     ada.send({ t: "sub", id: "all", channel: "list", scope: {} });
@@ -326,14 +326,111 @@ describe("live engine", () => {
     readers.set("a", new Set(["user:ada"]));
     readers.set("c", new Set(["user:ada"]));
     topic.publish({ v: 1, k: "a", a: true, d: { n: 1 } });
-    topic.publish({ v: 1, k: "c", d: { n: 2 } });
-    await until(() => ada.framesOf("all").length === 4);
-    expect(bob.framesOf("one").at(-1)).toEqual({ t: "revoked", id: "one", code: "access_denied" });
-    expect(ada.framesOf("all").slice(1)).toEqual([
-      { t: "resync", id: "all", cursor: "s6t.app.0" },
-      { t: "event", id: "all", cursor: "s6t.app.1", data: { n: 1 } },
-      { t: "event", id: "all", cursor: "s6t.app.2", data: { n: 2 } },
+    await until(() => ada.framesOf("all").some((frame) => frame.t === "resync"));
+    expect(bob.framesOf("one")).toEqual([
+      { t: "ready", id: "one", cursor: "s6t.app.0" },
+      { t: "revoked", id: "one", code: "access_denied" },
     ]);
+    expect(ada.framesOf("all")).toContainEqual({ t: "event", id: "all", cursor: "s6t.app.1", data: { n: 1 } });
+    topic.publish(event("c", 2));
+    await until(() => ada.framesOf("all").at(-1)?.t === "event" && ada.framesOf("all").length >= 4);
+    expect(ada.framesOf("all").at(-1)).toEqual({ t: "event", id: "all", cursor: "s6t.app.2", data: { n: 2 } });
+  });
+
+  test("a burst of access updates runs keys() at most twice per collection and authorizes only added keys", async () => {
+    let keysCalls = 0;
+    let gate: Promise<void> = Promise.resolve();
+    let open = () => {};
+    engine.stop();
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        ...channels,
+        list: {
+          ...(channels.list as LiveChannel),
+          keys: async (scope, who) => {
+            keysCalls++;
+            await gate;
+            return (channels.list as LiveChannel).keys(scope, who);
+          },
+        },
+      },
+    });
+    const { send, framesOf } = connect();
+    send({ t: "sub", id: "all", channel: "list", scope: {} });
+    await until(() => framesOf("all").length === 1);
+    keysCalls = 0;
+    gate = new Promise<void>((resolve) => (open = resolve));
+    authorizeCalls = [];
+    readers.set("c", new Set(["user:ada"]));
+    for (let n = 1; n <= 10; n++) topic.publish({ v: 1, k: `x${n}`, a: true });
+    topic.publish(event("b", 11));
+    // Delivery does not wait for the collections.
+    await until(() => framesOf("all").some((frame) => frame.data !== undefined));
+    open();
+    await until(() => framesOf("all").some((frame) => frame.t === "resync"));
+    await Bun.sleep(20);
+    expect(keysCalls).toBe(2);
+    expect(authorizeCalls.filter((call) => call.key === "a" || call.key === "b")).toEqual([]);
+    expect(authorizeCalls.filter((call) => call.key === "c")).toEqual([{ key: "c", viewers: ["user:ada"] }]);
+  });
+
+  test("a collection that resumes after an access update of one of its keys resyncs", async () => {
+    const first = connect();
+    first.send({ t: "sub", id: "all", channel: "list", scope: {} });
+    await until(() => first.framesOf("all").length === 1);
+    const cursor = first.framesOf("all")[0]?.cursor as string;
+    first.handle.closed();
+    readers.set("c", new Set(["user:ada"]));
+    topic.publish({ v: 1, k: "c", a: true });
+    topic.publish(event("c", 2));
+    topic.publish(event("a", 3));
+    await Bun.sleep(30);
+    const back = connect();
+    back.send({ t: "sub", id: "all", channel: "list", scope: {}, after: cursor });
+    await until(() => back.framesOf("all").length === 1);
+    expect(back.framesOf("all")).toEqual([{ t: "resync", id: "all", cursor: "s6t.app.3" }]);
+
+    // Without an access update of its keys, it replays as usual.
+    const quiet = connect();
+    quiet.send({ t: "sub", id: "all", channel: "list", scope: {}, after: "s6t.app.2" });
+    await until(() => quiet.framesOf("all").length === 2);
+    expect(quiet.framesOf("all").map((frame) => frame.t)).toEqual(["event", "ready"]);
+  });
+
+  test("an answer requested before an access update is used once but not cached", async () => {
+    let gate: Promise<void> | null = null;
+    let open = () => {};
+    engine.stop();
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        item: {
+          ...(channels.item as LiveChannel),
+          authorize: async (key, viewers) => {
+            const allowed = await authorize(key, viewers);
+            if (gate) await gate;
+            return allowed;
+          },
+        },
+      },
+    });
+    gate = new Promise<void>((resolve) => (open = resolve));
+    const { send, framesOf } = connect("bob");
+    send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => authorizeCalls.length === 1);
+    readers.set("a", new Set(["user:ada"]));
+    topic.publish({ v: 1, k: "a", a: true });
+    await Bun.sleep(20);
+    gate = null;
+    open();
+    await until(() => framesOf("s").length === 1);
+    expect(framesOf("s")[0]?.t).toBe("ready");
+    topic.publish(event("a", 2));
+    await until(() => framesOf("s").length === 2);
+    expect(framesOf("s")[1]).toEqual({ t: "revoked", id: "s", code: "access_denied" });
   });
 
   test("the sweep ends expired sessions, revokes quiet subscriptions, and refreshes collections", async () => {
@@ -359,6 +456,126 @@ describe("live engine", () => {
     topic.publish(event("d", 1));
     await until(() => ada.framesOf("all").length === 4);
     expect(ada.framesOf("all")[3]).toMatchObject({ t: "event", data: { n: 1 } });
+  });
+
+  test("a reconnect sends every subscription at once: 16 of them all become ready", async () => {
+    engine.stop();
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        item: {
+          ...(channels.item as LiveChannel),
+          keys: async (scope, who) => {
+            await Bun.sleep(5);
+            return (channels.item as LiveChannel).keys(scope, who);
+          },
+        },
+      },
+    });
+    const { socket, send } = connect();
+    for (let n = 0; n < LIVE_LIMITS.subscriptions; n++) send({ t: "sub", id: `s${n}`, channel: "item", scope: { key: "a" } });
+    await until(() => socket.frames.length === LIVE_LIMITS.subscriptions);
+    expect(socket.closes).toEqual([]);
+    expect(socket.frames.every((frame) => frame.t === "ready")).toBe(true);
+  });
+
+  test("a ring fill that fails halfway leaves nothing behind for the next attempt", async () => {
+    for (let n = 1; n <= 10; n++) topic.publish(event("a", n));
+    const replay = topic.replay;
+    let failOnce = true;
+    topic.replay = (options) => {
+      const events = replay(options);
+      if (!failOnce) return events;
+      failOnce = false;
+      return (async function* () {
+        let count = 0;
+        for await (const item of events) {
+          if (++count > 6) throw new Error("NATS hiccup");
+          yield item;
+        }
+      })();
+    };
+    const first = connect();
+    first.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => first.socket.closes.length === 1);
+    expect(first.socket.closes[0]).toEqual({ code: 1011, reason: "unavailable" });
+
+    const second = connect();
+    second.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" }, after: "s6t.app.3" });
+    await until(() => second.framesOf("s").at(-1)?.t === "ready");
+    expect(second.framesOf("s").map((frame) => (frame.data as { n: number } | undefined)?.n ?? frame.t)).toEqual([
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      "ready",
+    ]);
+  });
+
+  test("a replay stops when its subscription is revoked, so revoked is the next frame", async () => {
+    for (let n = 1; n <= 5; n++) topic.publish(event("a", n));
+    const { socket, send, framesOf } = connect("bob");
+    send({ t: "sub", id: "s", channel: "item", scope: { key: "a" }, after: "s6t.app.0" });
+    socket.buffered = LIVE_LIMITS.sendBufferBytes + 1;
+    await until(() => framesOf("s").length === 1);
+    readers.set("a", new Set(["user:ada"]));
+    await Bun.sleep(LIVE_LIMITS.cacheMs + 20);
+    topic.publish(event("a", 6));
+    await Bun.sleep(30);
+    socket.buffered = 0;
+    await until(() => framesOf("s").at(-1)?.t === "revoked");
+    expect(framesOf("s").map((frame) => (frame.data as { n: number } | undefined)?.n ?? frame.t)).toEqual([1, "revoked"]);
+  });
+
+  test("live frames held back during a replay are bounded like the send buffer", async () => {
+    for (let n = 1; n <= 3; n++) topic.publish(event("a", n));
+    const { socket, send, framesOf } = connect();
+    send({ t: "sub", id: "s", channel: "item", scope: { key: "a" }, after: "s6t.app.0" });
+    socket.buffered = LIVE_LIMITS.sendBufferBytes + 1;
+    await until(() => framesOf("s").length === 1);
+    const pad = "x".repeat(LIVE_LIMITS.sendBufferBytes / 4);
+    for (let n = 4; n <= 8; n++) topic.publish({ v: 1, k: "a", d: { n, pad } });
+    await until(() => socket.closes.length === 1);
+    expect(socket.closes).toEqual([{ code: 1013, reason: "backpressure" }]);
+  });
+
+  test("a check that never answers fails after the check deadline and does not stop later sweeps", async () => {
+    LIVE_LIMITS.sweepMs = 30;
+    LIVE_LIMITS.checkMs = 50;
+    engine.stop();
+    engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+    const hanging = fakeSocket();
+    const ada = viewer("ada");
+    engine
+      .open(hanging, ada, () => new Promise<never>(() => {}))
+      .message(JSON.stringify({ t: "sub", id: "s", channel: "item", scope: { key: "a" } }));
+    const bob = connect("bob");
+    bob.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => hanging.closes.length === 1);
+    expect(hanging.closes).toEqual([{ code: 1011, reason: "unavailable" }]);
+    valid.delete("user:bob");
+    await until(() => bob.socket.closes.length === 1);
+    expect(bob.socket.closes).toEqual([{ code: 1008, reason: "session_expired" }]);
+  });
+
+  test("a scope with more than 1,000 keys follows the first 1,000", async () => {
+    // With "a" and "b", the first 1,000 keys end at k997.
+    const many = Array.from({ length: LIVE_LIMITS.keys + 5 }, (_, n) => `k${n}`);
+    for (const key of many) readers.set(key, new Set(["user:ada"]));
+    const { socket, send, framesOf } = connect();
+    send({ t: "sub", id: "all", channel: "list", scope: {} });
+    await until(() => framesOf("all").length === 1);
+    expect(framesOf("all")[0]?.t).toBe("ready");
+    expect(socket.closes).toEqual([]);
+    topic.publish(event("k997", 1));
+    topic.publish(event("k1004", 2));
+    topic.publish(event("k0", 3));
+    await until(() => framesOf("all").length === 3);
+    expect(framesOf("all").map((frame) => (frame.data as { n: number } | undefined)?.n ?? frame.t)).toEqual(["ready", 1, 3]);
   });
 
   test("progress reports the delivered position; at most 16 sockets per viewer; stopping closes with 1012", async () => {

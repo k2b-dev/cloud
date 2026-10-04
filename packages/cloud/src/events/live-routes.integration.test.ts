@@ -25,16 +25,19 @@ const APP = "livetest";
 const readers = new Map<string, Set<string>>();
 const failing = new Set<string>();
 
+/** Access here belongs to the person, whatever credential the socket uses. */
+const principal = ({ accessSubject }: LiveViewer) =>
+  accessSubject.type === "user" ? `user:${accessSubject.userId}` : `service_account:${accessSubject.serviceAccountId}`;
 const authorize = async (key: string, viewers: readonly LiveViewer[]) => {
   if (failing.has(key)) throw new Error("reader unavailable");
-  return new Set(viewers.filter((viewer) => readers.get(key)?.has(viewer.id)).map((viewer) => viewer.id));
+  return new Set(viewers.filter((viewer) => readers.get(key)?.has(principal(viewer))).map((viewer) => viewer.id));
 };
 const channels = {
   item: { scope: z.object({ key: z.string() }).strict(), keys: async ({ key }: { key: string }) => [key], authorize },
   list: {
     scope: z.object({}).strict(),
     collection: true,
-    keys: async (_scope: unknown, viewer: LiveViewer) => [...readers].filter(([, ids]) => ids.has(viewer.id)).map(([key]) => key),
+    keys: async (_scope: unknown, viewer: LiveViewer) => [...readers].filter(([, ids]) => ids.has(principal(viewer))).map(([key]) => key),
     authorize,
   },
 } satisfies Record<string, LiveChannel>;
@@ -228,17 +231,11 @@ suite("live routes", () => {
     allow("new-book", erin);
     const accessAt = Date.now();
     await publish("new-book", 1, { access: true });
-    await until(() => socket.of("all").length === 3);
+    await until(() => socket.of("all").some((frame) => frame.t === "resync"));
     expect(Date.now() - accessAt).toBeLessThan(LIVE_LIMITS.sweepMs);
-    expect(
-      socket
-        .of("all")
-        .slice(1)
-        .map((frame) => [frame.t, frame.data?.n]),
-    ).toEqual([
-      ["resync", undefined],
-      ["event", 1],
-    ]);
+    // The collection reloads, which covers the update published with the access change; later ones arrive.
+    await publish("new-book", 2);
+    await until(() => socket.of("all").some((frame) => frame.data?.n === 2));
 
     const ringEvents = LIVE_LIMITS.ringEvents;
     LIVE_LIMITS.ringEvents = 3;
@@ -322,20 +319,24 @@ suite("live routes", () => {
     }
   }, 60_000);
 
-  test("a session from another origin and an OAuth token without read are refused with 403", async () => {
+  test("a missing or ended session, another origin, and an OAuth token without read are refused on the socket with 1008", async () => {
     const hal = await person("Hal Example");
-    const upgrade = (headers: Record<string, string>) =>
-      fetch(url(0).replace("ws:", "http:"), {
-        headers: {
-          connection: "Upgrade",
-          upgrade: "websocket",
-          "sec-websocket-version": "13",
-          "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
-          ...headers,
-        },
+    // Behind the gateway the browser never sees a refused handshake, only a retryable close.
+    const refusal = async (headers: Record<string, string>) => {
+      const socket = new BunWebSocket(url(0), { headers });
+      return await new Promise<{ frame: unknown; close: { code: number; reason: string } }>((resolve, reject) => {
+        let frame: unknown = null;
+        socket.onmessage = (message) => (frame = JSON.parse(String(message.data)));
+        socket.onclose = (close) => resolve({ frame, close: { code: close.code, reason: close.reason } });
+        socket.onerror = () => reject(new Error("The live socket did not open"));
       });
-    expect((await upgrade({ ...hal.headers, origin: "https://elsewhere.example" })).status).toBe(403);
-    expect((await upgrade({ cookie: hal.headers.cookie, "x-forwarded-for": uniqueCallerAddress() })).status).toBe(403);
+    };
+    const refused = (code: string) => ({ frame: { t: "error", code, message: expect.any(String) }, close: { code: 1008, reason: code } });
+    const address = () => ({ "x-forwarded-for": uniqueCallerAddress() });
+
+    expect(await refusal({ origin, ...address() })).toEqual(refused("login_required"));
+    expect(await refusal({ ...hal.headers, origin: "https://elsewhere.example" })).toEqual(refused("forbidden_origin"));
+    expect(await refusal({ cookie: hal.headers.cookie, ...address() })).toEqual(refused("forbidden_origin"));
 
     const clientId = `live-${crypto.randomUUID()}`;
     await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris) VALUES ('Live test', ${clientId}, ARRAY['https://client.example/callback'])`;
@@ -350,8 +351,8 @@ suite("live routes", () => {
           .setIssuedAt()
           .setExpirationTime("5m")
           .sign(signer.key);
-      const bearer = async (scope: string) => ({ authorization: `Bearer ${await token(scope)}`, "x-forwarded-for": uniqueCallerAddress() });
-      expect((await upgrade(await bearer("openid profile"))).status).toBe(403);
+      const bearer = async (scope: string) => ({ authorization: `Bearer ${await token(scope)}`, ...address() });
+      expect(await refusal(await bearer("openid profile"))).toEqual(refused("missing_scope"));
       allow("oauth", hal);
       const reader = await open(0, await bearer("openid read"));
       reader.sub("s", "item", { key: "oauth" });
@@ -361,5 +362,9 @@ suite("live routes", () => {
     } finally {
       await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
     }
+
+    // A tab whose session ended while its socket was closed stops instead of retrying.
+    await session.revokeAllForUser(hal.id);
+    expect(await refusal(hal.headers)).toEqual(refused("login_required"));
   });
 });

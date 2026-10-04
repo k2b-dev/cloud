@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { get as getSetting, serviceAccountCredentials } from "@k2b/cloud/services";
-import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -102,13 +102,50 @@ suite("Contacts live channels", () => {
     expect(await firstAnswer(bearer, "book", { book: other.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
   });
 
-  test("a tab from before the move to /live is asked to load the page again", async () => {
+  test("credentials of one principal that the API treats differently never share a live decision", async () => {
+    const owner = await person("Dana Example");
+    const admin = await person("Eli Admin", true);
+    const book1 = await book("Live scoped", owner.id);
+
+    // A standalone account with a grant on the book; only its key with the read scope may read it.
+    const [account] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts (name, kind) VALUES ('Live sync', 'standalone') RETURNING id`;
+    accounts.push(account!.id);
+    const [access] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access (service_account_id, permission) VALUES (${account!.id}::uuid, 'read') RETURNING id`;
+    await sql`INSERT INTO contacts.book_access (book_id, access_id) VALUES (${book1.id}::uuid, ${access!.id}::uuid)`;
+    const bearerFor = async (scopes: string[]) => {
+      const key = await serviceAccountCredentials.createApiToken({ serviceAccountId: account!.id, name: "live", scopes });
+      if (!key.ok) throw new Error(key.error.message);
+      return { authorization: `Bearer ${key.data.token}`, "x-forwarded-for": uniqueCallerAddress() };
+    };
+    const reader = await bearerFor(["read"]);
+    const unscoped = await bearerFor([]);
+    expect((await api.request(`/books/${book1.shortId}`, { headers: reader })).status).toBe(200);
+    expect((await api.request(`/books/${book1.shortId}`, { headers: unscoped })).status).toBe(403);
+    // Asked right after the allowed key, inside the 2-second decision cache.
+    expect(await firstAnswer(reader, "book", { book: book1.shortId })).toMatchObject({ t: "ready" });
+    expect(await firstAnswer(unscoped, "book", { book: book1.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
+
+    // An administrator's phone holds no admin role, so it does not read a book through it.
+    const phone = {
+      cookie: `pwa_session=${(await createTestAppSession(admin.id)).token}`,
+      origin,
+      "x-forwarded-for": uniqueCallerAddress(),
+    };
+    expect((await api.request(`/books/${book1.shortId}`, { headers: admin.headers })).status).toBe(200);
+    expect((await api.request(`/books/${book1.shortId}`, { headers: phone })).status).toBe(403);
+    expect(await firstAnswer(admin.headers, "book", { book: book1.shortId })).toMatchObject({ t: "ready" });
+    expect(await firstAnswer(phone, "book", { book: book1.shortId })).toEqual({ t: "revoked", id: "s", code: "not_found" });
+  });
+
+  test("a tab from before the move to /live is asked to load the page again, without sending anything", async () => {
     const socket = new BunWebSocket(`ws://127.0.0.1:${server?.port}/api/contacts/ws`, {
       headers: { "x-forwarded-for": uniqueCallerAddress() },
     });
     const answer = await new Promise<unknown>((resolve) => {
-      socket.onopen = () =>
-        socket.send(JSON.stringify({ type: "contacts.live.subscribe", payload: { scope: { kind: "all" }, fromCursor: null } }));
       socket.onmessage = (message) => resolve(JSON.parse(String(message.data)));
     });
     expect(answer).toMatchObject({ type: "contacts.live.error", payload: { code: "resync_required" } });
