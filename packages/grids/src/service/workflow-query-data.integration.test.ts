@@ -1,6 +1,7 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { cleanupFixture, ctx, insertDslDbFixture, postgresTest } from "../query-dsl/sql-compiler.integration-fixtures";
 import { workflowQueryParameterSamples } from "../workflows/query-parameters";
@@ -12,7 +13,7 @@ postgresTest("summary workflow bindings capture real rows and reject a changed u
   const fixture = await insertDslDbFixture();
   try {
     const viewId = Bun.randomUUIDv7();
-    const shortId = Math.random().toString(36).slice(2, 8);
+    const shortId = testShortId();
     const source = `from table {${fixture.orders.shortId}}\ngroup by {${fixture.fieldsByTableId[fixture.orders.id]!.find((field) => field.id === fixture.customerLinkId)!.shortId}}\naggregate sum(Amount) as summed_amount`;
     await sql`INSERT INTO grids.views (id, short_id, base_id, table_id, name, source)
       VALUES (${viewId}::uuid, ${shortId}, ${fixture.baseId}::uuid, ${fixture.orders.id}::uuid, 'Order totals', ${source})`;
@@ -283,11 +284,10 @@ postgresTest(
       const after = await capture();
       if (!after.ok) throw new Error(after.error.message);
       expect(after.data.payload.rows).not.toEqual(before.data.payload.rows);
+      const shortIds = Array.from({ length: 10_001 }, () => testShortId());
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
-      SELECT gen_random_uuid(), candidate.short_id, ${fixture.orders.id}::uuid, ${{ [fixture.amountId]: "1" }}::jsonb
-      FROM (SELECT 'W' || lpad(n::text, 5, '0') AS short_id FROM generate_series(1, 99999) n) candidate
-      WHERE NOT EXISTS (SELECT 1 FROM grids.records r WHERE r.short_id = candidate.short_id)
-      LIMIT 10001`;
+      SELECT gen_random_uuid(), item.short_id, ${fixture.orders.id}::uuid, ${{ [fixture.amountId]: "1" }}::jsonb
+      FROM unnest(${sql.array(shortIds, "TEXT")}) AS item(short_id)`;
       const incomplete = await capture();
       expect(incomplete.ok).toBe(false);
       if (!incomplete.ok) expect(incomplete.error.code).toBe("BAD_INPUT");

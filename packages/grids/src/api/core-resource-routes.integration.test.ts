@@ -96,17 +96,17 @@ const newFixture = (): Fixture => {
   return {
     user,
     baseId: testUuid(),
-    basePublicId: testShortId("B"),
+    basePublicId: testShortId(),
     foreignBaseId: testUuid(),
-    foreignBasePublicId: testShortId("X"),
+    foreignBasePublicId: testShortId(),
     tableId: testUuid(),
-    tablePublicId: testShortId("T"),
+    tablePublicId: testShortId(),
     foreignTableId: testUuid(),
-    foreignTablePublicId: testShortId("F"),
+    foreignTablePublicId: testShortId(),
     foreignViewId: testUuid(),
-    foreignViewPublicId: testShortId("V"),
+    foreignViewPublicId: testShortId(),
     uniqueFieldId: testUuid(),
-    uniqueFieldPublicId: testShortId("U"),
+    uniqueFieldPublicId: testShortId(),
     serviceAccountIds: [],
     accessIds: [],
     tokens: { read: "", write: "", admin: "", delegated: "" },
@@ -308,7 +308,7 @@ describe("classic resource route contracts", () => {
         for (let index = 0; index < 101; index += 1) {
           await sql`
             INSERT INTO grids.tables (id, short_id, base_id, name, position)
-            VALUES (${testUuid()}::uuid, ${testShortId("Q")}, ${fixture.baseId}::uuid, ${`Bounded search ${index}`}, ${index + 10})
+            VALUES (${testUuid()}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, ${`Bounded search ${index}`}, ${index + 10})
           `;
         }
         const boundedSearch = await app.request(`/tables/by-base/${fixture.basePublicId}?q=Bounded%20search`, bearer(fixture.tokens.read));
@@ -324,7 +324,7 @@ describe("classic resource route contracts", () => {
         expect((await app.request(`/views/${fixture.foreignViewPublicId}`, bearer(fixture.tokens.delegated))).status).toBe(404);
 
         const formId = testUuid();
-        const formPublicId = testShortId("M");
+        const formPublicId = testShortId();
         await sql`
           INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active)
           VALUES (${formId}::uuid, ${formPublicId}, ${fixture.tableId}::uuid, 'Public intake', '{"fields":[]}'::jsonb, TRUE)
@@ -698,9 +698,9 @@ describe("classic resource route contracts", () => {
         expect(trashed.status).toBe(204);
 
         const otherTableId = testUuid();
-        const otherTablePublicId = testShortId("C");
+        const otherTablePublicId = testShortId();
         const otherRecordId = testUuid();
-        const otherRecordPublicId = testShortId("R");
+        const otherRecordPublicId = testShortId();
         await sql`
           INSERT INTO grids.tables (id, short_id, base_id, name)
           VALUES (${otherTableId}::uuid, ${otherTablePublicId}, ${fixture.baseId}::uuid, 'Other changes')
@@ -997,9 +997,9 @@ describe("classic resource route contracts", () => {
       try {
         await setupFixture(fixture);
         const relationFieldId = testUuid();
-        const relationFieldPublicId = testShortId("L");
+        const relationFieldPublicId = testShortId();
         const targetRecordId = testUuid();
-        const targetRecordPublicId = testShortId("R");
+        const targetRecordPublicId = testShortId();
         await sql`
           INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
           VALUES (
@@ -1063,7 +1063,7 @@ describe("classic resource route contracts", () => {
         const batchItems = [
           first,
           item("B", "b-v1", "B-1"),
-          item("invalid-field", "invalid-field-v1", "unused", undefined, { [testShortId("Z")]: "unknown" }),
+          item("invalid-field", "invalid-field-v1", "unused", undefined, { [testShortId()]: "unknown" }),
           item("unique-conflict", "unique-conflict-v1", "B-1"),
           first,
           item("A", "a-v2", "A-2", 1),
@@ -1178,8 +1178,8 @@ describe("classic resource route contracts", () => {
       try {
         await setupFixture(fixture);
         const relationFieldId = testUuid();
-        const relationFieldPublicId = testShortId("L");
-        const record = (label: string) => ({ id: testUuid(), publicId: testShortId("R"), label });
+        const relationFieldPublicId = testShortId();
+        const record = (label: string) => ({ id: testUuid(), publicId: testShortId(), label });
         const source = record("SOURCE");
         const target = record("TARGET");
         const other = record("OTHER");
@@ -1236,7 +1236,7 @@ describe("classic resource route contracts", () => {
       try {
         await setupFixture(fixture);
         const ownersFieldId = testUuid();
-        const ownersFieldPublicId = testShortId("O");
+        const ownersFieldPublicId = testShortId();
         const owners = [{ type: "user", id: fixture.user.id }];
         await sql`
           INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
@@ -1244,7 +1244,7 @@ describe("classic resource route contracts", () => {
         `;
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data)
-          VALUES (${testUuid()}::uuid, ${testShortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.uniqueFieldId]: "OWNED", [ownersFieldId]: owners }}::jsonb)
+          VALUES (${testUuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, ${{ [fixture.uniqueFieldId]: "OWNED", [ownersFieldId]: owners }}::jsonb)
         `;
 
         const query = async (token: string) => {

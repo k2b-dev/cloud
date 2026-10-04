@@ -4,7 +4,7 @@ import { Layout } from "@k2b/cloud/ssr";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../config";
 import { contactsService } from "../service";
-import { captureContactEventCursor } from "../service/events";
+import { captureContactLiveCursor } from "../service/live";
 import {
   projectBooks,
   projectContacts,
@@ -40,7 +40,7 @@ export default ssr<AuthContext>(async (c) => {
   const selectedContactIdFromUrl = c.req.query("contact") ?? null;
   const selectedBookIdFromUrl = c.req.query("contactBook") ?? null;
   // The cursor must precede the snapshot reads or an event can fall between them.
-  const initialLiveCursor = await captureContactEventCursor();
+  const initialLiveCursor = await captureContactLiveCursor();
   const activeTagInternalId = activeTagId ? await resolvePublicId("tags", activeTagId) : null;
   const [booksResult, contactsResult] = await Promise.all([
     contactsService.book.list({

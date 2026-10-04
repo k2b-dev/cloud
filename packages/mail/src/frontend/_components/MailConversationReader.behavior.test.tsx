@@ -5,6 +5,18 @@ import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 
+// Load once outside any test, so the cold Solid transform of the reader's source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { MailConversationReader: (await import("./MailConversationReader")).default };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 const now = "2026-08-16T12:00:00.000Z";
 const envelopeOnly: MessageDetail = {
   id: "Msg001",
@@ -91,7 +103,7 @@ test.skipIf(isServer)(
   "the open reader replaces the pending body once hydration completes and offers a local refresh meanwhile",
   async () => {
     const dom = createDomTestHarness();
-    const { default: MailConversationReader } = await import("./MailConversationReader");
+    const { MailConversationReader } = modules!;
     const [messages, setMessages] = createSignal<MessageDetail[]>([envelopeOnly]);
     let refreshes = 0;
     let finishRefresh!: () => void;
@@ -147,7 +159,7 @@ test.skipIf(isServer)(
 
 test.skipIf(isServer)("an opened quoted block stays open when a live update refreshes the conversation", async () => {
   const dom = createDomTestHarness();
-  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const { MailConversationReader } = modules!;
   const hydrated: MessageDetail = {
     ...envelopeOnly,
     hydrationStatus: "complete",
@@ -193,7 +205,7 @@ test.skipIf(isServer)("an opened quoted block stays open when a live update refr
 
 test.skipIf(isServer)("a retained message card follows live delivery updates", async () => {
   const dom = createDomTestHarness();
-  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const { MailConversationReader } = modules!;
   const delivery: NonNullable<MessageDetail["delivery"]> = {
     submissionId: "Sub001",
     draftId: "Dra001",
@@ -242,7 +254,7 @@ test.skipIf(isServer)("a retained message card follows live delivery updates", a
 test.skipIf(isServer)("reply and forward Commands name an untitled conversation instead of quoting an empty subject", async () => {
   const dom = createDomTestHarness();
   const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
-  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const { MailConversationReader } = modules!;
   const dispose = render(
     () => createComponent(MailConversationReader, { ...readerProps, subject: "", messages: [{ ...envelopeOnly, subject: "" }] }),
     dom.root,

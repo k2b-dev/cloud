@@ -14,6 +14,7 @@ import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard, Placeholder, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
+import { pwaAvailable } from "./app-availability";
 import { type AccountMessages, accountMessages } from "./messages";
 
 // The page shell starts warning about an expiry 14 days ahead; the notice here only turns
@@ -68,6 +69,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account }]}>
       <AccountHub
+        appTab={pwaAvailable(c)}
         loginLabel={categoryPolicy.login.label}
         user={user}
         active="profile"

@@ -1,8 +1,8 @@
-import type { ContactServiceEvent } from "../../live-events";
+import type { ContactLiveEvent } from "../../live-events";
 
 const CONTACTS_LIVE_INVALIDATION_EVENT = "contacts:live-invalidation";
 
-type ContactsLiveInvalidation = ContactServiceEvent | { type: "scope.changed" };
+type ContactsLiveInvalidation = ContactLiveEvent | { type: "scope.changed" };
 
 type ContactsLiveOwner = "results" | "detail" | "notes";
 
@@ -22,7 +22,7 @@ type ContactsLiveApplyControls = {
 };
 
 type ContactsLiveApplyQueueOptions = {
-  apply: (event: ContactServiceEvent, controls: ContactsLiveApplyControls) => Promise<boolean | void>;
+  apply: (event: ContactLiveEvent, controls: ContactsLiveApplyControls) => Promise<boolean | void>;
   onFailure: (error: unknown, controls: ContactsLiveApplyControls) => void | Promise<void>;
 };
 
@@ -30,7 +30,7 @@ export const createContactsLiveApplyQueue = (options: ContactsLiveApplyQueueOpti
   let queue = Promise.resolve();
   let stopped = false;
 
-  const enqueue = (event: ContactServiceEvent, cursor: string, controls: ContactsLiveApplyControls): Promise<void> => {
+  const enqueue = (event: ContactLiveEvent, cursor: string, controls: ContactsLiveApplyControls): Promise<void> => {
     const apply = queue.then(async () => {
       if (stopped) return;
       const applied = await options.apply(event, controls);
@@ -118,7 +118,6 @@ export const requiresContactsResultsRefresh = (event: ContactsLiveInvalidation):
 /** Returns whether an open contact may have changed or become inaccessible. */
 export const requiresSelectedContactRefresh = (event: ContactsLiveInvalidation, bookId: string): boolean => {
   if (event.type === "scope.changed") return true;
-  if (event.type === "contact.moved") return event.sourceBookId === bookId || event.targetBookId === bookId;
   if (event.type === "notes.changed") return false;
-  return event.bookId === bookId && event.type !== "book.created";
+  return event.bookId === bookId;
 };

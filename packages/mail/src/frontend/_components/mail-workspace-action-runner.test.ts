@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActionId } from "./mail-actions";
-import type { MailBulkTarget } from "./mail-bulk-actions";
+import { MAIL_BULK_NO_PROVIDER_PLACEMENT, type MailBulkTarget } from "./mail-bulk-actions";
 import {
   decideMailAutoReadIntent,
   type MailWorkspaceActionRunnerHost,
@@ -22,7 +22,7 @@ const host = (overrides: Partial<MailWorkspaceActionRunnerHost> = {}) => {
     chooseDestinationFolder: async () => "archive",
     roleDestinationFolderId: () => null,
     applyOptimistic: () => events.push("optimistic"),
-    clearOptimistic: (ids) => events.push(`clear:${ids.join(",")}`),
+    clearOptimistic: (targets) => events.push(`clear:${targets.map((item) => item.conversationId).join(",")}`),
     submit: async ({ target: item, sourceFolderId }) => {
       events.push(`submit:${item.conversationId}`);
       return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
@@ -135,11 +135,28 @@ describe("Mail workspace action runner", () => {
   });
 
   test("normalizes move targets and optimistic fields", () => {
-    expect(removeDestinationPlacements([target("one", ["inbox", "archive"]), target("two", ["archive"])], "archive")).toEqual([
-      target("one", ["inbox"]),
-    ]);
+    expect(
+      removeDestinationPlacements([target("one", ["inbox", "archive"]), target("two", ["archive"]), target("three", [])], "archive"),
+    ).toEqual([target("one", ["inbox"]), target("three", [])]);
     expect(mailOptimisticFields("flag" satisfies MailActionId)).toEqual(["flagged"]);
     expect(mailOptimisticFields("archive")).toEqual([]);
+  });
+
+  test("reports a row in no folder instead of calling it already moved", async () => {
+    // A failed send that never reached a folder is listed under Send problems with no folder to act on.
+    const messages: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [target("unsent", [])],
+      roleDestinationFolderId: () => "archive",
+      showFailures: async (failures) => {
+        messages.push(...failures.map((failure) => failure.message));
+      },
+    });
+
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(fixture.events).not.toContain("nothing");
+    expect(fixture.events.some((event) => event.startsWith("submit:"))).toBe(false);
+    expect(messages).toEqual([MAIL_BULK_NO_PROVIDER_PLACEMENT]);
   });
 
   test("honors cancellation while the destination picker is open", async () => {
@@ -278,5 +295,30 @@ describe("Mail workspace action runner", () => {
     const silent = host();
     await runMailWorkspaceAction("mark_read", { silent: true }, silent.host, signal());
     expect(silent.events.some((event) => event.startsWith("follow:"))).toBe(false);
+  });
+
+  test("sends the messages of message-list rows, and the whole conversation once a row stands for it", async () => {
+    const submitted: string[] = [];
+    const followed: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [
+        { ...target("one", ["inbox"]), messageIds: ["a"] },
+        { ...target("one", ["projects"]), messageIds: ["b"] },
+        { ...target("two", ["inbox"]), messageIds: ["c"] },
+        target("two", ["inbox"]),
+      ],
+      submit: async ({ target: item, sourceFolderId }) => {
+        submitted.push(`${item.conversationId}:${sourceFolderId}:${item.messageIds?.join("+") ?? "all"}`);
+        return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
+      },
+      followOutcomes: ({ conversations }) => {
+        for (const conversation of conversations)
+          followed.push(`${conversation.conversationId}:${conversation.messageIds?.join("+") ?? "all"}`);
+      },
+    });
+
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    expect(submitted.sort()).toEqual(["one:inbox:a+b", "one:projects:a+b", "two:inbox:all"]);
+    expect(followed).toEqual(["one:a+b", "two:all"]);
   });
 });

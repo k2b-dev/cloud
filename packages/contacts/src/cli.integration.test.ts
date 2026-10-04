@@ -137,6 +137,11 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
         USING contacts.book_access ba, auth.access a
         WHERE ba.book_id = b.id AND a.id = ba.access_id AND a.user_id = ${user.id}::uuid
       `;
+      // Nothing publishes in this process: drop the live updates of the books the workflow and this cleanup deleted.
+      await sql`
+        DELETE FROM events.outbox o
+        WHERE o.app_id = 'contacts' AND NOT EXISTS (SELECT 1 FROM contacts.books b WHERE b.id::text = o.ordering_key)
+      `;
       await sql`DELETE FROM auth.access WHERE user_id = ${user.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
       await rm(home, { recursive: true, force: true });

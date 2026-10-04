@@ -15,6 +15,18 @@ type FetchRecords = typeof import("./fetcher").fetchTableQuery;
 let fetchRecords: FetchRecords = async () => memberPage;
 mock.module("./fetcher", () => ({ fetchTableQuery: (...args: Parameters<FetchRecords>) => fetchRecords(...args) }));
 
+// Load once, after the module mocks and outside any test, so the cold Solid transform of the view's source graph does
+// not count against the 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { RecordsView: (await import("./RecordsView")).default };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 const field = (id: string, name: string, position: number, extra: Partial<PublicField> = {}): PublicField => ({
   id,
   tableId: "TABLE1",
@@ -154,7 +166,7 @@ const openGroupMembers = async (groupField: PublicField, groupKey: string) => {
     query: { groupBy, aggregations },
     displayConfig: { mode: "table" },
   };
-  const { default: RecordsView } = await import("./RecordsView");
+  const { RecordsView } = modules!;
   const dispose = render(
     () =>
       createComponent(
@@ -238,7 +250,7 @@ domTest(
         resolveSearch = resolve;
       });
     };
-    const { default: RecordsView } = await import("./RecordsView");
+    const { RecordsView } = modules!;
     const dispose = render(() => createComponent(RecordsView, recordsViewProps({})), dom.root);
     const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[name="grids-record-search"]')!;
     const searchIcons = () => Array.from(dom.root.querySelectorAll(".k2b-text-input__icon > i")).map((icon) => icon.className);
@@ -291,7 +303,7 @@ domTest("a failed server read shows its error without repeating the read, and th
       settleRead = { resolve, reject };
     });
   };
-  const { default: RecordsView } = await import("./RecordsView");
+  const { RecordsView } = modules!;
   const dispose = render(
     () =>
       createComponent(
@@ -357,7 +369,7 @@ domTest("an empty table keeps its empty state while a search loads, and only a f
       for (const node of Array.from(mutation.addedNodes))
         if (node instanceof Element && (node.matches("table") || node.querySelector("table"))) gridsMounted++;
   });
-  const { default: RecordsView } = await import("./RecordsView");
+  const { RecordsView } = modules!;
   const dispose = render(
     () => createComponent(RecordsView, recordsViewProps({ initialData: { items: [], nextCursor: null }, relationLabels: {} })),
     dom.root,
@@ -479,7 +491,7 @@ const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
     reads.push({ query: args.query, signal: options?.signal });
     return memberPage;
   };
-  const { default: RecordsView } = await import("./RecordsView");
+  const { RecordsView } = modules!;
   const { dialogCore } = await import("@k2b/ui");
   const dispose = render(
     () =>
@@ -643,7 +655,7 @@ domTest("going back in a saved view keeps a search in a table field outside the 
     query,
     displayConfig: { mode: "table" },
   };
-  const { default: RecordsView } = await import("./RecordsView");
+  const { RecordsView } = modules!;
   const dispose = render(
     () =>
       createComponent(

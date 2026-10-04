@@ -24,9 +24,13 @@ type Service = ReturnType<typeof createAppApprovalService>;
 /** This is a separate credential surface, never a user API-key or OAuth scope. */
 export const createAppApprovalRoutes = (service: Service = appApproval) => {
   const actor = async (c: Parameters<typeof auth.session.getToken>[0]): Promise<AppApprovalActor> => {
-    const token = auth.session.getToken(c);
+    // The web session (or an explicit bearer session), never the mobile app's session: a phone
+    // that pairs sign-in devices would hand out authority that outlives its removal.
+    const token = auth.session.getBearerToken(c) ?? auth.session.getWebToken(c);
+    if (!token && auth.session.getAppToken(c)) throw new AppApprovalError("FORBIDDEN", 403);
     const session = token ? await auth.session.authenticateRequest(c, token) : null;
     if (!session) throw new AppApprovalError("REAUTHENTICATE", 403);
+    if (session.data.kind === "app") throw new AppApprovalError("FORBIDDEN", 403);
     return { userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") };
   };
   return new Hono<AuthContext>()

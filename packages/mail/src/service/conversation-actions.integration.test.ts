@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { encryptSecret } from "@k2b/cloud/services";
+import { encryptSecret, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
+import { executeMutationCommand } from "./command-runtime";
 import { getCommandOutcomes } from "./commands";
 import { createMailbox } from "./mailboxes";
 import { listConversations } from "./messages";
@@ -42,7 +43,48 @@ suite("mail conversation actions", () => {
     return folder!.id;
   };
 
-  const addMessage = async (params: { folderId: string; subject: string; minutesAgo: number }) => {
+  const addCopy = async (params: { messageId: string; folderId: string; uid: number; flags: string[] }) => {
+    const [ref] = await sql<{ id: string }[]>`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${params.folderId}::uuid, ${params.messageId}::uuid, 1, ${params.uid})
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+      VALUES (${ref!.id}::uuid, ${params.folderId}::uuid, ${params.messageId}::uuid, ${toPgTextArray(params.flags)}::text[], ARRAY[]::text[])
+    `;
+    return ref!.id;
+  };
+
+  const addConversation = async (subject: string, messageIds: string[]) => {
+    const [conversation] = await sql<{ id: string }[]>`
+      INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at, work_status)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${subject}, 'customer@example.test', now(), 'needs_action')
+      RETURNING id
+    `;
+    for (const [index, messageId] of messageIds.entries()) {
+      await sql`
+        INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+        VALUES (${conversation!.id}::uuid, ${messageId}::uuid, ${index + 1}, 'headers')
+      `;
+    }
+    return conversation!.id;
+  };
+
+  const commandRefs = async (correlationId: string) =>
+    (
+      await sql<{ ref_id: string }[]>`
+        SELECT command.target ->> 'remoteMessageRefId' AS ref_id
+        FROM mail.commands command
+        WHERE command.correlation_id = ${correlationId}
+        ORDER BY ref_id
+      `
+    ).map((row) => row.ref_id);
+
+  const placementFlags = async (refId: string) =>
+    (await sql<{ flags: string[] }[]>`SELECT flags FROM mail.message_placements WHERE remote_message_ref_id = ${refId}::uuid`)[0]!.flags;
+
+  const addMessage = async (params: { folderId: string; subject: string; minutesAgo: number; uid?: number; flags?: string[] }) => {
     const [message] = await sql<{ id: string }[]>`
       INSERT INTO mail.message_contents (short_id,
         mailbox_id, message_id, subject, normalized_subject, internal_date, size_bytes, content_hash, hydration_status, plain_text
@@ -51,15 +93,7 @@ suite("mail conversation actions", () => {
         ${crypto.randomUUID().replaceAll("-", "").padEnd(64, "0")}, 'complete', ${params.subject})
       RETURNING id
     `;
-    const [ref] = await sql<{ id: string }[]>`
-      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
-      VALUES (${params.folderId}::uuid, ${message!.id}::uuid, 1, 1)
-      RETURNING id
-    `;
-    await sql`
-      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
-      VALUES (${ref!.id}::uuid, ${params.folderId}::uuid, ${message!.id}::uuid, ARRAY['\\Seen']::text[], ARRAY[]::text[])
-    `;
+    await addCopy({ messageId: message!.id, folderId: params.folderId, uid: params.uid ?? 1, flags: params.flags ?? ["\\Seen"] });
     return message!.id;
   };
 
@@ -207,5 +241,192 @@ suite("mail conversation actions", () => {
     const unknownId = crypto.randomUUID();
     const outcomes = await getCommandOutcomes(context, mailboxId, [command!.id, unknownId, command!.id]);
     expect(outcomes).toEqual({ ok: true, data: [{ id: command!.id, state: "failed", code: "REMOTE_MESSAGE_MISSING" }] });
+  });
+
+  // A message list shows one row per message, so an action on one row must leave the other messages of its
+  // conversation alone, even in the same folder and even when they are not in the list.
+  test("acts only on the chosen messages of a conversation", async () => {
+    const chosenId = await addMessage({ folderId: inboxId, subject: "Chosen row", minutesAgo: 30, uid: 10, flags: [] });
+    const otherId = await addMessage({ folderId: inboxId, subject: "Re: Chosen row", minutesAgo: 20, uid: 11, flags: [] });
+    const chosenConversationId = await addConversation("Chosen row", [chosenId, otherId]);
+    const [chosenRef, otherRef] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.remote_message_refs WHERE folder_id = ${inboxId}::uuid AND uid IN (10, 11) ORDER BY uid
+    `;
+
+    const read = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: chosenConversationId,
+      input: {
+        kind: "change_state",
+        sourceFolderId: inboxId,
+        messageIds: [chosenId],
+        change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+        idempotencyKey: `chosen-read-${suffix}`,
+      },
+    });
+    if (!read.ok) throw new Error(read.error.message);
+    expect(await commandRefs(read.data.correlationId)).toEqual([chosenRef!.id]);
+    expect(await placementFlags(chosenRef!.id)).toEqual(["\\Seen"]);
+    expect(await placementFlags(otherRef!.id)).toEqual([]);
+
+    const archived = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: chosenConversationId,
+      input: {
+        kind: "move_to_role",
+        sourceFolderId: inboxId,
+        messageIds: [chosenId],
+        role: "archive",
+        idempotencyKey: `chosen-archive-${suffix}`,
+      },
+    });
+    if (!archived.ok) throw new Error(archived.error.message);
+    expect(await commandRefs(archived.data.correlationId)).toEqual([chosenRef!.id]);
+
+    // A message of another conversation is not a message of this one.
+    const foreign = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: chosenConversationId,
+      input: {
+        kind: "change_state",
+        sourceFolderId: inboxId,
+        messageIds: [questionId],
+        change: { addFlags: ["flagged"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+        idempotencyKey: `chosen-foreign-${suffix}`,
+      },
+    });
+    expect(foreign.ok).toBe(false);
+  });
+
+  // The same message delivered twice into one folder is one message with two provider copies.
+  test("changes every copy of a message in the folder", async () => {
+    const twiceId = await addMessage({ folderId: inboxId, subject: "Delivered twice", minutesAgo: 15, uid: 20, flags: [] });
+    const secondCopy = await addCopy({ messageId: twiceId, folderId: inboxId, uid: 21, flags: [] });
+    const [firstCopy] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.remote_message_refs WHERE folder_id = ${inboxId}::uuid AND uid = 20
+    `;
+    const twiceConversationId = await addConversation("Delivered twice", [twiceId]);
+
+    const read = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: twiceConversationId,
+      input: {
+        kind: "change_state",
+        sourceFolderId: inboxId,
+        change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+        idempotencyKey: `twice-read-${suffix}`,
+      },
+    });
+    if (!read.ok) throw new Error(read.error.message);
+    expect(await commandRefs(read.data.correlationId)).toEqual([firstCopy!.id, secondCopy].sort());
+    expect(await placementFlags(firstCopy!.id)).toEqual(["\\Seen"]);
+    expect(await placementFlags(secondCopy)).toEqual(["\\Seen"]);
+
+    const archived = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: twiceConversationId,
+      input: { kind: "move_to_role", sourceFolderId: inboxId, role: "archive", idempotencyKey: `twice-archive-${suffix}` },
+    });
+    if (!archived.ok) throw new Error(archived.error.message);
+    expect(await commandRefs(archived.data.correlationId)).toEqual([firstCopy!.id, secondCopy].sort());
+  });
+
+  // One unread message alone in its conversation, and the read and flag changes queued on it.
+  const unreadMessage = async (subject: string, uid: number) => {
+    const messageId = await addMessage({ folderId: inboxId, subject, minutesAgo: 10, uid, flags: [] });
+    const [ref] = await sql<{ id: string }[]>`SELECT id FROM mail.remote_message_refs WHERE folder_id = ${inboxId}::uuid AND uid = ${uid}`;
+    return { conversationId: await addConversation(subject, [messageId]), refId: ref!.id };
+  };
+
+  const queueChange = async (
+    target: { conversationId: string },
+    change: { addFlags?: ("seen" | "flagged")[]; removeFlags?: ("seen" | "flagged")[] },
+    idempotencyKey: string,
+  ) => {
+    const result = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: target.conversationId,
+      input: {
+        kind: "change_state",
+        sourceFolderId: inboxId,
+        change: { addFlags: change.addFlags ?? [], removeFlags: change.removeFlags ?? [], addKeywords: [], removeKeywords: [] },
+        idempotencyKey: `${idempotencyKey}-${suffix}`,
+      },
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    return result.data.commands[0]!.id;
+  };
+
+  // Queued commands fail before the mail server changed anything while the mailbox needs its sign-in again.
+  const whileSignInRequired = async (run: () => Promise<void>) => {
+    const [mailbox] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailboxId}::uuid`;
+    try {
+      await run();
+    } finally {
+      await sql`UPDATE mail.mailboxes SET health = ${mailbox!.health} WHERE id = ${mailboxId}::uuid`;
+    }
+  };
+
+  test("undoes two failed changes back to the state the mail server has", async () => {
+    const message = await unreadMessage("Fails twice", 30);
+    const read = await queueChange(message, { addFlags: ["seen"] }, "fails-read");
+    const flag = await queueChange(message, { addFlags: ["flagged"] }, "fails-flag");
+    expect(await placementFlags(message.refId)).toEqual(["\\Flagged", "\\Seen"]);
+
+    await whileSignInRequired(async () => {
+      expect(await executeMutationCommand(read)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Flagged"]);
+      expect(await executeMutationCommand(flag)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual([]);
+    });
+  });
+
+  test("keeps showing a second Mark read while it is still due", async () => {
+    const message = await unreadMessage("Read twice", 31);
+    const first = await queueChange(message, { addFlags: ["seen"] }, "twice-first");
+    const again = await queueChange(message, { addFlags: ["seen"] }, "twice-again");
+
+    await whileSignInRequired(async () => {
+      expect(await executeMutationCommand(first)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Seen"]);
+      expect(await executeMutationCommand(again)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual([]);
+    });
+  });
+
+  // Another client reads and answers the message between two queued changes, and the sync writes that.
+  test("keeps what the sync wrote between two queued changes when both fail", async () => {
+    const message = await unreadMessage("Read elsewhere", 32);
+    const read = await queueChange(message, { addFlags: ["seen"] }, "elsewhere-read");
+    await sql`
+      UPDATE mail.message_placements SET flags = ARRAY['\\Answered', '\\Seen']::text[]
+      WHERE remote_message_ref_id = ${message.refId}::uuid
+    `;
+    const flag = await queueChange(message, { addFlags: ["flagged"] }, "elsewhere-flag");
+
+    await whileSignInRequired(async () => {
+      expect(await executeMutationCommand(read)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Answered", "\\Flagged", "\\Seen"]);
+      expect(await executeMutationCommand(flag)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Answered", "\\Seen"]);
+    });
+  });
+
+  test("a replayed change does not show its change again over a later one", async () => {
+    const message = await unreadMessage("Replayed read", 33);
+    const read = await queueChange(message, { addFlags: ["seen"] }, "replay-read");
+    await queueChange(message, { removeFlags: ["seen"] }, "replay-unread");
+    expect(await placementFlags(message.refId)).toEqual([]);
+
+    // The client sends Mark read again with the same key, for example after a lost response.
+    expect(await queueChange(message, { addFlags: ["seen"] }, "replay-read")).toBe(read);
+    expect(await placementFlags(message.refId)).toEqual([]);
   });
 });

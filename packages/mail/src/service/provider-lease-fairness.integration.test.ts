@@ -406,19 +406,21 @@ suite("mail provider lease fairness", () => {
       folderId,
     };
     // The first sync of the empty INBOX records its cursor, so later messages arrive as new mail.
+    // It imports nothing and queues no body downloads, so nothing else holds the new mailbox's
+    // provider lease and the batches run directly.
     for (let batch = 0; batch < 20; batch += 1) {
       if (!(await syncFolderBatch(folderId(INBOX), async () => undefined)).hasMore) break;
     }
     return connected;
   };
 
-  /** Delivers messages and imports their envelopes with direct folder syncs. */
+  /**
+   * Delivers messages and imports their envelopes with INBOX's sync job, which waits for the
+   * provider lease like its worker does, for example while the mailbox's bodies download.
+   */
   const deliverAndSync = async (mailbox: Mailbox, count: number, label: string): Promise<string[]> => {
     const messageIds = deliver(mailbox, count, label);
-    for (let batch = 0; batch < 20; batch += 1) {
-      const result = await syncFolderBatch(mailbox.folderId(INBOX), async () => undefined);
-      if (!result.hasMore) break;
-    }
+    await runFolderSyncJob(mailbox.folderId(INBOX));
     return messageIds;
   };
 
@@ -929,8 +931,11 @@ suite("mail provider lease fairness", () => {
         internalDate: new Date(Date.UTC(2025, 0, 1) + index * 60_000),
       });
     }
-    // Archive's job has started importing old mail; its next batch would be background work.
-    expect((await syncFolderBatch(mailbox.folderId(ARCHIVE), async () => undefined)).hasMore).toBe(true);
+    // Archive's job has started importing old mail; its next batch would be background work. The
+    // import above queued the mailbox's body downloads, so the batch waits for the provider lease
+    // like the job does.
+    const archive = mailbox.folderId(ARCHIVE);
+    expect(await syncFolderTurn(archive)).toEqual({ delayMs: 0, input: { folderId: archive, backfill: true } });
     const moves = await queueMoves(mailbox, backlog, "requested-move", { startTogether: true });
     await waitFor(async () => (await confirmed(moves)) >= 3, "the moves to start");
 

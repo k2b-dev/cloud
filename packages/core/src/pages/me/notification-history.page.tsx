@@ -6,6 +6,7 @@ import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountSubnav, notificationViews } from "./AccountHub";
+import { pwaAvailable } from "./app-availability";
 import { type AccountMessages, accountMessages } from "./messages";
 import NotificationHistoryFilters from "./NotificationHistoryFilters.island";
 import { notificationChannelMeta, notificationErrorText, notificationStatusMeta } from "./notification-ui";
@@ -48,7 +49,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.deliveryHistory },
       ]}
     >
-      <AccountHub user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
+      <AccountHub appTab={pwaAvailable(c)} user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
         <AccountPage
           title={t.deliveryHistory}
           description={t.deliveryHistoryDescription}

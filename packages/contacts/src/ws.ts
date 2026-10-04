@@ -9,17 +9,12 @@ import {
   CONTACTS_LIVE_WS_TYPE,
   ContactLiveClientMessageSchema,
   type ContactLiveEvent,
-  ContactLiveEventSchema,
   type ContactLiveScope,
   type ContactLiveServerMessage,
-  type ContactServiceEvent,
-  ContactServiceEventSchema,
   classifyContactScopeChange,
-  contactEventBookIds,
-  projectContactEvent,
 } from "./live-events";
 import { contactsService } from "./service";
-import { latestContactEventCursor, liveContactEvents } from "./service/events";
+import { contactsLive, latestContactLiveCursor } from "./service/live";
 import { type ContactsMessages, contactsMessages } from "./service/messages";
 import { resolvePublicId } from "./service/public-resources";
 
@@ -141,54 +136,45 @@ const updateAccess = async (ctx: WsContext, scope: InternalLiveScope): Promise<b
   return true;
 };
 
-const refreshAllEventAccess = async (ctx: WsContext, event: ContactServiceEvent): Promise<ContactServiceEvent | null> => {
-  const affectedBookIds = [...new Set(contactEventBookIds(event))];
-  const mayExpandScope = event.type === "book.created" || event.type === "access.changed";
-  if (!mayExpandScope && !affectedBookIds.some((bookId) => ctx.readableBookIds.has(bookId))) return null;
-  if (!ctx.sessionToken || !ctx.userId) return null;
+/** Updates are keyed by the internal ID of the one book they concern. */
+const refreshAllEventAccess = async (ctx: WsContext, bookId: string, event: ContactLiveEvent): Promise<boolean> => {
+  if (event.type !== "access.changed" && !ctx.readableBookIds.has(bookId)) return false;
+  if (!ctx.sessionToken || !ctx.userId) return false;
   const authenticated = await auth.session.authenticate(ctx.sessionToken);
   if (!authenticated || authenticated.user.id !== ctx.userId) {
     revoke(ctx, { ok: false, code: "login_required", message: ctx.messages.loginRequired });
-    return null;
+    return false;
   }
 
-  const subject = { type: "user" as const, userId: ctx.userId };
+  const canRead = await contactsService.book.permission.canAccess({
+    bookId,
+    subject: { type: "user", userId: ctx.userId },
+    requiredLevel: "read",
+  });
+  if (canRead === ctx.readableBookIds.has(bookId)) return canRead;
+
   const before = new Set(ctx.readableBookIds);
-  for (const bookId of affectedBookIds) {
-    const canRead = await contactsService.book.permission.canAccess({ bookId, subject, requiredLevel: "read" });
-    if (canRead === ctx.readableBookIds.has(bookId)) continue;
-    if (canRead) ctx.readableBookIds.add(bookId);
-    else ctx.readableBookIds.delete(bookId);
+  if (canRead) ctx.readableBookIds.add(bookId);
+  else ctx.readableBookIds.delete(bookId);
+  if (
+    !send(ctx.socket, {
+      type: CONTACTS_LIVE_WS_TYPE.scopeChanged,
+      payload: { change: classifyContactScopeChange(before, ctx.readableBookIds) },
+    })
+  ) {
+    closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
   }
-
-  if (!sameIds(before, ctx.readableBookIds)) {
-    if (
-      !send(ctx.socket, {
-        type: CONTACTS_LIVE_WS_TYPE.scopeChanged,
-        payload: { change: classifyContactScopeChange(before, ctx.readableBookIds) },
-      })
-    ) {
-      closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
-    }
-    // The replacement SSR snapshot includes both the new scope and this event.
-    return null;
-  }
-  return projectContactEvent(event, ctx.readableBookIds);
+  // The replacement SSR snapshot includes both the new scope and this event.
+  return false;
 };
 
-const refreshEventAccess = async (
-  ctx: WsContext,
-  scope: InternalLiveScope,
-  event: ContactServiceEvent,
-): Promise<ContactServiceEvent | null> => {
+const refreshEventAccess = async (ctx: WsContext, scope: InternalLiveScope, bookId: string, event: ContactLiveEvent): Promise<boolean> => {
   if (event.type === "book.deleted") {
-    const wasReadable = ctx.readableBookIds.delete(event.bookId);
-    return wasReadable && (scope.kind === "all" || scope.bookId === event.bookId) ? event : null;
+    const wasReadable = ctx.readableBookIds.delete(bookId);
+    return wasReadable && (scope.kind === "all" || scope.bookId === bookId);
   }
-  if (scope.kind === "all") return refreshAllEventAccess(ctx, event);
-  if (!contactEventBookIds(event).includes(scope.bookId)) return null;
-  if (!(await updateAccess(ctx, scope))) return null;
-  return projectContactEvent(event, ctx.readableBookIds);
+  if (scope.kind === "all") return refreshAllEventAccess(ctx, bookId, event);
+  return bookId === scope.bookId && (await updateAccess(ctx, scope));
 };
 
 const startAccessRefresh = (ctx: WsContext, scope: InternalLiveScope) => {
@@ -207,18 +193,6 @@ const startAccessRefresh = (ctx: WsContext, scope: InternalLiveScope) => {
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
 
-const toVisiblePublicEvent = (
-  original: ContactServiceEvent,
-  publicEvent: ContactLiveEvent,
-  visible: ContactServiceEvent,
-): ContactLiveEvent => {
-  if (original.type !== "contact.moved" || publicEvent.type !== "contact.moved" || visible.type === "contact.moved") return publicEvent;
-  if (visible.type === "contact.deleted") {
-    return { type: "contact.deleted", bookId: publicEvent.sourceBookId, contactId: publicEvent.contactId, at: publicEvent.at };
-  }
-  return { type: "contact.created", bookId: publicEvent.targetBookId, contactId: publicEvent.contactId, at: publicEvent.at };
-};
-
 const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) => {
   ctx.streamAbort?.abort();
   const abort = new AbortController();
@@ -226,15 +200,16 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
 
   void (async () => {
     try {
-      for await (const envelope of liveContactEvents({ after, signal: abort.signal })) {
+      for await (const update of contactsLive.subscribe({ after, signal: abort.signal })) {
         if (abort.signal.aborted || ctx.phase !== "subscribed" || ctx.scope !== scope) break;
-        const parsed = ContactServiceEventSchema.safeParse(envelope.data.internal);
-        const parsedPublic = ContactLiveEventSchema.safeParse(envelope.data.public);
-        if (!parsed.success || !parsedPublic.success) continue;
-        const event = await refreshEventAccess(ctx, scope, parsed.data);
-        if (!event || ctx.phase !== "subscribed") continue;
-        const publicEvent = toVisiblePublicEvent(parsed.data, parsedPublic.data, event);
-        if (!send(ctx.socket, { type: CONTACTS_LIVE_WS_TYPE.event, payload: { cursor: envelope.cursor, event: publicEvent } })) {
+        if (update.data === null) {
+          // An update this server cannot read: a page that may show the book loads it again.
+          if (scope.kind === "all" ? !ctx.readableBookIds.has(update.key) : scope.bookId !== update.key) continue;
+          closeWithError(ctx, "resync_required", ctx.messages.liveStreamFailed, 1012);
+          break;
+        }
+        if (!(await refreshEventAccess(ctx, scope, update.key, update.data)) || ctx.phase !== "subscribed") continue;
+        if (!send(ctx.socket, { type: CONTACTS_LIVE_WS_TYPE.event, payload: { cursor: update.cursor, event: update.data } })) {
           closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
           break;
         }
@@ -261,7 +236,7 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
  */
 export const resolveContactLiveCursor = async (
   fromCursor: string | null,
-  latestCursor: () => Promise<string> = latestContactEventCursor,
+  latestCursor: () => Promise<string> = latestContactLiveCursor,
 ): Promise<string> => fromCursor ?? (await latestCursor());
 
 const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fromCursor: string | null) => {
@@ -331,8 +306,8 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
 
 const app = new Hono<AuthContext>().use("*", rateLimit({ keyBy: "auto", limitPerSecond: 5 })).get(
   "/",
-  upgradeWebSocket((c) => {
-    const sessionToken = auth.session.getToken(c);
+  upgradeWebSocket(async (c) => {
+    const sessionToken = await auth.session.resolveToken(c);
     const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();

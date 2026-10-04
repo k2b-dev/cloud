@@ -118,7 +118,9 @@ export const isCurrentPlatformAdmin = async (
   loadCurrentUser: CurrentUserLoader = accounts.users.get,
 ): Promise<boolean> => {
   const user = userBackedActor(context);
-  if (!user) return false;
+  // The reload only confirms the role is still current. It never adds one the request lacks:
+  // the mobile app's session, also through an invocation, carries no administrator role.
+  if (!user?.roles.includes("admin")) return false;
   const currentUser = await loadCurrentUser({ id: user.id });
   return currentUser?.roles.includes("admin") === true && !accounts.model.isAccountExpired(currentUser.accountExpires);
 };

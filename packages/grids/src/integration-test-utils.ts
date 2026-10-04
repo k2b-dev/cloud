@@ -4,19 +4,27 @@ import { testFor } from "../../../scripts/fixtures/test-infra";
 
 export const postgresTest = testFor("database");
 export const testUuid = () => Bun.randomUUIDv7();
+/** Leads every fixture short ID; `newShortId()` never emits `o` or `O`. */
+export const TEST_SHORT_ID_MARK = "o";
 const shortIdSpace = 36 ** 5;
 let shortIdCounter = Date.now() % shortIdSpace;
 
 /**
- * Six-character short id for raw fixture inserts that bypass the production
- * `insertWithShortId` retry: a one-character prefix plus a five-digit base36
- * counter. The counter never repeats within a process, and it starts at the
- * process start time so later test processes sharing one database stay ahead
- * of earlier ones; fixtures cannot collide on `idx_grids_*_short_id`.
+ * The only source of short IDs for Grids test fixtures, also for bulk SQL
+ * inserts. Raw fixture inserts bypass the production `insertWithShortId`
+ * retry, so every value must be new to the database: `o` plus a five-digit
+ * base36 counter. The counter never repeats within a process and starts at the
+ * time this module loads, so a later test process sharing the database starts
+ * beyond the IDs of an earlier one only if that one issued fewer IDs than the
+ * milliseconds it ran. A process that issues more, like the evidence exports
+ * with their 25,001-record test, deletes the rows of that test and of every
+ * later test in the process. The `o` keeps fixtures apart from IDs that
+ * services generate in the same database. `integration-test-utils.test.ts`
+ * flags the common other ways to make up a short ID in Grids database tests.
  */
-export const testShortId = (prefix: string) => {
+export const testShortId = () => {
   shortIdCounter = (shortIdCounter + 1) % shortIdSpace;
-  return `${prefix.slice(0, 1)}${shortIdCounter.toString(36).padStart(5, "0")}`;
+  return `${TEST_SHORT_ID_MARK}${shortIdCounter.toString(36).padStart(5, "0")}`;
 };
 
 export const insertTestDocumentArtifact = async (params: {
@@ -35,7 +43,7 @@ export const insertTestDocumentArtifact = async (params: {
   const templateRevision = createHash("sha256").update("test template").digest("hex");
   await db`
     INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-    VALUES (${fileId}::uuid, ${testShortId("P")}, ${params.filename ?? "test.pdf"}, 'application/pdf', ${bytes.byteLength}, ${sha256}, ${bytes})
+    VALUES (${fileId}::uuid, ${testShortId()}, ${params.filename ?? "test.pdf"}, 'application/pdf', ${bytes.byteLength}, ${sha256}, ${bytes})
   `;
   await db`
     INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id)

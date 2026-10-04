@@ -1,3 +1,4 @@
+import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { invokeCapabilityStream } from "./capability-streams";
@@ -811,6 +812,10 @@ export const defineApp = <
       cleanup.push(() => stopNotificationRegistration?.());
       const stopLifecycle = startOpts.lifecycle?.stop;
       if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
+
+      // Fails before any setup when Core has not created the platform outbox yet.
+      const stopLiveOutbox = await startLiveOutbox(meta.id);
+      if (stopLiveOutbox) cleanup.push(stopLiveOutbox);
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);

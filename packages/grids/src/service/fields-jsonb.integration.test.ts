@@ -57,9 +57,9 @@ for (const entry of cases) {
     async () => {
       const baseId = testUuid();
       const tableId = testUuid();
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'JSONB defaults')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'JSONB defaults')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-      VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Defaults')`;
+      VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Defaults')`;
       try {
         const created = await fields.create(
           {
@@ -118,9 +118,9 @@ for (const entry of cases) {
 postgresTest("record creation preserves JSON-looking text defaults verbatim", async () => {
   const baseId = testUuid();
   const tableId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'JSONB record defaults')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'JSONB record defaults')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Defaults')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Defaults')`;
   try {
     const value = '["x"]';
     const field = await fields.create({ tableId, name: "Text", type: "text", defaultValue: value }, null);

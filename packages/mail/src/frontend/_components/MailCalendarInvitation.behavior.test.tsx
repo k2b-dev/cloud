@@ -3,12 +3,25 @@ import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 
-if (!isServer)
-  test("calendar actions require write access and never apply a confirmed import to a changed message", async () => {
-    const dom = createDomTestHarness();
+// Load once outside any test, so the cold Solid transform of the invitation's source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
     const { prompts } = await import("@k2b/ui");
     const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
     const { default: Invitation } = await import("./MailCalendarInvitation");
+    return { prompts, collectContextAwareCommands, Invitation };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
+if (!isServer)
+  test("calendar actions require write access and never apply a confirmed import to a changed message", async () => {
+    const dom = createDomTestHarness();
+    const { prompts, collectContextAwareCommands, Invitation } = modules!;
     const originalFetch = globalThis.fetch;
     const writes: string[] = [];
     globalThis.fetch = Object.assign(

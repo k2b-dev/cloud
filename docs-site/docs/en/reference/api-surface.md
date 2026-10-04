@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-09-27
+updated: 2026-10-03
 ---
 
 # API surface
@@ -17,6 +17,8 @@ writing.
 not make every symbol in a mixed barrel an application API. `Platform-owned`
 is for Cloud itself. `Advanced` paths are public exports, but application code
 should use them only when a feature guide gives the exact import.
+`Preview` marks a documented export whose contract may still change in a minor
+release; its guide says so at the top until the feature is released.
 
 ## Application entry points
 
@@ -199,6 +201,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | `@k2b/cloud/browser/live` | Supported, browser | Live WebSocket transport with typed channel sends | [Realtime UI](/en/docs/frontend/realtime-ui) |
+| `@k2b/cloud/events` | Supported, server-only | Live updates written in the transaction that makes the change; `subscribe()` is interim | [Live updates](/en/docs/automation/live-updates) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |

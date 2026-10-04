@@ -1,4 +1,4 @@
-import { type AuthContext, jsonResponse, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, jsonResponse, respond, v } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -105,6 +105,8 @@ const routes = new Hono<AuthContext>()
   )
   .post(
     "/bases/:baseId/sources/:sourceId/api-keys",
+    // A resource API key outlives the phone: the mobile app cannot create one.
+    auth.rejectAppSession,
     describeRoute({
       tags: ["Pulse"],
       summary: "Create a Pulse HTTP ingest source API key",

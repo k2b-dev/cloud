@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as fields from "./fields";
 import { checkFormula } from "./formula-preview";
@@ -9,11 +10,10 @@ import * as views from "./views";
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createBase = async (name: string): Promise<string> => {
   const id = uuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${id}::uuid, ${shortId("V")}, ${name})`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${id}::uuid, ${testShortId()}, ${name})`;
   return id;
 };
 

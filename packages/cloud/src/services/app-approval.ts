@@ -1,4 +1,3 @@
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { type SQL, sql } from "bun";
 import { lazySync } from "../_internal/process-sync";
 import { env } from "../config/env";
@@ -19,6 +18,8 @@ import { publicCloudOrigin } from "../shared/app-url";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
 import { logger } from "./logging";
+import { pairingSecret } from "./pairing-secret";
+import { requireEligibleAccount, requireRecentWebSession } from "./session/recent";
 import { CORE_SETTINGS } from "./settings/core-settings";
 import { decryptValue } from "./settings/crypto";
 
@@ -33,10 +34,7 @@ export class AppApprovalError extends Error {
 const reject = (code: AppApprovalError["code"], status: AppApprovalError["status"]): never => {
   throw new AppApprovalError(code, status);
 };
-const secret = () => randomBytes(32).toString("base64url");
-const hash = (value: string) => createHash("sha256").update(value).digest("hex");
-const matches = (value: string, expected: string) => timingSafeEqual(Buffer.from(hash(value), "hex"), Buffer.from(expected, "hex"));
-const comparison = () => String(randomInt(0, 1_000_000)).padStart(6, "0");
+const { create: secret, hash, matches, code: comparison } = pairingSecret;
 const iso = (value: Date | string) => new Date(value).toISOString();
 const future = (seconds: number) => new Date(Date.now() + seconds * 1000);
 
@@ -217,26 +215,9 @@ export const createAppApprovalService = (
     if (requireEnabled && (!value.enabled || !value.appOrigin)) return reject("UNAVAILABLE", 503);
     return value;
   };
-  const eligible = async (tx: SQL, id: string): Promise<AccountRow> => {
-    const [row] = await tx<
-      AccountRow[]
-    >`SELECT id, uid, provider, profile, auth_epoch, account_expires FROM auth.users WHERE id = ${id}::uuid`;
-    if (
-      !row ||
-      (row.account_expires && new Date(row.account_expires).getTime() <= Date.now()) ||
-      !(await isAccountCategoryAllowed(row, tx))
-    )
-      return reject("FORBIDDEN", 403);
-    return row;
-  };
-  const fresh = async (tx: SQL, actor: AppApprovalActor) => {
-    const [row] = await tx`SELECT sid FROM auth.session_families f JOIN auth.users u ON u.id = f.user_id
-      WHERE f.sid = ${actor.sid}::uuid AND f.user_id = ${actor.userId}::uuid AND f.revoked_at IS NULL
-        AND f.auth_epoch = u.auth_epoch AND f.expires_at > now()
-        AND f.issued_at > now() - ${limits.recentSessionSeconds} * interval '1 second'`;
-    if (!row) return reject("REAUTHENTICATE", 403);
-    await eligible(tx, actor.userId);
-  };
+  const forbidden = (code: "REAUTHENTICATE" | "FORBIDDEN") => reject(code, 403);
+  const eligible = (tx: SQL, id: string): Promise<AccountRow> => requireEligibleAccount(tx, id, forbidden);
+  const fresh = (tx: SQL, actor: AppApprovalActor) => requireRecentWebSession(tx, actor, limits.recentSessionSeconds, forbidden);
   const record = (tx: SQL, action: string, userId: string, id: string, metadata: Record<string, unknown> = {}) =>
     audit.record({ action: `auth.app.${action}`, outcome: "allowed", actor: { userId }, target: { type: "app_device", id }, metadata }, tx);
   const cleanup = async () => {

@@ -746,8 +746,8 @@ export const createWorkspaceWebSocketSession = (sessionToken: string | null, ove
 
 const app = new Hono().get(
   "/",
-  upgradeWebSocket((c) => {
-    const session = createWorkspaceWebSocketSession(auth.session.getToken(c), {}, getLocale(c));
+  upgradeWebSocket(async (c) => {
+    const session = createWorkspaceWebSocketSession(await auth.session.resolveToken(c), {}, getLocale(c));
 
     return {
       onOpen(_, ws) {

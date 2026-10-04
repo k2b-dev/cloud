@@ -69,7 +69,8 @@ export const openApiMeta: Partial<GenerateSpecOptions> = {
           type: "apiKey",
           in: "cookie",
           name: "session_token",
-          description: "Session cookie (automatically set after login)",
+          description:
+            "Session cookie (automatically set after login). Requests from the mobile app carry the `pwa_session` cookie instead; it is accepted the same way, except where an endpoint needs the web.",
         },
         bearerAuth: {
           type: "http",

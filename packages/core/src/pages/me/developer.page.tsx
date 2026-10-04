@@ -6,6 +6,7 @@ import { SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
 import ApiKeysSettings from "./ApiKeysSettings.island";
+import { pwaAvailable } from "./app-availability";
 import McpSetup from "./McpSetup.island";
 import { accountMessages } from "./messages";
 
@@ -27,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.developer }]}>
-      <AccountHub user={user} active="developer" loginLabel={categoryPolicy.login.label}>
+      <AccountHub appTab={pwaAvailable(c)} user={user} active="developer" loginLabel={categoryPolicy.login.label}>
         <AccountPage title={t.developer} description={t.developerDescription}>
           <SettingsSection title="Cloud MCP" subtitle={t.cloudMcpDescription}>
             {/* Islands render as display: contents, so the section's spacing needs a real box. */}

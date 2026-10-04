@@ -10,6 +10,7 @@ import { describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { GRIDS_EVENT } from "../workflows/events";
 import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
@@ -52,7 +53,7 @@ const base = async () => {
   const baseId = Bun.randomUUIDv7();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${`W${Math.random().toString(36).slice(2, 7).toUpperCase()}`}, 'Definitions test')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Definitions test')
   `;
   return baseId;
 };

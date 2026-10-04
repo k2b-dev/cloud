@@ -38,12 +38,14 @@ import { createCapabilityRoutes } from "./capabilities";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
+import { createPwaRoutes } from "./pwa";
 import { createSearchRoutes } from "./search";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
 
 export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 export { cliPluginListRoutes } from "./cli-plugins";
+export { createPwaPhoneRoutes } from "./pwa-phone";
 
 /**
  * Single-expression chain so `typeof buildCoreApi()` captures every route's
@@ -64,6 +66,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
   return new Hono()
     .use(prettyJSON())
     .route("/auth/app-approval/v1", createAppApprovalRoutes())
+    .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
     .route("/accounts", accountsEntitiesRoutes)

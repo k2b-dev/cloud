@@ -4,6 +4,7 @@ import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { navigationSearchItems } from "../browser/navigation-search";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
+import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
@@ -205,6 +206,8 @@ export default function Layout(props: LayoutProps) {
   if (!page.title) page.title = pageTitle;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   const showRail = !!user;
+  // The profile menu offers the mobile app only while the installation runs it.
+  const appHref = user && isPwaShellAvailable(runtime.apps) ? "/me/app" : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
@@ -253,6 +256,7 @@ export default function Layout(props: LayoutProps) {
         {showRail && (
           <LayoutRail
             accent={currentApp?.appearance?.accent}
+            appHref={appHref}
             appsLabel={t.apps}
             homeLabel={t.home}
             launchpadApps={launchpadApps}
@@ -270,6 +274,7 @@ export default function Layout(props: LayoutProps) {
         )}
         <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
           <LayoutHeader
+            appHref={appHref}
             appLabel={currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined)}
             accent={currentApp?.appearance?.accent}
             authenticated={showRail}

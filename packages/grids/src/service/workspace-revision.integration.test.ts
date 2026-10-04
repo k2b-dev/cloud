@@ -8,20 +8,20 @@ import { loadWorkspaceRevision } from "./workspace-revision";
 postgresTest("workspace revision changes for structure, not record writes, and isolates Bases", async () => {
   const baseId = testUuid();
   const tableId = testUuid();
-  const tableShortId = testShortId("T");
+  const tableShortId = testShortId();
   const fieldId = testUuid();
   const recordId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Live revision test')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Live revision test')`;
   try {
     const empty = await loadWorkspaceRevision(baseId);
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Items')`;
     const created = await loadWorkspaceRevision(baseId);
     expect(created.revision).not.toBe(empty.revision);
     expect(created.resources[`table:${tableShortId}`]).toBeString();
-    await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+    await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`;
     await sql`UPDATE grids.records SET data = '{"name":"changed"}'::jsonb WHERE id = ${recordId}::uuid`;
     expect(await loadWorkspaceRevision(baseId)).toEqual(created);
-    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config) VALUES (${fieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
+    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config) VALUES (${fieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
     const fieldAdded = await loadWorkspaceRevision(baseId);
     expect(fieldAdded.resources[`table:${tableShortId}`]).not.toBe(created.resources[`table:${tableShortId}`]);
     await sql`UPDATE grids.fields SET config = '{"maxLength":100}'::jsonb WHERE id = ${fieldId}::uuid`;
@@ -37,13 +37,13 @@ postgresTest("workspace revision changes for structure, not record writes, and i
 postgresTest("presentation, ordering, and policy writes leave the structure revision alone", async () => {
   const baseId = testUuid();
   const tableId = testUuid();
-  const tableShortId = testShortId("T");
-  const viewShortId = testShortId("V");
+  const tableShortId = testShortId();
+  const viewShortId = testShortId();
   const fieldId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Presentation revision test')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Presentation revision test')`;
   try {
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Items')`;
-    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config) VALUES (${fieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
+    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config) VALUES (${fieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
     await sql`INSERT INTO grids.views (short_id, table_id, base_id, name, source) VALUES (${viewShortId}, ${tableId}::uuid, ${baseId}::uuid, 'All', 'from Items')`;
     const baseline = await loadWorkspaceRevision(baseId);
     const table = () => loadWorkspaceRevision(baseId).then((r) => r.resources[`table:${tableShortId}`]);
@@ -76,10 +76,10 @@ postgresTest("a record write against a deleted field fails on the server", async
   const baseId = testUuid();
   const tableId = testUuid();
   const fieldId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Deleted field test')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Deleted field test')`;
   try {
-    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Items')`;
-    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config) VALUES (${fieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
+    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Items')`;
+    await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config) VALUES (${fieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
     await sql`UPDATE grids.fields SET deleted_at = now() WHERE id = ${fieldId}::uuid`;
     const result = await sql.begin((tx) => createInTransaction(tx, tableId, { [fieldId]: "stale" }, null, "direct"));
     expect(result.ok).toBe(false);
@@ -91,7 +91,7 @@ postgresTest("a record write against a deleted field fails on the server", async
 
 postgresTest("draft save acknowledges exactly its own committed row, not a later competing edit", async () => {
   const baseId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Draft revision test')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Draft revision test')`;
   try {
     const created = await createBlank(baseId, "Editor");
     if (!created.ok || !created.data.draftDefinition) throw Error("Could not create fixture app");

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as durableHistory from "./durable-history";
 import { submitForm } from "./form-submission";
@@ -34,21 +34,21 @@ const fixture = (): Fixture => ({
 const insertFixture = async (item: Fixture) => {
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${item.baseId}::uuid, ${shortId("B")}, 'Form submission integration')
+    VALUES (${item.baseId}::uuid, ${testShortId()}, 'Form submission integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
     VALUES
-      (${item.sourceTableId}::uuid, ${shortId("S")}, ${item.baseId}::uuid, 'Orders', 0),
-      (${item.targetTableId}::uuid, ${shortId("T")}, ${item.baseId}::uuid, 'Contacts', 1)
+      (${item.sourceTableId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Orders', 0),
+      (${item.targetTableId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Contacts', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, required, position)
     VALUES
-      (${item.sourceNameFieldId}::uuid, ${shortId("N")}, ${item.sourceTableId}::uuid, 'Reference', 'text', '{}'::jsonb, TRUE, 0),
+      (${item.sourceNameFieldId}::uuid, ${testShortId()}, ${item.sourceTableId}::uuid, 'Reference', 'text', '{}'::jsonb, TRUE, 0),
       (
         ${item.relationFieldId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${item.sourceTableId}::uuid,
         'Contact',
         'relation',
@@ -56,15 +56,15 @@ const insertFixture = async (item: Fixture) => {
         FALSE,
         1
       ),
-      (${item.targetNameFieldId}::uuid, ${shortId("C")}, ${item.targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, TRUE, 0),
-      (${item.startFieldId}::uuid, ${shortId("A")}, ${item.sourceTableId}::uuid, 'Start', 'date', '{}'::jsonb, FALSE, 2),
-      (${item.dueFieldId}::uuid, ${shortId("D")}, ${item.sourceTableId}::uuid, 'Due', 'date', '{}'::jsonb, FALSE, 3)
+      (${item.targetNameFieldId}::uuid, ${testShortId()}, ${item.targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, TRUE, 0),
+      (${item.startFieldId}::uuid, ${testShortId()}, ${item.sourceTableId}::uuid, 'Start', 'date', '{}'::jsonb, FALSE, 2),
+      (${item.dueFieldId}::uuid, ${testShortId()}, ${item.sourceTableId}::uuid, 'Due', 'date', '{}'::jsonb, FALSE, 3)
   `;
 };
 
 const formFor = (item: Fixture): Form => ({
   id: uuid(),
-  shortId: shortId("F"),
+  shortId: testShortId(),
   tableId: item.sourceTableId,
   name: "Order",
   config: {
@@ -112,7 +112,7 @@ describe("form submission integration", () => {
       await insertFixture(item);
       const listId = uuid();
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, default_value, position)
-        VALUES (${listId}::uuid, ${shortId("L")}, ${item.targetTableId}::uuid, 'Items', 'object_list',
+        VALUES (${listId}::uuid, ${testShortId()}, ${item.targetTableId}::uuid, 'Items', 'object_list',
           ${{ fields: [{ id: "Amount", name: "Amount", type: "number" }] }}::jsonb,
           '[{"Amount":"7"}]'::jsonb, 1)`;
       const form = formFor(item);
@@ -215,7 +215,7 @@ describe("form submission integration", () => {
       `;
       expect(counts).toEqual({ records: 3, receipts: 1, events: 5 });
       const sharedBy = uuid();
-      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${sharedBy}::uuid, ${shortId("R")}, ${item.sourceTableId}::uuid, '{}'::jsonb)`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${sharedBy}::uuid, ${testShortId()}, ${item.sourceTableId}::uuid, '{}'::jsonb)`;
       await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id) VALUES (${sharedBy}::uuid, ${item.relationFieldId}::uuid, ${child.id}::uuid)`;
       const sharedEdit = await submitForm({
         ...input,

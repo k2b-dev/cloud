@@ -40,18 +40,18 @@ describe("authorization projections", () => {
         INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id)
         VALUES (${parentGroupId}::uuid, ${childGroupId}::uuid)
       `;
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Nested access')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Nested access')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Nested table')
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Nested table')
       `;
       await sql`
         INSERT INTO grids.views (id, short_id, table_id, name, source, owner_user_id)
-        VALUES (${viewId}::uuid, ${testShortId("V")}, ${tableId}::uuid, 'Nested view', 'from table "Nested table"', ${outsideUserId}::uuid)
+        VALUES (${viewId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Nested view', 'from table "Nested table"', ${outsideUserId}::uuid)
       `;
       await sql`
         INSERT INTO grids.custom_apps (id, short_id, base_id, name, draft_definition, draft_capabilities)
-        VALUES (${customAppId}::uuid, ${testShortId("C")}, ${baseId}::uuid, 'Nested app', '{}'::jsonb, '{"views":[]}'::jsonb)
+        VALUES (${customAppId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Nested app', '{}'::jsonb, '{"views":[]}'::jsonb)
       `;
       await sql`
         INSERT INTO auth.access (id, group_id, permission) VALUES

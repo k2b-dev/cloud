@@ -15,14 +15,14 @@ beforeAll(async () => {
 
 const createFixture = async () => {
   const baseId = testUuid();
-  const baseShortId = testShortId("B");
+  const baseShortId = testShortId();
   const firstTableId = testUuid();
   const secondTableId = testUuid();
   await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Destruction fixture')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
-      (${firstTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices', 0),
-      (${secondTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Cases', 1)
+      (${firstTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices', 0),
+      (${secondTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Cases', 1)
   `;
   await sql`INSERT INTO grids.retention_policies (base_id, minimum_days) VALUES (${baseId}::uuid, 30)`;
   return { baseId, baseShortId, firstTableId, secondTableId };
@@ -332,7 +332,7 @@ describe("controlled File destruction", () => {
       const insertRun = async (status: string, startedAgo: string) => {
         const [row] = await sql<Array<{ id: string }>>`
           INSERT INTO grids.controlled_destruction_runs (short_id, base_id, status, started_at)
-          VALUES (${testShortId("R")}, ${fixture.baseId}::uuid, ${status}, now() - ${startedAgo}::interval)
+          VALUES (${testShortId()}, ${fixture.baseId}::uuid, ${status}, now() - ${startedAgo}::interval)
           RETURNING id::text
         `;
         return row!.id;

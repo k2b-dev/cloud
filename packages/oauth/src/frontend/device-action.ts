@@ -18,6 +18,7 @@ const blocked = (c: Context<AuthContext>, description: string) =>
 export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.infer<typeof DeviceDecisionSchema>): Promise<Response> => {
   const { t } = oauthMessages.resolve([getLocale(c)]);
   if (c.get("credentialKind") !== "session") return blocked(c, t.deviceSessionRequired);
+  if (c.get("sessionKind") === "app") return blocked(c, t.webSessionRequired);
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const requestOrigin = c.req.header("origin");
   if (requestOrigin && requestOrigin !== issuer) return blocked(c, t.consentOriginInvalid);

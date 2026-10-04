@@ -162,4 +162,29 @@ describe("Mail action outcomes", () => {
       },
     ]);
   });
+
+  test("keeps the messages a message-list action was limited to, so Try again repeats only those", () => {
+    const outcomes = createMailActionOutcomes();
+    const report = outcomes.follow({
+      actionId: "trash",
+      destinationFolderId: null,
+      conversations: [
+        {
+          conversationId: "c1",
+          label: "Quarterly report",
+          messageIds: ["message-a"],
+          commands: [{ id: "m1", state: "failed", code: "REMOTE_MESSAGE_MISSING", sourceFolderId: "inbox" }],
+        },
+      ],
+    });
+    expect(report?.failures).toEqual([
+      {
+        conversationId: "c1",
+        label: "Quarterly report",
+        sourceFolderIds: ["inbox"],
+        messageIds: ["message-a"],
+        code: "REMOTE_MESSAGE_MISSING",
+      },
+    ]);
+  });
 });

@@ -1,15 +1,26 @@
 import { afterEach, expect, test } from "bun:test";
 import { createSignal, Show } from "solid-js";
-import { render } from "solid-js/web";
-import type { createCollectionSelection } from "../src";
+import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
+
+// Load once outside any test, so the cold Solid transform of the library source does not count against the 5 s test
+// timeout. The library needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return await import("../src");
+  } finally {
+    dom.cleanup();
+  }
+};
+const { createCollectionSelection, DataTable, FileGrid, FileView } = await load();
 
 let cleanup = () => {};
 afterEach(() => cleanup());
 
 test("table and grid share ranges, modifiers, focus, and pruning without treating nested controls as row clicks", async () => {
   const dom = createDomTestHarness();
-  const { createCollectionSelection, DataTable, FileGrid } = await import("../src");
+  delegateEvents(["click"], dom.document);
   const [rows, setRows] = createSignal(["a", "b", "c", "d"]);
   const [grid, setGrid] = createSignal(false);
   let selection!: ReturnType<typeof createCollectionSelection>;
@@ -79,7 +90,6 @@ test("table and grid share ranges, modifiers, focus, and pruning without treatin
 
 test("signed native previews support anonymous CORS and report a failure without fetching through load", async () => {
   const dom = createDomTestHarness();
-  const { FileView } = await import("../src");
   let errors = 0,
     reads = 0;
   const dispose = render(

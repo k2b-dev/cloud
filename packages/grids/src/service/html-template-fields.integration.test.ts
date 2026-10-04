@@ -36,9 +36,9 @@ describe("HTML template field integration", () => {
     const thirdHtmlFieldId = testUuid();
     const fourthHtmlFieldId = testUuid();
     const recordId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const recordShortId = testShortId("R");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const recordShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'HTML templates')`;
       await sql`
@@ -97,7 +97,7 @@ describe("HTML template field integration", () => {
         }
 
         const latestRecordId = testUuid();
-        const latestRecordShortId = testShortId("L");
+        const latestRecordShortId = testShortId();
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data, created_at, updated_at)
           VALUES (${latestRecordId}::uuid, ${latestRecordShortId}, ${tableId}::uuid, ${{ [nameFieldId]: "Tripod" }}::jsonb, '2030-01-01', '2030-01-01')
@@ -112,11 +112,12 @@ describe("HTML template field integration", () => {
         expect(latest.ok).toBe(true);
         if (latest.ok) expect(latest.data.rows[0]?.recordId).toBe(latestRecordShortId);
 
+        const shortIds = Array.from({ length: 500 }, () => testShortId());
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data)
-          SELECT gen_random_uuid(), 'E' || lpad(sequence::text, 5, '0'), ${tableId}::uuid,
-                 jsonb_build_object(${nameFieldId}::text, 'Product ' || sequence::text)
-          FROM generate_series(1, 500) sequence
+          SELECT gen_random_uuid(), item.short_id, ${tableId}::uuid,
+                 jsonb_build_object(${nameFieldId}::text, 'Product ' || item.sequence::text)
+          FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, sequence)
         `;
         await materialize(tableId);
         const exported = await exportRecords({
@@ -141,7 +142,7 @@ describe("HTML template field integration", () => {
     const fieldId = testUuid();
     const record = {
       id: testUuid(),
-      shortId: testShortId("R"),
+      shortId: testShortId(),
       tableId,
       data: {} as Record<string, unknown>,
       version: 1,
@@ -153,7 +154,7 @@ describe("HTML template field integration", () => {
     };
     const field = {
       id: fieldId,
-      shortId: testShortId("H"),
+      shortId: testShortId(),
       tableId,
       name: "HTML",
       description: null,

@@ -5,6 +5,20 @@ import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { Mailbox, ProviderBinding, ProviderConnection } from "../../contracts";
 import type { MailboxAdminSettingsContext } from "../../settings-context";
 
+// Load once outside any test, so the cold Solid transform of the settings' source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { MailConnectionSettings } = await import("./MailConnectionSettings");
+    const { LocaleProvider } = await import("@k2b/ui");
+    return { MailConnectionSettings, LocaleProvider };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 const now = "2026-09-24T10:00:00.000Z";
 const connectionId = "00000000-0000-4000-8000-00000000000c";
 const bindingId = "00000000-0000-4000-8000-00000000000b";
@@ -108,7 +122,7 @@ describe("Mail connection settings recovery", () => {
     options: { locale?: string; admin?: MailboxAdminSettingsContext; afterReload?: MailboxAdminSettingsContext } = {},
   ) => {
     const dom = createDomTestHarness();
-    const [{ MailConnectionSettings }, { LocaleProvider }] = await Promise.all([import("./MailConnectionSettings"), import("@k2b/ui")]);
+    const { MailConnectionSettings, LocaleProvider } = modules!;
     const [admin, setAdmin] = createSignal(options.admin ?? connectedAdmin);
     const dispose = render(
       () =>

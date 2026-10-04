@@ -56,6 +56,7 @@ export const app = defineApp({
     "/legal/terms",
     "/impressum",
     "/api/auth",
+    "/pwa/_auth",
     "/api/announcements",
     "/api/ai",
     "/api/mcp",

@@ -3,6 +3,7 @@ import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountSubnav, notificationViews } from "./AccountHub";
+import { pwaAvailable } from "./app-availability";
 import BrowserNotificationSetup from "./BrowserNotificationSetup.island";
 import { accountMessages } from "./messages";
 import NotificationPreferences, { type NotificationAppMeta } from "./NotificationPreferences.island";
@@ -18,7 +19,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.notifications }]}>
-      <AccountHub user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
+      <AccountHub appTab={pwaAvailable(c)} user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
         <AccountPage
           title={t.notifications}
           description={t.notificationsDescription}

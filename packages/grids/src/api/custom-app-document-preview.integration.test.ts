@@ -22,11 +22,11 @@ postgresTest(
       fieldId = testUuid(),
       recordId = testUuid(),
       templateId = testUuid();
-    const base = testShortId("B"),
-      table = testShortId("T"),
-      field = testShortId("F"),
-      record = testShortId("R"),
-      template = testShortId("D");
+    const base = testShortId(),
+      table = testShortId(),
+      field = testShortId(),
+      record = testShortId(),
+      template = testShortId();
     let accessId: string | undefined;
     const render = spyOn(gridsService.document, "renderPdfPreview").mockImplementation(async (_template, data) => {
       expect(data.record).toMatchObject({ id: record });
@@ -52,7 +52,7 @@ postgresTest(
       const definition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: base,
         name: "Draft portal",
         startPageId: "home",
@@ -110,7 +110,7 @@ postgresTest(
       const [scanCodes] = await sql`SELECT count(*)::int AS count FROM grids.record_scan_codes WHERE base_id = ${baseId}::uuid`;
       expect(scanCodes.count).toBe(0);
       expect(render).toHaveBeenCalledTimes(1);
-      expect((await api.request(path.replace(`item=${record}`, `item=${testShortId("Z")}`), { method: "POST" })).status).toBe(404);
+      expect((await api.request(path.replace(`item=${record}`, `item=${testShortId()}`), { method: "POST" })).status).toBe(404);
       await sql`UPDATE grids.fields SET name = 'Changed subject' WHERE id = ${fieldId}::uuid`;
       expect((await api.request(path, { method: "POST" })).status).toBe(409);
       expect(render).toHaveBeenCalledTimes(1);

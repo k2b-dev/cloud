@@ -81,6 +81,20 @@ the DOM phase. Files that need a process of their own are listed by name in
 The runner and the fast `bun test` subset both fail when a file would run in no
 phase or in more than one, so a new behavior test needs no registration.
 
+All phases share one database, and fixture rows stay after their tests. A test
+that inserts a short ID itself, also in a bulk SQL insert, takes it from
+`testShortId()` in `src/integration-test-utils.ts`. These IDs start with `o`,
+which service-generated IDs never contain, and never repeat within a test
+process. Each process starts its counter at the current time in milliseconds, so
+a later process starts beyond the IDs of an earlier one only if the earlier one
+issued fewer IDs than the milliseconds it ran. A process that issues more, like
+`evidence-exports` with its 25,001-record test, deletes the rows of that test
+and of every later test in the process. Random, counter, or sliced IDs can match
+an ID that another test inserts later. The unit test
+`src/integration-test-utils.test.ts` flags the common spellings of such IDs in
+Grids database tests, but it cannot prove that every ID comes from
+`testShortId()`.
+
 The `workflow-concurrency` phase runs before other suites enqueue fixtures. It
 checks ten shared execution/dry-run slots, an eleventh queued run, validation of
 the setting, and a changed limit after restart. Ten simultaneous atomic writes

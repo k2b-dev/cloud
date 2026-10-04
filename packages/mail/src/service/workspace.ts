@@ -480,6 +480,8 @@ const loadListItems = async (params: {
     params.searchExpression ??
     params.savedView?.filter.expression ??
     (params.folderId ? { type: "folder_id" as const, folderId: params.folderId } : activeViewExpression());
+  // Send problems has no search condition: it lists the messages whose send needs attention.
+  const sendProblems = !params.searchExpression && !params.savedView && !params.folderId && params.activeView === "send_problems";
 
   if (params.searchExpression || params.listMode === "messages") {
     const result = await search.searchMessages({
@@ -493,6 +495,7 @@ const loadListItems = async (params: {
       },
       groupByConversation: params.listMode === "conversations",
       excludedFolderIds: params.excludedFolderIds,
+      sendProblems,
     });
     if (!result.ok) {
       return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed" };

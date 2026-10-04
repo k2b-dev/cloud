@@ -69,8 +69,8 @@ const sepaOutput: FinancialDocumentOutput = {
 
 const fixture = async () => {
   const baseId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Financial issuance test')`;
-  const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId("W") });
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Financial issuance test')`;
+  const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId() });
   const actor = { kind: "service_account" as const, serviceAccountId: testUuid(), delegatedUserId: null, credentialId: null };
   const capture = async (
     channel: "api" | "schedule" = "api",
@@ -78,7 +78,7 @@ const fixture = async () => {
     businessId = "invoice-1",
     amount = "12.3000",
   ) => {
-    const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "waiting", channel });
+    const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId(), state: "waiting", channel });
     const capturedAt = new Date().toISOString();
     const sourceRow: Record<string, string> = {
       business: businessId,
@@ -154,12 +154,12 @@ describe("financial query Document issuance", () => {
     const scope = await fixture();
     const request = await scope.capture();
     const tableId = testUuid();
-    const tableShortId = testShortId("T");
+    const tableShortId = testShortId();
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position)
       VALUES (${tableId}::uuid, ${tableShortId}, ${scope.baseId}::uuid, 'Export members', 0)`;
     const members = [
-      { id: testUuid(), shortId: testShortId("R") },
-      { id: testUuid(), shortId: testShortId("R") },
+      { id: testUuid(), shortId: testShortId() },
+      { id: testUuid(), shortId: testShortId() },
     ];
     for (const member of members)
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
@@ -220,7 +220,7 @@ describe("financial query Document issuance", () => {
     });
     expect((await sql.begin((tx) => resolveCapturedDocumentRecords(documentSource, scope.baseId, tx)))?.length).toBe(2);
     expect(await sql.begin((tx) => resolveCapturedDocumentRecords(documentSource, testUuid(), tx))).toBeNull();
-    const snapshotShortId = testShortId("S");
+    const snapshotShortId = testShortId();
     await sql`INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
       VALUES (${testUuid()}::uuid, ${snapshotShortId}, ${scope.baseId}::uuid, ${tableId}::uuid, ${members[0]!.id}::uuid,
         '{"version":7}'::jsonb, '{}'::jsonb)`;
@@ -439,8 +439,8 @@ describe("financial query Document issuance", () => {
     const scope = await fixture();
     const tableId = testUuid(),
       recordId = testUuid();
-    const tableShortId = testShortId("T"),
-      recordShortId = testShortId("R");
+    const tableShortId = testShortId(),
+      recordShortId = testShortId();
     const profile = financialQueryProfiles.find((item) => item.id === "grids.datev-csv")!;
     const issue = profile.issue.bind(profile);
     let rendered = false;
@@ -482,8 +482,8 @@ describe("financial query Document issuance", () => {
     try {
       const tableId = testUuid(),
         recordId = testUuid();
-      const tableShortId = testShortId("T"),
-        recordShortId = testShortId("R");
+      const tableShortId = testShortId(),
+        recordShortId = testShortId();
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position)
         VALUES (${tableId}::uuid, ${tableShortId}, ${scope.baseId}::uuid, 'Approvals', 0)`;
       await sql`INSERT INTO grids.records (id, short_id, table_id, data, version)

@@ -73,11 +73,11 @@ describe("evidence export integration", () => {
     async () => {
       const baseId = testUuid();
       const tableId = testUuid();
-      const tableShortId = testShortId("T");
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Query evidence')`;
+      const tableShortId = testShortId();
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Query evidence')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Source')`;
-      const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId("W") });
-      const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "succeeded" });
+      const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId() });
+      const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId(), state: "succeeded" });
       const capturedAt = new Date().toISOString();
       const payload = {
         version: 1 as const,
@@ -106,7 +106,7 @@ describe("evidence export integration", () => {
       );
       if (!reference.ok) throw reference.error;
       const recordId = testUuid();
-      const recordShortId = testShortId("R");
+      const recordShortId = testShortId();
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, '{}'::jsonb)`;
       const selectionPayload = {
@@ -157,7 +157,7 @@ describe("evidence export integration", () => {
       await sql`UPDATE grids.tables SET name = 'Renamed later' WHERE id = ${tableId}::uuid`;
       await sql`UPDATE grids.records SET deleted_at = now() WHERE id = ${recordId}::uuid`;
       const exportId = testUuid();
-      const exportShortId = testShortId("E");
+      const exportShortId = testShortId();
       await sql`INSERT INTO grids.evidence_exports (id, short_id, base_id, sections)
       VALUES (${exportId}::uuid, ${exportShortId}, ${baseId}::uuid, ARRAY['documents'])`;
       await processExport(exportId);
@@ -214,34 +214,34 @@ describe("evidence export integration", () => {
     const exportId = testUuid();
     const tableExportId = testUuid();
     const serviceAccountId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const documentShortId = testShortId("D");
-    const exportShortId = testShortId("E");
-    const tableExportShortId = testShortId("X");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const documentShortId = testShortId();
+    const exportShortId = testShortId();
+    const tableExportShortId = testShortId();
     const pdf = new TextEncoder().encode("%PDF-1.7\nimmutable statement");
     const structured = new TextEncoder().encode('{"number":"STAT-0001","total":"119.00"}');
     const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Business evidence')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Orders')`;
-      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`;
       await sql`
         INSERT INTO grids.document_templates (
           id, short_id, table_id, name, source, renderer_kind, profile_id, profile_version, profile_input_template
         ) VALUES (
-          ${templateId}::uuid, ${testShortId("T")}, ${tableId}::uuid, 'Statement', 'from table Orders',
+          ${templateId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Statement', 'from table Orders',
           'profile', 'test.statement', 1, '{}'
         )
       `;
       await sql`
         INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
-        VALUES (${snapshotId}::uuid, ${testShortId("S")}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{"version":1}'::jsonb, '{}'::jsonb)
+        VALUES (${snapshotId}::uuid, ${testShortId()}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{"version":1}'::jsonb, '{}'::jsonb)
       `;
       await sql`
         INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes) VALUES
-          (${pdfFileId}::uuid, ${testShortId("F")}, 'statement.pdf', 'application/pdf', ${pdf.byteLength}, ${digest(pdf)}, ${pdf}),
-          (${structuredFileId}::uuid, ${testShortId("F")}, 'statement.json', 'application/json', ${structured.byteLength}, ${digest(structured)}, ${structured})
+          (${pdfFileId}::uuid, ${testShortId()}, 'statement.pdf', 'application/pdf', ${pdf.byteLength}, ${digest(pdf)}, ${pdf}),
+          (${structuredFileId}::uuid, ${testShortId()}, 'statement.json', 'application/json', ${structured.byteLength}, ${digest(structured)}, ${structured})
       `;
       await sql`
         INSERT INTO grids.documents (primary_artifact_key,
@@ -327,23 +327,23 @@ describe("evidence export integration", () => {
     const allocationId = testUuid();
     const exportId = testUuid();
     const interruptedExportId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const noHistoryTableShortId = testShortId("H");
-    const textFieldShortId = testShortId("F");
-    const relationFieldShortId = testShortId("L");
-    const fileFieldShortId = testShortId("A");
-    const recordShortId = testShortId("R");
-    const targetRecordShortId = testShortId("Q");
-    const revisionShortId = testShortId("V");
-    const templateShortId = testShortId("D");
-    const snapshotShortId = testShortId("S");
-    const documentShortId = testShortId("N");
-    const attachmentShortId = testShortId("I");
-    const artifactShortId = testShortId("P");
-    const seriesShortId = testShortId("C");
-    const exportShortId = testShortId("E");
-    const interruptedExportShortId = testShortId("J");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const noHistoryTableShortId = testShortId();
+    const textFieldShortId = testShortId();
+    const relationFieldShortId = testShortId();
+    const fileFieldShortId = testShortId();
+    const recordShortId = testShortId();
+    const targetRecordShortId = testShortId();
+    const revisionShortId = testShortId();
+    const templateShortId = testShortId();
+    const snapshotShortId = testShortId();
+    const documentShortId = testShortId();
+    const attachmentShortId = testShortId();
+    const artifactShortId = testShortId();
+    const seriesShortId = testShortId();
+    const exportShortId = testShortId();
+    const interruptedExportShortId = testShortId();
     const attachmentBytes = new TextEncoder().encode("exact attached evidence");
     const artifactBytes = new TextEncoder().encode("%PDF-1.7\nexact stored document");
     const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -607,11 +607,11 @@ describe("evidence export integration", () => {
 
   postgresTest("cancels queued work, retries terminal work once, and removes expired package bytes", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const canceledId = testUuid();
-    const canceledShortId = testShortId("C");
+    const canceledShortId = testShortId();
     const expiredId = testUuid();
-    const expiredShortId = testShortId("X");
+    const expiredShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Evidence lifecycle fixture')`;
       await sql`
@@ -653,18 +653,17 @@ describe("evidence export integration", () => {
   postgresTest("rejects a large known scope before queueing or building a partial package", async () => {
     const baseId = testUuid();
     const tableId = testUuid();
-    const publicPrefix = testShortId("Z").slice(0, 2);
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Large evidence fixture')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Large evidence fixture')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Many records')
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Many records')
       `;
       for (let offset = 0; offset < 25_001; offset += 500) {
-        const values = Array.from({ length: Math.min(500, 25_001 - offset) }, (_, index) => {
-          const shortId = `${publicPrefix}${(offset + index).toString(36).padStart(4, "0")}`;
-          return sql`(gen_random_uuid(), ${shortId}, ${tableId}::uuid, '{}'::jsonb)`;
-        }).reduce((left, right) => sql`${left}, ${right}`);
+        const values = Array.from(
+          { length: Math.min(500, 25_001 - offset) },
+          () => sql`(gen_random_uuid(), ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`,
+        ).reduce((left, right) => sql`${left}, ${right}`);
         await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES ${values}`;
       }
 
@@ -688,14 +687,15 @@ describe("evidence export integration", () => {
       `;
       expect(queued?.count).toBe(0);
     } finally {
+      // These 25,001 IDs run ahead of the clock, so later test processes issue them again (see testShortId).
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
   postgresTest("ends bound violations in the row and recovers abandoned running rows without touching live ones", async () => {
     const baseId = testUuid();
-    const shortIds = { bound: testShortId("E"), abandoned: testShortId("E"), live: testShortId("E"), fresh: testShortId("E") };
+    const shortIds = { bound: testShortId(), abandoned: testShortId(), live: testShortId(), fresh: testShortId() };
     const ids = { bound: testUuid(), abandoned: testUuid(), live: testUuid(), fresh: testUuid() };
-    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Reconcile fixture')`;
+    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Reconcile fixture')`;
     // Another Grids worker that is still processing the live export.
     const holder = getProcessSync().mutex({ id: "grids:evidence-export", ttlMs: 60_000, retry: { maxAttempts: 1 } });
     let live: Lock | null = null;

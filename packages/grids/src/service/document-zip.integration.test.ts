@@ -37,9 +37,9 @@ const fixture = async (options: { artifactPadding?: number } = {}) => {
   const actorId = testUuid();
   await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
     VALUES (${actorId}::uuid, ${actorId}, 'local', 'user', 'Zip test', 'Zip', 'Test')`;
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'ZIP export')`;
-  const paymentsShortId = testShortId("T");
-  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${invoicesTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'ZIP export')`;
+  const paymentsShortId = testShortId();
+  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${invoicesTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${paymentsTableId}::uuid, ${paymentsShortId}, ${baseId}::uuid, 'Payments')`;
   const template = await createTemplate(
     invoicesTableId,
@@ -74,7 +74,7 @@ const fixture = async (options: { artifactPadding?: number } = {}) => {
 
   const record = async (tableId: string) => {
     const id = testUuid();
-    const shortId = testShortId("R");
+    const shortId = testShortId();
     await sql`INSERT INTO grids.records (id, short_id, table_id, data, version) VALUES (${id}::uuid, ${shortId}, ${tableId}::uuid, '{}'::jsonb, 1)`;
     return { id, shortId };
   };
@@ -86,7 +86,7 @@ const fixture = async (options: { artifactPadding?: number } = {}) => {
   ) => {
     const snapshotId = testUuid();
     await sql`INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
-      VALUES (${snapshotId}::uuid, ${testShortId("S")}, ${baseId}::uuid, ${invoicesTableId}::uuid, ${invoice.id}::uuid, '{"version": 1}'::jsonb, '{}'::jsonb)`;
+      VALUES (${snapshotId}::uuid, ${testShortId()}, ${baseId}::uuid, ${invoicesTableId}::uuid, ${invoice.id}::uuid, '{"version": 1}'::jsonb, '{}'::jsonb)`;
     issued += 1;
     const primary = artifacts[0];
     if (!primary) throw new Error("artifact required");
@@ -94,7 +94,7 @@ const fixture = async (options: { artifactPadding?: number } = {}) => {
       persistIssuedDocument(
         {
           receiptId: testUuid(),
-          shortId: testShortId("D"),
+          shortId: testShortId(),
           baseId,
           queryDataId: null,
           record: { templateId, snapshotId, tableId: invoicesTableId, recordId: invoice.id },
@@ -141,8 +141,8 @@ const fixture = async (options: { artifactPadding?: number } = {}) => {
     await record(paymentsTableId),
   ];
 
-  const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId("W") });
-  const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "running", channel: "api" });
+  const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId() });
+  const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId(), state: "running", channel: "api" });
   const capturedAt = new Date().toISOString();
   const rows = [
     { invoice: [invoiceA.shortId], amount: "10.00" },
@@ -207,7 +207,7 @@ const zipRequest = (
 ): ZipRequest => ({
   baseId: f.baseId,
   runId: f.runId,
-  stepKey: `zip-${testShortId("K")}`,
+  stepKey: `zip-${testShortId()}`,
   data,
   output: { kind: "zip", ...output } as ZipRequest["output"],
   actor: { kind: "system" },
@@ -239,7 +239,7 @@ describe("Document ZIP output", () => {
       persistIssuedDocument(
         {
           receiptId: testUuid(),
-          shortId: testShortId("D"),
+          shortId: testShortId(),
           baseId: f.baseId,
           queryDataId: data.id,
           record: null,

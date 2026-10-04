@@ -29,13 +29,13 @@ describe("durable history route permissions", () => {
     const fileFieldId = testUuid();
     const fileId = testUuid();
     const recordId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const foreignTableShortId = testShortId("X");
-    const fieldShortId = testShortId("F");
-    const fileFieldShortId = testShortId("L");
-    const fileShortId = testShortId("I");
-    const recordShortId = testShortId("R");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const foreignTableShortId = testShortId();
+    const fieldShortId = testShortId();
+    const fileFieldShortId = testShortId();
+    const fileShortId = testShortId();
+    const recordShortId = testShortId();
     const user: User = {
       id: userId,
       uid: `durable-history-${userId}`,
@@ -66,7 +66,7 @@ describe("durable history route permissions", () => {
         INSERT INTO grids.bases (id, short_id, name)
         VALUES
           (${baseId}::uuid, ${baseShortId}, 'Durable routes'),
-          (${foreignBaseId}::uuid, ${testShortId("C")}, 'Foreign durable routes')
+          (${foreignBaseId}::uuid, ${testShortId()}, 'Foreign durable routes')
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)

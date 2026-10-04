@@ -39,8 +39,8 @@ describe("Table administration overview route", () => {
     const users = new Map([admin, reader].map((item) => [item.id, item]));
     const baseId = testUuid();
     const tableId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
     const accessIds = [testUuid(), testUuid()];
     const auth: MiddlewareHandler<AuthContext> = async (c, next) => {
       const selected = users.get(c.req.header("x-test-user") ?? "") ?? reader;

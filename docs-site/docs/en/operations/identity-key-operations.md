@@ -5,7 +5,7 @@ section: Operations
 order: 1145
 description: Operate Core-owned signing keys, rotation, rewrap, and emergency revocation.
 tags: [identity, jwt, keys, rotation, recovery]
-updated: 2026-09-03
+updated: 2026-10-03
 ---
 
 # Identity key operations
@@ -137,6 +137,11 @@ most the configured five-minute JWKS cache bound. Treat that interval as part
 of the incident blast radius. Session-family and user-epoch revocation remains
 available when all sessions must be invalidated immediately at the database
 authorization step.
+
+Revoking a session signing key also ends the mobile app's sessions signed with
+it. Paired phones are not signed out: their device keys stay valid, and each
+phone gets a new app session from the replacement signer the next time it
+starts. To sign phones out, remove them or revoke the account's sessions.
 
 Invocation and OAuth issuance confirm the prepared signer against PostgreSQL
 while holding a shared lock on its active key row. A capability or widget call

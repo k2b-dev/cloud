@@ -4,14 +4,13 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { insertTestDocumentArtifact } from "../integration-test-utils";
+import { insertTestDocumentArtifact, testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createDocumentsApi } from "./documents";
 
 const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 type DocumentLinkApiFixture = {
   baseId: string;
@@ -82,30 +81,30 @@ const insertFixture = async (userId: string): Promise<DocumentLinkApiFixture> =>
   const snapshotId = uuid();
   const templateId = uuid();
   const documentId = uuid();
-  const documentShortId = shortId("D");
+  const documentShortId = testShortId();
   const documentNumber = `INV-API-${documentId.slice(0, 8)}`;
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'Document links API integration')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Document links API integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Invoices', 0)
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices', 0)
   `;
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data)
-    VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, '{}'::jsonb)
+    VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)
   `;
   await sql`
     INSERT INTO grids.document_templates (id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
-    VALUES (${templateId}::uuid, ${shortId("T")}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
+    VALUES (${templateId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
   `;
   await sql`
     INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
     VALUES (
       ${snapshotId}::uuid,
-      ${shortId("S")},
+      ${testShortId()},
       ${baseId}::uuid,
       ${tableId}::uuid,
       ${recordId}::uuid,

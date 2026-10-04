@@ -2,12 +2,12 @@ import { afterAll, describe, expect } from "bun:test";
 import { SQL } from "bun";
 import { createDisposableDatabase, testFor } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../core/src/migrate/core/workflows";
+import { testShortId } from "./integration-test-utils";
 import { migrate } from "./migrate";
 
 const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const schemaSnapshot = async (db: SQL) => db`
   SELECT 'column' AS kind, table_name || '.' || column_name AS name,
@@ -58,14 +58,14 @@ const insertCalculationFixture = async (database: SQL) => {
   const totalId = uuid();
   const recordId = uuid();
   await database`INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'Calculation migration')`;
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Calculation migration')`;
   await database`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Records')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')`;
   await database`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
-    VALUES (${amountId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Amount', 'number', '{}'::jsonb),
-      (${totalId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Total', 'formula', '{"expression":"Amount * 2"}'::jsonb)`;
+    VALUES (${amountId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Amount', 'number', '{}'::jsonb),
+      (${totalId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Total', 'formula', '{"expression":"Amount * 2"}'::jsonb)`;
   await database`INSERT INTO grids.records (id, short_id, table_id, data)
-    VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, jsonb_build_object(${amountId}::text, '36'::text))`;
+    VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, jsonb_build_object(${amountId}::text, '36'::text))`;
   return { recordId, amountId, totalId };
 };
 
@@ -184,12 +184,12 @@ describe("grids schema migration", () => {
         const baseId = uuid();
         const tableId = uuid();
         await database`INSERT INTO grids.bases (id, short_id, name)
-          VALUES (${baseId}::uuid, ${shortId("B")}, 'Existing base')`;
+          VALUES (${baseId}::uuid, ${testShortId()}, 'Existing base')`;
         await database`INSERT INTO grids.tables (id, short_id, base_id, name)
-          VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Existing table')`;
+          VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Existing table')`;
         const [existing] = await database`INSERT INTO grids.document_templates
           (short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
-          VALUES (${shortId("D")}, ${tableId}::uuid, 'Existing template', 'from table "Existing table"',
+          VALUES (${testShortId()}, ${tableId}::uuid, 'Existing template', 'from table "Existing table"',
             'html', '<p>Existing content</p>', 'DOC-{{ sequence }}', 'existing.pdf')
           RETURNING to_jsonb(document_templates) - 'issuance_policy' AS data`;
 
@@ -642,37 +642,37 @@ describe("grids schema migration", () => {
         const snapshotB = uuid();
         const documentA = uuid();
         const documentB = uuid();
-        const documentAShortId = shortId("F");
-        const documentBShortId = shortId("G");
-        const mismatchedDocumentShortId = shortId("H");
+        const documentAShortId = testShortId();
+        const documentBShortId = testShortId();
+        const mismatchedDocumentShortId = testShortId();
         const fileA = uuid();
         const ordinaryFile = uuid();
         await database`
           INSERT INTO grids.bases (id, short_id, name) VALUES
-            (${baseA}::uuid, ${shortId("A")}, 'A'),
-            (${baseB}::uuid, ${shortId("B")}, 'B')
+            (${baseA}::uuid, ${testShortId()}, 'A'),
+            (${baseB}::uuid, ${testShortId()}, 'B')
         `;
         await database`
           INSERT INTO grids.tables (id, short_id, base_id, name) VALUES
-            (${tableA}::uuid, ${shortId("T")}, ${baseA}::uuid, 'A'),
-            (${tableB}::uuid, ${shortId("U")}, ${baseB}::uuid, 'B')
+            (${tableA}::uuid, ${testShortId()}, ${baseA}::uuid, 'A'),
+            (${tableB}::uuid, ${testShortId()}, ${baseB}::uuid, 'B')
         `;
         await database`
           INSERT INTO grids.records (id, short_id, table_id) VALUES
-            (${recordA}::uuid, ${shortId("R")}, ${tableA}::uuid),
-            (${recordB}::uuid, ${shortId("S")}, ${tableB}::uuid)
+            (${recordA}::uuid, ${testShortId()}, ${tableA}::uuid),
+            (${recordB}::uuid, ${testShortId()}, ${tableB}::uuid)
         `;
         await database`
           INSERT INTO grids.document_templates (
             id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template
           ) VALUES
-            (${templateA}::uuid, ${shortId("D")}, ${tableA}::uuid, 'A', 'from table A', 'html', '<p>A</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf'),
-            (${templateB}::uuid, ${shortId("E")}, ${tableB}::uuid, 'B', 'from table B', 'html', '<p>B</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
+            (${templateA}::uuid, ${testShortId()}, ${tableA}::uuid, 'A', 'from table A', 'html', '<p>A</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf'),
+            (${templateB}::uuid, ${testShortId()}, ${tableB}::uuid, 'B', 'from table B', 'html', '<p>B</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
         `;
         await database`
           INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph) VALUES
-            (${snapshotA}::uuid, ${shortId("N")}, ${baseA}::uuid, ${tableA}::uuid, ${recordA}::uuid, '{}'::jsonb, '{}'::jsonb),
-            (${snapshotB}::uuid, ${shortId("O")}, ${baseB}::uuid, ${tableB}::uuid, ${recordB}::uuid, '{}'::jsonb, '{}'::jsonb)
+            (${snapshotA}::uuid, ${testShortId()}, ${baseA}::uuid, ${tableA}::uuid, ${recordA}::uuid, '{}'::jsonb, '{}'::jsonb),
+            (${snapshotB}::uuid, ${testShortId()}, ${baseB}::uuid, ${tableB}::uuid, ${recordB}::uuid, '{}'::jsonb, '{}'::jsonb)
         `;
         await database`
           INSERT INTO grids.documents (primary_artifact_key,
@@ -691,7 +691,7 @@ describe("grids schema migration", () => {
                 id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
                 template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
               ) VALUES ('pdf',
-                ${uuid()}::uuid, ${shortId("H")}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
+                ${uuid()}::uuid, ${testShortId()}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
                 ${recordA}::uuid, 'INV-1', 'duplicate.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"c".repeat(64)}, '{"kind":"system"}'::jsonb
               )
             `;
@@ -704,7 +704,7 @@ describe("grids schema migration", () => {
                 id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
                 template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
               ) VALUES ('pdf',
-                ${uuid()}::uuid, ${shortId("I")}, ${templateA}::uuid, ${uuid()}::uuid, ${snapshotA}::uuid, ${baseA}::uuid,
+                ${uuid()}::uuid, ${testShortId()}, ${templateA}::uuid, ${uuid()}::uuid, ${snapshotA}::uuid, ${baseA}::uuid,
                 ${tableA}::uuid, ${recordA}::uuid, 'INV-2', 'INV-2.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"d".repeat(64)}, '{"kind":"system"}'::jsonb
               )
             `;
@@ -717,7 +717,7 @@ describe("grids schema migration", () => {
                 id, short_id, table_id, name, source, renderer_kind, profile_id, profile_version, profile_input_template,
                 number_template
               ) VALUES (
-                ${uuid()}::uuid, ${shortId("P")}, ${tableA}::uuid, 'Invalid profile', 'from table A', 'profile',
+                ${uuid()}::uuid, ${testShortId()}, ${tableA}::uuid, 'Invalid profile', 'from table A', 'profile',
                 'test.profile', 1, '{}', 'ignored'
               )
             `;
@@ -729,7 +729,7 @@ describe("grids schema migration", () => {
               INSERT INTO grids.document_templates (
                 id, short_id, table_id, name, source, renderer_kind, html, header_html, number_template, filename_template
               ) VALUES (
-                ${uuid()}::uuid, ${shortId("V")}, ${tableA}::uuid, 'Empty header', 'from table A', 'html',
+                ${uuid()}::uuid, ${testShortId()}, ${tableA}::uuid, 'Empty header', 'from table A', 'html',
                 '<p>A</p>', '', 'INV-{{ series.value }}', '{{ document.number }}.pdf'
               )
             `;
@@ -741,7 +741,7 @@ describe("grids schema migration", () => {
               INSERT INTO grids.document_templates (
                 id, short_id, table_id, name, source, renderer_kind, html, footer_html, number_template, filename_template
               ) VALUES (
-                ${uuid()}::uuid, ${shortId("W")}, ${tableA}::uuid, 'Empty footer', 'from table A', 'html',
+                ${uuid()}::uuid, ${testShortId()}, ${tableA}::uuid, 'Empty footer', 'from table A', 'html',
                 '<p>A</p>', '', 'INV-{{ series.value }}', '{{ document.number }}.pdf'
               )
             `;
@@ -753,7 +753,7 @@ describe("grids schema migration", () => {
               INSERT INTO grids.document_templates (
                 id, short_id, table_id, name, source, renderer_kind, html, page_css, number_template, filename_template
               ) VALUES (
-                ${uuid()}::uuid, ${shortId("X")}, ${tableA}::uuid, 'Empty CSS', 'from table A', 'html',
+                ${uuid()}::uuid, ${testShortId()}, ${tableA}::uuid, 'Empty CSS', 'from table A', 'html',
                 '<p>A</p>', '', 'INV-{{ series.value }}', '{{ document.number }}.pdf'
               )
             `;
@@ -762,11 +762,11 @@ describe("grids schema migration", () => {
 
         await database`
           INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-          VALUES (${fileA}::uuid, ${shortId("J")}, 'INV-1.pdf', 'application/pdf', 4, ${"e".repeat(64)}, ${new TextEncoder().encode("%PDF")})
+          VALUES (${fileA}::uuid, ${testShortId()}, 'INV-1.pdf', 'application/pdf', 4, ${"e".repeat(64)}, ${new TextEncoder().encode("%PDF")})
         `;
         await database`
           INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-          VALUES (${ordinaryFile}::uuid, ${shortId("K")}, 'draft.txt', 'text/plain', 5, ${"3".repeat(64)}, ${new TextEncoder().encode("draft")})
+          VALUES (${ordinaryFile}::uuid, ${testShortId()}, 'draft.txt', 'text/plain', 5, ${"3".repeat(64)}, ${new TextEncoder().encode("draft")})
         `;
         await database`
           INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id)
@@ -968,12 +968,12 @@ describe("grids schema migration", () => {
         const tableA = uuid();
         const tableB = uuid();
         const recordId = uuid();
-        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("b")}, 'External invariant')`;
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'External invariant')`;
         await database`
           INSERT INTO grids.tables (id, short_id, base_id, name)
-          VALUES (${tableA}::uuid, ${shortId("a")}, ${baseId}::uuid, 'A'), (${tableB}::uuid, ${shortId("t")}, ${baseId}::uuid, 'B')
+          VALUES (${tableA}::uuid, ${testShortId()}, ${baseId}::uuid, 'A'), (${tableB}::uuid, ${testShortId()}, ${baseId}::uuid, 'B')
         `;
-        await database`INSERT INTO grids.records (id, short_id, table_id) VALUES (${recordId}::uuid, ${shortId("r")}, ${tableB}::uuid)`;
+        await database`INSERT INTO grids.records (id, short_id, table_id) VALUES (${recordId}::uuid, ${testShortId()}, ${tableB}::uuid)`;
         let mismatchRejected = false;
         try {
           await database.begin(
@@ -1006,19 +1006,19 @@ describe("grids schema migration", () => {
         const revisionId = uuid();
         await database`
           INSERT INTO grids.bases (id, short_id, name)
-          VALUES (${baseId}::uuid, ${shortId("B")}, 'Combined schema invariants')
+          VALUES (${baseId}::uuid, ${testShortId()}, 'Combined schema invariants')
         `;
         await database`
           INSERT INTO grids.tables (id, short_id, base_id, kind, name, disable_direct_insert)
           VALUES
-            (${storedTableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'stored', 'Stored', FALSE),
-            (${combinedTableId}::uuid, ${shortId("C")}, ${baseId}::uuid, 'federated', 'Combined', TRUE)
+            (${storedTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'stored', 'Stored', FALSE),
+            (${combinedTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'federated', 'Combined', TRUE)
         `;
         await database`
           INSERT INTO grids.fields (id, short_id, table_id, name, type)
           VALUES
-            (${storedFieldId}::uuid, ${shortId("F")}, ${storedTableId}::uuid, 'Stored field', 'text'),
-            (${combinedFieldId}::uuid, ${shortId("F")}, ${combinedTableId}::uuid, 'Canonical field', 'text')
+            (${storedFieldId}::uuid, ${testShortId()}, ${storedTableId}::uuid, 'Stored field', 'text'),
+            (${combinedFieldId}::uuid, ${testShortId()}, ${combinedTableId}::uuid, 'Canonical field', 'text')
         `;
         await database`
           INSERT INTO grids.federated_table_revisions (id, table_id, revision, status)
@@ -1083,17 +1083,17 @@ describe("grids schema migration", () => {
 
         await database`
           INSERT INTO grids.bases (id, short_id, name)
-          VALUES (${baseId}::uuid, ${shortId("B")}, 'View names')
+          VALUES (${baseId}::uuid, ${testShortId()}, 'View names')
         `;
         await database`
           INSERT INTO grids.tables (id, short_id, base_id, name)
           VALUES
-            (${firstTableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'First'),
-            (${secondTableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Second')
+            (${firstTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'First'),
+            (${secondTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Second')
         `;
         const [view] = await database<Array<{ baseId: string }>>`
           INSERT INTO grids.views (short_id, table_id, name, source)
-          VALUES (${shortId("V")}, ${firstTableId}::uuid, 'Open items', 'from table First')
+          VALUES (${testShortId()}, ${firstTableId}::uuid, 'Open items', 'from table First')
           RETURNING base_id::text AS "baseId"
         `;
         expect(view?.baseId).toBe(baseId);
@@ -1102,7 +1102,7 @@ describe("grids schema migration", () => {
         try {
           await database`
             INSERT INTO grids.views (short_id, table_id, name, source)
-            VALUES (${shortId("V")}, ${secondTableId}::uuid, ' open ITEMS ', 'from table Second')
+            VALUES (${testShortId()}, ${secondTableId}::uuid, ' open ITEMS ', 'from table Second')
           `;
         } catch (error) {
           conflict = error;

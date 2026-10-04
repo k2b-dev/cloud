@@ -20,6 +20,18 @@ if (!isServer) {
   }));
 }
 
+// Load once, after the module mocks and outside any test, so the cold Solid transform of the workspace's source graph
+// does not count against the 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { Workspace: (await import("../src/frontend/Workspace.island")).default };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 const initial: WorkspaceSnapshot = {
   source: "/app/filesv2?base=home",
   bases: { items: [], issues: [], editor: null },
@@ -193,7 +205,7 @@ describe("Filesv2 progressive navigation", () => {
   test("workspace sidebar and folders enhance real hrefs; popstate reloads the matching view", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const base = {
       id: "home",
       area: "cloud" as const,
@@ -279,7 +291,7 @@ describe("Filesv2 progressive navigation", () => {
   test("the sidebar tree holds only storage and folders; each storage root's listing opens its trash", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const home = {
       id: "home",
       area: "cloud" as const,
@@ -359,7 +371,7 @@ describe("Filesv2 progressive navigation", () => {
   test("a listing row stops spinning when a navigation back to the same folder replaces its pending open", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const base = {
       id: "home",
       area: "cloud" as const,
@@ -404,7 +416,7 @@ describe("Filesv2 progressive navigation", () => {
   });
   test("failures of enabled areas show a notice next to working storage; no issues and no storage stay quiet", async () => {
     const dom = createDomTestHarness();
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const base = {
       id: "ipa",
       area: "freeipa" as const,
@@ -532,7 +544,7 @@ describe("Filesv2 progressive navigation", () => {
     };
     const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
     const directory = { base, path: "", items: [folder], next: null };
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const dispose = render(
       () =>
         createComponent(Workspace, {
@@ -590,7 +602,7 @@ describe("Filesv2 progressive navigation", () => {
 
   test("a shares deep link remains account-scoped after its requested group disappears", async () => {
     const dom = createDomTestHarness();
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const dispose = render(() => createComponent(Workspace, { initial, cloudUrl: "https://cloud.test" }), dom.root);
     cleanup = () => {
       dispose();
@@ -631,7 +643,7 @@ describe("Filesv2 progressive navigation", () => {
     const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
     const bases = { items: [base], issues: [], editor: null };
     const directory = { base, path: "", items: [folder], next: null };
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const dispose = render(
       () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
       dom.root,
@@ -703,7 +715,7 @@ describe("Filesv2 progressive navigation", () => {
       versioningEnabled: false,
     };
     const directory = { base, path: "", items: [], next: null };
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const { Workspace } = modules!;
     const dispose = render(
       () =>
         createComponent(Workspace, {

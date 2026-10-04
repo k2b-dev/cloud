@@ -15,7 +15,7 @@ beforeAll(async () => {
 
 const createBase = async (name: string): Promise<string> => {
   const id = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${id}::uuid, ${testShortId("B")}, ${name})`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${id}::uuid, ${testShortId()}, ${name})`;
   return id;
 };
 

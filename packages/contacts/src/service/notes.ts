@@ -2,6 +2,7 @@ import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
+import { publishContactChange } from "./live";
 import { isUuid, type SqlExecutor } from "./shared";
 import type { ContactNote, CreateContactNoteInput, UpdateContactNoteInput } from "./types";
 
@@ -139,30 +140,33 @@ export const create = async (config: {
   }
   if (!(await verifyContactInBook(config))) return fail(err.notFound("Contact"));
 
-  const row = await withShortId("note", async (shortId) => {
-    const [created] = await sql<DbContactNote[]>`
-      WITH inserted AS (
-        INSERT INTO contacts.contact_notes (
-          short_id,
-          contact_id,
-          author_user_id,
-          author_display_name,
-          content
-        ) VALUES (
-          ${shortId},
-          ${config.contactId}::uuid,
-          ${config.authorUserId}::uuid,
-          ${config.authorDisplayName},
-          ${trimmed}
+  const row = await withShortId("note", (shortId) =>
+    sql.begin(async (tx) => {
+      const [created] = await tx<DbContactNote[]>`
+        WITH inserted AS (
+          INSERT INTO contacts.contact_notes (
+            short_id,
+            contact_id,
+            author_user_id,
+            author_display_name,
+            content
+          ) VALUES (
+            ${shortId},
+            ${config.contactId}::uuid,
+            ${config.authorUserId}::uuid,
+            ${config.authorDisplayName},
+            ${trimmed}
+          )
+          RETURNING id, contact_id, author_user_id, author_display_name, content, created_at, updated_at
         )
-        RETURNING id, contact_id, author_user_id, author_display_name, content, created_at, updated_at
-      )
-      SELECT i.id, i.contact_id, i.author_user_id, i.author_display_name, u.avatar_hash AS author_avatar_hash, i.content, i.created_at, i.updated_at
-      FROM inserted i
-      LEFT JOIN auth.users u ON u.id = i.author_user_id
-    `;
-    return created;
-  });
+        SELECT i.id, i.contact_id, i.author_user_id, i.author_display_name, u.avatar_hash AS author_avatar_hash, i.content, i.created_at, i.updated_at
+        FROM inserted i
+        LEFT JOIN auth.users u ON u.id = i.author_user_id
+      `;
+      if (created) await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
+      return created;
+    }),
+  );
   if (!row) return fail(err.internal("Failed to create note"));
   return ok(mapNote(row, config.authorUserId));
 };
@@ -229,6 +233,7 @@ export const createIdempotent = async (config: {
       INSERT INTO contacts.contact_notes (id, short_id, contact_id, author_user_id, author_display_name, content)
       VALUES (${allocated.id}::uuid, ${shortId}, ${config.contactId}::uuid, ${config.authorUserId}::uuid, ${config.authorDisplayName}, ${trimmed})
     `;
+      await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
       const note = await loadNote({ noteId: allocated.id, contactId: config.contactId, viewerUserId: config.authorUserId, db: tx });
       return note ? ok({ note, replayed: false }) : fail(err.internal("Failed to load created note"));
     }),
@@ -266,19 +271,23 @@ export const update = async (config: {
     return fail(err.forbidden("Notes can only be edited within 10 minutes"));
   }
 
-  const [row] = await sql<DbContactNote[]>`
-    WITH updated AS (
-      UPDATE contacts.contact_notes
-      SET content = ${trimmed}, updated_at = now()
-      WHERE id = ${config.noteId}::uuid
-        AND author_user_id = ${config.authorUserId}::uuid
-        AND created_at >= now() - interval '10 minutes'
-      RETURNING id, contact_id, author_user_id, author_display_name, content, created_at, updated_at
-    )
-    SELECT u2.id, u2.contact_id, u2.author_user_id, u2.author_display_name, au.avatar_hash AS author_avatar_hash, u2.content, u2.created_at, u2.updated_at
-    FROM updated u2
-    LEFT JOIN auth.users au ON au.id = u2.author_user_id
-  `;
+  const [row] = await sql.begin(async (tx) => {
+    const rows = await tx<DbContactNote[]>`
+      WITH updated AS (
+        UPDATE contacts.contact_notes
+        SET content = ${trimmed}, updated_at = now()
+        WHERE id = ${config.noteId}::uuid
+          AND author_user_id = ${config.authorUserId}::uuid
+          AND created_at >= now() - interval '10 minutes'
+        RETURNING id, contact_id, author_user_id, author_display_name, content, created_at, updated_at
+      )
+      SELECT u2.id, u2.contact_id, u2.author_user_id, u2.author_display_name, au.avatar_hash AS author_avatar_hash, u2.content, u2.created_at, u2.updated_at
+      FROM updated u2
+      LEFT JOIN auth.users au ON au.id = u2.author_user_id
+    `;
+    if (rows.length > 0) await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
+    return rows;
+  });
   if (!row) return fail(err.forbidden("Notes can only be edited within 10 minutes"));
   return ok(mapNote(row, config.authorUserId));
 };
@@ -304,13 +313,17 @@ export const remove = async (config: {
   if (existing.author_user_id !== config.authorUserId) return fail(err.forbidden("Only the author may delete this note"));
   if (!canMutateNote(existing, config.authorUserId)) return fail(err.forbidden("Notes can only be deleted within 10 minutes"));
 
-  const [deleted] = await sql<{ id: string }[]>`
-    DELETE FROM contacts.contact_notes
-    WHERE id = ${config.noteId}::uuid
-      AND author_user_id = ${config.authorUserId}::uuid
-      AND created_at >= now() - interval '10 minutes'
-    RETURNING id
-  `;
+  const deleted = await sql.begin(async (tx) => {
+    const [note] = await tx<{ id: string }[]>`
+      DELETE FROM contacts.contact_notes
+      WHERE id = ${config.noteId}::uuid
+        AND author_user_id = ${config.authorUserId}::uuid
+        AND created_at >= now() - interval '10 minutes'
+      RETURNING id
+    `;
+    if (note) await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
+    return note;
+  });
   if (!deleted) return fail(err.forbidden("Notes can only be deleted within 10 minutes"));
   return ok(undefined);
 };

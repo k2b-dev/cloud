@@ -70,9 +70,32 @@ Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
 that branches on `isServer` is not named `*.behavior.test.*`, or when the
 runner would not pick up a behavior test.
 
-Import heavy components once at module scope, not inside the first test: the
+Load heavy components once at module scope, not inside the first test: the
 first import runs the Solid transform over the component's source graph, and
-that time otherwise counts against the 5 s test timeout.
+that time otherwise counts against the 5 s test timeout. A plain module-scope
+import does not work, because the `@k2b/ui` browser build needs a document
+while its modules evaluate. Load the component under a temporary harness from
+`packages/ui/test/dom.ts`, after any top-level `mock.module` calls:
+
+```tsx
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return (await import("./RecordsView")).default;
+  } finally {
+    dom.cleanup();
+  }
+};
+const RecordsView = isServer ? undefined : await load();
+```
+
+Solid attaches its delegated event listeners, such as the one for `click`, to
+the document that exists while a module evaluates, here the temporary one. A
+test that clicks therefore calls `delegateEvents(["click"], dom.document)` for
+its own document.
+`packages/grids/src/frontend/_components/records-view/RecordsView.behavior.test.tsx`
+loads its component after module mocks and registers delegated events in each
+test.
 
 ## Replace modules in tests
 

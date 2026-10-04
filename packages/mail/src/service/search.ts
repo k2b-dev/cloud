@@ -8,6 +8,7 @@ import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contr
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
+import { hasSendProblem } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
@@ -799,11 +800,13 @@ const runSearch = async (params: {
   groupByConversation: boolean;
   excludedFolderIds: readonly string[];
   lapsedAssignees: readonly LapsedAssignee[];
+  sendProblems: boolean;
 }): Promise<DbSearchHit[]> => {
   const predicate = compileSearchExpression(params.expression, params.currentUserId, sql`cm.conversation_id`, params.lapsedAssignees);
   const indexedSeed = findIndexedSeed(params.expression);
   const indexedSeedCoversExpression = indexedSeed === params.expression;
-  const conversationOnly = params.groupByConversation && !indexedSeed && isConversationOnlyExpression(params.expression);
+  const conversationOnly =
+    params.groupByConversation && !params.sendProblems && !indexedSeed && isConversationOnlyExpression(params.expression);
   const cursor = params.cursor;
   const limit = params.limit + 1;
   const includedPlacement = (folderId: SqlFragment) => sql`
@@ -820,6 +823,16 @@ const runSearch = async (params: {
           FROM mail.conversations seed_conversation
           WHERE seed_conversation.mailbox_id = ${params.mailboxId}::uuid
             AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`, params.lapsedAssignees)})
+            -- Only conversations the list can show take a place on the page; one without a visible
+            -- message would otherwise end the page early.
+            AND EXISTS (
+              SELECT 1
+              FROM mail.conversation_messages seed_link
+              JOIN mail.message_placements seed_visible ON seed_visible.message_id = seed_link.message_id
+              WHERE seed_link.conversation_id = seed_conversation.id
+                AND seed_visible.deleted_at IS NULL
+                AND ${includedPlacement(sql`seed_visible.folder_id`)}
+            )
             AND (
               ${cursor?.id ?? null}::uuid IS NULL
               OR (
@@ -867,6 +880,24 @@ const runSearch = async (params: {
           ) mc
         `
       : sql`mail.message_contents mc`;
+  const visiblePlacement = sql`EXISTS (
+    SELECT 1 FROM mail.message_placements visible
+    WHERE visible.message_id = mc.id
+      AND visible.deleted_at IS NULL
+      AND ${includedPlacement(sql`visible.folder_id`)}
+  )`;
+  // A message whose send failed usually never reached a folder, so Send problems also lists it
+  // without a placement, as long as no folder holds a copy at all.
+  const candidateVisibility = params.sendProblems
+    ? sql`${hasSendProblem(sql`mc.id`)}
+        AND (
+          ${visiblePlacement}
+          OR NOT EXISTS (
+            SELECT 1 FROM mail.message_placements any_visible
+            WHERE any_visible.message_id = mc.id AND any_visible.deleted_at IS NULL
+          )
+        )`
+    : visiblePlacement;
   const sourceMailboxPredicate = conversationOnly ? sql`seed_conversation.mailbox_id = ${params.mailboxId}::uuid` : sql`true`;
   const folderIds = guaranteedFolderIds(params.expression);
   const unreadFolderPredicate = folderIds
@@ -943,12 +974,7 @@ const runSearch = async (params: {
       LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
       WHERE ${sourceMailboxPredicate}
         AND mc.mailbox_id = ${params.mailboxId}::uuid
-        AND EXISTS (
-          SELECT 1 FROM mail.message_placements visible
-          WHERE visible.message_id = mc.id
-            AND visible.deleted_at IS NULL
-            AND ${includedPlacement(sql`visible.folder_id`)}
-        )
+        AND ${candidateVisibility}
         AND (${useConversationSeed || indexedSeedCoversExpression ? sql`true` : predicate})
         ${messageNewestPage}
     ),
@@ -1179,7 +1205,7 @@ const runSearch = async (params: {
           FROM mail.message_placements unread_placement
           WHERE unread_placement.deleted_at IS NULL
             AND NOT ('\\Seen' = ANY(unread_placement.flags))
-            AND deduplicated.conversation_id IS NULL
+            AND (NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL)
             AND unread_placement.message_id = deduplicated.id
             AND ${unreadFolderPredicate}
             AND ${includedPlacement(sql`unread_placement.folder_id`)}
@@ -1340,6 +1366,7 @@ const executeSearchWithFallback = async (params: {
   groupByConversation: boolean;
   excludedFolderIds: readonly string[];
   lapsedAssignees: readonly LapsedAssignee[];
+  sendProblems: boolean;
 }): Promise<Result<{ rows: DbSearchHit[]; backend: SearchCursor["backend"] }>> => {
   try {
     const rows = await executeSearch(params);
@@ -1368,6 +1395,8 @@ export const searchMessages = async (params: {
   request: SearchRequest;
   groupByConversation?: boolean;
   excludedFolderIds?: readonly string[];
+  /** Limit the results to messages whose send needs attention, including ones no folder holds yet. */
+  sendProblems?: boolean;
 }): Promise<Result<MessageSearchPage>> => {
   const expression = params.request.expression;
   const complexity = validateSearchComplexity(expression);
@@ -1378,7 +1407,16 @@ export const searchMessages = async (params: {
   const currentUserId = userBackedActor(params.context)?.id ?? null;
   const groupByConversation = params.groupByConversation !== false;
   const excludedFolderIds = [...new Set(params.excludedFolderIds ?? [])].sort();
-  const queryHash = sha256Json({ mailboxId: params.mailboxId, expression, currentUserId, groupByConversation, excludedFolderIds });
+  const sendProblems = params.sendProblems === true;
+  // Only a Send problems list adds its scope, so cursors of every other search stay valid.
+  const queryHash = sha256Json({
+    mailboxId: params.mailboxId,
+    expression,
+    currentUserId,
+    groupByConversation,
+    excludedFolderIds,
+    ...(sendProblems ? { sendProblems } : {}),
+  });
   const cursor = decodeCursor(params.request.cursor, sort, queryHash);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.request.limit ?? 50), 1), 100);
@@ -1399,6 +1437,7 @@ export const searchMessages = async (params: {
     groupByConversation,
     excludedFolderIds,
     lapsedAssignees,
+    sendProblems,
   });
   if (!execution.ok) return execution;
   const rows = execution.data.rows;

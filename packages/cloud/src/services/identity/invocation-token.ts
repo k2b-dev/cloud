@@ -56,6 +56,8 @@ const InvocationPayloadSchema = z
     delegated_user_id: z.string().uuid().optional(),
     act: z.object({ sub: z.string().regex(/^app:[a-z][a-z0-9-]{0,79}$/) }).strict(),
     credential_kind: z.enum(["session", "oauth", "api_key", "mandate"]),
+    /** Only for an app session of the mobile app, which never acts as an administrator. */
+    session_kind: z.literal("app").optional(),
     credential_id: BoundedIdentifierSchema.optional(),
     scopes: z
       .array(ScopeSchema)
@@ -97,6 +99,9 @@ const InvocationPayloadSchema = z
     if (claims.credential_kind === "session" && claims.principal_type !== "user") {
       context.addIssue({ code: "custom", message: "A session invocation must use a user principal" });
     }
+    if (claims.session_kind && claims.credential_kind !== "session") {
+      context.addIssue({ code: "custom", message: "Only a session invocation has a session kind" });
+    }
     if (claims.credential_kind === "session" && claims.scopes.length > 0) {
       context.addIssue({ code: "custom", message: "A session invocation cannot carry credential scopes" });
     }
@@ -120,6 +125,7 @@ export type InvocationAuthority = Pick<
   | "access_subject_id"
   | "delegated_user_id"
   | "credential_kind"
+  | "session_kind"
   | "credential_id"
   | "scopes"
   | "mandate_id"

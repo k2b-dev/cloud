@@ -130,7 +130,7 @@ const queue = async (
   });
   await sql`
     INSERT INTO grids.workflow_run_profile (run_id, short_id, base_id, workflow_id, channel, actor_user_id, request_fingerprint)
-    VALUES (${runId}::uuid, ${testShortId("R")}, ${fixture.baseId}::uuid, ${workflow.id}::uuid, 'api', ${fixture.actorId}::uuid, ${runId})
+    VALUES (${runId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, ${workflow.id}::uuid, 'api', ${fixture.actorId}::uuid, ${runId})
   `;
   return runId;
 };

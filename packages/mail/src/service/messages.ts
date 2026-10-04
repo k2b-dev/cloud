@@ -8,7 +8,7 @@ import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
-import { isUnsentOutboundMessage } from "./conversation-timeline";
+import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
 import { FOLLOW_UP_VIEWS, isFollowUpConversation } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
@@ -393,12 +393,8 @@ export const listConversations = async (params: {
           AND EXISTS (
             SELECT 1
             FROM mail.conversation_messages problem_cm
-            JOIN mail.outbox_submissions problem_outbox ON problem_outbox.message_id = problem_cm.message_id
             WHERE problem_cm.conversation_id = c.id
-              AND (
-                (problem_outbox.state = 'scheduled' AND problem_outbox.last_error_code IS NOT NULL)
-                OR problem_outbox.state IN ('failed', 'unknown', 'reconciled_unsent', 'needs_attention')
-              )
+              AND ${hasSendProblem(sql`problem_cm.message_id`)}
           )
         )
         OR ${view} = 'recently_active'
@@ -532,12 +528,8 @@ export const getConversationViewCounts = async (params: {
         WHERE EXISTS (
           SELECT 1
           FROM mail.conversation_messages problem_cm
-          JOIN mail.outbox_submissions problem_outbox ON problem_outbox.message_id = problem_cm.message_id
           WHERE problem_cm.conversation_id = c.id
-            AND (
-              (problem_outbox.state = 'scheduled' AND problem_outbox.last_error_code IS NOT NULL)
-              OR problem_outbox.state IN ('failed', 'unknown', 'reconciled_unsent', 'needs_attention')
-            )
+            AND ${hasSendProblem(sql`problem_cm.message_id`)}
         )
       )::int AS send_problems,
       COUNT(*)::int AS recently_active

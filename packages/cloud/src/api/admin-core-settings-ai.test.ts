@@ -30,7 +30,7 @@ beforeEach(() => {
   restores.push(
     spyOn(session, "authenticateRequest").mockResolvedValue({
       user,
-      data: { userId: user.id, sid: "test", authEpoch: 0, expiresAt: new Date(Date.now() + 60000).toISOString() },
+      data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: new Date(Date.now() + 60000).toISOString() },
     }),
     spyOn(settings, "get").mockImplementation((async (key: string) => stored[key]) as typeof settings.get),
     spyOn(settings, "set").mockRejectedValue(new Error("test must not write settings")),

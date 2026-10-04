@@ -234,8 +234,8 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
 
 const app = new Hono().get(
   "/",
-  upgradeWebSocket((c) => {
-    const sessionToken = auth.session.getToken(c);
+  upgradeWebSocket(async (c) => {
+    const sessionToken = await auth.session.resolveToken(c);
     const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();

@@ -41,9 +41,9 @@ const createScope = async (database: SQL = sql) => {
   const baseId = testUuid();
   const tableId = testUuid();
   const recordId = testUuid();
-  const recordShortId = testShortId("R");
-  await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Issuance')`;
-  await database`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
+  const recordShortId = testShortId();
+  await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Issuance')`;
+  await database`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices')`;
   await database`
     INSERT INTO grids.records (id, short_id, table_id, data, version, updated_at)
     VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, '{}'::jsonb, 1, '2026-08-22T10:00:00.000Z')
@@ -58,7 +58,7 @@ const inputFor = (
 ): IssueDocumentInput => {
   const root = {
     id: scope.recordId,
-    table: { id: scope.tableId, shortId: testShortId("T"), name: "Invoices" },
+    table: { id: scope.tableId, shortId: testShortId(), name: "Invoices" },
     fields: [],
     data: {},
     version: 1,
@@ -80,7 +80,7 @@ const inputFor = (
     },
     renderData: {
       record: { id: scope.recordShortId, shortId: scope.recordShortId, version: 1, updatedAt: "2026-08-22T10:00:00.000Z", data: {} },
-      table: { id: testShortId("T"), name: "Invoices" },
+      table: { id: testShortId(), name: "Invoices" },
     },
     actor: { kind: "system" },
     idempotencyKey: `issue-${testUuid()}`,
@@ -98,7 +98,7 @@ const insertProfileTemplate = async (
       id, short_id, table_id, name, source, renderer_kind,
       profile_id, profile_version, profile_input_template, enabled, position
     ) VALUES (
-      ${id}::uuid, ${testShortId("D")}, ${tableId}::uuid, 'Statement', 'from table Invoices', 'profile',
+      ${id}::uuid, ${testShortId()}, ${tableId}::uuid, 'Statement', 'from table Invoices', 'profile',
       ${renderer.id}, ${renderer.version}, ${renderer.inputTemplate}, true, 0
     )
   `;
@@ -168,7 +168,7 @@ postgresTest("once-per-finalized-record retries across keys and actors without a
   input.snapshot.root = { ...input.snapshot.root, version: finalized.data.version, updatedAt: finalized.data.updatedAt };
   input.renderData.record = { id: scope.recordShortId, version: finalized.data.version, updatedAt: finalized.data.updatedAt, data: {} };
   const relatedTableId = testUuid();
-  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${relatedTableId}::uuid, ${testShortId("T")}, ${scope.baseId}::uuid, 'Related')`;
+  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${relatedTableId}::uuid, ${testShortId()}, ${scope.baseId}::uuid, 'Related')`;
   input.snapshot.graph = {
     rootId: `${scope.tableId}:${scope.recordId}`,
     records: {
@@ -353,11 +353,11 @@ postgresTest(
     expect(normalized.data.input.rows[0]).toMatchObject({ businessId: scope.recordShortId, amount: "0.02", direction: "S" });
     const datev = renderDatevBatch(normalized.data.input, new Date("2026-09-11T12:00:00.000Z"));
     expect(new TextDecoder().decode(datev.bytes)).toContain('0,02;"S";"EUR"');
-    const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId("W") });
+    const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId() });
     const runId = await insertTestWorkflowRun({
       baseId: scope.baseId,
       workflowId,
-      shortId: testShortId("R"),
+      shortId: testShortId(),
       state: "waiting",
       channel: "api",
     });
@@ -431,7 +431,7 @@ postgresTest(
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
     const starterWorkflow = await insertTestWorkflow({
       baseId: scope.baseId,
-      shortId: testShortId("W"),
+      shortId: testShortId(),
       source: starterSource,
       plan: compiled.plan,
       enabled: true,
@@ -485,8 +485,8 @@ type RunFile = { key: string; filename: string; mediaType: string; bytes: Uint8A
 /** Issues one Document per file into a fresh workflow run, one profile template each. */
 const issueRunDocuments = async (files: RunFile[]) => {
   const scope = await createScope();
-  const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId("W") });
-  const runId = await insertTestWorkflowRun({ baseId: scope.baseId, workflowId, shortId: testShortId("R"), state: "succeeded" });
+  const workflowId = await insertTestWorkflow({ baseId: scope.baseId, shortId: testShortId() });
+  const runId = await insertTestWorkflowRun({ baseId: scope.baseId, workflowId, shortId: testShortId(), state: "succeeded" });
   const templates: DocumentTemplate[] = [];
   for (const [index, file] of files.entries()) {
     const profile: DocumentProfile<Record<string, never>> = {
@@ -576,7 +576,7 @@ describe("Workflow run download-all", () => {
 
   postgresTest("rejects a run over the document count limit", async () => {
     const { runId } = await issueRunDocuments([csvFile("export.csv", "x\r\n")]);
-    // Random short IDs may clash with earlier rows; extra attempts keep the run above the limit.
+    const shortIds = Array.from({ length: 1100 }, () => testShortId());
     await sql`
       INSERT INTO grids.documents (
         short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
@@ -584,13 +584,12 @@ describe("Workflow run download-all", () => {
         profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
         validation_report, issued_actor, primary_artifact_key
       )
-      SELECT substr(md5(random()::text || n), 1, 6), template_id, workflow_run_id, 'limit-' || n, snapshot_id, base_id, table_id,
-        record_id, document_number || '-' || n, filename, template_snapshot, render_data, renderer_kind, renderer_version,
+      SELECT item.short_id, template_id, workflow_run_id, 'limit-' || item.n, snapshot_id, base_id, table_id,
+        record_id, document_number || '-' || item.n, filename, template_snapshot, render_data, renderer_kind, renderer_version,
         template_revision, profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
         validation_report, issued_actor, primary_artifact_key
-      FROM grids.documents, generate_series(1, 1100) AS n
+      FROM grids.documents, unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, n)
       WHERE workflow_run_id = ${runId}::uuid
-      ON CONFLICT DO NOTHING
     `;
     const [{ count } = { count: 0 }] = await sql<Array<{ count: number }>>`
       SELECT count(*)::int AS count FROM grids.documents WHERE workflow_run_id = ${runId}::uuid
@@ -838,7 +837,7 @@ describe("Document issuance", () => {
             id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template,
             profile_id, profile_version, profile_input_template
           ) VALUES (
-            ${testUuid()}::uuid, ${testShortId("D")}, ${scope.tableId}::uuid, 'Historical', 'from table Invoices',
+            ${testUuid()}::uuid, ${testShortId()}, ${scope.tableId}::uuid, 'Historical', 'from table Invoices',
             ${kind}, ${kind === "html" ? "<p>{{ document.number }}</p>" : null},
             ${kind === "html" ? "HIST-{{ series.value }}" : null},
             ${kind === "html" ? "{{ document.number }}.pdf" : null},
@@ -1079,7 +1078,7 @@ describe("Document issuance", () => {
     const corruptBytes = new TextEncoder().encode("corrupt");
     await sql`
       INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-      VALUES (${corruptFileId}::uuid, ${testShortId("F")}, 'corrupt.bin', 'application/octet-stream', ${corruptBytes.byteLength}, ${"0".repeat(64)}, ${corruptBytes})
+      VALUES (${corruptFileId}::uuid, ${testShortId()}, 'corrupt.bin', 'application/octet-stream', ${corruptBytes.byteLength}, ${"0".repeat(64)}, ${corruptBytes})
     `;
     await sql`
       INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id)
@@ -1152,7 +1151,7 @@ describe("Document issuance", () => {
     const recordBId = testUuid();
     await sql`
       INSERT INTO grids.records (id, short_id, table_id, data, version, updated_at)
-      VALUES (${recordBId}::uuid, ${testShortId("R")}, ${scope.tableId}::uuid, '{"content":"B"}'::jsonb, 1, '2026-08-22T10:00:00.000Z')
+      VALUES (${recordBId}::uuid, ${testShortId()}, ${scope.tableId}::uuid, '{"content":"B"}'::jsonb, 1, '2026-08-22T10:00:00.000Z')
     `;
     const recordBRoot = { ...input.snapshot.root, id: recordBId, data: { content: "B" } };
     const crossedBinding = await service.issueDocument({

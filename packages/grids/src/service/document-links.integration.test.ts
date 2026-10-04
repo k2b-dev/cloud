@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { insertTestDocumentArtifact } from "../integration-test-utils";
+import { insertTestDocumentArtifact, testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import {
   createDocumentLink,
@@ -15,7 +15,6 @@ import {
 const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 type DocumentLinkFixture = {
   baseId: string;
@@ -37,22 +36,22 @@ const insertFixture = async (): Promise<DocumentLinkFixture> => {
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'Document link integration')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Document link integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Invoices', 0)
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices', 0)
   `;
-  await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+  await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`;
   await sql`
     INSERT INTO grids.document_templates (id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
-    VALUES (${templateId}::uuid, ${shortId("D")}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
+    VALUES (${templateId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
   `;
   await sql`
     INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
     VALUES (
       ${snapshotId}::uuid,
-      ${shortId("S")},
+      ${testShortId()},
       ${baseId}::uuid,
       ${tableId}::uuid,
       ${recordId}::uuid,
@@ -69,7 +68,7 @@ const insertFixture = async (): Promise<DocumentLinkFixture> => {
     )
     VALUES ('pdf',
       ${documentId}::uuid,
-      ${shortId("D")},
+      ${testShortId()},
       ${templateId}::uuid,
       ${snapshotId}::uuid,
       ${baseId}::uuid,

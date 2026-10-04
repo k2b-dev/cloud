@@ -18,12 +18,12 @@ const fixture = async () => {
   const baseId = testUuid();
   const tableId = testUuid();
   const targetTableId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Durable history')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Durable history')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name)
     VALUES
-      (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Assets'),
-      (${targetTableId}::uuid, ${testShortId("U")}, ${baseId}::uuid, 'Categories')
+      (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Assets'),
+      (${targetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Categories')
   `;
   const name = await fields.create({ tableId, name: "Name", type: "text", presentable: true }, null);
   const attachment = await fields.create({ tableId, name: "Attachment", type: "file", config: { maxFiles: 2 } }, null);
@@ -291,7 +291,7 @@ describe("durable record history Postgres integration", () => {
   postgresTest("finishes a resumable baseline without duplicates while a record changes concurrently", async () => {
     const item = await fixture();
     try {
-      const rows = Array.from({ length: 130 }, (_, index) => ({ id: testUuid(), shortId: testShortId("R"), name: `Asset ${index}` }));
+      const rows = Array.from({ length: 130 }, (_, index) => ({ id: testUuid(), shortId: testShortId(), name: `Asset ${index}` }));
       for (const row of rows) {
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data)

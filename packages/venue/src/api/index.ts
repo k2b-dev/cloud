@@ -510,6 +510,8 @@ const venueRoutes = new Hono<AuthContext>()
   )
   .post(
     "/:id/api-keys",
+    // A resource API key outlives the phone: the mobile app cannot create one.
+    auth.rejectAppSession,
     describeRoute({
       tags: ["Venues"],
       summary: "Create venue API key",

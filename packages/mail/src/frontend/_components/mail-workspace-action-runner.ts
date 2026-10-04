@@ -44,7 +44,7 @@ export type MailWorkspaceActionRunnerHost = {
   /** The folder Archive, Spam, Not spam, or Delete moves to, when the workspace can tell. */
   roleDestinationFolderId: (actionId: MailActionId) => string | null;
   applyOptimistic: (actionId: MailActionId, targets: readonly MailBulkTarget[]) => void;
-  clearOptimistic: (conversationIds: readonly string[], fields: readonly MailListOptimisticField[]) => void;
+  clearOptimistic: (targets: readonly MailBulkTarget[], fields: readonly MailListOptimisticField[]) => void;
   submit: (params: {
     actionId: MailActionId;
     target: MailBulkTarget;
@@ -58,10 +58,15 @@ export type MailWorkspaceActionRunnerHost = {
   followOutcomes: (params: {
     actionId: MailActionId;
     destinationFolderId: string | null;
-    conversations: { conversationId: string; label: string; commands: MailActionQueuedCommand[] }[];
+    conversations: {
+      conversationId: string;
+      label: string;
+      messageIds?: readonly string[];
+      commands: MailActionQueuedCommand[];
+    }[];
   }) => void;
   pruneSelection: (succeededConversationIds: ReadonlySet<string>) => void;
-  removesActiveConversation: (actionId: MailActionId, succeededConversationIds: ReadonlySet<string>) => boolean;
+  removesActiveConversation: (actionId: MailActionId, succeededTargets: readonly MailBulkTarget[]) => boolean;
   refreshAfterSuccess: (params: { removesActiveConversation: boolean; succeededConversationIds: ReadonlySet<string> }) => Promise<void>;
   reconcile: () => Promise<void>;
   showMissingTarget: () => Promise<void>;
@@ -76,28 +81,37 @@ export const mailOptimisticFields = (actionId: MailActionId): MailListOptimistic
 
 /**
  * One target per conversation, with its own copy of the folders. In a message list, several
- * selected rows can belong to one conversation; the action runs once on the union of their folders.
+ * selected rows can belong to one conversation; the action runs once on the union of their folders
+ * and messages, and on the whole conversation as soon as one target stands for it.
  * The copy keeps the action on the folders it started from while the list store updates.
  */
 const mergeConversationTargets = (targets: readonly MailBulkTarget[]): MailBulkTarget[] => {
   const merged = new Map<string, MailBulkTarget>();
   for (const target of targets) {
     const existing = merged.get(target.conversationId);
+    const messageIds = existing
+      ? existing.messageIds && target.messageIds && [...new Set([...existing.messageIds, ...target.messageIds])]
+      : target.messageIds;
     merged.set(target.conversationId, {
-      ...(existing ?? target),
+      conversationId: target.conversationId,
+      label: (existing ?? target).label,
       sourceFolderIds: [...new Set([...(existing?.sourceFolderIds ?? []), ...target.sourceFolderIds])],
+      ...(messageIds ? { messageIds: [...messageIds] } : {}),
     });
   }
   return [...merged.values()];
 };
 
+/**
+ * The targets without their placements in the destination folder. A target that is only there has
+ * nothing to move and drops out. A target in no folder at all, such as a failed send that never
+ * reached one, stays, so the action reports that instead of claiming it is already there.
+ */
 export const removeDestinationPlacements = (targets: readonly MailBulkTarget[], destinationFolderId: string): MailBulkTarget[] =>
-  targets
-    .map((target) => ({
-      ...target,
-      sourceFolderIds: target.sourceFolderIds.filter((sourceFolderId) => sourceFolderId !== destinationFolderId),
-    }))
-    .filter((target) => target.sourceFolderIds.length > 0);
+  targets.flatMap((target) => {
+    const sourceFolderIds = target.sourceFolderIds.filter((sourceFolderId) => sourceFolderId !== destinationFolderId);
+    return sourceFolderIds.length > 0 || target.sourceFolderIds.length === 0 ? [{ ...target, sourceFolderIds }] : [];
+  });
 
 export const runMailWorkspaceAction = async (
   actionId: MailActionId,
@@ -168,8 +182,9 @@ export const runMailWorkspaceAction = async (
     });
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
 
+    const failed = new Set(result.failures.map((failure) => failure.conversationId));
     host.clearOptimistic(
-      result.failures.map((failure) => failure.conversationId),
+      targets.filter((target) => failed.has(target.conversationId)),
       optimisticFields,
     );
     const succeeded = new Set(result.succeededConversationIds);
@@ -182,13 +197,16 @@ export const runMailWorkspaceAction = async (
         destinationFolderId: destinationFolderId ?? null,
         conversations: targets.flatMap((target) => {
           const commands = queued.get(target.conversationId);
-          return commands ? [{ conversationId: target.conversationId, label: target.label, commands }] : [];
+          return commands ? [{ conversationId: target.conversationId, label: target.label, messageIds: target.messageIds, commands }] : [];
         }),
       });
 
     if (succeeded.size > 0) {
       await host.refreshAfterSuccess({
-        removesActiveConversation: host.removesActiveConversation(actionId, succeeded),
+        removesActiveConversation: host.removesActiveConversation(
+          actionId,
+          targets.filter((target) => succeeded.has(target.conversationId)),
+        ),
         succeededConversationIds: succeeded,
       });
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -200,10 +218,7 @@ export const runMailWorkspaceAction = async (
     if (result.failures.length > 0) await host.showFailures(result.failures, targets.length);
   } catch (error) {
     if (optimisticApplied) {
-      host.clearOptimistic(
-        targets.map((target) => target.conversationId),
-        optimisticFields,
-      );
+      host.clearOptimistic(targets, optimisticFields);
       try {
         await host.reconcile();
       } catch {

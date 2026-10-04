@@ -264,10 +264,6 @@ export default function ContactDetailPanel(props: Props) {
         clearSelectedContactInUrl("replace");
         return Promise.resolve();
       }
-      if (event.type === "contact.moved" && event.contactId === selectedContactId && event.sourceBookId === selectedBookId) {
-        selectTarget(event.targetBookId, selectedContactId);
-        return detailQuery.invalidate();
-      }
       if (requiresSelectedContactRefresh(event, selectedBookId)) {
         return detailQuery.invalidate();
       }

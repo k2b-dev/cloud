@@ -1,6 +1,7 @@
 import { describe, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import {
   dropFieldIndex,
@@ -18,18 +19,17 @@ import * as mutationPolicy from "./mutation-policy";
 import * as tables from "./tables";
 
 const postgresTest = testFor("database");
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createTableFixture = async (name: string) => {
   const baseId = Bun.randomUUIDv7();
   const tableId = Bun.randomUUIDv7();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, ${name})
+    VALUES (${baseId}::uuid, ${testShortId()}, ${name})
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Fields')
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Fields')
   `;
   return { baseId, tableId };
 };
@@ -377,7 +377,7 @@ describe("field lifecycle Postgres integration", () => {
       try {
         await sql`
           INSERT INTO grids.fields (id, short_id, table_id, name, type, indexed)
-          VALUES (${fieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Indexed', 'number', TRUE)
+          VALUES (${fieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Indexed', 'number', TRUE)
         `;
         await sql.unsafe(
           `CREATE INDEX ${forwardName}
@@ -588,7 +588,7 @@ describe("field lifecycle Postgres integration", () => {
           INSERT INTO grids.views (id, short_id, table_id, base_id, name, source, ui)
           VALUES (
             ${viewId}::uuid,
-            ${shortId("V")},
+            ${testShortId()},
             ${fixture.tableId}::uuid,
             ${fixture.baseId}::uuid,
             'Presented view',

@@ -5,10 +5,40 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Deprecations and migrations
+
+## Contacts writes live updates through the platform outbox
+
+Contacts writes its live updates in the transaction that makes the change,
+through the platform outbox that Core's migration creates. Update Core before
+Contacts: Contacts does not start until `events.outbox` exists. See
+[Live updates](/en/docs/automation/live-updates).
+
+The Contacts socket reads the topic `cloud:live:contacts`. With one Contacts
+replica, tabs that are open during the upgrade reload once. While replicas of
+both versions run, a change handled by an older replica reaches a new tab only
+after its next reload, and a tab whose page and socket come from replicas of
+different versions can reload and then show "Live updates stopped" until the
+rollout finishes; reloading the page after the rollout restores live updates.
+Nothing writes the previous topic, `cloud:contacts:events:changes`, anymore.
+Its events expire after 24 hours, but its stream keeps its 1 GiB reservation
+until a later release removes it; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
+A moved contact now arrives as a deletion in its source book and a creation in
+its target book, so a reader of one book does not learn the other. Another tab
+that shows the moved contact closes its details instead of following it.
+
+## Reading live updates with subscribe() is interim
+
+`defineLive()` from `@k2b/cloud/events` returns `subscribe()` so that an
+application's own socket can read its live updates. It is interim: a later
+release replaces it with shared live routes and removes it. Build new sockets
+on it only if you can follow that migration; see
+[Live updates](/en/docs/automation/live-updates#read-the-updates-for-a-socket).
 
 ## The legacy Files app is removed
 
