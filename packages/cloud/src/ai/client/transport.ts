@@ -86,7 +86,8 @@ export async function* parseAiSse(response: Response, signal: AbortSignal): Asyn
  * Subscribe to a conversation's SSE stream with automatic reconnect. Each
  * (re)connect starts with a fresh `state` event, so the projection self-heals on
  * every reconnect without cursor bookkeeping. A 401, 403, or 404 cannot heal
- * that way: the subscription stops and reports an `AiStreamError` once.
+ * that way: the subscription stops and reports an `AiStreamError` once through
+ * `onError`, its only signal that the stream ended. Status stays where it was.
  */
 export const subscribeAiStream = (input: {
   url: string;

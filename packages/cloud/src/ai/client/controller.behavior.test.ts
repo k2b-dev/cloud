@@ -667,6 +667,63 @@ describe("AI controller stream sessions", () => {
     dispose();
   });
 
+  test("subscribes again after a stream ended with an error once the person returns to the chat", async () => {
+    type Subscription = Parameters<AiConversationStreamTransport["subscribe"]>[0];
+    const subscriptions: Subscription[] = [];
+    const transport: AiConversationStreamTransport = {
+      subscribe: (input) => {
+        subscriptions.push(input);
+        return { close: () => undefined };
+      },
+    };
+    const current = conversation("Chat01");
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) =>
+        new URL(String(input), "http://cloud.test").pathname === "/api/ai/conversations/Chat01"
+          ? Response.json({ conversation: current, messages: [], activeTurn: null })
+          : Response.json({}),
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: transport,
+      });
+    });
+    const endStream = (index: number) => {
+      subscriptions[index]!.onStatus?.("open");
+      subscriptions[index]!.onError?.(new Error("Authentication required"));
+      expect(controller.error()).toBe("Authentication required");
+      expect(controller.streamStatus()).toBe("idle");
+    };
+
+    endStream(0);
+    expect(await controller.openConversation("Chat01")).toBe("current");
+    expect(subscriptions).toHaveLength(2);
+    // Opening the same chat again keeps the live stream.
+    await controller.openConversation("Chat01");
+    expect(subscriptions).toHaveLength(2);
+    // The new stream connecting resolves the error its predecessor left; the old one stays ignored.
+    subscriptions[1]!.onStatus?.("open");
+    expect(controller.error()).toBeNull();
+    expect(controller.streamStatus()).toBe("open");
+    subscriptions[0]!.onError?.(new Error("stale"));
+    expect(controller.error()).toBeNull();
+
+    endStream(1);
+    await controller.refreshActiveConversation();
+    expect(subscriptions).toHaveLength(3);
+
+    endStream(2);
+    expect(await controller.compactConversation()).toBe(true);
+    expect(subscriptions.map((subscription) => subscription.conversationId)).toEqual(["Chat01", "Chat01", "Chat01", "Chat01"]);
+    dispose();
+  });
+
   test("rejects an earlier session after leaving and reopening the same conversation", () => {
     const firstA = { conversationId: "a", generation: 1 };
     const b = { conversationId: "b", generation: 2 };

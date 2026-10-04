@@ -386,6 +386,29 @@ suiteFor(
     }
   }, 20_000);
 
+  test("ends an open stream once its conversation is archived", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const abort = new AbortController();
+    try {
+      const response = await openStream(chat.shortId, token, abort.signal);
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      expect((await readFirstEvent(reader)).type).toBe("state");
+
+      // The credential stays valid; only the conversation check can end this stream.
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toBe(true);
+
+      expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);
+      expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(404);
+    } finally {
+      abort.abort();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  }, 20_000);
+
   test("ends the stream instead of buffering without bound when the reader falls behind", async () => {
     const userId = await insertUser();
     const token = await createTestSession(userId);

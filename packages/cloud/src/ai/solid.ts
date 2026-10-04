@@ -20,10 +20,8 @@ export {
   reduceWireEvent,
   visibleMessages,
 } from "./client/projection";
-export {
-  type AiConversationStreamTransport,
-  type AiStreamConnectionStatus,
-  AiStreamError,
-  type AiStreamErrorCode,
-  type AiStreamHandle,
+export type {
+  AiConversationStreamTransport,
+  AiStreamConnectionStatus,
+  AiStreamHandle,
 } from "./client/transport";

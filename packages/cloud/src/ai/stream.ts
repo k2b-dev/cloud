@@ -16,16 +16,15 @@ import type { AiConversation } from "./types";
 
 const log = logger("ai:stream");
 
-/** Largest wire event the stream topic accepts. */
-const AI_STREAM_EVENT_MAX_BYTES = 257 * 1024;
-
 /**
- * Bytes an SSE reader may fall behind before its stream ends: 16 full-size
- * wire events, the same order as the live socket's 4 MiB send buffer. The
+ * Bytes an SSE reader may leave unread before its stream ends, the live
+ * socket's send-buffer limit. The check runs before each event, so the queue
+ * can exceed it by the event that crosses it, and a state snapshot or a
+ * finished turn with its messages can be larger than one live event. The
  * reconnect starts from a fresh state snapshot, so ending the stream loses
  * nothing durable.
  */
-const AI_STREAM_MAX_BUFFERED_BYTES = 16 * AI_STREAM_EVENT_MAX_BYTES;
+const AI_STREAM_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 /**
  * Live fanout for wire events. Events carry their full payload so the SSE hot
@@ -37,7 +36,7 @@ export const aiStreamTopic = lazySync((sync) =>
     id: "cloud-ai-stream",
     owner: "cloud",
     retention: { maxAgeMs: 15 * 60 * 1000, maxBytes: 256 * 1024 * 1024 },
-    maxPayloadBytes: AI_STREAM_EVENT_MAX_BYTES,
+    maxPayloadBytes: 257 * 1024,
   }),
 );
 

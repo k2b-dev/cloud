@@ -292,15 +292,17 @@ use `/conversations/:id/stream` over SSE.
 
 An open SSE stream re-checks its credential and the conversation every 5
 seconds. A revoked session or API key, an expired account, or a conversation
-that is no longer the caller's ends the stream. The next connection attempt
-then receives 401, 403, or 404. The controller's default SSE transport does
-not retry these statuses. It stops and reports an `AiStreamError` from
-`@k2b/cloud/ai/solid` with the code `login_required`, `access_denied`, or
-`not_found`. These are the codes the WebSocket uses. The message is the
-server's. Other failures keep reconnecting with backoff. A reader that falls
-about 4 MiB behind (16 events of the maximum size) has its stream closed.
-The client then reconnects and continues from a fresh state snapshot, so the
-server never queues an unbounded backlog.
+that is archived or no longer the caller's ends the stream. The next
+connection attempt then receives 401, 403, or 404. The controller's default
+SSE transport does not retry these statuses. Like the WebSocket's turn error,
+it stops the stream: `streamStatus()` becomes `idle` and `error()` shows the
+server's message. Reopening or refreshing the chat, or acting in it, subscribes
+again. Other failures keep reconnecting with backoff.
+
+The server closes a stream once its reader has left about 4 MiB unread. The
+event that crosses that limit is still queued, and a `state` snapshot or a
+`turn_finished` event with its stored messages can be larger than one live
+event. The client then reconnects and continues from a fresh state snapshot.
 
 The controller folds both transports into the same projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,

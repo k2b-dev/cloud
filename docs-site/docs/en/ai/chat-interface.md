@@ -123,7 +123,8 @@ channel, while the workspace WebSocket and user-wide invalidation channel stay
 alive. Both paths use the same projection, reconnect snapshot, and action
 deduplication behavior. When access to the conversation ends, both stop the
 stream and show the server's reason as the chat's error instead of
-reconnecting.
+reconnecting. Reopening or refreshing the chat, or acting in it, subscribes
+again; the error clears once the new stream connects.
 
 ## Attach Cloud resources
 
