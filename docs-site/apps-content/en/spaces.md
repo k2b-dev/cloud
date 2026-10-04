@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-09-26
+updated: 2026-10-04
 ---
 
 # Spaces
@@ -46,6 +46,32 @@ to the same item are grouped to keep the feed useful.
 
 Use one Space for work that shares a team and access boundary. Create another
 when the audience or lifecycle is different.
+
+## Check off tasks in the mobile app
+
+> **Preview:** the mobile app is not released yet.
+
+When the installation runs the
+[mobile app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
+page and in its tab bar for people with the `user` role. Guests do not see it.
+The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
+**Upcoming** lists with their counts, across every Space you can read.
+
+- Each row shows the title, the Space with its color, and the deadline or, for
+  an event, its time. An overdue deadline is red.
+- Tap the circle in front of a task to mark it done. The circle stays busy
+  until the list loads again without the task, and **Undo** in the
+  confirmation reopens it. This is the same change as on the web, with the same
+  activity entry, and it needs write access to the Space.
+- Events have no circle. Complete them in Spaces on the web.
+- A task with unfinished blockers stays open, and so does a claimed task, even
+  one you claimed yourself with **I'm on it**. The app says why; release the
+  claim or complete the task on the web.
+- If a change cannot be saved, for example while the phone is offline, a
+  notice offers **Retry**.
+- The selected list is part of the address, so a reload keeps it.
+
+Rows do not open the item. Read and edit details in Spaces on the web.
 
 ## Understand the Spaces model
 

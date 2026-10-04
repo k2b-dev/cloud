@@ -52,6 +52,9 @@ limited to administrators never appears.
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
 [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app).
 
+Spaces adds its "My tasks" page this way, as an example of a list with a quick
+action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
+
 ## Paths
 
 | Path | Owner |

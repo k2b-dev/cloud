@@ -102,3 +102,23 @@
 /* Who is working on a task: a ring behind a small gap, outside the avatar, so it takes no space and nothing moves. The gap
    is transparent, so it matches any card or panel background, hovered or selected. */
 .k2b-ui .k2b-avatar.spaces-claim-ring { outline: 2px solid var(--k2b-success-text); outline-offset: 2px; }
+
+/* Mobile app, "My tasks": one column of flat rows separated by hairlines. A task leads with its 44 px check button;
+   an event keeps the same slot for its icon, so every title starts at the same edge. */
+.spaces-pwa { display: flex; max-width: 32rem; flex-direction: column; gap: 1rem; margin: 0 auto; }
+.spaces-pwa__count { color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; }
+.spaces-pwa__list { margin: 0; padding: 0; list-style: none; }
+.spaces-pwa__row { display: grid; min-width: 0; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; gap: .5rem; padding: .5rem 0; border-bottom: 1px solid var(--k2b-border); }
+.spaces-pwa__row:last-child { border-bottom: 0; }
+/* The shared stylesheet loads after this one, so the circle outranks the icon button's size, font, and colour. */
+.k2b-ui .k2b-icon-button.spaces-pwa__check { width: 2.75rem; height: 2.75rem; border-radius: 999px; }
+.k2b-ui .spaces-pwa__check i { color: var(--k2b-text-muted); font-size: 1.5rem; }
+.k2b-ui .spaces-pwa__check:not(:disabled):active i { color: var(--k2b-success-text); }
+.spaces-pwa__event { display: flex; width: 2.75rem; height: 2.75rem; align-items: center; justify-content: center; color: var(--k2b-text-muted); font-size: 1.25rem; }
+.spaces-pwa__copy { display: flex; min-width: 0; flex-direction: column; gap: .125rem; }
+.spaces-pwa__title { color: var(--k2b-text); font-size: 1rem; line-height: 1.375rem; overflow-wrap: anywhere; }
+.spaces-pwa__meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: .125rem .75rem; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.125rem; }
+.spaces-pwa__space, .spaces-pwa__when { display: inline-flex; min-width: 0; align-items: center; gap: .375rem; }
+.spaces-pwa__when { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spaces-pwa__when[data-overdue] { color: var(--k2b-danger-text); }
+.spaces-pwa__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
