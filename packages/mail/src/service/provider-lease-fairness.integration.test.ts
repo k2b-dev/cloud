@@ -406,19 +406,21 @@ suite("mail provider lease fairness", () => {
       folderId,
     };
     // The first sync of the empty INBOX records its cursor, so later messages arrive as new mail.
+    // It imports nothing and queues no body downloads, so nothing else holds the new mailbox's
+    // provider lease and the batches run directly.
     for (let batch = 0; batch < 20; batch += 1) {
       if (!(await syncFolderBatch(folderId(INBOX), async () => undefined)).hasMore) break;
     }
     return connected;
   };
 
-  /** Delivers messages and imports their envelopes with direct folder syncs. */
+  /**
+   * Delivers messages and imports their envelopes with INBOX's sync job, which waits for the
+   * provider lease like its worker does, for example while the mailbox's bodies download.
+   */
   const deliverAndSync = async (mailbox: Mailbox, count: number, label: string): Promise<string[]> => {
     const messageIds = deliver(mailbox, count, label);
-    for (let batch = 0; batch < 20; batch += 1) {
-      const result = await syncFolderBatch(mailbox.folderId(INBOX), async () => undefined);
-      if (!result.hasMore) break;
-    }
+    await runFolderSyncJob(mailbox.folderId(INBOX));
     return messageIds;
   };
 
