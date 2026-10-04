@@ -641,8 +641,13 @@ export const loadMailboxPageData = async (params: {
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
   const defaultAllMail = !scheduledMode && !searchExpression && !folderId && !activeView && !activeSavedView;
+  const activeFolder = folders.find((folder) => folder.id === folderId);
   const draftsMode =
-    !scheduledMode && !searchExpression && !resolvedSearch.error && folders.find((folder) => folder.id === folderId)?.role === "drafts";
+    !scheduledMode &&
+    !searchExpression &&
+    !resolvedSearch.error &&
+    !!activeFolder &&
+    messages.isEffectiveDraftsFolder(activeFolder, folders);
   const excludedFolderIds =
     defaultAllMail || (!searchExpression && activeView && FOLLOW_UP_VIEWS.includes(activeView))
       ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
@@ -696,7 +701,6 @@ export const loadMailboxPageData = async (params: {
           locale: params.locale,
         });
 
-  const activeFolder = folders.find((folder) => folder.id === folderId);
   const selectedSubject = selection.detailMessages.at(-1)?.subject || selectedListItem?.subject || "";
 
   return ok({

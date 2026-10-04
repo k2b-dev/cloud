@@ -19,6 +19,7 @@ import { mergeConversations } from "./conversations";
 import { startDraftProjectionRuntime, stopDraftProjectionRuntime, submitDueDraftProjectionWork } from "./draft-provider-projection";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
 import { createDraft, discardDraft, updateDraft } from "./drafts";
+import { setFolderRole } from "./folders";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations, listFolders } from "./messages";
@@ -262,6 +263,7 @@ const createProvider = (kind: ProviderKind) => {
     deliver: (source: string) => store(Buffer.from(source), INBOX, []),
     // A draft another client saved, without the headers Mail writes into its own drafts.
     saveDraftElsewhere: (source: string) => store(Buffer.from(source), draftsPath, ["\\Draft", "\\Seen"]),
+    storeIn: (path: string, source: string, flags: string[]) => store(Buffer.from(source), path, flags),
     // A message another client sent; a message to the own address is delivered to the Inbox too.
     storeSent: async (source: string, alsoInInbox: boolean) => {
       const { message } = await store(Buffer.from(source), sentPath, ["\\Seen"]);
@@ -2299,6 +2301,37 @@ suite("mail sent message projection", () => {
         SELECT count(*)::int AS count FROM mail.draft_attachments WHERE draft_id = ${created.data.id}::uuid AND removed_at IS NULL
       `;
       expect(attachments?.count).toBe(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("with Drafts mapped to another folder, the provider's own Drafts folder lists its messages", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const mapped = await setFolderRole({ context, mailboxId: mailbox.mailboxId, folderId: mailbox.folderId("Sent"), role: "drafts" });
+      if (!mapped.ok) throw new Error(mapped.error.message);
+      await provider.storeIn(provider.draftsPath, inboundSource(`kept-in-drafts-${suffix}`, "Kept in the old Drafts folder"), ["\\Seen"]);
+      await mailbox.syncAll();
+      await waitForHydration(mailbox);
+
+      const folders = await listFolders(context, mailbox.mailboxId);
+      if (!folders.ok) throw new Error(folders.error.message);
+      expect(folders.data.find((folder) => folder.id === mailbox.folderId(provider.draftsPath))).toMatchObject({ total: 1 });
+
+      const [providerDrafts] = await sql<{ short_id: string }[]>`
+        SELECT short_id FROM mail.folders WHERE id = ${mailbox.folderId(provider.draftsPath)}::uuid
+      `;
+      const request = await resolveWorkspaceRequest(
+        new URL(`https://cloud.example.test/app/mail/mailbox?folder=${providerDrafts!.short_id}`),
+        mailbox.mailboxId,
+      );
+      if (!request) throw new Error("Workspace request did not resolve");
+      const page = await loadMailboxPageData({ context, mailboxId: mailbox.mailboxId, ...request });
+      if (!page.ok) throw new Error(page.error.message);
+      expect(page.data.draftsMode).toBe(false);
+      expect(page.data.listItems.map((item) => item.subject)).toEqual(["Kept in the old Drafts folder"]);
     } finally {
       provider.restore();
     }

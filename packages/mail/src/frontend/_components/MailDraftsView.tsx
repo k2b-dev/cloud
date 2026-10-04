@@ -14,9 +14,11 @@ const recipients = (item: DraftFolderItem, t: ReturnType<typeof mailConversation
   return all.length === 1 ? label : t.moreRecipients({ first: label, count: all.length - 1 });
 };
 
-/** The Drafts folder: the mailbox's drafts, each opening in the composer. */
+/** The Drafts folder: the mailbox's drafts, each opening in the composer for members who may edit them. */
 export default function MailDraftsView(props: {
   mailboxId: string;
+  /** Only members who may write open the composer; readers see the drafts without a link. */
+  canWrite: boolean;
   title: string;
   /** The workspace route the composer returns to. */
   returnHref: string;
@@ -57,39 +59,48 @@ export default function MailDraftsView(props: {
           >
             <div class="flex flex-col gap-2">
               <For each={props.page.items}>
-                {(item) => (
-                  <Paper
-                    as="a"
-                    interactive
-                    href={mailDraftHref(props.mailboxId, item.id, listHref(null))}
-                    aria-label={t().openDraft({ subject: item.subject || t().noSubject })}
-                    class="flex min-w-0 items-start gap-3 p-3"
-                  >
-                    <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                      <i class={`ti ${item.intent === "new" ? "ti-file-pencil" : "ti-arrow-back-up"}`} aria-hidden="true" />
-                    </span>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-primary">{item.subject || t().noSubject}</h2>
-                        <time
-                          class="shrink-0 text-xs text-dimmed"
-                          dateTime={item.updatedAt}
-                          title={dates.formatDateTime(item.updatedAt, props.dateConfig)}
-                        >
-                          {t().edited({ value: dates.formatDateTimeRelative(item.updatedAt, props.dateConfig) })}
-                        </time>
+                {(item) => {
+                  const card = (
+                    <>
+                      <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
+                        <i class={`ti ${item.intent === "new" ? "ti-file-pencil" : "ti-arrow-back-up"}`} aria-hidden="true" />
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                          <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-primary">{item.subject || t().noSubject}</h2>
+                          <time
+                            class="shrink-0 text-xs text-dimmed"
+                            dateTime={item.updatedAt}
+                            title={dates.formatDateTime(item.updatedAt, props.dateConfig)}
+                          >
+                            {t().edited({ value: dates.formatDateTimeRelative(item.updatedAt, props.dateConfig) })}
+                          </time>
+                        </div>
+                        <p class="mt-0.5 truncate text-xs text-secondary">
+                          {t().to} {recipients(item, t())}
+                        </p>
+                        <p class="mt-2 line-clamp-2 text-sm leading-5 text-secondary">{item.bodyPreview || t().noMessageBody}</p>
+                        <p class="mt-2 text-xs text-dimmed">
+                          <i class="ti ti-user mr-1" aria-hidden="true" />
+                          {t().draftStartedBy({ name: item.createdByDisplayName })}
+                        </p>
                       </div>
-                      <p class="mt-0.5 truncate text-xs text-secondary">
-                        {t().to} {recipients(item, t())}
-                      </p>
-                      <p class="mt-2 line-clamp-2 text-sm leading-5 text-secondary">{item.bodyPreview || t().noMessageBody}</p>
-                      <p class="mt-2 text-xs text-dimmed">
-                        <i class="ti ti-user mr-1" aria-hidden="true" />
-                        {t().draftStartedBy({ name: item.createdByDisplayName })}
-                      </p>
-                    </div>
-                  </Paper>
-                )}
+                    </>
+                  );
+                  return (
+                    <Show when={props.canWrite} fallback={<Paper class="flex min-w-0 items-start gap-3 p-3">{card}</Paper>}>
+                      <Paper
+                        as="a"
+                        interactive
+                        href={mailDraftHref(props.mailboxId, item.id, listHref(null))}
+                        aria-label={t().openDraft({ subject: item.subject || t().noSubject })}
+                        class="flex min-w-0 items-start gap-3 p-3"
+                      >
+                        {card}
+                      </Paper>
+                    </Show>
+                  );
+                }}
               </For>
               <Show when={props.page.nextCursor}>
                 {(cursor) => (

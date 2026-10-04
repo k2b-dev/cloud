@@ -14,10 +14,11 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: MailDraftsView } = await import("./MailDraftsView.tsx");
 
-const render = (page: DraftFolderPage) =>
+const render = (page: DraftFolderPage, canWrite = true) =>
   renderToString(() =>
     createComponent(MailDraftsView, {
       mailboxId: "Box001",
+      canWrite,
       title: "Drafts",
       returnHref: "/app/mail/Box001?folder=Fld001&cursor=old",
       page,
@@ -55,6 +56,33 @@ describe("MailDraftsView", () => {
     expect(html).toContain("Here are the numbers.");
     expect(html).toContain("Started by Mail provider");
     expect(html).toContain('href="/app/mail/Box001?folder=Fld001&amp;cursor=next"');
+  });
+
+  test("shows readers the drafts without links into the composer they may not open", () => {
+    const html = render(
+      {
+        items: [
+          {
+            id: "Drf001",
+            conversationId: null,
+            intent: "new",
+            subject: "Quarterly figures",
+            to: [],
+            cc: [],
+            bcc: [],
+            bodyPreview: "Here are the numbers.",
+            createdByDisplayName: "Ada Example",
+            updatedAt: "2026-10-01T09:00:00.000Z",
+          },
+        ],
+        nextCursor: null,
+        total: 1,
+      },
+      false,
+    );
+    expect(html).toContain("Quarterly figures");
+    expect(html).not.toContain("/compose/");
+    expect(html).not.toContain("Open draft");
   });
 
   test("explains an empty Drafts folder", () => {

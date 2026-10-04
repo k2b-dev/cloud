@@ -1743,6 +1743,7 @@ function MailWorkspaceView(props: {
             >
               <MailDraftsView
                 mailboxId={data.mailbox.id}
+                canWrite={canWrite()}
                 title={data.listTitle}
                 returnHref={requestPath()}
                 page={data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
