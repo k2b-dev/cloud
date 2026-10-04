@@ -173,9 +173,9 @@ grants, as on the web.
   `ssr.pwaAccess`. Check resource permissions in services, as on the web.
 - Keep APIs at `/api/<app-id>` and call them through the typed browser
   client from `api.create()`. On an app page it renews an ended app session
-  and repeats the request once, so a `401` that still reaches the part means
-  the session could not be renewed, for example while offline. Treat it like
-  any failed request; do not reload the page. See
+  and repeats the request once, so a `401` that still reaches the part is
+  final, for example while offline. Treat it like any failed request; do not
+  reload the page. See
   [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations#create-a-typed-client).
 
 - WebSocket and stream handlers take the credential from the auth middleware

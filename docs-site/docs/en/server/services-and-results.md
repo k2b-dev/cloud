@@ -5,7 +5,7 @@ section: Server
 order: 230
 description: Keep business rules reusable and return explicit failures.
 tags: [server, services, result, errors]
-updated: 2026-07-27
+updated: 2026-10-04
 ---
 
 # Services and Result
@@ -91,6 +91,11 @@ if (!hasPermission(permission, "write")) {
 
 Use expected failures for conditions a caller can encounter. Do not throw for a
 missing item or denied permission.
+
+Return `err.unauthenticated()` only before the operation changes anything. A
+`401` tells the caller that nothing was applied: on a page of the mobile app,
+the typed browser client renews the app session and sends such a request once
+more.
 
 ## Convert a Result to HTTP
 

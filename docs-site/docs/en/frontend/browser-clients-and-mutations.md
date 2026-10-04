@@ -38,11 +38,15 @@ The client infers route parameters and request payloads. Check `response.ok`
 before reading success data.
 
 On a page of the [mobile app](/en/docs/frontend/mobile-app-pages), the client
-also keeps the app session alive. When a request answers `401` because the app
-session ended, the client renews the session through Core and sends the
-request once more. The authentication middleware refused the first attempt
-before any route handler ran, so the repeat never applies a change twice. When the phone is no longer
-paired, the app opens its pairing view instead. On the web, a `401` is
+also keeps the app session alive. When a request answers `401`, the client
+renews the app session through Core and, once the phone has a valid session,
+sends the request once more. A `401` means that the server did not apply the
+request: the authentication middleware answers it before any route handler
+runs, and a route that answers `401` itself must do so before it changes
+anything, as described in
+[Return expected failures](/en/docs/server/services-and-results#return-expected-failures).
+The repeat therefore applies a change at most once. When the phone is no
+longer paired, the app opens its pairing view instead. On the web, a `401` is
 returned as it is.
 
 Do not use raw `fetch()` for an application JSON API when its typed route is
