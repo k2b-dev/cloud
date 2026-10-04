@@ -7,16 +7,23 @@ import { type ConversationViewCounts, getConversationViewCounts } from "./messag
 
 const suite = suiteFor("database", "nats");
 
-// 5,000 messages are enough for the planner to price the counts like a large mailbox; the opt-in
-// performance run measures the same mailbox at 20,000 or 100,000 messages.
+// At 25,000 messages PostgreSQL estimates the counts at about 680,000 cost units, above the 500,000
+// at which it inlines and optimizes a query with JIT, so the budget below fails both when the
+// counts go back to the old per-view query and when the read stops turning JIT off. At 5,000
+// messages the estimate stays below that threshold and dropping `SET LOCAL jit = off` went unseen.
+// The opt-in performance run measures the same mailbox at up to 100,000 messages.
+const DEFAULT_MESSAGE_COUNT = 25_000;
 const requestedMessageCount = Number.parseInt(process.env.MAIL_PERFORMANCE_MESSAGE_COUNT ?? "", 10);
 const MESSAGE_COUNT =
   process.env.MAIL_PERFORMANCE_TESTS === "1" && Number.isFinite(requestedMessageCount)
-    ? Math.min(Math.max(requestedMessageCount, 5_000), 100_000)
-    : 5_000;
-// Warm counts took about 60 ms at 5,000 messages, 95 ms at 20,000 and 340 ms at 100,000. Before,
-// PostgreSQL spent about 5 s compiling the query with JIT at each of these sizes, 4.6 s at 5,000.
-const BUDGET_MS = 1_000;
+    ? Math.min(Math.max(requestedMessageCount, DEFAULT_MESSAGE_COUNT), 100_000)
+    : DEFAULT_MESSAGE_COUNT;
+// Warm counts take about 100 to 150 ms at 20,000 to 30,000 messages on PostgreSQL 15 and 17, and
+// 340 ms at 100,000 on PostgreSQL 15. With JIT they took 1.0 to 1.6 s at 20,000 and 30,000 messages,
+// and the old query about 5 s. The median of the warm runs keeps one stall on a busy host from
+// failing the budget.
+const BUDGET_MS = 500;
+const WARM_RUNS = 5;
 
 type Folder = "inbox" | "sent" | "archive" | "trash" | "junk" | "spam" | "all";
 const FOLDERS: readonly Folder[] = ["inbox", "sent", "archive", "trash", "junk", "spam", "all"];
@@ -42,11 +49,63 @@ const foldersOf = (item: number): Folder[] => {
   return ["inbox", "all"];
 };
 const isDeleted = (item: number) => conversationOf(item) % 23 === 7 || item % 31 === 0;
-const workStatusOf = (conversation: number) => (conversation % 10 < 6 ? "done" : conversation % 10 === 8 ? "waiting" : "needs_action");
-/** Snoozed until tomorrow, or a snooze that already ran out. */
-const snoozeOf = (conversation: number) => (conversation % 40 === 9 ? "future" : conversation % 40 === 19 ? "past" : null);
+type WorkStatus = "needs_action" | "waiting" | "done";
+const workStatusOf = (conversation: number): WorkStatus =>
+  conversation % 10 < 6 ? "done" : conversation % 10 === 8 ? "waiting" : "needs_action";
+/** Snoozed until tomorrow (open, Waiting or Done), or a snooze that already ran out (open or Waiting). */
+const snoozeOf = (conversation: number) => {
+  const slot = conversation % 40;
+  if (slot === 9 || slot === 18 || slot === 21) return "future";
+  if (slot === 19 || slot === 28) return "past";
+  return null;
+};
 /** The reader, a former teammate without access, or nobody. */
 const assigneeOf = (conversation: number) => (conversation % 3 === 0 ? "reader" : conversation % 3 === 1 ? "former" : null);
+
+type OutboxState = "undo_window" | "scheduled" | "sending" | "sent" | "failed" | "unknown" | "needs_attention" | "cancelled";
+type CaseMessage = { folder?: Folder; deleted?: true; outbox?: OutboxState; sendError?: string };
+/**
+ * Conversations with outgoing mail, added to the same mailbox, each with the views it counts in.
+ * None has an assignee or a snooze, so an open one also counts as unassigned.
+ */
+const OUTBOX_CASES: { status: WorkStatus; messages: CaseMessage[]; views: (keyof ConversationViewCounts)[] }[] = [
+  // A reply on its way out that the provider holds no copy of yet.
+  { status: "needs_action", messages: [{ outbox: "sending" }], views: ["recently_active", "needs_action", "unassigned"] },
+  // A reply in its undo window whose only copy was deleted in another mail program.
+  {
+    status: "needs_action",
+    messages: [{ folder: "inbox", deleted: true, outbox: "undo_window" }],
+    views: ["recently_active", "needs_action", "unassigned"],
+  },
+  // A reply scheduled for later is on its way out, but not a send problem.
+  { status: "waiting", messages: [{ outbox: "scheduled" }], views: ["recently_active", "waiting", "unassigned"] },
+  // A failed reply, alone in its conversation.
+  {
+    status: "waiting",
+    messages: [{ outbox: "failed", sendError: "SMTP_REJECTED" }],
+    views: ["recently_active", "waiting", "unassigned", "send_problems"],
+  },
+  // A reply waiting for a retry after an error keeps a conversation whose question is in Trash in follow-up.
+  {
+    status: "needs_action",
+    messages: [{ folder: "trash" }, { outbox: "scheduled", sendError: "SMTP_TEMPORARY" }],
+    views: ["recently_active", "needs_action", "unassigned", "send_problems"],
+  },
+  // A filed reply whose send needs attention.
+  {
+    status: "needs_action",
+    messages: [{ folder: "sent", outbox: "needs_attention" }],
+    views: ["recently_active", "needs_action", "unassigned", "send_problems"],
+  },
+  // A send with an unknown outcome in a Done conversation.
+  { status: "done", messages: [{ folder: "inbox" }, { outbox: "unknown" }], views: ["recently_active", "done", "send_problems"] },
+  // A sent reply whose only copy is in Trash leaves follow-up like any mail in Trash.
+  { status: "needs_action", messages: [{ folder: "trash", outbox: "sent" }], views: ["recently_active"] },
+  // A cancelled reply is not on its way out, so the question in Junk keeps the conversation out of follow-up.
+  { status: "needs_action", messages: [{ folder: "junk" }, { outbox: "cancelled" }], views: ["recently_active"] },
+  // A cancelled reply alone does not make its conversation visible.
+  { status: "needs_action", messages: [{ outbox: "cancelled" }], views: [] },
+];
 
 const expectedCounts = (): ConversationViewCounts => {
   const evidence = new Map<number, { visible: boolean; followUp: boolean }>();
@@ -84,6 +143,9 @@ const expectedCounts = (): ConversationViewCounts => {
     if (status === "waiting") counts.waiting += 1;
     if (status !== "done" && assigneeOf(conversation) === "reader") counts.mine += 1;
     if (status !== "done" && assigneeOf(conversation) !== "reader") counts.unassigned += 1;
+  }
+  for (const outboxCase of OUTBOX_CASES) {
+    for (const view of outboxCase.views) counts[view] += 1;
   }
   return counts;
 };
@@ -218,7 +280,10 @@ suite("mail conversation view counts in a large mailbox", () => {
         md5(${suffix} || ':conversation:' || thread.conversation)::uuid, '0' || lpad(to_hex(thread.conversation), 5, '0'),
         ${mailboxId}::uuid, 'Thread ' || thread.conversation, 'Person ' || thread.conversation % 700, thread.latest, thread.latest,
         CASE WHEN thread.conversation % 10 < 6 THEN 'done' WHEN thread.conversation % 10 = 8 THEN 'waiting' ELSE 'needs_action' END,
-        CASE thread.conversation % 40 WHEN 9 THEN now() + interval '1 day' WHEN 19 THEN now() - interval '1 hour' END,
+        CASE
+          WHEN thread.conversation % 40 IN (9, 18, 21) THEN now() + interval '1 day'
+          WHEN thread.conversation % 40 IN (19, 28) THEN now() - interval '1 hour'
+        END,
         CASE thread.conversation % 3 WHEN 0 THEN ${readerId}::uuid WHEN 1 THEN ${formerId}::uuid END
       FROM (
         SELECT (item - 1) * 2 / 5 AS conversation, max(now() - make_interval(mins => item * 7)) AS latest
@@ -233,6 +298,94 @@ suite("mail conversation view counts in a large mailbox", () => {
         ${MESSAGE_COUNT} - item, 'headers'
       FROM generate_series(1, ${MESSAGE_COUNT}) AS item
     `;
+
+    // The outbox cases, with what a send refers to. Their short IDs start above every bulk index.
+    let nextCaseIndex = 0x80000;
+    const caseShortId = () => fixtureShortId(nextCaseIndex++);
+    const [connection] = await sql<{ id: string }[]>`
+      INSERT INTO mail.provider_connections (
+        owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode,
+        smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret
+      ) VALUES (
+        ${mailboxId}::uuid, 'IMAP', 'team@example.com', 'team@example.com',
+        'imap.example.com', 993, 'implicit', 'smtp.example.com', 587, 'starttls', 'password', 'fixture'
+      ) RETURNING id
+    `;
+    const [binding] = await sql<{ id: string }[]>`
+      INSERT INTO mail.provider_bindings (remote_resource_id, connection_id, state, remote_locator)
+      VALUES (${resource!.id}::uuid, ${connection!.id}::uuid, 'active', '{}'::jsonb)
+      RETURNING id
+    `;
+    const [identity] = await sql<{ id: string }[]>`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, from_address, label)
+      VALUES (${caseShortId()}, ${mailboxId}::uuid, 'team@example.com', 'Team')
+      RETURNING id
+    `;
+    const [draft] = await sql<{ id: string }[]>`
+      INSERT INTO mail.drafts (short_id, mailbox_id, sender_identity_id, author_kind, author_id, last_editor_kind, last_editor_id, state)
+      VALUES (${caseShortId()}, ${mailboxId}::uuid, ${identity!.id}::uuid, 'user', ${readerId}::uuid, 'user', ${readerId}::uuid, 'sent')
+      RETURNING id
+    `;
+    let caseUid = 0;
+    for (const [caseIndex, outboxCase] of OUTBOX_CASES.entries()) {
+      const [conversation] = await sql<{ id: string }[]>`
+        INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at, work_status)
+        VALUES (${caseShortId()}, ${mailboxId}::uuid, ${`Outbox case ${caseIndex}`}, 'Team', now(), ${outboxCase.status})
+        RETURNING id
+      `;
+      for (const [position, message] of outboxCase.messages.entries()) {
+        const key = `outbox-case-${caseIndex}-${position}`;
+        const [content] = await sql<{ id: string }[]>`
+          INSERT INTO mail.message_contents (
+            short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash,
+            hydration_status, plain_text, normalized_subject
+          ) VALUES (
+            ${caseShortId()}, ${mailboxId}::uuid, ${`<${key}@example.com>`}, ${`Outbox case ${caseIndex}`}, now(), 512,
+            ${`e${String(caseIndex * 10 + position).padStart(63, "0")}`}, 'complete', ${key}, ${`outbox case ${caseIndex}`}
+          ) RETURNING id
+        `;
+        await sql`
+          INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+          VALUES (${conversation!.id}::uuid, ${content!.id}::uuid, ${position}, 'headers')
+        `;
+        if (message.folder) {
+          caseUid += 1;
+          const [ref] = await sql<{ id: string }[]>`
+            INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+            VALUES (${folderIds[message.folder]}::uuid, ${content!.id}::uuid, 2, ${caseUid})
+            RETURNING id
+          `;
+          await sql`
+            INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords, deleted_at)
+            VALUES (
+              ${ref!.id}::uuid, ${folderIds[message.folder]}::uuid, ${content!.id}::uuid, ARRAY['\\Seen']::text[], ARRAY[]::text[],
+              CASE WHEN ${message.deleted === true} THEN now() END
+            )
+          `;
+        }
+        if (message.outbox) {
+          const [command] = await sql<{ id: string }[]>`
+            INSERT INTO mail.commands (
+              mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload,
+              access_subject_kind, access_subject_id, credential_scopes
+            ) VALUES (
+              ${mailboxId}::uuid, 'send', 'user', ${readerId}::uuid, ${`send-${key}`}, ${"f".repeat(64)},
+              '{}'::jsonb, '{}'::jsonb, 'user', ${readerId}::uuid, ARRAY[]::text[]
+            ) RETURNING id
+          `;
+          await sql`
+            INSERT INTO mail.outbox_submissions (
+              short_id, mailbox_id, draft_id, command_id, sender_identity_id, selected_binding_id,
+              stable_message_id, state, last_error_code, mime_date, message_id
+            ) VALUES (
+              ${caseShortId()}, ${mailboxId}::uuid, ${draft!.id}::uuid, ${command!.id}::uuid, ${identity!.id}::uuid,
+              ${binding!.id}::uuid, ${`<${key}@example.com>`}, ${message.outbox}, ${message.sendError ?? null}, now(), ${content!.id}::uuid
+            )
+          `;
+        }
+      }
+    }
+
     for (const table of ["message_contents", "message_placements", "conversations", "conversation_messages"]) {
       await sql.unsafe(`ANALYZE mail.${table}`);
     }
@@ -262,7 +415,7 @@ suite("mail conversation view counts in a large mailbox", () => {
   test(`counts every view of ${MESSAGE_COUNT.toLocaleString("en-US")} messages within ${BUDGET_MS} ms`, async () => {
     const expected = expectedCounts();
     const durations: number[] = [];
-    for (let run = 0; run < 4; run += 1) {
+    for (let run = 0; run <= WARM_RUNS; run += 1) {
       const startedAt = performance.now();
       const counts = await getConversationViewCounts({ context, mailboxId });
       durations.push(performance.now() - startedAt);
@@ -270,6 +423,6 @@ suite("mail conversation view counts in a large mailbox", () => {
     }
     const warm = durations.slice(1);
     console.info(`Mail ${MESSAGE_COUNT} view counts: ${warm.map((value) => value.toFixed(1)).join(", ")} ms`);
-    expect(Math.max(...warm)).toBeLessThan(BUDGET_MS);
+    expect(warm.toSorted((left, right) => left - right)[Math.floor(WARM_RUNS / 2)]).toBeLessThan(BUDGET_MS);
   }, 120_000);
 });

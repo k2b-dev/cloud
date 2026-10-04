@@ -12,4 +12,4 @@ MAIL_PERFORMANCE_TESTS=1 MAIL_PERFORMANCE_MESSAGE_COUNT=100000 bun --no-env-file
   packages/mail/src/service/performance.integration.test.ts packages/mail/src/service/view-counts.integration.test.ts
 ```
 
-Without `MAIL_PERFORMANCE_TESTS=1`, the performance suite is skipped and the view counts suite runs with 5,000 messages as part of the integration suites.
+Without `MAIL_PERFORMANCE_TESTS=1`, the performance suite is skipped and the view counts suite runs with 25,000 messages as part of the integration suites. At that size PostgreSQL would compile the counts with JIT inlining and optimization, so the suite fails if the read stops turning JIT off; smaller values of `MAIL_PERFORMANCE_MESSAGE_COUNT` are raised to it.
