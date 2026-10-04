@@ -102,13 +102,16 @@ const mergeConversationTargets = (targets: readonly MailBulkTarget[]): MailBulkT
   return [...merged.values()];
 };
 
+/**
+ * The targets without their placements in the destination folder. A target that is only there has
+ * nothing to move and drops out. A target in no folder at all, such as a failed send that never
+ * reached one, stays, so the action reports that instead of claiming it is already there.
+ */
 export const removeDestinationPlacements = (targets: readonly MailBulkTarget[], destinationFolderId: string): MailBulkTarget[] =>
-  targets
-    .map((target) => ({
-      ...target,
-      sourceFolderIds: target.sourceFolderIds.filter((sourceFolderId) => sourceFolderId !== destinationFolderId),
-    }))
-    .filter((target) => target.sourceFolderIds.length > 0);
+  targets.flatMap((target) => {
+    const sourceFolderIds = target.sourceFolderIds.filter((sourceFolderId) => sourceFolderId !== destinationFolderId);
+    return sourceFolderIds.length > 0 || target.sourceFolderIds.length === 0 ? [{ ...target, sourceFolderIds }] : [];
+  });
 
 export const runMailWorkspaceAction = async (
   actionId: MailActionId,

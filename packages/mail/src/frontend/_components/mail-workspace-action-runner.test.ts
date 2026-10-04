@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActionId } from "./mail-actions";
-import type { MailBulkTarget } from "./mail-bulk-actions";
+import { MAIL_BULK_NO_PROVIDER_PLACEMENT, type MailBulkTarget } from "./mail-bulk-actions";
 import {
   decideMailAutoReadIntent,
   type MailWorkspaceActionRunnerHost,
@@ -135,11 +135,28 @@ describe("Mail workspace action runner", () => {
   });
 
   test("normalizes move targets and optimistic fields", () => {
-    expect(removeDestinationPlacements([target("one", ["inbox", "archive"]), target("two", ["archive"])], "archive")).toEqual([
-      target("one", ["inbox"]),
-    ]);
+    expect(
+      removeDestinationPlacements([target("one", ["inbox", "archive"]), target("two", ["archive"]), target("three", [])], "archive"),
+    ).toEqual([target("one", ["inbox"]), target("three", [])]);
     expect(mailOptimisticFields("flag" satisfies MailActionId)).toEqual(["flagged"]);
     expect(mailOptimisticFields("archive")).toEqual([]);
+  });
+
+  test("reports a row in no folder instead of calling it already moved", async () => {
+    // A failed send that never reached a folder is listed under Send problems with no folder to act on.
+    const messages: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [target("unsent", [])],
+      roleDestinationFolderId: () => "archive",
+      showFailures: async (failures) => {
+        messages.push(...failures.map((failure) => failure.message));
+      },
+    });
+
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(fixture.events).not.toContain("nothing");
+    expect(fixture.events.some((event) => event.startsWith("submit:"))).toBe(false);
+    expect(messages).toEqual([MAIL_BULK_NO_PROVIDER_PLACEMENT]);
   });
 
   test("honors cancellation while the destination picker is open", async () => {
