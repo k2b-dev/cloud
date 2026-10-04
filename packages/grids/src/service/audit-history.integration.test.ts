@@ -21,27 +21,27 @@ describe("record history storage boundary", () => {
     const relationFieldId = testUuid();
     const labelFieldId = testUuid();
     const targetRecordId = testUuid();
-    const targetRecordShortId = testShortId("R");
-    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Audit history')`;
+    const targetRecordShortId = testShortId();
+    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Audit history')`;
     await sql`
       INSERT INTO grids.tables (id, short_id, base_id, name)
-      VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Records')
+      VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')
     `;
     await sql`
       INSERT INTO grids.tables (id, short_id, base_id, name)
-      VALUES (${targetTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Cameras')
+      VALUES (${targetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Cameras')
     `;
     await sql`
       INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
       VALUES
-        (${relationFieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Camera', 'relation',
+        (${relationFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Camera', 'relation',
          ${{ targetTableId }}::jsonb, 0),
-        (${labelFieldId}::uuid, ${testShortId("F")}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+        (${labelFieldId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
     `;
     await sql`UPDATE grids.fields SET presentable = TRUE WHERE id = ${labelFieldId}::uuid`;
     await sql`
       INSERT INTO grids.records (id, short_id, table_id, data)
-      VALUES (${recordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)
+      VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)
     `;
     await sql`
       INSERT INTO grids.records (id, short_id, table_id, data)

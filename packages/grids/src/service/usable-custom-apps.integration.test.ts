@@ -33,15 +33,15 @@ describe("usable custom apps across bases", () => {
           (${deniedUserId}::uuid, ${`denied-${deniedUserId}`}, 'local', 'user', 'Denied user', 'Denied', 'User')
       `;
       // Nobody in this test has any base grant.
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Loan office')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Loan office')`;
       await sql`
         INSERT INTO grids.custom_apps (id, short_id, base_id, name, draft_definition, published_definition, published_at)
         VALUES
-          (${alphaId}::uuid, ${testShortId("A")}, ${baseId}::uuid, 'Alpha desk', '{}'::jsonb, '{}'::jsonb, now()),
-          (${betaId}::uuid, ${testShortId("B")}, ${baseId}::uuid, 'Beta desk', '{}'::jsonb, '{}'::jsonb, now()),
-          (${gammaId}::uuid, ${testShortId("G")}, ${baseId}::uuid, 'Gamma desk', '{}'::jsonb, '{}'::jsonb, now()),
-          (${draftId}::uuid, ${testShortId("D")}, ${baseId}::uuid, 'Draft desk', '{}'::jsonb, NULL, NULL),
-          (${openId}::uuid, ${testShortId("O")}, ${baseId}::uuid, 'Open desk', '{}'::jsonb, '{}'::jsonb, now())
+          (${alphaId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Alpha desk', '{}'::jsonb, '{}'::jsonb, now()),
+          (${betaId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Beta desk', '{}'::jsonb, '{}'::jsonb, now()),
+          (${gammaId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Gamma desk', '{}'::jsonb, '{}'::jsonb, now()),
+          (${draftId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Draft desk', '{}'::jsonb, NULL, NULL),
+          (${openId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Open desk', '{}'::jsonb, '{}'::jsonb, now())
       `;
       for (const appId of [alphaId, betaId, gammaId, draftId]) await grant(appId, { userId: appUserId }, "read");
       // An authenticated grant opens the app to everyone except a user whose own tier denies it.

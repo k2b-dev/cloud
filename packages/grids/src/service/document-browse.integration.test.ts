@@ -46,29 +46,29 @@ const insertFixture = async (): Promise<Fixture> => {
   const workflowRunId = testUuid();
   const documentIds = Array.from({ length: 5 }, () => testUuid());
 
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Document browse')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Document browse')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices', 0)
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices', 0)
   `;
   await sql`
     INSERT INTO grids.document_templates (id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
-    VALUES (${templateId}::uuid, ${testShortId("D")}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
+    VALUES (${templateId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
   `;
-  await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+  await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`;
   await sql`
     INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
-    VALUES (${snapshotId}::uuid, ${testShortId("S")}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{}'::jsonb, '{}'::jsonb)
+    VALUES (${snapshotId}::uuid, ${testShortId()}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{}'::jsonb, '{}'::jsonb)
   `;
   await insertTestWorkflow({
     id: workflowId,
-    shortId: testShortId("W"),
+    shortId: testShortId(),
     baseId: baseId,
     name: "Invoice workflow",
     source: "steps: []",
     enabled: true,
   });
-  await insertTestWorkflowRun({ id: workflowRunId, shortId: testShortId("W"), workflowId, baseId, state: "succeeded" });
+  await insertTestWorkflowRun({ id: workflowRunId, shortId: testShortId(), workflowId, baseId, state: "succeeded" });
 
   const rows = [
     {
@@ -93,7 +93,7 @@ const insertFixture = async (): Promise<Fixture> => {
         workflow_run_id, workflow_step_key, document_number, filename, tags, template_snapshot, render_data,
         renderer_kind, renderer_version, template_revision, issued_actor, created_at
       ) VALUES ('pdf',
-        ${row.id}::uuid, ${testShortId("R")}, ${templateId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid,
+        ${row.id}::uuid, ${testShortId()}, ${templateId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid,
         ${tableId}::uuid, ${recordId}::uuid, ${workflowRunId}::uuid, ${`step-${row.number}`}, ${row.number}, ${row.filename}, ${sql.array(row.tags, "TEXT")},
         '{}'::jsonb, '{}'::jsonb,
         'html', ${artifact.rendererVersion}, ${artifact.templateRevision}, '{"kind":"system"}'::jsonb, ${row.at}::timestamptz
@@ -124,7 +124,7 @@ describe("document browsing integration", () => {
         id, short_id, base_id, workflow_run_id, workflow_step_key, template_id, snapshot_id, table_id, record_id,
         document_number, filename, primary_artifact_key, template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
       ) VALUES (
-        ${id}::uuid, ${testShortId("D")}, ${fixture.baseId}::uuid, ${fixture.workflowRunId}::uuid, 'summary', NULL, NULL, NULL, NULL,
+        ${id}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, ${fixture.workflowRunId}::uuid, 'summary', NULL, NULL, NULL, NULL,
         'SUMMARY', 'report.pdf', 'pdf', '{}'::jsonb, '{}'::jsonb, 'html', ${artifact.rendererVersion}, ${artifact.templateRevision}, '{"kind":"system"}'::jsonb
       )
     `;
@@ -199,8 +199,8 @@ describe("document browsing integration", () => {
             id, short_id, base_id, workflow_run_id, workflow_step_key, template_id, snapshot_id, table_id, record_id,
             document_number, filename, primary_artifact_key, template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
           ) VALUES (
-            ${testUuid()}::uuid, ${testShortId("D")}, ${binding.baseId}::uuid, ${binding.runId}::uuid,
-            ${binding.runId ? testShortId("S") : null}, ${binding.templateId}::uuid, ${binding.snapshotId}::uuid, ${binding.tableId}::uuid, ${binding.recordId}::uuid,
+            ${testUuid()}::uuid, ${testShortId()}, ${binding.baseId}::uuid, ${binding.runId}::uuid,
+            ${binding.runId ? testShortId() : null}, ${binding.templateId}::uuid, ${binding.snapshotId}::uuid, ${binding.tableId}::uuid, ${binding.recordId}::uuid,
             'INVALID', 'report.pdf', 'pdf', '{}'::jsonb, '{}'::jsonb, 'html', ${artifact.rendererVersion}, ${artifact.templateRevision}, '{"kind":"system"}'::jsonb
           )
         `;
@@ -270,7 +270,7 @@ describe("document browsing integration", () => {
   postgresTest("associates one immutable document with multiple records without widening template-scoped reads", async () => {
     const fixture = await insertFixture();
     const second = testUuid();
-    await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${second}::uuid, ${testShortId("R")}, ${fixture.tableId}::uuid, '{}'::jsonb)`;
+    await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${second}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, '{}'::jsonb)`;
     const document = fixture.documentIds[0]!;
     await sql`INSERT INTO grids.document_record_sources (document_id, table_id, record_id, version)
       VALUES (${document}::uuid, ${fixture.tableId}::uuid, ${fixture.recordId}::uuid, 1),

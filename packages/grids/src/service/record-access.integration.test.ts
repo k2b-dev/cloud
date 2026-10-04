@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createReader } from "./record-read";
 import { createInTransaction, updateInTransaction } from "./record-write";
@@ -45,20 +45,20 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
   `;
   await sql`
     INSERT INTO grids.bases (id, short_id, name, created_by)
-    VALUES (${fixture.baseId}::uuid, ${shortId("B")}, 'Record access integration', ${fixture.userId}::uuid)
+    VALUES (${fixture.baseId}::uuid, ${testShortId()}, 'Record access integration', ${fixture.userId}::uuid)
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
-      (${fixture.parentTableId}::uuid, ${shortId("P")}, ${fixture.baseId}::uuid, 'Parents', 0),
-      (${fixture.childTableId}::uuid, ${shortId("C")}, ${fixture.baseId}::uuid, 'Children', 1)
+      (${fixture.parentTableId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Parents', 0),
+      (${fixture.childTableId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Children', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
-      (${fixture.parentNameFieldId}::uuid, ${shortId("N")}, ${fixture.parentTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
-      (${fixture.childNameFieldId}::uuid, ${shortId("N")}, ${fixture.childTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
+      (${fixture.parentNameFieldId}::uuid, ${testShortId()}, ${fixture.parentTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
+      (${fixture.childNameFieldId}::uuid, ${testShortId()}, ${fixture.childTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
       (
         ${fixture.relationFieldId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${fixture.childTableId}::uuid,
         'Parent',
         'relation',
@@ -70,7 +70,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
     INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by) VALUES
       (
         ${fixture.ownedParentId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${fixture.parentTableId}::uuid,
         ${{ [fixture.parentNameFieldId]: "Owned parent" }}::jsonb,
         ${fixture.userId}::uuid,
@@ -78,7 +78,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ),
       (
         ${fixture.otherParentId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${fixture.parentTableId}::uuid,
         ${{ [fixture.parentNameFieldId]: "Other parent" }}::jsonb,
         ${fixture.otherUserId}::uuid,
@@ -86,7 +86,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ),
       (
         ${fixture.linkedChildId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${fixture.childTableId}::uuid,
         ${{ [fixture.childNameFieldId]: "Linked child" }}::jsonb,
         ${fixture.otherUserId}::uuid,
@@ -94,7 +94,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ),
       (
         ${fixture.otherChildId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${fixture.childTableId}::uuid,
         ${{ [fixture.childNameFieldId]: "Other child" }}::jsonb,
         ${fixture.otherUserId}::uuid,

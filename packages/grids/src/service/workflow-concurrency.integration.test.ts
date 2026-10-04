@@ -29,11 +29,11 @@ postgresTest(
     const [actor] = await sql<Array<{ id: string }>>`SELECT id::text FROM auth.users LIMIT 1`;
     if (!actor) throw new Error("Missing bootstrap user");
     await sql`INSERT INTO grids.bases (id, short_id, name, created_by)
-    VALUES (${baseId}::uuid, ${testShortId("B")}, 'Concurrency test', ${actor.id}::uuid)`;
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Concurrency test', ${actor.id}::uuid)`;
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Items')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Items')`;
     await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
-    VALUES (${nameFieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
+    VALUES (${nameFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb)`;
     const [grant] = await sql<Array<{ id: string }>>`INSERT INTO auth.access (user_id, permission)
     VALUES (${actor.id}::uuid, 'write') RETURNING id::text`;
     await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${grant!.id}::uuid)`;
@@ -184,7 +184,7 @@ steps:
       const recordIds: string[] = [];
       for (let i = 0; i < 10; i++) {
         const id = testUuid();
-        const shortId = testShortId("R");
+        const shortId = testShortId();
         recordIds.push(id);
         await sql`INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES (${id}::uuid, ${shortId}, ${tableId}::uuid, ${{ [nameFieldId]: "Before" }}::jsonb)`;

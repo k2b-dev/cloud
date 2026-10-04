@@ -14,23 +14,23 @@ beforeAll(async () => {
 
 const insertFixture = async () => {
   const baseId = testUuid();
-  const orders = { kind: "table" as const, id: testUuid(), shortId: testShortId("O"), name: "Orders" };
-  const customers = { kind: "table" as const, id: testUuid(), shortId: testShortId("C"), name: "Customers" };
-  const amount = field({ id: testUuid(), tableId: orders.id, shortId: testShortId("A"), name: "Amount", type: "text" });
+  const orders = { kind: "table" as const, id: testUuid(), shortId: testShortId(), name: "Orders" };
+  const customers = { kind: "table" as const, id: testUuid(), shortId: testShortId(), name: "Customers" };
+  const amount = field({ id: testUuid(), tableId: orders.id, shortId: testShortId(), name: "Amount", type: "text" });
   const customer = field({
     id: testUuid(),
     tableId: orders.id,
-    shortId: testShortId("F"),
+    shortId: testShortId(),
     name: "Customer",
     type: "relation",
     config: { targetTableId: customers.id },
     position: 1,
   });
-  const name = field({ id: testUuid(), tableId: customers.id, shortId: testShortId("N"), name: "Name", type: "text" });
+  const name = field({ id: testUuid(), tableId: customers.id, shortId: testShortId(), name: "Name", type: "text" });
   const fieldsByTableId = { [orders.id]: [amount, customer], [customers.id]: [name] };
   // Roll back all setup if any constraint fails before a fixture can be returned.
   await sql.begin(async (tx) => {
-    await tx`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Query authorization')`;
+    await tx`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Query authorization')`;
     for (const [position, table] of [orders, customers].entries()) {
       await tx`INSERT INTO grids.tables (id, short_id, base_id, name, position)
         VALUES (${table.id}::uuid, ${table.shortId}, ${baseId}::uuid, ${table.name}, ${position})`;
@@ -41,11 +41,11 @@ const insertFixture = async () => {
     }
     const customerId = testUuid();
     await tx`INSERT INTO grids.records (id, short_id, table_id, data)
-      VALUES (${customerId}::uuid, ${testShortId("R")}, ${customers.id}::uuid, ${{ [name.id]: "Alice" }}::jsonb)`;
+      VALUES (${customerId}::uuid, ${testShortId()}, ${customers.id}::uuid, ${{ [name.id]: "Alice" }}::jsonb)`;
     for (const value of ["one", "two", "three"]) {
       const recordId = testUuid();
       await tx`INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${recordId}::uuid, ${testShortId("R")}, ${orders.id}::uuid, ${{ [amount.id]: value }}::jsonb)`;
+        VALUES (${recordId}::uuid, ${testShortId()}, ${orders.id}::uuid, ${{ [amount.id]: value }}::jsonb)`;
       await tx`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
         VALUES (${recordId}::uuid, ${customer.id}::uuid, ${customerId}::uuid, 0)`;
     }

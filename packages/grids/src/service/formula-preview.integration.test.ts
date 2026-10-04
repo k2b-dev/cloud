@@ -16,10 +16,10 @@ describe("formula preview integration", () => {
     const nameFieldId = testUuid();
     const recordId = testUuid();
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Formula preview')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Formula preview')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'People', 0)
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'People', 0)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
@@ -36,7 +36,7 @@ describe("formula preview integration", () => {
       if (cycle.ok) expect(cycle.data.diagnostics[0]?.message).toContain("cycle");
       await sql`
         INSERT INTO grids.records (short_id, id, table_id, data)
-        VALUES (${testShortId("R")}, ${recordId}::uuid, ${tableId}::uuid, ${{ [nameFieldId]: "Ada" }}::jsonb)
+        VALUES (${testShortId()}, ${recordId}::uuid, ${tableId}::uuid, ${{ [nameFieldId]: "Ada" }}::jsonb)
       `;
 
       const empty = await checkFormula({ tableId, expression: "   " });
@@ -81,12 +81,12 @@ describe("formula preview integration", () => {
     const baseId = testUuid();
     const tableId = testUuid();
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Deleted formula parent')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Deleted formula parent')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position, deleted_at)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Deleted', 0, now())
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Deleted', 0, now())
       `;
-      await sql`INSERT INTO grids.records (short_id, id, table_id, data) VALUES (${testShortId("R")}, ${testUuid()}::uuid, ${tableId}::uuid, '{}'::jsonb)`;
+      await sql`INSERT INTO grids.records (short_id, id, table_id, data) VALUES (${testShortId()}, ${testUuid()}::uuid, ${tableId}::uuid, '{}'::jsonb)`;
       const result = await checkFormula({ tableId, expression: "1 + 1" });
       expect(result.ok && result.data.rows).toEqual([]);
     } finally {

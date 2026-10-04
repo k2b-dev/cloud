@@ -17,12 +17,12 @@ describe("query parent validation integration", () => {
     try {
       await sql`
         INSERT INTO grids.bases (id, short_id, name) VALUES
-          (${baseId}::uuid, ${testShortId("B")}, 'Query parent'),
-          (${foreignBaseId}::uuid, ${testShortId("B")}, 'Query foreign')
+          (${baseId}::uuid, ${testShortId()}, 'Query parent'),
+          (${foreignBaseId}::uuid, ${testShortId()}, 'Query foreign')
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Items', 0)
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Items', 0)
       `;
       expect(await tableBelongsToBase(tableId, baseId)).toBe(true);
       expect(await tableBelongsToBase(tableId, foreignBaseId)).toBe(false);

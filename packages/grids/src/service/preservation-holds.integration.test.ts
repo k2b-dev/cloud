@@ -13,19 +13,19 @@ beforeAll(async () => {
 describe("scoped preservation holds", () => {
   postgresTest("keeps multiple holds independent and gates destruction through the Base lock", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const firstTableId = testUuid();
     const secondTableId = testUuid();
     const unheldTableId = testUuid();
     const foreignBaseId = testUuid();
-    const firstTableShortId = testShortId("T");
-    const secondTableShortId = testShortId("T");
-    const unheldTableShortId = testShortId("T");
+    const firstTableShortId = testShortId();
+    const secondTableShortId = testShortId();
+    const unheldTableShortId = testShortId();
     try {
       await sql`
         INSERT INTO grids.bases (id, short_id, name) VALUES
           (${baseId}::uuid, ${baseShortId}, 'Preservation fixture'),
-          (${foreignBaseId}::uuid, ${testShortId("B")}, 'Foreign preservation fixture')
+          (${foreignBaseId}::uuid, ${testShortId()}, 'Foreign preservation fixture')
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
@@ -154,10 +154,10 @@ describe("scoped preservation holds", () => {
     const baseId = testUuid();
     const tableId = testUuid();
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Hold lock fixture')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Hold lock fixture')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Locked Table', 0)
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Locked Table', 0)
       `;
       const created = await create(
         baseId,

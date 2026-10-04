@@ -34,12 +34,12 @@ describe("base catalog integration", () => {
       await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
         VALUES (${userId}::uuid, ${`catalog-${userId}`}, 'local', 'user', 'Catalog User', 'Catalog', 'User')`;
       await sql`INSERT INTO grids.bases (id, short_id, name)
-        VALUES (${baseId}::uuid, ${testShortId("B")}, 'Default catalog')`;
+        VALUES (${baseId}::uuid, ${testShortId()}, 'Default catalog')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Defaults')`;
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Defaults')`;
       for (const [position, entry] of defaults.entries()) {
         await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, default_value, position)
-          VALUES (${testUuid()}::uuid, ${testShortId("F")}, ${tableId}::uuid, ${entry.name}, ${entry.type},
+          VALUES (${testUuid()}::uuid, ${testShortId()}, ${tableId}::uuid, ${entry.name}, ${entry.type},
             '{}'::jsonb, ${JSON.stringify(entry.value)}::text::jsonb, ${position})`;
       }
       const baseAccess = await grant(userId, "read");
@@ -70,29 +70,29 @@ describe("base catalog integration", () => {
         INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
         VALUES (${userId}::uuid, ${`catalog-${userId}`}, 'local', 'user', 'Catalog User', 'Catalog', 'User')
       `;
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Catalog')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Catalog')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position, deleted_at) VALUES
-          (${readableTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Readable', 0, NULL),
-          (${deniedTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Denied', 1, NULL),
-          (${formOnlyTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Form only', 2, NULL),
-          (${documentOnlyTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Document only', 3, NULL),
-          (${deletedTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Deleted', 4, now())
+          (${readableTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Readable', 0, NULL),
+          (${deniedTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Denied', 1, NULL),
+          (${formOnlyTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Form only', 2, NULL),
+          (${documentOnlyTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Document only', 3, NULL),
+          (${deletedTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Deleted', 4, now())
       `;
       for (const [position, tableId] of [readableTableId, deniedTableId, formOnlyTableId, documentOnlyTableId, deletedTableId].entries()) {
         await sql`
           INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-          VALUES (${testUuid()}::uuid, ${testShortId("F")}, ${tableId}::uuid, ${`Field ${position}`}, 'text', '{}'::jsonb, ${position})
+          VALUES (${testUuid()}::uuid, ${testShortId()}, ${tableId}::uuid, ${`Field ${position}`}, 'text', '{}'::jsonb, ${position})
         `;
       }
       await sql`
         INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active)
-        VALUES (${formId}::uuid, ${testShortId("F")}, ${formOnlyTableId}::uuid, 'Submit', '{}'::jsonb, TRUE)
+        VALUES (${formId}::uuid, ${testShortId()}, ${formOnlyTableId}::uuid, 'Submit', '{}'::jsonb, TRUE)
       `;
       await sql`
         INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, renderer_kind, number_template, filename_template, deleted_at) VALUES
-          (${templateId}::uuid, ${testShortId("D")}, ${documentOnlyTableId}::uuid, 'Invoice', 'from table "Document only"', '<p>Invoice</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', NULL),
-          (${deletedTemplateId}::uuid, ${testShortId("D")}, ${documentOnlyTableId}::uuid, 'Old invoice', 'from table "Document only"', '<p>Old</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', now())
+          (${templateId}::uuid, ${testShortId()}, ${documentOnlyTableId}::uuid, 'Invoice', 'from table "Document only"', '<p>Invoice</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', NULL),
+          (${deletedTemplateId}::uuid, ${testShortId()}, ${documentOnlyTableId}::uuid, 'Old invoice', 'from table "Document only"', '<p>Old</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', now())
       `;
 
       const baseAccess = await grant(userId, "write");

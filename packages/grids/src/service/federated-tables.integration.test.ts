@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
@@ -104,30 +104,30 @@ const createFixture = async (): Promise<Fixture> => {
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
     VALUES
-      (${sourceBaseId}::uuid, ${shortId("S")}, 'Combined source integration'),
-      (${targetBaseId}::uuid, ${shortId("T")}, 'Combined target integration')
+      (${sourceBaseId}::uuid, ${testShortId()}, 'Combined source integration'),
+      (${targetBaseId}::uuid, ${testShortId()}, 'Combined target integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, kind, name, position, disable_direct_insert)
     VALUES
-      (${sourceTableId}::uuid, ${shortId("S")}, ${sourceBaseId}::uuid, 'stored', 'Source', 0, FALSE),
-      (${targetTableId}::uuid, ${shortId("C")}, ${targetBaseId}::uuid, 'federated', 'Combined', 0, TRUE)
+      (${sourceTableId}::uuid, ${testShortId()}, ${sourceBaseId}::uuid, 'stored', 'Source', 0, FALSE),
+      (${targetTableId}::uuid, ${testShortId()}, ${targetBaseId}::uuid, 'federated', 'Combined', 0, TRUE)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
     VALUES
-      (${sourceTextFieldId}::uuid, ${shortId("ST")}, ${sourceTableId}::uuid, 'Source name', 'text', '{}'::jsonb, 0, TRUE),
-      (${sourceFileFieldId}::uuid, ${shortId("SF")}, ${sourceTableId}::uuid, 'Source file', 'file', '{}'::jsonb, 1, FALSE),
-      (${targetTextFieldId}::uuid, ${shortId("CT")}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE),
-      (${targetFileFieldId}::uuid, ${shortId("CF")}, ${targetTableId}::uuid, 'File', 'file', '{}'::jsonb, 1, FALSE)
+      (${sourceTextFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Source name', 'text', '{}'::jsonb, 0, TRUE),
+      (${sourceFileFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Source file', 'file', '{}'::jsonb, 1, FALSE),
+      (${targetTextFieldId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE),
+      (${targetFileFieldId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'File', 'file', '{}'::jsonb, 1, FALSE)
   `;
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data)
-    VALUES (${recordId}::uuid, ${shortId("R")}, ${sourceTableId}::uuid, jsonb_build_object(${sourceTextFieldId}::text, 'Mapped value'))
+    VALUES (${recordId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, jsonb_build_object(${sourceTextFieldId}::text, 'Mapped value'))
   `;
   await sql`
     INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-    VALUES (${fileId}::uuid, ${shortId("FI")}, 'source.png', 'image/png', 5, 'fixture', ${new TextEncoder().encode("hello")})
+    VALUES (${fileId}::uuid, ${testShortId()}, 'source.png', 'image/png', 5, 'fixture', ${new TextEncoder().encode("hello")})
   `;
   await sql`
     INSERT INTO grids.file_attachments (file_id, record_id, field_id, position)
@@ -701,29 +701,29 @@ describe("combined table integration", () => {
     try {
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
-        VALUES (${secondBaseId}::uuid, ${shortId("S")}, 'Second combined source')
+        VALUES (${secondBaseId}::uuid, ${testShortId()}, 'Second combined source')
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, kind, name, position, disable_direct_insert)
-        VALUES (${secondTableId}::uuid, ${shortId("S")}, ${secondBaseId}::uuid, 'stored', 'Second source', 0, FALSE)
+        VALUES (${secondTableId}::uuid, ${testShortId()}, ${secondBaseId}::uuid, 'stored', 'Second source', 0, FALSE)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
         VALUES
-          (${firstStatusFieldId}::uuid, ${shortId("SS")}, ${fixture.sourceTableId}::uuid, 'Status', 'select', ${{
+          (${firstStatusFieldId}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, 'Status', 'select', ${{
             multiple: false,
             options: [{ id: firstOptionId, label: "Open" }],
           }}::jsonb, 2, FALSE),
-          (${secondTextFieldId}::uuid, ${shortId("ST")}, ${secondTableId}::uuid, 'Label', 'text', '{}'::jsonb, 0, TRUE),
-          (${secondStatusFieldId}::uuid, ${shortId("SS")}, ${secondTableId}::uuid, 'State', 'select', ${{
+          (${secondTextFieldId}::uuid, ${testShortId()}, ${secondTableId}::uuid, 'Label', 'text', '{}'::jsonb, 0, TRUE),
+          (${secondStatusFieldId}::uuid, ${testShortId()}, ${secondTableId}::uuid, 'State', 'select', ${{
             multiple: false,
             options: [{ id: secondOptionId, label: "Ready" }],
           }}::jsonb, 1, FALSE),
-          (${targetStatusFieldId}::uuid, ${shortId("CS")}, ${fixture.targetTableId}::uuid, 'Status', 'select', ${{
+          (${targetStatusFieldId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Status', 'select', ${{
             multiple: false,
             options: [{ id: canonicalOptionId, label: "Available" }],
           }}::jsonb, 2, FALSE),
-          (${targetOptionalFieldId}::uuid, ${shortId("CO")}, ${fixture.targetTableId}::uuid, 'Optional note', 'text', '{}'::jsonb, 3, FALSE)
+          (${targetOptionalFieldId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Optional note', 'text', '{}'::jsonb, 3, FALSE)
       `;
       await sql`
         UPDATE grids.records
@@ -734,7 +734,7 @@ describe("combined table integration", () => {
         INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES (
           ${uuid()}::uuid,
-          ${shortId("R")},
+          ${testShortId()},
           ${secondTableId}::uuid,
           jsonb_build_object(
             ${secondTextFieldId}::text, 'Second value',
@@ -787,8 +787,8 @@ describe("combined table integration", () => {
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES
-          (${uuid()}::uuid, ${shortId("R")}, ${fixture.sourceTableId}::uuid, jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Mapped second')),
-          (${uuid()}::uuid, ${shortId("R")}, ${fixture.sourceTableId}::uuid, jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Other'))
+          (${uuid()}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Mapped second')),
+          (${uuid()}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Other'))
       `;
       const rows = await previewCombined(
         fixture,
@@ -858,7 +858,7 @@ describe("combined table integration", () => {
         INSERT INTO grids.records (id, short_id, table_id, data, deleted_at)
         VALUES (
           ${deletedRecordId}::uuid,
-          ${shortId("R")},
+          ${testShortId()},
           ${fixture.sourceTableId}::uuid,
           jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Deleted value'),
           now()
@@ -888,24 +888,24 @@ describe("combined table integration", () => {
     try {
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, kind, name, position)
-        VALUES (${relationTableId}::uuid, ${shortId("R")}, ${fixture.sourceBaseId}::uuid, 'stored', 'Categories', 1)
+        VALUES (${relationTableId}::uuid, ${testShortId()}, ${fixture.sourceBaseId}::uuid, 'stored', 'Categories', 1)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
         VALUES
-          (${relationNameFieldId}::uuid, ${shortId("RN")}, ${relationTableId}::uuid, 'Category', 'text', '{}'::jsonb, 0, TRUE),
-          (${sourceRelationFieldId}::uuid, ${shortId("SR")}, ${fixture.sourceTableId}::uuid, 'Source category', 'relation', ${{
+          (${relationNameFieldId}::uuid, ${testShortId()}, ${relationTableId}::uuid, 'Category', 'text', '{}'::jsonb, 0, TRUE),
+          (${sourceRelationFieldId}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, 'Source category', 'relation', ${{
             targetTableId: relationTableId,
             cardinality: "single",
           }}::jsonb, 2, FALSE),
-          (${targetRelationFieldId}::uuid, ${shortId("CR")}, ${fixture.targetTableId}::uuid, 'Category', 'relation', ${{
+          (${targetRelationFieldId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Category', 'relation', ${{
             targetTableId: relationTableId,
             cardinality: "single",
           }}::jsonb, 2, FALSE)
       `;
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${relationRecordId}::uuid, ${shortId("R")}, ${relationTableId}::uuid, jsonb_build_object(${relationNameFieldId}::text, 'Hardware'))
+        VALUES (${relationRecordId}::uuid, ${testShortId()}, ${relationTableId}::uuid, jsonb_build_object(${relationNameFieldId}::text, 'Hardware'))
       `;
       await sql`
         INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
@@ -1266,7 +1266,7 @@ describe("combined table integration", () => {
     try {
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${changedSourceFieldId}::uuid, ${shortId("ST")}, ${fixture.sourceTableId}::uuid, 'Published name', 'text', '{}'::jsonb, 2)
+        VALUES (${changedSourceFieldId}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, 'Published name', 'text', '{}'::jsonb, 2)
       `;
       await sql`
         INSERT INTO grids.federated_table_revisions (id, table_id, revision, status)
@@ -1400,7 +1400,7 @@ describe("combined table integration", () => {
       `;
       await sql`
         INSERT INTO auth.groups (id, cn, provider, name)
-        VALUES (${groupId}::uuid, ${`combined-publisher-${shortId("G")}`}, ${user.provider}, 'Combined publishers')
+        VALUES (${groupId}::uuid, ${`combined-publisher-${testShortId()}`}, ${user.provider}, 'Combined publishers')
       `;
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${user.id}::uuid, ${groupId}::uuid)`;
       await sql`
@@ -1559,17 +1559,17 @@ describe("combined table integration", () => {
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, kind, name, position, disable_direct_insert)
         VALUES
-          (${relationSourceTableId}::uuid, ${shortId("RS")}, ${fixture.sourceBaseId}::uuid, 'stored', 'Related source', 2, FALSE),
-          (${relationTargetTableId}::uuid, ${shortId("RT")}, ${fixture.targetBaseId}::uuid, 'federated', 'Related combined', 2, TRUE)
+          (${relationSourceTableId}::uuid, ${testShortId()}, ${fixture.sourceBaseId}::uuid, 'stored', 'Related source', 2, FALSE),
+          (${relationTargetTableId}::uuid, ${testShortId()}, ${fixture.targetBaseId}::uuid, 'federated', 'Related combined', 2, TRUE)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES
-          (${relationSourceFieldId}::uuid, ${shortId("RSF")}, ${relationSourceTableId}::uuid, 'Source relation', 'relation', ${{
+          (${relationSourceFieldId}::uuid, ${testShortId()}, ${relationSourceTableId}::uuid, 'Source relation', 'relation', ${{
             targetTableId: fixture.sourceTableId,
             cardinality: "multiple",
           }}::jsonb, 0),
-          (${relationTargetFieldId}::uuid, ${shortId("RTF")}, ${relationTargetTableId}::uuid, 'Canonical relation', 'relation', ${{
+          (${relationTargetFieldId}::uuid, ${testShortId()}, ${relationTargetTableId}::uuid, 'Canonical relation', 'relation', ${{
             targetTableId: fixture.targetTableId,
             cardinality: "multiple",
           }}::jsonb, 0)
@@ -1618,18 +1618,18 @@ describe("combined table integration", () => {
     try {
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, kind, name, position)
-        VALUES (${relationTargetId}::uuid, ${shortId("R")}, ${fixture.sourceBaseId}::uuid, 'stored', 'Relation target', 1)
+        VALUES (${relationTargetId}::uuid, ${testShortId()}, ${fixture.sourceBaseId}::uuid, 'stored', 'Relation target', 1)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES
-          (${sourcePercentId}::uuid, ${shortId("SP")}, ${fixture.sourceTableId}::uuid, 'Source percent', 'percent', '{"range":"fraction"}'::jsonb, 2),
-          (${targetPercentId}::uuid, ${shortId("TP")}, ${fixture.targetTableId}::uuid, 'Percent', 'percent', '{"range":"percent"}'::jsonb, 2),
-          (${sourceRelationId}::uuid, ${shortId("SR")}, ${fixture.sourceTableId}::uuid, 'Source relation', 'relation', ${{
+          (${sourcePercentId}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, 'Source percent', 'percent', '{"range":"fraction"}'::jsonb, 2),
+          (${targetPercentId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Percent', 'percent', '{"range":"percent"}'::jsonb, 2),
+          (${sourceRelationId}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, 'Source relation', 'relation', ${{
             targetTableId: relationTargetId,
             cardinality: "single",
           }}::jsonb, 3),
-          (${targetRelationId}::uuid, ${shortId("TR")}, ${fixture.targetTableId}::uuid, 'Relation', 'relation', ${{
+          (${targetRelationId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Relation', 'relation', ${{
             targetTableId: relationTargetId,
             cardinality: "multiple",
           }}::jsonb, 3)
@@ -1669,10 +1669,10 @@ describe("combined table integration", () => {
         const fieldId = uuid();
         return {
           tableId,
-          tableShortId: shortId("S"),
+          tableShortId: testShortId(),
           tableName: `Boundary source ${index + 2}`,
           fieldId,
-          fieldShortId: shortId("F"),
+          fieldShortId: testShortId(),
           fieldName: `Boundary field ${index + 2}`,
           recordId: uuid(),
           data: { [fieldId]: `Boundary value ${index + 2}` },
@@ -1705,7 +1705,7 @@ describe("combined table integration", () => {
         SELECT id, short_id, table_id, data
         FROM jsonb_to_recordset(${extra.map((item) => ({
           id: item.recordId,
-          short_id: shortId("R"),
+          short_id: testShortId(),
           table_id: item.tableId,
           data: item.data,
         }))}::jsonb) AS item(id uuid, short_id text, table_id uuid, data jsonb)
@@ -1763,7 +1763,7 @@ describe("combined table integration", () => {
       await sql`UPDATE grids.records SET data = data || ${{ [fixture.sourceTextFieldId]: "Alpha" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
       for (const name of ["Bravo", "Charlie"]) {
         await sql`INSERT INTO grids.records (id, short_id, table_id, data)
-          VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.sourceTableId}::uuid, ${{ [fixture.sourceTextFieldId]: name }}::jsonb)`;
+          VALUES (${uuid()}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, ${{ [fixture.sourceTextFieldId]: name }}::jsonb)`;
       }
       const fieldId = fixture.targetTextFieldId;
       const queries = [
@@ -1839,11 +1839,12 @@ describe("combined table integration", () => {
     async () => {
       const fixture = await createFixture();
       try {
+        const shortIds = Array.from({ length: 10_025 }, () => testShortId());
         await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        SELECT gen_random_uuid(), 'E' || lpad(sequence::text, 5, '0'), ${fixture.sourceTableId}::uuid,
-               jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Export row ' || sequence::text)
-        FROM generate_series(1, 10025) sequence
+        SELECT gen_random_uuid(), item.short_id, ${fixture.sourceTableId}::uuid,
+               jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Export row ' || item.sequence::text)
+        FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, sequence)
       `;
         const exported = await exportRecords({
           tableId: fixture.targetTableId,
@@ -1883,7 +1884,7 @@ postgresTest("mapped calculation errors remain field-local and propagate through
     if (!broken.ok) throw broken.error;
     await sql`UPDATE grids.federated_field_mappings SET source_field_id = ${broken.data.id}::uuid WHERE revision_id = ${fixture.revisionId}::uuid AND target_field_id = ${fixture.targetTextFieldId}::uuid`;
     const other = uuid();
-    await sql`INSERT INTO grids.fields(id, short_id, table_id, name, type, config, position) VALUES (${other}::uuid, ${shortId("OT")}, ${fixture.targetTableId}::uuid, 'Other', 'text', '{}'::jsonb, 2)`;
+    await sql`INSERT INTO grids.fields(id, short_id, table_id, name, type, config, position) VALUES (${other}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Other', 'text', '{}'::jsonb, 2)`;
     await sql`INSERT INTO grids.federated_field_mappings(revision_id, target_field_id, source_table_id, source_field_id, config) VALUES (${fixture.revisionId}::uuid, ${other}::uuid, ${fixture.sourceTableId}::uuid, ${fixture.sourceTextFieldId}::uuid, '{}'::jsonb)`;
     fixture.targetFields = await loadTableFields(fixture.targetTableId);
 
@@ -1915,7 +1916,7 @@ postgresTest("mapped calculation errors remain field-local and propagate through
     if (!brokenNumber.ok) throw brokenNumber.error;
     const amountId = uuid();
     await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-      VALUES (${amountId}::uuid, ${shortId("AM")}, ${fixture.targetTableId}::uuid, 'Amount', 'number', '{}'::jsonb, 3)`;
+      VALUES (${amountId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Amount', 'number', '{}'::jsonb, 3)`;
     await sql`INSERT INTO grids.federated_field_mappings(revision_id, target_field_id, source_table_id, source_field_id, config)
       VALUES (${fixture.revisionId}::uuid, ${amountId}::uuid, ${fixture.sourceTableId}::uuid, ${brokenNumber.data.id}::uuid, '{}'::jsonb)`;
     fixture.targetFields = await loadTableFields(fixture.targetTableId);
@@ -1930,7 +1931,7 @@ postgresTest("mapped calculation errors remain field-local and propagate through
     const recoveredId = uuid();
     await sql`UPDATE grids.fields SET presentable = false WHERE table_id = ${fixture.targetTableId}::uuid`;
     await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
-      VALUES (${recoveredId}::uuid, ${shortId("RC")}, ${fixture.targetTableId}::uuid, 'Recovered', 'formula',
+      VALUES (${recoveredId}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, 'Recovered', 'formula',
         ${{ expression: "IFERROR(Name, 'fallback')" }}::jsonb, 3, true)`;
     const recoveredReader = await createReader(fixture.targetTableId);
     const recoveredRecord = await recoveredReader.get(fixture.recordId);

@@ -19,6 +19,7 @@ import {
   RecordCreateInputSchema,
   RecordExternalUpsertInputSchema,
 } from "./capability-contracts";
+import { testShortId } from "./integration-test-utils";
 import { migrate } from "./migrate";
 import { gridsService } from "./service";
 import { enable as enableDurableHistory } from "./service/durable-history";
@@ -29,7 +30,6 @@ const zDocument = (value: unknown) => gridsCapabilities.queries["document.read"]
 const postgresTest = testFor("database");
 if (testInfra.database) setDefaultTimeout(60_000);
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 test("only exposes remembered approval for record updates and external upserts", () => {
   const rememberable = (Object.entries(gridsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
@@ -135,10 +135,10 @@ describe("Grids capabilities", () => {
     const tableId = uuid();
     const recordId = uuid();
     const otherRecordId = uuid();
-    const basePublicId = shortId("B");
-    const tablePublicId = shortId("T");
-    const recordPublicId = shortId("R");
-    const otherPublicId = shortId("R");
+    const basePublicId = testShortId();
+    const tablePublicId = testShortId();
+    const recordPublicId = testShortId();
+    const otherPublicId = testShortId();
     let accessId: string | undefined;
     const issue = gridsService.document.createDocumentForRecord;
     const renderer = spyOn(gridsService.document, "createDocumentForRecord").mockImplementation((input) =>
@@ -230,8 +230,8 @@ describe("Grids capabilities", () => {
       expect((await invoke("query", "workflow.record-actions", { baseId: basePublicId }, outsider)).ok).toBe(false);
       const actions = await invoke("query", "workflow.record-actions", { baseId: basePublicId, limit: 1 }, context);
       expect(actions.ok && actions.data.data).toEqual({ items: [], nextOffset: null });
-      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${shortId("F")},${tableId}::uuid,'Name','text','{}'::jsonb)`;
-      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${shortId("F")},${tableId}::uuid,'Corrects','relation',${{ targetTableId: tableId, cardinality: "single" }}::jsonb)`;
+      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${testShortId()},${tableId}::uuid,'Name','text','{}'::jsonb)`;
+      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${testShortId()},${tableId}::uuid,'Corrects','relation',${{ targetTableId: tableId, cardinality: "single" }}::jsonb)`;
       expect((await enableDurableHistory(tableId, user.id)).ok).toBe(true);
       expect((await enableFinalization(tableId, { mode: "direct" }, user.id)).ok).toBe(true);
       expect((await finalizeRecord({ tableId, recordId, actorId: user.id, origin: "direct" })).ok).toBe(true);
@@ -420,14 +420,14 @@ describe("Grids capabilities", () => {
     const singleRelationFieldId = uuid();
     const auditQuestionId = uuid();
     const auditOptionId = uuid();
-    const basePublicId = shortId("B");
-    const tablePublicId = shortId("T");
-    const secretTablePublicId = shortId("S");
-    const viewPublicId = shortId("V");
-    const fieldPublicId = shortId("F");
-    const selectFieldPublicId = shortId("O");
-    const relationFieldPublicId = shortId("R");
-    const singleRelationFieldPublicId = shortId("Q");
+    const basePublicId = testShortId();
+    const tablePublicId = testShortId();
+    const secretTablePublicId = testShortId();
+    const viewPublicId = testShortId();
+    const fieldPublicId = testShortId();
+    const selectFieldPublicId = testShortId();
+    const relationFieldPublicId = testShortId();
+    const singleRelationFieldPublicId = testShortId();
     const accessIds: string[] = [];
 
     try {
@@ -592,7 +592,7 @@ describe("Grids capabilities", () => {
       });
 
       const listFieldId = uuid();
-      const listFieldPublicId = shortId("L");
+      const listFieldPublicId = testShortId();
       const listConfig = {
         minItems: 0,
         maxItems: 5,
@@ -1091,11 +1091,12 @@ describe("Grids capabilities", () => {
         error: { code: "BAD_INPUT", message: expect.stringContaining("Select fewer fields") },
       });
 
+      const shortIds = Array.from({ length: 30 }, () => testShortId());
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        SELECT gen_random_uuid(), substring(md5(random()::text) FROM 1 FOR 6), ${tableId}::uuid,
-               jsonb_build_object(${fieldId}::text, 'page-' || item::text || repeat('x', 10000))
-        FROM generate_series(1, 30) AS item
+        SELECT gen_random_uuid(), item.short_id, ${tableId}::uuid,
+               jsonb_build_object(${fieldId}::text, 'page-' || item.n::text || repeat('x', 10000))
+        FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, n)
       `;
       const pagedQuery = `from table {${tablePublicId}}\nselect {${fieldPublicId}}\nwhere contains({${fieldPublicId}}, 'page-')`;
       for (const query of [
@@ -1179,7 +1180,7 @@ describe("Grids capabilities", () => {
       // Reviews must stay usable with opaque IDs, long labels and wide records.
       const wideValues: Record<string, string> = {};
       for (let index = 0; index < 25; index++) {
-        const publicId = shortId("W");
+        const publicId = testShortId();
         await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
           VALUES (${uuid()}::uuid, ${publicId}, ${tableId}::uuid, ${`${index}-${"Label".repeat(35)}`}, 'text', '{}'::jsonb, ${index + 100})`;
         wideValues[publicId] = `Value ${index}`;
@@ -1269,11 +1270,11 @@ describe("Grids capabilities", () => {
     const tableId = uuid();
     const otherTableId = uuid();
     const fieldId = uuid();
-    const boundBasePublicId = shortId("A");
-    const otherBasePublicId = shortId("B");
-    const tablePublicId = shortId("T");
-    const otherTablePublicId = shortId("T");
-    const fieldPublicId = shortId("F");
+    const boundBasePublicId = testShortId();
+    const otherBasePublicId = testShortId();
+    const tablePublicId = testShortId();
+    const otherTablePublicId = testShortId();
+    const fieldPublicId = testShortId();
     const accessIds: string[] = [];
     const [serviceAccount] = await sql<{ id: string; createdAt: string }[]>`
       INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)

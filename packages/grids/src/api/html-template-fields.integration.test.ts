@@ -28,9 +28,9 @@ describe("HTML template field route", () => {
     const tableId = testUuid();
     const fieldId = testUuid();
     const accessId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const fieldShortId = testShortId("H");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const fieldShortId = testShortId();
     const user: User = {
       id: userId,
       uid: `html-template-route-${userId}`,

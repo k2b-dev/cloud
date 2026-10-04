@@ -29,24 +29,24 @@ describe("published App SSR availability", () => {
     const childId = testUuid();
     const relationId = testUuid();
     const otherRelationId = testUuid();
-    const otherRelationPublicId = testShortId("F");
+    const otherRelationPublicId = testShortId();
     const otherFieldId = testUuid();
-    const otherFieldPublicId = testShortId("F");
+    const otherFieldPublicId = testShortId();
     const listFieldId = testUuid();
-    const listFieldPublicId = testShortId("F");
-    const childPublicId = testShortId("R");
-    const relationPublicId = testShortId("F");
+    const listFieldPublicId = testShortId();
+    const childPublicId = testShortId();
+    const relationPublicId = testShortId();
     const viewId = testUuid();
     const metricViewId = testUuid();
     const formId = testUuid();
-    const basePublicId = testShortId("B");
-    const tablePublicId = testShortId("T");
-    const fieldPublicId = testShortId("F");
-    const recordPublicId = testShortId("R");
-    const viewPublicId = testShortId("V");
-    const metricViewPublicId = testShortId("V");
-    const formPublicId = testShortId("M");
-    const appPublicId = testShortId("A");
+    const basePublicId = testShortId();
+    const tablePublicId = testShortId();
+    const fieldPublicId = testShortId();
+    const recordPublicId = testShortId();
+    const viewPublicId = testShortId();
+    const metricViewPublicId = testShortId();
+    const formPublicId = testShortId();
+    const appPublicId = testShortId();
     const accessIds: string[] = [];
     const recordGet = spyOn(gridsService.record, "get");
     try {
@@ -287,7 +287,7 @@ describe("published App SSR availability", () => {
       // for data also used by another parent. Server writes still recheck this.
       const otherParentId = testUuid();
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${otherParentId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+        VALUES (${otherParentId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`;
       await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
         VALUES (${otherParentId}::uuid, ${relationId}::uuid, ${childId}::uuid)`;
       const sharedResponse = await api.request(`/runtime/${appPublicId}/detail?request_id=${recordPublicId}`);
@@ -328,7 +328,7 @@ describe("published App SSR availability", () => {
         expect(drift.blocks.find((block: { id: string }) => block.id === "edit-form").form.ok).toBe(false);
       } else expect(driftResponse.status).toBe(404);
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordId}`)).status).toBe(404);
-      await sql`UPDATE grids.fields SET short_id = ${testShortId("F")} WHERE id = ${fieldId}::uuid`;
+      await sql`UPDATE grids.fields SET short_id = ${testShortId()} WHERE id = ${fieldId}::uuid`;
       expect((await app.request(`/${appPublicId}/detail?request_id=${recordPublicId}`)).status).toBe(404);
     } finally {
       recordGet.mockRestore();
@@ -342,11 +342,11 @@ describe("published App SSR availability", () => {
     const tableId = testUuid();
     const fieldId = testUuid();
     const viewId = testUuid();
-    const basePublicId = testShortId("B");
-    const tablePublicId = testShortId("T");
-    const fieldPublicId = testShortId("F");
-    const viewPublicId = testShortId("V");
-    const appPublicId = testShortId("A");
+    const basePublicId = testShortId();
+    const tablePublicId = testShortId();
+    const fieldPublicId = testShortId();
+    const viewPublicId = testShortId();
+    const appPublicId = testShortId();
     const accessIds: string[] = [];
     const viewGet = spyOn(gridsService.view, "get");
 

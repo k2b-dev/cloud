@@ -17,10 +17,10 @@ beforeAll(async () => {
 const createFixture = async () => {
   const baseId = testUuid();
   const tableId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'File lifecycle')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'File lifecycle')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Records')
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')
   `;
   const field = await fields.create({ tableId, name: "Attachments", type: "file", config: { maxFiles: 3 } }, null);
   if (!field.ok) throw field.error;

@@ -23,19 +23,19 @@ type Fixture = {
 const createFixture = async (): Promise<Fixture> => {
   const userId = testUuid();
   const baseId = testUuid();
-  const basePublicId = testShortId("B");
+  const basePublicId = testShortId();
   const tasksId = testUuid();
-  const tablePublicId = testShortId("T");
+  const tablePublicId = testShortId();
   const peopleTableId = testUuid();
   const titleId = testUuid();
-  const titlePublicId = testShortId("F");
+  const titlePublicId = testShortId();
   const peopleId = testUuid();
-  const peoplePublicId = testShortId("F");
+  const peoplePublicId = testShortId();
   const ownersId = testUuid();
-  const ownersPublicId = testShortId("F");
+  const ownersPublicId = testShortId();
   const nameId = testUuid();
   const adaId = testUuid();
-  const adaPublicId = testShortId("R");
+  const adaPublicId = testShortId();
   const graceId = testUuid();
   const alphaId = testUuid();
   const betaId = testUuid();
@@ -47,22 +47,22 @@ const createFixture = async (): Promise<Fixture> => {
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
       (${tasksId}::uuid, ${tablePublicId}, ${baseId}::uuid, 'Tasks', 0),
-      (${peopleTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'People', 1)
+      (${peopleTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'People', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable) VALUES
       (${titleId}::uuid, ${titlePublicId}, ${tasksId}::uuid, 'Title', 'text', '{}'::jsonb, 0, TRUE),
       (${peopleId}::uuid, ${peoplePublicId}, ${tasksId}::uuid, 'People', 'relation', ${{ targetTableId: peopleTableId }}::jsonb, 1, FALSE),
       (${ownersId}::uuid, ${ownersPublicId}, ${tasksId}::uuid, 'Owners', 'principal', '{}'::jsonb, 2, FALSE),
-      (${nameId}::uuid, ${testShortId("F")}, ${peopleTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE)
+      (${nameId}::uuid, ${testShortId()}, ${peopleTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE)
   `;
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data) VALUES
       (${adaId}::uuid, ${adaPublicId}, ${peopleTableId}::uuid, ${{ [nameId]: "Ada" }}::jsonb),
-      (${graceId}::uuid, ${testShortId("R")}, ${peopleTableId}::uuid, ${{ [nameId]: "Grace" }}::jsonb),
-      (${alphaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Alpha", [ownersId]: [{ type: "user", id: userId }] }}::jsonb),
-      (${betaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Beta" }}::jsonb),
-      (${gammaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Gamma" }}::jsonb)
+      (${graceId}::uuid, ${testShortId()}, ${peopleTableId}::uuid, ${{ [nameId]: "Grace" }}::jsonb),
+      (${alphaId}::uuid, ${testShortId()}, ${tasksId}::uuid, ${{ [titleId]: "Alpha", [ownersId]: [{ type: "user", id: userId }] }}::jsonb),
+      (${betaId}::uuid, ${testShortId()}, ${tasksId}::uuid, ${{ [titleId]: "Beta" }}::jsonb),
+      (${gammaId}::uuid, ${testShortId()}, ${tasksId}::uuid, ${{ [titleId]: "Gamma" }}::jsonb)
   `;
   await sql`
     INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position) VALUES

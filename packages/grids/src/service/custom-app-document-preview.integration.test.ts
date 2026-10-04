@@ -25,19 +25,19 @@ const withPreview = async (
     fieldId = testUuid(),
     templateId = testUuid(),
     userId = testUuid();
-  const table = testShortId("T"),
-    field = testShortId("F");
+  const table = testShortId(),
+    field = testShortId();
   const source = `from table {${table}}\nselect {${field}}\nwhere record.id = '{{ record.id }}'\nlimit 1`;
   try {
     await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name)
       VALUES (${userId}::uuid, ${`preview-${userId}`}, 'local', 'user', 'Preview owner')`;
-    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Preview fingerprint')`;
+    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Preview fingerprint')`;
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
       VALUES (${tableId}::uuid, ${table}, ${baseId}::uuid, 'Drafts')`;
     await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type)
       VALUES (${fieldId}::uuid, ${field}, ${tableId}::uuid, 'Subject', 'text')`;
     await sql`INSERT INTO grids.document_templates (id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
-      VALUES (${templateId}::uuid, ${testShortId("D")}, ${tableId}::uuid, 'Preview', ${source}, 'html', '<p>Preview</p>', 'PREVIEW', 'preview.pdf')`;
+      VALUES (${templateId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Preview', ${source}, 'html', '<p>Preview</p>', 'PREVIEW', 'preview.pdf')`;
     await run({
       baseId,
       tableId,
@@ -58,14 +58,14 @@ postgresTest("table-backed preview ignores personal views and cosmetic schema ed
     const original = await fingerprint();
     expect(original).toBeString();
     const unrelated = testUuid();
-    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${unrelated}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Unrelated')`;
-    await sql`INSERT INTO grids.fields (short_id, table_id, name, type) VALUES (${testShortId("F")}, ${unrelated}::uuid, 'Other', 'text')`;
+    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${unrelated}::uuid, ${testShortId()}, ${baseId}::uuid, 'Unrelated')`;
+    await sql`INSERT INTO grids.fields (short_id, table_id, name, type) VALUES (${testShortId()}, ${unrelated}::uuid, 'Other', 'text')`;
     expect(await fingerprint()).toBe(original);
     await sql`UPDATE grids.tables SET name = 'Renamed unrelated' WHERE id = ${unrelated}::uuid`;
     expect(await fingerprint()).toBe(original);
     const viewId = testUuid();
     await sql`INSERT INTO grids.views (id, short_id, base_id, table_id, name, source, owner_user_id)
-      VALUES (${viewId}::uuid, ${testShortId("V")}, ${baseId}::uuid, ${tableId}::uuid,
+      VALUES (${viewId}::uuid, ${testShortId()}, ${baseId}::uuid, ${tableId}::uuid,
         'My drafts', 'from table Drafts', ${userId}::uuid)`;
     expect(await fingerprint()).toBe(original);
     await sql`UPDATE grids.views SET name = 'My filtered drafts', source = 'from table Drafts limit 2',
@@ -97,7 +97,7 @@ postgresTest("table-backed preview ignores personal views and cosmetic schema ed
 postgresTest("view-backed preview retains shared and personal view semantics but ignores view presentation", async () => {
   await withPreview(async ({ baseId, tableId, templateId, userId, fingerprint }) => {
     const viewId = testUuid(),
-      view = testShortId("V");
+      view = testShortId();
     await sql`INSERT INTO grids.views (id, short_id, base_id, table_id, name, source)
       VALUES (${viewId}::uuid, ${view}, ${baseId}::uuid, ${tableId}::uuid, 'Saved drafts', 'from table Drafts')`;
     await sql`UPDATE grids.document_templates SET source = ${`from view {${view}}\nwhere record.id = '{{ record.id }}'\nlimit 1`}

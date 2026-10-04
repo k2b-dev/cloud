@@ -38,23 +38,23 @@ describe("relation label access integration", () => {
         INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
         VALUES (${userId}::uuid, ${`relation-labels-${userId}`}, 'local', 'user', 'Relation Label User', 'Relation', 'User')
       `;
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Relation labels')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Relation labels')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
-          (${sourceTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Source', 0),
-          (${targetTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Target', 1)
+          (${sourceTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Source', 0),
+          (${targetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Target', 1)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable) VALUES
-          (${relationFieldId}::uuid, ${testShortId("F")}, ${sourceTableId}::uuid, 'Target', 'relation', ${{ targetTableId }}::jsonb, 0, FALSE),
-          (${lookupFieldId}::uuid, ${testShortId("F")}, ${sourceTableId}::uuid, 'Target name', 'lookup', ${{ relationFieldId, targetFieldId: labelFieldId }}::jsonb, 1, FALSE),
-          (${nameFieldId}::uuid, ${testShortId("F")}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, FALSE),
-          (${labelFieldId}::uuid, ${testShortId("F")}, ${targetTableId}::uuid, 'Display name', 'formula', ${{ expression: 'IFEMPTY("Name", "Name")' }}::jsonb, 1, TRUE)
+          (${relationFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Target', 'relation', ${{ targetTableId }}::jsonb, 0, FALSE),
+          (${lookupFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Target name', 'lookup', ${{ relationFieldId, targetFieldId: labelFieldId }}::jsonb, 1, FALSE),
+          (${nameFieldId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, FALSE),
+          (${labelFieldId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'Display name', 'formula', ${{ expression: 'IFEMPTY("Name", "Name")' }}::jsonb, 1, TRUE)
       `;
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data) VALUES
-          (${sourceRecordId}::uuid, ${testShortId("R")}, ${sourceTableId}::uuid, ${{ [relationFieldId]: [targetRecordId] }}::jsonb),
-          (${targetRecordId}::uuid, ${testShortId("R")}, ${targetTableId}::uuid, ${{ [nameFieldId]: "Secret target" }}::jsonb)
+          (${sourceRecordId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, ${{ [relationFieldId]: [targetRecordId] }}::jsonb),
+          (${targetRecordId}::uuid, ${testShortId()}, ${targetTableId}::uuid, ${{ [nameFieldId]: "Secret target" }}::jsonb)
       `;
       await sql`
         INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
@@ -65,7 +65,7 @@ describe("relation label access integration", () => {
       const sourceFields = await listByTable(sourceTableId);
       const record = (): GridRecord => ({
         id: sourceRecordId,
-        shortId: testShortId("R"),
+        shortId: testShortId(),
         tableId: sourceTableId,
         data: { [relationFieldId]: [targetRecordId] },
         version: 1,

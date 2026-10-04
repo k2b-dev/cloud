@@ -17,9 +17,9 @@ const fixture = async () => {
   const baseId = testUuid();
   const tableId = testUuid();
   await sql`INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${testShortId("B")}, 'Local calculation schema')`;
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Local calculation schema')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Records')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')`;
   return { baseId, tableId };
 };
 

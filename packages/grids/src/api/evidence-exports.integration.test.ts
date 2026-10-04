@@ -21,9 +21,9 @@ describe("evidence export route permissions", () => {
   postgresTest("keeps preflight, jobs, and package metadata behind the Base admin gate", async () => {
     const userId = testUuid();
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const exportId = testUuid();
-    const exportShortId = testShortId("E");
+    const exportShortId = testShortId();
     const packageBytes = new TextEncoder().encode("tar");
     const packageSha256 = createHash("sha256").update(packageBytes).digest("hex");
     const user: User = {
@@ -128,7 +128,7 @@ describe("evidence export route permissions", () => {
       expect(downloaded.headers.get("cache-control")).toBe("private, no-store");
       expect(downloaded.headers.get("etag")).toBe(`"${packageSha256}"`);
       expect(await downloaded.text()).toBe("tar");
-      expect((await app.request(`/evidence-exports/${testShortId("X")}`, bearer(adminCredential.data.token))).status).toBe(404);
+      expect((await app.request(`/evidence-exports/${testShortId()}`, bearer(adminCredential.data.token))).status).toBe(404);
       expect((await app.request(`/evidence-exports/by-base/${baseId}`, bearer(adminCredential.data.token))).status).toBe(404);
       expect((await app.request(`${url}/preflight?sections=records,unknown`, bearer(adminCredential.data.token))).status).toBe(400);
       expect((await app.request(`${url}/preflight?sections=records,records`, bearer(adminCredential.data.token))).status).toBe(400);

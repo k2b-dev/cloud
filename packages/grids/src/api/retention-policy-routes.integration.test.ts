@@ -17,13 +17,13 @@ describe("retention policy routes", () => {
     const userId = testUuid();
     const baseId = testUuid();
     const accessId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const fileId = testUuid();
-    const fileShortId = testShortId("F");
+    const fileShortId = testShortId();
     const tableId = testUuid();
-    const tableShortId = testShortId("T");
+    const tableShortId = testShortId();
     const recordId = testUuid();
-    const recordShortId = testShortId("R");
+    const recordShortId = testShortId();
     const user: User = {
       id: userId,
       uid: `retention-${userId}`,

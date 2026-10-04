@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as comments from "./record-comments";
 
@@ -33,27 +33,27 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
   `;
   await sql`
     INSERT INTO grids.bases (id, short_id, name, created_by)
-    VALUES (${fixture.baseId}::uuid, ${shortId("B")}, 'Record comments', ${fixture.ownerId}::uuid)
+    VALUES (${fixture.baseId}::uuid, ${testShortId()}, 'Record comments', ${fixture.ownerId}::uuid)
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${fixture.tableId}::uuid, ${shortId("T")}, ${fixture.baseId}::uuid, 'Requests', 0)
+    VALUES (${fixture.tableId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Requests', 0)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-    VALUES (${fixture.fieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
+    VALUES (${fixture.fieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
   `;
   await sql`
     INSERT INTO grids.records (short_id, id, table_id, data, created_by, updated_by) VALUES
       (
-        ${shortId("R")}, ${fixture.ownerRecordId}::uuid,
+        ${testShortId()}, ${fixture.ownerRecordId}::uuid,
         ${fixture.tableId}::uuid,
         ${{ [fixture.fieldId]: "Owner request" }}::jsonb,
         ${fixture.ownerId}::uuid,
         ${fixture.ownerId}::uuid
       ),
       (
-        ${shortId("R")}, ${fixture.otherRecordId}::uuid,
+        ${testShortId()}, ${fixture.otherRecordId}::uuid,
         ${fixture.tableId}::uuid,
         ${{ [fixture.fieldId]: "Other request" }}::jsonb,
         ${fixture.otherUserId}::uuid,

@@ -17,20 +17,20 @@ beforeAll(async () => {
 describe("custom app navigation publication", () => {
   postgresTest("accepts a live bound record and rejects missing, deleted, or other-table targets", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const tableId = testUuid();
-    const tableShortId = testShortId("T");
+    const tableShortId = testShortId();
     const otherTableId = testUuid();
     const fieldId = testUuid();
-    const fieldShortId = testShortId("F");
+    const fieldShortId = testShortId();
     const recordId = testUuid();
-    const recordShortId = testShortId("R");
-    const otherRecordShortId = testShortId("R");
+    const recordShortId = testShortId();
+    const otherRecordShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Navigation')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES
         (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Settings'),
-        (${otherTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Other')`;
+        (${otherTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Other')`;
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES (${fieldId}::uuid, ${fieldShortId}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)`;
       await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES
@@ -39,7 +39,7 @@ describe("custom app navigation publication", () => {
       const definition: CustomAppDefinition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Settings",
         startPageId: "home",
@@ -71,7 +71,7 @@ describe("custom app navigation publication", () => {
       const valid = await compile(definition);
       expect(valid.ok).toBe(true);
       const formId = testUuid();
-      const formShortId = testShortId("M");
+      const formShortId = testShortId();
       await sql`INSERT INTO grids.forms (id, short_id, table_id, name, config)
         VALUES (${formId}::uuid, ${formShortId}, ${tableId}::uuid, 'Company settings',
           ${{ fields: [{ kind: "user_input", fieldId }] }}::jsonb)`;
@@ -82,7 +82,7 @@ describe("custom app navigation publication", () => {
         expect(editOnly.compiled.capabilities.records[0]?.fieldIds).toEqual([]);
         expect(editOnly.compiled.capabilities.forms[0]?.formId).toBe(formId);
       }
-      for (const invalidId of [testShortId("R"), otherRecordShortId]) {
+      for (const invalidId of [testShortId(), otherRecordShortId]) {
         definition.pages[1]!.navigation.recordId = invalidId;
         const invalid = await compile(definition);
         expect(invalid.ok).toBe(false);

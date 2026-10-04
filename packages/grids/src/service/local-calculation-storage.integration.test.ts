@@ -23,9 +23,9 @@ const fixture = async () => {
   const baseId = testUuid();
   const tableId = testUuid();
   await sql`INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${testShortId("B")}, 'Materialized calculation storage')`;
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Materialized calculation storage')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Records')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')`;
   const amount = await fields.create({ tableId, name: "Amount", type: "number" }, null);
   const total = await fields.create({ tableId, name: "Total", type: "formula", config: { expression: "Amount * 2" } }, null);
   if (!amount.ok) throw amount.error;

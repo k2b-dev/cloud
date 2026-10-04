@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import {
   grantAccess,
@@ -14,15 +15,14 @@ import {
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const insertFixture = async () => {
   const baseId = uuid();
   const customAppId = uuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Access registry')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Access registry')`;
   await sql`
     INSERT INTO grids.custom_apps (id, short_id, base_id, name, draft_definition, draft_capabilities)
-    VALUES (${customAppId}::uuid, ${shortId("C")}, ${baseId}::uuid, 'Request portal', '{}'::jsonb, NULL)
+    VALUES (${customAppId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Request portal', '{}'::jsonb, NULL)
   `;
   return { baseId, customAppId };
 };

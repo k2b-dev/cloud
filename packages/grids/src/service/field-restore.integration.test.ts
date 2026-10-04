@@ -1,12 +1,12 @@
 import { describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { fieldUniqueIndexName } from "./field-indexes";
 import * as fields from "./fields";
 
 const postgresTest = testFor("database");
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 describe("field restore Postgres integration", () => {
   postgresTest(
@@ -17,11 +17,11 @@ describe("field restore Postgres integration", () => {
       const tableId = Bun.randomUUIDv7();
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
-        VALUES (${baseId}::uuid, ${shortId("B")}, ${`Field restore ${baseId}`})
+        VALUES (${baseId}::uuid, ${testShortId()}, ${`Field restore ${baseId}`})
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Records')
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')
       `;
 
       try {
@@ -34,8 +34,8 @@ describe("field restore Postgres integration", () => {
         await sql`
           INSERT INTO grids.records (short_id, id, table_id, data)
           VALUES
-            (${shortId("R")}, ${firstRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'A'::text)),
-            (${shortId("R")}, ${secondRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'B'::text))
+            (${testShortId()}, ${firstRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'A'::text)),
+            (${testShortId()}, ${secondRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'B'::text))
         `;
 
         expect((await fields.softDelete(fieldId, null)).ok).toBe(true);

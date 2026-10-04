@@ -26,9 +26,9 @@ const fixture = async () => {
   const baseId = testUuid();
   const tableId = testUuid();
   await sql`INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${testShortId("B")}, 'Public Document capture')`;
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Public Document capture')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Root')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Root')`;
   const name = await fields.create({ tableId, name: "Name", type: "text", presentable: true }, null);
   if (!name.ok) throw name.error;
   const record = await records.create(tableId, { [name.data.id]: "Original root" }, null, "direct");
@@ -89,7 +89,7 @@ describe("public Document capture and replay", () => {
     const item = await fixture();
     const targetId = testUuid();
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-      VALUES (${targetId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Outside snapshot')`;
+      VALUES (${targetId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Outside snapshot')`;
     const target = await records.create(targetId, {}, null, "direct");
     if (!target.ok) throw target.error;
     const relation = await fields.create(
@@ -327,7 +327,7 @@ describe("public Document capture and replay", () => {
     const item = await fixture();
     const relatedTableId = testUuid();
     await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-      VALUES (${relatedTableId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Related')`;
+      VALUES (${relatedTableId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Related')`;
     const name = await fields.create({ tableId: relatedTableId, name: "Name", type: "text", presentable: true }, null);
     if (!name.ok) throw name.error;
     const related = await records.create(relatedTableId, { [name.data.id]: "Original related" }, null, "direct");

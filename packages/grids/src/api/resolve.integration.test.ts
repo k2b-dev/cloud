@@ -20,11 +20,11 @@ describe("address resolution route", () => {
     const userId = testUuid();
     const accessId = testUuid();
     const [bookshopId, twinAId, twinBId, hiddenId] = [testUuid(), testUuid(), testUuid(), testUuid()];
-    const [bookshop, twinA, twinB, hidden] = [testShortId("B"), testShortId("B"), testShortId("B"), testShortId("B")];
+    const [bookshop, twinA, twinB, hidden] = [testShortId(), testShortId(), testShortId(), testShortId()];
     const [authorsId, ordersId, hiddenTableId] = [testUuid(), testUuid(), testUuid()];
-    const [authors, orders, hiddenTable] = [testShortId("T"), testShortId("T"), testShortId("T")];
+    const [authors, orders, hiddenTable] = [testShortId(), testShortId(), testShortId()];
     const [recordId, trashedId, hiddenRecordId] = [testUuid(), testUuid(), testUuid()];
-    const [record, trashed, hiddenRecord] = [testShortId("R"), testShortId("R"), testShortId("R")];
+    const [record, trashed, hiddenRecord] = [testShortId(), testShortId(), testShortId()];
     const twinName = `Twin ${userId}`;
     const user: User = {
       id: userId,

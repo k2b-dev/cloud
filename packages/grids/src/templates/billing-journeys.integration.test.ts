@@ -106,7 +106,7 @@ const fixture = async () => {
       occurredAt: new Date(),
     });
     await sql`INSERT INTO grids.workflow_run_profile (run_id, short_id, base_id, workflow_id, channel, actor_user_id, request_fingerprint)
-      VALUES (${runId}::uuid, ${testShortId("R")}, ${baseId}::uuid, ${workflow.id}::uuid, 'api', ${actorId}::uuid, ${runId})`;
+      VALUES (${runId}::uuid, ${testShortId()}, ${baseId}::uuid, ${workflow.id}::uuid, 'api', ${actorId}::uuid, ${runId})`;
     for (let attempt = 0; attempt < 30; attempt++) {
       await runGridsWorkflowRun(runId);
       const [run] = await sql`SELECT state, error FROM workflows.run WHERE id = ${runId}::uuid`;

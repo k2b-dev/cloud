@@ -2,7 +2,7 @@ import { beforeAll, describe, expect } from "bun:test";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { startGridsTestSync } from "../sync-test-utils";
 import type { SqlClient } from "./audit";
@@ -31,15 +31,15 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
   `;
   await sql`
     INSERT INTO grids.bases (id, short_id, name, created_by)
-    VALUES (${fixture.baseId}::uuid, ${shortId("B")}, 'Record event outbox', ${fixture.actorId}::uuid)
+    VALUES (${fixture.baseId}::uuid, ${testShortId()}, 'Record event outbox', ${fixture.actorId}::uuid)
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${fixture.tableId}::uuid, ${shortId("T")}, ${fixture.baseId}::uuid, 'Items', 0)
+    VALUES (${fixture.tableId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Items', 0)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-    VALUES (${fixture.fieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+    VALUES (${fixture.fieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
   `;
 };
 
@@ -54,7 +54,7 @@ const insertRecordAndEvent = async (client: SqlClient, fixture: Fixture, name: s
   await client`
     INSERT INTO grids.records (short_id, id, table_id, data, version, created_by, updated_by)
     VALUES (
-      ${shortId("R")}, ${recordId}::uuid,
+      ${testShortId()}, ${recordId}::uuid,
       ${fixture.tableId}::uuid,
       ${{ [fixture.fieldId]: name }}::jsonb,
       1,

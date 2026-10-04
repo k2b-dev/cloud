@@ -25,8 +25,8 @@ beforeAll(async () => {
 const fixture = async (policy: { mode: "direct" } | { mode: "fourEyes"; approverGroupId: string } = { mode: "direct" }) => {
   const baseId = testUuid();
   const tableId = testUuid();
-  const tableShortId = testShortId("T");
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Finalization')`;
+  const tableShortId = testShortId();
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Finalization')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Cases')`;
   const name = await fields.create({ tableId, name: "Name", type: "text", presentable: true }, null);
   const attachment = await fields.create({ tableId, name: "Attachment", type: "file" }, null);
@@ -306,8 +306,8 @@ describe("record finalization Postgres integration", () => {
         const targetId = testUuid();
         const originalId = testUuid();
         await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES
-        (${targetId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Intermediate'),
-        (${originalId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Original')`;
+        (${targetId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Intermediate'),
+        (${originalId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Original')`;
         const amount = await fields.create({ tableId: originalId, name: "Amount", type: "number" }, null);
         if (!amount.ok) throw amount.error;
         const source = await records.create(originalId, { [amount.data.id]: "12.5" }, null, "direct");
@@ -707,7 +707,7 @@ describe("record finalization Postgres integration", () => {
       const item = await fixture();
       try {
         const targetTableId = testUuid();
-        await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${targetTableId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Lines')`;
+        await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${targetTableId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Lines')`;
         const amount = await fields.create({ tableId: targetTableId, name: "Amount", type: "number" }, null);
         if (!amount.ok) throw amount.error;
         const calculated = await fields.create(
@@ -1059,8 +1059,8 @@ describe("record finalization Postgres integration", () => {
     const tableId = testUuid();
     const groupId = testUuid();
     await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`finalization-policy-${groupId}`}, 'local', 'Other policy')`;
-    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Draft default')`;
-    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Drafts')`;
+    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Draft default')`;
+    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Drafts')`;
     try {
       expect(await finalization.getStatus(tableId)).toEqual({ ok: true, data: { enabled: false, durableHistory: "disabled" } });
       const withoutHistory = await finalization.enable(tableId, { mode: "direct" }, null);

@@ -1,12 +1,12 @@
 import { describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as fields from "./fields";
 import { create, createMany, restore, softDelete, update } from "./record-write";
 
 const postgresTest = testFor("database");
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const expectUniqueConflict = (result: { ok: boolean; error?: { code?: string; message?: string } }) => {
   expect(result.ok).toBe(false);
@@ -25,11 +25,11 @@ describe("record unique-field Postgres integration", () => {
       const tableId = Bun.randomUUIDv7();
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
-        VALUES (${baseId}::uuid, ${shortId("B")}, ${`Record uniqueness ${baseId}`})
+        VALUES (${baseId}::uuid, ${testShortId()}, ${`Record uniqueness ${baseId}`})
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Records')
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records')
       `;
 
       try {

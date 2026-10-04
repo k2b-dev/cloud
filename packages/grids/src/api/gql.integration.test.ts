@@ -5,6 +5,7 @@ import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DslQueryExecuteResponse } from "../contracts";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createGqlApi } from "./gql";
 import { compileGqlViewWrite } from "./gql-runtime";
@@ -14,7 +15,6 @@ const postgresTest = testFor("database");
 if (testInfra.database) setDefaultTimeout(60_000);
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 type GqlApiFixture = {
   baseId: string;
@@ -120,15 +120,15 @@ const grantBaseRead = async (baseId: string, userId: string): Promise<string> =>
 
 const insertFixture = async (userId: string): Promise<GqlApiFixture> => {
   const baseId = uuid();
-  const basePublicId = shortId("B");
+  const basePublicId = testShortId();
   const tableId = uuid();
-  const tablePublicId = shortId("T");
+  const tablePublicId = testShortId();
   const viewId = uuid();
-  const viewPublicId = shortId("V");
+  const viewPublicId = testShortId();
   const amountId = uuid();
-  const amountPublicId = shortId("F");
+  const amountPublicId = testShortId();
   const stageId = uuid();
-  const stagePublicId = shortId("F");
+  const stagePublicId = testShortId();
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
@@ -187,14 +187,14 @@ const insertAutocompleteBaseFixture = async (
   secretLinkId: string;
 }> => {
   const baseId = uuid();
-  const basePublicId = shortId("B");
+  const basePublicId = testShortId();
   const publicTableId = uuid();
-  const publicTablePublicId = shortId("T");
+  const publicTablePublicId = testShortId();
   const secretTableId = uuid();
-  const secretTablePublicId = shortId("T");
+  const secretTablePublicId = testShortId();
   const publicAmountId = uuid();
   const secretLinkId = uuid();
-  const secretLinkPublicId = shortId("F");
+  const secretLinkPublicId = testShortId();
   const secretCodeId = uuid();
   const secretViewId = uuid();
 
@@ -211,13 +211,13 @@ const insertAutocompleteBaseFixture = async (
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${publicAmountId}::uuid, ${shortId("F")}, ${publicTableId}::uuid, 'PublicAmount', 'number', '{}'::jsonb, 0),
+      (${publicAmountId}::uuid, ${testShortId()}, ${publicTableId}::uuid, 'PublicAmount', 'number', '{}'::jsonb, 0),
       (${secretLinkId}::uuid, ${secretLinkPublicId}, ${publicTableId}::uuid, 'SecretDeal', 'relation', ${{ targetTableId: secretTableId }}::jsonb, 1),
-      (${secretCodeId}::uuid, ${shortId("F")}, ${secretTableId}::uuid, 'SecretCode', 'text', '{}'::jsonb, 0)
+      (${secretCodeId}::uuid, ${testShortId()}, ${secretTableId}::uuid, 'SecretCode', 'text', '{}'::jsonb, 0)
   `;
   await sql`
     INSERT INTO grids.views (id, short_id, table_id, name, source, ui, position)
-    VALUES (${secretViewId}::uuid, ${shortId("V")}, ${secretTableId}::uuid, 'Secret view', ${`from table {${secretTablePublicId}}`}, '{}'::jsonb, 0)
+    VALUES (${secretViewId}::uuid, ${testShortId()}, ${secretTableId}::uuid, 'Secret view', ${`from table {${secretTablePublicId}}`}, '{}'::jsonb, 0)
   `;
 
   const accessId = await grantBaseRead(baseId, userId);
@@ -234,19 +234,19 @@ const insertAutocompleteBaseFixture = async (
 
 const insertRelationFixture = async (userId: string): Promise<GqlRelationApiFixture> => {
   const baseId = uuid();
-  const basePublicId = shortId("B");
+  const basePublicId = testShortId();
   const ordersTableId = uuid();
-  const ordersTablePublicId = shortId("T");
+  const ordersTablePublicId = testShortId();
   const customersTableId = uuid();
-  const customersTablePublicId = shortId("T");
+  const customersTablePublicId = testShortId();
   const byCustomerViewId = uuid();
-  const byCustomerViewPublicId = shortId("V");
+  const byCustomerViewPublicId = testShortId();
   const amountId = uuid();
-  const amountPublicId = shortId("F");
+  const amountPublicId = testShortId();
   const customerLinkId = uuid();
-  const customerLinkPublicId = shortId("F");
+  const customerLinkPublicId = testShortId();
   const customerNameId = uuid();
-  const customerNamePublicId = shortId("F");
+  const customerNamePublicId = testShortId();
   const orderAId = uuid();
   const orderBId = uuid();
   const orderCId = uuid();
@@ -286,12 +286,12 @@ const insertRelationFixture = async (userId: string): Promise<GqlRelationApiFixt
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data, version)
     VALUES
-      (${customerAId}::uuid, ${shortId("R")}, ${customersTableId}::uuid, ${{ [customerNameId]: "Alice" }}::jsonb, 1),
-      (${customerBId}::uuid, ${shortId("R")}, ${customersTableId}::uuid, ${{ [customerNameId]: "Bob" }}::jsonb, 1),
-      (${customerCId}::uuid, ${shortId("R")}, ${customersTableId}::uuid, ${{ [customerNameId]: "Charlie" }}::jsonb, 1),
-      (${orderAId}::uuid, ${shortId("R")}, ${ordersTableId}::uuid, ${{ [amountId]: "12.50" }}::jsonb, 1),
-      (${orderBId}::uuid, ${shortId("R")}, ${ordersTableId}::uuid, ${{ [amountId]: "4.00" }}::jsonb, 1),
-      (${orderCId}::uuid, ${shortId("R")}, ${ordersTableId}::uuid, ${{ [amountId]: "8.00" }}::jsonb, 1)
+      (${customerAId}::uuid, ${testShortId()}, ${customersTableId}::uuid, ${{ [customerNameId]: "Alice" }}::jsonb, 1),
+      (${customerBId}::uuid, ${testShortId()}, ${customersTableId}::uuid, ${{ [customerNameId]: "Bob" }}::jsonb, 1),
+      (${customerCId}::uuid, ${testShortId()}, ${customersTableId}::uuid, ${{ [customerNameId]: "Charlie" }}::jsonb, 1),
+      (${orderAId}::uuid, ${testShortId()}, ${ordersTableId}::uuid, ${{ [amountId]: "12.50" }}::jsonb, 1),
+      (${orderBId}::uuid, ${testShortId()}, ${ordersTableId}::uuid, ${{ [amountId]: "4.00" }}::jsonb, 1),
+      (${orderCId}::uuid, ${testShortId()}, ${ordersTableId}::uuid, ${{ [amountId]: "8.00" }}::jsonb, 1)
   `;
   await sql`
     INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)

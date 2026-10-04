@@ -27,7 +27,7 @@ import { PublicGridsWorkflowRunSchema } from "../api/workflow-public-contracts";
 import { createWorkflowRunRoutes } from "../api/workflow-run-routes";
 import { jsonDocumentProfile } from "../document-profiles/table";
 import { expensePaymentStarterSource } from "../frontend/_components/workflows/financial-workflow-starters";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
@@ -101,20 +101,20 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
   `;
   await sql`
     INSERT INTO grids.bases (id, short_id, name, created_by)
-    VALUES (${fixture.baseId}::uuid, ${shortId("B")}, 'Workflow actions integration', ${fixture.actorId}::uuid)
+    VALUES (${fixture.baseId}::uuid, ${testShortId()}, 'Workflow actions integration', ${fixture.actorId}::uuid)
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${fixture.tableId}::uuid, ${shortId("T")}, ${fixture.baseId}::uuid, 'Tasks', 0)
+    VALUES (${fixture.tableId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Tasks', 0)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${fixture.assetIdFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Asset ID', 'id', '{"strategy":"sequence","prefix":"ITEM-","padding":4}'::jsonb, 0),
-      (${fixture.nameFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
-      (${fixture.statusFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Status', 'text', '{}'::jsonb, 2),
-      (${fixture.jsonFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Metadata', 'json', '{}'::jsonb, 3),
-      (${fixture.correctionTypeFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Document type', 'select',
+      (${fixture.assetIdFieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Asset ID', 'id', '{"strategy":"sequence","prefix":"ITEM-","padding":4}'::jsonb, 0),
+      (${fixture.nameFieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
+      (${fixture.statusFieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Status', 'text', '{}'::jsonb, 2),
+      (${fixture.jsonFieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Metadata', 'json', '{}'::jsonb, 3),
+      (${fixture.correctionTypeFieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Document type', 'select',
         ${{
           options: [
             { id: "original", label: "Original" },
@@ -122,7 +122,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
             { id: "cancellation", label: "Cancellation" },
           ],
         }}::jsonb, 4),
-      (${fixture.originalRelationFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Corrects', 'relation',
+      (${fixture.originalRelationFieldId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Corrects', 'relation',
         ${{ targetTableId: fixture.tableId, cardinality: "single" }}::jsonb, 5)
   `;
   await provisionFieldNumberSeries(sql, fixture.assetIdFieldId, { strategy: "sequence", prefix: "ITEM-", padding: 4 });
@@ -130,7 +130,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
     INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
     VALUES (
       ${fixture.recordId}::uuid,
-      ${shortId("R")},
+      ${testShortId()},
       ${fixture.tableId}::uuid,
       ${{
         [fixture.assetIdFieldId]: "ITEM-0001",
@@ -145,7 +145,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
   await sql`
     INSERT INTO grids.email_templates (id, short_id, base_id, name, subject, html, created_by, updated_by)
     VALUES (
-      ${fixture.emailTemplateId}::uuid, ${shortId("E")}, ${fixture.baseId}::uuid, 'Task notice',
+      ${fixture.emailTemplateId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Task notice',
       'Task update', '<p>A task changed.</p>', ${fixture.actorId}::uuid, ${fixture.actorId}::uuid
     )
   `;
@@ -154,7 +154,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template, created_by, updated_by
     )
     VALUES (
-      ${fixture.documentTemplateId}::uuid, ${shortId("D")}, ${fixture.tableId}::uuid, 'Task sheet',
+      ${fixture.documentTemplateId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Task sheet',
       ${`from table {${fixture.tableId}} limit 1`}, 'html', '<p>Task</p>', 'TASK-{{ document.id }}', '{{ document.number }}.pdf',
       ${fixture.actorId}::uuid, ${fixture.actorId}::uuid
     )
@@ -168,7 +168,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
   await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${fixture.baseId}::uuid, ${access.id}::uuid)`;
   await insertTestWorkflow({
     id: fixture.workflowId,
-    shortId: shortId("W"),
+    shortId: testShortId(),
     baseId: fixture.baseId,
     name: "Task workflow",
     source: "steps: []",
@@ -273,7 +273,7 @@ const queueRun = async (fixture: Fixture, input: QueuedRun): Promise<string> => 
   await sql`
     INSERT INTO grids.workflow_run_profile (run_id, short_id, base_id, workflow_id, channel, actor_user_id, request_fingerprint)
     VALUES (
-      ${runId}::uuid, ${shortId("R")}, ${fixture.baseId}::uuid, ${fixture.workflowId}::uuid,
+      ${runId}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, ${fixture.workflowId}::uuid,
       'api', ${fixture.actorId}::uuid, ${runId}
     )
   `;
@@ -480,7 +480,7 @@ steps:
           {
             schemaVersion: 5,
             kind: "grids.custom-app",
-            id: shortId("A"),
+            id: testShortId(),
             baseId: base.short_id,
             name: "Expense scanner",
             startPageId: "home",
@@ -890,9 +890,9 @@ steps:
         const relatedTable = uuid();
         const relatedField = uuid();
         const relatedRecord = uuid();
-        await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${relatedTable}::uuid, ${shortId("T")}, ${fixture.baseId}::uuid, 'Related', 1)`;
-        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES (${relatedField}::uuid, ${shortId("F")}, ${relatedTable}::uuid, 'Secret', 'text', '{}'::jsonb, 0)`;
-        await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${relatedRecord}::uuid, ${shortId("R")}, ${relatedTable}::uuid, ${{ [relatedField]: "Historical related secret" }}::jsonb)`;
+        await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${relatedTable}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, 'Related', 1)`;
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES (${relatedField}::uuid, ${testShortId()}, ${relatedTable}::uuid, 'Secret', 'text', '{}'::jsonb, 0)`;
+        await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${relatedRecord}::uuid, ${testShortId()}, ${relatedTable}::uuid, ${{ [relatedField]: "Historical related secret" }}::jsonb)`;
         await sql`UPDATE grids.fields SET config = ${{ targetTableId: relatedTable, cardinality: "single" }}::jsonb WHERE id = ${fixture.originalRelationFieldId}::uuid`;
         await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
           VALUES (${fixture.recordId}::uuid, ${fixture.originalRelationFieldId}::uuid, ${relatedRecord}::uuid, 0)`;
@@ -1121,11 +1121,11 @@ steps:
       try {
         await insertFixture(fixture);
         const fields = {
-          businessId: { id: uuid(), shortId: shortId("F"), value: "AE-2026-001", type: "text" },
-          amount: { id: uuid(), shortId: shortId("F"), value: "12.30", type: "number" },
-          creditorName: { id: uuid(), shortId: shortId("F"), value: "Example Payee", type: "text" },
-          creditorIban: { id: uuid(), shortId: shortId("F"), value: "DE89370400440532013000", type: "text" },
-          remittance: { id: uuid(), shortId: shortId("F"), value: "Expense reimbursement", type: "text" },
+          businessId: { id: uuid(), shortId: testShortId(), value: "AE-2026-001", type: "text" },
+          amount: { id: uuid(), shortId: testShortId(), value: "12.30", type: "number" },
+          creditorName: { id: uuid(), shortId: testShortId(), value: "Example Payee", type: "text" },
+          creditorIban: { id: uuid(), shortId: testShortId(), value: "DE89370400440532013000", type: "text" },
+          remittance: { id: uuid(), shortId: testShortId(), value: "Expense reimbursement", type: "text" },
         };
         for (const [key, field] of Object.entries(fields)) {
           await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, required, unique_constraint)
@@ -1222,7 +1222,7 @@ steps:
         await insertFixture(fixture);
         await sql`UPDATE grids.records SET data = data || ${{ [fixture.statusFieldId]: "COST-A" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
         await sql`INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
-          VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid,
+          VALUES (${uuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid,
             ${{ [fixture.assetIdFieldId]: "ITEM-0002", [fixture.nameFieldId]: "Cost B payee", [fixture.statusFieldId]: "COST-B" }}::jsonb,
             ${fixture.actorId}::uuid, ${fixture.actorId}::uuid)`;
         const catalog = await loadWorkflowCatalog(fixture.baseId);
@@ -1604,7 +1604,7 @@ steps:
         ],
       };
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
-        VALUES (${listId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Items', 'object_list', ${config}::jsonb)`;
+        VALUES (${listId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Items', 'object_list', ${config}::jsonb)`;
       const items = [{ Label1: "Consulting", Amount: "9007199254740993.25" }];
       const expected = [{ ...items[0], Total1: "18014398509481986.50" }];
       const inputs = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
@@ -2687,7 +2687,7 @@ steps:
           await sql`INSERT INTO grids.document_templates (
             id, short_id, table_id, name, source, issuance_policy, renderer_kind,
             profile_id, profile_version, profile_input_template, enabled, position
-          ) VALUES (${uuid()}::uuid, ${shortId("D")}, ${fixture.tableId}::uuid, ${rollback ? "Invalid sheet" : "Extra sheet"},
+          ) VALUES (${uuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, ${rollback ? "Invalid sheet" : "Extra sheet"},
             ${"from table Tasks\nselect Name\nlimit 1"}, 'oncePerFinalizedRecord', 'profile',
             ${jsonDocumentProfile.id}, ${jsonDocumentProfile.version}, ${rollback ? "{}" : profileInput}, true, 1)`;
           const compile = async (steps: string) => {
@@ -2857,7 +2857,7 @@ steps:
         {
           schemaVersion: 5,
           kind: "grids.custom-app",
-          id: shortId("A"),
+          id: testShortId(),
           baseId: base.short_id,
           name: "Atomic approval",
           startPageId: "home",
@@ -3189,11 +3189,11 @@ steps:
       await insertFixture(fixture);
       const amountId = uuid();
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
-        VALUES (${amountId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Amount', 'number', '{"decimalPlaces":2}'::jsonb)`;
+        VALUES (${amountId}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, 'Amount', 'number', '{"decimalPlaces":2}'::jsonb)`;
       const candidates = [uuid(), uuid()];
       for (const [index, id] of candidates.entries()) {
         await sql`INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
-          VALUES (${id}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid,
+          VALUES (${id}::uuid, ${testShortId()}, ${fixture.tableId}::uuid,
             ${{ [fixture.nameFieldId]: `Candidate ${index}`, [fixture.assetIdFieldId]: `ITEM-000${index + 2}`, [amountId]: "60.00" }}::jsonb,
             ${fixture.actorId}::uuid, ${fixture.actorId}::uuid)`;
       }

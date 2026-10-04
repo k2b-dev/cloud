@@ -12,9 +12,9 @@ beforeAll(async () => {
 
 const fixture = async () => {
   const baseId = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Export claims')`;
-  const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId("W") });
-  const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId("R"), state: "waiting" });
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Export claims')`;
+  const workflowId = await insertTestWorkflow({ baseId, shortId: testShortId() });
+  const runId = await insertTestWorkflowRun({ baseId, workflowId, shortId: testShortId(), state: "waiting" });
   const queryId = testUuid();
   await sql`INSERT INTO grids.workflow_query_data (id, run_id, step_key, payload, sha256, row_count, captured_at)
     VALUES (${queryId}::uuid, ${runId}::uuid, 'query', '{}'::jsonb, ${"a".repeat(64)}, 0, now())`;
@@ -23,7 +23,7 @@ const fixture = async () => {
     const frozen = { output: { kind: "datev-csv", header: { destinationKey: "accounting" } } };
     await sql`INSERT INTO grids.document_issuances (id, base_id, document_short_id, operation_key_hash, request_hash,
       frozen_request, query_data_id, confirmation_hash, confirmed_actor, confirmed_at)
-      VALUES (${receiptId}::uuid, ${baseId}::uuid, ${testShortId("D")}, ${new Bun.CryptoHasher("sha256").update(receiptId).digest("hex")},
+      VALUES (${receiptId}::uuid, ${baseId}::uuid, ${testShortId()}, ${new Bun.CryptoHasher("sha256").update(receiptId).digest("hex")},
         ${"b".repeat(64)}, ${frozen}::jsonb, ${queryId}::uuid, ${"c".repeat(64)},
         ${confirmed ? { kind: "user", userId: testUuid() } : null}::jsonb, CASE WHEN ${confirmed} THEN now() ELSE NULL END)`;
     return receiptId;

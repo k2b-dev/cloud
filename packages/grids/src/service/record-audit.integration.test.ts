@@ -2,6 +2,7 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { TableAuditPolicy } from "../contracts";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as fields from "./fields";
 import { get } from "./record-read";
@@ -9,7 +10,6 @@ import { create, restore, softDelete, update } from "./record-write";
 import { update as updateTable } from "./tables";
 
 const postgresTest = testFor("database");
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -23,10 +23,10 @@ describe("record audit requirements Postgres integration", () => {
     const deleteQuestionId = Bun.randomUUIDv7();
     const restoreQuestionId = Bun.randomUUIDv7();
 
-    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Audit requirements')`;
+    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Audit requirements')`;
     await sql`
       INSERT INTO grids.tables (id, short_id, base_id, name)
-      VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Assets')
+      VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Assets')
     `;
 
     try {

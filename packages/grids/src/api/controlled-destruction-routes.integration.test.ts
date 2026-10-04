@@ -24,9 +24,9 @@ describe("controlled destruction routes", () => {
     const accessId = testUuid();
     const tableId = testUuid();
     const fileId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const fileShortId = testShortId("F");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const fileShortId = testShortId();
     const user: User = {
       id: userId,
       uid: `destruction-${userId}`,
