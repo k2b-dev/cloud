@@ -283,3 +283,41 @@ domTest("after live updates end, a successful check keeps the toast", async () =
     dom.cleanup();
   }
 });
+
+domTest("without the page's cursor, the revision is checked once at the start", async () => {
+  const dom = createDomTestHarness();
+  const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
+  const initial = { revision: "one", resources: { "table:TABLE1": "one" } };
+  let requests = 0;
+  // The table changed between the page's read and the subscription, which starts at the current position.
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () => {
+        requests++;
+        return Response.json({ revision: "two", resources: { "table:TABLE1": "two" }, canWrite: true, canAdmin: true });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const dispose = render(
+    () =>
+      createComponent(WorkspaceMetadataRefresh, {
+        baseId: "BASE01",
+        initialCursor: null,
+        revision: initial,
+        activeKeys: ["table:TABLE1"],
+        canWrite: true,
+        canAdmin: true,
+      }),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(300);
+    expect(requests).toBe(1);
+    expect(dom.root.querySelector('[role="status"]')?.textContent).toContain("Workspace changed");
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});

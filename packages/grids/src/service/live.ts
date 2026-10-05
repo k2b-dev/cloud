@@ -24,8 +24,19 @@ type MetadataChange = GridsMetadataLiveEvent["type"];
  * pages check them at once. Call `gridsLive.wake()` after the commit.
  */
 export const publishMetadataChange = async (tx: SQL, baseId: string, type: MetadataChange): Promise<void> => {
-  const access = type === "access.changed" || type === "base.deleted";
-  await gridsLive.publish(tx, { key: gridsLiveKey.base(baseId), data: { type }, ...(access ? { access: true as const } : {}) });
+  const key = gridsLiveKey.base(baseId);
+  if (type !== "access.changed" && type !== "base.deleted") {
+    await gridsLive.publish(tx, { key, data: { type } });
+    return;
+  }
+  // Readers of the Base follow its tables and workflows too, and Cloud checks only the key an access change
+  // names again; trashed ones are included, because a restore brings them back without an access change.
+  const children = await tx<{ kind: "table" | "workflow"; id: string }[]>`
+    SELECT 'table' AS kind, id::text AS id FROM grids.tables WHERE base_id = ${baseId}::uuid
+    UNION ALL
+    SELECT 'workflow', id::text FROM grids.workflow_profile WHERE base_id = ${baseId}::uuid`;
+  for (const child of children) await gridsLive.publish(tx, { key: gridsLiveKey[child.kind](child.id), access: true });
+  await gridsLive.publish(tx, { key, data: { type }, access: true });
 };
 
 /** `publishMetadataChange` for the Base of a table. */

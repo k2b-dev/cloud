@@ -97,6 +97,11 @@ who lost the key loses it at once. Right after, without holding up delivery,
 it runs `keys()` for its collections; a collection that gained a key loads its
 state again. Access updates that arrive while that runs share one more run.
 
+An access update checks only the subscribers of the key it names. When one
+change decides who may read several keys, for example a grant on a Base whose
+readers also follow its tables, publish an access update for each of those
+keys in the same transaction.
+
 `data` is optional; with it, viewers who keep access receive the update too.
 `publish()` writes the access change as a row of its own before the data, so
 data above 32 KiB, which becomes a resync, does not lose it.

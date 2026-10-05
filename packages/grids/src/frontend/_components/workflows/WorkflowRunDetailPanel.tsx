@@ -117,7 +117,6 @@ export function WorkflowRunDetailPanel(props: {
   });
   const [downloadingDocumentId, setDownloadingDocumentId] = createSignal<string | null>(null);
   const [downloadingAll, setDownloadingAll] = createSignal(false);
-  const [pendingLiveRefreshRunId, setPendingLiveRefreshRunId] = createSignal<string | null>(null);
   const [provenance, setProvenance] = createSignal(props.initialDetail?.provenance ?? null);
   const activeWorkflow = createMemo(() => props.workflows.find((workflow) => workflow.id === run()?.workflowId) ?? null);
   const revisionWorkflow = createMemo(() => {
@@ -236,16 +235,24 @@ export function WorkflowRunDetailPanel(props: {
     loadMoreDocumentsMut.abort();
   });
 
+  /** The latest detail read; a read that starts later replaces its result. */
+  let reading: Promise<void> = Promise.resolve();
+  const load = (runId: string) => (reading = loadMut.mutate(runId));
   const refresh = (runId = props.runId) => {
-    if (!loadMut.loading()) loadMut.mutate(runId);
+    if (!loadMut.loading()) void load(runId);
   };
-
-  createEffect(() => {
-    const runId = pendingLiveRefreshRunId();
-    if (!runId || loadMut.loading()) return;
-    setPendingLiveRefreshRunId(null);
-    if (runId === props.runId) refresh(runId);
-  });
+  /**
+   * Reads the run once the read in flight, which may predate the update that asks for it, has finished, and
+   * settles when the result is shown. A failed read rejects, so live updates retry it. A run that is no longer
+   * selected is not read: its read would replace the one of the selected run.
+   */
+  const readAgain = async (runId: string) => {
+    await reading;
+    if (runId !== props.runId) return;
+    await load(runId);
+    const error = loadMut.error();
+    if (error) throw error;
+  };
 
   createEffect(() => {
     const current = run();
@@ -258,13 +265,12 @@ export function WorkflowRunDetailPanel(props: {
     if (loadedRunId === runId) return;
     exportReviewController?.abort();
     loadedRunId = runId;
-    setPendingLiveRefreshRunId(null);
     setRun(null);
     setInputLabels({});
     setProvenance(null);
     setSteps([]);
     setDocuments({ items: [], total: 0, hasMore: false, nextOffset: null });
-    loadMut.mutate(runId);
+    void load(runId);
   });
 
   const liveRunId = createMemo(() => {
@@ -281,13 +287,8 @@ export function WorkflowRunDetailPanel(props: {
     const workflowId = liveWorkflowId();
     if (!runId || !workflowId) return;
     let fallbackTimer: ReturnType<typeof setInterval> | null = null;
-    const refreshSelectedRun = () => {
-      if (loadMut.loading()) {
-        setPendingLiveRefreshRunId(runId);
-        return;
-      }
-      refresh(runId);
-    };
+    // A failed read shows its error in the panel.
+    const readSelectedRun = () => void readAgain(runId).catch(() => undefined);
     const stopFallback = () => {
       if (fallbackTimer) clearInterval(fallbackTimer);
       fallbackTimer = null;
@@ -296,9 +297,15 @@ export function WorkflowRunDetailPanel(props: {
     const startFallback = () => {
       fallbackTimer ??= setInterval(() => {
         if (run() && isTerminalWorkflowRunStatus(run()!.status)) stopFallback();
-        else if (document.visibilityState === "visible") refreshSelectedRun();
+        else if (document.visibilityState === "visible") readSelectedRun();
       }, 10_000);
     };
+    // A run update is written after the workflow runtime committed the transition, so it can be lost; a return
+    // to the tab reads the run once.
+    const readOnReturn = () => {
+      if (document.visibilityState === "visible") readSelectedRun();
+    };
+    document.addEventListener("visibilitychange", readOnReturn);
     const subscription = liveConnection("/api/grids/live").subscribe(
       "runs",
       { workflow: workflowId },
@@ -306,6 +313,9 @@ export function WorkflowRunDetailPanel(props: {
         cursor: props.liveCursor,
         parse: (data) => GridsRunLiveEventSchema.parse(data),
         apply: async (events) => {
+          // A read still in flight may predate these updates; they apply after it.
+          await reading;
+          let readAfter = false;
           for (const { data: event } of events) {
             if (event.run.id !== runId) continue;
             setRun((current) => (current?.id === runId ? { ...current, ...event.run } : current));
@@ -321,14 +331,18 @@ export function WorkflowRunDetailPanel(props: {
             }
             // Updates do not carry permission-checked confirmation details or the final result: a parked or
             // finished run is read again.
-            if (isTerminalWorkflowRunStatus(event.run.status) || event.run.status === "waiting") refreshSelectedRun();
+            if (isTerminalWorkflowRunStatus(event.run.status) || event.run.status === "waiting") readAfter = true;
           }
+          if (readAfter) await readAgain(runId);
         },
-        resync: async () => refreshSelectedRun(),
+        resync: () => readAgain(runId),
         unavailable: startFallback,
       },
     );
+    // Without the page's cursor the subscription starts at the current position, so the run is read once.
+    if (props.liveCursor === null) readSelectedRun();
     onCleanup(() => {
+      document.removeEventListener("visibilitychange", readOnReturn);
       stopFallback();
       subscription.close();
     });

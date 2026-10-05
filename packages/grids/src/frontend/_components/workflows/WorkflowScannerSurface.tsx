@@ -393,10 +393,18 @@ export default function WorkflowScannerSurface(props: Props) {
     }
   };
 
+  /** Reads every active run; rejects when one of the reads failed. */
   const refreshActiveRuns = async () => {
     const active = logs().filter((item) => item.runId && (item.status === "queued" || item.status === "running"));
-    await Promise.all(active.map((item) => refreshRun(item.id, item.runId!).catch(() => undefined)));
+    const failed = (await Promise.allSettled(active.map((item) => refreshRun(item.id, item.runId!)))).find(
+      (result) => result.status === "rejected",
+    );
+    if (failed) throw failed.reason;
   };
+  const readActiveRuns = () => void refreshActiveRuns().catch(() => undefined);
+
+  /** Updates carry no result, step list, or export confirmation: a finished or parked run is read again. */
+  const needsRead = (run: PublicWorkflowRunEventSummary) => isTerminal(run) || run.status === "waiting";
 
   const stopFallback = () => {
     if (fallbackTimer) clearInterval(fallbackTimer);
@@ -405,7 +413,7 @@ export default function WorkflowScannerSurface(props: Props) {
 
   const startFallback = () => {
     if (fallbackTimer || disposed || document.visibilityState !== "visible") return;
-    fallbackTimer = setInterval(() => void refreshActiveRuns(), 2500);
+    fallbackTimer = setInterval(readActiveRuns, 2500);
   };
 
   const stopForTerminalLiveError = (error: { message: string }) => {
@@ -427,14 +435,15 @@ export default function WorkflowScannerSurface(props: Props) {
     for (const item of stopped) announceLog(item);
   };
 
+  // A run update is written after the workflow runtime committed the transition, so it can be lost; a return to
+  // the tab reads the active runs once.
   const syncLiveVisibility = () => {
-    if (!polling) return;
     if (document.visibilityState !== "visible") {
       stopFallback();
       return;
     }
-    startFallback();
-    void refreshActiveRuns();
+    if (polling) startFallback();
+    readActiveRuns();
   };
 
   const followRuns = () =>
@@ -445,15 +454,18 @@ export default function WorkflowScannerSurface(props: Props) {
         cursor: props.state.liveCursor ?? null,
         parse: (data) => GridsRunLiveEventSchema.parse(data),
         apply: async (events) => {
+          const reads: Promise<void>[] = [];
           for (const { data: event } of events) {
             const item = logs().find((candidate) => candidate.runId === event.run.id);
             if (!item) {
               pendingRunEvents.push(event);
               continue;
             }
-            applyRun(item.id, event.run, event.steps);
-            if (event.run.status === "waiting") void refreshRun(item.id, event.run.id).catch(() => undefined);
+            // A run transition names no step and keeps the steps shown so far.
+            applyRun(item.id, event.run, event.steps.length > 0 ? event.steps : undefined);
+            if (needsRead(event.run)) reads.push(refreshRun(item.id, event.run.id));
           }
+          await Promise.all(reads);
         },
         resync: refreshActiveRuns,
         revoked: () => stopForTerminalLiveError({ message: t().workflowAccessRevoked }),
@@ -486,8 +498,10 @@ export default function WorkflowScannerSurface(props: Props) {
       const receipt = PublicWorkflowInvocationReceiptSchema.parse(await res.json());
       const runId = receipt.runId;
       const pending = pendingRunEvents.take(runId);
-      if (pending) applyRun(item.id, pending.run, pending.steps);
-      else {
+      if (pending) {
+        applyRun(item.id, pending.run, pending.steps.length > 0 ? pending.steps : undefined);
+        if (needsRead(pending.run)) void refreshRun(item.id, runId).catch(() => undefined);
+      } else {
         const status = receipt.status === "queued" ? "queued" : "running";
         updateLog(item.id, { runId, status, message: status === "queued" ? t().queued : t().running });
       }

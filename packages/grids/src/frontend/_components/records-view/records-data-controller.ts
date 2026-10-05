@@ -458,6 +458,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       {
         cursor: options.initialEventCursor,
         parse: (data) => GridsRecordLiveEventSchema.parse(data),
+        // The view acknowledges an update once its read is scheduled: it keeps that read pending itself, holds it
+        // while a dialog is open, repeats it on a return to the tab, and offers it manually after a failure.
         apply: async (events) => {
           for (const { data: event } of events) {
             pendingLiveRecordIds.add(event.recordId);
@@ -481,6 +483,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
         },
       },
     );
+    // Without the page's cursor the subscription starts at the current position, so the records are read once.
+    if (options.initialEventCursor === null) scheduleLiveRefresh();
 
     onCleanup(() => {
       document.removeEventListener("visibilitychange", refreshOnReturn);

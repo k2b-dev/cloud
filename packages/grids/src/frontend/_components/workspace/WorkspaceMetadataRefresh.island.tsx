@@ -85,6 +85,8 @@ export default function WorkspaceMetadataRefresh(props: {
       onError: showFailure,
     });
     // An update only says that the structure or access changed; the revision check decides what that means here.
+    // Each check compares the whole revision with the page's, so a later check covers every update acknowledged
+    // before it, and a check that keeps failing shows the reload toast.
     const subscription = liveConnection("/api/grids/live").subscribe(
       "metadata",
       { base: props.baseId },
@@ -101,6 +103,8 @@ export default function WorkspaceMetadataRefresh(props: {
         },
       },
     );
+    // Without the page's cursor the subscription starts at the current position, so the revision is checked once.
+    if (props.initialCursor === null) controller.check();
     // Short ids are unique across Bases, so no Base check is needed here.
     const applied = (raw: Event) => {
       const { key, revision } = (raw as CustomEvent<{ key: string; revision: string }>).detail;

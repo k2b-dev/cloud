@@ -10,6 +10,7 @@ import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess } from "../service/access";
+import { remove as removeBase } from "../service/bases";
 import { gridsLiveKey } from "../service/live";
 import { create as createRecord } from "../service/record-write";
 import { create as createTable, remove as removeTable, update as updateTable } from "../service/tables";
@@ -185,9 +186,11 @@ suite("Grids live channels", () => {
   test("structure and access changes are written in the transaction that makes them", async () => {
     const shared = await base("Live structure");
     const orders = await table(shared.id, "Orders");
-    await table(shared.id, "Invoices");
+    const invoices = await table(shared.id, "Invoices");
+    const workflowId = await insertTestWorkflow({ baseId: shared.id });
     const key = gridsLiveKey.base(shared.id);
-    await sql`DELETE FROM events.outbox WHERE app_id = 'grids' AND ordering_key = ${key}`;
+    const children = [gridsLiveKey.table(orders.id), gridsLiveKey.table(invoices.id), gridsLiveKey.workflow(workflowId)];
+    await sql`DELETE FROM events.outbox WHERE app_id = 'grids' AND ordering_key IN ${sql([key, ...children])}`;
 
     expect((await updateTable(orders.id, { name: "Purchase orders" }, null)).ok).toBe(true);
     // A rejected rename writes nothing.
@@ -209,6 +212,16 @@ suite("Grids live channels", () => {
       { v: 1, k: key, a: true },
       { v: 1, k: key, d: { type: "access.changed" } },
     ]);
+    // Readers of the Base follow its tables and workflows too, so their keys are checked again as well.
+    for (const child of children) expect(await pending(child)).toEqual([{ v: 1, k: child, a: true }]);
+
+    // A deleted Base takes its tables and workflows along.
+    expect((await removeBase(shared.id, null)).ok).toBe(true);
+    for (const child of children)
+      expect(await pending(child)).toEqual([
+        { v: 1, k: child, a: true },
+        { v: 1, k: child, a: true },
+      ]);
   });
 
   test("a run update names public IDs, and one above 32 KiB asks pages to read the run again", async () => {

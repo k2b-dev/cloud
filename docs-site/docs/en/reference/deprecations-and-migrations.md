@@ -22,10 +22,12 @@ Grids pages share one socket on `/api/grids/live` with three channels:
 `records` follows the records of one table, `metadata` the structure and
 access of one Base, and `runs` the runs of one workflow. The socket reads the
 topic `cloud:live:grids` and checks, when it delivers an update, that the
-reader may read the Base, by the same rules as the Grids API. It accepts every
-credential the Grids API accepts, so pages in the phone app receive live
-updates too. A returning tab receives what it missed instead of checking the
-Base structure again; the check every 30 seconds is gone.
+reader may read the Base, by the same rules as the Grids API. A changed grant
+and a deleted Base check the readers of the Base's tables, structure, and runs
+at once. The socket accepts every credential the Grids API accepts, so pages
+in the phone app receive live updates too. A returning tab receives what it
+missed instead of checking the Base structure again; the check every 30
+seconds is gone.
 
 `grids.enqueue_record_event()` keeps its signature. Besides the record event
 that feeds record-event workflows and the change feed (`/changes`), it now

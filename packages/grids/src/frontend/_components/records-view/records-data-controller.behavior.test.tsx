@@ -286,3 +286,21 @@ domTest("relation labels follow each refetch and stay with earlier pages when mo
     state.dispose();
   }
 });
+
+domTest("without the page's cursor, the view reads its records once at the start", async () => {
+  const queries: RecordQuery[] = [];
+  // A record changed between the page's read and the subscription, which starts at the current position.
+  fetchRecords = async (args) => {
+    queries.push(args.query);
+    return { items: [record("missed")], nextCursor: null };
+  };
+  const state = await mount();
+  try {
+    expect(records().cursor).toBeNull();
+    await until(() => state.controller.items()[0]?.id === "missed");
+    await Bun.sleep(300);
+    expect(queries).toHaveLength(1);
+  } finally {
+    state.dispose();
+  }
+});
