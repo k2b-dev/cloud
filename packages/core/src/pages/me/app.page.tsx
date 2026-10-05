@@ -1,7 +1,6 @@
 import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { coreSettings, pwaDevices, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { ButtonLink } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage } from "./AccountHub";
 import AppDevices from "./AppDevices.island";
@@ -30,16 +29,6 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.pwaTab }]}>
       <AccountHub appTab user={user} active="app" loginLabel={categoryPolicy.login.label}>
         <AccountPage title={t.pwaTab} description={t.pwaDescription({ cloud })}>
-          {/* Installing happens on /pwa/, the only pages that link the manifest. */}
-          <div class="flex flex-col gap-2 text-sm">
-            <div class="hidden pointer-coarse:block">
-              <ButtonLink href="/pwa/" variant="secondary">
-                <i class="ti ti-download" aria-hidden="true" />
-                {t.pwaInstall}
-              </ButtonLink>
-            </div>
-            <p class="text-dimmed pointer-coarse:hidden">{t.pwaNoAppYet}</p>
-          </div>
           <AppDevices userId={user.id} initial={devices} dateConfig={getDateConfig(c)} />
         </AccountPage>
       </AccountHub>

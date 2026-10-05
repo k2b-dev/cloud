@@ -41,7 +41,7 @@ import { applyConversationReferenceToReplySubjectInTransaction } from "./convers
 import { requireDraftLeaseAvailable, withOwnedDraftLease } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { enqueueDraftProjection, enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
-import { notifyMailInvalidations } from "./events";
+import { mailLive } from "./live";
 import type { AttachmentDownload } from "./messages";
 
 const InternalIdSchema = z.string().uuid();
@@ -2249,7 +2249,7 @@ export const discardDraft = async (params: {
       retirementSnapshotId = await queueDraftProjectionInTransaction({ db: tx, draftId: updated.id });
       return ok(mapDraft(updated));
     });
-    if (result.ok) await notifyMailInvalidations();
+    if (result.ok) mailLive.wake();
     if (result.ok && retirementSnapshotId) await enqueueDraftProjectionSnapshot(retirementSnapshotId);
     return result;
   } catch {

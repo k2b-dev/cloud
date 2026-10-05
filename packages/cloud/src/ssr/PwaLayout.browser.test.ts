@@ -183,13 +183,14 @@ describe("PwaLayout in a phone browser", () => {
 describe("navigations between app pages", () => {
   test("swap the page at once, while the web keeps its cross-fade", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-    // A document that shows itself through a view transition has one in its reveal event.
-    await page.addInitScript(() =>
-      addEventListener("pagereveal", (event) => {
-        (window as { revealedWithTransition?: boolean }).revealedWithTransition = !!(event as Event & { viewTransition: unknown })
-          .viewTransition;
-      }),
-    );
+    // A document that shows itself through a view transition has one in its reveal event. The event comes with
+    // the first rendering opportunity, which can follow the load event that waitForURL waits for, so each
+    // document keeps a promise of its reveal for the test to await.
+    await page.addInitScript(() => {
+      (window as { revealed?: Promise<boolean> }).revealed = new Promise((resolve) =>
+        window.addEventListener("pagereveal", (event) => resolve(!!event.viewTransition), { once: true }),
+      );
+    });
     await page.route(`${origin}/**`, async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === "/public/global.css") return route.fulfill({ contentType: "text/css", body: css });
@@ -202,7 +203,7 @@ describe("navigations between app pages", () => {
       const response = await server.request(`${origin}${documentPath}`, { headers: { Cookie: "pwa_session=test-session; theme=light" } });
       return route.fulfill({ contentType: "text/html", body: await response.text() });
     });
-    const revealed = () => page.evaluate(() => (window as { revealedWithTransition?: boolean }).revealedWithTransition);
+    const revealed = () => page.evaluate(() => (window as { revealed?: Promise<boolean> }).revealed);
     try {
       await page.goto(`${origin}/app/inventory`);
       await page.getByRole("link", { name: "Next" }).click();

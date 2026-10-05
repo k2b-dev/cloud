@@ -4,7 +4,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";
 import { refreshConversationTimeline } from "./conversation-timeline";
-import { enqueueMailInvalidation } from "./events";
+import { enqueueMailInvalidation } from "./live";
 import { normalizeMailSubject } from "./message-threading";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
 import { splitSearchText } from "./search-chunks";
@@ -317,20 +317,6 @@ export const recordSentCopyPlacement = async (
     LEFT JOIN mail.conversation_messages link ON link.message_id = placements.message_id
   `;
   for (const row of placed) await enqueueMailInvalidation(db, { mailboxId: row.mailbox_id, conversationId: row.conversation_id });
-};
-
-export const loadOutboundProjectionByOutbox = async (db: SqlClient, outboxId: string): Promise<OutboundMessageProjection | null> => {
-  const [projection] = await db<OutboundMessageProjection[]>`
-    SELECT
-      outbox.id AS "outboxId",
-      outbox.mailbox_id AS "mailboxId",
-      outbox.message_id AS "messageId",
-      link.conversation_id AS "conversationId"
-    FROM mail.outbox_submissions outbox
-    JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
-    WHERE outbox.id = ${outboxId}::uuid
-  `;
-  return projection ?? null;
 };
 
 export const removeUnsentOutboundMessage = async (db: SqlClient, outboxId: string): Promise<void> => {

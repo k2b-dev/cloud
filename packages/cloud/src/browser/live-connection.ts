@@ -12,7 +12,7 @@ export type LiveSubscriptionHandlers<T> = {
   resync: () => Promise<void>;
   /** The subscription ended because its resource is gone or no longer readable. */
   revoked?: (code: "not_found" | "access_denied") => void;
-  /** Live updates stopped: the session ended, or `apply` or `resync` kept failing. */
+  /** Live updates stopped: the session ended, or `apply` or `resync` kept failing. Never called after `close()`. */
   unavailable: () => void;
 };
 
@@ -125,6 +125,8 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
           }
           const applied = item.kind === "events" ? await attempt(() => handlers.apply(item.events)) : await attempt(handlers.resync);
           if (!applied) {
+            // A closed subscription reports nothing: its owner ended it.
+            if (ended) return;
             stop();
             handlers.unavailable();
             return;

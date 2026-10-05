@@ -46,46 +46,6 @@ CREATE FUNCTION mail.enqueue_activity_live_invalidation() RETURNS trigger
     END;
     $$;
 
-CREATE FUNCTION mail.enqueue_live_invalidation(target_mailbox_id uuid, target_conversation_id uuid DEFAULT NULL::uuid) RETURNS uuid
-    LANGUAGE plpgsql
-    AS $$
-    DECLARE
-      invalidation_id UUID;
-      current_transaction_key TEXT := pg_current_xact_id()::text;
-    BEGIN
-      INSERT INTO mail.live_invalidation_outbox (
-        mailbox_id,
-        mailbox_short_id,
-        conversation_id,
-        conversation_short_id,
-        transaction_key
-      )
-      SELECT
-        mailbox.id,
-        mailbox.short_id,
-        conversation.id,
-        conversation.short_id,
-        current_transaction_key
-      FROM mail.mailboxes mailbox
-      LEFT JOIN mail.conversations conversation
-        ON conversation.id = target_conversation_id
-       AND conversation.mailbox_id = mailbox.id
-      WHERE mailbox.id = target_mailbox_id
-        AND (target_conversation_id IS NULL OR conversation.id IS NOT NULL)
-      ON CONFLICT DO NOTHING
-      RETURNING id INTO invalidation_id;
-
-      IF invalidation_id IS NULL THEN
-        SELECT id INTO invalidation_id
-        FROM mail.live_invalidation_outbox
-        WHERE mailbox_id = target_mailbox_id
-          AND conversation_id IS NOT DISTINCT FROM target_conversation_id
-          AND transaction_key = current_transaction_key;
-      END IF;
-      RETURN invalidation_id;
-    END;
-    $$;
-
 CREATE FUNCTION mail.guard_outbox_requested_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -1387,39 +1347,6 @@ ALTER TABLE ONLY mail.list_subscriptions
     ADD CONSTRAINT list_subscriptions_pkey PRIMARY KEY (id);
 
 CREATE INDEX list_subscriptions_mailbox_requested_idx ON mail.list_subscriptions USING btree (mailbox_id, requested_at DESC, id DESC);
-
--- mail.live_invalidation_outbox -------------------------------------------
-
-CREATE TABLE mail.live_invalidation_outbox (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    mailbox_id uuid NOT NULL,
-    mailbox_short_id text NOT NULL,
-    conversation_id uuid,
-    conversation_short_id text,
-    transaction_key text NOT NULL,
-    attempts integer DEFAULT 0 NOT NULL,
-    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
-    claimed_until timestamp with time zone,
-    delivered_at timestamp with time zone,
-    last_error text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT live_invalidation_outbox_attempts_check CHECK ((attempts >= 0)),
-    CONSTRAINT live_invalidation_outbox_conversation_short_id_format CHECK (((conversation_short_id IS NULL) OR (conversation_short_id ~ '^[0-9A-Za-z]{6}$'::text))),
-    CONSTRAINT live_invalidation_outbox_last_error_check CHECK (((last_error IS NULL) OR (char_length(last_error) <= 1000))),
-    CONSTRAINT live_invalidation_outbox_mailbox_short_id_format CHECK ((mailbox_short_id ~ '^[0-9A-Za-z]{6}$'::text))
-);
-
-ALTER TABLE ONLY mail.live_invalidation_outbox
-    ADD CONSTRAINT live_invalidation_outbox_mailbox_id_conversation_id_transac_key UNIQUE (mailbox_id, conversation_id, transaction_key);
-
-ALTER TABLE ONLY mail.live_invalidation_outbox
-    ADD CONSTRAINT live_invalidation_outbox_pkey PRIMARY KEY (id);
-
-CREATE INDEX live_invalidation_outbox_delivered_idx ON mail.live_invalidation_outbox USING btree (delivered_at) WHERE (delivered_at IS NOT NULL);
-
-CREATE UNIQUE INDEX live_invalidation_outbox_mailbox_transaction_idx ON mail.live_invalidation_outbox USING btree (mailbox_id, transaction_key) WHERE (conversation_id IS NULL);
-
-CREATE INDEX live_invalidation_outbox_pending_idx ON mail.live_invalidation_outbox USING btree (next_attempt_at, created_at, id) WHERE (delivered_at IS NULL);
 
 -- mail.local_tags ---------------------------------------------------------
 
@@ -2724,9 +2651,6 @@ ALTER TABLE ONLY mail.incoming_automations
 
 ALTER TABLE ONLY mail.list_subscriptions
     ADD CONSTRAINT list_subscriptions_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES mail.mailboxes(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY mail.live_invalidation_outbox
-    ADD CONSTRAINT live_invalidation_outbox_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES mail.mailboxes(id) ON DELETE CASCADE;
 
 ALTER TABLE ONLY mail.local_tags
     ADD CONSTRAINT local_tags_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES mail.mailboxes(id) ON DELETE CASCADE;

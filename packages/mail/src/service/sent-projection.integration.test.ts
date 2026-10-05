@@ -774,8 +774,9 @@ suite("mail sent message projection", () => {
       // The later attempt placed the message, so open views of its conversation refresh.
       const [invalidations] = await sql<{ count: number }[]>`
         SELECT count(*)::int AS count
-        FROM mail.live_invalidation_outbox
-        WHERE conversation_id = ${inbound.conversation_id}::uuid AND created_at >= ${mark!.at}
+        FROM events.outbox
+        WHERE app_id = 'mail' AND created_at >= ${mark!.at}
+          AND payload -> 'd' ->> 'conversationId' = (SELECT short_id FROM mail.conversations WHERE id = ${inbound.conversation_id}::uuid)
       `;
       expect(invalidations?.count).toBe(1);
       expect(provider.messagesWithId(SENT, outbox.stable_message_id)).toHaveLength(1);
@@ -2189,7 +2190,7 @@ suite("mail sent message projection", () => {
       );
       const invalidations = async () => {
         const [row] = await sql<{ count: number }[]>`
-          SELECT count(*)::int AS count FROM mail.live_invalidation_outbox WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+          SELECT count(*)::int AS count FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailbox.mailboxId}
         `;
         return row?.count ?? 0;
       };

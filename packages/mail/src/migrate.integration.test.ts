@@ -168,6 +168,35 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("moves the live updates of a database installed before into the platform outbox", async () => {
+    await migrate();
+    // The database before this update: Mail's own table, and the function that wrote to it.
+    await sql`CREATE TABLE mail.live_invalidation_outbox (id uuid PRIMARY KEY DEFAULT gen_random_uuid())`;
+    await sql`
+      CREATE OR REPLACE FUNCTION mail.enqueue_live_invalidation(target_mailbox_id uuid, target_conversation_id uuid DEFAULT NULL)
+      RETURNS uuid LANGUAGE sql AS $$ INSERT INTO mail.live_invalidation_outbox DEFAULT VALUES RETURNING id $$
+    `.simple();
+    const [mailbox] = await sql<{ id: string }[]>`
+      INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Live update migration') RETURNING id
+    `;
+    try {
+      await migrate();
+      await migrate();
+      const [table] = await sql<{ exists: boolean }[]>`SELECT to_regclass('mail.live_invalidation_outbox') IS NOT NULL AS exists`;
+      expect(table).toEqual({ exists: false });
+      // An older replica still calls the function with its old signature, and its result is a uuid column.
+      const [called] = await sql<{ id: string | null }[]>`SELECT mail.enqueue_live_invalidation(${mailbox!.id}::uuid)::text AS id`;
+      expect(called).toEqual({ id: null });
+      const pending = await sql<{ payload: unknown }[]>`
+        SELECT payload FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailbox!.id}
+      `;
+      expect(pending).toEqual([{ payload: { v: 1, k: mailbox!.id, d: { conversationId: null } } }]);
+    } finally {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailbox!.id}`;
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox!.id}::uuid`;
+    }
+  });
+
   test("seeds the singleton rows a fresh installation needs", async () => {
     await migrate();
     const [security] = await sql<{ singleton: boolean; trusted: string[] }[]>`
@@ -289,7 +318,6 @@ suite("mail baseline schema", () => {
       {
         mailbox_owned_connections: boolean;
         reference_configuration_singleton: boolean;
-        live_invalidation_outbox: boolean;
         attachment_extractions: boolean;
         search_chunk_sources: number;
         workflow_profile: boolean;
@@ -306,7 +334,6 @@ suite("mail baseline schema", () => {
             AND table_class.relname = 'reference_number_configurations'
             AND pg_index.indisunique
         ) AS reference_configuration_singleton,
-        to_regclass('mail.live_invalidation_outbox') IS NOT NULL AS live_invalidation_outbox,
         to_regclass('mail.attachment_extractions') IS NOT NULL AS attachment_extractions,
         (
           SELECT count(*)::int FROM information_schema.columns
@@ -318,7 +345,6 @@ suite("mail baseline schema", () => {
     expect(shape).toEqual({
       mailbox_owned_connections: true,
       reference_configuration_singleton: true,
-      live_invalidation_outbox: true,
       attachment_extractions: true,
       search_chunk_sources: 4,
       workflow_profile: true,

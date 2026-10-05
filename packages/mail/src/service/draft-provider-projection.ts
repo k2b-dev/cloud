@@ -18,10 +18,10 @@ import {
   draftProviderFingerprint,
   draftProviderMessageId,
 } from "./draft-provider-mime";
-import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { assertMailboxTransportFence, loadMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { assessMessageSourceSize } from "./message-source-size";
@@ -1555,7 +1555,7 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           connectionId: execution.execution.connectionId!,
           secretRevision: execution.execution.secretRevision!,
         });
-        await notifyMailInvalidations();
+        mailLive.wake();
       },
     });
   } catch (error) {

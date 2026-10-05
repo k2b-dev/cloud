@@ -1,4 +1,4 @@
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -19,7 +19,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type {
   MailingListDispositionResult,
@@ -27,10 +27,9 @@ import type {
   MailSubscriptionSummary,
   UnsubscribeMailingListResult,
 } from "../../contracts";
-import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../../live-events";
+import { MailLiveEventSchema } from "../../live-events";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
-import { createMailLiveInvalidationHub, type MailLiveInvalidation } from "./mail-live-invalidation-hub";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
@@ -68,28 +67,39 @@ const mailingListDialogOptions = {
   contentClassName: panelDialogFixedOptions.contentClassName,
 };
 
-function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; initialListKey: string | null; close: () => void }) {
+function MailSubscriptionDialog(props: {
+  mailboxId: string;
+  canWrite: boolean;
+  initialListKey: string | null;
+  liveCursor: string | null;
+  close: () => void;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [pendingAction, setPendingAction] = createSignal<string | null>(null);
-  const [liveTransportDegraded, setLiveTransportDegraded] = createSignal(false);
-  const [liveSnapshotDegraded, setLiveSnapshotDegraded] = createSignal(false);
-  const liveDegraded = createMemo(() => liveTransportDegraded() || liveSnapshotDegraded());
-  let markLiveApplied: (cursor: string | null | undefined) => void = () => undefined;
-  let liveTransportTimer: ReturnType<typeof setTimeout> | null = null;
+  const [liveUnavailable, setLiveUnavailable] = createSignal(false);
   let disposed = false;
 
-  const liveHub = createMailLiveInvalidationHub({
-    delayMs: 150,
-    isBlocked: () => false,
-    onApplied: (cursor) => {
-      setLiveSnapshotDegraded(false);
-      markLiveApplied(cursor);
+  // The page's cursor was read before the list loads, so a change made while it loads still arrives. The
+  // changes since the page loaded arrive with it and refresh the list once more.
+  const live = liveConnection("/api/mail/live").subscribe(
+    "mailbox",
+    { mailbox: props.mailboxId },
+    {
+      cursor: props.liveCursor,
+      parse: (data) => MailLiveEventSchema.parse(data),
+      apply: () => subscriptions.invalidate(),
+      resync: () => subscriptions.invalidate(),
+      revoked: () => void documentNavigate("/app/mail", { replace: true }),
+      // A reload lets the route policy send an ended session to sign-in. A failure that survives it must not
+      // reload in a loop.
+      unavailable: () => {
+        if (!reloadOnce(`mail:live:${props.mailboxId}`)) setLiveUnavailable(true);
+      },
     },
-    onFailed: () => setLiveSnapshotDegraded(true),
-  });
+  );
 
-  const subscriptions = query.createInfinite<string, MailSubscriptionPage, string, MailLiveInvalidation>({
+  const subscriptions = query.createInfinite<string, MailSubscriptionPage, string>({
     source: () => `${props.mailboxId}:${props.initialListKey ?? ""}`,
     loadPage: async (_source, { cursor, abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"].subscriptions.$get(
@@ -105,7 +115,6 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
       return page;
     },
     getNextCursor: (page) => page.nextCursor,
-    subscribe: ({ invalidate }) => liveHub.register({ matches: () => true, invalidate }),
   });
   const items = createMemo(() => mergePages(subscriptions.pages()));
 
@@ -125,13 +134,13 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
     onSuccess: ({ item, result }) => {
       toast.success(messages().unsubscribeRequestedFor({ name: item.name }));
       void subscriptions
-        .invalidate({ cursor: null, conversationIds: null })
+        .invalidate()
         .catch((error) => toast.error(error instanceof Error ? error.message : messages().mailingListsRefreshFailed));
     },
     onError: (error) => {
       toast.error(error.message);
       void subscriptions
-        .invalidate({ cursor: null, conversationIds: null })
+        .invalidate()
         .catch((error) => toast.error(error instanceof Error ? error.message : messages().mailingListsRefreshFailed));
     },
   });
@@ -221,74 +230,9 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
     return actions;
   };
 
-  onMount(() => {
-    const live = createLiveWebSocket<MailLiveServerMessage>({
-      url: "/api/mail/ws",
-      initialCursor: null,
-      activity: "visible",
-      subscribe: (cursor) =>
-        ({
-          type: MAIL_LIVE_WS_TYPE.subscribe,
-          payload: { mailboxId: props.mailboxId, fromCursor: cursor },
-        }) satisfies MailLiveClientMessage,
-      parse: (raw) => {
-        const message = parseMailLiveServerMessage(raw);
-        if (!message) throw new Error(messages().invalidLiveMessage);
-        return message;
-      },
-      onStatus: (status) => {
-        if (liveTransportTimer) clearTimeout(liveTransportTimer);
-        liveTransportTimer = null;
-        if (status === "reconnecting") {
-          if (!liveTransportDegraded()) {
-            liveTransportTimer = setTimeout(() => {
-              liveTransportTimer = null;
-              if (!disposed) setLiveTransportDegraded(true);
-            }, 2_000);
-          }
-          return;
-        }
-        if (status === "open" || status === "paused" || status === "closed") setLiveTransportDegraded(false);
-      },
-      onMessage: (message, controls) => {
-        if (message.payload.mailboxId && message.payload.mailboxId !== props.mailboxId) {
-          controls.terminate({ code: "resource_mismatch", message: messages().liveResourceChanged });
-          return;
-        }
-        // A ready that confirms the subscribed cursor resumes the replay and needs no refresh.
-        if (message.type === MAIL_LIVE_WS_TYPE.ready && message.payload.cursor === controls.subscribedCursor()) return;
-        if (message.type === MAIL_LIVE_WS_TYPE.ready || message.type === MAIL_LIVE_WS_TYPE.event) {
-          liveHub.schedule({
-            cursor: message.payload.cursor,
-            conversationId: message.type === MAIL_LIVE_WS_TYPE.event ? message.payload.event.conversationId : null,
-          });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.revoked) {
-          controls.terminate({ code: message.payload.code, message: message.payload.message });
-        }
-      },
-      classifyClose: ({ code, reason }) =>
-        code === 1008 ? { code: reason || "access_denied", message: messages().mailboxAccessChanged } : null,
-      onFatal: (error) => {
-        if (error.code !== "login_required") documentNavigate("/app/mail", { replace: true });
-        // A reload lets the route policy send an expired session to sign-in. A
-        // failure that survives it must not reload in a loop.
-        else if (!reloadOnce(`mail:live:${props.mailboxId}`)) setLiveTransportDegraded(true);
-      },
-    });
-    markLiveApplied = live.markApplied;
-    live.connect();
-    onCleanup(() => {
-      live.dispose();
-      markLiveApplied = () => undefined;
-    });
-  });
-
   onCleanup(() => {
     disposed = true;
-    if (liveTransportTimer) clearTimeout(liveTransportTimer);
-    liveHub.dispose();
+    live.close();
     unsubscribe.abort();
     dispose.abort();
   });
@@ -300,7 +244,7 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
         subtitle={messages().mailingListsSubtitle}
         icon="ti ti-news"
         actions={
-          <Show when={liveDegraded()}>
+          <Show when={liveUnavailable()}>
             <span class="inline-flex items-center gap-1 text-xs text-dimmed" title={messages().liveUpdatesPaused}>
               <i class="ti ti-cloud-off" aria-hidden="true" /> {messages().updatesPaused}
             </span>
@@ -459,13 +403,20 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
   );
 }
 
-export const openMailSubscriptionDialog = (params: { mailboxId: string; canWrite: boolean; initialListKey?: string | null }) =>
+export const openMailSubscriptionDialog = (params: {
+  mailboxId: string;
+  canWrite: boolean;
+  initialListKey?: string | null;
+  /** The live cursor the page read before it loaded; `null` starts at the current position. */
+  liveCursor: string | null;
+}) =>
   dialogCore.open<void>(
     (close) => (
       <MailSubscriptionDialog
         mailboxId={params.mailboxId}
         canWrite={params.canWrite}
         initialListKey={params.initialListKey ?? null}
+        liveCursor={params.liveCursor}
         close={() => close()}
       />
     ),

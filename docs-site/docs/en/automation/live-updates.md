@@ -101,6 +101,47 @@ state again. Access updates that arrive while that runs share one more run.
 `publish()` writes the access change as a row of its own before the data, so
 data above 32 KiB, which becomes a resync, does not lose it.
 
+### Write from a database trigger
+
+A trigger writes an update with Core's `events.enqueue()`, in the transaction
+of the statement that fired it. Build the same row that `publish()` writes: an
+update ID, the application ID, `live`, the key, and an envelope with `v` set
+to `1`, the key as `k`, and the data as `d`.
+
+```sql
+CREATE FUNCTION inventory.publish_item_change() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM events.enqueue(
+    gen_random_uuid(),
+    'inventory',
+    'live',
+    NEW.warehouse_id::text,
+    jsonb_build_object(
+      'v', 1,
+      'k', NEW.warehouse_id::text,
+      'd', jsonb_build_object('type', 'item.changed', 'itemId', NEW.short_id)
+    ),
+    NEW.warehouse_id::text || ':' || NEW.short_id
+  );
+  RETURN NEW;
+END;
+$$;
+```
+
+- The last argument, the coalesce key, joins the updates of one transaction:
+  updates of the application with the same coalesce key are written once, at
+  the position of the first, with the data of the last. A bulk change that
+  fires the trigger for many rows of one item then writes one update. Pass
+  `NULL` to write every update. Keep coalesce keys under 600 characters.
+- Nothing checks the data against `event` when it is written. The browser
+  validates it and loads its state again when it cannot read an update.
+- Data above 32 KiB becomes a resync, as with `publish()`.
+- Call `wake()` after the commit, or the update is published within about a
+  second.
+
+Mail writes its updates this way, from a trigger on its activity log, with
+one update per conversation and transaction.
+
 ## Serve the channels
 
 A channel is what a tab subscribes to. Declare the channels next to the
@@ -288,8 +329,8 @@ updates does not start before Core has created it:
 Update Cloud Core first: its migration creates the outbox.
 ```
 
-Update Core before the applications that define live updates. Contacts and
-Spaces are the built-in applications that do.
+Update Core before the applications that define live updates. Contacts,
+Spaces, and Mail are the built-in applications that do.
 
 A replica that stops closes its sockets with `1012`; the tabs reconnect to
 another replica and resume from their cursors. Each replica reads the topic

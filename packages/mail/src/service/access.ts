@@ -4,6 +4,7 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  getEffectivePermissions,
   hasPermission,
   type PermissionLevel,
   type Principal,
@@ -202,6 +203,28 @@ const getMailboxPermissionForLifecycle = async (
   const permission = row?.permission ?? "none";
 
   return capByCredentialScopes(context, permission);
+};
+
+/**
+ * The permission of each reader on one mailbox, by the grant, binding and scope
+ * rules of `getMailboxPermission()`, with one query for all of their grants.
+ * The live channel decides with it. It leaves out whether each account is still
+ * active: the live socket checks every credential again every 10 seconds.
+ */
+export const getMailboxPermissions = async (mailboxId: string, readers: readonly MailRequestContext[]): Promise<PermissionLevel[]> => {
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT ma.access_id
+    FROM mail.mailbox_access ma
+    JOIN mail.mailboxes m ON m.id = ma.mailbox_id
+    WHERE ma.mailbox_id = ${mailboxId}::uuid AND m.deleted_at IS NULL
+  `;
+  const granted = await getEffectivePermissions({
+    accessIds: accessRows.map((row) => row.access_id),
+    subjects: readers.map((reader) => reader.accessSubject),
+  });
+  return readers.map((reader, position) =>
+    isResourceBoundToMailbox(reader, mailboxId) ? capByCredentialScopes(reader, granted[position] ?? "none") : "none",
+  );
 };
 
 export const requireMailboxLifecycleAdmin = async (

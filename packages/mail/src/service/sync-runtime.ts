@@ -28,10 +28,10 @@ import {
   submitDueDraftProjectionWork,
 } from "./draft-provider-projection";
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
-import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import { isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
@@ -2106,7 +2106,7 @@ export const commitSyncBatch = async (params: {
     return { hydratedIds, draftImportSnapshotIds, draftExportSnapshotIds, flagsUpdated, removed, liveInvalidated };
   });
   if (result.hydratedIds.length > 0) notifyWorkflowWorker(MAIL_WORKFLOW_APP_ID);
-  if (result.liveInvalidated) await notifyMailInvalidations();
+  if (result.liveInvalidated) mailLive.wake();
   return result;
 };
 
@@ -2435,7 +2435,7 @@ const invalidateSettledConversations = async (mailboxId: string, messageIds: Rea
       }
       return conversations.length;
     });
-    if (invalidated > 0) await notifyMailInvalidations();
+    if (invalidated > 0) mailLive.wake();
   } catch (error) {
     log.warn("Mail hydration live invalidation failed", { mailboxId, code: normalizeSyncErrorCode(error) });
   }
