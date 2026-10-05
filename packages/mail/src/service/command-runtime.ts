@@ -2112,6 +2112,7 @@ type OutboxClaim = {
   previousOutboxAttempt: number;
   previousOutboxErrorCode: string | null;
   previousOutboxErrorMessage: string | null;
+  previousSentCopyPending: boolean;
   claimedOutboxState: string;
   claimedOutboxAttempt: number;
   previousCommandState: string;
@@ -2173,12 +2174,17 @@ const claimOutbox = async (outboxId: string): Promise<OutboxClaim | null> =>
       FOR UPDATE OF o, c, d
     `;
     if (!current || !["scheduled", "undo_window", "unknown", "sent_sync_pending", "needs_attention"].includes(current.state)) return null;
+    // Only a partly accepted send whose Sent copy is still missing runs again; it keeps its outcome meanwhile.
+    if (current.state === "needs_attention" && !current.sent_copy_pending) return null;
+    if (current.state === "needs_attention" && current.command_state !== "needs_attention") {
+      // An operator took the send over, for example to reconcile it, so its copy retry ends instead of staying due.
+      await tx`UPDATE mail.outbox_submissions SET sent_copy_pending = false, updated_at = now() WHERE id = ${outboxId}::uuid`;
+      return null;
+    }
     if (
       ((current.state === "scheduled" || current.state === "undo_window") && current.command_state !== "queued") ||
       (current.state === "unknown" && current.command_state !== "ambiguous") ||
-      (current.state === "sent_sync_pending" && current.command_state !== "confirmed") ||
-      // Only a partly accepted send whose Sent copy is still missing runs again; it keeps its outcome meanwhile.
-      (current.state === "needs_attention" && (!current.sent_copy_pending || current.command_state !== "needs_attention"))
+      (current.state === "sent_sync_pending" && current.command_state !== "confirmed")
     ) {
       return null;
     }
@@ -2257,9 +2263,11 @@ const claimOutbox = async (outboxId: string): Promise<OutboxClaim | null> =>
         WHERE id = ${outboxId}::uuid AND state = 'sent_sync_pending'
       `;
     } else {
+      // A retry at or past the last attempt is the last one and takes the flag along, so a worker
+      // that stops during it ends the retry, like a stopped last attempt at a full send's copy.
       await tx`
         UPDATE mail.outbox_submissions
-        SET attempt = attempt + 1, updated_at = now()
+        SET attempt = attempt + 1, sent_copy_pending = ${claimedOutboxAttempt < OUTBOX_MAX_ATTEMPTS}, updated_at = now()
         WHERE id = ${outboxId}::uuid AND state = 'needs_attention'
       `;
     }
@@ -2268,6 +2276,7 @@ const claimOutbox = async (outboxId: string): Promise<OutboxClaim | null> =>
       previousOutboxAttempt: current.attempt,
       previousOutboxErrorCode: current.last_error_code,
       previousOutboxErrorMessage: current.last_error_message,
+      previousSentCopyPending: current.sent_copy_pending,
       claimedOutboxState,
       claimedOutboxAttempt,
       previousCommandState: current.command_state,
@@ -2313,6 +2322,7 @@ const resetUnstartedOutboxClaim = async (outboxId: string, claim: OutboxClaim): 
         attempt = ${claim.previousOutboxAttempt},
         last_error_code = ${claim.previousOutboxErrorCode},
         last_error_message = ${claim.previousOutboxErrorMessage},
+        sent_copy_pending = ${claim.previousSentCopyPending},
         updated_at = now()
       WHERE id = ${outboxId}::uuid
     `;
@@ -2916,8 +2926,8 @@ type SentCopyTarget = {
  * Stores the Sent copy of a message SMTP accepted and settles the send. An IMAP failure while
  * storing the copy, or a missing `copy` target, leaves the send confirmed and the copy to the
  * next attempt instead of making the delivery look uncertain. A message only some recipients
- * got needs attention for the others; while attempts remain, its missing copy is retried the
- * same way, next to that outcome.
+ * got needs attention for the others; its missing copy is retried the same way, next to that
+ * outcome.
  */
 const settleAcceptedSend = async (params: {
   outbox: DbOutboxExecution;
@@ -2953,7 +2963,7 @@ const settleAcceptedSend = async (params: {
       draftState: "sent",
       providerResponse: params.response,
       delivered: true,
-      sentCopyPending: !sentCopy.stored && outbox.attempt < OUTBOX_MAX_ATTEMPTS,
+      sentCopyPending: !sentCopy.stored,
       error: Object.assign(new Error("SMTP provider accepted only some recipients"), { code: "SMTP_PARTIAL_ACCEPTANCE" }),
     });
     return;
@@ -3261,22 +3271,10 @@ const reconcileSentCopy = async (
   }
 };
 
-/** Ends the Sent copy retry of a partly accepted send, which keeps needing attention for the refused recipients. */
-const endPartialSentCopyRetry = async (outbox: DbOutboxExecution, stored: boolean): Promise<void> => {
-  if (!stored) log.warn("Sent copy of a partly accepted send could not be stored", { outboxId: outbox.id });
-  await sql`
-    UPDATE mail.outbox_submissions
-    SET sent_copy_pending = false, updated_at = now()
-    WHERE id = ${outbox.id}::uuid
-      AND attempt = ${outbox.attempt}
-      AND state = 'needs_attention'
-  `;
-};
-
 /**
- * Retries the Sent copy of a send only some recipients accepted. Its last attempt appends the copy
- * even where the provider usually stores it; a retry whose worker stopped during that last attempt
- * ends without asking the provider again.
+ * Retries the Sent copy of a send only some recipients accepted, which keeps needing attention for
+ * the others. Like a full send's copy, it is retried at least once and until the last attempt,
+ * which appends the copy even where the provider usually stores it.
  */
 const reconcilePartialSentCopy = async (
   outbox: DbOutboxExecution,
@@ -3284,12 +3282,15 @@ const reconcilePartialSentCopy = async (
   assertLeaseActive: LeaseAssertion,
   signal: AbortSignal,
 ): Promise<void> => {
-  if (outbox.attempt > OUTBOX_MAX_ATTEMPTS) {
-    await endPartialSentCopyRetry(outbox, false);
-    return;
+  if (await retrySentCopy(outbox, command, assertLeaseActive, signal)) {
+    await sql`
+      UPDATE mail.outbox_submissions
+      SET sent_copy_pending = false, updated_at = now()
+      WHERE id = ${outbox.id}::uuid AND attempt = ${outbox.attempt} AND state = 'needs_attention'
+    `;
+  } else if (outbox.attempt >= OUTBOX_MAX_ATTEMPTS) {
+    log.warn("Sent copy of a partly accepted send could not be stored", { outboxId: outbox.id });
   }
-  const stored = await retrySentCopy(outbox, command, assertLeaseActive, signal);
-  if (stored || outbox.attempt >= OUTBOX_MAX_ATTEMPTS) await endPartialSentCopyRetry(outbox, stored);
 };
 
 const deferSentCopy = async (outbox: DbOutboxExecution, error?: unknown): Promise<void> => {
@@ -3326,13 +3327,12 @@ const runClaimedOutbox = async (
       log.warn("Sent copy reconciliation failed", { outboxId, code: normalizeCode(error, "SENT_RECONCILIATION_FAILED") });
       await deferSentCopy(loaded.outbox, error);
     } else if (claim.previousOutboxState === "needs_attention") {
-      if (loaded.outbox.attempt >= OUTBOX_MAX_ATTEMPTS) await endPartialSentCopyRetry(loaded.outbox, false);
-      else {
-        log.warn("Sent copy of a partly accepted send waits for the next attempt", {
-          outboxId,
-          code: normalizeCode(error, "SENT_RECONCILIATION_FAILED"),
-        });
-      }
+      // The claim already decided whether another retry follows.
+      const message =
+        loaded.outbox.attempt < OUTBOX_MAX_ATTEMPTS
+          ? "Sent copy of a partly accepted send waits for the next attempt"
+          : "Sent copy of a partly accepted send could not be stored";
+      log.warn(message, { outboxId, code: normalizeCode(error, "SENT_RECONCILIATION_FAILED") });
     } else if (claim.previousOutboxState === "unknown") {
       // A connection or database failure proves nothing either way, so the check is repeated while attempts remain.
       const accepted = recordedSmtpOutcome(loaded.outbox);
@@ -3400,6 +3400,9 @@ export const executeOutboxSubmissionWithHeartbeat = async (
     });
   }
   let claim: OutboxClaim | null = null;
+  // The copy retry of a partly accepted send leaves its states as they were, so a reset could not
+  // tell that it asked the provider; once it starts, its attempt stays used.
+  let copyRetryStarted = false;
   try {
     claim = await claimOutbox(outboxId);
     if (!claim) return null;
@@ -3418,11 +3421,12 @@ export const executeOutboxSubmissionWithHeartbeat = async (
       work: async (assertLeaseActive, signal) => {
         await waitForMailProviderSlot(remoteResourceId, signal);
         await assertLeaseActive();
+        copyRetryStarted = activeClaim.previousOutboxState === "needs_attention";
         return runClaimedOutbox(outboxId, activeClaim, loaded, assertLeaseActive, signal);
       },
     });
   } catch (error) {
-    if (claim) {
+    if (claim && !copyRetryStarted) {
       const reset = await resetUnstartedOutboxClaim(outboxId, claim).catch((rollbackError: unknown) => {
         log.warn("Failed to reset an unstarted outbox claim", {
           outboxId,

@@ -1413,6 +1413,114 @@ suite("mail sent message projection", () => {
     }
   });
 
+  const copyRetry = async (outboxId: string) => {
+    const [row] = await sql<{ attempt: number; sent_copy_pending: boolean }[]>`
+      SELECT attempt, sent_copy_pending FROM mail.outbox_submissions WHERE id = ${outboxId}::uuid
+    `;
+    return row;
+  };
+
+  test("a message only some recipients accept on the last attempt still gets one more try at its Sent copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered on the last attempt");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "partial-last-attempt");
+      // The earlier attempts could not reach the provider, so SMTP answers on the last one.
+      await sql`UPDATE mail.outbox_submissions SET attempt = ${OUTBOX_MAX_ATTEMPTS - 1} WHERE id = ${outbox.id}::uuid`;
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      expect(await sendRetryNow(outbox.id)).toBe("needs_attention");
+      expect(provider.appends).toEqual(["Drafts"]);
+
+      // Like a message every recipient accepted, it gets one more try, which stores the copy.
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual(["Sent"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an operator's reconcile of a partly accepted send ends the retry of its Sent copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, reconciled by an operator");
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-operator-reconcile", "needs_attention");
+      const [target] = await sql<{ command_id: string }[]>`
+        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      const reconcile = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconciles-partial-${suffix}` },
+        enqueue: false,
+      });
+      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+
+      // The operator took the send over, so its copy retry ends instead of coming back with every schedule.
+      const searches = provider.searches();
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(await copyRetry(outbox.id)).toMatchObject({ sent_copy_pending: false });
+      expect(provider.searches()).toBe(searches);
+      expect(provider.appends).toEqual(["Drafts"]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a lost lease gives back only the attempt of a Sent copy retry that had not started", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, lease lost during the copy");
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-copy-lease-lost", "needs_attention");
+      const leaseLost = () => Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
+      /** Runs the retry with a job lease that is lost once the retry looked into Sent. */
+      const loseLeaseAfterSearch = () => {
+        const searches = provider.searches();
+        return executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
+          if (provider.searches() > searches) throw leaseLost();
+        });
+      };
+
+      // The retry asked the provider before its lease was lost, so its attempt stays used.
+      await expect(loseLeaseAfterSearch()).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(await copyRetry(outbox.id)).toEqual({ attempt: 2, sent_copy_pending: true });
+
+      // Lost before the last retry began: nothing ran, so that retry is still to come.
+      await sql`UPDATE mail.outbox_submissions SET attempt = ${OUTBOX_MAX_ATTEMPTS - 1} WHERE id = ${outbox.id}::uuid`;
+      const searches = provider.searches();
+      const unstarted = executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
+        throw leaseLost();
+      });
+      await expect(unstarted).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(provider.searches()).toBe(searches);
+      expect(await copyRetry(outbox.id)).toEqual({ attempt: OUTBOX_MAX_ATTEMPTS - 1, sent_copy_pending: true });
+
+      // Lost during the last retry: the retry ends, and nothing asks the provider again.
+      await expect(loseLeaseAfterSearch()).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(await copyRetry(outbox.id)).toEqual({ attempt: OUTBOX_MAX_ATTEMPTS, sent_copy_pending: false });
+      const searchesAfterLastRetry = provider.searches();
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(provider.searches()).toBe(searchesAfterLastRetry);
+      expect(provider.appends).toEqual(["Drafts"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a partly accepted send whose lease is lost after SMTP answered keeps its partial outcome", async () => {
     const provider = createProvider("imap");
     try {
