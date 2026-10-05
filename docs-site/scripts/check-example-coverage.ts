@@ -60,6 +60,10 @@ export const recipeFixtures: RecipeFixture[] = [
     fixtures: ["ai-ui.tsx"],
   },
   {
+    page: "ai/chat-runtime-and-streaming.md",
+    fixtures: ["ai.ts", "ai-live.ts"],
+  },
+  {
     page: "frontend/ssr-pages-and-routing.md",
     fixtures: ["frontend-server.tsx"],
   },
