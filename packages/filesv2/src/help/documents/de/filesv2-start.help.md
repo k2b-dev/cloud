@@ -82,7 +82,7 @@ Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 ls` zeigt deine
 
 `cld filesv2 get me:/Dokumente/bericht.pdf` lädt eine Datei herunter, `cld filesv2 cat me:/Notizen/todo.md` gibt eine Textdatei aus. Die CLI lädt direkt von Filegate in eine neue lokale Datei und überschreibt nie bestehende Pfade; ein Ordner kommt als ZIP. Mit `--json` erhältst du den gespeicherten Pfad und die Byteanzahl. `cld filesv2 help` zeigt alle verfügbaren Befehle.
 
-`cld filesv2 put ./bericht.pdf me:/Dokumente/` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei, mit `--parents` legst du fehlende Ordner an. `mkdir -p`, `mv`, `cp`, `rm --yes` (in den Papierkorb), `tree`, `stat`, `search`, `trash list|restore`, `versions list|get|restore|update`, `shares list|add|rm`, `zip --out` für ein ZIP mehrerer Einträge, `thumbnail` sowie `documents create --kind` und `edit-url` für Office-Dokumente decken die übrigen Vorgänge ab.
+`cld filesv2 put ./bericht.pdf me:/Dokumente/` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei, mit `--parents` legst du fehlende Ordner an. `mkdir -p`, `mv`, `cp`, `rm --yes` (in den Papierkorb), `tree`, `stat`, `search`, `trash list|restore`, `versions list|get|restore|update`, `shares list|add|revoke`, `zip --out` für ein ZIP mehrerer Einträge, `thumbnail` sowie `documents create --kind` und `edit-url` für Office-Dokumente decken die übrigen Vorgänge ab.
 
 ## Wenn eine Ablage nicht verfügbar ist {icon="alert-circle"}
 

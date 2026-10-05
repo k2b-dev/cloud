@@ -37,11 +37,11 @@ Notebooks can be collaborative. Read current state before changing it and use ed
 
 ## Markdown knowledge conventions
 
-Keep durable knowledge visible in Markdown. Queries and formulas summarize readable source data rather than holding the only copy.
+Keep durable knowledge visible in Markdown. Queries and formulas summarize readable source data rather than holding the only copy. Before writing content, read [Notebook Markdown](markdown.md): it lists every block Notebooks renders, such as callouts (`:::warning`), tasks, tables, data blocks, math, and diagrams, with one example each. Use nothing else.
 
 - Headings use normal Markdown (`#`, `##`, and deeper levels).
 - Tasks use `- [ ]` and `- [x]`.
-- A parsed tag is written as `#tag` in note content.
+- A parsed tag is written as `#tag` in note content, with ASCII characters only.
 - A note link is `[Label](note://shortId)`. To open the note at a heading, add the heading's slug: `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". A heading the note does not have opens the note at its top.
 - A file link is `[Label](attach://shortId)`; an image is `![Alt](attach://shortId)`.
 - A named block places `@name` on its own line directly above a table, list, data block, or heading section.
@@ -63,15 +63,13 @@ reviewed: true
 - [ ] Verify the deployment
 ````
 
-The editor can render callouts and other Markdown extensions, but CLI agents should preserve unfamiliar syntax rather than normalize it away. Legacy fenced `script` blocks remain visible code and never execute. Preserve their source unless the user asks to replace it; there is no script runtime, notebook-local script storage, or script setting.
+Preserve syntax you do not recognize when you edit a note rather than normalizing it away. Legacy fenced `script` blocks remain visible code and never execute. Preserve their source unless the user asks to replace it; there is no script runtime, notebook-local script storage, or script setting.
 
 ## Declarative summaries
 
 Use `:::toc` for the current note's headings and `:::query` for lists or tables of notes. Both render in Book and in the editor preview. Their configuration remains Markdown, so `cat`, `write`, and `edit` manage it.
 
 Place data, query, and TOC directives at document level, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
-
-For notice blocks such as `:::info`, indent the closing `:::` no more than the opening line.
 
 ````markdown
 :::toc
@@ -138,7 +136,7 @@ cld notebooks preview <note> --json
 cld notebooks preview <note> --from ./draft.md --json
 ```
 
-Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Without `--from` or `--content`, it previews the saved page with read access. With a draft it requires write access and an unlocked note, and it never saves. It evaluates queries against saved note data and builds the contents list from the draft headings.
+Preview checks only query and TOC blocks; callouts, data values, and formulas are not validated. It needs an existing note: for a new note, `write` it first, preview the saved page, and correct it with `write --if-content-hash`. To test a draft before it exists, preview it against any note you can write in the same notebook; `children` and `descendants` scopes then refer to that note. Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Without `--from` or `--content`, it previews the saved page with read access. With a draft it requires write access and an unlocked note, and it never saves. It evaluates queries against saved note data and builds the contents list from the draft headings.
 
 The JSON result contains `markdown`, rendered `blocks` (`line`, `html`), `headings` (`id`, `line`), and `diagnostics` (`line`, `message`). Source lines are 1-based. `headings` includes only headings with an exact source position. Diagnostics produce exit code 1 while retaining the JSON result; a clean preview returns 0. Check diagnostics before applying a draft with `write` or `edit`.
 
@@ -163,11 +161,12 @@ Notebook-scoped commands (`ls`, `tree`, `pull`, `tags`, `export`, `update`, and 
 ## Agent workflow
 
 1. Confirm the selected Cloud profile with `cld profile list` when the target instance is not obvious.
-2. Find the notebook with `cld notebooks ls --json`, then look at its structure with `cld notebooks tree <notebook>`.
+2. Find the notebook with `cld notebooks ls --q <text> --json`, which matches a case-insensitive part of the name or description, then look at its structure with `cld notebooks tree <notebook>`. Several matches with the same name need the user's choice; use the ID.
 3. Search before creating duplicate knowledge: `cld notebooks search "deployment rollback" --notebook <notebook> --json`.
 4. Read the note with `cld notebooks cat <note> --json` and keep `contentHash` and `blocks`.
+   For a new note, read [Notebook Markdown](markdown.md), write the draft to a local file, and create the note with `cld notebooks write "<notebook>:<path>" --from draft.md --json`. No mirror is needed for one note.
 5. Prefer a named-block or line edit with `edit` over replacing the whole note. Pass the returned hash as `--if-content-hash` or `--if-block-hash`.
-6. Run risky edits with `--dry-run` first, then repeat without it.
+6. Run risky edits with `edit --dry-run` first, then repeat without it. `write` has no dry run.
 7. Read the result again. A successful request does not prove the intended Markdown structure.
 
 For many notes, or when you want to use normal file tools, pull the notebook into a folder instead: see the next section.
@@ -357,7 +356,7 @@ owner: ops
 MD
 ```
 
-Supported block types are `table`, `list`, `data`, `section`, and `unknown`. A name may occur more than once; select a duplicate with `--index`. For data blocks, `cat --block` returns the inner data text, but `--replace-block` replaces the whole block including its delimiters and keeps `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement.
+Supported block types are `table`, `list`, `data`, `section`, and `unknown`. A handle above anything else, such as a callout or a paragraph, has the type `unknown` and addresses nothing; name the surrounding heading instead. A name may occur more than once; select a duplicate with `--index`. For data blocks, `cat --block` returns the inner data text, but `--replace-block` replaces the whole block including its delimiters and keeps `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement.
 
 ## Attachments, versions, and exports
 
@@ -403,7 +402,7 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 
 | Command | Purpose |
 |---|---|
-| `ls [<notebook>[:<path>]]` | Notebooks, or the children of a notebook or note. |
+| `ls [<notebook>[:<path>]]` | Notebooks, or the children of a notebook or note; `--q <text>` filters notebooks by name or description, `--page` and `--per-page` page them. |
 | `tree <notebook>[:<path>]` | Note tree. |
 | `cat <note>` | Live content; `--json`, `--numbered`, `--blocks`, `--block <name>`. |
 | `stat <note>` / `stat <notebook>:` | Metadata. |
@@ -444,6 +443,7 @@ Treat JSON fields as the contract and tolerate additional fields.
 
 Load only the reference needed for the task:
 
+- [Notebook Markdown](markdown.md): read before writing or restructuring note content. It lists every supported block with an example.
 - [Table formulas](formulas.md): read when creating or changing formulas inside Markdown tables.
 
-The formula reference lists the supported functions. Do not assume unlisted formula functions exist.
+These references list the supported syntax and functions. Do not assume that anything unlisted exists.

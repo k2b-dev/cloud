@@ -45,7 +45,7 @@ cld filesv2 search me:/Documents report --json
 | `cat <file> [--out <local>]` | Prints a UTF-8 text file | `{baseId, path, bytes, content}`; with `--out`, `{path, bytes}` |
 | `get <remote> [<local>]` | Downloads a file, or a folder as ZIP | `{path, bytes}` |
 | `zip <remote>... --out <local>` | Downloads several entries of one area as ZIP | `{path, bytes}` |
-| `put <local> <remote> [--parents] [--replace]` | Uploads a file | `{base, entry}` |
+| `put <local> <remote> [--parents] [--replace] [--expected-revision <rev>]` | Uploads one file | `{base, entry}` |
 | `mkdir [-p] <folder>` | Creates a folder | `{base, entry}` |
 | `mv <source>... <destination>` | Renames or moves inside one area | `{base, entries, results}` |
 | `cp <source>... <folder>` | Copies into a folder of any area | `{base, entries, results}` |
@@ -104,9 +104,6 @@ cld filesv2 get me:/Documents/report.pdf ./downloads/    # into a local folder
 cld filesv2 get team:/Photos ./photos.zip                # a folder as ZIP
 cld filesv2 zip me:/Documents me:/Photos/team.jpg --out ./selection.zip
 cld filesv2 cat me:/Notes/todo.md
-cld filesv2 put ./report.pdf me:/Documents/
-cld filesv2 put ./report.pdf team:/2026/Q3/report.pdf --parents
-cld filesv2 put ./report.pdf me:/Documents/report.pdf --replace --expected-revision '<revision>'
 ```
 
 Downloads obtain a short-lived lease through the authenticated Cloud API, then
@@ -124,12 +121,10 @@ anything; use `get` or `cat --out` for those.
 
 `put` opens a Filegate upload session through Cloud, streams disk-backed
 segments to the session lease without Cloud credentials, and commits through
-Cloud. A remote that ends in `/` or is an area root receives the local file
-name. Existing files fail with `path_conflict` unless `--replace` is passed.
-`--parents` creates missing parent folders first. For conditional saves, read
-`stat --json` and pass its `entry.revision` as `--expected-revision`; a stale
-revision is a conflict. Unmanaged observation tokens use `fs:<modified>:<size>`
-and are not atomic filesystem preconditions. `idempotency_conflict` means the
+Cloud; see [Upload local files](#upload-local-files) for targets, folders, and
+replacing. A stale `--expected-revision` is a `write_conflict`. Unmanaged
+`fs:<modified>:<size>` tokens are not atomic filesystem preconditions.
+`idempotency_conflict` means the
 upload ID was reused with different parameters; inspect the original operation.
 `operation_conflict` and `write_conflict` do not authorize overwriting.
 Retries and lease renewal are bounded; interruption before commit requests an
@@ -137,6 +132,62 @@ abort. The CLI stores one logical upload ID in its active profile before
 requesting a session. Repeating the same command with unchanged local file
 metadata, target, and conflict policy reuses it. Terminal receipts last seven
 days; after that, an uncertain outcome needs inspection rather than a new ID.
+
+## Upload local files
+
+`put` uploads one local file of any type; Files stores the bytes as they are and
+converts nothing.
+
+```bash
+cld filesv2 put ./report.pdf me:/Documents/                         # keeps the name
+cld filesv2 put ./report.pdf team:/2026/Q3/report-final.pdf --parents  # new folders, new name
+cld filesv2 mkdir -p team:/2026/Q4                                  # folders only
+```
+
+A remote ending in `/` or an area root keeps the local file name; otherwise the
+last segment is the new name. Without `--parents`, the parent folder must exist.
+An existing file fails with `path_conflict`; check first with `stat`, which
+fails when nothing exists at the path.
+
+To replace a file, read its revision and pass it, so that a newer change by
+someone else is a conflict instead of being overwritten:
+
+```bash
+cld filesv2 stat team:/2026/Q3/report.pdf --json    # entry.revision
+cld filesv2 put ./report.pdf team:/2026/Q3/report.pdf --replace --expected-revision '<entry.revision>' --json
+```
+
+When `entry.revision` is missing, the storage keeps no managed revisions; pass
+`fs:<entry.modified>:<entry.size>` from the same `stat` result instead. The
+replaced file keeps its owner and permissions. Whether the previous content
+becomes a version depends on the storage; `versions list` shows it.
+
+There is no recursive upload. Upload a folder file by file, one at a time:
+
+```bash
+cd ./handout && find . -type f -print0 | while IFS= read -r -d '' f; do
+  cld filesv2 put "$f" "team:/Events/Handout/${f#./}" --parents --json || break
+done
+```
+
+### Office files with content
+
+`cld filesv2` cannot fill a document with content. Create the file locally with
+a tool that is available, such as LibreOffice or a document library, check it,
+then upload it with `put`. LibreOffice converts without a window:
+
+```bash
+soffice --headless --convert-to ods --infilter=CSV:44,34,76,1 participants.csv   # UTF-8 CSV, comma-separated
+soffice --headless --convert-to xlsx --infilter=CSV:44,34,76,1 participants.csv
+soffice --headless --convert-to odt minutes.html
+soffice --headless --convert-to 'docx:MS Word 2007 XML' minutes.html
+cld filesv2 put ./participants.ods team:/Events/ --parents
+```
+
+The output lands in the working directory under the input's name with the new
+extension. Use real data from the user or another Cloud source; do not invent
+rows. `documents create --kind spreadsheet` only creates an empty document for
+the browser editor.
 
 ## Organize files
 
