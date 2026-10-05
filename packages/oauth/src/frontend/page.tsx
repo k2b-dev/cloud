@@ -153,86 +153,112 @@ export default ssr<AuthContext>(async (c) => {
 
         {totalPages > 1 ? <Pagination currentPage={clientsPage.page} totalPages={totalPages} baseUrl={paginationBaseUrl} /> : null}
 
-        <NoticeCard tone="info" style="view-transition-name: admin-oauth-reference">
-          <h2 class="mb-3 text-sm font-medium">{t.discoveryEndpoints}</h2>
-          <div class="space-y-1 text-xs font-mono mb-4">
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.openIdConfiguration}:</span>
-              <a href="/.well-known/openid-configuration" class="underline hover:opacity-80 break-all" target="_blank">
-                {baseUrl}/.well-known/openid-configuration
-              </a>
-            </div>
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">JWKS:</span>
-              <a href="/.well-known/jwks.json" class="underline hover:opacity-80 break-all" target="_blank">
-                {baseUrl}/.well-known/jwks.json
-              </a>
-            </div>
-          </div>
+        <NoticeCard tone="info" style="view-transition-name: admin-oauth-reference" bodyClass="flex flex-col gap-6">
+          <section>
+            <h2 class="font-semibold text-primary">{t.discoveryEndpoints}</h2>
+            <dl class="mt-2 flex flex-col gap-2">
+              <div>
+                <dt class="text-dimmed">{t.openIdConfiguration}</dt>
+                <dd>
+                  <a href="/.well-known/openid-configuration" class="break-all underline" target="_blank">
+                    <code>{baseUrl}/.well-known/openid-configuration</code>
+                  </a>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-dimmed">JWKS</dt>
+                <dd>
+                  <a href="/.well-known/jwks.json" class="break-all underline" target="_blank">
+                    <code>{baseUrl}/.well-known/jwks.json</code>
+                  </a>
+                </dd>
+              </div>
+            </dl>
+          </section>
 
-          <h2 class="mb-2 mt-6 text-sm font-medium">{t.oauthEndpoints}</h2>
-          <div class="space-y-2 text-xs font-mono mb-4">
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.authorizationEndpoint}:</span>
-              <code class="break-all">{baseUrl}/oauth/authorize</code>
-            </div>
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.tokenEndpoint}:</span>
-              <code class="break-all">{baseUrl}/oauth/token</code>
-            </div>
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.dynamicRegistrationEndpoint}:</span>
-              <code class="break-all">{baseUrl}/oauth/register</code>
-            </div>
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.userInfoEndpoint}:</span>
-              <code class="break-all">{baseUrl}/oauth/userinfo</code>
-            </div>
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.logoutUrl}:</span>
-              <code class="break-all">{baseUrl}/oauth/logout</code>
-            </div>
-          </div>
+          <section>
+            <h2 class="font-semibold text-primary">{t.oauthEndpoints}</h2>
+            <dl class="mt-2 flex flex-col gap-2">
+              <div>
+                <dt class="text-dimmed">{t.authorizationEndpoint}</dt>
+                <dd>
+                  <code class="break-all">{baseUrl}/oauth/authorize</code>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-dimmed">{t.tokenEndpoint}</dt>
+                <dd>
+                  <code class="break-all">{baseUrl}/oauth/token</code>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-dimmed">{t.dynamicRegistrationEndpoint}</dt>
+                <dd>
+                  <code class="break-all">{baseUrl}/oauth/register</code>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-dimmed">{t.userInfoEndpoint}</dt>
+                <dd>
+                  <code class="break-all">{baseUrl}/oauth/userinfo</code>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-dimmed">{t.logoutUrl}</dt>
+                <dd>
+                  <code class="break-all">{baseUrl}/oauth/logout</code>
+                </dd>
+              </div>
+            </dl>
+          </section>
 
-          <h2 class="mb-2 mt-6 text-sm font-medium">{t.availableScopes}</h2>
-          <div class="space-y-2 text-xs mb-4">
-            <div class="flex gap-2">
-              <code class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900 font-medium">openid</code>
-              <span class="opacity-80">{t.requiredReturnsUserId}</span>
-            </div>
-            <div class="flex gap-2">
-              <code class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900 font-medium">profile</code>
-              <span class="opacity-80">{t.returnsProfileClaims}</span>
-            </div>
-            <div class="flex gap-2">
-              <code class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900 font-medium">email</code>
-              <span class="opacity-80">{t.returnsEmail}</span>
-            </div>
-            <div class="flex gap-2">
-              <code class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900 font-medium">groups</code>
-              <span class="opacity-80">{t.returnsGroups}</span>
-            </div>
-          </div>
+          <section>
+            <h2 class="font-semibold text-primary">{t.availableScopes}</h2>
+            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              <dt>
+                <code>openid</code>
+              </dt>
+              <dd class="text-dimmed">{t.requiredReturnsUserId}</dd>
+              <dt>
+                <code>profile</code>
+              </dt>
+              <dd class="text-dimmed">{t.returnsProfileClaims}</dd>
+              <dt>
+                <code>email</code>
+              </dt>
+              <dd class="text-dimmed">{t.returnsEmail}</dd>
+              <dt>
+                <code>groups</code>
+              </dt>
+              <dd class="text-dimmed">{t.returnsGroups}</dd>
+            </dl>
+          </section>
 
-          <h2 class="mb-2 mt-6 text-sm font-medium">{t.claimMapping}</h2>
-          <div class="space-y-1 text-xs font-mono">
-            <div>
-              <span class="opacity-70">{t.idClaim}:</span> <code>sub</code> {t.or} <code>uid</code>{" "}
-              <span class="opacity-60">({t.username})</span>
-            </div>
-            <div>
-              <span class="opacity-70">{t.databaseId}:</span> <code>id</code> <span class="opacity-60">(UUID)</span>
-            </div>
-            <div>
-              <span class="opacity-70">{t.displayNameClaim}:</span> <code>display_name</code>
-            </div>
-            <div>
-              <span class="opacity-70">{t.emailClaim}:</span> <code>email</code>
-            </div>
-            <div>
-              <span class="opacity-70">{t.groupsClaim}:</span> <code>groups</code>
-            </div>
-          </div>
+          <section>
+            <h2 class="font-semibold text-primary">{t.claimMapping}</h2>
+            <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              <dt class="text-dimmed">{t.idClaim}</dt>
+              <dd>
+                <code>sub</code> {t.or} <code>uid</code> ({t.username})
+              </dd>
+              <dt class="text-dimmed">{t.databaseId}</dt>
+              <dd>
+                <code>id</code> (UUID)
+              </dd>
+              <dt class="text-dimmed">{t.displayNameClaim}</dt>
+              <dd>
+                <code>display_name</code>
+              </dd>
+              <dt class="text-dimmed">{t.emailClaim}</dt>
+              <dd>
+                <code>email</code>
+              </dd>
+              <dt class="text-dimmed">{t.groupsClaim}</dt>
+              <dd>
+                <code>groups</code>
+              </dd>
+            </dl>
+          </section>
         </NoticeCard>
       </div>
     </AdminLayout>

@@ -305,8 +305,7 @@ export function CreateUserDialog(props: {
             disabled={createMutation.loading() || withoutEmail()}
           />
           <Show when={category()}>
-            <NoticeCard tone="info" bodyClass="flex flex-col gap-2">
-              <p class="font-medium">{messages().creationOutcome}</p>
+            <NoticeCard tone="info" title={messages().creationOutcome} bodyClass="flex flex-col gap-2">
               <Show
                 when={provider() === "ipa"}
                 fallback={

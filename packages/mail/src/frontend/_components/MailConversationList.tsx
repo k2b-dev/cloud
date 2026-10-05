@@ -500,7 +500,7 @@ export default function MailConversationList(props: {
             <NoticeCard tone="neutral" data-mail-folder-only-hint>
               <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
                 <p class="min-w-0 flex-[1_1_14rem]">
-                  <strong class="font-medium text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
+                  <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
                   {messages().folderOnlyHintDetail}
                 </p>
                 <div class="flex shrink-0 items-center gap-1">

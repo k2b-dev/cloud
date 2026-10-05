@@ -94,22 +94,24 @@ export default ssr<AuthContext>(async (c) => {
           <Placeholder surface="paper" description={<>{t.empty}</>} />
         )}
 
-        <NoticeCard tone="info" style="view-transition-name: admin-proxy-auth-reference">
-          <h2 class="mb-3 text-sm font-medium">{t.setupTitle}</h2>
-          <p class="text-xs mb-3 opacity-80">{t.setupDescription}</p>
+        <NoticeCard tone="info" style="view-transition-name: admin-proxy-auth-reference" bodyClass="flex flex-col gap-6">
+          <section>
+            <h2 class="font-semibold text-primary">{t.setupTitle}</h2>
+            <p class="mt-1">{t.setupDescription}</p>
+            <dl class="mt-2">
+              <dt class="text-dimmed">{t.verifyUrlPattern}</dt>
+              <dd>
+                <code class="break-all">
+                  {baseUrl}/proxy-auth/verify/{"<client-id>"}
+                </code>
+              </dd>
+            </dl>
+          </section>
 
-          <div class="space-y-2 text-xs font-mono mb-4">
-            <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">{t.verifyUrlPattern}:</span>
-              <code class="break-all">
-                {baseUrl}/proxy-auth/verify/{"<client-id>"}
-              </code>
-            </div>
-          </div>
-
-          <h2 class="mb-2 mt-6 text-sm font-medium">{t.exampleConfiguration}</h2>
-          <pre class="text-xs bg-blue-50 dark:bg-blue-950/30 p-3 rounded overflow-x-auto">
-            {`http:
+          <section>
+            <h2 class="font-semibold text-primary">{t.exampleConfiguration}</h2>
+            <pre class="mt-2 overflow-x-auto">
+              {`http:
   middlewares:
     my-proxy-auth:
       forwardAuth:
@@ -119,20 +121,32 @@ export default ssr<AuthContext>(async (c) => {
           - "X-Forwarded-Email"
           - "X-Forwarded-Groups"
         trustForwardHeader: true`}
-          </pre>
+            </pre>
+          </section>
 
-          <h2 class="mb-2 mt-6 text-sm font-medium">{t.responseHeaders}</h2>
-          <div class="space-y-1 text-xs">
-            <div>
-              <code class="font-mono">X-Forwarded-User</code> <span class="opacity-70">— {t.username}</span>
-            </div>
-            <div>
-              <code class="font-mono">X-Forwarded-Email</code> <span class="opacity-70">— {t.emailAddress}</span>
-            </div>
-            <div>
-              <code class="font-mono">X-Forwarded-Groups</code> <span class="opacity-70">— {t.groupList}</span>
-            </div>
-          </div>
+          <section>
+            <h2 class="font-semibold text-primary">{t.responseHeaders}</h2>
+            <dl class="mt-2 flex flex-col gap-2">
+              <div>
+                <dt>
+                  <code>X-Forwarded-User</code>
+                </dt>
+                <dd class="text-dimmed">{t.username}</dd>
+              </div>
+              <div>
+                <dt>
+                  <code>X-Forwarded-Email</code>
+                </dt>
+                <dd class="text-dimmed">{t.emailAddress}</dd>
+              </div>
+              <div>
+                <dt>
+                  <code>X-Forwarded-Groups</code>
+                </dt>
+                <dd class="text-dimmed">{t.groupList}</dd>
+              </div>
+            </dl>
+          </section>
         </NoticeCard>
       </div>
     </AdminLayout>

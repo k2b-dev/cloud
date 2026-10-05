@@ -215,9 +215,7 @@ export default function PasswordGenerator() {
         ]}
       />
 
-      <NoticeCard tone="info">
-        <strong>{modeInfo().title}</strong> {modeInfo().body}
-      </NoticeCard>
+      <NoticeCard tone="info" title={modeInfo().title} detail={modeInfo().body} />
 
       <section class="paper p-4">
         <div class="flex flex-col gap-5">

@@ -14,7 +14,9 @@
  *
  * Every block renders as the calm NoticeCard: the tone tints the surface, the
  * text stays neutral, and there is no icon. An explicit title is the visible
- * heading; without one the type name is announced to screen readers only.
+ * heading and names the block, as on a NoticeCard; without one the type name
+ * is announced to screen readers only. Email drops the visually hidden class,
+ * so a titled block must not carry the type name as well.
  */
 
 import { NOTICE_CARD_CLASSES, type NoticeTone } from "@k2b/ui";
@@ -66,8 +68,10 @@ export function infoBlocksExtension(): MarkedExtension {
         renderer(token: Tokens.Generic) {
           const config = blockConfig[token.blockType as BlockType];
           const body = renderInlineContent(escapeHtml(token.content as string));
-          const title = token.title ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(token.title as string)}</p>` : "";
-          return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}" role="note"><span class="sr-only">${config.label}: </span>${title}<div class="${NOTICE_CARD_CLASSES.body}">${body}</div></aside>`;
+          const name = token.title
+            ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(token.title as string)}</p>`
+            : `<span class="sr-only">${config.label}: </span>`;
+          return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}" role="note">${name}<div class="${NOTICE_CARD_CLASSES.body}">${body}</div></aside>`;
         },
       },
     ],

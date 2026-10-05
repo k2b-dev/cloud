@@ -5,10 +5,30 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Deprecations and migrations
+
+## Notices have one calm look
+
+`NoticeCard` from `@k2b/ui` has one appearance: a light tint of its tone, no
+icon, and neutral text. Markdown callouts render the same notice. Code that
+used the removed API stops type-checking; update it as follows.
+
+| Old | Current |
+| --- | --- |
+| `NoticeCard` without `tone`, shown as a warning | Set `tone="warning"` where a warning is meant; without `tone` a notice is now `neutral` |
+| `NoticeCard` `icon` | Removed. Name the state in `title` instead |
+| `NOTICE_CARD_ICONS` | Removed |
+| `NOTICE_CARD_CLASSES.inner` and `.icon` | Removed. Put the title and body directly in the root |
+| `markdown.render()` and `markdown.renderSync()` option `{ notices }` | Removed. Every callout renders the calm notice |
+
+Markdown callouts no longer show an icon or an automatic English type label.
+An explicit `:::warning Before deleting` title stays the visible heading. An
+untitled callout names its type for screen readers only, so add a title where
+the type matters. See [Notices](/en/ui/feedback/blocks) and
+[Use callouts](/en/docs/platform/help#use-callouts).
 
 ## Mail writes live updates through the platform outbox
 
