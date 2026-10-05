@@ -6,7 +6,7 @@
   "module": "src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
-    "test:integration": "GATEWAY_OPS_DB_TEST=1 bun --cwd=../.. test packages/gateway-ops/src/health-webhooks.integration.test.ts packages/gateway-ops/src/telemetry.integration.test.ts"
+    "test:integration": "GATEWAY_OPS_DB_TEST=1 bun --cwd=../.. test packages/gateway-ops/src/health-webhooks.integration.test.ts packages/gateway-ops/src/telemetry.integration.test.ts && bun --cwd=../.. test --timeout 30000 packages/gateway-ops/src/ai-live-health.integration.test.ts"
   },
   "dependencies": {
     "@nats-io/transport-node": "catalog:",

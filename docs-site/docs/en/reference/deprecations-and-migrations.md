@@ -37,13 +37,13 @@ Code that used these exports stops type-checking:
 route stay. The data of an AI live update is the `AiInvalidation` it was
 before.
 
-### Update Core, then Assistant
+### Update Core first
 
 1. Replace every Core replica with this release, and make sure no Core replica
    of an earlier release starts again afterwards. Core's migration replaces
    `ai.enqueue_live_for_user()`; an earlier Core that starts again restores
    its own version, and its updates then reach no current Assistant tab.
-2. Then update Assistant.
+2. Then update Assistant and Gateway Ops.
 
 Assistant tabs that are open during the update lose their live socket once
 and show "Live access changed or expired." until they are reloaded. Turns keep
@@ -55,16 +55,20 @@ Gateway health reports an error on Core while `ai.enqueue_live_for_user()`
 does not write to `events.outbox`: "AI live updates are not published: an
 older Core restored ai.enqueue_live_for_user". Stop every older Core replica,
 then restart one current Core replica; its migration restores the function.
+Gateway Ops of this release also reports this error while Core's migration
+has not run yet.
 
 Proxies in front of Cloud must not buffer `text/event-stream` responses,
 because browsers now stream conversations over SSE.
 
 ### Roll back
 
-Roll back Core and Assistant together. The earlier Core restores its table and
-function when it starts. AI live updates that this release wrote but had not
-published yet stay in `events.outbox`; they are hints only, and you can delete
-them:
+Roll back Core, Assistant, and Gateway Ops together, as the whole release.
+Gateway Ops of this release would report the function that the earlier Core
+restores as the error above and ask you to stop that Core. The earlier Core
+restores its table and function when it starts. AI live updates that this
+release wrote but had not published yet stay in `events.outbox`; they are
+hints only, and you can delete them:
 
 ```sql
 DELETE FROM events.outbox WHERE kind = 'live' AND app_id = 'core';
