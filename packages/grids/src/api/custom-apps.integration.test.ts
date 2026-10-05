@@ -1534,8 +1534,6 @@ describe("Grids App Form runtime", () => {
           error: null,
           resultMessage: "Approved",
         };
-        let denyStatusScope = false;
-        let statusWaits = 0;
         const createStatusApi = (serviceAccountId: string) =>
           new Hono<AuthContext>().route(
             "/apps",
@@ -1588,14 +1586,7 @@ describe("Grids App Form runtime", () => {
                   status: "queued",
                 });
               },
-              workflowRunEventCursor: async () => "internal-cursor",
-              waitForWorkflowChange: async () => {
-                statusWaits++;
-                denyStatusScope = true;
-                return true;
-              },
               getWorkflowRunScope: async (runId): Promise<GridsWorkflowRunScope | null> => {
-                if (denyStatusScope) return null;
                 const accepted = statusRuns.get(runId);
                 return accepted
                   ? {
@@ -1732,14 +1723,6 @@ describe("Grids App Form runtime", () => {
         });
         workflowResult = null;
         expect(await (await firstServiceAccountApi.request(statusPath)).json()).not.toHaveProperty("navigateTo");
-
-        statusResult = { status: "running", error: null, resultMessage: null };
-        const waitingHeaders = { "X-Workflow-Changes": "0" };
-        expect((await secondServiceAccountApi.request(statusPath, { headers: waitingHeaders })).status).toBe(404);
-        expect(statusWaits).toBe(0);
-        expect((await firstServiceAccountApi.request(statusPath, { headers: waitingHeaders })).status).toBe(404);
-        expect(statusWaits).toBe(1);
-        denyStatusScope = false;
 
         for (const code of ["WORKFLOW_FAILED", "ATOMIC_CHECK_FAILED", "WORKFLOW_ACTION_ERROR"]) {
           statusResult = {

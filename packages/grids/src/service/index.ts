@@ -19,7 +19,6 @@ import { submitForm } from "./form-submission";
 import * as forms from "./forms";
 import * as formulaPreview from "./formula-preview";
 import * as htmlTemplatePreview from "./html-template-preview";
-import * as metadataEvents from "./metadata-events";
 import * as mutationPolicy from "./mutation-policy";
 import { getOperationalHealth } from "./operational-health";
 import {
@@ -400,7 +399,6 @@ export const gridsService = {
     buildFilterLabelCache: relationsModule.buildRelationFilterLabelCache,
     lookup: relationsModule.lookupRecords,
   },
-  metadataEvents,
 };
 
 export type { View } from "../contracts";

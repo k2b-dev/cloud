@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Deployment requirements
@@ -103,7 +103,7 @@ Per replica, the built-in applications reserve:
 | Core, with the platform services it runs | 18 | AI turn streams 520 MiB, AI invalidations 128 MiB, FreeIPA backfill pump 64 MiB | 1.9 GiB |
 | Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
-| Grids | 2 | `grids:records` 1 GiB, `grids:workflow-record-events` 1 GiB, workflow run events 512 MiB, metadata events 128 MiB | 2.8 GiB |
+| Grids | 2 | `grids:workflow-record-events` 1 GiB, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.8 GiB |
 | Mail | 10 | `cloud:live:mail` 65 MiB, previous invalidations (`mail:invalidations`) 1 GiB until a later release removes them, automation backfill pump 64 MiB | 1.8 GiB |
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |

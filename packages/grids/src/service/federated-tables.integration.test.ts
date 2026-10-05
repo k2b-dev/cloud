@@ -33,7 +33,6 @@ import {
 import { create as createField, update as updateField } from "./fields";
 import { getContent, listFirstImagePreviews, listForRecordField } from "./files";
 import { planLocalCalculations } from "./local-calculations";
-import { resolveFederatedTargetsForRecordEvent } from "./record-events";
 import * as finalization from "./record-finalization";
 import { listByRecord as listRecordHistory } from "./record-history";
 import { createReader, publicIdsForRecords } from "./record-read";
@@ -968,34 +967,35 @@ describe("combined table integration", () => {
     }
   });
 
-  postgresTest("invalidates combined tables only for mapped source changes", async () => {
+  postgresTest("refreshes open views of combined tables only for mapped source changes", async () => {
     const fixture = await createFixture();
     const unmappedFieldId = uuid();
-    const event = (changedFieldIds: string[]) => ({
-      v: 1 as const,
-      type: "record.updated" as const,
-      baseId: fixture.sourceBaseId,
-      tableId: fixture.sourceTableId,
-      recordId: fixture.recordId,
-      version: 2,
-      changedFieldIds,
-      actorId: null,
-      occurredAt: new Date().toISOString(),
-    });
+    const rollback = new Error("rollback");
+    // The live updates one record change writes, in the transaction that writes it.
+    const liveTables = async (changedFieldIds: string[]) => {
+      let keys: string[] = [];
+      await sql
+        .begin(async (tx) => {
+          const payload = { v: 1, type: "record.updated", version: 2, changedFieldIds, actorId: null };
+          await tx`SELECT grids.enqueue_record_event(${fixture.sourceTableId}::uuid, ${fixture.recordId}::uuid, ${payload}::jsonb)`;
+          const rows = await tx<{ ordering_key: string; payload: { d: { tableId: string; recordId: string } } }[]>`
+            SELECT ordering_key, payload FROM events.outbox
+            WHERE app_id = 'grids' AND coalesce_key LIKE pg_current_xact_id()::text || ':%'
+            ORDER BY seq`;
+          keys = rows.map((row) => row.ordering_key);
+          throw rollback;
+        })
+        .catch((error) => {
+          if (error !== rollback) throw error;
+        });
+      return keys;
+    };
+    const source = `table:${fixture.sourceTableId}`;
+    const combined = `table:${fixture.targetTableId}`;
     try {
-      const mapped = await resolveFederatedTargetsForRecordEvent(event([fixture.sourceTextFieldId]));
-      expect(mapped).toEqual([
-        {
-          baseId: fixture.targetBaseId,
-          tableId: fixture.targetTableId,
-          changedFieldIds: [fixture.targetTextFieldId],
-        },
-      ]);
-
-      expect(await resolveFederatedTargetsForRecordEvent(event([unmappedFieldId]))).toEqual([]);
-      const broad = await resolveFederatedTargetsForRecordEvent(event([]));
-      expect(broad).toHaveLength(1);
-      expect(new Set(broad[0]?.changedFieldIds)).toEqual(new Set([fixture.targetTextFieldId, fixture.targetFileFieldId]));
+      expect(await liveTables([fixture.sourceTextFieldId])).toEqual([source, combined]);
+      expect(await liveTables([unmappedFieldId])).toEqual([source]);
+      expect(await liveTables([])).toEqual([source, combined]);
 
       const sourceFormula = await createField(
         {
@@ -1019,14 +1019,8 @@ describe("combined table integration", () => {
           '{}'::jsonb
         )
       `;
-      const computed = await resolveFederatedTargetsForRecordEvent(event([unmappedFieldId]));
-      expect(computed).toEqual([
-        {
-          baseId: fixture.targetBaseId,
-          tableId: fixture.targetTableId,
-          changedFieldIds: [targetFormula.data.id],
-        },
-      ]);
+      // A computed source field can change with any field, so every change reaches the combined table.
+      expect(await liveTables([unmappedFieldId])).toEqual([source, combined]);
     } finally {
       await cleanupFixture(fixture);
     }

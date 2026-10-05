@@ -1,5 +1,4 @@
 import { PWA_AUTH_PATH, PWA_SCOPE, type PwaPlatform } from "@k2b/cloud/contracts";
-import { installationPlatform } from "@k2b/ui";
 
 /** An answer of Core's phone endpoints; `status` 0 means the request did not reach Cloud. */
 export type PhoneAnswer = { status: number; code?: string; body: unknown };
@@ -30,9 +29,13 @@ export const phoneAuth = {
   signOut: () => request("DELETE", "/session"),
 };
 
+/**
+ * The phone's system, from the operating system alone. The installed app on iPhone may look like a browser inside
+ * another app, so the installation guide's classification would name it wrongly.
+ */
 export const phonePlatform = (): PwaPlatform => {
-  const platform = installationPlatform(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
-  return platform === "apple-mobile" ? "ios" : platform === "android" ? "android" : "other";
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
+  return /Android/.test(navigator.userAgent) ? "android" : "other";
 };
 
 /** Running from the Home Screen. */

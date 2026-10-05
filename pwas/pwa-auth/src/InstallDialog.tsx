@@ -2,7 +2,7 @@ import { Button, InstallGuide, LocaleProvider, PanelDialog, useLocale } from "@k
 import { createEffect, createMemo } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
-import type { Installation } from "./install";
+import { embedded, type Installation, onApplePhone } from "./install";
 import type { Preferences } from "./preferences";
 
 function InstallDialog(props: { installation: Installation; close: () => void }) {
@@ -27,10 +27,10 @@ function InstallDialog(props: { installation: Installation; close: () => void })
             install={props.installation}
             url={`${location.origin}/`}
             note={
-              props.installation.platform === "apple-mobile"
-                ? t().pushInstallNote
-                : props.installation.platform === "in-app"
-                  ? t().installFromMenu
+              embedded(props.installation.platform)
+                ? t().installFromMenu
+                : onApplePhone(props.installation.platform)
+                  ? t().pushInstallNote
                   : undefined
             }
           />

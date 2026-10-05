@@ -4,7 +4,7 @@ import { type BaseNavigation, BaseNavigationSchema, navigationReferenceKey } fro
 import { navigationMessages } from "../navigation-messages";
 import { logAudit, type SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
-import { emitMetadataEvent } from "./metadata-events";
+import { gridsLive, publishMetadataChange } from "./live";
 
 export const getBaseNavigation = async (baseId: string, client: SqlClient = sql): Promise<BaseNavigation | null> => {
   const [row] = await client`SELECT navigation_groups AS groups, navigation_revision AS revision
@@ -52,8 +52,9 @@ export const updateBaseNavigation = async (
     await tx`UPDATE grids.bases SET navigation_groups = ${JSON.stringify(next.groups)}::text::jsonb, navigation_revision = ${next.revision}, updated_at = now()
       WHERE id = ${baseId}::uuid`;
     await logAudit({ baseId, userId: actorId, action: "updated", diff: { navigation: { old: current.groups, new: next.groups } } }, tx);
+    await publishMetadataChange(tx, baseId, "base.updated");
     return ok(next);
   });
-  if (result.ok) await emitMetadataEvent({ type: "base.updated", baseId, resource: { kind: "base", id: baseId }, actorId });
+  if (result.ok) gridsLive.wake();
   return result;
 };

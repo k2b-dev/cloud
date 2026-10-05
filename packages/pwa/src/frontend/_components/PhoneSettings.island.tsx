@@ -14,9 +14,11 @@ export type PhoneSettingsProps = {
   /** This phone's name; empty when the request carries no device. */
   name: string;
   cloud: string;
+  /** The release line under Sign out. */
+  version: string;
 };
 
-/** The sections of the app's Settings: the account, language, appearance, this phone, and signing out. */
+/** The app's Settings: the account, language, appearance, this phone's name, and signing out at the end. */
 export default function PhoneSettings(props: PhoneSettingsProps) {
   const locale = useLocale();
   const t = () => shellMessages.resolve([locale()]).t;
@@ -44,17 +46,15 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
   };
 
   return (
-    <>
-      <SettingsSection title={t().account} icon="ti ti-user-circle">
-        <div class="pwa-settings__account">
-          <Avatar name={props.account.name} src={props.account.avatar} size="lg" />
-          <div>
-            <p class="pwa-settings__name-line">{props.account.name}</p>
-            {props.account.mail && <p class="pwa-settings__meta">{props.account.mail}</p>}
-          </div>
+    <div class="pwa-settings">
+      <div class="pwa-settings__account">
+        <Avatar name={props.account.name} src={props.account.avatar} size="lg" />
+        <div>
+          <p class="pwa-settings__name-line">{props.account.name}</p>
+          {props.account.mail && <p class="pwa-settings__meta">{props.account.mail}</p>}
         </div>
-      </SettingsSection>
-      <SettingsSection title={t().language} icon="ti ti-language">
+      </div>
+      <SettingsSection title={t().language}>
         <SegmentedControl
           ariaLabel={t().language}
           options={[
@@ -67,7 +67,7 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
           }}
         />
       </SettingsSection>
-      <SettingsSection title={t().appearance} icon="ti ti-sun-moon">
+      <SettingsSection title={t().appearance}>
         <SegmentedControl
           ariaLabel={t().appearance}
           options={[
@@ -80,7 +80,7 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
           }}
         />
       </SettingsSection>
-      <SettingsSection title={t().thisPhone} icon="ti ti-device-mobile">
+      <SettingsSection title={t().thisPhone}>
         <form
           class="pwa-settings__name"
           onSubmit={(event) => {
@@ -103,8 +103,11 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
             {t().save}
           </Button>
         </form>
-        <SignOutButton cloud={props.cloud} />
       </SettingsSection>
-    </>
+      <div class="pwa-settings__end">
+        <SignOutButton cloud={props.cloud} />
+        <p class="pwa-settings__version">{props.version}</p>
+      </div>
+    </div>
   );
 }

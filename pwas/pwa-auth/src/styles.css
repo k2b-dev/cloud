@@ -28,11 +28,6 @@ body {
   padding-top: calc(env(safe-area-inset-top) + 1.25rem);
   padding-bottom: 1.25rem;
 }
-.auth-menu-button {
-  min-width: 44px;
-  min-height: 44px;
-  font-size: 1.5rem;
-}
 .auth-settings {
   display: grid;
   gap: 1.5rem;
@@ -174,11 +169,14 @@ body {
 .auth-cloud .k2b-button {
   min-height: 44px;
 }
+/* Buttons have the phone's text size; when a long label does not fit beside
+   Close, the main action moves to its own row above it. */
 .auth-dialog-actions {
   display: flex;
+  flex-wrap: wrap-reverse;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
   width: 100%;
 }
 .auth-settings-version {

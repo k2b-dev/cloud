@@ -101,7 +101,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
         initialState={records.initialState}
         initialData={records.initialData}
         initialError={records.initialError}
-        initialEventCursor={state.recordEventCursor}
+        initialEventCursor={state.liveCursor}
         initialSelectedRecord={records.initialSelectedRecord}
         initialSelectedRecordDetail={records.initialSelectedRecordDetail}
         documentTemplates={records.documentTemplates}
@@ -139,6 +139,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
                   initialOverview={workflows.initialOverview}
                   onWorkflowChanged={reloadRoute}
                   onSelectRun={updateWorkflowRun}
+                  liveCursor={state.liveCursor}
                 />
               );
             })()}
@@ -257,6 +258,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
               workflows={state.catalog.workflows}
               workflowLevels={state.catalog.workflowLevels}
               tables={state.catalog.tables}
+              liveCursor={state.liveCursor}
               onRunUpdated={setWorkflowRunUpdate}
               onSelectRun={updateWorkflowRun}
               onClose={() => updateWorkflowRun(null)}

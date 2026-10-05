@@ -6,8 +6,7 @@ import { loadGridsWorkspaceState } from "./workspace-state";
 const loadWorkspaceState = (params: Parameters<typeof loadGridsWorkspaceState>[0]) =>
   loadGridsWorkspaceState(params, {
     loadRevision: async () => ({ revision: "fixture", resources: {} }),
-    latestMetadataEventCursor: async () => null,
-    latestRecordEventCursor: async () => null,
+    liveCursor: async () => null,
   });
 
 const base = {
@@ -93,9 +92,8 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
     expect(state).toEqual({ kind: "accessDenied", title: "Access denied", message: "No access to this base" });
   });
 
-  test("keeps metadata and record cursors on their matching SSR streams", async () => {
+  test("renders the page with the live topic's position", async () => {
     spyOn(gridsService.permission, "resolve").mockImplementation(() => "read");
-    const loadedStreams: string[] = [];
     const state = await loadGridsWorkspaceState(
       {
         user: {
@@ -107,25 +105,16 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
       },
       {
         loadRevision: async () => ({ revision: "fixture", resources: {} }),
-        latestMetadataEventCursor: async (baseId) => {
-          loadedStreams.push(`metadata:${baseId}`);
-          return "metadata-cursor";
-        },
-        latestRecordEventCursor: async (baseId) => {
-          loadedStreams.push(`records:${baseId}`);
-          return "record-cursor";
-        },
+        liveCursor: async () => "live-cursor",
       },
     );
 
     expect(state.kind).toBe("ok");
     if (state.kind !== "ok") return;
-    expect(state.metadataEventCursor).toBe("metadata-cursor");
-    expect(state.recordEventCursor).toBe("record-cursor");
-    expect(loadedStreams.sort()).toEqual([`metadata:${base.id}`, `records:${base.id}`]);
+    expect(state.liveCursor).toBe("live-cursor");
   });
 
-  test("keeps the healthy SSR cursor when the other stream is unavailable", async () => {
+  test("renders the page without a live cursor when the live topic is unavailable", async () => {
     spyOn(gridsService.permission, "resolve").mockImplementation(() => "read");
     const state = await loadGridsWorkspaceState(
       {
@@ -138,17 +127,15 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
       },
       {
         loadRevision: async () => ({ revision: "fixture", resources: {} }),
-        latestMetadataEventCursor: async () => {
-          throw new Error("metadata stream unavailable");
+        liveCursor: async () => {
+          throw new Error("live topic unavailable");
         },
-        latestRecordEventCursor: async () => "record-cursor",
       },
     );
 
     expect(state.kind).toBe("ok");
     if (state.kind !== "ok") return;
-    expect(state.metadataEventCursor).toBeNull();
-    expect(state.recordEventCursor).toBe("record-cursor");
+    expect(state.liveCursor).toBeNull();
   });
 
   test("does not expose the query workspace to form-only users", async () => {
@@ -214,7 +201,7 @@ describe("loadGridsWorkspaceState — Base access boundary", () => {
         href: `/app/grids/${base.shortId}`,
       },
       base as never,
-      { metadata: null, records: null },
+      null,
     );
 
     expect(request).toEqual({ kind: "accessDenied", title: "Access denied", message: "No access to this base" });

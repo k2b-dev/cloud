@@ -1,6 +1,7 @@
 import { afterAll, describe, expect } from "bun:test";
 import { SQL } from "bun";
 import { createDisposableDatabase, testFor } from "../../../scripts/fixtures/test-infra";
+import { migrate as migrateCoreEvents } from "../../core/src/migrate/core/events";
 import { migrate as migrateCoreWorkflows } from "../../core/src/migrate/core/workflows";
 import { testShortId } from "./integration-test-utils";
 import { migrate } from "./migrate";
@@ -40,6 +41,8 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
     await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
     await database`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
     await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+    // Record writes also write their live updates to the platform outbox.
+    await migrateCoreEvents(database);
     await run(database);
   } finally {
     try {

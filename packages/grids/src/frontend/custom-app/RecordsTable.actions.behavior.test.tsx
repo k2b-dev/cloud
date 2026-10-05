@@ -28,7 +28,7 @@ for (const navigateTo of [undefined, "/apps/APP001/bill?bill_id=BILL01"]) {
         if (String(input) === "/invoke") return Response.json({ statusUrl: "/status" });
         if (String(input) === "/status") {
           polls++;
-          return polls === 1 ? Response.json({ status: "running", live: true, committedChanges: 1 }) : finished;
+          return polls === 1 ? Response.json({ status: "running", committedChanges: 1 }) : finished;
         }
         recordReads++;
         return Response.json(data);
@@ -58,8 +58,9 @@ for (const navigateTo of [undefined, "/apps/APP001/bill?bill_id=BILL01"]) {
       expect(recordReads).toBe(1);
       expect(reload).not.toHaveBeenCalled();
       expect(replace).not.toHaveBeenCalled();
-      finish!(Response.json({ status: "succeeded", live: true, committedChanges: 1, navigateTo }));
-      await Bun.sleep(10);
+      finish!(Response.json({ status: "succeeded", committedChanges: 1, navigateTo }));
+      // The next status read follows the client's polling delay.
+      for (let waited = 0; waited < 2_000 && !reload.mock.calls.length && !replace.mock.calls.length; waited += 20) await Bun.sleep(20);
       expect(recordReads).toBe(1);
       if (navigateTo) {
         expect(replace).toHaveBeenCalledWith(navigateTo);

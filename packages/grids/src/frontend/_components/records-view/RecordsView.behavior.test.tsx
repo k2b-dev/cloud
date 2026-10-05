@@ -119,7 +119,8 @@ const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProp
   },
   initialData: memberPage,
   initialError: null,
-  initialEventCursor: null,
+  // A page renders with its live cursor; without one, the view reads its records again at once.
+  initialEventCursor: "s6t.page.1",
   initialSelectedRecord: null,
   initialSelectedRecordDetail: null,
   documentTemplates: [],

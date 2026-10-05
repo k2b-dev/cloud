@@ -11,7 +11,7 @@ const entry = resolve(import.meta.dir, "mobile-shell.fixture.ts");
 const fixture = `
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
-import { dialogCore, MobileShell, TabBar, TextInput, toast } from ${JSON.stringify(resolve(packageRoot, "dist/browser/index.js"))};
+import { Button, dialogCore, IconButton, MobileShell, PanelDialog, SegmentedControl, TabBar, TextInput, toast } from ${JSON.stringify(resolve(packageRoot, "dist/browser/index.js"))};
 
 const rows = () => Array.from({ length: 40 }, (_, index) => {
   const row = document.createElement("p");
@@ -24,7 +24,16 @@ render(
   () =>
     createComponent(MobileShell, {
       get header() {
-        return createComponent(MobileShell.Header, { title: "Tasks" });
+        return createComponent(MobileShell.Header, {
+          title: "Tasks",
+          back: window.fixtureHeader === "back" ? { href: "#start", label: "Start" } : undefined,
+          get actions() {
+            if (window.fixtureHeader !== "actions") return undefined;
+            const glyph = document.createElement("i");
+            glyph.className = "ti ti-settings";
+            return createComponent(IconButton, { label: "Settings", tooltip: false, children: glyph });
+          },
+        });
       },
       get footer() {
         return createComponent(TabBar, {
@@ -41,7 +50,27 @@ render(
     }),
   document.getElementById("root"),
 );
-window.ui = { toast, dialogCore };
+/** Shared controls at the end of the content and in a dialog, to read the phone's type scale from. */
+const typeSamples = () => {
+  const host = document.createElement("div");
+  host.className = "samples";
+  document.querySelector(".k2b-mobile-shell__body").append(host);
+  render(
+    () => [
+      createComponent(Button, { children: "Save" }),
+      createComponent(SegmentedControl, {
+        ariaLabel: "Language",
+        options: [{ value: "en", label: "English" }, { value: "de", label: "Deutsch" }],
+        value: () => "en",
+        onValueChange: () => {},
+      }),
+      createComponent(TextInput, { label: "Name", value: () => "", onValueChange: () => {}, error: "Too long" }),
+    ],
+    host,
+  );
+  void dialogCore.open(() => createComponent(PanelDialog, { get children() { return createComponent(PanelDialog.Header, { title: "Scan code" }); } }));
+};
+window.ui = { toast, dialogCore, typeSamples };
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -73,15 +102,18 @@ type Ui = {
   /** A toast a test keeps between two `page.evaluate` calls. */
   kept?: ToastHandle;
   dialogCore: { open: (view: () => Node) => Promise<unknown>; close: () => void };
+  typeSamples: () => void;
 };
 declare const ui: Ui;
 
-const open = async (): Promise<Page> => {
+/** Opens the fixture; `header` adds Back or one action to the header. */
+const open = async (header?: "back" | "actions"): Promise<Page> => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await context.newPage();
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
+  if (header) await page.addScriptTag({ content: `window.fixtureHeader = ${JSON.stringify(header)};` });
   await page.addScriptTag({ content: script });
   await page.locator(".k2b-tab-bar").waitFor();
   return page;
@@ -142,6 +174,65 @@ describe("MobileShell in a phone browser", () => {
         tabBar: "static",
         tabBarBottom: 844,
         topEdge: null,
+      });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("the header keeps one height with a title alone, with Back, and with an action", async () => {
+    const layouts: { header: number; title: number; content: number }[] = [];
+    for (const header of [undefined, "back", "actions"] as const) {
+      const page = await open(header);
+      try {
+        layouts.push(
+          await page.evaluate(() => {
+            const top = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+            return {
+              header: top(".k2b-mobile-shell__header").height,
+              title: top(".k2b-mobile-shell__title").top,
+              content: top(".k2b-mobile-shell__body").top,
+            };
+          }),
+        );
+      } finally {
+        await page.context().close();
+      }
+    }
+    expect(layouts[0]!.header).toBeGreaterThanOrEqual(68);
+    expect(layouts[1]).toEqual(layouts[0]!);
+    expect(layouts[2]).toEqual(layouts[0]!);
+  });
+
+  test("shared text and controls follow the phone's type scale, in the content and in dialogs", async () => {
+    const page = await open("actions");
+    try {
+      await page.evaluate(() => ui.typeSamples());
+      await page.locator("dialog h2").waitFor();
+      const sizes = await page.evaluate(() => {
+        const size = (selector: string) => getComputedStyle(document.querySelector(selector)!).fontSize;
+        return {
+          title: size(".k2b-mobile-shell__title"),
+          text: size(".row"),
+          button: size(".samples .k2b-button"),
+          segment: size(".samples .k2b-segmented-control__option"),
+          label: size(".samples .k2b-field__label"),
+          error: size(".samples .k2b-field__error"),
+          dialogTitle: size("dialog h2"),
+          tab: size(".k2b-tab-bar a"),
+          action: size(".k2b-mobile-shell__actions .k2b-icon-button"),
+        };
+      });
+      expect(sizes).toEqual({
+        title: "18px",
+        text: "16px",
+        button: "16px",
+        segment: "14px",
+        label: "14px",
+        error: "14px",
+        dialogTitle: "18px",
+        tab: "11px",
+        action: "22px",
       });
     } finally {
       await page.context().close();

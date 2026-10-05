@@ -19,7 +19,7 @@ export type WorkspaceRequestContext = {
 export const loadWorkspaceRequest = async (
   params: LoadWorkspaceParams,
   base: Base,
-  eventCursors: { metadata: string | null; records: string | null },
+  liveCursor: string | null,
 ): Promise<WorkspaceRequestContext | Extract<GridsWorkspaceState, { kind: "accessDenied" }>> => {
   const t = resolveWorkspaceMessages(params.locale);
   const level = await resolveBaseLevel(params.user, base.id);
@@ -62,8 +62,7 @@ export const loadWorkspaceRequest = async (
       canCreateTables,
       canUseEditMode: canUseEditModeForCatalog(catalog, params.user, canManageBase, canCreateTables),
       canUseQueryWorkspace: hasBaseRead,
-      metadataEventCursor: eventCursors.metadata,
-      recordEventCursor: eventCursors.records,
+      liveCursor,
     },
     requestedDocumentTable,
     requestedDocumentTemplate,

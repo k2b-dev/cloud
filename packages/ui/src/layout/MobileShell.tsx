@@ -1,6 +1,7 @@
 import { type JSX, onCleanup, onMount, Show } from "solid-js";
 import { IconButton, IconButtonLink } from "../actions/Button";
 import ScrollArea from "./ScrollArea";
+import { installScrollFades } from "./scroll-fade";
 
 export type MobileShellProps = {
   /** Usually `MobileShell.Header`; it sits above the scroll area and pads the top safe area. */
@@ -105,7 +106,8 @@ const observeLinkTaps = (root: HTMLElement): (() => void) => {
 
 /**
  * Keeps a mounted shell working: the footer height on the body, which the portalled toast rail reads, the room a
- * persistent toast takes from the scroll area, and immediate feedback for link taps. `MobileShell` calls it itself;
+ * persistent toast takes from the scroll area, the scroll area's edge fade, and immediate feedback for link taps.
+ * The fade is the only cue at the footer's edge, which has no rule. `MobileShell` calls it itself;
  * a page that renders the shell on the server without hydrating it calls it once in the browser. Returns the
  * cleanup.
  */
@@ -114,6 +116,7 @@ export function observeMobileShell(root: HTMLElement): () => void {
   const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
   if (!main || !body) return () => {};
   const stopLinkTaps = observeLinkTaps(root);
+  const stopScrollFades = installScrollFades(body);
   let frame = 0;
   const measure = () => {
     frame = 0;
@@ -145,6 +148,7 @@ export function observeMobileShell(root: HTMLElement): () => void {
     document.removeEventListener("transitionend", schedule, true);
     document.body.style.removeProperty(FOOTER_HEIGHT);
     stopLinkTaps();
+    stopScrollFades();
   };
 }
 

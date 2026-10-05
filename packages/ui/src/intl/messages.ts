@@ -397,7 +397,8 @@ const uiMessages = i18n.define({
       installHomeScreenDetail: "Scroll through the actions and choose “Add to Home Screen”.",
       installConfirmAdd: "Confirm Add",
       installConfirmAddDetail: "Keep “Open as Web App” enabled if shown, then tap “Add”.",
-      installUseSafari: "On iPhone or iPad, open this page in Safari and follow these steps.",
+      installOpenShareBrowserDetail: "In Chrome, tap Share in the address bar. In Firefox or Edge, open the menu, then Share.",
+      installSafariFallback: "Don’t see “Add to Home Screen”? This page may be open inside another app. Open it in Safari.",
       installSafariMenu: "Open the Safari menu",
       installSafariMenuDetail: "On your Mac, open File or click Share in Safari.",
       installAddDock: "Add to Dock",
@@ -407,11 +408,19 @@ const uiMessages = i18n.define({
       installAndroidDetail: "Choose “Install app” or “Add to Home screen”, then follow the browser’s instructions.",
       installBrowserDetail: "Look for “Install app” in the menu or an installation icon in the address bar.",
       installUnavailable: "No installation option? You can keep using the browser or try another browser that supports installation.",
-      installEmbedded: ({ appName }: { appName: string }) =>
-        `This page appears to be open inside another app. Open it in Safari or Chrome to install ${appName}.`,
-      installCopyLink: "Copy app link",
+      installAppleInAppTitle: "Open this page in Safari",
+      installAppleInAppDetail: ({ appName }: { appName: string }) =>
+        `This page is open inside another app, which can’t install ${appName}. In that app’s menu (••• or Share), choose “Open in Safari”, or copy the link and paste it into Safari.`,
+      installInAppTitle: "Open this page in your browser",
+      installInAppDetail: ({ appName }: { appName: string }) =>
+        `This page is open inside another app, which can’t install ${appName}. In that app’s menu, choose “Open in Chrome” or “Open in browser”, or copy the link and paste it into Chrome.`,
+      installAppleBrowserTitle: "Safari works best",
+      installAppleBrowserDetail: "This browser installs through Share → Add to Home Screen. If that isn’t there, open this page in Safari.",
+      installAndroidBrowserTitle: "Chrome works best",
+      installAndroidBrowserDetail:
+        "In this browser, look for “Install” or “Add to Home screen” in the menu. If that isn’t there, open this page in Chrome.",
+      installCopyLink: "Copy link",
       installLinkCopied: "Link copied",
-      installPasteLink: ({ appName }: { appName: string }) => `Paste the link into Safari or Chrome to install ${appName}.`,
       installCopyFailed: "The link could not be copied. Copy this address manually:",
       qrCameraPreview: "Camera preview for scanning a QR code",
       qrCameraStarting: "Starting camera…",
@@ -810,7 +819,9 @@ const uiMessages = i18n.define({
       installHomeScreenDetail: "Scrolle durch die Aktionen und wähle „Zum Home-Bildschirm“.",
       installConfirmAdd: "Hinzufügen bestätigen",
       installConfirmAddDetail: "Lass „Als Web-App öffnen“ aktiviert, falls angezeigt, und tippe auf „Hinzufügen“.",
-      installUseSafari: "Öffne diese Seite auf dem iPhone oder iPad in Safari und folge diesen Schritten.",
+      installOpenShareBrowserDetail: "Tippe in Chrome in der Adressleiste auf Teilen. Öffne in Firefox oder Edge das Menü und dann Teilen.",
+      installSafariFallback:
+        "Kein „Zum Home-Bildschirm“? Dann ist die Seite vielleicht in einer anderen App geöffnet. Öffne sie in Safari.",
       installSafariMenu: "Safari-Menü öffnen",
       installSafariMenuDetail: "Öffne auf deinem Mac in Safari „Ablage“ oder klicke auf Teilen.",
       installAddDock: "Zum Dock hinzufügen",
@@ -821,11 +832,20 @@ const uiMessages = i18n.define({
       installBrowserDetail: "Suche nach „App installieren“ im Menü oder nach einem Installationssymbol in der Adressleiste.",
       installUnavailable:
         "Keine Installationsoption? Nutze die App weiter im Browser oder versuche einen anderen Browser mit Installationsunterstützung.",
-      installEmbedded: ({ appName }) =>
-        `Diese Seite scheint innerhalb einer anderen App geöffnet zu sein. Öffne sie in Safari oder Chrome, um ${appName} zu installieren.`,
-      installCopyLink: "App-Link kopieren",
+      installAppleInAppTitle: "Öffne diese Seite in Safari",
+      installAppleInAppDetail: ({ appName }) =>
+        `Diese Seite ist in einer anderen App geöffnet, die ${appName} nicht installieren kann. Wähle im Menü dieser App (••• oder Teilen) „In Safari öffnen“ oder kopiere den Link und füge ihn in Safari ein.`,
+      installInAppTitle: "Öffne diese Seite in deinem Browser",
+      installInAppDetail: ({ appName }) =>
+        `Diese Seite ist in einer anderen App geöffnet, die ${appName} nicht installieren kann. Wähle im Menü dieser App „In Chrome öffnen“ oder „Im Browser öffnen“ oder kopiere den Link und füge ihn in Chrome ein.`,
+      installAppleBrowserTitle: "Am besten mit Safari",
+      installAppleBrowserDetail:
+        "In diesem Browser installierst du über Teilen → Zum Home-Bildschirm. Fehlt der Eintrag, öffne diese Seite in Safari.",
+      installAndroidBrowserTitle: "Am besten mit Chrome",
+      installAndroidBrowserDetail:
+        "Suche in diesem Browser im Menü nach „Installieren“ oder „Zum Startbildschirm hinzufügen“. Fehlt der Eintrag, öffne diese Seite in Chrome.",
+      installCopyLink: "Link kopieren",
       installLinkCopied: "Link kopiert",
-      installPasteLink: ({ appName }) => `Füge den Link in Safari oder Chrome ein, um ${appName} zu installieren.`,
       installCopyFailed: "Der Link konnte nicht kopiert werden. Kopiere diese Adresse manuell:",
       qrCameraPreview: "Kameravorschau zum Scannen eines QR-Codes",
       qrCameraStarting: "Kamera wird gestartet…",

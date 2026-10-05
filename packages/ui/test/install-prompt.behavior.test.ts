@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createRoot } from "solid-js";
+import { createComponent, createRoot, createSignal } from "solid-js";
+import { render } from "solid-js/web";
 import { createInstallPrompt, type InstallPrompt } from "../src/feedback/install";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
@@ -83,5 +84,49 @@ describe("createInstallPrompt", () => {
     dispose = undefined;
     offer("accepted");
     expect(install.canPrompt()).toBe(false);
+  });
+});
+
+describe("InstallGuide", () => {
+  test("follows the state its host hands over after mount, so the browser's own dialog appears", async () => {
+    dom = createDomTestHarness();
+    Object.defineProperty(globalThis, "matchMedia", { configurable: true, value: dom.window.matchMedia.bind(dom.window) });
+    const { default: InstallGuide } = await import("../src/feedback/InstallGuide");
+    // The server's view, as a page renders it before the browser's state exists.
+    const rendered: InstallPrompt = {
+      platform: "android",
+      installed: () => false,
+      canPrompt: () => false,
+      busy: () => false,
+      requested: () => false,
+      failed: () => false,
+      install: async () => {},
+    };
+    const [install, setInstall] = createSignal(rendered);
+    let stopPrompt = () => {};
+    const stopGuide = render(
+      () =>
+        createComponent(InstallGuide, {
+          appName: "Northwind",
+          get install() {
+            return install();
+          },
+          url: "https://cloud.example/app/",
+        }),
+      dom.root,
+    );
+    dispose = () => {
+      stopGuide();
+      stopPrompt();
+    };
+    const installButton = () => [...dom.root.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Install app");
+    expect(installButton()).toBeUndefined();
+    createRoot((done) => {
+      stopPrompt = done;
+      setInstall(createInstallPrompt());
+    });
+    offer("accepted");
+    expect(installButton()).toBeDefined();
+    expect(dom.root.textContent).toContain("Your browser can install Northwind.");
   });
 });

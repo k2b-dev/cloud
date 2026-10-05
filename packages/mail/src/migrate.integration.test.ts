@@ -58,15 +58,37 @@ suite("mail baseline schema", () => {
     await migrate();
     await sql`DROP TABLE mail.personal_mailbox_preferences`;
     await sql`DROP INDEX mail.message_contents_hydration_claim_idx`;
+    await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN sent_copy_pending`;
     await migrate();
-    const [shape] = await sql<{ table_exists: boolean; claim_index_exists: boolean; versions: number }[]>`
+    const [shape] = await sql<
+      {
+        table_exists: boolean;
+        claim_index_exists: boolean;
+        sent_copy_index_exists: boolean;
+        sent_copy_pending: string | null;
+        versions: number;
+      }[]
+    >`
       SELECT
         to_regclass('mail.personal_mailbox_preferences') IS NOT NULL AS table_exists,
         to_regclass('mail.message_contents_hydration_claim_idx') IS NOT NULL AS claim_index_exists,
+        to_regclass('mail.outbox_sent_copy_pending_idx') IS NOT NULL AS sent_copy_index_exists,
+        (
+          SELECT pg_get_expr(d.adbin, d.adrelid)
+          FROM pg_attribute a
+          JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+          WHERE a.attrelid = 'mail.outbox_submissions'::regclass AND a.attname = 'sent_copy_pending' AND a.attnotnull
+        ) AS sent_copy_pending,
         (SELECT count(*)::int FROM mail.schema_migrations) AS versions
     `;
     // No version is recorded, so an older Mail image still starts on the upgraded database.
-    expect(shape).toEqual({ table_exists: true, claim_index_exists: true, versions: 1 });
+    expect(shape).toEqual({
+      table_exists: true,
+      claim_index_exists: true,
+      sent_copy_index_exists: true,
+      sent_copy_pending: "false",
+      versions: 1,
+    });
   });
 
   test("turns each folder's sidebar switch into its display once, and keeps the switch for an older image", async () => {

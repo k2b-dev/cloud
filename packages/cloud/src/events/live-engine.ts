@@ -773,19 +773,29 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
 
   /** Lets quiet subscriptions move their cursor along, so they stay inside the ring. */
   const progress = () => {
-    const text = JSON.stringify({ t: "progress", cursor: cursorAt(head) });
-    for (const conn of [...connections]) {
-      if ([...conn.subs.values()].every((sub) => sub.backlog === null && sub.from <= head)) write(conn, text);
+    if (stopping.signal.aborted || connections.size === 0) return;
+    try {
+      const text = JSON.stringify({ t: "progress", cursor: cursorAt(head) });
+      for (const conn of [...connections]) {
+        if ([...conn.subs.values()].every((sub) => sub.backlog === null && sub.from <= head)) write(conn, text);
+      }
+    } catch (error) {
+      // A timer callback must not throw: the next round tries again.
+      log.error("Live progress failed", { appId, error: message(error) });
     }
   };
 
   return {
     open: (socket: LiveSocket, viewer: LiveViewer, revalidate: () => Promise<LiveViewer | null>): LiveConnectionHandle => {
-      start().catch((error) => log.warn("Live follower could not start", { appId, error: message(error) }));
       const conn: Connection = { socket, viewer, revalidate, subs: new Map(), pending: 0, work: Promise.resolve(), closed: false };
-      const open = [...connections].filter((other) => other.viewer.id === viewer.id).length;
-      connections.add(conn);
-      if (open >= LIVE_LIMITS.socketsPerViewer) close(conn, 1013, "too_many_sockets", "Too many live sockets are open.");
+      // A stopped engine starts no follower or timers again: the socket reconnects to a running replica.
+      if (stopping.signal.aborted) close(conn, 1012, "restart");
+      else {
+        start().catch((error) => log.warn("Live follower could not start", { appId, error: message(error) }));
+        const open = [...connections].filter((other) => other.viewer.id === viewer.id).length;
+        connections.add(conn);
+        if (open >= LIVE_LIMITS.socketsPerViewer) close(conn, 1013, "too_many_sockets", "Too many live sockets are open.");
+      }
       return {
         message: (raw) => {
           if (conn.closed) return;

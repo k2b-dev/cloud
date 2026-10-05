@@ -70,11 +70,13 @@ export const liveOutbox = (appId: string, publish: (row: LiveOutboxRow) => Promi
 const dispatchers = new Map<string, (() => void) | null>();
 /** Live sockets served by this process; they close when the application stops. */
 const engines = new Set<LiveEngine>();
+/** Set when the application stops delivery: its engines stay stopped until delivery starts again. */
+let stopped = false;
 
 /** Closes every live socket of this process with 1012, so clients reconnect to another replica. */
 export const stopLiveEngines = () => {
+  stopped = true;
   for (const engine of engines) engine.stop();
-  engines.clear();
 };
 
 const logStaleRows = async (appId: string): Promise<void> => {
@@ -108,6 +110,11 @@ export const startLiveOutbox = async (startedAppId: string): Promise<(() => Prom
     throw new Error(
       `"${appIds.join('", "')}" writes live updates to events.outbox, which does not exist. Update Cloud Core first: its migration creates the outbox.`,
     );
+  }
+  // Delivery starts again: the engines stopped before give way to new ones.
+  if (stopped) {
+    engines.clear();
+    stopped = false;
   }
   const stops = appIds.map((appId) => {
     const topic = liveTopics()(appId);
@@ -256,6 +263,8 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
         if (engine && engines.has(engine)) return engine;
         engine = createLiveEngine({ appId, topic: () => liveTopics()(appId), channels });
         engines.add(engine);
+        // A socket that opens while the application stops closes with 1012 and starts nothing.
+        if (stopped) engine.stop();
         return engine;
       };
       return new Hono<AuthContext>().get(

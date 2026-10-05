@@ -1,6 +1,6 @@
 import { localStore } from "@k2b/stdlib/solid";
 import { createSignal, onCleanup, onMount } from "solid-js";
-import type { Installation } from "./install";
+import { type Installation, onApplePhone } from "./install";
 import { PREFERENCES_CACHE } from "./push-worker";
 
 /**
@@ -58,7 +58,7 @@ export function createPush(installation: Installation, browser: Browser = defaul
   const [failed, setFailed] = createSignal(false);
 
   const state = (): PushState => {
-    if (installation.platform === "apple-mobile" && !installation.installed() && permission() === undefined) return "not-installed";
+    if (onApplePhone(installation.platform) && !installation.installed() && permission() === undefined) return "not-installed";
     if (permission() === undefined || publicKey() === null) return "unsupported";
     if (publicKey() === undefined) return "checking";
     if (permission() === "denied") return "denied";

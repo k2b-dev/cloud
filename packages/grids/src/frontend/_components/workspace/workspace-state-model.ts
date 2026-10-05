@@ -240,9 +240,8 @@ export type GridsWorkspaceState =
       canCreateTables: boolean;
       canUseEditMode: boolean;
       canUseQueryWorkspace: boolean;
-      metadataEventCursor: string | null;
+      liveCursor: string | null;
       workspaceRevision?: import("../../../service/workspace-revision").WorkspaceRevision;
-      recordEventCursor: string | null;
       dateConfig?: DateContext;
       catalog: WorkspaceCatalog;
       route: GridsWorkspaceRoute;
@@ -282,8 +281,7 @@ export type WorkspaceCommon = {
   canCreateTables: boolean;
   canUseEditMode: boolean;
   canUseQueryWorkspace: boolean;
-  metadataEventCursor: string | null;
-  recordEventCursor: string | null;
+  liveCursor: string | null;
 };
 
 export type OkWorkspaceState = Extract<GridsWorkspaceState, { kind: "ok" }>;
