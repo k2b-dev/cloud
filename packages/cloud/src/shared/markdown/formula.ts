@@ -489,11 +489,15 @@ const cellAt = (row: number, col: number, ctx: EvalContext): string => {
 const isCurrentFormulaCell = (row: number, col: number, ctx: EvalContext): boolean =>
   row === ctx.currentRow && col === ctx.currentCol && cellAt(row, col, ctx).startsWith("=");
 
+/** Cell text that is one decimal number and nothing else. */
+const NUMBER_CELL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+
 /**
  * Resolve a single cell to its evaluated value. If the cell is itself
  * a formula, recursively evaluate it (with cycle detection via
- * `ctx._visited`). Non-formula cells are coerced to number when
- * possible, otherwise returned as-is.
+ * `ctx._visited`). A non-formula cell becomes a number only when its
+ * whole text is one; anything else, such as the ISO date `2026-10-12`
+ * that DATEDIFF needs intact, stays text.
  *
  * Used by both the column-reference resolver in `evaluateAst` and by
  * the column / row aggregate functions, so a `=SUM(total)` aggregating
@@ -503,8 +507,8 @@ const isCurrentFormulaCell = (row: number, col: number, ctx: EvalContext): boole
 const evaluateCell = (row: number, col: number, ctx: EvalContext): EvalResult => {
   const cell = cellAt(row, col, ctx);
   if (!cell.startsWith("=")) {
-    const n = toNumber(cell);
-    return n !== null ? ok(n) : ok(cell);
+    const text = cell.trim();
+    return NUMBER_CELL.test(text) ? ok(Number(text)) : ok(cell);
   }
   const key = `${row},${col}`;
   if (ctx._visited?.has(key)) {

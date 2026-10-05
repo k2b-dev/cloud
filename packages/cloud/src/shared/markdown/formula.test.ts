@@ -173,6 +173,14 @@ describe("column references", () => {
     expectOk(evaluateFormula("=status", c), "active");
   });
 
+  test("a cell is a number only when its whole text is one", () => {
+    const c = ctx(["date", "amount", "count"], [["2026-10-12", "1,5", " 12.50 "]]);
+    expectOk(evaluateFormula("=date", c), "2026-10-12");
+    expectOk(evaluateFormula("=amount", c), "1,5");
+    expectOk(evaluateFormula("=count", c), 12.5);
+    expectOk(evaluateFormula(`=COUNTIF(date, "2026-10-12")`, ctx(["date"], [["2026-10-12"], ["2026-10-31"]], 5)), 1);
+  });
+
   test("unknown column reports suggestion", () => {
     const c = ctx(["price", "hours"], [["10", "5"]]);
     const res = evaluateFormula("=prce", c);
@@ -733,6 +741,18 @@ describe("NOW / TODAY / DATEDIFF", () => {
     expectOk(evaluateFormula(`=DATEDIFF("2026-01-01T00:00:00Z", "2026-01-01T03:00:00Z", "hours")`, c), 3);
     expectOk(evaluateFormula(`=DATEDIFF("2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z", "m")`, c), 30);
     expectOk(evaluateFormula(`=DATEDIFF("2026-01-01T00:00:00Z", "2026-01-01T00:00:45Z", "s")`, c), 45);
+  });
+
+  test("DATEDIFF reads ISO dates and timestamps from cells", () => {
+    const cells = ctx(
+      ["Start", "End", "Opened", "Closed", "Days"],
+      [["2026-10-01", "2026-10-12", "2026-01-01T00:00:00Z", "2026-01-01T03:00:00Z", ""]],
+      0,
+      4,
+    );
+    expectOk(evaluateFormula(`=DATEDIFF(Start, End, "d")`, cells), 11);
+    expectOk(evaluateFormula(`=DATEDIFF(End, "2027-10-12")`, cells), 365);
+    expectOk(evaluateFormula(`=DATEDIFF(Opened, Closed, "h")`, cells), 3);
   });
 
   test("DATEDIFF returns 0 for same date", () => {
