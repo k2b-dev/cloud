@@ -1,17 +1,26 @@
-import { query, timed } from "@k2b/stdlib/solid";
-import { Button, IconButton, ScrollArea, useLocale } from "@k2b/ui";
+import { timed } from "@k2b/stdlib/solid";
+import { announce, Button, IconButton, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
-import type { SearchItem, SearchResponse } from "../api/search/schemas";
+import type { SearchApp, SearchItem } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
-import { LOCALE_HEADER } from "../shared/locale";
 import { shortcutLabel } from "./command-shortcuts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
-
 import { commandSearchItem, matchingCommands, type PaletteCommand } from "./search-commands";
+import {
+  applySearchLine,
+  emptySearchRun,
+  failedSearchApps,
+  retrySearchApp,
+  type SearchBlock,
+  type SearchRun,
+  searchFinished,
+  searchingApps,
+  streamCloudResourceSearch,
+} from "./search-stream";
 
 export type CloudResourceSearchProps = {
   commands?: readonly PaletteCommand[];
@@ -37,6 +46,7 @@ export type CloudResourceSearchProps = {
 const isLinkableCommand = (command: PaletteCommand) => typeof command.action !== "function" && "command" in command.action;
 
 const itemKey = (item: SearchItem) => `${item.ref.type}:${item.ref.id}`;
+const URL_BASE = "https://cloud.invalid";
 const groupByApp = (items: SearchItem[]) => {
   const groups = new Map<string, SearchItem[]>();
   for (const item of items) {
@@ -59,7 +69,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const appId = () => scope()?.appId ?? scope()?.ref?.type.split(".")[0];
   const scopeLabel = () =>
     !props.request && props.initialAppId
-      ? (response()?.apps.find((app) => app.id === props.initialAppId)?.name ?? scope()?.label)
+      ? (catalogApps()?.find((app) => app.id === props.initialAppId)?.name ?? scope()?.label)
       : scope()?.label;
   createEffect(() => {
     const request = props.request;
@@ -114,23 +124,72 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     }),
   );
   const [searchUrl, setSearchUrl] = createSignal(desiredUrl());
-  const searchQuery = query.create({
-    source: searchUrl,
-    load: async (url, { abortSignal }) => {
-      if (props.searchResources === false) {
-        const data: SearchResponse = { query: "", count: 0, apps: [], items: [] };
-        return { url, data };
-      }
-      const response = await fetch(url, { signal: abortSignal, headers: { [LOCALE_HEADER]: locale() } });
-      if (!response.ok) throw new Error(t().searchFailed);
-      const data: SearchResponse = await response.json();
-      return { url, data };
-    },
-  });
-  const response = () => searchQuery.data()?.data;
-  const fresh = () => searchQuery.data()?.url === desiredUrl() && !searchQuery.error();
-  const pending = () => searchUrl() !== desiredUrl() || searchQuery.loading() || searchQuery.refreshing();
-  const catalog = createMemo(() => searchTags(response()?.apps ?? [], appId()));
+  // One streamed run per search URL. Apps answer in any order; their rows are appended and never reordered.
+  const [run, setRun] = createSignal<SearchRun>(emptySearchRun());
+  const [runUrl, setRunUrl] = createSignal<string>();
+  const [catalogApps, setCatalogApps] = createSignal<SearchApp[]>();
+  // The last rows a run showed stay until the next run shows its first rows, so typing does not blank the list.
+  const [stale, setStale] = createSignal<{ url: string; blocks: SearchBlock[] }>();
+  let controller: AbortController | undefined;
+  const startRun = (url: string) => {
+    controller?.abort();
+    const own = new AbortController();
+    controller = own;
+    const previous = runUrl();
+    if (previous && run().blocks.length) setStale({ url: previous, blocks: run().blocks });
+    setRunUrl(url);
+    if (props.searchResources === false) {
+      setRun({ ...emptySearchRun(), done: true });
+      return;
+    }
+    setRun(emptySearchRun());
+    void streamCloudResourceSearch(url, {
+      signal: own.signal,
+      locale: locale(),
+      onLine: (line) => {
+        if (controller !== own) return;
+        if (line.type === "start") setCatalogApps(line.apps);
+        setRun((current) => applySearchLine(current, line));
+      },
+    }).catch(() => {
+      if (controller === own && !own.signal.aborted) setRun((current) => ({ ...current, failed: true }));
+    });
+  };
+  /** Searches one app again within the current run; its rows, if any, are appended at the end. */
+  const retryApp = (appId: string) => {
+    const own = controller;
+    const url = runUrl();
+    if (!own || !url) return;
+    const target = new URL(url, URL_BASE);
+    target.searchParams.set("app", appId);
+    // Narrowed to one app, the server samples more; the retried section keeps the size the others have.
+    const limit = run().providers.length > 1 ? Number(target.searchParams.get("provider_limit")) : undefined;
+    setRun((current) => retrySearchApp(current, appId));
+    const giveUp = () => {
+      if (controller === own && run().status[appId] === "searching")
+        setRun((current) => applySearchLine(current, { type: "provider", provider: appId, status: "error", results: [], ms: 0 }));
+    };
+    void streamCloudResourceSearch(`${target.pathname}${target.search}`, {
+      signal: own.signal,
+      locale: locale(),
+      onLine: (line) => {
+        if (controller !== own || line.type !== "provider" || line.provider !== appId) return;
+        setRun((current) => applySearchLine(current, { ...line, results: line.results.slice(0, limit) }));
+      },
+    }).then(giveUp, giveUp);
+  };
+  createEffect(on(searchUrl, startRun));
+  onCleanup(() => controller?.abort());
+
+  const current = () => runUrl() === desiredUrl();
+  const started = () => run().providers.length > 0 || run().done || run().failed;
+  const finished = () => current() && searchFinished(run());
+  const waiting = () => searchUrl() !== desiredUrl() || !started();
+  const pendingApps = () => (current() ? searchingApps(run()) : []);
+  const failedApps = () => (current() ? failedSearchApps(run()) : []);
+  const appName = (appId: string) => run().apps.find((app) => app.id === appId)?.name ?? appId;
+  const narrowedApp = () => (run().providers.length === 1 ? run().providers[0] : undefined);
+  const catalog = createMemo(() => searchTags(catalogApps() ?? [], appId()));
   const quickTags = createMemo(() =>
     catalog()
       .filter((tag, index, all) => all.findIndex((other) => other.appName === tag.appName) === index)
@@ -147,31 +206,52 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
         })
       : [],
   );
+  // Keep last-good rows only within the same context, never across scope changes.
+  const sameScope = (url: string) => {
+    const loaded = new URL(url, URL_BASE).searchParams;
+    return (
+      (loaded.get("scope_type") ?? undefined) === scope()?.ref?.type &&
+      (loaded.get("scope_id") ?? undefined) === scope()?.ref?.id &&
+      (loaded.get("app") ?? undefined) === appId() &&
+      (loaded.get("scope_tag") ?? undefined) === scope()?.tag
+    );
+  };
+  const shownRun = () => run().blocks.length > 0 || searchFinished(run());
+  const shownBlocks = () => {
+    const source = shownRun() ? { url: runUrl() ?? "", blocks: run().blocks } : stale();
+    return source && sameScope(source.url) ? source.blocks : [];
+  };
+  /** Rows of the run for the current input; anything older is visible but cannot be chosen. */
+  const freshResults = () => current() && shownRun();
+  const results = createMemo(() =>
+    canSearch()
+      ? [...groupByApp(navigation()), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))]
+      : [],
+  );
   const items = createMemo(() => {
     const commands = visibleCommands().map((command) => commandSearchItem(command, command.context ? t().contextActions : t().actions));
-    if (!canSearch()) return commands;
-    // Keep last-good rows only within the same context, never across scope changes.
-    const loaded = new URL(searchQuery.data()?.url ?? "/api/search", "https://cloud.invalid");
-    const sameScope =
-      (loaded.searchParams.get("scope_type") ?? undefined) === scope()?.ref?.type &&
-      (loaded.searchParams.get("scope_id") ?? undefined) === scope()?.ref?.id &&
-      (loaded.searchParams.get("app") ?? undefined) === appId() &&
-      (loaded.searchParams.get("scope_tag") ?? undefined) === scope()?.tag;
-    const resources = filterCloudResourceSearchItems(sameScope ? (response()?.items ?? []) : [], props).sort(
-      (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title),
-    );
-    const results = [...groupByApp(resources), ...groupByApp(navigation())];
-    // Context actions stay visible when opening an app-scoped search without text.
-    return textQuery() ? [...results, ...commands] : [...commands, ...results];
+    // Instant rows come first: streamed app sections are appended below them and never push them down.
+    return [...commands, ...results()];
   });
   const selectable = (item: SearchItem) =>
-    !props.disabled && !choosingTag() && (commandFor(item) || navigation().includes(item) || (fresh() && !pending()));
+    !props.disabled &&
+    !choosingTag() &&
+    (commandFor(item) || navigation().includes(item) || (freshResults() && searchUrl() === desiredUrl()));
   const activeItem = () => items()[activeIndex()];
   const selectedItem = () => items().find((item) => itemKey(item) === selectedKey());
   const previewItem = () => (props.selectionMode ? (selectedItem() ?? activeItem()) : activeItem());
   const showList = () => !choosingTag() && items().length > 0;
-  const showResults = () => showList() && (canSearch() || commandMode());
-  const unknownTags = () => (fresh() && !pending() ? (response()?.unsupportedTags ?? []) : []);
+  // An active search keeps the full height from its first keystroke, so arriving rows never resize the dialog.
+  const searching = () => !choosingTag() && (canSearch() || commandMode());
+  const showResults = () => showList() && searching();
+  const unknownTags = () => (current() && started() ? run().unsupportedTags : []);
+  const noMatches = () =>
+    !items().length && (commandMode() ? !props.commandsLoading : canSearch() && finished() && !run().failed && failedApps().length === 0);
+  const stillSearching = () => {
+    const names = pendingApps().map(appName);
+    const shown = names.length > 3 ? [...names.slice(0, 2), t().moreApps({ count: names.length - 2 })] : names;
+    return t().stillSearching({ apps: new Intl.ListFormat(locale(), { type: "conjunction" }).format(shown), count: names.length });
+  };
 
   const { debouncedFn: scheduleSearch, cancel } = timed.debounce((url: string) => setSearchUrl(url), 200);
   createEffect(() => {
@@ -207,8 +287,18 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
         } else {
           userSelected = false;
           const explicitCommand = commandMode() && Boolean(commandQuery());
-          setActiveIndex(current.rows[0]?.ref.type === "cloud.command" && !explicitCommand ? -1 : 0);
+          const firstResult = current.rows.findIndex((row) => row.ref.type !== "cloud.command");
+          // Actions are never implicitly selected; with text, the first result is.
+          setActiveIndex(explicitCommand ? 0 : current.rows[0]?.ref.type === "cloud.command" && !textQuery() ? -1 : firstResult);
         }
+      },
+    ),
+  );
+  createEffect(
+    on(
+      () => canSearch() && !commandMode() && finished(),
+      (done, wasDone) => {
+        if (done && !wasDone) announce(t().searchDone({ count: results().length }));
       },
     ),
   );
@@ -349,7 +439,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       role="group"
       aria-label={props.title ?? t().searchCloudResources}
       class="cloud-resource-search"
-      classList={{ "has-results": showResults(), "is-picker": props.selectionMode, "shows-details": mobileDetails() && showResults() }}
+      classList={{ "has-results": searching(), "is-picker": props.selectionMode, "shows-details": mobileDetails() && showResults() }}
       onKeyDown={(event) => {
         if (event.target === inputRef) return;
         if (event.key === "Escape") handleKeyDown(event);
@@ -366,7 +456,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       </IconButton>
       <label class="cloud-resource-search__input">
         <Show
-          when={commandMode() ? props.commandsLoading : pending() && !choosingTag()}
+          when={commandMode() ? props.commandsLoading : canSearch() && waiting() && !choosingTag()}
           fallback={<i class="ti ti-search" aria-hidden="true" />}
         >
           <i class="ti ti-loader-2 animate-spin" role="status" aria-label={t().loading} />
@@ -446,7 +536,11 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           />
         </div>
       </label>
-      <ScrollArea ref={bodyRef} class="cloud-resource-search__body" aria-busy={pending() && !choosingTag()}>
+      <ScrollArea
+        ref={bodyRef}
+        class="cloud-resource-search__body"
+        aria-busy={canSearch() && !choosingTag() && (waiting() || pendingApps().length > 0)}
+      >
         <Show
           when={choosingTag()}
           fallback={
@@ -458,25 +552,20 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   </p>
                 )}
               </Show>
-              <Show when={searchQuery.error()}>
+              <Show when={current() && run().failed}>
                 <div class="cloud-resource-search__hint" role="status">
                   {t().searchFailed}{" "}
-                  <Button variant="text" size="xs" onClick={() => void searchQuery.refresh()}>
+                  <Button variant="text" size="xs" onClick={() => startRun(searchUrl())}>
                     {t().retry}
                   </Button>
                 </div>
               </Show>
-              <Show when={fresh() && response()?.failedApps?.length}>
-                <p class="cloud-resource-search__hint" role="status">
-                  {t().partialFailure}
-                </p>
-              </Show>
               <Show when={!canSearch() && !commandMode()}>
                 <div class="cloud-resource-search__idle">
                   <p>{props.selectionMode ? t().pickerHint : props.searchResources === false ? t().navigationHint : t().startHint}</p>
-                  <div class="cloud-resource-search__quick" aria-busy={!response() && !searchQuery.error()}>
+                  <div class="cloud-resource-search__quick" aria-busy={!catalogApps() && !run().failed}>
                     <Show
-                      when={response() || searchQuery.error()}
+                      when={catalogApps() || run().failed}
                       fallback={<For each={[0, 1, 2]}>{() => <span class="cloud-resource-search__tag-skeleton" aria-hidden="true" />}</For>}
                     >
                       <For each={quickTags()}>
@@ -487,7 +576,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                         )}
                       </For>
                     </Show>
-                    <Show when={!response() || catalog().length > 0}>
+                    <Show when={!catalogApps() || catalog().length > 0}>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -523,10 +612,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   {t().commandFailed}
                 </p>
               </Show>
+              <Show when={searching()}>
+                <div class="cloud-resource-search__count">{items().length > 0 ? t().resultCount({ count: items().length }) : "\u00a0"}</div>
+              </Show>
               <Show when={showList()}>
-                <div class="cloud-resource-search__count" aria-live="polite">
-                  {t().resultCount({ count: items().length })}
-                </div>
                 <section id={`${id}-options`} role="listbox" aria-label={t().searchCloudResources} class="cloud-resource-search__results">
                   <For each={items()}>
                     {(item, index) => (
@@ -575,18 +664,36 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   </For>
                 </section>
               </Show>
-              <Show
-                when={
-                  (canSearch() || commandMode()) &&
-                  !items().length &&
-                  !pending() &&
-                  fresh() &&
-                  !searchQuery.error() &&
-                  !response()?.failedApps?.length
-                }
-              >
+              <Show when={canSearch() && !commandMode() && (pendingApps().length > 0 || failedApps().length > 0)}>
+                <div class="cloud-resource-search__status">
+                  <Show when={pendingApps().length > 0}>
+                    <p>
+                      <i class="ti ti-loader-2 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      {stillSearching()}
+                    </p>
+                  </Show>
+                  <For each={failedApps()}>
+                    {(failure) => (
+                      <p>
+                        {failure.status === "timeout"
+                          ? t().appTimedOut({ app: appName(failure.appId) })
+                          : t().appUnavailable({ app: appName(failure.appId) })}
+                        <span aria-hidden="true">·</span>
+                        <Button variant="text" size="xs" onClick={() => retryApp(failure.appId)}>
+                          {t().retry}
+                        </Button>
+                      </p>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={noMatches()}>
                 <p class="cloud-resource-search__hint" role="status">
-                  {unknownTags().length ? t().unsupportedTags : t().noMatches}
+                  {unknownTags().length
+                    ? t().unsupportedTags
+                    : !commandMode() && narrowedApp()
+                      ? t().appNoMatches({ app: appName(narrowedApp()!), query: textQuery() })
+                      : t().noMatches}
                 </p>
               </Show>
             </>
@@ -601,9 +708,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           <Show
             when={suggestions().length > 0}
             fallback={
-              <p class="cloud-resource-search__hint">
-                {searchQuery.loading() ? t().loadingTags : searchQuery.error() ? t().searchFailed : t().noTags}
-              </p>
+              <p class="cloud-resource-search__hint">{run().failed ? t().searchFailed : catalogApps() ? t().noTags : t().loadingTags}</p>
             }
           >
             <div role="listbox" id={`${id}-options`} aria-label={t().tagSuggestions} class="cloud-resource-search__tags">
@@ -634,9 +739,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           </Show>
         </Show>
       </ScrollArea>
-      <Show when={showResults() || (choosingTag() && suggestions().length > 0)}>
+      <Show when={searching() || (choosingTag() && suggestions().length > 0)}>
         <footer class="cloud-resource-search__footer">
-          <Show when={showResults()}>
+          <Show when={searching()}>
             <Button
               class="cloud-resource-search__details"
               disabled={!previewItem()}
