@@ -128,7 +128,7 @@ Use arithmetic directly, or call helpers when a cell needs formatting.
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
 | `Arithmetic` | `+  -  *  /` | `=Price * Qty` | number<br>Division by 0 shows a formula error. |
-| `Comparisons` | `==  !=  <  <=  >  >=` | `=Hours >= 8` | 1 or 0 |
+| `Comparisons` | `==  !=  <  <=  >  >=` | `=Hours >= 8` | 1 or 0<br>Dates such as 2026-10-12 and timestamps compare in time order, for example `=Due < TODAY()`. A date is only ordered against another date. |
 | `ROUND` | `ROUND(number, digits)` | `=ROUND(Price * Qty, 2)` | rounded number |
 | `ABS` | `ABS(number)` | `=ABS(Balance)` | absolute value |
 | `SQRT` | `SQRT(number)` | `=SQRT(Area)` | square root |

@@ -219,6 +219,18 @@ describe("column aggregates", () => {
     expectOk(evaluateFormula("=SUM(price)", c), 60);
   });
 
+  test("SUM and arithmetic read the leading number of unit text", () => {
+    const money = ctx(
+      ["Price", "Qty"],
+      [
+        ["5 €", "2"],
+        ["2.50 €", "4"],
+      ],
+    );
+    expectOk(evaluateFormula("=SUM(Price)", money), 7.5);
+    expectOk(evaluateFormula("=Price * Qty", money), 10);
+  });
+
   test("SUM skips the current formula cell when aggregating its own column", () => {
     const ownColumn = ctx(["Hours"], [["10"], ["10"], ["=SUM(Hours)"]], 2, 0);
     expectOk(evaluateFormula("=SUM(Hours)", ownColumn), 20);
@@ -801,6 +813,70 @@ describe("comparison operators", () => {
 
   test("non-numeric ordering errors", () => {
     expectError(evaluateFormula(`=name < 10`, c), "NON_NUMERIC");
+  });
+
+  test("ISO dates compare by day, not by their leading year", () => {
+    const d = ctx(["Deadline", "Done"], [["2026-10-12", "2026-03-01"]]);
+    expectOk(evaluateFormula(`=Deadline < "2026-12-24"`, d), 1);
+    expectOk(evaluateFormula(`=Deadline > "2026-12-24"`, d), 0);
+    expectOk(evaluateFormula(`=Deadline >= "2026-10-12"`, d), 1);
+    expectOk(evaluateFormula(`=Deadline <= "2026-10-11"`, d), 0);
+    expectOk(evaluateFormula(`=Done < Deadline`, d), 1);
+    expectOk(evaluateFormula(`=Deadline == "2026-12-24"`, d), 0);
+    expectOk(evaluateFormula(`=Deadline != "2026-12-24"`, d), 1);
+    expectOk(evaluateFormula(`=Deadline == "2026-10-12"`, d), 1);
+    expectOk(evaluateFormula(`=IF(Deadline < "2027-01-01", "this year", "later")`, d), "this year");
+  });
+
+  test("dates compare with TODAY() and NOW()", () => {
+    const day = (offset: number) => {
+      const date = new Date();
+      date.setDate(date.getDate() + offset);
+      const pad = (n: number) => n.toString().padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    };
+    const d = ctx(["Past", "Future"], [[day(-1), day(1)]]);
+    expectOk(evaluateFormula(`=Past < TODAY()`, d), 1);
+    expectOk(evaluateFormula(`=Future < TODAY()`, d), 0);
+    expectOk(evaluateFormula(`=Future > NOW()`, d), 1);
+    expectOk(evaluateFormula(`=TODAY() == TODAY()`, d), 1);
+  });
+
+  test("timestamps compare by time and against dates", () => {
+    const d = ctx(["Opened", "Closed", "Day", "Utc"], [["2026-10-12 09:30", "2026-10-12T17:05:00", "2026-10-12", "2026-10-12T10:00:00Z"]]);
+    expectOk(evaluateFormula(`=Opened < Closed`, d), 1);
+    expectOk(evaluateFormula(`=Opened > Day`, d), 1);
+    expectOk(evaluateFormula(`=Day == "2026-10-12T00:00"`, d), 1);
+    expectOk(evaluateFormula(`=Utc == "2026-10-12T12:00:00+02:00"`, d), 1);
+    expectOk(evaluateFormula(`=Utc < "2026-10-12T12:00:01+02:00"`, d), 1);
+  });
+
+  test("a date never compares with its leading number", () => {
+    const d = ctx(["Date", "Name"], [["2026-10-12", "2026 plan"]]);
+    expectOk(evaluateFormula(`=Date == 2026`, d), 0);
+    expectOk(evaluateFormula(`=Date != 2026`, d), 1);
+    expectOk(evaluateFormula(`=Date == Name`, d), 0);
+    expectError(evaluateFormula(`=Date > 2025`, d), "TYPE_ERROR");
+    expectError(evaluateFormula(`=Date < "soon"`, d), "TYPE_ERROR");
+    expectError(evaluateFormula(`=Date < Name`, d), "TYPE_ERROR");
+  });
+
+  test("text that only looks like a date stays text", () => {
+    const d = ctx(["Date"], [["2026-13-45"]]);
+    expectOk(evaluateFormula(`=Date == "2026-13-45"`, d), 1);
+    expectOk(evaluateFormula(`=Date < 2027`, d), 1);
+  });
+
+  test("text compares as text unless the other side is a number", () => {
+    const t = ctx(["Version", "Fruit", "Price", "Cheap"], [["1.2.3", "3 apples", "5 €", "4 €"]]);
+    expectOk(evaluateFormula(`=Version == "1.2.4"`, t), 0);
+    expectOk(evaluateFormula(`=Version == "1.2.3"`, t), 1);
+    expectOk(evaluateFormula(`=Fruit == "3 pears"`, t), 0);
+    expectOk(evaluateFormula(`=Fruit != "3 pears"`, t), 1);
+    expectOk(evaluateFormula(`=Price == 5`, t), 1);
+    expectOk(evaluateFormula(`=Price > 3`, t), 1);
+    expectOk(evaluateFormula(`=Cheap < Price`, t), 1);
+    expectOk(evaluateFormula(`="10" == "10.0"`, t), 1);
   });
 });
 

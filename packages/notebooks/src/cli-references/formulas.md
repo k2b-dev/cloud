@@ -27,7 +27,7 @@ A table cell is a formula when its content starts with `=`. Function names are c
 
 Arithmetic: `+`, `-`, `*`, `/`.
 
-Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
+Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`. ISO dates such as `2026-10-12` and timestamps such as `2026-10-12 09:30` compare in time order, so `=Due < TODAY()` works; ordering a date against a value that is not a date is a formula error.
 
 ## Progress
 

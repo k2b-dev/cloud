@@ -128,7 +128,7 @@ Verwende Rechenoperatoren direkt oder Hilfsfunktionen, wenn eine Zelle formatier
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
 | `Arithmetic` | `+  -  *  /` | `=Price * Qty` | Zahl<br>Eine Division durch 0 zeigt einen Formelfehler. |
-| `Comparisons` | `==  !=  <  <=  >  >=` | `=Hours >= 8` | 1 oder 0 |
+| `Comparisons` | `==  !=  <  <=  >  >=` | `=Hours >= 8` | 1 oder 0<br>Datumswerte wie 2026-10-12 und Zeitstempel werden zeitlich verglichen, zum Beispiel `=Due < TODAY()`. Ein Datum lässt sich nur mit einem anderen Datum der Größe nach vergleichen. |
 | `ROUND` | `ROUND(number, digits)` | `=ROUND(Price * Qty, 2)` | gerundete Zahl |
 | `ABS` | `ABS(number)` | `=ABS(Balance)` | absoluter Wert |
 | `SQRT` | `SQRT(number)` | `=SQRT(Area)` | Quadratwurzel |

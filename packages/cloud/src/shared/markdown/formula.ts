@@ -1034,18 +1034,99 @@ const FUNCTION_NAMES = Object.keys(FUNCTIONS);
 
 // -- Binop application --------------------------------------------------------
 
-const applyBinop = (op: BinOp, l: EvalValue, r: EvalValue): EvalResult => {
-  if (op === "==" || op === "!=") {
-    // Equality: if both look numeric, compare as numbers; else as strings.
+/** An ISO date or timestamp: `2026-10-12`, `2026-10-12 09:30`,
+ *  `2026-10-12T09:30:00.250Z`, or with an offset such as `+02:00`. */
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3})\d*)?)?(Z|[+-]\d{2}:?\d{2})?)?$/i;
+
+/**
+ * The instant an ISO date or timestamp names, or null for anything else,
+ * including impossible dates such as `2026-02-30`. Text without an offset
+ * is local time, like the values TODAY() and NOW() return.
+ */
+const toDateTime = (v: EvalValue): number | null => {
+  if (typeof v !== "string") return null;
+  const match = ISO_DATE_TIME.exec(v.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4] ?? 0);
+  const minute = Number(match[5] ?? 0);
+  const second = Number(match[6] ?? 0);
+  const ms = Number((match[7] ?? "").padEnd(3, "0"));
+  const zone = match[8];
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const utc = new Date(0);
+  utc.setUTCFullYear(year, month - 1, day);
+  if (utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) return null;
+  if (zone) {
+    utc.setUTCHours(hour, minute, second, ms);
+    if (zone.toUpperCase() === "Z") return utc.getTime();
+    const sign = zone.startsWith("-") ? -1 : 1;
+    const digits = zone.slice(1).replace(":", "");
+    return utc.getTime() - sign * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2))) * 60_000;
+  }
+  const local = new Date(0);
+  local.setFullYear(year, month - 1, day);
+  local.setHours(hour, minute, second, ms);
+  return local.getTime();
+};
+
+/** A number, boolean, or text whose whole content is one number. */
+const toExactNumber = (v: EvalValue): number | null =>
+  typeof v === "string" ? (NUMBER_CELL.test(v.trim()) ? Number(v.trim()) : null) : toNumber(v);
+
+/**
+ * Order two values for the comparison operators: negative, zero, or
+ * positive, or null when they have no common order. Two dates compare
+ * as instants and never with a number or other text, so `2026-10-12`
+ * is not `2026`. Text with a unit, such as `5 €`, still compares by its
+ * leading number, as does text against text.
+ */
+const compareValues = (l: EvalValue, r: EvalValue): number | null => {
+  const ld = toDateTime(l);
+  const rd = toDateTime(r);
+  if (ld !== null || rd !== null) return ld !== null && rd !== null ? ld - rd : null;
+  const ln = toNumber(l);
+  const rn = toNumber(r);
+  return ln !== null && rn !== null ? ln - rn : null;
+};
+
+/** Equality: dates by instant; numbers, also `5 €` against 5, by value;
+ *  everything else, such as `1.2.3` or `3 apples`, by its exact text. */
+const isEqual = (l: EvalValue, r: EvalValue): boolean => {
+  const ld = toDateTime(l);
+  const rd = toDateTime(r);
+  if (ld !== null && rd !== null) return ld === rd;
+  if (ld === null && rd === null && (toExactNumber(l) !== null || toExactNumber(r) !== null)) {
     const ln = toNumber(l);
     const rn = toNumber(r);
-    const equal = ln !== null && rn !== null ? ln === rn : toString(l) === toString(r);
+    if (ln !== null && rn !== null) return ln === rn;
+  }
+  return toString(l) === toString(r);
+};
+
+const applyBinop = (op: BinOp, l: EvalValue, r: EvalValue): EvalResult => {
+  if (op === "==" || op === "!=") {
+    const equal = isEqual(l, r);
     return ok((op === "==" ? equal : !equal) ? 1 : 0);
+  }
+  if (op === "<" || op === "<=" || op === ">" || op === ">=") {
+    const order = compareValues(l, r);
+    if (order === null) {
+      return toDateTime(l) !== null || toDateTime(r) !== null
+        ? err("TYPE_ERROR", `Cannot compare a date with a value that is not a date using "${op}"`)
+        : err("NON_NUMERIC", `Cannot compare non-numeric values with "${op}"`);
+    }
+    if (op === "<") return ok(order < 0 ? 1 : 0);
+    if (op === "<=") return ok(order <= 0 ? 1 : 0);
+    if (op === ">") return ok(order > 0 ? 1 : 0);
+    return ok(order >= 0 ? 1 : 0);
   }
   const ln = toNumber(l);
   const rn = toNumber(r);
   if (ln === null || rn === null) {
-    return err("NON_NUMERIC", `Cannot compare/compute non-numeric values with "${op}"`);
+    return err("NON_NUMERIC", `Cannot compute non-numeric values with "${op}"`);
   }
   switch (op) {
     case "+":
@@ -1057,14 +1138,6 @@ const applyBinop = (op: BinOp, l: EvalValue, r: EvalValue): EvalResult => {
     case "/":
       if (rn === 0) return err("DIV_BY_ZERO", `Division by zero`);
       return ok(ln / rn);
-    case "<":
-      return ok(ln < rn ? 1 : 0);
-    case "<=":
-      return ok(ln <= rn ? 1 : 0);
-    case ">":
-      return ok(ln > rn ? 1 : 0);
-    case ">=":
-      return ok(ln >= rn ? 1 : 0);
   }
 };
 
