@@ -598,29 +598,38 @@ describe("live engine", () => {
     // Sync stops while the engine still runs, as when a teardown drains Sync first.
     let syncGone = false;
     const intervals = spyOn(globalThis, "setInterval");
-    engine.stop();
-    engine = createLiveEngine({
-      appId: "app",
-      topic: () => {
-        if (syncGone) throw new Error("Sync is not available before app.start() has connected NATS");
-        return topic;
-      },
-      channels,
-    });
-    const { socket, send } = connect();
-    send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
-    await until(() => socket.frames.length === 1);
-    const ticks = intervals.mock.calls.map(([tick]) => tick as () => void);
-    intervals.mockRestore();
-    expect(ticks).toHaveLength(2);
+    try {
+      engine.stop();
+      engine = createLiveEngine({
+        appId: "app",
+        topic: () => {
+          if (syncGone) throw new Error("Sync is not available before app.start() has connected NATS");
+          return topic;
+        },
+        channels,
+      });
+      const { socket, send } = connect();
+      send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+      await until(() => socket.frames.length === 1);
+      const ticks = intervals.mock.calls.map(([tick]) => tick as () => void);
+      expect(ticks).toHaveLength(2);
 
-    syncGone = true;
-    for (const tick of ticks) expect(() => tick()).not.toThrow();
-    engine.stop();
-    for (const tick of ticks) tick();
-    expect(socket.frames).toHaveLength(1);
+      syncGone = true;
+      for (const tick of ticks) expect(() => tick()).not.toThrow();
+      engine.stop();
+      for (const tick of ticks) tick();
+      expect(socket.frames).toHaveLength(1);
 
-    const late = connect();
-    expect(late.socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
+      const late = connect();
+      expect(late.socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
+
+      // Stopped before its first socket, as a mount that serves its first socket while the application stops.
+      engine = createLiveEngine({ appId: "app", topic: () => topic, channels });
+      engine.stop();
+      expect(connect().socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
+      expect(intervals).toHaveBeenCalledTimes(2);
+    } finally {
+      intervals.mockRestore();
+    }
   });
 });

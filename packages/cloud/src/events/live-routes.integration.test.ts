@@ -373,4 +373,35 @@ suite("live routes", () => {
     await session.revokeAllForUser(hal.id);
     expect(await refusal(hal.headers)).toEqual(refused("login_required"));
   });
+
+  // Last: it stops delivery and starts it again.
+  test("a stopping replica closes its sockets with 1012, also those that open while it stops, until delivery starts again", async () => {
+    const ivy = await person("Ivy Example");
+    allow("stop", ivy);
+    // A mount that served no socket before the stop, like a quiet replica.
+    const quiet = { routes: live.routes(channels), server: null as ReturnType<typeof Bun.serve> | null };
+    quiet.server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/live", quiet.routes).fetch, websocket });
+    pods.push(quiet);
+    const closed = async (socket: Awaited<ReturnType<typeof open>>) => {
+      await until(() => socket.state.closed !== null);
+      return socket.state.closed;
+    };
+    const restart = { code: 1012, reason: "restart" };
+
+    const before = await open(0, ivy.headers);
+    before.sub("s", "item", { key: "stop" });
+    await until(() => before.of("s").length === 1);
+    await stopOutbox?.();
+    expect(await closed(before)).toEqual(restart);
+    for (const pod of [0, pods.length - 1]) expect(await closed(await open(pod, ivy.headers))).toEqual(restart);
+
+    stopOutbox = await startLiveOutbox(APP);
+    for (const pod of [0, pods.length - 1]) {
+      const again = await open(pod, ivy.headers);
+      again.sub("s", "item", { key: "stop" });
+      await until(() => again.of("s").length === 1);
+      expect(again.of("s")[0]?.t).toBe("ready");
+      again.socket.close();
+    }
+  });
 });

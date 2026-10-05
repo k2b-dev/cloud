@@ -332,12 +332,12 @@ Update Cloud Core first: its migration creates the outbox.
 Update Core before the applications that define live updates. Contacts,
 Spaces, and Mail are the built-in applications that do.
 
-A replica that stops closes its sockets with `1012`; the tabs reconnect to
-another replica and resume from their cursors. Each replica reads the topic
-once to fill its window, not once per socket. Plan the send buffers for each
-socket that reads too slowly: 256 KiB in the application, twice that during
-a replay, and up to 4 MiB in the gateway, which closes the browser socket with
-`1013` above it.
+A replica that stops closes its sockets with `1012`, also those that open
+while it stops; the tabs reconnect to another replica and resume from their
+cursors. Each replica reads the topic once to fill its window, not once per
+socket. Plan the send buffers for each socket that reads too slowly: 256 KiB
+in the application, twice that during a replay, and up to 4 MiB in the
+gateway, which closes the browser socket with `1013` above it.
 
 Live sockets have no metrics of their own. Each replica logs under
 `events:live`, with the application ID:
