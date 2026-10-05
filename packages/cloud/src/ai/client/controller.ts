@@ -1,6 +1,7 @@
 import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
+import { aiChatMessages } from "../chat/messages";
 import { type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
@@ -24,7 +25,14 @@ import {
   reduceProjection,
   visibleMessages,
 } from "./projection";
-import { type AiConversationStreamTransport, type AiStreamHandle, aiSseConversationStreamTransport } from "./transport";
+import {
+  type AiConversationStreamTransport,
+  AiStreamError,
+  type AiStreamErrorCode,
+  type AiStreamHandle,
+  aiSseConversationStreamTransport,
+  terminalAiStreamErrorCode,
+} from "./transport";
 
 type ComposerDraftInput = {
   draftContent?: AiDraftContentPart[];
@@ -108,7 +116,7 @@ export type CreateAiChatControllerOptions = {
   frontendTools?: Record<string, AiFrontendToolHandler>;
   /** Explicitly advertise only client tools with a connected handler. */
   clientToolIds?: AiClientToolId[];
-  /** Overrides the default SSE transport, for example with a shared WebSocket channel. */
+  /** Overrides the default SSE transport of the conversation stream. */
   streamTransport?: AiConversationStreamTransport;
 };
 
@@ -141,6 +149,17 @@ const completeFrontendToolBlock = (blocks: AiTurnBlock[], callId: string, result
 
 const isActiveConversationLoading = (activeConversationId: string | null, loadingConversationId: string | null): boolean =>
   activeConversationId !== null && loadingConversationId === activeConversationId;
+
+/**
+ * Why the stream ended, in the request's locale: the server renders it into
+ * `<html lang>`, which is also what `useLocale()` of `@k2b/ui` resolves in an
+ * island. The controller stays headless and does not load the component library.
+ */
+const streamErrorText = (code: AiStreamErrorCode): string => {
+  const t = aiChatMessages(typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
+  if (code === "login_required") return t.streamLoginRequired;
+  return code === "access_denied" ? t.streamAccessDenied : t.streamNotFound;
+};
 
 export const createAiChatController = (options: CreateAiChatControllerOptions) => {
   const [activeConversationId, setActiveConversationIdSignal] = createSignal<string | null>(options.initialConversationId ?? null);
@@ -330,11 +349,16 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       // or action in this chat can subscribe again.
       onError: (error) => {
         if (!isCurrentStreamSession(streamSession, session)) return;
-        closeStream();
-        streamError = error.message;
-        setConversationError(conversationId, error.message);
+        endStream(conversationId, error);
       },
     });
+  };
+
+  /** Stops the chat's stream for good and shows why. */
+  const endStream = (conversationId: string, error: Error) => {
+    closeStream();
+    streamError = error instanceof AiStreamError ? streamErrorText(error.code) : error.message;
+    setConversationError(conversationId, streamError);
   };
 
   // ---- frontend tools ---------------------------------------------------
@@ -474,22 +498,31 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   let conversationRefreshGeneration = 0;
-  const refreshActiveConversation = async (): Promise<void> => {
+  /**
+   * Loads the active chat again. Resolves `false` when it no longer exists or
+   * is no longer readable: the chat then ends like its stream, with the reason
+   * as its error, because no retry can load it.
+   */
+  const refreshActiveConversation = async (): Promise<boolean> => {
     const conversationId = activeConversationId();
-    if (!conversationId) return;
+    if (!conversationId) return true;
     const refreshGeneration = ++conversationRefreshGeneration;
     const openGeneration = conversationOpenGeneration;
-    const detail = await request<AiConversationDetail>(
-      `/conversations/${conversationId}`,
-      { method: "GET" },
-      "Failed to refresh conversation",
-    );
+    const response = await fetch(url(`/conversations/${conversationId}`));
+    const ended = terminalAiStreamErrorCode(response.status);
+    if (ended) {
+      const error = new AiStreamError(ended, await readError(response, "Failed to refresh conversation"));
+      if (isActiveConversation(conversationId)) endStream(conversationId, error);
+      return false;
+    }
+    if (!response.ok) throw new Error(await readError(response, "Failed to refresh conversation"));
+    const detail = (await response.json()) as AiConversationDetail;
     if (
       !isActiveConversation(conversationId) ||
       refreshGeneration !== conversationRefreshGeneration ||
       openGeneration !== conversationOpenGeneration
     )
-      return;
+      return true;
     const currentDraft = state.conversation?.draft;
     if (currentDraft && currentDraft.revision > detail.conversation.draft.revision) detail.conversation.draft = currentDraft;
     const windowOldest = detail.messages[0]?.seq;
@@ -499,6 +532,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (detail.timeline) setTimeline(conversationId, detail.timeline);
     setRunError(conversationRunError(detail.conversation));
     openStream(conversationId);
+    return true;
   };
 
   const requestMessagesPage = async (conversationId: string, before: number, limit: number): Promise<AiMessagesPage> => {

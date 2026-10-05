@@ -41,12 +41,17 @@ export const inventoryLive = defineLive({
 ```
 
 `appId` is required and is the ID from the application's declaration. Cloud
-does not derive it from the process, and `app.start()` refuses to start when a
-definition names another application. Define the updates once, at module
+does not derive it from the process. Define the updates once, at module
 scope, in a module that the application imports before `app.start()`.
 `app.start()` then publishes the pending updates from every replica. Writing
 an update needs no started application, so tests can call the code that
 writes it directly.
+
+Another application may import the definition to read its `cursor()` or to
+write updates; only the application with that ID publishes and serves them.
+`app.start()` refuses to start a process that mounts `routes()` of another
+application. Assistant, for example, reads the cursor of Core's AI live
+updates for its server-rendered page.
 
 ## Publish in the transaction
 
@@ -145,7 +150,9 @@ $$;
   second.
 
 Mail writes its updates this way, from a trigger on its activity log, with
-one update per conversation and transaction. Grids writes the updates of
+one update per conversation and transaction. The AI tables write Core's AI
+live updates this way, one for each user who reads the changed data, without
+a coalesce key, because each update names its own changed views. Grids writes the updates of
 record changes from the function that also records its own record events,
 with one update per record and table in a transaction.
 
@@ -337,7 +344,8 @@ Update Cloud Core first: its migration creates the outbox.
 ```
 
 Update Core before the applications that define live updates. Contacts,
-Spaces, Mail, and Grids are the built-in applications that do.
+Spaces, Mail, and Grids are the built-in applications that do. Core defines
+the AI live updates itself and starts publishing them after its migration.
 
 A replica that stops closes its sockets with `1012`, also those that open
 while it stops; the tabs reconnect to another replica and resume from their

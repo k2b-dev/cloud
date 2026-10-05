@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
+import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import type { AiTodoPlan } from "./todo-contracts";
@@ -18,6 +19,7 @@ databaseSuite()("working plan and execution budget in disposable Postgres", () =
     await migrateAuth();
     await sql`CREATE SCHEMA settings`;
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text)`;
+    await migrateEvents();
     await migrateCloudAi();
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${userId},'plan-fixture','local','user')`;
   });

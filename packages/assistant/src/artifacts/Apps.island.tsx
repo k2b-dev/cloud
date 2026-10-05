@@ -5,7 +5,7 @@ import { createSignal, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantCreateProjectDialog } from "../frontend/AssistantProjectsDialog";
 import AssistantSidebar from "../frontend/AssistantSidebar";
-import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "../frontend/assistant-live";
+import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { createArtifactActions } from "./artifact-actions";
 import { artifactClient } from "./client";
@@ -28,7 +28,7 @@ type Props = {
 export default function Apps(props: Props) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => {} });
+  const live = createAssistantLiveHub();
   const [sidebar, setSidebar] = createSignal({ conversations: props.conversations, projects: props.projects, doneCount: props.doneCount });
   const reloadSidebar = async () => setSidebar(await assistantApi.loadSidebar());
   const [selectedVersion, setSelectedVersion] = createSignal<number>();

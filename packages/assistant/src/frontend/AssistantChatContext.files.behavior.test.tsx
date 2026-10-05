@@ -73,8 +73,8 @@ describe("Assistant chat files", () => {
     const dom = createDomTestHarness();
     const { prompts, toast } = await import("@k2b/ui");
     const { AssistantChatContextContent } = await import("./AssistantChatContext");
-    const { AssistantLiveProvider, createAssistantLiveInvalidationHub } = await import("./assistant-live");
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined, delayMs: 1 });
+    const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
+    const live = createAssistantLiveHub();
     let files = options.files ?? [chatFile("/report.pdf", "assistant"), chatFile("/upload.pdf", "user")];
     const requests: { method: string; url: string }[] = [];
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
@@ -124,7 +124,6 @@ describe("Assistant chat files", () => {
       fetchMock.mockRestore();
       confirm.mockRestore();
       toastError.mockRestore();
-      live.dispose();
       dom.cleanup();
     };
     await tick();
@@ -208,8 +207,8 @@ describe("Assistant chat files", () => {
     const { prompts } = await import("@k2b/ui");
     const { ArtifactWorkspace, createArtifactWorkspace } = await import("../artifacts/Workspace");
     const { contextTab, fileTab } = await import("../artifacts/workspace-state");
-    const { AssistantLiveProvider, createAssistantLiveInvalidationHub } = await import("./assistant-live");
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined, delayMs: 1 });
+    const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
+    const live = createAssistantLiveHub();
     let files = [chatFile("/report.pdf", "assistant"), chatFile("/upload.pdf", "user")];
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -239,7 +238,6 @@ describe("Assistant chat files", () => {
       dispose();
       fetchMock.mockRestore();
       confirm.mockRestore();
-      live.dispose();
       dom.cleanup();
     };
     const reportTab = fileTab("Chat01", "/report.pdf");

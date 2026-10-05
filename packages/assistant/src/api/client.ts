@@ -199,11 +199,13 @@ export const assistantApi = {
     return response.json();
   },
 
-  loadChatContext: async (conversationId: string, signal?: AbortSignal): Promise<AssistantChatContextSnapshot> => {
+  /** `null` when the chat no longer exists for the viewer: it has no context, and its chat shows why. */
+  loadChatContext: async (conversationId: string, signal?: AbortSignal): Promise<AssistantChatContextSnapshot | null> => {
     const response = await assistantClient.workspace.conversations[":conversationId"].context.$get(
       { param: { conversationId } },
       { init: { signal } },
     );
+    if (response.status === 404) return null;
     if (!response.ok) throw new Error(await readError(response, "Failed to load chat context"));
     return (await response.json()) as AssistantChatContextSnapshot;
   },

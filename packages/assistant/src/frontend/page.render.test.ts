@@ -58,7 +58,7 @@ afterEach(() => {
 beforeEach(() => {
   spies.push(spyOn(ai, "getAiChatQuotas").mockResolvedValue({ enabled: false, balances: [] }));
   spies.push(spyOn(rail, "readRailSnapshot").mockResolvedValue({ revision: 0, visibility: {}, shortcuts: [], managedShortcuts: [] }));
-  spies.push(spyOn(live, "latestAiInvalidationCursor").mockResolvedValue("s6t.cloud-ai-invalidations.0"));
+  spies.push(spyOn(live.aiLive, "cursor").mockResolvedValue("s6t.cloud-live-core.0"));
   spies.push(
     spyOn(ai, "assistantAiSettingsState").mockResolvedValue({
       ok: true,

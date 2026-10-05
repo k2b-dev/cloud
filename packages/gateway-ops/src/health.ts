@@ -1,6 +1,7 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
 import { env } from "@k2b/cloud/config";
 import { listGatewayRouteSnapshots } from "@k2b/cloud/services";
+import { AI_LIVE_FUNCTION_OUTDATED_SIGNAL, aiLiveFunctionOutdated } from "./ai-live-health";
 import { buildAppRuntimeStatuses } from "./app-runtime-status";
 import { getGridsOperationalSnapshot, gridsSloStatus, listAppSloWindows } from "./grids-operational-health";
 import { getNatsInventorySummary } from "./observability/nats/service";
@@ -71,12 +72,13 @@ export const scopeGatewayHealth = (health: GatewayHealth, scopeAppIds?: readonly
 
 export const buildGatewayHealth = async (scopeAppIds?: readonly string[]): Promise<GatewayHealth> => {
   const checkedAt = new Date();
-  const [registry, snapshots, gridsOperations, gridsSlo, natsInventory] = await Promise.all([
+  const [registry, snapshots, gridsOperations, gridsSlo, natsInventory, aiLiveOutdated] = await Promise.all([
     readAppRegistrySnapshot(),
     listGatewayRouteSnapshots(),
     getGridsOperationalSnapshot(),
     listAppSloWindows("grids"),
     getNatsInventorySummary(),
+    aiLiveFunctionOutdated(),
   ]);
   const registeredApps = await listRegisteredAppStatus(registry.apps);
   const syncOperations = buildSyncOperationalHealth(
@@ -107,6 +109,10 @@ export const buildGatewayHealth = async (scopeAppIds?: readonly string[]): Promi
       else if (gridsOperations?.status === "warn") signals.push("Grids processing is delayed");
       if (sloStatus === "error") signals.push("Grids request availability is burning error budget quickly");
       else if (sloStatus === "warn") signals.push("Grids request availability is burning error budget");
+    }
+    if (app.id === "core" && aiLiveOutdated) {
+      status = "error";
+      signals.push(AI_LIVE_FUNCTION_OUTDATED_SIGNAL);
     }
     return {
       id: app.id,

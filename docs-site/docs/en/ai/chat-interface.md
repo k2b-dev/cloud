@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-08-22
+updated: 2026-10-05
 ---
 
 # Chat interface
@@ -115,16 +115,21 @@ The controller exposes:
 - file URLs and file counts;
 - one error state for the active chat.
 
-The controller consumes a transport-neutral conversation event stream. It uses
-the conversation SSE route by default, so application-owned chat endpoints and
-CLI-compatible integrations keep working unchanged. Core's Assistant injects
-the shared AI live connection instead: changing chats replaces only its turn
-channel, while the workspace WebSocket and user-wide invalidation channel stay
-alive. Both paths use the same projection, reconnect snapshot, and action
-deduplication behavior. When access to the conversation ends, both stop the
-stream and show the server's reason as the chat's error instead of
-reconnecting. Reopening or refreshing the chat, or acting in it, subscribes
-again; the error clears once the new stream connects.
+The controller consumes a transport-neutral conversation event stream over the
+conversation SSE route, like the CLI; `streamTransport` replaces it for an
+application-owned chat endpoint. Changing chats closes the previous stream and
+opens one for the new chat, and every connection starts from a fresh state
+snapshot, so a frontend tool runs once and a resolved approval does not
+reappear. When access to the conversation ends, the controller stops the
+stream and shows, in the page's language, why the chat cannot continue,
+instead of reconnecting. `refreshActiveConversation()` does the same and
+resolves `false` when the chat is gone, so a caller does not retry it.
+Reopening or refreshing the chat, or acting in it, subscribes again; the error
+clears once the new stream connects.
+
+Lists, Sources, files, tasks, dictations, and Project context refresh through
+[AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
+on `/api/ai/live`, not through the conversation stream.
 
 ## Attach Cloud resources
 

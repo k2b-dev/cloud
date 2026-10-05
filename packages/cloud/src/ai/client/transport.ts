@@ -13,10 +13,7 @@ export type AiConversationStreamTransport = {
   }) => AiStreamHandle;
 };
 
-/**
- * Why a conversation stream ended for good. The codes match the live
- * WebSocket's turn errors and revocations.
- */
+/** Why a conversation stream ended for good. A client shows its own text for the code. */
 export type AiStreamErrorCode = "login_required" | "access_denied" | "not_found";
 
 /** A stream that will not recover by reconnecting; `message` comes from the server when it sent one. */
@@ -35,6 +32,9 @@ const TERMINAL_STATUS_CODES: Readonly<Record<number, AiStreamErrorCode>> = {
   403: "access_denied",
   404: "not_found",
 };
+
+/** The code of an HTTP status after which a conversation cannot continue, by retrying or reconnecting. */
+export const terminalAiStreamErrorCode = (status: number): AiStreamErrorCode | undefined => TERMINAL_STATUS_CODES[status];
 
 const terminalStreamError = async (response: Response, code: AiStreamErrorCode): Promise<AiStreamError> => {
   const body: unknown = await response.json().catch(() => null);
@@ -116,7 +116,7 @@ export const subscribeAiStream = (input: {
         input.onStatus?.(reconnectDelay === RECONNECT_BASE_MS ? "connecting" : "reconnecting");
         const response = await fetchStream(input.url, { signal: attempt.signal, headers: { Accept: "text/event-stream" } });
         if (stopped) return;
-        const terminalCode = TERMINAL_STATUS_CODES[response.status];
+        const terminalCode = terminalAiStreamErrorCode(response.status);
         if (terminalCode) {
           // The connect timeout still bounds reading the error body.
           const error = await terminalStreamError(response, terminalCode);

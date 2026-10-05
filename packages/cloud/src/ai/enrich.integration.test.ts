@@ -3,6 +3,7 @@ import type { Message } from "@k2b/nessi";
 import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
+import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 
@@ -54,6 +55,7 @@ databaseSuite()("enrichment store (integration)", () => {
     await migrateAuth();
     await sql`CREATE SCHEMA settings`;
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text)`;
+    await migrateEvents();
     await migrateCloudAi();
   });
   test("applyEnrichment with exact dirtyAsOf makes an unchanged conversation exactly clean", async () => {

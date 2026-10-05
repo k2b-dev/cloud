@@ -1,10 +1,12 @@
-import type { AiInvalidation, AiInvalidationDomain } from "@k2b/cloud/ai/live-events";
+import { AI_INVALIDATION_DOMAINS, type AiInvalidation, type AiInvalidationDomain, AiInvalidationSchema } from "@k2b/cloud/ai/live-events";
+import { type LiveSubscription, liveConnection } from "@k2b/cloud/browser/live";
 import { createContext, type JSX, useContext } from "solid-js";
 
 export type AssistantLiveInvalidation = {
-  cursor: string | null;
   domains: ReadonlySet<AiInvalidationDomain>;
+  /** `null`: every conversation. */
   conversationIds: ReadonlySet<string> | null;
+  /** `null`: every Project. */
   projectIds: ReadonlySet<string> | null;
 };
 
@@ -13,122 +15,76 @@ type Invalidator = {
   invalidate: (invalidation: AssistantLiveInvalidation) => Promise<void>;
 };
 
-type PendingInvalidation = AssistantLiveInvalidation & { sequence: number };
+const ofEvent = (event: AiInvalidation): AssistantLiveInvalidation => ({
+  domains: new Set(event.domains),
+  conversationIds: event.conversationId ? new Set([event.conversationId]) : null,
+  projectIds: event.projectId ? new Set([event.projectId]) : null,
+});
 
-export const createAssistantLiveInvalidationHub = (options: {
-  delayMs?: number;
-  retryBaseMs?: number;
-  retryMaxMs?: number;
-  onApplied: (cursor: string | null) => void;
-  onFailed?: (attempt: number, error: unknown) => void;
-}) => {
+const everything: AssistantLiveInvalidation = { domains: new Set(AI_INVALIDATION_DOMAINS), conversationIds: null, projectIds: null };
+
+/**
+ * The Assistant views that reload when AI data changes. The live subscription
+ * hands it each batch of updates and moves its cursor once the returned promise
+ * resolves; a rejection makes it try again.
+ */
+export const createAssistantLiveHub = () => {
   const invalidators = new Set<Invalidator>();
-  let pending: PendingInvalidation | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let running = false;
-  let disposed = false;
-  let sequence = 0;
-  let failedAttempts = 0;
-
-  const mergeIds = (left: ReadonlySet<string> | null, right: ReadonlySet<string> | null): ReadonlySet<string> | null =>
-    left === null || right === null ? null : new Set([...left, ...right]);
-
-  const merge = (left: PendingInvalidation | null, right: PendingInvalidation): PendingInvalidation => ({
-    sequence: Math.max(left?.sequence ?? 0, right.sequence),
-    cursor: right.sequence >= (left?.sequence ?? 0) ? right.cursor : (left?.cursor ?? null),
-    domains: new Set([...(left?.domains ?? []), ...right.domains]),
-    conversationIds: mergeIds(left?.conversationIds ?? new Set(), right.conversationIds),
-    projectIds: mergeIds(left?.projectIds ?? new Set(), right.projectIds),
-  });
-
-  const arm = (delay = options.delayMs ?? 30) => {
-    if (disposed || running || timer || !pending) return;
-    timer = setTimeout(() => {
-      timer = null;
-      void flush();
-    }, delay);
-  };
-
-  const flush = async () => {
-    if (disposed || running || !pending) return;
-    running = true;
-    const current = pending;
-    pending = null;
-    try {
-      await Promise.all([...invalidators].filter((item) => item.matches(current)).map((item) => item.invalidate(current)));
-      if (disposed) return;
-      failedAttempts = 0;
-      options.onApplied(current.cursor);
-    } catch (error) {
-      if (disposed) return;
-      pending = merge(pending, current);
-      failedAttempts += 1;
-      options.onFailed?.(failedAttempts, error);
-      running = false;
-      const base = options.retryBaseMs ?? 1_000;
-      const maximum = options.retryMaxMs ?? 15_000;
-      const exponential = Math.min(maximum, base * 2 ** Math.min(failedAttempts - 1, 5));
-      arm(Math.max(1, Math.round(exponential * (0.8 + Math.random() * 0.4))));
-      return;
+  /** Reloads every view that one of the invalidations matches, each view once. */
+  const run = async (invalidations: readonly AssistantLiveInvalidation[]) => {
+    const reloads: Promise<void>[] = [];
+    for (const invalidator of invalidators) {
+      const match = invalidations.find((invalidation) => invalidator.matches(invalidation));
+      if (match) reloads.push(invalidator.invalidate(match));
     }
-    running = false;
-    arm();
+    await Promise.all(reloads);
   };
-
-  const schedule = (
-    invalidation: Omit<AssistantLiveInvalidation, "conversationIds" | "projectIds"> & {
-      conversationId?: string | null;
-      projectId?: string | null;
-    },
-  ) => {
-    pending = merge(pending, {
-      ...invalidation,
-      conversationIds: invalidation.conversationId ? new Set([invalidation.conversationId]) : null,
-      projectIds: invalidation.projectId ? new Set([invalidation.projectId]) : null,
-      sequence: ++sequence,
-    });
-    arm();
-  };
-
   return {
     register: (invalidator: Invalidator) => {
-      if (disposed) return () => undefined;
       invalidators.add(invalidator);
       return () => invalidators.delete(invalidator);
     },
-    scheduleEvent: (cursor: string, event: AiInvalidation) =>
-      schedule({
-        cursor,
-        domains: new Set(event.domains),
-        conversationId: event.conversationId,
-        projectId: event.projectId,
-      }),
-    scheduleScopeRefresh: (cursor: string | null = null) =>
-      schedule({
-        cursor,
-        domains: new Set<AiInvalidationDomain>([
-          "conversation-list",
-          "conversation-detail",
-          "conversation-sources",
-          "conversation-files",
-          "conversation-tasks",
-          "conversation-dictations",
-          "project-list",
-          "project-detail",
-          "project-context",
-        ]),
-      }),
-    dispose: () => {
-      disposed = true;
-      if (timer) clearTimeout(timer);
-      timer = null;
-      pending = null;
-      invalidators.clear();
-    },
+    /** Reloads the views that a batch of updates changed. */
+    apply: (events: readonly AiInvalidation[]) => run(events.map(ofEvent)),
+    /** Reloads every view: updates were missed. */
+    resync: () => run([everything]),
   };
 };
 
-export type AssistantLiveHub = ReturnType<typeof createAssistantLiveInvalidationHub>;
+export type AssistantLiveHub = ReturnType<typeof createAssistantLiveHub>;
+
+/**
+ * Follows the user's AI live updates on Core's socket from the page's cursor;
+ * the hub reloads what changed. `failing` reports a reload that failed and is
+ * tried again, and its success. `stopped`: the session ended, or reloading kept
+ * failing, so live updates stopped.
+ */
+export const followAssistantLive = (
+  hub: AssistantLiveHub,
+  options: { cursor: string; failing: (failing: boolean) => void; stopped: () => void },
+): LiveSubscription => {
+  const reload = async (run: () => Promise<void>) => {
+    try {
+      await run();
+      options.failing(false);
+    } catch (error) {
+      options.failing(true);
+      throw error;
+    }
+  };
+  return liveConnection("/api/ai/live").subscribe(
+    "user",
+    {},
+    {
+      cursor: options.cursor,
+      parse: (data) => AiInvalidationSchema.parse(data),
+      apply: (events) => reload(() => hub.apply(events.map((event) => event.data))),
+      resync: () => reload(hub.resync),
+      revoked: options.stopped,
+      unavailable: options.stopped,
+    },
+  );
+};
 
 const AssistantLiveContext = createContext<AssistantLiveHub>();
 

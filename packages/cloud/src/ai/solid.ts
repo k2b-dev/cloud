@@ -8,11 +8,6 @@ export {
 } from "./client/controller";
 export { conversationFileSource } from "./client/file-source";
 export {
-  type AiLiveConnection,
-  type CreateAiLiveConnectionOptions,
-  createAiLiveConnection,
-} from "./client/live-connection";
-export {
   type AiActiveTurn,
   type AiChatProjection,
   emptyProjection,

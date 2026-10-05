@@ -9,8 +9,8 @@ test("global task dialogs provide live context through activity, run detail and 
   dom.root.className = "k2b-ui";
   const { dialogCore } = await import("@k2b/ui");
   const { openAssistantActivities, openAssistantTaskRun } = await import("./AssistantActivitiesDialog");
-  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const { createAssistantLiveHub } = await import("./assistant-live");
+  const live = createAssistantLiveHub();
   const task: AiChatTaskView = {
     id: "task01",
     chatId: "chat01",
@@ -105,7 +105,6 @@ test("global task dialogs provide live context through activity, run detail and 
     while (dialogCore.isOpen()) dialogCore.close();
     await tick();
     fetchMock.mockRestore();
-    live.dispose();
     dom.cleanup();
   }
 });

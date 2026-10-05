@@ -11,13 +11,13 @@ const load = async () => {
   const dom = createDomTestHarness();
   try {
     const { default: AssistantSidebar } = await import("./AssistantSidebar");
-    const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
-    return { AssistantSidebar, createAssistantLiveInvalidationHub };
+    const { createAssistantLiveHub } = await import("./assistant-live");
+    return { AssistantSidebar, createAssistantLiveHub };
   } finally {
     dom.cleanup();
   }
 };
-const { AssistantSidebar, createAssistantLiveInvalidationHub } = await load();
+const { AssistantSidebar, createAssistantLiveHub } = await load();
 
 const conversation = (id: string, title: string, projectId: string | null): AiConversation => ({
   id,
@@ -44,7 +44,7 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 
 test("chat clicks select immediately while loading, preserve native modifiers and ignore stale completions", async () => {
   const dom = createDomTestHarness();
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const live = createAssistantLiveHub();
   const [selected, setSelected] = createSignal("first");
   let finish: (opened: boolean) => void = () => {};
   const pending = new Promise<boolean>((resolve) => {
@@ -137,7 +137,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
   let created = 0;
   const searches: unknown[] = [];
   const release = registerGlobalSearchHost((options) => searches.push(options));
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const live = createAssistantLiveHub();
   const dispose = render(
     () => (
       <AssistantSidebar
@@ -213,7 +213,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
 
 test("Done keeps its card through live updates, confirms success, then fades without blocking", async () => {
   const dom = createDomTestHarness();
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const live = createAssistantLiveHub();
   const original = { ...conversation("finish", "Finish this", null), hasActiveSchedule: true };
   const completed = { ...original, isDone: true, done: true };
   const [items, setItems] = createSignal<AiConversation[]>([original]);
@@ -253,14 +253,13 @@ test("Done keeps its card through live updates, confirms success, then fades wit
     jest.useRealTimers();
     dispose();
     save.mockRestore();
-    live.dispose();
     dom.cleanup();
   }
 });
 
 test("failed Done request leaves the chat available and clears its pending feedback", async () => {
   const dom = createDomTestHarness();
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const live = createAssistantLiveHub();
   const save = spyOn(assistantApi, "setConversationDone").mockRejectedValue(new Error("Offline"));
   const dispose = render(() => <AssistantSidebar conversations={() => [conversation("fail", "Keep this", null)]} live={live} />, dom.root);
   delegateEvents(["click"]);
@@ -274,7 +273,6 @@ test("failed Done request leaves the chat available and clears its pending feedb
   } finally {
     dispose();
     save.mockRestore();
-    live.dispose();
     dom.cleanup();
   }
 });

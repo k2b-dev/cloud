@@ -18,7 +18,7 @@ afterAll(() => {
   if (createdSerovalLink) unlinkSync(serovalLink);
 });
 
-const [{ default: AssistantProjectView }, { assistantContextCountTitle }, { AssistantLiveProvider, createAssistantLiveInvalidationHub }] =
+const [{ default: AssistantProjectView }, { assistantContextCountTitle }, { AssistantLiveProvider, createAssistantLiveHub }] =
   await Promise.all([import("./AssistantProjectView"), import("./AssistantContextContent"), import("./assistant-live")]);
 
 const project = {
@@ -125,7 +125,7 @@ const projectContext = {
 
 describe("Assistant Project view", () => {
   test("places compact recent chats above the bottom composer and renders a quiet context rail", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -175,7 +175,6 @@ describe("Assistant Project view", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).toContain("IT support");
     expect(html).toContain("Standard composer");
@@ -218,7 +217,7 @@ describe("Assistant Project view", () => {
   });
 
   test("uses one item action menu for Project context management", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -235,7 +234,6 @@ describe("Assistant Project view", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).toContain('aria-label="Actions for Printer runbook"');
     expect(html).toContain('aria-label="Actions for printer.png"');
@@ -250,7 +248,7 @@ describe("Assistant Project view", () => {
   });
 
   test("adds View all as the last action only when a section overflows", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -278,7 +276,6 @@ describe("Assistant Project view", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).toContain("2 Images");
     expect(html).toContain('class="ti ti-eye"');
@@ -287,7 +284,7 @@ describe("Assistant Project view", () => {
   });
 
   test("keeps Project context management out of a read-only workspace", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -304,7 +301,6 @@ describe("Assistant Project view", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).not.toContain('aria-label="Project settings"');
     expect(html).not.toContain('aria-label="Add Project knowledge"');

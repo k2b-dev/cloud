@@ -78,8 +78,11 @@ const recorder = (delayMs = 0) => {
 };
 
 suiteFor("database", "nats")("live outbox", () => {
-  test("an application does not start before Core created the outbox", async () => {
-    await expect(startLiveOutbox("inventory")).rejects.toThrow(/names "eventstest", but this process starts "inventory"/);
+  test("only the application itself serves its updates, and it does not start before Core created the outbox", async () => {
+    // Another application may hold the definition to read its cursor; it publishes nothing of it.
+    expect(await startLiveOutbox("inventory")).toBeNull();
+    live.routes({});
+    await expect(startLiveOutbox("inventory")).rejects.toThrow(/mounts the live socket of "eventstest", but starts "inventory"/);
     await expect(startLiveOutbox(APP)).rejects.toThrow(/Update Cloud Core first/);
     const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
     await runCoreSetup();

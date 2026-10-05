@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, IconButton, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, Index, onCleanup, Show } from "solid-js";
-import { type AssistantLiveInvalidation, type createAssistantLiveInvalidationHub, matchesAssistantInvalidation } from "./assistant-live";
+import { type AssistantLiveInvalidation, type createAssistantLiveHub, matchesAssistantInvalidation } from "./assistant-live";
 import { audioMessages } from "./audio-messages";
 import { startAudioRecording } from "./audio-recorder";
 
@@ -44,7 +44,7 @@ export const createAssistantDictation = (props: {
   target: () => string | null;
   ensureTarget: () => Promise<{ key: string; target: string } | null>;
   generation: (key: string) => number;
-  live: ReturnType<typeof createAssistantLiveInvalidationHub>;
+  live: ReturnType<typeof createAssistantLiveHub>;
   apply: (key: string, target: string, id: string) => Promise<boolean>;
 }) => {
   const locale = useLocale();

@@ -7,7 +7,7 @@ if (!isServer) {
   test("all-chat search releases its shortcut while a chat is open and restores it on leaving", async () => {
     const dom = createDomTestHarness();
     const { default: AssistantSidebar } = await import("./AssistantSidebar");
-    const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
+    const { createAssistantLiveHub } = await import("./assistant-live");
     const { contextCommandsWithShortcuts } = await import("@k2b/cloud/browser/testing");
     const [project, setProject] = createSignal<string | null>(null);
     const projectRecord = {
@@ -24,7 +24,7 @@ if (!isServer) {
       updatedAt: "",
     };
     const [chat, setChat] = createSignal<string | null>(null);
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const dispose = render(
       () => (
         <AssistantSidebar

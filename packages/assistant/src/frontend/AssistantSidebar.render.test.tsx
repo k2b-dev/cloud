@@ -21,8 +21,8 @@ afterAll(() => {
 
 const { default: AssistantSidebar } = await import("./AssistantSidebar");
 const { default: AssistantAllChatsList } = await import("./AssistantAllChatsList");
-const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
-const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+const { createAssistantLiveHub } = await import("./assistant-live");
+const live = createAssistantLiveHub();
 
 const project = {
   id: "project123",

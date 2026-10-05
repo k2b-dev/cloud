@@ -886,14 +886,19 @@ export const defineApp = <
       const stopLifecycle = startOpts.lifecycle?.stop;
       if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
 
-      // Fails before any setup when Core has not created the platform outbox yet.
-      const stopLiveOutbox = await startLiveOutbox(meta.id);
-      if (stopLiveOutbox) cleanup.push(stopLiveOutbox);
+      const startOutbox = async () => {
+        const stopLiveOutbox = await startLiveOutbox(meta.id);
+        if (stopLiveOutbox) cleanup.push(stopLiveOutbox);
+      };
+      // An application fails before any setup when Core has not created the platform outbox yet.
+      // Core creates it in its own setup, so it starts publishing after that.
+      if (meta.id !== "core") await startOutbox();
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
         log.info(`Setup: ${meta.id}`);
         await startOpts.lifecycle.setup(cloudCtx);
       }
+      if (meta.id === "core") await startOutbox();
 
       stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
 

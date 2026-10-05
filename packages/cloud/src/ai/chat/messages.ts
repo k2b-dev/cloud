@@ -22,6 +22,9 @@ const messages = i18n.define({
       thinking: "Thinking",
       showReasoning: "Show reasoning",
       byteRange: ({ start, end }: { start: string; end: string }) => `Bytes ${start}–${end}`,
+      streamLoginRequired: "Your session has ended. Sign in again to continue this chat.",
+      streamAccessDenied: "You no longer have access to this chat.",
+      streamNotFound: "This chat is no longer available.",
     },
     de: {
       backgroundRun: "Hintergrundlauf",
@@ -43,6 +46,9 @@ const messages = i18n.define({
       thinking: "Denkt nach",
       showReasoning: "Denkprozess anzeigen",
       byteRange: ({ start, end }) => `Bytes ${start}–${end}`,
+      streamLoginRequired: "Deine Sitzung ist abgelaufen. Melde dich erneut an, um diesen Chat fortzusetzen.",
+      streamAccessDenied: "Du hast keinen Zugriff mehr auf diesen Chat.",
+      streamNotFound: "Dieser Chat ist nicht mehr verfügbar.",
     },
   },
 });
