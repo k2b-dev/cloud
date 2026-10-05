@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Mail
@@ -294,6 +294,28 @@ arrays replace the entire corresponding list. `draft.read.editableSnapshotComple
 must be true before using that response for a complete `draft.update` replacement.
 Both mutations require the current revision; sending still requires the existing
 send-safety review and approval.
+
+## Search in large mailboxes
+
+Search reads a bounded amount of mail in each mailbox, so a word that appears
+in most messages stays fast. **Best match** ranks the newest 1,000 messages of a mailbox that
+match. A word in nearly every message is checked from the newest message on
+until those 1,000 are found. Add a more specific word, or choose
+**Newest first**, to reach older matches.
+
+Cloud search and the `search` capability search up to four mailboxes at a time.
+Each mailbox has three seconds, and the whole search has six. A mailbox that
+fails or runs out of time is left out and logged as `Mail search skipped a
+mailbox` from `mail:search`; the other mailboxes' results are still returned.
+The result's `summary` then names the mailboxes that could not be searched,
+for example `Results from 5 of 6 mailboxes; “Sales” could not be searched in
+time.` The search fails only when no mailbox answers. A search that runs out of
+time fails with `BAD_INPUT` and `Search query exceeded the execution limit`,
+not with an internal error.
+
+BM25 ranking with `pg_textsearch` is optional; Mail creates its index when the
+extension is installed. See
+[Optional Mail search ranking](/en/docs/operations/deployment-requirements#optional-mail-search-ranking).
 
 ## Deployment requirements
 

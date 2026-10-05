@@ -126,7 +126,8 @@ Für einen einzelnen Ordner im Terminal akzeptiert `cld mail ls "Postfach:Sent M
 3. Entferne veraltete Felder wie Ordner, lokaler Tag oder Anbieter-Schlüsselwort.
 4. Wird der Nachrichtentext noch synchronisiert, versuche es nach Abschluss erneut.
 5. Befinden sich die fehlenden Wörter in einem neuen Anhang, warte auf die Verarbeitung im Hintergrund und versuche es erneut.
-6. Bitte eine Person mit Adminrechten, **Status > Suchindex** zu prüfen, wenn die allgemeine Suche im gesamten Postfach fehlschlägt.
+6. **Bester Treffer** ordnet die neuesten 1.000 passenden Nachrichten eines Postfachs. Steht ein Wort in sehr vielen Nachrichten, ergänze ein genaueres Wort oder wähle **Neueste zuerst**, um ältere zu erreichen.
+7. Bitte eine Person mit Adminrechten, **Status > Suchindex** zu prüfen, wenn die allgemeine Suche im gesamten Postfach fehlschlägt.
 :::
 
 Lokale Tags und interne Kommentare gibt es nur in Cloud. Anbieterordner und Schlüsselwörter hängen vom synchronisierten entfernten Zustand ab.
