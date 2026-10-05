@@ -12,6 +12,7 @@ import { searchInvocationOperation } from "../services/identity/invocation-opera
 import type { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes as buildSearchRoutes } from "./search";
+import type { SearchStreamLine } from "./search/schemas";
 
 const capabilities = defineCapabilities({
   protocolVersion: 2,
@@ -961,4 +962,231 @@ test("an app tag context selects only its provider and cannot be widened by ordi
   expect(calls).toEqual([]);
   expect((await routes.request("/search?app=demo&scope_tag=thing")).status).toBe(200);
   expect(calls.map((call) => call.url)).toEqual(["http://demo:3000/api/_internal/capabilities/v1/queries/search"]);
+});
+
+describe("streamed search", () => {
+  const NDJSON = { accept: "application/x-ndjson" };
+  const found = (appId: string, title = appId) =>
+    Response.json({ data: [{ ref: { type: `${appId}.item`, id: title }, title, links: [{ rel: "open", href: `/app/${appId}` }] }] });
+
+  /** Reads one line at a time, so a test sees exactly what has arrived so far. */
+  const lines = (response: Response) => {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    return {
+      next: async (): Promise<SearchStreamLine | undefined> => {
+        while (!buffer.includes("\n")) {
+          const chunk = await reader.read();
+          if (chunk.done) return undefined;
+          buffer += decoder.decode(chunk.value, { stream: true });
+        }
+        const end = buffer.indexOf("\n");
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        return JSON.parse(line);
+      },
+      cancel: () => reader.cancel(),
+    };
+  };
+
+  /** Each provider answers only when the test releases it. */
+  const heldProviders = () => {
+    const held = new Map<string, { release: (response: Response) => void; signal?: AbortSignal | null }>();
+    const fetch = (url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const appId = new URL(String(url)).hostname;
+        held.set(appId, { release: resolve, signal: init?.signal });
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    const started = async (count: number) => {
+      for (let attempt = 0; attempt < 100 && held.size < count; attempt += 1) await Bun.sleep(1);
+      expect(held.size).toBe(count);
+    };
+    return { held, fetch, started };
+  };
+
+  test("writes each app's line as soon as it finishes, while slower apps keep searching", async () => {
+    const providers = heldProviders();
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [provider(1), provider(2), provider(3)],
+      fetch: providers.fetch,
+    });
+    const response = await routes.request("/search?q=plan", { headers: NDJSON });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/x-ndjson; charset=utf-8");
+    expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
+    const stream = lines(response);
+    expect(await stream.next()).toMatchObject({ type: "start", query: "plan", providers: ["search-01", "search-02", "search-03"] });
+    await providers.started(3);
+
+    providers.held.get("search-03")!.release(found("search-03", "Plan"));
+    const first = await stream.next();
+    expect(first).toMatchObject({
+      type: "provider",
+      provider: "search-03",
+      status: "ok",
+      results: [{ title: "Plan", appId: "search-03" }],
+    });
+    expect(first?.type === "provider" && first.ms).toBeGreaterThanOrEqual(0);
+    // The other two are still running, unaffected.
+    expect(providers.held.get("search-01")!.signal?.aborted).toBeFalse();
+
+    providers.held.get("search-01")!.release(Response.json({ data: [] }));
+    expect(await stream.next()).toMatchObject({ type: "provider", provider: "search-01", status: "empty", results: [] });
+    providers.held.get("search-02")!.release(found("search-02"));
+    expect(await stream.next()).toMatchObject({ type: "provider", provider: "search-02", status: "ok" });
+    expect(await stream.next()).toEqual({ type: "done", status: "complete", count: 2 });
+    expect(await stream.next()).toBeUndefined();
+  });
+
+  test("names a timed-out app and a failed app in their own lines and keeps the others' results", async () => {
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
+    try {
+      const providers = heldProviders();
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => [provider(1), provider(2), provider(3)],
+        fetch: providers.fetch,
+      });
+      const stream = lines(await routes.request("/search?q=plan", { headers: NDJSON }));
+      expect(await stream.next()).toMatchObject({ type: "start" });
+      await providers.started(3);
+      providers.held.get("search-02")!.release(Response.json({ code: "UNAVAILABLE" }, { status: 503 }));
+      expect(await stream.next()).toMatchObject({ type: "provider", provider: "search-02", status: "error", results: [] });
+      providers.held.get("search-01")!.release(found("search-01"));
+      expect(await stream.next()).toMatchObject({ type: "provider", provider: "search-01", status: "ok" });
+      // Search 3 is still searching when the shared deadline ends.
+      deadline.abort();
+      expect(await stream.next()).toMatchObject({ type: "provider", provider: "search-03", status: "timeout", results: [] });
+      expect(await stream.next()).toEqual({ type: "done", status: "partial", count: 1 });
+      expect(timeout).toHaveBeenCalledWith(8_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  test("stops the remaining providers when the client stops reading", async () => {
+    const providers = heldProviders();
+    const routes = createSearchRoutes({ authenticate, listCapabilities: async () => [provider(1), provider(2)], fetch: providers.fetch });
+    const stream = lines(await routes.request("/search?q=plan", { headers: NDJSON }));
+    await stream.next();
+    await providers.started(2);
+    providers.held.get("search-01")!.release(found("search-01"));
+    expect(await stream.next()).toMatchObject({ provider: "search-01" });
+    await stream.cancel();
+    expect(providers.held.get("search-02")!.signal?.aborted).toBeTrue();
+  });
+
+  test("stops the remaining providers when the request is aborted", async () => {
+    const providers = heldProviders();
+    const routes = createSearchRoutes({ authenticate, listCapabilities: async () => [provider(1), provider(2)], fetch: providers.fetch });
+    const client = new AbortController();
+    const stream = lines(await routes.request("/search?q=plan", { headers: NDJSON, signal: client.signal }));
+    await stream.next();
+    await providers.started(2);
+    client.abort();
+    expect(providers.held.get("search-01")!.signal?.aborted).toBeTrue();
+    expect(providers.held.get("search-02")!.signal?.aborted).toBeTrue();
+  });
+
+  test("groups several Queries of one app into one line within the app's limit", async () => {
+    const twoQueries = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        ...capabilities,
+        queries: {
+          first: { ...capabilities.queries.search, universalSearch: { tags: [{ tag: "first", title: "First", description: "First." }] } },
+          second: {
+            ...capabilities.queries.search,
+            universalSearch: { tags: [{ tag: "second", title: "Second", description: "Second." }] },
+          },
+        },
+      }),
+    ).manifest;
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [{ ...app, manifest: twoQueries }, provider(2)],
+      fetch: async (url) => {
+        const target = new URL(String(url));
+        if (target.hostname === "search-02") return Response.json({ data: [] });
+        const query = target.pathname.split("/").at(-1)!;
+        return Response.json({
+          data: Array.from({ length: 2 }, (_, index) => ({
+            ref: { type: "demo.item", id: `${query}-${index}` },
+            title: `${query} ${index}`,
+            priority: query === "second" ? 5 : 0,
+            links: [{ rel: "open", href: `/app/demo/${query}-${index}` }],
+          })),
+        });
+      },
+    });
+    const stream = lines(await routes.request("/search?q=plan&provider_limit=3", { headers: NDJSON }));
+    const received: SearchStreamLine[] = [];
+    for (let line = await stream.next(); line; line = await stream.next()) received.push(line);
+    expect(received[0]).toMatchObject({ type: "start", providers: ["demo", "search-02"] });
+    const demo = received.find((line) => line.type === "provider" && line.provider === "demo");
+    expect(demo?.type === "provider" && demo.results.map((item) => item.title)).toEqual(["second 0", "second 1", "first 0"]);
+    expect(received.filter((line) => line.type === "provider")).toHaveLength(2);
+    expect(received.at(-1)).toEqual({ type: "done", status: "complete", count: 3 });
+  });
+
+  test("answers the catalog and unsupported tags in the same two-line shape", async () => {
+    let calls = 0;
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [app],
+      fetch: async () => {
+        calls += 1;
+        return Response.json({ data: [] });
+      },
+    });
+    for (const [path, unsupportedTags] of [
+      ["/search", undefined],
+      ["/search?q=x&tag=missing", ["missing"]],
+    ] satisfies Array<[string, string[] | undefined]>) {
+      const stream = lines(await routes.request(path, { headers: NDJSON }));
+      expect(await stream.next()).toEqual({
+        type: "start",
+        query: path === "/search" ? "" : "x",
+        apps: [
+          {
+            id: "demo",
+            name: "Demo",
+            icon: "ti ti-box",
+            tags: [{ tag: "item", title: "Items", description: "Show test items.", aliases: ["thing"] }],
+          },
+        ],
+        providers: [],
+        ...(unsupportedTags ? { unsupportedTags } : {}),
+      });
+      expect(await stream.next()).toEqual({ type: "done", status: "complete", count: 0 });
+      expect(await stream.next()).toBeUndefined();
+    }
+    expect(calls).toBe(0);
+  });
+
+  test("keeps the merged JSON response for every client that does not ask for a stream", async () => {
+    const routes = createSearchRoutes({
+      authenticate,
+      listCapabilities: async () => [provider(1), provider(2)],
+      fetch: async (url) => {
+        const appId = new URL(String(url)).hostname;
+        return appId === "search-02" ? Response.json({}, { status: 500 }) : found(appId);
+      },
+    });
+    for (const accept of [undefined, "application/json", "*/*"]) {
+      const response = await routes.request("/search?q=plan", accept ? { headers: { accept } } : {});
+      expect(response.headers.get("content-type")).toStartWith("application/json");
+      expect(await response.json()).toMatchObject({
+        query: "plan",
+        count: 1,
+        items: [{ appId: "search-01" }],
+        failedApps: ["search-02"],
+      });
+    }
+  });
 });

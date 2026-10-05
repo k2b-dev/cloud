@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-09-16
+updated: 2026-10-05
 ---
 
 # Universal search
@@ -13,7 +13,8 @@ updated: 2026-09-16
 Universal Search is an optional projection of ordinary capability Queries.
 The application searches its own data and returns only resources the current
 access subject may read. Cloud discovers live providers, fans out the query,
-and merges their results.
+and either merges their results or streams each application's results as soon
+as that application answers.
 
 Signing and provider requests share one eight-second execution budget. Cold
 signer preparation uses that same budget; there is no shorter signing timeout.
@@ -39,8 +40,9 @@ searchLinks: [
 ],
 ```
 
-These links appear only in the global search dialog, below all resource
-results. Cloud includes them when the app is visible in the user's navigation
+These links appear only in the global search dialog, above the resource
+results: they are matched in the browser and show at once, so application
+results that arrive later never push them down. Cloud includes them when the app is visible in the user's navigation
 catalog. The browser matches every search word against the label, description, and keywords,
 ignoring case, after at least two characters. An explicit application context also shows
 its static links for an empty query and uses fuzzy matching. Resource contexts
@@ -202,11 +204,39 @@ traversal semantics when they have a stable cross-client use.
 Cloud ranks results by app-provided priority and title after merging providers.
 One provider failure does not fail the complete search: successful providers
 still return partial results with HTTP 200 and `failedApps` identifies unavailable
-sources. The browser shows an incomplete-results hint rather than claiming
-there were no matches. A shared registry or invocation
+sources. A shared registry or invocation
 signer failure returns HTTP 503, not a successful empty result. Log provider failures
 with [structured logging](/en/docs/platform/logging); the application's domain
 database remains the source of truth.
+
+## Stream results as applications answer
+
+By default, `GET /api/search` answers once with the merged JSON response
+above, for the CLI, MCP, and other API clients. A client that sends
+`Accept: application/x-ndjson` receives one JSON object per line instead, in
+this order:
+
+| Line | Fields | Meaning |
+| --- | --- | --- |
+| `start` | `query`, `apps`, `providers`, optional `unsupportedTags` | The app catalog and the IDs of the applications that search |
+| `provider` | `provider`, `status`, `results`, `ms` | One application finished; `status` is `ok`, `empty`, `timeout`, or `error` |
+| `done` | `status` (`complete` or `partial`), `count` | Every application has answered |
+
+Each application named in `start` gets exactly one `provider` line, written
+when all of its search Queries have finished, so a slow application never holds
+back the others. Applications keep searching until the shared eight-second
+budget ends; an application still searching then gets a `timeout` line.
+`results` holds at most that application's provider limit, ranked by priority
+and title; a streamed search has no merged top-30 list. An application with
+several Queries can report `timeout` or `error` together with what its other
+Queries found.
+
+Closing the response, for example because the user typed the next character,
+cancels the providers that are still running. The response is sent with
+`Cache-Control: no-store, no-transform` and `X-Accel-Buffering: no`; a reverse
+proxy in front of Cloud must pass it through without buffering or compressing
+it, or the browser receives every line at the end. Signing and registry
+failures still return HTTP 503 before the first line.
 
 ## Search in the browser
 
@@ -220,9 +250,31 @@ unsupported-filter warning.
 **All filters** remains available while tags load and shows their loading state
 inside the filter view. It uses the same padded hover surface as **Actions**.
 
-Results are grouped by application. Desktop search shows a preview beside the
-input and result list. The centered dialog keeps its width and top position across search
-states, growing downward until its content needs to scroll.
+Results are grouped by application, and each application's section appears as
+soon as that application answers. New sections are appended below the ones
+already shown, so nothing on screen moves and the keyboard selection stays on
+its result. Matching pages and actions come first. An action that finishes
+loading after results are on screen appears with the next keystroke instead
+of pushing them down.
+While applications are still searching, a calm line below the results names
+them, for example “Files and Mail are still searching…”. “No matches” appears
+only after every application has answered. An application that did not
+answer in time or failed gets its own line, for example “Mail did not respond
+in time · Try again”; **Try again** searches only that application and appends
+its results. When the connection breaks off, the results already shown stay
+and every application that had not answered gets that line. Only a search
+that fails before it names its applications says “Search is currently
+unavailable”, below anything already on screen.
+A search narrowed to one application by its chip or a tag has one
+state at a time: searching, its results, or **Mail: no matches for “invoice”**.
+When every application has answered, screen readers hear “Search complete,
+3 results”, followed by each application that did not answer, such as “Mail
+did not respond in time”.
+
+Desktop search shows a preview beside the
+input and result list. The centered dialog keeps its width, top position, and
+height from the first search character until the input is cleared, so arriving
+results never resize it.
 On small screens, **Details** opens the preview and
 **Back to results** returns to the list. Escape first leaves filter discovery
 or mobile details, then closes the dialog. Scroll fades indicate more content.
@@ -249,8 +301,10 @@ retain their modal selection behavior.
 
 
 Global search opens a result on click or Enter. The picker selects it first;
-**Add** confirms the choice. While a new resource search loads, earlier results
-remain visible but cannot be selected for the new query.
+**Add** confirms the choice. While a new resource search waits for its first
+application, earlier results remain visible but cannot be selected for the new
+query. Results of the current search can be opened while other applications
+are still searching.
 
 ## Open search from an application
 
