@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.13.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.12.0...npm-ui-v0.13.0) (2026-10-05)
+
+
+### Features
+
+* **core:** flatten the account pages ([#572](https://github.com/k2b-dev/cloud/issues/572)) ([deaf537](https://github.com/k2b-dev/cloud/commit/deaf537c25414d89785ef24407b839d880c49252))
+* **notebooks:** preview attached files instead of only downloading them ([#574](https://github.com/k2b-dev/cloud/issues/574)) ([8c443eb](https://github.com/k2b-dev/cloud/commit/8c443eb73cde98ff26c98035d0ab15d7fc9f80c1))
+* **pwa:** add the installable mobile app ([#605](https://github.com/k2b-dev/cloud/issues/605)) ([27e42cc](https://github.com/k2b-dev/cloud/commit/27e42cc1eccaf4b1943645fcb7cf34855507bc22))
+* **pwa:** calm app shell without lines and warn when the install page is not open in Safari ([#626](https://github.com/k2b-dev/cloud/issues/626)) ([4a64cc8](https://github.com/k2b-dev/cloud/commit/4a64cc874e7e10e180b5b90d0ccf58fc24af6abd))
+* **ui:** announce action outcomes to screen readers in every app ([#616](https://github.com/k2b-dev/cloud/issues/616)) ([e19e7ac](https://github.com/k2b-dev/cloud/commit/e19e7ac8b67ab7bfb0c5433a97cce68197f01485))
+* **ui:** share phone app building blocks with Cloud Login ([#591](https://github.com/k2b-dev/cloud/issues/591)) ([394af22](https://github.com/k2b-dev/cloud/commit/394af22d4053b7418481ee25beda9288b88d038b))
+
+
+### Bug Fixes
+
+* announce quiet confirmations in Spaces, confirm hidden completions with Undo, and keep create and edit dialogs open until saved ([#585](https://github.com/k2b-dev/cloud/issues/585)) ([0a40a67](https://github.com/k2b-dev/cloud/commit/0a40a675282a976597c0a6f5d406cecb3e5d45aa))
+* give every detail panel section the same flat frame, comments included ([#592](https://github.com/k2b-dev/cloud/issues/592)) ([42e81a6](https://github.com/k2b-dev/cloud/commit/42e81a6a6d9ff36d01fda71b73ac23b5a423795c))
+* **pwa:** open app pages on the first tap and check off tasks instantly ([#622](https://github.com/k2b-dev/cloud/issues/622)) ([0c063eb](https://github.com/k2b-dev/cloud/commit/0c063ebcd856cfd4991a2830d0fc940bd4cdf9ec))
+* **ui:** finish the flat-frame sweep in dialogs and keep Mail's detail layout ([#595](https://github.com/k2b-dev/cloud/issues/595)) ([ff405ea](https://github.com/k2b-dev/cloud/commit/ff405eacda76c76b3e81182568b0f6494f6a2a02))
+* **ui:** keep icons the same width while the icon font loads ([#581](https://github.com/k2b-dev/cloud/issues/581)) ([cb58bbc](https://github.com/k2b-dev/cloud/commit/cb58bbc157f8f838c442d4c06036701358ff27f5))
+
 ## [0.12.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.11.0...npm-ui-v0.12.0) (2026-10-03)
 
 
