@@ -850,6 +850,21 @@ describe("NOW / TODAY / DATEDIFF", () => {
     expectError(evaluateFormula(`=DATEDIFF("2026-01-01", "garbage")`, c), "PARSE_ERROR");
   });
 
+  test("DATEDIFF rejects impossible ISO dates and offsets, like the comparisons", () => {
+    for (const impossible of [
+      "2026-02-30",
+      "2026-10-12 25:00",
+      "2026-10-12T00:00:00+00:60",
+      "2026-10-12T00:00:00+24:00",
+      "2026-10-12T00:00:00+9999",
+    ]) {
+      expectError(evaluateFormula(`=DATEDIFF("${impossible}", "2026-10-12")`, c), "PARSE_ERROR");
+      expectError(evaluateFormula(`="${impossible}" < "2026-10-12"`, c), "TYPE_ERROR");
+    }
+    expectOk(evaluateFormula(`=DATEDIFF("2026-10-12T00:00:00+23:59", "2026-10-12T00:00:00Z", "m")`, c), 1439);
+    expectOk(evaluateFormula(`=DATEDIFF("2026-10-12T00:00:00-0230", "2026-10-12T00:00:00Z", "m")`, c), -150);
+  });
+
   test("DATEDIFF rejects unknown unit", () => {
     expectError(evaluateFormula(`=DATEDIFF("2026-01-01", "2026-01-02", "weeks")`, c), "PARSE_ERROR");
   });
