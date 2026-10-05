@@ -492,8 +492,9 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The instant an ISO date or timestamp names, or null for anything else,
- * including impossible dates such as `2026-02-30`. Text without an offset
- * is local time, like the values TODAY() and NOW() return.
+ * including impossible dates such as `2026-02-30` and offsets such as
+ * `+00:60`. Text without an offset is local time, like the values TODAY()
+ * and NOW() return.
  */
 const toDateTime = (v: EvalValue): number | null => {
   if (typeof v !== "string") return null;
@@ -516,7 +517,10 @@ const toDateTime = (v: EvalValue): number | null => {
     if (zone.toUpperCase() === "Z") return utc.getTime();
     const sign = zone.startsWith("-") ? -1 : 1;
     const digits = zone.slice(1).replace(":", "");
-    return utc.getTime() - sign * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2))) * 60_000;
+    const offsetHours = Number(digits.slice(0, 2));
+    const offsetMinutes = Number(digits.slice(2));
+    if (offsetHours > 23 || offsetMinutes > 59) return null;
+    return utc.getTime() - sign * (offsetHours * 60 + offsetMinutes) * 60_000;
   }
   const local = new Date(0);
   local.setFullYear(year, month - 1, day);
@@ -1055,9 +1059,12 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     const d2V = state.evaluate(args[1]!);
     if (d2V.kind === "error") return d2V;
     // ISO values follow the comparison operators, so a date without a
-    // time is local midnight; other text keeps the Date parser's reading.
-    const t1 = toDateTime(d1V.value) ?? new Date(toString(d1V.value)).getTime();
-    const t2 = toDateTime(d2V.value) ?? new Date(toString(d2V.value)).getTime();
+    // time is local midnight and an impossible one such as 2026-02-30 is
+    // no date; other text keeps the Date parser's reading.
+    const instant = (v: EvalValue): number =>
+      ISO_DATE_TIME.test(toString(v).trim()) ? (toDateTime(v) ?? Number.NaN) : new Date(toString(v)).getTime();
+    const t1 = instant(d1V.value);
+    const t2 = instant(d2V.value);
     if (Number.isNaN(t1)) return err("PARSE_ERROR", `DATEDIFF: first argument is not a valid date`);
     if (Number.isNaN(t2)) return err("PARSE_ERROR", `DATEDIFF: second argument is not a valid date`);
     let unit = "days";
