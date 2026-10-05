@@ -143,12 +143,14 @@ a native tab bar does. On `pointerdown` the shell shows the frame of the tab's
 page: the header shows that page's title (the item's `title`) where every
 title sits, without this page's Back or actions, and the content area is
 empty. No spinner appears, and the header, the content area, and the tab bar
-keep their size and place. After that frame is painted, the shell starts the
-page load, while the finger is still down. The click that ends the tap leaves
-the load alone. The new page then appears in the same frame, so nothing moves.
-A page restored from the back/forward cache shows its own frame again. Give
-each tab's page the title of its tab item, so the header does not change when
-the page arrives.
+keep their size and place. The page loads with the click at the end of the
+tap, as for any link. Browsers count only the end of a touch as the person's
+action, and a page that loaded before it could make the browser's Back skip
+the page where the tab was tapped. A touch that turns into a scroll takes the
+frame back. The new page appears in the same frame, so nothing moves. A page
+restored from the back/forward cache shows its own frame again. Give each
+tab's page the title of its tab item, so the header does not change when the
+page arrives.
 
 A page that renders the shell on the server and hydrates only islands inside
 it calls `observeMobileShell(root)` once in the browser instead, with the

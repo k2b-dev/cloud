@@ -429,7 +429,7 @@ describe("Tab bar taps in a phone browser", () => {
     }
   });
 
-  test("a press on a tab shows its page's frame at once and loads the page before the finger lifts", async () => {
+  test("a press on a tab shows its page's frame at once, and the end of the tap loads the page", async () => {
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
       deviceScaleFactor: 2,
@@ -437,8 +437,14 @@ describe("Tab bar taps in a phone browser", () => {
       hasTouch: true,
     });
     const page = await context.newPage();
-    // While a load is pending, Playwright's evaluations wait for it, so the page reports its frame itself.
-    const report = `const frame = () => {
+    // While a load is pending, Playwright's evaluations wait for it, so the page reports its frame itself. The content
+    // also holds bare text and an element that shows itself, as a running pull-to-refresh spinner does.
+    const report = `const body = document.querySelector(".k2b-mobile-shell__body");
+    const spinner = document.createElement("span");
+    spinner.style.visibility = "visible";
+    spinner.textContent = "Refreshing";
+    body.append("Bare text", spinner);
+    const frame = () => {
       const shell = document.querySelector(".k2b-mobile-shell");
       const title = shell.querySelector(".k2b-mobile-shell__title");
       const after = getComputedStyle(title, "::after");
@@ -447,7 +453,7 @@ describe("Tab bar taps in a phone browser", () => {
         title: after.visibility === "visible" && after.content !== "none" ? after.content : title.textContent,
         titleLeft: title.getBoundingClientRect().left,
         back: shell.querySelector(".k2b-mobile-shell__back") ? getComputedStyle(shell.querySelector(".k2b-mobile-shell__back")).display : null,
-        content: [...shell.querySelectorAll(".k2b-mobile-shell__body > *")].every((node) => getComputedStyle(node).visibility === "hidden"),
+        content: [body, ...body.querySelectorAll("*")].every((node) => getComputedStyle(node).visibility === "hidden"),
         header: shell.querySelector(".k2b-mobile-shell__header").getBoundingClientRect().height,
         footerTop: shell.querySelector(".k2b-tab-bar").getBoundingClientRect().top,
       };
@@ -470,10 +476,6 @@ describe("Tab bar taps in a phone browser", () => {
     page.on("console", (message) => {
       if (message.text().startsWith("{")) frames.push(JSON.parse(message.text()));
     });
-    let release!: () => void;
-    const loading = new Promise<void>((resolve) => {
-      release = resolve;
-    });
     let tasksRequests = 0;
     await page.route("https://app.test/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
@@ -481,32 +483,32 @@ describe("Tab bar taps in a phone browser", () => {
       if (path === "/start") return route.fulfill({ contentType: "text/html", body: document('window.fixtureHeader = "back";') });
       if (path !== "/tasks") return route.fulfill({ status: 404 });
       tasksRequests++;
-      await loading;
-      await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" }).catch(() => undefined);
+      // The page arrives at once, as on a fast connection, so a load started during the press would end before it.
+      await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" });
     });
     const next = async (count: number) => {
       while (frames.length < count) await Bun.sleep(10);
       return frames[count - 1]!;
     };
     try {
-      // A page without Back shows where a page's title belongs.
+      // A page without Back shows where a page's title belongs. The tab sits at the same place on both pages.
       await page.goto("https://app.test/plain");
       const plain = await next(1);
+      const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
+      // Opened without a touch, as is every page that a tab has just opened. Playwright's own calls into a page count
+      // as the person's action, so none reaches this page before the press.
       await page.goto("https://app.test/start");
       const before = await next(2);
       expect(before).toMatchObject({ switching: false, title: "Tasks", back: "flex", content: false });
 
-      const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
       const cdp = await context.newCDPSession(page);
       await cdp.send("Input.dispatchTouchEvent", {
         type: "touchStart",
         touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
       });
-      // The finger is still down: the page is already requested, and the shell shows its frame where that page will
-      // have it, without this page's Back, and with nothing else moving.
-      const pressed = await next(3);
-      while (tasksRequests === 0) await Bun.sleep(10);
-      expect(pressed).toEqual({
+      // The finger is still down: the shell shows the page's frame where that page will have it, without this page's
+      // Back or any of its content, and with nothing else moving.
+      expect(await next(3)).toEqual({
         switching: true,
         title: '"My tasks"',
         titleLeft: plain.titleLeft,
@@ -515,12 +517,109 @@ describe("Tab bar taps in a phone browser", () => {
         header: before.header,
         footerTop: before.footerTop,
       });
+      // The page loads only with the click at the end of the tap, which the browser counts as the person's action.
+      // A page that arrived before it would drop this one from the history, so Back would skip it.
+      await Bun.sleep(200);
+      expect(tasksRequests).toBe(0);
 
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      release();
       await page.waitForURL("https://app.test/tasks");
-      // The click at the end of the tap found the load pending and left it alone.
       expect(tasksRequests).toBe(1);
+      // The browser's own Back, which skips pages left without the person's action, returns to the pressed page.
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 100, y: 300 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 100, y: 300, button: "back", buttons: 8, clickCount: 1 });
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 100, y: 300, button: "back", buttons: 0, clickCount: 1 });
+      await page.waitForURL((url) => url.pathname !== "/tasks");
+      expect(new URL(page.url()).pathname).toBe("/start");
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("a press on a tab that turns into a scroll takes its frame back and loads nothing", async () => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    const home = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script></body></html>`;
+    const requests: string[] = [];
+    await page.route("https://app.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      requests.push(path);
+      if (path === "/home") return route.fulfill({ contentType: "text/html", body: home });
+      return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" });
+    });
+    const frame = () =>
+      page.evaluate(() => ({
+        switching: document.querySelector(".k2b-mobile-shell")!.hasAttribute("data-k2b-switching"),
+        pending: document.querySelectorAll("[data-k2b-pending]").length,
+      }));
+    try {
+      await page.goto("https://app.test/home");
+      const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      expect(await frame()).toEqual({ switching: true, pending: 1 });
+      for (let step = 1; step <= 8; step++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - step * 15 }] });
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      expect(await frame()).toEqual({ switching: false, pending: 0 });
+      expect(requests).toEqual(["/home"]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a tap on another tab while a page loads opens that tab, also in a browser that paints nothing meanwhile", async () => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    // WebKit paints no frame, and so runs no animation frame callback, once a page load has started. Chromium paints
+    // on, so this page stops its animation frames at the start of a load.
+    const frozen = `let loading = false;
+    navigation.addEventListener("navigate", () => { loading = true; });
+    const animationFrame = requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => animationFrame((time) => { if (!loading) callback(time); });`;
+    const home = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>${frozen}</script><script>window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script></body></html>`;
+    const requests: string[] = [];
+    let release!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("https://app.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      requests.push(path);
+      if (path === "/home") return route.fulfill({ contentType: "text/html", body: home });
+      if (path === "/start") return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Start</title>" });
+      if (path !== "/tasks") return route.fulfill({ status: 404 });
+      // The tasks page does not arrive while the test runs. A cancelled load has no one to answer.
+      await loading;
+      await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" }).catch(() => undefined);
+    });
+    try {
+      await page.goto("https://app.test/home");
+      const center = async (id: string) => {
+        const box = (await page.locator(`.k2b-tab-bar a[data-tab="${id}"]`).boundingBox())!;
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      };
+      const tasks = await center("tasks");
+      const start = await center("start");
+
+      await page.touchscreen.tap(tasks.x, tasks.y);
+      while (!requests.includes("/tasks")) await Bun.sleep(10);
+      await page.touchscreen.tap(start.x, start.y);
+      await page.waitForURL("https://app.test/start");
+      expect(requests).toEqual(["/home", "/tasks", "/start"]);
     } finally {
       release();
       await context.close();

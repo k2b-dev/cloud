@@ -62,6 +62,7 @@ import { normalizeInvocationRequestId } from "../services/identity/invocation-to
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { readRailSnapshot } from "../services/rail-snapshot";
+import { isAppPagePath } from "../services/session";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
@@ -456,8 +457,8 @@ export const defineApp = <
       c.get("page").performanceRoute =
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       // Pages of the mobile app render in PwaLayout, which shows no announcements, Help, or rail; reading them would
-      // only delay every tab switch.
-      if (isPwaPath(c.req.path)) return;
+      // only delay every tab switch. Core's pages below /pwa/_auth, such as its not-found page, keep the web layout.
+      if (isAppPagePath(c.req.path)) return;
       await Promise.all([
         preloadLayoutAnnouncements(c),
         preloadLayoutHelp(c),

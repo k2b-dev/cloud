@@ -42,11 +42,11 @@ marks the current item, so the bar never changes after hydration.
 
 A tap switches tabs at the first touch, as on a native tab bar: the item takes
 the current item's colour, and the shell shows the item's page frame with its
-`title` and an empty content area while the page loads. The load starts before
-the finger lifts. When it takes longer than a moment, the item's icon pulses.
+`title` and an empty content area until the page arrives. The page loads at
+the end of the tap. When it takes longer than a moment, the item's icon pulses.
 A second tap on the item does not start the load over. Pressed and loading
-change only colour and opacity, so nothing moves. The page frame, the early
-load, and the ignored repeat tap come from the shell in the browser; see
+change only colour and opacity, so nothing moves. The page frame and the
+ignored repeat tap come from the shell in the browser; see
 [MobileShell](/en/ui/layout/mobile-shell#runtime).
 
 ## Accessibility

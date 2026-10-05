@@ -1546,10 +1546,10 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   margin-inline-end: -0.625rem;
 }
 
-/* While a tab's page loads, the shell already shows that page's frame: the
-   page's title where the title always is, without this page's Back or
-   actions, and an empty content area. The page then appears inside the same
-   frame, so nothing moves. */
+/* From the press on a tab until its page arrives, the shell already shows
+   that page's frame: the page's title where the title always is, without this
+   page's Back or actions, and an empty content area. The page then appears
+   inside the same frame, so nothing moves. */
 .k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__header > :not(.k2b-mobile-shell__title) {
   display: none;
 }
@@ -1568,8 +1568,11 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   visibility: visible;
 }
 
-.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__body > * {
-  visibility: hidden;
+/* All of the content goes: bare text, and also an element that shows itself,
+   such as a running pull-to-refresh spinner. Hidden, it takes no taps. */
+.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__body,
+.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__body * {
+  visibility: hidden !important;
 }
 
 .k2b-ui .k2b-mobile-shell__main {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-test("mobile app pages skip the web layout's announcements, Help, and rail reads", async () => {
+test("mobile app pages skip the web layout's announcements, Help, and rail reads; Core's pages below /pwa/_auth keep them", async () => {
   const module = (path: string) => JSON.stringify(new URL(path, import.meta.url).pathname);
   const script = `
     import { mock } from "bun:test";
@@ -45,12 +45,18 @@ test("mobile app pages skip the web layout's announcements, Help, and rail reads
     const server = new Hono()
       .use("*", async (c, next) => { c.set("user", { id: "user-1" }); await next(); })
       .get("/app/finalize-probe", ...page)
-      .get("/pwa/finalize-probe", ...page);
+      .get("/pwa/finalize-probe", ...page)
+      .get("/pwa/_auth/missing", ...page);
+    const read = async (path) => {
+      reads.length = 0;
+      assert.equal((await server.request(path)).status, 200);
+      return reads.sort();
+    };
     try {
-      assert.equal((await server.request("/pwa/finalize-probe")).status, 200);
-      assert.deepEqual(reads, []);
-      assert.equal((await server.request("/app/finalize-probe")).status, 200);
-      assert.deepEqual(reads.sort(), ["announcements /app/finalize-probe", "help /app/finalize-probe", "rail"]);
+      assert.deepEqual(await read("/pwa/finalize-probe"), []);
+      assert.deepEqual(await read("/app/finalize-probe"), ["announcements /app/finalize-probe", "help /app/finalize-probe", "rail"]);
+      // Core's not-found page there renders in the web layout.
+      assert.deepEqual(await read("/pwa/_auth/missing"), ["announcements /pwa/_auth/missing", "help /pwa/_auth/missing", "rail"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
