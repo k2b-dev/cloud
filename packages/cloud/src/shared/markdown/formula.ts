@@ -475,6 +475,72 @@ const isTruthy = (v: EvalValue): boolean => {
   return v.length > 0;
 };
 
+/** Cell text that is one decimal number and nothing else. Each digit has
+ *  one place in the pattern, so a long run of digits never backtracks. */
+const NUMBER_CELL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+
+/** A number, boolean, or text whose whole content is one number. */
+const toExactNumber = (v: EvalValue): number | null =>
+  typeof v === "string" ? (NUMBER_CELL.test(v.trim()) ? Number(v.trim()) : null) : toNumber(v);
+
+/** An ISO date or timestamp: `2026-10-12`, `2026-10-12 09:30`,
+ *  `2026-10-12T09:30:00.250Z`, or with an offset such as `+02:00`. */
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3})\d*)?)?(Z|[+-]\d{2}:?\d{2})?)?$/i;
+
+/** An ISO date without a time, such as `2026-10-12`. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The instant an ISO date or timestamp names, or null for anything else,
+ * including impossible dates such as `2026-02-30`. Text without an offset
+ * is local time, like the values TODAY() and NOW() return.
+ */
+const toDateTime = (v: EvalValue): number | null => {
+  if (typeof v !== "string") return null;
+  const match = ISO_DATE_TIME.exec(v.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4] ?? 0);
+  const minute = Number(match[5] ?? 0);
+  const second = Number(match[6] ?? 0);
+  const ms = Number((match[7] ?? "").padEnd(3, "0"));
+  const zone = match[8];
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const utc = new Date(0);
+  utc.setUTCFullYear(year, month - 1, day);
+  if (utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) return null;
+  if (zone) {
+    utc.setUTCHours(hour, minute, second, ms);
+    if (zone.toUpperCase() === "Z") return utc.getTime();
+    const sign = zone.startsWith("-") ? -1 : 1;
+    const digits = zone.slice(1).replace(":", "");
+    return utc.getTime() - sign * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2))) * 60_000;
+  }
+  const local = new Date(0);
+  local.setFullYear(year, month - 1, day);
+  local.setHours(hour, minute, second, ms);
+  return local.getTime();
+};
+
+/**
+ * Equality for `==`, `!=`, COUNTIF, and SUMIF: dates by instant; numbers,
+ * also `5 €` against 5, by value; everything else, such as `1.2.3` or
+ * `3 apples`, by its exact text.
+ */
+const isEqual = (l: EvalValue, r: EvalValue): boolean => {
+  const ld = toDateTime(l);
+  const rd = toDateTime(r);
+  if (ld !== null && rd !== null) return ld === rd;
+  if (ld === null && rd === null && (toExactNumber(l) !== null || toExactNumber(r) !== null)) {
+    const ln = toNumber(l);
+    const rn = toNumber(r);
+    if (ln !== null && rn !== null) return ln === rn;
+  }
+  return toString(l) === toString(r);
+};
+
 const lookupColumn = (name: string, ctx: EvalContext): { index: number } | { suggestion?: string } => {
   const lower = name.toLowerCase();
   const idx = ctx.headers.findIndex((h) => h.toLowerCase() === lower);
@@ -492,8 +558,9 @@ const isCurrentFormulaCell = (row: number, col: number, ctx: EvalContext): boole
 /**
  * Resolve a single cell to its evaluated value. If the cell is itself
  * a formula, recursively evaluate it (with cycle detection via
- * `ctx._visited`). Non-formula cells are coerced to number when
- * possible, otherwise returned as-is.
+ * `ctx._visited`). A non-formula cell becomes a number only when its
+ * whole text is one; anything else, such as the ISO date `2026-10-12`
+ * that DATEDIFF needs intact, stays text.
  *
  * Used by both the column-reference resolver in `evaluateAst` and by
  * the column / row aggregate functions, so a `=SUM(total)` aggregating
@@ -503,8 +570,8 @@ const isCurrentFormulaCell = (row: number, col: number, ctx: EvalContext): boole
 const evaluateCell = (row: number, col: number, ctx: EvalContext): EvalResult => {
   const cell = cellAt(row, col, ctx);
   if (!cell.startsWith("=")) {
-    const n = toNumber(cell);
-    return n !== null ? ok(n) : ok(cell);
+    const text = cell.trim();
+    return NUMBER_CELL.test(text) ? ok(Number(text)) : ok(cell);
   }
   const key = `${row},${col}`;
   if (ctx._visited?.has(key)) {
@@ -686,9 +753,8 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     if ("kind" in col) return col;
     const valueArg = state.evaluate(args[1]!);
     if (valueArg.kind === "error") return valueArg;
-    const target = toString(valueArg.value);
     let count = 0;
-    for (const v of col.values) if (v === target) count++;
+    for (const v of col.values) if (isEqual(v, valueArg.value)) count++;
     return ok(count);
   },
   SUMIF: (args, state) => {
@@ -717,13 +783,12 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     }
     const condValueArg = state.evaluate(args[2]!);
     if (condValueArg.kind === "error") return condValueArg;
-    const target = toString(condValueArg.value);
     let total = 0;
     for (let r = 0; r < state.ctx.rows.length; r++) {
       if (isCurrentFormulaCell(r, condLookup.index, state.ctx) || isCurrentFormulaCell(r, sumLookup.index, state.ctx)) continue;
       const condResult = evaluateCell(r, condLookup.index, state.ctx);
       if (condResult.kind !== "ok") continue;
-      if (toString(condResult.value) !== target) continue;
+      if (!isEqual(condResult.value, condValueArg.value)) continue;
       const sumResult = evaluateCell(r, sumLookup.index, state.ctx);
       if (sumResult.kind !== "ok") continue;
       const n = toNumber(sumResult.value);
@@ -989,17 +1054,22 @@ const FUNCTIONS: Record<string, FuncImpl> = {
     if (d1V.kind === "error") return d1V;
     const d2V = state.evaluate(args[1]!);
     if (d2V.kind === "error") return d2V;
-    const d1 = new Date(toString(d1V.value));
-    const d2 = new Date(toString(d2V.value));
-    if (Number.isNaN(d1.getTime())) return err("PARSE_ERROR", `DATEDIFF: first argument is not a valid date`);
-    if (Number.isNaN(d2.getTime())) return err("PARSE_ERROR", `DATEDIFF: second argument is not a valid date`);
+    // ISO values follow the comparison operators, so a date without a
+    // time is local midnight; other text keeps the Date parser's reading.
+    const t1 = toDateTime(d1V.value) ?? new Date(toString(d1V.value)).getTime();
+    const t2 = toDateTime(d2V.value) ?? new Date(toString(d2V.value)).getTime();
+    if (Number.isNaN(t1)) return err("PARSE_ERROR", `DATEDIFF: first argument is not a valid date`);
+    if (Number.isNaN(t2)) return err("PARSE_ERROR", `DATEDIFF: second argument is not a valid date`);
     let unit = "days";
     if (args.length === 3) {
       const u = state.evaluate(args[2]!);
       if (u.kind === "error") return u;
       unit = toString(u.value).toLowerCase();
     }
-    const diffMs = d2.getTime() - d1.getTime();
+    // Two dates are whole days apart, also across a daylight saving change.
+    const dayMs = 1000 * 60 * 60 * 24;
+    const wholeDays = ISO_DATE.test(toString(d1V.value).trim()) && ISO_DATE.test(toString(d2V.value).trim());
+    const diffMs = wholeDays ? Math.round((t2 - t1) / dayMs) * dayMs : t2 - t1;
     switch (unit) {
       case "ms":
       case "milliseconds":
@@ -1030,18 +1100,45 @@ const FUNCTION_NAMES = Object.keys(FUNCTIONS);
 
 // -- Binop application --------------------------------------------------------
 
+/**
+ * The two numbers the ordering operators compare, or null when the
+ * values have no common order. Two dates compare as instants and never
+ * with a number or other text, so `2026-10-12` is not `2026`. Text with
+ * a unit, such as `5 €`, compares by its leading number, as does text
+ * against text: `5 €` and `5.00 €` are neither smaller nor greater than
+ * each other, even though `==` tells their texts apart.
+ */
+const orderedPair = (l: EvalValue, r: EvalValue): [number, number] | null => {
+  const ld = toDateTime(l);
+  const rd = toDateTime(r);
+  if (ld !== null || rd !== null) return ld !== null && rd !== null ? [ld, rd] : null;
+  const ln = toNumber(l);
+  const rn = toNumber(r);
+  return ln !== null && rn !== null ? [ln, rn] : null;
+};
+
 const applyBinop = (op: BinOp, l: EvalValue, r: EvalValue): EvalResult => {
   if (op === "==" || op === "!=") {
-    // Equality: if both look numeric, compare as numbers; else as strings.
-    const ln = toNumber(l);
-    const rn = toNumber(r);
-    const equal = ln !== null && rn !== null ? ln === rn : toString(l) === toString(r);
+    const equal = isEqual(l, r);
     return ok((op === "==" ? equal : !equal) ? 1 : 0);
+  }
+  if (op === "<" || op === "<=" || op === ">" || op === ">=") {
+    const pair = orderedPair(l, r);
+    if (pair === null) {
+      return toDateTime(l) !== null || toDateTime(r) !== null
+        ? err("TYPE_ERROR", `Cannot compare a date with a value that is not a date using "${op}"`)
+        : err("NON_NUMERIC", `Cannot compare non-numeric values with "${op}"`);
+    }
+    const [a, b] = pair;
+    if (op === "<") return ok(a < b ? 1 : 0);
+    if (op === "<=") return ok(a <= b ? 1 : 0);
+    if (op === ">") return ok(a > b ? 1 : 0);
+    return ok(a >= b ? 1 : 0);
   }
   const ln = toNumber(l);
   const rn = toNumber(r);
   if (ln === null || rn === null) {
-    return err("NON_NUMERIC", `Cannot compare/compute non-numeric values with "${op}"`);
+    return err("NON_NUMERIC", `Cannot compute non-numeric values with "${op}"`);
   }
   switch (op) {
     case "+":
@@ -1053,14 +1150,6 @@ const applyBinop = (op: BinOp, l: EvalValue, r: EvalValue): EvalResult => {
     case "/":
       if (rn === 0) return err("DIV_BY_ZERO", `Division by zero`);
       return ok(ln / rn);
-    case "<":
-      return ok(ln < rn ? 1 : 0);
-    case "<=":
-      return ok(ln <= rn ? 1 : 0);
-    case ">":
-      return ok(ln > rn ? 1 : 0);
-    case ">=":
-      return ok(ln >= rn ? 1 : 0);
   }
 };
 

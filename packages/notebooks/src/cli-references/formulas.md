@@ -27,7 +27,7 @@ A table cell is a formula when its content starts with `=`. Function names are c
 
 Arithmetic: `+`, `-`, `*`, `/`.
 
-Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
+Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`. ISO dates such as `2026-10-12` and timestamps such as `2026-10-12 09:30` compare in time order, so `=Due < TODAY()` works; ordering a date against a value that is not a date is a formula error.
 
 ## Progress
 
@@ -48,10 +48,10 @@ Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 | `MEDIAN(column)` | Median numeric value. |
 | `UNIQUE(column)` | Count distinct non-empty values. |
 | `STDEV(column)` | Standard deviation of numeric values. |
-| `COUNTIF(column, value)` | Count exact string matches. |
-| `SUMIF(sumColumn, conditionColumn, value)` | Sum values whose corresponding condition cell exactly matches. |
+| `COUNTIF(column, value)` | Count cells equal to the value. |
+| `SUMIF(sumColumn, conditionColumn, value)` | Sum values whose corresponding condition cell equals the value. |
 
-`COUNTIF` and `SUMIF` use exact string matching.
+`COUNTIF` and `SUMIF` match a cell the way `==` does: text exactly, numbers and ISO dates by value. A `5 €` cell matches both `5` and `"5 €"`, but not `"5.00 €"`.
 
 ## Current-row aggregates
 
@@ -71,6 +71,8 @@ Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 | `OR(value, ...)` | True when any value is truthy. |
 | `NOT(value)` | Negate truthiness. |
 | `CONTAINS(text, search)` | Test whether text contains a value. |
+
+Truthy means a non-zero number or non-empty text. A cell such as `0 €` or `0%` is text and therefore truthy; compare the amount instead, for example `Price > 0`.
 
 ## Text
 
@@ -102,7 +104,7 @@ Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 | `NOW()` | Current date and time. |
 | `DATEDIFF(start, end, unit?)` | Difference between dates. |
 
-`DATEDIFF` units are `ms`, `s`, `m`, `h`, and `d`, with their corresponding full unit names accepted by the evaluator.
+`DATEDIFF` units are `ms`, `s`, `m`, `h`, and `d`, with their corresponding full unit names accepted by the evaluator. Dates and timestamps without an offset are local time, like `TODAY()` and `NOW()`, in `DATEDIFF` and in comparisons alike. Two dates are always a whole number of days apart, also across a daylight saving change.
 
 ## Formula examples
 
