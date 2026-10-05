@@ -42,6 +42,18 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     }
   }, 120_000);
 
+  test("a link to a heading of the exported note jumps within the PDF", async () => {
+    const markdown = "# Guide\n\n[Restore steps](note://DEF456#restore)\n\n## Restore\n\nDone.";
+    const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", noteShortId: "DEF456", locale: "en" });
+    const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Guide" }, config)).pdf;
+    // Chromium writes link annotations uncompressed; a named destination is a link inside the document.
+    const links =
+      Buffer.from(pdf)
+        .toString("latin1")
+        .match(/\/Subtype \/Link\b[^>]*>/g) ?? [];
+    expect(links).toEqual([expect.stringContaining("/Dest /heading-restore")]);
+  }, 60_000);
+
   test("ligatures print like the reader and copy as text", async () => {
     const words = "office, affine, fluffy, finally, ffi, ffl";
     const markdown = [

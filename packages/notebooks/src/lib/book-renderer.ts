@@ -25,6 +25,8 @@ export type NotebookBookInput = {
    * preset loads no images yet, and math leaves out MathML the PDF drops.
    */
   print?: boolean;
+  /** Short ID of the rendered note. In print, a link to one of its own headings stays inside the document. */
+  noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
 };
@@ -116,6 +118,7 @@ export const renderNotebookBook = (
     const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(raw)?.[1];
     if (attachmentId) return `/api/notebooks/${notebookId}/attachments/${attachmentId}/content?v=1`;
     const note = image ? null : parseNoteLink(raw);
+    if (note?.anchor && input.print && note.noteId === input.noteId) return anchorHash(note.anchor);
     if (note) return `/app/notebooks/${notebookId}/notes/${note.noteId}?mode=${linkMode}${anchorHash(note.anchor)}`;
     const url = safeUrl(raw, image);
     return url && !image ? bookHref(url, linkMode) : url;
@@ -427,8 +430,15 @@ export const renderNotebookBook = (
         }
         const noticeKind = kind as NoticeKind;
         const tone: NoticeTone = NOTICE_TONES[noticeKind];
+        // The body starts on the line after its opener; its own headings keep their source line.
+        const bodyTokens = marked.lexer(body);
+        let bodyLine = start + 2;
+        for (const token of bodyTokens) {
+          if (token.type === "heading") headingSource.set(token, bodyLine);
+          bodyLine += token.raw.split("\n").length - 1;
+        }
         // Notices are the calm NoticeCard: tone tint, neutral text; the type name remains for screen readers.
-        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parse(body, { async: false })}</div></aside>`;
+        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parser(bodyTokens)}</div></aside>`;
       }),
       "",
     );

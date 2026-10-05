@@ -95,7 +95,15 @@ describe("Notebook Book HTML", () => {
 
   test("preview source positions never point to headings inside code or nested Markdown", () => {
     const document = render("```md\n# Same\n```\n\n> # Same\n\n:::info\n# Same\n:::\n\n# Same\n\nTitle\n=====");
-    expect(document.headings.map(({ line }) => line)).toEqual([undefined, undefined, 11, 13]);
+    // A notice's own headings keep their exact line; a quoted heading has none.
+    expect(document.headings.map(({ line }) => line)).toEqual([undefined, 8, 11, 13]);
+    const notice = render(":::warning\n\nText\n\n## Restore\nMore\n### Steps ###\n\n> ## Quoted\n:::\n\n## Restore");
+    expect(notice.headings.map(({ id, line }) => [id, line])).toEqual([
+      ["heading-restore", 5],
+      ["heading-steps", 7],
+      ["heading-quoted", undefined],
+      ["heading-restore-2", 12],
+    ]);
   });
 
   test("invalid directives retain visible preview diagnostics without executable HTML", () => {
