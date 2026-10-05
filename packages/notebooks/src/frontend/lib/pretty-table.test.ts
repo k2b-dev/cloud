@@ -54,6 +54,17 @@ describe("pretty table rendering", () => {
     expect(html).toContain('href="/app/notebooks/nb1234/tags/garden"');
   });
 
+  test("note links to a heading open the note at the heading's Book id", () => {
+    const html = renderPrettyTableHtml(
+      { headers: ["Link"], rows: [["[Restore](note://5ARr8F#restore) [Top](note://5ARr8F#)"]] },
+      { notebookId: "nb1234" },
+    );
+
+    expect(html).toContain('href="/app/notebooks/nb1234/notes/5ARr8F#heading-restore"');
+    expect(html).toContain('href="/app/notebooks/nb1234/notes/5ARr8F"');
+    expect(html).not.toContain("note://");
+  });
+
   test("formats standalone ISO date-time strings", () => {
     const html = renderPrettyTableHtml({
       headers: ["created", "title"],

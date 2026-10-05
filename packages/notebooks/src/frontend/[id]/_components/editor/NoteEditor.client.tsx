@@ -13,6 +13,7 @@ import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
+import { headingAnchorLine } from "../../../../lib/heading-anchors";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
@@ -678,6 +679,30 @@ function EditorInstance(props: EditorInstanceProps) {
     return true;
   };
 
+  // A link to a heading (`#heading-…`, the Book id) opens the note there; a heading the note lacks opens its top.
+  const showLinkedHeading = (attempts = 0): boolean => {
+    if (disposed || !window.location.hash.startsWith("#heading-")) return false;
+    const view = editorView();
+    if (!view) {
+      if (attempts < 8) {
+        const frame = requestAnimationFrame(() => {
+          pendingFocusFrames.delete(frame);
+          showLinkedHeading(attempts + 1);
+        });
+        pendingFocusFrames.add(frame);
+      }
+      return true;
+    }
+    const line = headingAnchorLine(view.state.doc.toString(), window.location.hash.slice(1));
+    const at = line === null ? 0 : view.state.doc.line(line).from;
+    view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "start" }) });
+    if (!props.readOnly) view.focus();
+    return true;
+  };
+  const onHashChange = () => {
+    showLinkedHeading();
+  };
+
   const selectInitialTitle = (attempts = 0): boolean => {
     if (disposed) return false;
     const view = editorView();
@@ -753,9 +778,10 @@ function EditorInstance(props: EditorInstanceProps) {
   onMount(() => {
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
+    const linkedHeading = showLinkedHeading();
     if (!props.readOnly) {
       if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-      else focusEditor();
+      else if (!linkedHeading) focusEditor();
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,
@@ -791,6 +817,7 @@ function EditorInstance(props: EditorInstanceProps) {
     });
 
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
+    window.addEventListener("hashchange", onHashChange);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.addEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
     window.addEventListener(EDITOR_COPY_EVENT, onCopy);
@@ -820,6 +847,7 @@ function EditorInstance(props: EditorInstanceProps) {
     }
     ytext.unobserve(onTextUpdate);
     window.removeEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
+    window.removeEventListener("hashchange", onHashChange);
     window.removeEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.removeEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
     window.removeEventListener(EDITOR_COPY_EVENT, onCopy);

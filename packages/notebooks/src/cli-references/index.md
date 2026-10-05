@@ -42,7 +42,7 @@ Keep durable knowledge visible in Markdown. Queries and formulas summarize reada
 - Headings use normal Markdown (`#`, `##`, and deeper levels).
 - Tasks use `- [ ]` and `- [x]`.
 - A parsed tag is written as `#tag` in note content.
-- A note link is `[Label](note://shortId)`.
+- A note link is `[Label](note://shortId)`. To open the note at a heading, add the heading's slug: `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". A heading the note does not have opens the note at its top.
 - A file link is `[Label](attach://shortId)`; an image is `![Alt](attach://shortId)`.
 - A named block places `@name` on its own line directly above a table, list, data block, or heading section.
 

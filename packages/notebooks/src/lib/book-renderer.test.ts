@@ -288,6 +288,28 @@ describe("Notebook Book HTML", () => {
     expect(html).toContain('class="notebook-book-tag"');
   });
 
+  test("note links to a heading open the note at the heading's Book id", () => {
+    const { html } = render(
+      "[Restore](note://DEF456#restore) [Steps](note://DEF456#Backup%20&%20Restore) [Top](note://DEF456#---)\n\n| Link |\n| --- |\n| [Cell](note://DEF456#restore) |",
+    );
+    expect(html).toContain(
+      '<a class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"><i class="ti ti-connection" aria-hidden="true"></i>Restore</a>',
+    );
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-backup-restore"');
+    // An anchor without a heading slug opens the note at its top.
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book">');
+    expect(html.match(/#heading-restore"/g)).toHaveLength(2);
+    expect(html).not.toContain("note://");
+    // The anchor never carries markup or a script into the link.
+    const hostile = render('[x](note://DEF456#"><script>alert(1)</script>) [y](note://DEF456#javascript:alert(1))').html;
+    expect(hostile).not.toContain("<script");
+    expect(hostile).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-javascript-alert-1"');
+    expect(render("[Note](note://DEF456#restore)", "en").html).toContain("#heading-restore");
+    expect(
+      renderNotebookBook({ markdown: "[Note](note://DEF456#restore)", notebookId: "ABC123", locale: "en", print: true }).html,
+    ).toContain('class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"');
+  });
+
   test("note badges preserve inline labels and titles without styling external links as notes", () => {
     const { html } = render('[**Guide**](note://DEF456 "Open guide") [Website](https://example.test)');
     expect(html).toContain('class="notebook-book-note-link"');
