@@ -151,6 +151,10 @@ const catalog = i18n.define({
       date: "Date",
       matchedAttachment: "Matched attachment",
       untitledAttachment: "Untitled attachment",
+      partialSearch: ({ searched, total, mailboxes }: { searched: number; total: number; skipped: number; mailboxes: string }) =>
+        `Results from ${searched} of ${total} mailboxes; ${mailboxes} could not be searched in time.`,
+      moreMailboxes: ({ count }: { count: number }) => `${count} more`,
+      quoted: ({ name }: { name: string }) => `“${name}”`,
       statePending: "pending",
       stateComplete: "complete",
       stateFailed: "failed",
@@ -337,6 +341,10 @@ const catalog = i18n.define({
       date: "Datum",
       matchedAttachment: "Gefundener Anhang",
       untitledAttachment: "Anhang ohne Titel",
+      partialSearch: ({ searched, total, skipped, mailboxes }) =>
+        `Ergebnisse aus ${searched} von ${total} Postfächern; ${mailboxes} ${skipped === 1 ? "konnte" : "konnten"} nicht rechtzeitig durchsucht werden.`,
+      moreMailboxes: ({ count }) => `${count} weitere`,
+      quoted: ({ name }) => `„${name}“`,
       statePending: "ausstehend",
       stateComplete: "abgeschlossen",
       stateFailed: "fehlgeschlagen",

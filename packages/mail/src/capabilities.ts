@@ -15,6 +15,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { logger } from "@k2b/cloud/services";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import * as c from "./capability-contracts";
@@ -736,7 +737,54 @@ const mapSubscription = (item: MailSubscriptionSummary) => ({
   unsubscribeErrorCode: item.unsubscribeErrorCode,
 });
 
-const runSearch = async (input: UniversalSearchInput, capabilityContext: CapabilityExecutionContext) => {
+const searchLog = logger("mail:search");
+
+/**
+ * Universal search gives each provider eight seconds in total. Mail searches the mailboxes a few at
+ * a time within a deadline below that, and each mailbox within its own budget, so a slow or failing
+ * mailbox costs only its own results. Four searches at once keep most of the database pool free.
+ */
+const MAIL_SEARCH_DEADLINE_MS = 6_000;
+const MAILBOX_SEARCH_BUDGET_MS = 3_000;
+const MAILBOX_SEARCH_CONCURRENCY = 4;
+
+const searchMailboxes = async <T extends { id: string }, R>(
+  mailboxList: readonly T[],
+  run: (mailbox: T, timeoutMs: number) => Promise<Result<R>>,
+): Promise<Array<{ mailbox: T; page: Result<R> }>> => {
+  const deadline = Date.now() + MAIL_SEARCH_DEADLINE_MS;
+  const results: Array<{ mailbox: T; page: Result<R> }> = [];
+  let next = 0;
+  const worker = async () => {
+    for (let index = next++; index < mailboxList.length; index = next++) {
+      const mailbox = mailboxList[index]!;
+      const budget = Math.min(MAILBOX_SEARCH_BUDGET_MS, deadline - Date.now());
+      if (budget <= 0) {
+        results[index] = { mailbox, page: search.searchExceededLimit() };
+        continue;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // The database stops the statement at the same budget; this also bounds the wait for a connection.
+      const expired = new Promise<Result<R>>((resolve) => {
+        timer = setTimeout(() => resolve(search.searchExceededLimit()), budget);
+      });
+      const searchedPage = run(mailbox, budget).catch((error: unknown) => {
+        searchLog.error("Mail search failed", { mailboxId: mailbox.id, error: error instanceof Error ? error.message : String(error) });
+        return fail(err.internal("Mail search failed"));
+      });
+      const page = await Promise.race([searchedPage, expired]);
+      clearTimeout(timer);
+      results[index] = { mailbox, page };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(MAILBOX_SEARCH_CONCURRENCY, mailboxList.length) }, worker));
+  return results;
+};
+
+const runSearch = async (
+  input: UniversalSearchInput,
+  capabilityContext: CapabilityExecutionContext,
+): Promise<Result<CapabilityResult<CloudResourceView[]>>> => {
   const t = mailCapabilityMessages(capabilityContext.locale);
   if (!input.scope && !input.query.trim()) return ok({ data: [] });
   const context = requestContext(capabilityContext);
@@ -750,29 +798,29 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
   })();
   if (!mailboxResult.ok) return mailboxResult;
   if (!input.query.trim()) return ok({ data: [] });
-  const pages: Array<{ mailbox: (typeof mailboxResult.data)[number]; page: Awaited<ReturnType<typeof search.searchMessages>> }> = [];
-  for (let offset = 0; offset < mailboxResult.data.length; offset += 4) {
-    pages.push(
-      ...(await Promise.all(
-        mailboxResult.data.slice(offset, offset + 4).map(async (mailbox) => ({
-          mailbox,
-          page: await search.searchMessages({
-            context,
-            mailboxId: mailbox.id,
-            request: {
-              expression: { type: "text", field: "any", query: input.query, match: "words" },
-              sort: "relevance",
-              limit: Math.min(input.limit, 10),
-            },
-          }),
-        })),
-      )),
-    );
+  const searched = await searchMailboxes(mailboxResult.data, (mailbox, timeoutMs) =>
+    search.searchMessages({
+      context,
+      mailboxId: mailbox.id,
+      request: {
+        expression: { type: "text", field: "any", query: input.query, match: "words" },
+        sort: "relevance",
+        limit: Math.min(input.limit, 10),
+      },
+      timeoutMs,
+    }),
+  );
+  const pages = searched.flatMap(({ mailbox, page }) => (page.ok ? [{ mailbox, page: page.data }] : []));
+  const skipped = searched.filter(({ page }) => !page.ok);
+  for (const { mailbox, page } of skipped) {
+    if (!page.ok)
+      searchLog.warn("Mail search skipped a mailbox", { mailboxId: mailbox.id, code: page.error.code, reason: page.error.message });
   }
-  const failedPage = pages.find(({ page }) => !page.ok);
-  if (failedPage && !failedPage.page.ok) return failedPage.page;
+  // Every mailbox failing is a failure of the search, not an empty result.
+  const firstSkipped = skipped[0]?.page;
+  if (pages.length === 0 && firstSkipped && !firstSkipped.ok) return firstSkipped;
   const resultItems = pages
-    .flatMap(({ mailbox, page }) => (page.ok ? page.data.items.map((message, mailboxRank) => ({ mailbox, message, mailboxRank })) : []))
+    .flatMap(({ mailbox, page }) => page.items.map((message, mailboxRank) => ({ mailbox, message, mailboxRank })))
     .sort((left, right) => left.mailboxRank - right.mailboxRank || right.message.internalDate.localeCompare(left.message.internalDate))
     .slice(0, input.limit);
   const [mailboxIds, messageIds, conversationIds, attachmentIds] = await Promise.all([
@@ -832,7 +880,24 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
       ],
     };
   });
-  return ok({ data });
+  if (skipped.length === 0) return ok({ data });
+  const names = skipped.map(({ mailbox }) => mailbox.name);
+  return ok({
+    data,
+    summary: capabilitySummary(
+      t.partialSearch({
+        searched: pages.length,
+        total: searched.length,
+        skipped: skipped.length,
+        mailboxes: i18n.formatList(
+          names.length > 3
+            ? [...names.slice(0, 3).map((name) => t.quoted({ name })), t.moreMailboxes({ count: names.length - 3 })]
+            : names.map((name) => t.quoted({ name })),
+          capabilityContext.locale,
+        ),
+      }),
+    ),
+  });
 };
 
 const queryDefinitions = {
