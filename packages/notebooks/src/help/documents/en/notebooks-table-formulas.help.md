@@ -78,8 +78,8 @@ Read one whole column. Empty or non-numeric cells are ignored for numeric functi
 | `MEDIAN` | `MEDIAN(column)` | `=MEDIAN(Score)` | middle number; 0 when empty |
 | `UNIQUE` | `UNIQUE(column)` | `=UNIQUE(Status)` | distinct non-empty value count |
 | `STDEV` | `STDEV(column)` | `=STDEV(Weight)` | sample standard deviation<br>Returns 0 for fewer than 2 numbers. |
-| `COUNTIF` | `COUNTIF(column, value)` | `=COUNTIF(Status, "done")` | matching cell count<br>Exact string match. |
-| `SUMIF` | `SUMIF(sumColumn, conditionColumn, value)` | `=SUMIF(Hours, Status, "done")` | conditional sum |
+| `COUNTIF` | `COUNTIF(column, value)` | `=COUNTIF(Status, "done")` | matching cell count<br>A cell matches as with `==`: text exactly, numbers and dates by value. |
+| `SUMIF` | `SUMIF(sumColumn, conditionColumn, value)` | `=SUMIF(Hours, Status, "done")` | conditional sum<br>Matches cells like COUNTIF. |
 
 ### Row aggregates
 
@@ -93,7 +93,7 @@ Read the current row. The cell containing the formula is skipped.
 
 ### Logic and conditions
 
-Build simple decisions. Truthy means non-zero number or non-empty text.
+Build simple decisions. Truthy means non-zero number or non-empty text. A cell such as `0 €` is text, so compare the amount instead, for example `Price > 0`.
 
 | Function | Syntax | Example | Result and notes |
 | --- | --- | --- | --- |
@@ -143,4 +143,4 @@ Return simple date strings or compare dates.
 | --- | --- | --- | --- |
 | `TODAY` | `TODAY()` | `=TODAY()` | YYYY-MM-DD |
 | `NOW` | `NOW()` | `=NOW()` | YYYY-MM-DD HH:MM:SS |
-| `DATEDIFF` | `DATEDIFF(start, end, unit?)` | `=DATEDIFF(Start, Due, "d")` | difference as number<br>Units: ms, s, m, h, d. Full names work too. |
+| `DATEDIFF` | `DATEDIFF(start, end, unit?)` | `=DATEDIFF(Start, Due, "d")` | difference as number<br>Units: ms, s, m, h, d. Full names work too. Dates and times without a time zone are local time. |

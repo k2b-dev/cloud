@@ -320,6 +320,23 @@ describe("UNIQUE / COUNTIF / SUMIF / STDEV", () => {
     expectOk(evaluateFormula("=COUNTIF(price, 10)", c), 2);
   });
 
+  test("COUNTIF and SUMIF match a cell the way == does", () => {
+    const c = ctx(
+      ["Price", "Qty", "Due"],
+      [
+        ["5 €", "1", "2026-10-12"],
+        ["5 €", "2", "2026-10-12T00:00"],
+        ["7 €", "4", "2026-10-13"],
+      ],
+    );
+    expectOk(evaluateFormula("=COUNTIF(Price, 5)", c), 2);
+    expectOk(evaluateFormula(`=COUNTIF(Price, "5 €")`, c), 2);
+    expectOk(evaluateFormula(`=COUNTIF(Price, "5.00 €")`, c), 0);
+    expectOk(evaluateFormula("=SUMIF(Qty, Price, 5)", c), 3);
+    expectOk(evaluateFormula(`=COUNTIF(Due, "2026-10-12")`, c), 2);
+    expectOk(evaluateFormula(`=SUMIF(Qty, Due, "2026-10-13")`, c), 4);
+  });
+
   test("COUNTIF arg count + unknown column", () => {
     const c = ctx(["x"], [["1"]]);
     expectError(evaluateFormula("=COUNTIF(x)", c), "WRONG_ARG_COUNT");
@@ -593,6 +610,14 @@ describe("IF / IFEMPTY / IFERROR", () => {
     expectOk(evaluateFormula(`=IF(1, "yes", "no")`, c), "yes");
   });
 
+  test("IF: text with a unit is non-empty text and therefore true", () => {
+    const c = ctx(["Discount", "Progress"], [["0 €", "0%"]]);
+    expectOk(evaluateFormula(`=IF(Discount, "yes", "no")`, c), "yes");
+    expectOk(evaluateFormula(`=NOT(Progress)`, c), 0);
+    expectOk(evaluateFormula(`=IF(Discount > 0, "yes", "no")`, c), "no");
+    expectOk(evaluateFormula(`=IF(Progress == 0, "todo", "started")`, c), "todo");
+  });
+
   test("IF lazily evaluates only chosen branch", () => {
     const c = ctx(["a"], [["10"]]);
     // false branch divides by zero — must NOT evaluate when condition true
@@ -767,6 +792,47 @@ describe("NOW / TODAY / DATEDIFF", () => {
     expectOk(evaluateFormula(`=DATEDIFF(Opened, Closed, "h")`, cells), 3);
   });
 
+  test("DATEDIFF agrees with the comparison operators in every time zone", () => {
+    const cells = ctx(["Due", "Done", "Utc"], [["2026-10-12", "2026-10-11T20:00", "2026-10-12T00:00:00Z"]]);
+    const zones: [string, number][] = [
+      ["UTC", 0],
+      ["Europe/Berlin", 2],
+      ["America/Los_Angeles", -7],
+    ];
+    const previous = process.env.TZ;
+    try {
+      for (const [zone, utcHoursAfterDue] of zones) {
+        process.env.TZ = zone;
+        const result = (formula: string) => {
+          const res = evaluateFormula(formula, cells);
+          return res.kind === "ok" ? res.value : res.code;
+        };
+        expect({
+          zone,
+          doneBeforeDue: result("=Done < Due"),
+          hoursFromDoneToDue: result(`=DATEDIFF(Done, Due, "h")`),
+          hoursFromMidnight: result(`=DATEDIFF(Due, "2026-10-12 00:00", "h")`),
+          daysAcrossDst: result(`=DATEDIFF("2026-10-20", "2026-11-03")`),
+          // Text without an offset is local time, so a date against a UTC
+          // timestamp depends on the zone, the same way for both.
+          utcHoursAfterDue: result(`=DATEDIFF(Due, Utc, "h")`),
+          dueBeforeUtc: result("=Due < Utc"),
+        }).toEqual({
+          zone,
+          doneBeforeDue: 1,
+          hoursFromDoneToDue: 4,
+          hoursFromMidnight: 0,
+          daysAcrossDst: 14,
+          utcHoursAfterDue,
+          dueBeforeUtc: utcHoursAfterDue > 0 ? 1 : 0,
+        });
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
   test("DATEDIFF returns 0 for same date", () => {
     expectOk(evaluateFormula(`=DATEDIFF("2026-05-12", "2026-05-12")`, c), 0);
   });
@@ -835,7 +901,9 @@ describe("comparison operators", () => {
       const pad = (n: number) => n.toString().padStart(2, "0");
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
     };
-    const d = ctx(["Past", "Future"], [[day(-1), day(1)]]);
+    // Two days ahead, so the test also passes when midnight falls between
+    // building the row and evaluating NOW().
+    const d = ctx(["Past", "Future"], [[day(-1), day(2)]]);
     expectOk(evaluateFormula(`=Past < TODAY()`, d), 1);
     expectOk(evaluateFormula(`=Future < TODAY()`, d), 0);
     expectOk(evaluateFormula(`=Future > NOW()`, d), 1);
@@ -877,6 +945,18 @@ describe("comparison operators", () => {
     expectOk(evaluateFormula(`=Price > 3`, t), 1);
     expectOk(evaluateFormula(`=Cheap < Price`, t), 1);
     expectOk(evaluateFormula(`="10" == "10.0"`, t), 1);
+    // Ordering reads the amount, so two texts for the same amount are
+    // neither smaller nor greater, while == still tells the texts apart.
+    expectOk(evaluateFormula(`=Price <= "5.00 €"`, t), 1);
+    expectOk(evaluateFormula(`=Price >= "5.00 €"`, t), 1);
+    expectOk(evaluateFormula(`=Price == "5.00 €"`, t), 0);
+  });
+
+  test("equal infinite numbers order as equal", () => {
+    expectOk(evaluateFormula("=POW(10, 1000) >= POW(10, 1000)", c), 1);
+    expectOk(evaluateFormula("=POW(10, 1000) <= POW(10, 1000)", c), 1);
+    expectOk(evaluateFormula("=POW(10, 1000) > POW(10, 1000)", c), 0);
+    expectOk(evaluateFormula("=a >= a", ctx(["a"], [["1e400"]])), 1);
   });
 });
 
