@@ -5,7 +5,7 @@ import { websocket } from "hono/bun";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
-import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { prepareIdentitySigner } from "../services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
@@ -13,7 +13,7 @@ import { session } from "../services/session";
 import { createTestSession } from "../services/session/session.test-fixture";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
-import { defineLive, startLiveOutbox, stopLiveEngines } from "./live";
+import { defineLive, startLiveOutbox } from "./live";
 import { LIVE_LIMITS, type LiveChannel, type LiveViewer } from "./live-engine";
 
 // Two replicas of one application ("pods") in this process, each with its own
@@ -50,25 +50,6 @@ const url = (pod: number) => `ws://127.0.0.1:${pods[pod]?.server?.port}/live`;
 let origin = "";
 let stopOutbox: (() => Promise<void>) | null = null;
 const users: string[] = [];
-
-beforeAll(async () => {
-  if (!testInfra.database || !testInfra.nats || !testInfra.valkey) return;
-  // Shorter progress, and collection keys on every sweep instead of every sixth (60 s).
-  LIVE_LIMITS.progressMs = 300;
-  LIVE_LIMITS.keysEveryRounds = 1;
-  origin = publicCloudOrigin(await settings.get<string>("app.url"));
-  for (const pod of pods) {
-    pod.server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/live", pod.routes).fetch, websocket });
-  }
-  stopOutbox = await startLiveOutbox(APP);
-});
-
-afterAll(async () => {
-  stopLiveEngines();
-  await stopOutbox?.();
-  for (const pod of pods) await pod.server?.stop(true);
-  if (users.length > 0) await sql`DELETE FROM auth.users WHERE id IN ${sql(users)}`;
-});
 
 const person = async (name: string) => {
   const id = crypto.randomUUID();
@@ -121,6 +102,25 @@ const publish = async (key: string, n: number, options: { access?: true; pad?: s
 const allow = (key: string, ...people: Person[]) => readers.set(key, new Set(people.map((who) => who.viewer)));
 
 suite("live routes", () => {
+  beforeAll(async () => {
+    // Shorter progress, and collection keys on every sweep instead of every sixth (60 s).
+    LIVE_LIMITS.progressMs = 300;
+    LIVE_LIMITS.keysEveryRounds = 1;
+    origin = publicCloudOrigin(await settings.get<string>("app.url"));
+    for (const pod of pods) {
+      pod.server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/live", pod.routes).fetch, websocket });
+    }
+    stopOutbox = await startLiveOutbox(APP);
+  });
+
+  // Inside the suite, so Bun runs it before the authorization preload's file-level
+  // teardown stops Sync: engines and the outbox stop while Sync still runs, as in `app.start()`.
+  afterAll(async () => {
+    await stopOutbox?.();
+    for (const pod of pods) await pod.server?.stop(true);
+    if (users.length > 0) await sql`DELETE FROM auth.users WHERE id IN ${sql(users)}`;
+  });
+
   test("a reconnect to the other replica replays from its ring; old, foreign, and future cursors resync", async () => {
     const ada = await person("Ada Example");
     allow("ring", ada);
@@ -372,5 +372,36 @@ suite("live routes", () => {
     // A tab whose session ended while its socket was closed stops instead of retrying.
     await session.revokeAllForUser(hal.id);
     expect(await refusal(hal.headers)).toEqual(refused("login_required"));
+  });
+
+  // Last: it stops delivery and starts it again.
+  test("a stopping replica closes its sockets with 1012, also those that open while it stops, until delivery starts again", async () => {
+    const ivy = await person("Ivy Example");
+    allow("stop", ivy);
+    // A mount that served no socket before the stop, like a quiet replica.
+    const quiet = { routes: live.routes(channels), server: null as ReturnType<typeof Bun.serve> | null };
+    quiet.server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/live", quiet.routes).fetch, websocket });
+    pods.push(quiet);
+    const closed = async (socket: Awaited<ReturnType<typeof open>>) => {
+      await until(() => socket.state.closed !== null);
+      return socket.state.closed;
+    };
+    const restart = { code: 1012, reason: "restart" };
+
+    const before = await open(0, ivy.headers);
+    before.sub("s", "item", { key: "stop" });
+    await until(() => before.of("s").length === 1);
+    await stopOutbox?.();
+    expect(await closed(before)).toEqual(restart);
+    for (const pod of [0, pods.length - 1]) expect(await closed(await open(pod, ivy.headers))).toEqual(restart);
+
+    stopOutbox = await startLiveOutbox(APP);
+    for (const pod of [0, pods.length - 1]) {
+      const again = await open(pod, ivy.headers);
+      again.sub("s", "item", { key: "stop" });
+      await until(() => again.of("s").length === 1);
+      expect(again.of("s")[0]?.t).toBe("ready");
+      again.socket.close();
+    }
   });
 });

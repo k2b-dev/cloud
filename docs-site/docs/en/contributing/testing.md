@@ -217,7 +217,11 @@ leaves out suites whose name or path matches, and `--filter <name>` keeps only t
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
 after the gate; it starts the authority only when database and NATS targets are
-configured.
+configured. Bun runs file-level `afterAll` hooks in the order they were
+registered, so the preload's teardown, which stops the authority and the process
+Sync, runs before the file's own file-level `afterAll`. Put teardown that still
+needs either, such as stopping a live outbox, in an `afterAll` inside the
+suite's `describe`; Bun runs it when the suite ends.
 
 A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
