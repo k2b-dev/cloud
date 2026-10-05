@@ -475,8 +475,9 @@ const isTruthy = (v: EvalValue): boolean => {
   return v.length > 0;
 };
 
-/** Cell text that is one decimal number and nothing else. */
-const NUMBER_CELL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+/** Cell text that is one decimal number and nothing else. Each digit has
+ *  one place in the pattern, so a long run of digits never backtracks. */
+const NUMBER_CELL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 
 /** A number, boolean, or text whose whole content is one number. */
 const toExactNumber = (v: EvalValue): number | null =>

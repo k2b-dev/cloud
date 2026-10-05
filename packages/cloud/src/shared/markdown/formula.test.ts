@@ -181,6 +181,14 @@ describe("column references", () => {
     expectOk(evaluateFormula(`=COUNTIF(date, "2026-10-12")`, ctx(["date"], [["2026-10-12"], ["2026-10-31"]], 5)), 1);
   });
 
+  test("a long run of digits before text stays text without backtracking", () => {
+    const digits = `${"0".repeat(50_000)}x`;
+    const c = ctx(["a", "b"], [[digits, ""]], 0, 1);
+    expectOk(evaluateFormula("=a", c), digits);
+    expectOk(evaluateFormula("=a == 0", c), 1);
+    expectOk(evaluateFormula("=COUNTIF(a, 0)", c), 1);
+  });
+
   test("unknown column reports suggestion", () => {
     const c = ctx(["price", "hours"], [["10", "5"]]);
     const res = evaluateFormula("=prce", c);
