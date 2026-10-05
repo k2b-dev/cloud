@@ -23,11 +23,10 @@ const EXPIRY_WARNING_DAYS = 14;
 
 const accountExpiryNotice = (expiresAt: string, t: AccountMessages) => {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return { title: t.accountExpired, tone: "danger", icon: "ti ti-calendar-x" } as const;
+  if (days < 0) return { title: t.accountExpired, tone: "danger" } as const;
   return {
     title: days === 0 ? t.accountExpiresToday : t.accountExpiresIn({ count: days }),
     tone: days <= EXPIRY_WARNING_DAYS ? "warning" : "info",
-    icon: days <= EXPIRY_WARNING_DAYS ? "ti ti-calendar-exclamation" : "ti ti-calendar-event",
   } as const;
 };
 
@@ -80,14 +79,10 @@ export default ssr<AuthContext>(async (c) => {
         <AccountPage title={t.profile} description={t.profilePageDescription}>
           {(action === "extend" || user.accountExpires || pendingRequest || (user.provider === "ipa" && user.profile === "guest")) && (
             <div class="flex flex-col gap-2">
-              {action === "extend" && (
-                <NoticeCard tone="info" icon={false}>
-                  {t.extendHint}
-                </NoticeCard>
-              )}
+              {action === "extend" && <NoticeCard tone="info">{t.extendHint}</NoticeCard>}
 
               {expiryNotice && user.accountExpires && (
-                <NoticeCard tone={expiryNotice.tone} icon={expiryNotice.icon} title={expiryNotice.title}>
+                <NoticeCard tone={expiryNotice.tone} title={expiryNotice.title}>
                   <p>{t.extendBefore({ date: dates.formatDate(user.accountExpires, { locale }) })}</p>
                   {canExtend && (
                     <div class="mt-2">
@@ -98,7 +93,7 @@ export default ssr<AuthContext>(async (c) => {
               )}
 
               {pendingRequest && (
-                <NoticeCard tone="info" icon="ti ti-clock" title={t.requestPending}>
+                <NoticeCard tone="info" title={t.requestPending}>
                   <p>{t.requestSubmitted({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) })}</p>
                   <ButtonLink href="/me/access" variant="secondary" size="sm" class="mt-2">
                     {t.access}
@@ -107,11 +102,7 @@ export default ssr<AuthContext>(async (c) => {
                 </NoticeCard>
               )}
 
-              {user.provider === "ipa" && user.profile === "guest" && (
-                <NoticeCard tone="info" icon={false}>
-                  {t.limitedAccess}
-                </NoticeCard>
-              )}
+              {user.provider === "ipa" && user.profile === "guest" && <NoticeCard tone="info">{t.limitedAccess}</NoticeCard>}
             </div>
           )}
 

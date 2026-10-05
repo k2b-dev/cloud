@@ -3,8 +3,6 @@ import type { PublicTableQueryResult as TableQueryResult } from "../../../api/pu
 import type { RecordQuery } from "../../../contracts";
 import {
   highlightedIdsForLiveRefresh,
-  isLiveRecordEventForTable,
-  isTerminalLiveErrorCode,
   liveRefreshQuery,
   shouldLoadNextLiveRefreshPage,
   shouldOptimisticallyRemoveDeletedRecord,
@@ -12,27 +10,6 @@ import {
 } from "./live-refresh";
 
 describe("records live refresh helpers", () => {
-  test("accepts only v1 record events for the active table", () => {
-    const event = {
-      v: 1,
-      type: "record.updated",
-      baseId: "base-1",
-      tableId: "table-1",
-      recordId: "record-1",
-      version: 2,
-      changedFieldIds: [],
-      actorId: null,
-      occurredAt: "2026-05-29T00:00:00.000Z",
-    };
-
-    expect(isLiveRecordEventForTable(event, "table-1")).toBe(true);
-    expect(isLiveRecordEventForTable({ ...event, type: "record.restored" }, "table-1")).toBe(true);
-    expect(isLiveRecordEventForTable({ ...event, type: "record.finalized" }, "table-1")).toBe(true);
-    expect(isLiveRecordEventForTable(event, "table-2")).toBe(false);
-    expect(isLiveRecordEventForTable({ ...event, type: "workflow.run" }, "table-1")).toBe(false);
-    expect(isLiveRecordEventForTable({ ...event, v: 2 }, "table-1")).toBe(false);
-  });
-
   test("highlights changed visible rows and newly visible rows", () => {
     expect(
       highlightedIdsForLiveRefresh({
@@ -65,16 +42,6 @@ describe("records live refresh helpers", () => {
       nextCursor: null,
     } as TableQueryResult;
     expect(visibleIdsFromResult(result)).toEqual(["a", "b"]);
-  });
-
-  test("treats only permanent live errors as terminal", () => {
-    expect(isTerminalLiveErrorCode("login_required")).toBe(true);
-    expect(isTerminalLiveErrorCode("access_denied")).toBe(true);
-    expect(isTerminalLiveErrorCode("not_found")).toBe(true);
-    expect(isTerminalLiveErrorCode("stream_failed")).toBe(false);
-    expect(isTerminalLiveErrorCode("invalid_message")).toBe(false);
-    expect(isTerminalLiveErrorCode("backpressure")).toBe(false);
-    expect(isTerminalLiveErrorCode(undefined)).toBe(false);
   });
 
   test("optimistically removes deletes only from live-only queries", () => {

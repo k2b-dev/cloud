@@ -103,6 +103,10 @@ const defineSchema = async (sql: SQL): Promise<void> => {
         DECLARE
           outbox_id uuid := gen_random_uuid();
           event_base_id uuid;
+          event_type text := p_payload->>'type';
+          changed_field_ids uuid[] := ARRAY(SELECT jsonb_array_elements_text(COALESCE(p_payload->'changedFieldIds', '[]'::jsonb))::uuid);
+          record_short_id text;
+          target record;
         BEGIN
           SELECT base_id INTO event_base_id FROM grids.tables WHERE id = p_table_id;
           IF event_base_id IS NULL THEN
@@ -121,6 +125,55 @@ const defineSchema = async (sql: SQL): Promise<void> => {
               'occurredAt', now()
             )
           );
+          IF event_type = 'comment.created' THEN
+            RETURN outbox_id;
+          END IF;
+          -- Open views of the table, and of every Combined table that shows a changed field of it,
+          -- refresh in the same transaction's live update: one per record and table.
+          SELECT short_id INTO record_short_id FROM grids.records WHERE id = p_record_id;
+          FOR target IN
+            SELECT t.id, t.short_id FROM grids.tables t WHERE t.id = p_table_id
+            UNION
+            SELECT combined.id, combined.short_id
+            FROM grids.federated_table_sources source
+            JOIN grids.federated_table_revisions revision ON revision.id = source.revision_id AND revision.status = 'active'
+            JOIN grids.tables combined
+              ON combined.id = revision.table_id AND combined.kind = 'federated' AND combined.deleted_at IS NULL
+            JOIN grids.bases combined_base ON combined_base.id = combined.base_id AND combined_base.deleted_at IS NULL
+            WHERE source.source_table_id = p_table_id
+              AND source.authorized_at IS NOT NULL
+              AND source.revoked_at IS NULL
+              AND (
+                cardinality(changed_field_ids) = 0
+                OR EXISTS (
+                  SELECT 1
+                  FROM grids.federated_field_mappings mapping
+                  LEFT JOIN grids.fields source_field
+                    ON source_field.id = mapping.source_field_id AND source_field.table_id = mapping.source_table_id
+                  WHERE mapping.revision_id = revision.id
+                    AND mapping.source_table_id = p_table_id
+                    AND (mapping.source_field_id = ANY(changed_field_ids) OR source_field.type IN ('formula', 'lookup', 'rollup'))
+                )
+              )
+          LOOP
+            PERFORM events.enqueue(
+              gen_random_uuid(),
+              'grids',
+              'live',
+              'table:' || target.id::text,
+              jsonb_build_object(
+                'v', 1,
+                'k', 'table:' || target.id::text,
+                'd', jsonb_build_object(
+                  'type', event_type,
+                  'tableId', target.short_id,
+                  'recordId', record_short_id,
+                  'version', p_payload->'version'
+                )
+              ),
+              'table:' || target.id::text || ':' || p_record_id::text
+            );
+          END LOOP;
           RETURN outbox_id;
         END;
         $function$

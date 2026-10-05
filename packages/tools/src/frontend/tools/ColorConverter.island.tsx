@@ -185,10 +185,7 @@ export default function ColorConverter() {
 
   return (
     <div class="flex flex-col gap-4">
-      <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-        <i class="ti ti-info-circle shrink-0 mt-0.5" />
-        <span>{t().hint}</span>
-      </NoticeCard>
+      <NoticeCard tone="info">{t().hint}</NoticeCard>
 
       <div class="paper p-4 flex flex-col gap-4">
         {/* Color preview */}

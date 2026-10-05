@@ -586,7 +586,7 @@ function DocumentTemplateEditorDialog(props: {
                 error={() => (submitted() && !source().trim() ? t().gqlSourceRequired : undefined)}
               />
               <Show when={gqlDiagnosticError() || previewSourceError() || gqlDiagnostics().length > 0}>
-                <NoticeCard tone="danger" icon={false} class="mt-2">
+                <NoticeCard tone="danger" class="mt-2">
                   <Show
                     when={gqlDiagnosticError() || previewSourceError()}
                     fallback={

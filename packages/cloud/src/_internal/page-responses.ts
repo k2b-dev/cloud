@@ -23,7 +23,7 @@ export const createPageResponses = (html: HtmlFn<PageOptions>) => {
     // Auth middleware may reject before ssr() initializes page metadata.
     c.set("page", { lang: getLocale(c) });
     c.header("Cache-Control", "private, no-store");
-    await preloadLayoutAnnouncements(c);
+    if (options.layout !== "pwa") await preloadLayoutAnnouncements(c);
     // Load JSX only after the application's SSR plugin has been installed.
     const { renderPageError } = await import("../ssr/PageError");
     const response = await html(renderPageError(c, status, options), c.get("page"));

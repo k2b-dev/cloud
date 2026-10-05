@@ -4,52 +4,41 @@ import type { IntentTone } from "../semantics";
 export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger">;
 
 type NoticeCardContentProps =
-  | { title: JSX.Element; detail?: JSX.Element; children?: JSX.Element }
-  | { title?: never; detail?: never; children: JSX.Element };
+  | { title: JSX.Element; detail?: JSX.Element; meta?: JSX.Element; children?: JSX.Element }
+  | { title?: never; detail?: never; meta?: never; children: JSX.Element };
 
 export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class" | "title"> &
   NoticeCardContentProps & {
     tone?: NoticeTone;
-    icon?: string | false;
     class?: string;
     bodyClass?: string;
   };
 
 export const NOTICE_CARD_CLASSES = {
   root: "k2b-notice-card",
-  inner: "k2b-notice-card__inner",
-  icon: "k2b-notice-card__icon",
   content: "k2b-notice-card__content",
+  head: "k2b-notice-card__head",
   title: "k2b-notice-card__title",
+  meta: "k2b-notice-card__meta",
   description: "k2b-notice-card__description",
   body: "k2b-notice-card__body",
 } as const;
 
-export const NOTICE_CARD_ICONS: Readonly<Record<NoticeTone, string>> = {
-  neutral: "ti ti-note",
-  info: "ti ti-info-circle",
-  success: "ti ti-circle-check",
-  warning: "ti ti-alert-triangle",
-  danger: "ti ti-alert-circle",
-};
-
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
-  const [local, articleProps] = splitProps(props, ["tone", "title", "detail", "children", "icon", "class", "bodyClass"]);
-  const tone = () => local.tone ?? "warning";
+  const [local, articleProps] = splitProps(props, ["tone", "title", "detail", "meta", "children", "class", "bodyClass"]);
   return (
-    <article {...articleProps} class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`} data-tone={tone()}>
-      <div class={NOTICE_CARD_CLASSES.inner}>
-        <Show when={local.icon !== false}>
-          <i
-            class={`${typeof local.icon === "string" ? local.icon : NOTICE_CARD_ICONS[tone()]} ${NOTICE_CARD_CLASSES.icon}`}
-            aria-hidden="true"
-          />
+    <article {...articleProps} class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`} data-tone={local.tone ?? "neutral"}>
+      <div class={NOTICE_CARD_CLASSES.content}>
+        <Show when={local.title}>
+          {(title) => (
+            <div class={NOTICE_CARD_CLASSES.head}>
+              <p class={NOTICE_CARD_CLASSES.title}>{title()}</p>
+              <Show when={local.meta}>{(meta) => <span class={NOTICE_CARD_CLASSES.meta}>{meta()}</span>}</Show>
+            </div>
+          )}
         </Show>
-        <div class={NOTICE_CARD_CLASSES.content}>
-          <Show when={local.title}>{(title) => <p class={NOTICE_CARD_CLASSES.title}>{title()}</p>}</Show>
-          <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
-          <Show when={local.children}>{(body) => <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>}</Show>
-        </div>
+        <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
+        <Show when={local.children}>{(body) => <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>}</Show>
       </div>
     </article>
   );

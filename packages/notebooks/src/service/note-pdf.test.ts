@@ -20,6 +20,11 @@ describe("note PDF HTML", () => {
       expect(html).toContain(`Pack the <strong>${kind}</strong> kit.`);
       expect(html).toContain(`.k2b-notice-card[data-tone="${TONES[kind]}"]`);
     }
+    // The calm notice on paper: a light tint, no accent border, and the preset's text colour.
+    const notice = /\.k2b-notice-card \{([^}]*)\}/.exec(html)?.[1] ?? "";
+    expect(notice).toContain("background: var(--notice-tint)");
+    expect(notice).not.toContain("border:");
+    expect(notice).not.toMatch(/(^|[ ;])color:/);
   });
 
   test("renders the reader's other note blocks and prints images as labels", () => {
@@ -68,6 +73,25 @@ describe("note PDF HTML", () => {
     const selected = [...rule.matchAll(/\.notebook-ligature\[title="([^"]+)"\]/g)].map((match) => match[1]).sort();
     // `©`, `…`, `–` and `±` exist in every text font and keep the preset's typeface.
     expect(selected).toEqual(["!=", "->", "<-", "<->", "<=", "<=>", "=>", ">="].sort());
+  });
+
+  test("links to the exported note jump within the PDF; links to other notes keep their address", () => {
+    const html = build(
+      [
+        "# Guide",
+        "[Steps](note://DEF456#restore) [Missing](note://DEF456#nope) [Top](note://DEF456) [Other](note://GHI789#restore)",
+        "| Link |\n| --- |\n| [Cell](note://DEF456#nope) |",
+        "## Restore",
+      ].join("\n\n"),
+      { noteShortId: "DEF456" },
+    );
+    expect(html).toContain('<a class="notebook-book-note-link" href="#heading-restore">');
+    expect(html).toContain('<h2 id="heading-restore">Restore</h2>');
+    // A heading the note does not have opens its top, like the bare link: the PDF has no `#heading-nope` to jump to.
+    expect(html.match(/href="#top"/g)).toHaveLength(3);
+    expect(html).not.toContain("#heading-nope");
+    expect(html).not.toContain("/notes/DEF456");
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/GHI789?mode=book#heading-restore"');
   });
 
   test("layers note styles between the preset and custom CSS", () => {

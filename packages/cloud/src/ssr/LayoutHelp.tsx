@@ -753,10 +753,8 @@ const HelpShell = (props: {
                 </Show>
                 <Show when={loadError()}>
                   {(message) => (
-                    <NoticeCard tone="danger" icon={false}>
-                      <p class="font-medium">{t().loadFailed}</p>
-                      <p class="mt-1 text-sm">{message()}</p>
-                      <Button size="sm" variant="secondary" class="mt-3" onClick={() => setLoadAttempt((value) => value + 1)}>
+                    <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
+                      <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
                         {t().tryAgain}
                       </Button>
                     </NoticeCard>

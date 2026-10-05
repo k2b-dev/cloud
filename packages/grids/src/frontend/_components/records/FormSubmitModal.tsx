@@ -223,10 +223,7 @@ function FormSubmitBody(props: {
         </fieldset>
 
         <Show when={error()}>
-          <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
-            <i class="ti ti-alert-circle mt-0.5 shrink-0" />
-            <span>{error()}</span>
-          </NoticeCard>
+          <NoticeCard tone="danger">{error()}</NoticeCard>
           <Show when={pendingSubmission()}>
             <p class="text-sm text-dimmed">{gridsFormMessages.resolve([locale()]).t.retrySubmission}</p>
           </Show>

@@ -122,10 +122,7 @@ export default function BaseSettingsPanel(props: Props) {
         <SettingsModal.Group title={t().sharing}>
           <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
             <SettingsGroup title={t().baseAccess} description={t().immediateChanges}>
-              <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-                <i class="ti ti-info-circle text-sm mt-0.5 shrink-0" aria-hidden="true" />
-                <span>{t().baseGrantExplanation}</span>
-              </NoticeCard>
+              <NoticeCard tone="info">{t().baseGrantExplanation}</NoticeCard>
               <PermissionsSection baseId={props.base.id} initialEntries={props.accessEntries} />
             </SettingsGroup>
           </SettingsModal.Tab>

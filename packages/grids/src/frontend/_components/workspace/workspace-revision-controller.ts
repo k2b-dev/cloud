@@ -12,13 +12,11 @@ export const createWorkspaceRevisionController = (options: {
   activeKeys: string[];
   load: (signal: AbortSignal) => Promise<RevisionSnapshot>;
   apply: (state: { changed: boolean; revoked: boolean }) => void;
-  markApplied: (cursor: string | null) => void;
   onError: (error: unknown) => void;
 }) => {
   let disposed = false;
   let running = false;
   let pending = false;
-  let cursor: string | null = null;
   let abort: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const baseline = { ...options.initial.resources };
@@ -37,7 +35,6 @@ export const createWorkspaceRevisionController = (options: {
     if (disposed || running || !pending) return;
     running = true;
     pending = false;
-    const coveringCursor = cursor;
     const coveringGeneration = generation;
     abort = new AbortController();
     try {
@@ -46,7 +43,6 @@ export const createWorkspaceRevisionController = (options: {
       if (coveringGeneration !== generation) return;
       latest = next;
       apply(next);
-      if (!disposed) options.markApplied(coveringCursor);
     } catch (error) {
       if (!disposed) options.onError(error);
     } finally {
@@ -61,10 +57,10 @@ export const createWorkspaceRevisionController = (options: {
       generation++;
       if (latest?.resources[key] === revision) apply(latest);
     },
-    check: (nextCursor?: string | null) => {
+    /** `reset` discards a check that is already running: it may have read the state before the change. */
+    check: (reset = false) => {
       if (disposed) return;
-      if (nextCursor === null) generation++;
-      if (nextCursor !== undefined) cursor = nextCursor;
+      if (reset) generation++;
       pending = true;
       if (running || timer) return;
       timer = setTimeout(() => {

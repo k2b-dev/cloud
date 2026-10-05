@@ -64,14 +64,7 @@ const PermissionDialogBody = (props: Props) => {
       <Show when={projects.data()?.length}>
         <NoticeCard tone="info" title={t().skillProjectAccessTitle} detail={t().skillProjectAccessHelp}>
           <ul class="flex flex-col gap-1">
-            <For each={projects.data()}>
-              {(project) => (
-                <li class="flex items-center gap-2 text-sm">
-                  <i class="ti ti-folders" aria-hidden="true" />
-                  {project.name ?? t().skillProjectUnavailable}
-                </li>
-              )}
-            </For>
+            <For each={projects.data()}>{(project) => <li>{project.name ?? t().skillProjectUnavailable}</li>}</For>
           </ul>
         </NoticeCard>
       </Show>

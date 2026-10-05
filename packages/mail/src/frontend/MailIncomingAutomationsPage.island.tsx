@@ -27,10 +27,7 @@ export default function MailIncomingAutomationsPage(props: {
         <h1 class="text-base font-semibold text-primary">{messages().incomingMail}</h1>
         <p class="mt-0.5 text-xs text-dimmed">{messages().incomingMailDescription}</p>
       </header>
-      <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-        <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-        <span>{messages().incomingMailNotice}</span>
-      </NoticeCard>
+      <NoticeCard tone="info">{messages().incomingMailNotice}</NoticeCard>
       <MailIncomingAutomationSettings
         mailboxId={props.data.mailbox.id}
         catalog={props.data.catalog}

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Deployment requirements
@@ -103,7 +103,7 @@ Per replica, the built-in applications reserve:
 | Core, with the platform services it runs | 18 | AI turn streams 520 MiB, AI invalidations 128 MiB, FreeIPA backfill pump 64 MiB | 1.9 GiB |
 | Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
-| Grids | 2 | `grids:records` 1 GiB, `grids:workflow-record-events` 1 GiB, workflow run events 512 MiB, metadata events 128 MiB | 2.8 GiB |
+| Grids | 2 | `grids:workflow-record-events` 1 GiB, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.8 GiB |
 | Mail | 10 | `cloud:live:mail` 65 MiB, previous invalidations (`mail:invalidations`) 1 GiB until a later release removes them, automation backfill pump 64 MiB | 1.8 GiB |
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
@@ -274,7 +274,7 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming and must not buffer or compress streamed responses, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails require shared SMTP. | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
@@ -561,3 +561,65 @@ not prove that the optional indexes are usable.
 The Filegate public origin must be reachable from the requesting user's browser
 or CLI. See [private file lists and downloads](/en/apps/filesv2#compose-private-file-lists-and-downloads)
 for the capability flow, lease expiry, and access checks.
+
+## Optional Mail search ranking
+
+Mail searches with native PostgreSQL full-text search on every supported
+version. With `pg_textsearch` installed as described in
+[Optional Help search ranking](#optional-help-search-ranking), Mail ranks with
+BM25 once its index `mail.message_contents_bm25_idx` is valid. Mailboxes set
+to `postgres` keep native ranking.
+
+Mail creates the index itself. After its schema setup, every Mail start checks
+for the extension and the index. If the index is missing or invalid, Mail
+builds it in the background with `CREATE INDEX CONCURRENTLY`:
+
+- Mail starts and searches natively while the index builds; mail keeps
+  arriving.
+- One Mail process builds at a time, coordinated through a NATS lease. A build
+  that another process or an operator is still running is left alone. Postgres
+  hides which index another database role builds, so while another role builds
+  any index in the same database, Mail logs that and leaves the build to its
+  next start. Every step is a single statement without session state, so the
+  build also works behind a transaction pooler.
+- The build has no time limit. With `pg_textsearch` 1.5.1, a build reacts to a
+  cancel request or `statement_timeout` only after it has read every message,
+  so a limit would only discard a finished build.
+- A build that fails is removed, logged as a warning from `mail:migrate`, and
+  tried again on the next start. An invalid index left by an interrupted build,
+  or an index of another kind under the same name, is replaced on the next
+  start.
+
+Build time grows with the stored message text. With 92,000 invented messages
+of about 1 KB of text each on PostgreSQL 17 and `pg_textsearch` 1.4.0, the
+build took 18 to 24 seconds and the index used 34 MB. While it runs, the build
+holds a lock that keeps autovacuum and other schema changes on Mail messages
+waiting. The current Mail setup does not need that lock once its indexes exist,
+but an older Mail image that starts during the build waits for it and can fail
+its setup until the build finishes.
+
+To decide when the build runs, create the index yourself before Mail starts,
+for example in a maintenance window. Mail then finds the valid index and skips
+its build:
+
+```sql
+SET statement_timeout = 0;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS message_contents_bm25_idx
+  ON mail.message_contents
+  USING bm25 ((COALESCE(subject, '') || ' ' || COALESCE(subject, '') || ' ' || COALESCE(plain_text, '')))
+  WITH (text_config = 'simple');
+```
+
+Check a mailbox with `cld mail status --mailbox <mailbox> --json`:
+`search.pgTextsearchInstalled` shows the extension, and `search.bm25Ready`
+turns `true` once the index is valid. To return one mailbox to native ranking,
+run `cld mail configure --mailbox <mailbox> --search-backend postgres`. To
+remove BM25 ranking for every mailbox, drop the index:
+
+```sql
+DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx;
+```
+
+Mail builds the index again on its next start while the extension stays
+installed, so set the mailboxes to `postgres` first if BM25 should stay off. See [Mail search in large mailboxes](/en/apps/mail#search-in-large-mailboxes)
+for how search bounds its work.

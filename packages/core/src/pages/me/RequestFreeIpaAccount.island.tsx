@@ -70,11 +70,7 @@ export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps)
       fields: {
         info: {
           type: "info",
-          content: () => (
-            <NoticeCard tone="info" icon={false}>
-              {t().verifyRequestDetails}
-            </NoticeCard>
-          ),
+          content: () => <NoticeCard tone="info">{t().verifyRequestDetails}</NoticeCard>,
         },
         firstName: {
           type: "text",

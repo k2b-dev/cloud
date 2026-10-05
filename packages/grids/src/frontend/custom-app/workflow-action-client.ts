@@ -82,23 +82,21 @@ export const invokeCustomAppWorkflow = async (input: {
   input.onRunning?.();
 
   const confirmedReceipts = new Set<string>();
-  let live = false;
   let committedChanges = 0;
   const deadline = Date.now() + 300_000;
   for (let attempt = 0; attempt < 150 && Date.now() < deadline; attempt += 1) {
-    if (attempt > 0 && !live) await delay(Math.min(400 + attempt * 100, 2_000), input.signal);
+    if (attempt > 0) await delay(Math.min(400 + attempt * 100, 2_000), input.signal);
     input.signal.throwIfAborted();
     let status: {
       status?: unknown;
       message?: unknown;
       documentConfirmation?: unknown;
-      live?: unknown;
       committedChanges?: unknown;
       navigateTo?: unknown;
     };
     try {
       const statusResponse = await fetch(operation.statusUrl, {
-        headers: { Accept: "application/json", ...(live ? { "X-Workflow-Changes": String(committedChanges) } : {}) },
+        headers: { Accept: "application/json" },
         signal: input.signal,
       });
       if (!statusResponse.ok) return { kind: "running", message: messages.statusUnavailable };
@@ -107,7 +105,6 @@ export const invokeCustomAppWorkflow = async (input: {
       if (input.signal.aborted) throw error;
       return { kind: "running", message: messages.statusUnavailable };
     }
-    live = status.live === true;
     if (typeof status.committedChanges === "number" && status.committedChanges > committedChanges) {
       committedChanges = status.committedChanges;
       if (status.status !== "succeeded") await input.onCommittedChanges?.();
@@ -126,7 +123,6 @@ export const invokeCustomAppWorkflow = async (input: {
     }
     if (status.documentConfirmation !== undefined) {
       // An already-reviewed receipt can remain visible until the worker resumes.
-      live = false;
       const pending = WorkflowPendingDocumentConfirmationSchema.safeParse(status.documentConfirmation);
       if (!pending.success) return { kind: "running", message: messages.statusUnavailable };
       if (!confirmedReceipts.has(pending.data.receiptId)) {

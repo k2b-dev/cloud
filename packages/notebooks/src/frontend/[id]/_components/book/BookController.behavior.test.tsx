@@ -165,6 +165,60 @@ describe("Book controller", () => {
     }
   });
 
+  test("opens a note link at its heading, and at the top when the note has no such heading", async () => {
+    const app = await mount();
+    try {
+      const main = app.dom.root.querySelector<HTMLElement>(".notebook-book-main")!;
+      const link = (id: string, href: string) => {
+        const anchor = app.dom.document.createElement("a");
+        anchor.id = id;
+        anchor.href = href;
+        main.append(anchor);
+      };
+      link("restore", "/app/notebooks/book01/notes/note02?mode=book#heading-restore");
+      link("missing", "/app/notebooks/book01/notes/note03?mode=book#heading-missing");
+      link("here-missing", "/app/notebooks/book01/notes/note03?mode=book#heading-gone");
+      const scrolledTo: string[] = [];
+      const scrollIntoView = spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (this: HTMLElement) {
+        scrolledTo.push(this.id);
+      });
+      const scrollTo = spyOn(main, "scrollTo");
+      try {
+        expect(app.click("restore").defaultPrevented).toBe(true);
+        await flush();
+        app.requests.at(-1)!.resolve(
+          Response.json({
+            ...snapshot("note02", "Second"),
+            html: '<h1 id="heading-second">Second</h1><h2 id="heading-restore">Restore</h2>',
+          }),
+        );
+        await flush();
+        expect(location.hash).toBe("#heading-restore");
+        expect(scrolledTo).toEqual(["heading-restore"]);
+        expect(scrollTo).not.toHaveBeenCalledWith(0, 0);
+
+        expect(app.click("missing").defaultPrevented).toBe(true);
+        await flush();
+        app.requests.at(-1)!.resolve(Response.json(snapshot("note03", "Third")));
+        await flush();
+        expect(location.pathname).toEndWith("/note03");
+        expect(scrolledTo).toEqual(["heading-restore"]);
+        expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
+
+        // Within the open note the browser follows the anchor; a heading the note lacks leaves the reader at the top.
+        scrollTo.mockClear();
+        expect(app.click("here-missing").defaultPrevented).toBe(false);
+        expect(scrollTo).toHaveBeenLastCalledWith(0, 0);
+        expect(app.requests).toHaveLength(2);
+      } finally {
+        scrollIntoView.mockRestore();
+        scrollTo.mockRestore();
+      }
+    } finally {
+      app.cleanup();
+    }
+  });
+
   test("opens attachments in place: a file in its preview, an image in the lightbox", async () => {
     const app = await mount();
     const { dialogCore } = await import("@k2b/ui");

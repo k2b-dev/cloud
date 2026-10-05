@@ -148,9 +148,7 @@ export function RecordDisplayConfigEditor(props: {
           disabled={dateFieldOptions().length === 0}
         />
         <Show when={dateFieldOptions().length === 0}>
-          <NoticeCard tone="warning" icon={false}>
-            {t().addDateField}
-          </NoticeCard>
+          <NoticeCard tone="warning">{t().addDateField}</NoticeCard>
         </Show>
       </Show>
     </div>

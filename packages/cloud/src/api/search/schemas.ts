@@ -85,6 +85,40 @@ export const SearchResponseSchema = z.object({
   failedApps: z.array(z.string()).optional(),
 });
 
+/** Media type a client sends in `Accept` to receive one NDJSON line per app as soon as it finishes. */
+export const SEARCH_STREAM_CONTENT_TYPE = "application/x-ndjson";
+
+export const SearchProviderStatusSchema = z.enum(["ok", "empty", "timeout", "error"]);
+
+/**
+ * One line of a streamed search: `start` names the apps that search, one `provider` line follows per app in the
+ * order the apps finish, and `done` closes the search. Apps without a line before `done` do not exist: every app
+ * named in `start` gets exactly one line.
+ */
+export const SearchStreamLineSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("start"),
+    query: z.string(),
+    apps: z.array(SearchAppSchema),
+    providers: z.array(z.string()),
+    unsupportedTags: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal("provider"),
+    provider: z.string(),
+    status: SearchProviderStatusSchema,
+    results: z.array(SearchItemSchema),
+    ms: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("done"),
+    status: z.enum(["complete", "partial"]),
+    count: z.number().int().nonnegative(),
+  }),
+]);
+
 export type SearchApp = z.infer<typeof SearchAppSchema>;
 export type SearchItem = z.infer<typeof SearchItemSchema>;
 export type SearchResponse = z.infer<typeof SearchResponseSchema>;
+export type SearchProviderStatus = z.infer<typeof SearchProviderStatusSchema>;
+export type SearchStreamLine = z.infer<typeof SearchStreamLineSchema>;

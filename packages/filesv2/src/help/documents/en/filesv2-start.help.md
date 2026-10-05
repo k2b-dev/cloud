@@ -82,7 +82,7 @@ After signing in with `cld login --server <Cloud URL>`, `cld filesv2 ls` lists y
 
 Download a file with `cld filesv2 get me:/Documents/report.pdf`, or print a text file with `cld filesv2 cat me:/Notes/todo.md`. The CLI downloads directly from Filegate to a new local file and never overwrites existing paths; a folder arrives as a ZIP. Use `--json` for the saved path and byte count, or `cld filesv2 help` for all available commands.
 
-`cld filesv2 put ./report.pdf me:/Documents/` uploads a file directly to the file server; add `--replace` to replace an existing file and `--parents` to create missing folders. `mkdir -p`, `mv`, `cp`, `rm --yes` (to the trash), `tree`, `stat`, `search`, `trash list|restore`, `versions list|get|restore|update`, `shares list|add|rm`, `zip --out` for a ZIP of several entries, `thumbnail`, and `documents create --kind` plus `edit-url` for office documents cover the remaining operations.
+`cld filesv2 put ./report.pdf me:/Documents/` uploads a file directly to the file server; add `--replace` to replace an existing file and `--parents` to create missing folders. `mkdir -p`, `mv`, `cp`, `rm --yes` (to the trash), `tree`, `stat`, `search`, `trash list|restore`, `versions list|get|restore|update`, `shares list|add|revoke`, `zip --out` for a ZIP of several entries, `thumbnail`, and `documents create --kind` plus `edit-url` for office documents cover the remaining operations.
 
 ## When storage is unavailable {icon="alert-circle"}
 

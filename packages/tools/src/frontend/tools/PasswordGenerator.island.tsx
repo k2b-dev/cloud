@@ -215,12 +215,7 @@ export default function PasswordGenerator() {
         ]}
       />
 
-      <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-        <i class="ti ti-info-circle shrink-0 mt-0.5" />
-        <div class="text-sm">
-          <strong>{modeInfo().title}</strong> {modeInfo().body}
-        </div>
-      </NoticeCard>
+      <NoticeCard tone="info" title={modeInfo().title} detail={modeInfo().body} />
 
       <section class="paper p-4">
         <div class="flex flex-col gap-5">

@@ -91,9 +91,7 @@ function ProfileWarnings({ user, locale }: { user: User; locale: string }) {
   if (missing.length === 0) return null;
   return (
     <a href="/me" class="block shrink-0 no-underline">
-      <NoticeCard tone="warning" icon={false} bodyClass="flex items-center gap-2">
-        <i class="ti ti-user-exclamation" /> <span>{t.profileIncomplete({ fields: missing.join(", ") })}</span>
-      </NoticeCard>
+      <NoticeCard tone="warning">{t.profileIncomplete({ fields: missing.join(", ") })}</NoticeCard>
     </a>
   );
 }
@@ -101,13 +99,12 @@ function ExpiryWarnings({ user, dateConfig, locale }: { user: User; dateConfig: 
   const t = platformMessages.resolve([locale]).t;
   const now = Date.now();
   const warnThreshold = now + WARN_DAYS * 24 * 60 * 60 * 1000;
-  const warnings: { icon: string; message: string; expired: boolean }[] = [];
+  const warnings: { message: string; expired: boolean }[] = [];
   if (user.accountExpires) {
     const expires = new Date(user.accountExpires).getTime();
-    if (expires < now) warnings.push({ icon: "ti-calendar-event", message: t.accountExpired, expired: true });
+    if (expires < now) warnings.push({ message: t.accountExpired, expired: true });
     else if (expires < warnThreshold)
       warnings.push({
-        icon: "ti-calendar-event",
         message:
           user.profile === "guest"
             ? t.guestAccountExpires({ date: dates.formatDate(user.accountExpires, dateConfig) })
@@ -117,10 +114,9 @@ function ExpiryWarnings({ user, dateConfig, locale }: { user: User; dateConfig: 
   }
   if (user.ipa?.passwordExpires) {
     const expires = new Date(user.ipa.passwordExpires).getTime();
-    if (expires < now) warnings.push({ icon: "ti-key", message: t.passwordExpired, expired: true });
+    if (expires < now) warnings.push({ message: t.passwordExpired, expired: true });
     else if (expires < warnThreshold)
       warnings.push({
-        icon: "ti-key",
         message: t.passwordExpires({ date: dates.formatDate(user.ipa.passwordExpires, dateConfig) }),
         expired: false,
       });
@@ -130,10 +126,7 @@ function ExpiryWarnings({ user, dateConfig, locale }: { user: User; dateConfig: 
     <div class="flex shrink-0 flex-col gap-1">
       {" "}
       {warnings.map((w) => (
-        <NoticeCard tone={w.expired ? "danger" : "warning"} icon={false} bodyClass="flex items-center gap-2">
-          {" "}
-          <i class={`ti ${w.icon}`} /> <span>{w.message}</span>{" "}
-        </NoticeCard>
+        <NoticeCard tone={w.expired ? "danger" : "warning"}>{w.message}</NoticeCard>
       ))}{" "}
     </div>
   );

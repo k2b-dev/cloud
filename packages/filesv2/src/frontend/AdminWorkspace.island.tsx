@@ -370,7 +370,6 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                         <>
                           <NoticeCard
                             tone="info"
-                            icon={location().area === "cloud" ? "ti ti-cloud" : "ti ti-server"}
                             title={location().area === "cloud" ? a().cloudPurpose : a().freeipaPurpose}
                             detail={location().area === "cloud" ? a().cloudExplanation : a().freeipaExplanation}
                           />
@@ -445,7 +444,7 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                   </Match>
                   <Match when={location().view === "directories" || location().view === "archive"}>
                     <Show when={location().view === "archive"}>
-                      <NoticeCard tone="info" icon="ti ti-archive" title={a().archivePurpose} detail={a().archiveExplanation} />
+                      <NoticeCard tone="info" title={a().archivePurpose} detail={a().archiveExplanation} />
                     </Show>
                     <DataTable.Panel>
                       <DataTable.Header title={title()} />

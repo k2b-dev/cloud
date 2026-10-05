@@ -30,10 +30,7 @@ export default function MailWorkflowsPage(props: {
         <h1 class="text-base font-semibold text-primary">{messages().workflows}</h1>
         <p class="mt-0.5 text-xs text-dimmed">{messages().workflowsDescription}</p>
       </header>
-      <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-        <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-        <span>{messages().workflowsNotice}</span>
-      </NoticeCard>
+      <NoticeCard tone="info">{messages().workflowsNotice}</NoticeCard>
       <MailReferenceConfigurationCard
         mailboxId={props.data.mailbox.id}
         configuration={referenceConfiguration()}

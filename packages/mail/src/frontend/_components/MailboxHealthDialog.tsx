@@ -81,7 +81,7 @@ function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext
             <div class="flex flex-col gap-2">
               <Show when={health.error()}>
                 {(error) => (
-                  <NoticeCard tone="danger" icon={false} bodyClass="flex items-start justify-between gap-3" role="alert">
+                  <NoticeCard tone="danger" bodyClass="flex items-start justify-between gap-3" role="alert">
                     <span>{error().message}</span>
                     <Button
                       variant="secondary"

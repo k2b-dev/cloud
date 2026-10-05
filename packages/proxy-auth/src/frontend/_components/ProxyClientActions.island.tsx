@@ -80,7 +80,7 @@ const ProxyClientActions = (props: Props) => {
 
         return (
           <div class="flex flex-col gap-4">
-            <NoticeCard tone="info" icon={false}>
+            <NoticeCard tone="info">
               {t().clientId}: <code class="bg-zinc-50 dark:bg-zinc-800 px-1 rounded">{client.clientId}</code>
             </NoticeCard>
 

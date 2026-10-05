@@ -49,7 +49,7 @@ export function PublicDocumentShare(props: {
         <Paper as="article" elevated class="standalone-card w-full p-6 sm:p-8">
           <Show
             when={available()}
-            fallback={<NoticeCard tone="warning" icon="ti ti-link-off" title={t().linkUnavailable} detail={t().documentLinkUnavailable} />}
+            fallback={<NoticeCard tone="warning" title={t().linkUnavailable} detail={t().documentLinkUnavailable} />}
           >
             <div class="flex items-center gap-3">
               <span class="app-accent-text flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)]">

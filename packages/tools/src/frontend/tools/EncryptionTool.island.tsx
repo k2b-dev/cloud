@@ -212,13 +212,8 @@ export default function EncryptionTool() {
       {tab() === "symmetric" && (
         <div class="flex flex-col gap-4">
           {" "}
-          <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-            {" "}
-            <i class="ti ti-info-circle shrink-0 mt-0.5" />{" "}
-            <div class="text-sm">
-              {" "}
-              <strong>{t().symIntro}</strong> {t().symStretchedHint} {t().symFastHint}{" "}
-            </div>{" "}
+          <NoticeCard tone="info">
+            <strong>{t().symIntro}</strong> {t().symStretchedHint} {t().symFastHint}
           </NoticeCard>{" "}
           <div class="paper p-4 flex flex-col gap-3">
             {" "}
@@ -256,12 +251,7 @@ export default function EncryptionTool() {
               </Button>{" "}
             </div>{" "}
           </div>{" "}
-          {symError() && (
-            <NoticeCard tone="danger" icon={false} bodyClass="flex items-center gap-2">
-              {" "}
-              <i class="ti ti-alert-circle" /> {symError()}{" "}
-            </NoticeCard>
-          )}{" "}
+          {symError() && <NoticeCard tone="danger">{symError()}</NoticeCard>}{" "}
           {symOutput() && (
             <div class="paper p-4">
               {" "}
@@ -274,10 +264,8 @@ export default function EncryptionTool() {
       {tab() === "asymmetric" && (
         <div class="flex flex-col gap-4">
           {" "}
-          <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-            {" "}
-            <i class="ti ti-info-circle shrink-0 mt-0.5" />{" "}
-            <div class="text-sm flex flex-col gap-2">
+          <NoticeCard tone="info">
+            <div class="flex flex-col gap-2">
               {" "}
               <div>
                 {" "}
@@ -288,7 +276,7 @@ export default function EncryptionTool() {
                 <strong>{t().exampleLabel}</strong> {t().exampleAlice} {t().exampleKeyPair} {t().exampleEncrypt} {t().exampleDecrypt}{" "}
                 {t().exampleNobody}{" "}
               </div>{" "}
-            </div>{" "}
+            </div>
           </NoticeCard>{" "}
           <div class="paper p-4 flex flex-col gap-3">
             {" "}
@@ -340,12 +328,7 @@ export default function EncryptionTool() {
               </Button>{" "}
             </div>{" "}
           </div>{" "}
-          {asymError() && (
-            <NoticeCard tone="danger" icon={false} bodyClass="flex items-center gap-2">
-              {" "}
-              <i class="ti ti-alert-circle" /> {asymError()}{" "}
-            </NoticeCard>
-          )}{" "}
+          {asymError() && <NoticeCard tone="danger">{asymError()}</NoticeCard>}{" "}
           {asymOutput() && (
             <div class="paper p-4">
               {" "}

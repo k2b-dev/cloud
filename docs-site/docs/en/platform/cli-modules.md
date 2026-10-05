@@ -608,6 +608,10 @@ modules. Both paths are relative to the application directory:
 Write the references for agents that operate the application through `cld`:
 start `index.md` with the task workflow and the safest commands, and link the
 other files for details. Every file must be Markdown with a plain file name.
+When the application accepts authored content, such as Markdown with its own
+blocks or files in particular formats, list every supported construct with one
+compact example and test the examples against the real renderer. The core
+`cloud-cli` skill only routes agents to these references.
 
 The production build bundles each module into one self-contained ESM file,
 copies its references, and writes a manifest to `dist/cli/<name>/`. It imports

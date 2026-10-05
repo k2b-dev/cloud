@@ -63,6 +63,11 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
       WHERE submission.mailbox_id = ${mailboxId}::uuid
         AND submission.state IN ('scheduled', 'undo_window', 'sending', 'accepted', 'sent_sync_pending', 'unknown')
       RETURNING submission.draft_id, submission.state
+    ), stopped_copy_retries AS (
+      -- A partly accepted send keeps its outcome; only the retry of its Sent copy stops, like any other.
+      UPDATE mail.outbox_submissions submission
+      SET sent_copy_pending = false, updated_at = now()
+      WHERE submission.mailbox_id = ${mailboxId}::uuid AND submission.state = 'needs_attention' AND submission.sent_copy_pending
     ), reset_drafts AS (
       UPDATE mail.drafts draft
       SET state = 'draft', updated_at = now()

@@ -2242,7 +2242,7 @@ async function openAiProfileDialog(input: {
               </PanelDialog.Section>
               <PanelDialog.Section title={t().costs} icon="ti ti-coins" subtitle={costSummary()} hideable {...sectionControl("costs")}>
                 <div class="grid gap-4">
-                  <Show when={!isAudio()} fallback={<NoticeCard>{t().audioCostsDescription}</NoticeCard>}>
+                  <Show when={!isAudio()} fallback={<NoticeCard tone="warning">{t().audioCostsDescription}</NoticeCard>}>
                     <Switch label={t().enterPrices} value={priced} onValueChange={setPriced} />
                     <Show
                       when={priced()}

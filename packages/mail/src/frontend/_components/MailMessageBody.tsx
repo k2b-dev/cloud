@@ -325,8 +325,7 @@ export default function MailMessageBody(props: {
     >
       <div class="flex min-w-0 flex-col gap-2">
         <Show when={remoteImagesRemaining() > 0}>
-          <NoticeCard tone="neutral" icon={false} bodyClass="flex flex-wrap items-center gap-2">
-            <i class="ti ti-photo-shield shrink-0" aria-hidden="true" />
+          <NoticeCard tone="neutral" bodyClass="flex flex-wrap items-center gap-2">
             <span class="min-w-48 flex-1">{messages().remoteImagesBlocked}</span>
             <Button variant="secondary" size="xs" type="button" disabled={remoteLoading()} onClick={() => void loadRemoteImages()}>
               <i class={`ti ${remoteLoading() ? "ti-loader-2 animate-spin" : "ti-photo"}`} aria-hidden="true" />

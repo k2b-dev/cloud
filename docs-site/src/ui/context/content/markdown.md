@@ -40,8 +40,10 @@ These options also work with `renderSafeMarkdown(source, options)`. They apply
 to Markdown rendering only; `trustedHtml` already crosses an explicit trust
 boundary and bypasses the renderer.
 
-Embedded components such as `NoticeCard` keep their own paragraph spacing;
-ordinary Markdown paragraphs retain the standard prose spacing.
+Embedded components such as `NoticeCard` keep their own inner spacing and sit
+one paragraph apart from the surrounding prose; ordinary Markdown paragraphs
+retain the standard prose spacing. Markdown callouts render as the same calm
+notice as the [`NoticeCard`](/en/ui/feedback/blocks) component.
 
 Prose stays flat on the surrounding surface. Links use the action colour and
 an underline. Inline code and fenced code blocks are text on a light fill

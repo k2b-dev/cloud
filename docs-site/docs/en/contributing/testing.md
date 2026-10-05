@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-09-29
+updated: 2026-10-05
 ---
 
 # Testing
@@ -217,7 +217,11 @@ leaves out suites whose name or path matches, and `--filter <name>` keeps only t
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right
 after the gate; it starts the authority only when database and NATS targets are
-configured.
+configured. Bun runs file-level `afterAll` hooks in the order they were
+registered, so the preload's teardown, which stops the authority and the process
+Sync, runs before the file's own file-level `afterAll`. Put teardown that still
+needs either, such as stopping a live outbox, in an `afterAll` inside the
+suite's `describe`; Bun runs it when the suite ends.
 
 A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
@@ -318,3 +322,84 @@ slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
 Grids, and Mail images, boots them against fresh infrastructure, and runs the
 Grids and Mail browser smokes against that stack. It runs independently of the
 Assistant browser suites, so a failure in one does not hide the other's result.
+
+### Read slow statements from a CI run
+
+The test PostgreSQL in the `integration`, `grids`, and `packed` jobs logs every
+completed statement that took 250 ms or longer. For queries whose execution
+took as long, `auto_explain` also logs the plan, including queries that run
+inside functions. Use these entries when a test got slower in CI but not
+locally: they tell a slow database apart from a slow test process.
+
+Find the PostgreSQL log in the job log:
+
+- `integration` and `packed`: open the `Stop containers` step and look for
+  `Print service container logs:` followed by the `postgres` container name.
+- `grids`: open the `Print the Postgres log and remove containers` step and
+  expand the `grids-postgres log` group.
+
+To search it, download the job log and filter it, for example:
+
+```bash
+gh run view --job <job-id> --log > job.log
+grep -n -A 20 'duration: ' job.log
+```
+
+Each entry starts with the time in UTC, the process ID, the database, and the
+application name:
+
+- Suites that create their own database show it as `<prefix>_<random>_test`,
+  such as `mail_a931..._test`. Suites that use the job's shared database show
+  `cloud_ci_test`, `cloud_packed_test`, or `grids_test`; tell them apart by the
+  statement text and the time. `CREATE DATABASE` and `DROP DATABASE` also run
+  on the shared database.
+- Most test connections set no application name and show `[unknown]`.
+  Connections that an application opens through its declaration show
+  `cloud:<app>`.
+
+A slow query produces a statement entry and a plan entry with the same process
+ID. They can come in either order: for a prepared query that returns rows,
+the `execute` entry and its parameters come first; for an `INSERT`, `UPDATE`,
+or `DELETE` without `RETURNING`, the plan comes first.
+
+```text
+2026-10-05 13:12:03.456 UTC [812] mail_a931..._test [unknown]: LOG:  duration: 903.530 ms  execute P...: SELECT ... WHERE mc.mailbox_id = $3 ::uuid
+2026-10-05 13:12:03.456 UTC [812] mail_a931..._test [unknown]: DETAIL:  Parameters: $1 = '...', $2 = '...', $3 = '...'
+2026-10-05 13:12:03.457 UTC [812] mail_a931..._test [unknown]: LOG:  duration: 903.211 ms  plan:
+	Query Text: SELECT ... WHERE mc.mailbox_id = $3 ::uuid
+	Query Parameters: $1 = '...', $2 = '...', $3 = '...'
+	Nested Loop  (cost=0.84..16.90 rows=1 width=28)
+	  ...
+```
+
+Not every slow statement has a plan. `auto_explain` times only the execution
+of a query, so DDL and other utility statements, such as migrations,
+`CREATE DATABASE`, `DROP DATABASE`, `ANALYZE`, or `COMMIT`, and queries that
+spent their time in parsing or planning show only the statement entry. The
+PostgreSQL 15 of the `grids` job has no `Query Parameters` line in its plans;
+read the parameters from the statement entry.
+
+Compare the PostgreSQL time at the start of each entry with the GitHub
+timestamps of the test step's output. Ignore the GitHub timestamps in front of
+the PostgreSQL lines: the log is printed when the job ends, so they all show
+the time of that step.
+
+- Entries in the slow window show which statements took the time. The plan
+  shows the chosen strategy with estimated costs; a `JIT:` section means the
+  query was compiled. The plan has no actual row counts or timings, so
+  reproduce a suspicious plan locally with `EXPLAIN (ANALYZE, BUFFERS)`.
+- A statement that fails or is cancelled logs no duration. Look for `ERROR:`
+  and `FATAL:` lines in the slow window, such as `canceling statement due to
+  statement timeout` or `terminating connection due to administrator command`.
+- No `duration:` and no `ERROR:` or `FATAL:` lines in the slow window, while
+  the log still starts with the database initialization, mean that no
+  statement took 250 ms or longer. The time went to the test process, the
+  network, or many shorter statements.
+- PostgreSQL logs checkpoints by default. A long checkpoint in the same window
+  can point to slow disk writes on the runner.
+
+The log is bounded: Docker keeps two log files of 4 MB for each PostgreSQL
+container and drops the oldest entries when both are full. A full local
+integration run writes about 0.7 MB, most of it the text of large migrations
+that took longer than 250 ms. If the log no longer starts with the database
+initialization, entries were dropped. Parameter values are cut after 256 bytes.

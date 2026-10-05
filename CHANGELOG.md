@@ -3,6 +3,73 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.29.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.28.0...cloud-v0.29.0) (2026-10-05)
+
+
+### Features
+
+* **accounts:** let administrators see and remove app devices ([#614](https://github.com/k2b-dev/cloud/issues/614)) ([9ba1a35](https://github.com/k2b-dev/cloud/commit/9ba1a357d8344d52daf75ca1c52992feccf9f6d7))
+* **cloud:** keep live updates quiet when a background tab returns ([#570](https://github.com/k2b-dev/cloud/issues/570)) ([#583](https://github.com/k2b-dev/cloud/issues/583)) ([b075650](https://github.com/k2b-dev/cloud/commit/b0756506e8b42d13e0d50b6138ddf8d2d772d56c))
+* **cloud:** let applications add pages to the mobile app ([#609](https://github.com/k2b-dev/cloud/issues/609)) ([bd64ddb](https://github.com/k2b-dev/cloud/commit/bd64ddb620b4597df336b4410019d4392e819461))
+* **cloud:** pair phones with long-lived app sessions ([#602](https://github.com/k2b-dev/cloud/issues/602)) ([cdea338](https://github.com/k2b-dev/cloud/commit/cdea3389f00c73d247ab431f919ccb2a19fbdb83))
+* **core:** flatten the account pages ([#572](https://github.com/k2b-dev/cloud/issues/572)) ([deaf537](https://github.com/k2b-dev/cloud/commit/deaf537c25414d89785ef24407b839d880c49252))
+* **core:** pair a phone in a dialog on a calmer App page ([#628](https://github.com/k2b-dev/cloud/issues/628)) ([97f0e63](https://github.com/k2b-dev/cloud/commit/97f0e6341ecfd66ad51cb8bb1d08be540a6665b7))
+* **events:** write live updates in the domain transaction through one platform outbox ([#599](https://github.com/k2b-dev/cloud/issues/599)) ([864f459](https://github.com/k2b-dev/cloud/commit/864f459465f7c39a0af21b053fa7a6504af987c2))
+* **gateway:** pass the real client address behind a reverse proxy so rate limits apply per client ([#617](https://github.com/k2b-dev/cloud/issues/617)) ([ba1f92b](https://github.com/k2b-dev/cloud/commit/ba1f92b333a48ccd19078db39fd232626a9b911a))
+* **grids:** confirm only what the screen does not show, and offer Retry when an action fails ([#580](https://github.com/k2b-dev/cloud/issues/580)) ([1d5a42a](https://github.com/k2b-dev/cloud/commit/1d5a42a06e334e0895c1a828bcb9cda85903709a))
+* keep rejected notes in their composer in Contacts and Notebooks, and report failed clicks in a toast ([#582](https://github.com/k2b-dev/cloud/issues/582)) ([bf252b1](https://github.com/k2b-dev/cloud/commit/bf252b1f5b27c21c4f47c62567b426c24f55eb7a))
+* **live:** serve live channels over one socket per app and check access at delivery ([#610](https://github.com/k2b-dev/cloud/issues/610)) ([2a77a14](https://github.com/k2b-dev/cloud/commit/2a77a14583f407e02887497b50e755eb60ededab))
+* **mail:** apply message actions only to the chosen messages and undo failed changes correctly ([#594](https://github.com/k2b-dev/cloud/issues/594)) ([b8727a9](https://github.com/k2b-dev/cloud/commit/b8727a9f1593df6eb2c5f8aa4db49109bf3286a7))
+* **mail:** confirm only what the screen does not show, and offer Retry when an action fails ([#578](https://github.com/k2b-dev/cloud/issues/578)) ([c455391](https://github.com/k2b-dev/cloud/commit/c45539126e0e663cfdb4260379a98293ed98ae6d))
+* **mail:** keep mails of a folder inside that folder when asked ([#619](https://github.com/k2b-dev/cloud/issues/619)) ([ab5d9dc](https://github.com/k2b-dev/cloud/commit/ab5d9dc1980ff536cb5a070a1dfef8ce3ca79a34))
+* **mail:** keep pinned and hidden mailboxes per person or agent on every device ([#579](https://github.com/k2b-dev/cloud/issues/579)) ([16b8e7d](https://github.com/k2b-dev/cloud/commit/16b8e7d8cef0c99e1358e53ffbe058b9804400c1))
+* **mail:** make sync --wait wait until its folders have synced ([#571](https://github.com/k2b-dev/cloud/issues/571)) ([2a106ee](https://github.com/k2b-dev/cloud/commit/2a106ee3394a01b178e341559d33a886701e9339))
+* **mail:** show folder settings as a compact tree ([#623](https://github.com/k2b-dev/cloud/issues/623)) ([8dd56f9](https://github.com/k2b-dev/cloud/commit/8dd56f983bee8b9bd494f5a13fd1f78d3a53decf))
+* **notebooks:** let admins reserve locking notes along with deleting them ([#575](https://github.com/k2b-dev/cloud/issues/575)) ([5a4e929](https://github.com/k2b-dev/cloud/commit/5a4e9299d41326154e9270f78eaaea9086799333))
+* **notebooks:** preview attached files instead of only downloading them ([#574](https://github.com/k2b-dev/cloud/issues/574)) ([8c443eb](https://github.com/k2b-dev/cloud/commit/8c443eb73cde98ff26c98035d0ab15d7fc9f80c1))
+* **pwa:** add the installable mobile app ([#605](https://github.com/k2b-dev/cloud/issues/605)) ([27e42cc](https://github.com/k2b-dev/cloud/commit/27e42cc1eccaf4b1943645fcb7cf34855507bc22))
+* **pwa:** calm app shell without lines and warn when the install page is not open in Safari ([#626](https://github.com/k2b-dev/cloud/issues/626)) ([4a64cc8](https://github.com/k2b-dev/cloud/commit/4a64cc874e7e10e180b5b90d0ccf58fc24af6abd))
+* **spaces:** check off my tasks in the mobile app ([#611](https://github.com/k2b-dev/cloud/issues/611)) ([227ddfc](https://github.com/k2b-dev/cloud/commit/227ddfccb271b37c046a8e2b6eb2666eb4ffc94e))
+* **spaces:** confirm only what the screen does not show, and offer Retry when an action fails ([#577](https://github.com/k2b-dev/cloud/issues/577)) ([4643b0a](https://github.com/k2b-dev/cloud/commit/4643b0a85882fb2b453827b58942573fe80f66ae))
+* **ui:** announce action outcomes to screen readers in every app ([#616](https://github.com/k2b-dev/cloud/issues/616)) ([e19e7ac](https://github.com/k2b-dev/cloud/commit/e19e7ac8b67ab7bfb0c5433a97cce68197f01485))
+* **ui:** share phone app building blocks with Cloud Login ([#591](https://github.com/k2b-dev/cloud/issues/591)) ([394af22](https://github.com/k2b-dev/cloud/commit/394af22d4053b7418481ee25beda9288b88d038b))
+
+
+### Bug Fixes
+
+* **ai:** stop the turn stream when access ends and report errors instead of retrying forever ([#606](https://github.com/k2b-dev/cloud/issues/606)) ([b6f6fb5](https://github.com/k2b-dev/cloud/commit/b6f6fb57ea3974e3ef4d0df0b910b4b63789202e))
+* announce quiet confirmations in Spaces, confirm hidden completions with Undo, and keep create and edit dialogs open until saved ([#585](https://github.com/k2b-dev/cloud/issues/585)) ([0a40a67](https://github.com/k2b-dev/cloud/commit/0a40a675282a976597c0a6f5d406cecb3e5d45aa))
+* **events:** keep live updates flowing under load and behind one busy key ([#620](https://github.com/k2b-dev/cloud/issues/620)) ([a6a15bf](https://github.com/k2b-dev/cloud/commit/a6a15bf3e7ac37ffc514b63768c94fa53ef9d034))
+* **files:** keep trash and archive recovery working with Filegate 7 ([#627](https://github.com/k2b-dev/cloud/issues/627)) ([2bebab7](https://github.com/k2b-dev/cloud/commit/2bebab7d698ee572f2195ee33e812372704f95e1))
+* give every detail panel section the same flat frame, comments included ([#592](https://github.com/k2b-dev/cloud/issues/592)) ([42e81a6](https://github.com/k2b-dev/cloud/commit/42e81a6a6d9ff36d01fda71b73ac23b5a423795c))
+* **grids:** create each workflow email delivery once when two runs race ([#615](https://github.com/k2b-dev/cloud/issues/615)) ([11b35d6](https://github.com/k2b-dev/cloud/commit/11b35d63b00aaa5fc7783c1f500256ec497791d6))
+* **grids:** deliver records, structure and workflow runs over one live socket ([#636](https://github.com/k2b-dev/cloud/issues/636)) ([88034a2](https://github.com/k2b-dev/cloud/commit/88034a29df459860e1df4375a21b5b90cc2bc28f))
+* **grids:** never skip committed records in the change feed ([#612](https://github.com/k2b-dev/cloud/issues/612)) ([99a9778](https://github.com/k2b-dev/cloud/commit/99a97786b55cf78176063b45bb9b8a9c00f320a6))
+* **grids:** offer to publish a Custom App again after a Form or other used resource changed ([#593](https://github.com/k2b-dev/cloud/issues/593)) ([8840635](https://github.com/k2b-dev/cloud/commit/88406358c73d9c97c136e3fdf8a3531d6beb9ade)), closes [#539](https://github.com/k2b-dev/cloud/issues/539)
+* **grids:** tell App readers who can bring back a changed Form ([#596](https://github.com/k2b-dev/cloud/issues/596)) ([daf6d7a](https://github.com/k2b-dev/cloud/commit/daf6d7a4b5986a8da6bfa792e1473e6c573643be))
+* **live:** stop live engine timers before Sync shuts down ([#637](https://github.com/k2b-dev/cloud/issues/637)) ([390c15a](https://github.com/k2b-dev/cloud/commit/390c15ae92a781a21f82d94ee018fd2a2dc07a44))
+* **mail:** finish every send reliably and run commands queued with personal API keys ([#573](https://github.com/k2b-dev/cloud/issues/573)) ([9232582](https://github.com/k2b-dev/cloud/commit/92325823486d9190c981f78457e5b9b655457001))
+* **mail:** keep a Sent copy for messages that reached only some recipients ([#635](https://github.com/k2b-dev/cloud/issues/635)) ([d458e4b](https://github.com/k2b-dev/cloud/commit/d458e4bdb7218835ea384a3c38fa07d358f7b481))
+* **mail:** keep drafts correct across Mail, the Drafts folder and other mail programs ([#604](https://github.com/k2b-dev/cloud/issues/604)) ([c11a596](https://github.com/k2b-dev/cloud/commit/c11a596955544e7a1582124377ad230289a344d0))
+* **mail:** keep folders and message bodies syncing through restarts and provider outages ([#587](https://github.com/k2b-dev/cloud/issues/587)) ([4c1bd2a](https://github.com/k2b-dev/cloud/commit/4c1bd2a56ddb83dda93bad0071d8021306a488d6))
+* **mail:** keep healthy mailboxes syncing while one provider host is down ([#618](https://github.com/k2b-dev/cloud/issues/618)) ([fe9eaf5](https://github.com/k2b-dev/cloud/commit/fe9eaf51e8d2d36f7abb6084754d8407f616cc26))
+* **mail:** keep mailboxes syncing when a provider refuses connections at its limit ([#590](https://github.com/k2b-dev/cloud/issues/590)) ([3a2c0dc](https://github.com/k2b-dev/cloud/commit/3a2c0dcfd76e529a366b50a67cf07a9b2401e5de))
+* **mail:** list recently deleted mailboxes again ([#588](https://github.com/k2b-dev/cloud/issues/588)) ([64e890b](https://github.com/k2b-dev/cloud/commit/64e890b6a488db58e440c1fa32128a934af1b8ae))
+* **mail:** load the Mail workspace view counts quickly in large mailboxes ([#613](https://github.com/k2b-dev/cloud/issues/613)) ([fa3cc76](https://github.com/k2b-dev/cloud/commit/fa3cc769d855350a64c9af6dd5015bc5de1ff9d0))
+* **mail:** project finished draft attachments and export drafts that change mid-append ([#625](https://github.com/k2b-dev/cloud/issues/625)) ([85d1757](https://github.com/k2b-dev/cloud/commit/85d1757b90b96d17297b2492b177fe94f0b6ce18))
+* **mail:** report a Send problems row in no folder instead of calling it already moved ([#600](https://github.com/k2b-dev/cloud/issues/600)) ([abe0421](https://github.com/k2b-dev/cloud/commit/abe042143573a7da1100856762ed6a1b3cf80331))
+* **mail:** return full search pages and correct unread and Send problems in message mode ([#598](https://github.com/k2b-dev/cloud/issues/598)) ([e2efea7](https://github.com/k2b-dev/cloud/commit/e2efea7651c258ddd2b6b140433c73a356e2eeb7))
+* **mail:** run queued mailbox commands in the order the mailbox lock accepted them ([#621](https://github.com/k2b-dev/cloud/issues/621)) ([9a779fe](https://github.com/k2b-dev/cloud/commit/9a779feb8789169faaf6ad146060facc8dfde217))
+* **mail:** share one live connection per tab for the mailbox, composer and dialogs ([#630](https://github.com/k2b-dev/cloud/issues/630)) ([da155cf](https://github.com/k2b-dev/cloud/commit/da155cf1d00cc564c343bc24a59540ff95b69bf3))
+* match the Files preview in Mail, Grids and Assistant previews ([#568](https://github.com/k2b-dev/cloud/issues/568)) ([47c34ef](https://github.com/k2b-dev/cloud/commit/47c34efc975255a6e0d2bd025ae7769c11894e0d))
+* **notebooks:** keep live updates for long notes by sending only references ([#608](https://github.com/k2b-dev/cloud/issues/608)) ([c16cf0c](https://github.com/k2b-dev/cloud/commit/c16cf0c37745b5cfab0de57366d510d7b7d4d09e))
+* **oauth:** let people approve app access in the browser again ([#638](https://github.com/k2b-dev/cloud/issues/638)) ([9b8001d](https://github.com/k2b-dev/cloud/commit/9b8001de33cd2b7fdd7c00348d2d8b6c39909485))
+* **pwa-auth:** keep icons the same width while the inlined icon font decodes ([#586](https://github.com/k2b-dev/cloud/issues/586)) ([04414a7](https://github.com/k2b-dev/cloud/commit/04414a7c6233e0dfa0d7909f54a4cc0a262058b5))
+* **pwa:** open app pages on the first tap and check off tasks instantly ([#622](https://github.com/k2b-dev/cloud/issues/622)) ([0c063eb](https://github.com/k2b-dev/cloud/commit/0c063ebcd856cfd4991a2830d0fc940bd4cdf9ec))
+* **spaces:** stop losing Space live updates by moving them onto the shared live layer ([#624](https://github.com/k2b-dev/cloud/issues/624)) ([3780886](https://github.com/k2b-dev/cloud/commit/3780886a9bcbda93bc5e7ff4a7a3fb29b239218b))
+* **ui:** finish the flat-frame sweep in dialogs and keep Mail's detail layout ([#595](https://github.com/k2b-dev/cloud/issues/595)) ([ff405ea](https://github.com/k2b-dev/cloud/commit/ff405eacda76c76b3e81182568b0f6494f6a2a02))
+* **ui:** keep icons the same width while the icon font loads ([#581](https://github.com/k2b-dev/cloud/issues/581)) ([cb58bbc](https://github.com/k2b-dev/cloud/commit/cb58bbc157f8f838c442d4c06036701358ff27f5))
+
 ## [0.28.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.27.0...cloud-v0.28.0) (2026-10-03)
 
 

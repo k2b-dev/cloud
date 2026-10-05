@@ -15,9 +15,9 @@ import { listByTable as listFields } from "./fields";
 import { validateFormConfig } from "./form-config-validation";
 import { formMessagesFor } from "./form-messages";
 import { parseJsonbRow } from "./jsonb";
-import { emitTableMetadataEvent } from "./metadata-events";
+import { gridsLive, publishTableMetadataChange } from "./live";
 import { requireStoredTableWritable } from "./parent-checks";
-import { insertWithShortId } from "./short-id";
+import { insertWithShortIdForDb } from "./short-id";
 import type { Field } from "./types";
 
 type DbRow = Record<string, unknown>;
@@ -434,35 +434,38 @@ export const create = async (input: CreateFormInput, actorId: string | null, loc
   if (!configValid.ok) return configValid;
   const config = configValid.data;
   const publicToken = input.isPublic ? generatePublicToken() : null;
-  const row = await insertWithShortId<DbRow>(async (shortId) => {
-    const [r] = await sql<DbRow[]>`
-      INSERT INTO grids.forms (short_id, table_id, name, config, public_token, owner_user_id, position)
-      VALUES (
-        ${shortId},
-        ${input.tableId}::uuid,
-        ${name},
-        ${config}::jsonb,
-        ${publicToken},
-        ${actorId}::uuid,
-        COALESCE((SELECT MAX(position) + 1 FROM grids.forms WHERE table_id = ${input.tableId}::uuid AND deleted_at IS NULL), 0)
-      )
-      RETURNING ${COLS}
-    `;
-    if (!r) throw err.internal(t.insertFailed);
-    return r;
-  }, "idx_grids_forms_short_id");
-  const form = mapRow(row);
-  await logAudit({
-    tableId: input.tableId,
-    userId: actorId,
-    action: "created",
-    diff: { form: { old: null, new: { id: form.id, name: form.name } } },
+  const form = await sql.begin(async (tx) => {
+    const row = await insertWithShortIdForDb(tx, "idx_grids_forms_short_id", async (db, shortId) => {
+      const [r] = await db<DbRow[]>`
+        INSERT INTO grids.forms (short_id, table_id, name, config, public_token, owner_user_id, position)
+        VALUES (
+          ${shortId},
+          ${input.tableId}::uuid,
+          ${name},
+          ${config}::jsonb,
+          ${publicToken},
+          ${actorId}::uuid,
+          COALESCE((SELECT MAX(position) + 1 FROM grids.forms WHERE table_id = ${input.tableId}::uuid AND deleted_at IS NULL), 0)
+        )
+        RETURNING ${COLS}
+      `;
+      if (!r) throw err.internal(t.insertFailed);
+      return r;
+    });
+    const created = mapRow(row);
+    await logAudit(
+      {
+        tableId: input.tableId,
+        userId: actorId,
+        action: "created",
+        diff: { form: { old: null, new: { id: created.id, name: created.name } } },
+      },
+      tx,
+    );
+    await publishTableMetadataChange(tx, input.tableId, "form.created");
+    return created;
   });
-  await emitTableMetadataEvent(input.tableId, {
-    type: "form.created",
-    resource: { kind: "form", id: form.id, tableId: input.tableId },
-    actorId,
-  });
+  gridsLive.wake();
   return ok(form);
 };
 
@@ -490,29 +493,33 @@ export const update = async (id: string, input: UpdateFormInput, actorId: string
   }
   const newPublicToken = input.isPublic === true ? generatePublicToken() : null;
 
-  const [row] = await sql<DbRow[]>`
-    UPDATE grids.forms
-    SET name = CASE WHEN ${name !== undefined} THEN ${name ?? ""} ELSE name END,
-        config = CASE WHEN ${config !== undefined} THEN ${config ?? { fields: [] }}::jsonb ELSE config END,
-        public_token = CASE
-          WHEN ${input.isPublic === true} THEN COALESCE(public_token, ${newPublicToken})
-          WHEN ${input.isPublic === false} THEN NULL
-          ELSE public_token
-        END,
-        is_active = CASE WHEN ${input.isActive !== undefined} THEN ${input.isActive ?? false} ELSE is_active END,
-        position = CASE WHEN ${input.position !== undefined} THEN ${input.position ?? 0} ELSE position END,
-        updated_at = now()
-    WHERE id = ${id}::uuid AND deleted_at IS NULL
-    RETURNING ${COLS}
-  `;
-  if (!row) return fail(err.internal(t.updateFailed));
-  const form = mapRow(row);
-  await logAudit({ tableId: existing.tableId, userId: actorId, action: "updated", diff: { form: { old: existing.name, new: form.name } } });
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "form.updated",
-    resource: { kind: "form", id: form.id, tableId: existing.tableId },
-    actorId,
+  const form = await sql.begin(async (tx) => {
+    const [row] = await tx<DbRow[]>`
+      UPDATE grids.forms
+      SET name = CASE WHEN ${name !== undefined} THEN ${name ?? ""} ELSE name END,
+          config = CASE WHEN ${config !== undefined} THEN ${config ?? { fields: [] }}::jsonb ELSE config END,
+          public_token = CASE
+            WHEN ${input.isPublic === true} THEN COALESCE(public_token, ${newPublicToken})
+            WHEN ${input.isPublic === false} THEN NULL
+            ELSE public_token
+          END,
+          is_active = CASE WHEN ${input.isActive !== undefined} THEN ${input.isActive ?? false} ELSE is_active END,
+          position = CASE WHEN ${input.position !== undefined} THEN ${input.position ?? 0} ELSE position END,
+          updated_at = now()
+      WHERE id = ${id}::uuid AND deleted_at IS NULL
+      RETURNING ${COLS}
+    `;
+    if (!row) return null;
+    const updated = mapRow(row);
+    await logAudit(
+      { tableId: existing.tableId, userId: actorId, action: "updated", diff: { form: { old: existing.name, new: updated.name } } },
+      tx,
+    );
+    await publishTableMetadataChange(tx, existing.tableId, "form.updated");
+    return updated;
   });
+  if (!form) return fail(err.internal(t.updateFailed));
+  gridsLive.wake();
   return ok(form);
 };
 
@@ -525,13 +532,12 @@ export const remove = async (id: string, actorId: string | null, locale?: string
   const t = formMessagesFor(locale);
   const existing = await get(id);
   if (!existing) return fail({ ...err.notFound("Form"), message: t.formNotFound });
-  await sql`UPDATE grids.forms SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
-  await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" });
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "form.deleted",
-    resource: { kind: "form", id, tableId: existing.tableId },
-    actorId,
+  await sql.begin(async (tx) => {
+    await tx`UPDATE grids.forms SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
+    await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" }, tx);
+    await publishTableMetadataChange(tx, existing.tableId, "form.deleted");
   });
+  gridsLive.wake();
   return ok();
 };
 
@@ -540,18 +546,18 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
   const existing = await get(id, { includeDeleted: true });
   if (!existing) return fail({ ...err.notFound("Form"), message: t.formNotFound });
   if (existing.deletedAt === null) return ok(existing);
-  const [row] = await sql<DbRow[]>`
-    UPDATE grids.forms SET deleted_at = NULL, updated_at = now()
-    WHERE id = ${id}::uuid
-    RETURNING ${COLS}
-  `;
-  if (!row) return fail(err.internal(t.restoreFailed));
-  const form = mapRow(row);
-  await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" });
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "form.restored",
-    resource: { kind: "form", id, tableId: existing.tableId },
-    actorId,
+  const form = await sql.begin(async (tx) => {
+    const [row] = await tx<DbRow[]>`
+      UPDATE grids.forms SET deleted_at = NULL, updated_at = now()
+      WHERE id = ${id}::uuid
+      RETURNING ${COLS}
+    `;
+    if (!row) return null;
+    await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
+    await publishTableMetadataChange(tx, existing.tableId, "form.restored");
+    return mapRow(row);
   });
+  if (!form) return fail(err.internal(t.restoreFailed));
+  gridsLive.wake();
   return ok(form);
 };

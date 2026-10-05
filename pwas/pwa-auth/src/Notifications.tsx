@@ -29,7 +29,6 @@ export function PushCard(props: { push: Push; installation: Installation; showIn
       <NoticeCard
         class="auth-push-card"
         tone="info"
-        icon="ti ti-bell"
         title={t().pushCardTitle}
         detail={props.push.state() === "not-installed" ? t().pushCardInstallBody : t().pushCardBody}
         aria-label={t().pushCardTitle}

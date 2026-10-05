@@ -1,6 +1,7 @@
 import { rateLimit } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import wsRoutes from "../ws";
+import { gridsLive } from "../service/live";
+import legacyLiveRoutes from "../ws";
 import accessRoutes from "./access";
 import adminRoutes from "./admin";
 import adminSettingsRoutes from "./admin-settings";
@@ -15,6 +16,7 @@ import formsRoutes from "./forms";
 import formulasRoutes from "./formulas";
 import gqlRoutes from "./gql";
 import htmlTemplateFieldRoutes from "./html-template-fields";
+import { gridsLiveChannels } from "./live-channels";
 import recordsRoutes from "./records";
 import resolveRoutes from "./resolve";
 import tablesRoutes from "./tables";
@@ -23,9 +25,11 @@ import viewsRoutes from "./views";
 import workflowsRoutes from "./workflows";
 import workspaceRoutes from "./workspace";
 
+// The live socket and its predecessor own their authentication and rate limit.
 const app = new Hono()
+  .route("/live", gridsLive.routes(gridsLiveChannels))
+  .route("/ws", legacyLiveRoutes)
   .use(rateLimit())
-  .route("/ws", wsRoutes)
   .route("/admin/settings", adminSettingsRoutes)
   .route("/admin", adminRoutes)
   .route("/templates", templatesRoutes)

@@ -26,6 +26,7 @@ import {
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
 import { createDraft, discardDraft, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
+import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations, listFolders } from "./messages";
@@ -1296,6 +1297,226 @@ suite("mail sent message projection", () => {
         SELECT accepted_at FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
       `;
       expect(accepted?.accepted_at).not.toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  const partialDelivery = {
+    state: "needs_attention",
+    last_error_code: "SMTP_PARTIAL_ACCEPTANCE",
+    command_state: "needs_attention",
+    draft_state: "sent",
+  };
+
+  test("a message only some recipients accept gets its Sent copy when storing it fails at first", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, copy later");
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-copy-later", "needs_attention");
+      expect(provider.appends).toEqual(["Drafts"]);
+
+      // The retry stores the copy and places it in Sent; the send still needs attention for the refused recipient.
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual(["Sent"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+
+      // Nothing is left to retry, so no later run stores a second copy or sends again.
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("when Gmail's search lags behind a partly accepted send, Mail waits for Gmail's copy instead of adding one", async () => {
+    const provider = createProvider("gmail");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, Gmail lag");
+      provider.refuseRecipient(MISTYPED);
+      provider.indexNewMessagesLate();
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-gmail-lag", "needs_attention");
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual([]);
+
+      provider.indexEverything();
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(provider.appends.filter((path) => path === SENT)).toEqual([]);
+      expect(provider.messagesWithId(SENT, outbox.stable_message_id)).toHaveLength(1);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual([SENT]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("when Gmail keeps no copy of a partly accepted submission, Mail appends one on the last attempt only", async () => {
+    const provider = createProvider("gmail");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, other relay");
+      provider.refuseRecipient(MISTYPED);
+      provider.setStoresSubmissions(false);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-gmail-relay", "needs_attention");
+      const states: (string | null)[] = [];
+      for (let run = 0; run < OUTBOX_MAX_ATTEMPTS; run += 1) states.push(await executeOutboxSubmission(outbox.id));
+      expect(states).toEqual([...Array<string>(OUTBOX_MAX_ATTEMPTS - 1).fill("needs_attention"), null]);
+      expect(provider.appends.filter((path) => path === SENT)).toEqual([SENT]);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual([SENT]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("the Sent copy of a partly accepted send is retried until the last attempt, and the send keeps its outcome", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, Sent unavailable");
+      provider.refuseRecipient(MISTYPED);
+      // Every look into Sent fails: the one right after SMTP and each retry's.
+      provider.failSearchesAfterSubmission(OUTBOX_MAX_ATTEMPTS);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-sent-unavailable", "needs_attention");
+      const states: (string | null)[] = [];
+      for (let run = 0; run < OUTBOX_MAX_ATTEMPTS; run += 1) states.push(await executeOutboxSubmission(outbox.id));
+      expect(states).toEqual([...Array<string>(OUTBOX_MAX_ATTEMPTS - 1).fill("needs_attention"), null]);
+      expect(provider.appends).toEqual(["Drafts"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("deleting the mailbox stops the Sent copy retry of a partly accepted send", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, mailbox deleted");
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-mailbox-deleted", "needs_attention");
+      await pauseDeletedMailboxExecution(mailbox.mailboxId);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(provider.appends).toEqual(["Drafts"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  const copyRetry = async (outboxId: string) => {
+    const [row] = await sql<{ attempt: number; sent_copy_pending: boolean }[]>`
+      SELECT attempt, sent_copy_pending FROM mail.outbox_submissions WHERE id = ${outboxId}::uuid
+    `;
+    return row;
+  };
+
+  test("a message only some recipients accept on the last attempt still gets one more try at its Sent copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered on the last attempt");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "partial-last-attempt");
+      // The earlier attempts could not reach the provider, so SMTP answers on the last one.
+      await sql`UPDATE mail.outbox_submissions SET attempt = ${OUTBOX_MAX_ATTEMPTS - 1} WHERE id = ${outbox.id}::uuid`;
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      expect(await sendRetryNow(outbox.id)).toBe("needs_attention");
+      expect(provider.appends).toEqual(["Drafts"]);
+
+      // Like a message every recipient accepted, it gets one more try, which stores the copy.
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual(["Sent"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an operator's reconcile of a partly accepted send ends the retry of its Sent copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, reconciled by an operator");
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-operator-reconcile", "needs_attention");
+      const [target] = await sql<{ command_id: string }[]>`
+        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      const reconcile = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconciles-partial-${suffix}` },
+        enqueue: false,
+      });
+      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+
+      // The operator took the send over, so its copy retry ends instead of coming back with every schedule.
+      const searches = provider.searches();
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(await copyRetry(outbox.id)).toMatchObject({ sent_copy_pending: false });
+      expect(provider.searches()).toBe(searches);
+      expect(provider.appends).toEqual(["Drafts"]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a lost lease gives back only the attempt of a Sent copy retry that had not started", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered, lease lost during the copy");
+      provider.refuseRecipient(MISTYPED);
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial-copy-lease-lost", "needs_attention");
+      const leaseLost = () => Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
+      /** Runs the retry with a job lease that is lost once the retry looked into Sent. */
+      const loseLeaseAfterSearch = () => {
+        const searches = provider.searches();
+        return executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
+          if (provider.searches() > searches) throw leaseLost();
+        });
+      };
+
+      // The retry asked the provider before its lease was lost, so its attempt stays used.
+      await expect(loseLeaseAfterSearch()).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(await copyRetry(outbox.id)).toEqual({ attempt: 2, sent_copy_pending: true });
+
+      // Lost before the last retry began: nothing ran, so that retry is still to come.
+      await sql`UPDATE mail.outbox_submissions SET attempt = ${OUTBOX_MAX_ATTEMPTS - 1} WHERE id = ${outbox.id}::uuid`;
+      const searches = provider.searches();
+      const unstarted = executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
+        throw leaseLost();
+      });
+      await expect(unstarted).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(provider.searches()).toBe(searches);
+      expect(await copyRetry(outbox.id)).toEqual({ attempt: OUTBOX_MAX_ATTEMPTS - 1, sent_copy_pending: true });
+
+      // Lost during the last retry: the retry ends, and nothing asks the provider again.
+      await expect(loseLeaseAfterSearch()).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(await copyRetry(outbox.id)).toEqual({ attempt: OUTBOX_MAX_ATTEMPTS, sent_copy_pending: false });
+      const searchesAfterLastRetry = provider.searches();
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      expect(provider.searches()).toBe(searchesAfterLastRetry);
+      expect(provider.appends).toEqual(["Drafts"]);
+      expect(await delivery(outbox.id)).toEqual(partialDelivery);
+      expect(provider.submissions()).toBe(1);
     } finally {
       provider.restore();
     }

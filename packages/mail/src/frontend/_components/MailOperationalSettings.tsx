@@ -707,10 +707,7 @@ export default function MailOperationalSettings(props: {
                 <Show when={status().folders.length > 0}>
                   <div class="flex flex-col gap-2">
                     <p class="text-xs font-semibold text-primary">{messages().folderMaintenance}</p>
-                    <NoticeCard tone="neutral" icon={false} bodyClass="flex items-start gap-2">
-                      <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-                      <p>{messages().folderMaintenanceDescription}</p>
-                    </NoticeCard>
+                    <NoticeCard tone="neutral">{messages().folderMaintenanceDescription}</NoticeCard>
                     <For each={status().folders}>
                       {(folder) => (
                         <div class="flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-3 py-2">

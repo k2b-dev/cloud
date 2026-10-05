@@ -1006,7 +1006,7 @@ export default function MailConversationReader(props: {
         }}
       </Show>
       <Show when={!props.error && props.totalMessageCount > props.messages.length}>
-        <NoticeCard tone="warning" icon={false} class="mx-3 mt-3" role="status">
+        <NoticeCard tone="warning" class="mx-3 mt-3" role="status">
           {t().longConversation({ shown: props.messages.length, total: props.totalMessageCount })}
         </NoticeCard>
       </Show>

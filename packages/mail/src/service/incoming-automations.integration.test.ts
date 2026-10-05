@@ -21,6 +21,7 @@ import type { MailRequestContext } from "./auth";
 import { resolveIncomingAutomationPlacementTurn } from "./incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import {
+  cancelIncomingAutomationBackfill,
   createIncomingAutomation,
   deleteIncomingAutomation,
   getIncomingAutomationBackfill,
@@ -183,6 +184,32 @@ suite("incoming automations", () => {
     if (userIds.length > 0) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[])`;
   });
 
+  // Starts a backfill and returns its state once its run settled on the Sync worker, or once the
+  // time is up. It waits for the run's settle event: re-sending the start request would lock the
+  // automation row that the run locks for every message it dispatches.
+  const runBackfillUntilSettled = async (request: Parameters<typeof startIncomingAutomationBackfill>[0], timeoutMs: number) => {
+    const { automationId, input } = request;
+    const key = `${automationId}:${input.operationId}`;
+    const listening = new AbortController();
+    // Subscribed before the start request, so the settle event of a fast run cannot be missed.
+    const settled = (async () => {
+      const signal = AbortSignal.any([listening.signal, AbortSignal.timeout(timeoutMs)]);
+      for await (const event of getProcessSync().events({ signal })) {
+        if (event.type === "pump_run_settled" && event.detail?.key === key) return;
+      }
+    })();
+    try {
+      const started = await startIncomingAutomationBackfill(request);
+      if (!started.ok) throw new Error(started.error.message);
+      await settled;
+    } finally {
+      listening.abort();
+    }
+    const current = await getIncomingAutomationBackfill({ context: ownerContext, mailboxId, automationId, operationId: input.operationId });
+    if (!current.ok) throw new Error(current.error.message);
+    return current.data;
+  };
+
   test("completes an empty durable backfill and preserves its terminal state and activity on replay", async () => {
     const created = await createIncomingAutomation({
       context: ownerContext,
@@ -217,25 +244,27 @@ suite("incoming automations", () => {
     }
     await startIncomingAutomationBackfillRuntime();
     try {
-      let result = await startIncomingAutomationBackfill(request);
-      // The backfill runs on the Sync worker; bound the wait by time, not by iterations.
-      const deadline = Date.now() + 10_000;
-      while (result.ok && result.data.state !== "completed" && Date.now() < deadline) {
-        await Bun.sleep(20);
-        result = await startIncomingAutomationBackfill(request);
-      }
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.data.state).toBe("completed");
-      expect(result.data.newlyAcceptedCount).toBe(0);
+      const result = await runBackfillUntilSettled(request, 10_000);
+      expect(result.state).toBe("completed");
+      expect(result.newlyAcceptedCount).toBe(0);
       const repeated = await startIncomingAutomationBackfill(request);
-      expect(repeated.ok && repeated.data.updatedAt).toBe(result.data.updatedAt);
-      const [span] = await sql<{ attributes: Record<string, unknown>; summary: Record<string, unknown> }[]>`
-        SELECT attributes, summary FROM logging.trace_spans
-        WHERE source = 'mail:incoming-automation-backfill'
-          AND attributes ->> 'mail.backfill.operation_id' = ${operationId}
-          AND ended_at IS NOT NULL
-      `;
+      expect(repeated.ok && repeated.data.updatedAt).toBe(result.updatedAt);
+      // The settle event closes the run's span through a queued trace write, which can land later.
+      const closedSpan = async () => {
+        const [span] = await sql<{ attributes: Record<string, unknown>; summary: Record<string, unknown> }[]>`
+          SELECT attributes, summary FROM logging.trace_spans
+          WHERE source = 'mail:incoming-automation-backfill'
+            AND attributes ->> 'mail.backfill.operation_id' = ${operationId}
+            AND ended_at IS NOT NULL
+        `;
+        return span;
+      };
+      const deadline = Date.now() + 10_000;
+      let span = await closedSpan();
+      while (!span && Date.now() < deadline) {
+        await Bun.sleep(20);
+        span = await closedSpan();
+      }
       expect(span?.attributes["mail.mailbox.id"]).toBe(mailboxId);
       expect(span?.summary.status).toBe("completed");
       expect(span?.summary.dispatched).toBe(0);
@@ -293,21 +322,16 @@ suite("incoming automations", () => {
       },
     });
     if (!created.ok) throw new Error(created.error.message);
+    let operationId = "";
     const runBackfill = async (revision: number) => {
+      operationId = crypto.randomUUID();
       const request = {
         context: ownerContext,
         mailboxId,
         automationId: created.data.id,
-        input: { operationId: crypto.randomUUID(), expectedRevision: revision },
+        input: { operationId, expectedRevision: revision },
       };
-      let result = await startIncomingAutomationBackfill(request);
-      const deadline = Date.now() + 20_000;
-      while (result.ok && ["queued", "running", "waiting"].includes(result.data.state) && Date.now() < deadline) {
-        await Bun.sleep(50);
-        result = await startIncomingAutomationBackfill(request);
-      }
-      if (!result.ok) throw new Error(result.error.message);
-      return { request, result: result.data };
+      return { request, result: await runBackfillUntilSettled(request, 20_000) };
     };
 
     await startIncomingAutomationBackfillRuntime();
@@ -354,6 +378,11 @@ suite("incoming automations", () => {
       const second = await runBackfill(created.data.revision);
       expect(second.result).toMatchObject({ state: "completed", newlyAcceptedCount: 2, remainingCount: 0 });
     } finally {
+      // A run that did not settle in time would keep dispatching through the drain while later
+      // tests use this mailbox. Canceled, it stops at its next checkpoint and the drain returns.
+      if (operationId) {
+        await cancelIncomingAutomationBackfill({ context: ownerContext, mailboxId, automationId: created.data.id, operationId });
+      }
       await stopIncomingAutomationBackfillRuntime();
       // Leave no pending backfill events behind for later tests that dispatch this mailbox scope.
       await sql`

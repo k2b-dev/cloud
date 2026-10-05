@@ -1,7 +1,8 @@
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { type Accessor, createEffect, createSignal, onCleanup, onMount, type Setter } from "solid-js";
 import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQueryResult } from "../../../api/public-dto";
+import { GridsRecordLiveEventSchema } from "../../../live-events";
 import { fetchTableQuery } from "./fetcher";
-import { createGridsRecordEventsProvider } from "./grids-record-events-provider";
 import {
   highlightedIdsForLiveRefresh,
   liveRefreshQuery,
@@ -176,7 +177,8 @@ export const fetchVisibleGroupedRecords = async (options: {
   };
 };
 
-type LiveProviderError = { message: string };
+/** Without a message, the view explains the situation itself. */
+type LiveProviderError = { message?: string };
 
 type RecordsDataControllerOptions = {
   tableId: string;
@@ -185,7 +187,6 @@ type RecordsDataControllerOptions = {
   initialData: TableQueryResult;
   initialError: string | null;
   initialEventCursor: string | null;
-  locale: string;
   cursor: Accessor<string | null>;
   setCursor: Setter<string | null>;
   isGrouped: Accessor<boolean>;
@@ -227,17 +228,11 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   let liveRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
   let liveRefreshAbort: AbortController | undefined;
-  let liveProvider: ReturnType<typeof createGridsRecordEventsProvider> | null = null;
-  let pendingLiveCursor: string | null = null;
   let refreshRequestId = 0;
   let pendingLiveRecordIds = new Set<string>();
   let staleResourceEpochFloor = -1;
   let liveCommitId = 0;
   let revoked = false;
-  // The first ready after mount resumes from the SSR cursor, so its read would repeat the SSR read. Replay covers only this
-  // table's records, not cross-table lookups, rollups, or time-relative values, so the skip holds only while the page has
-  // stayed visible since mount. Every later ready (reconnect, return to the tab) reconciles.
-  let firstReadyRepeatsSsrRead = false;
   const [refreshFailed, setRefreshFailed] = createSignal(false);
 
   const invalidate = () => {
@@ -245,7 +240,6 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     liveRefreshAbort?.abort();
     liveRefreshAbort = undefined;
     pendingLiveRecordIds = new Set();
-    pendingLiveCursor = null;
     if (liveRefreshTimer) {
       clearTimeout(liveRefreshTimer);
       liveRefreshTimer = undefined;
@@ -362,7 +356,6 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
 
     const eventRecordIds = new Set(config.recordIds ?? pendingLiveRecordIds);
     pendingLiveRecordIds = new Set();
-    const cursorToApply = pendingLiveCursor;
     const previousVisibleIds = options.isGrouped() ? [] : flatPage().items.map((record) => record.id);
     const requestId = ++refreshRequestId;
     liveRefreshAbort?.abort();
@@ -396,8 +389,6 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       recordsQuery.mutate({ ...next, __liveCommitId: liveCommitId } as RecordsTableQueryResult);
       await options.onRefreshed(next);
       if (requestId !== refreshRequestId || revoked) return;
-      liveProvider?.markApplied(cursorToApply);
-      if (pendingLiveCursor === cursorToApply) pendingLiveCursor = null;
 
       if (!options.isGrouped()) {
         const highlighted = highlightedIdsForLiveRefresh({
@@ -410,10 +401,6 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
           setHighlightedRecordIds(new Set(highlighted));
           highlightTimer = setTimeout(() => setHighlightedRecordIds(new Set()), 1400);
         }
-      }
-      if (pendingLiveCursor) {
-        setLivePending(true);
-        scheduleLiveRefresh();
       }
     } catch (error) {
       if (abort.signal.aborted) return;
@@ -458,53 +445,50 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   });
 
   onMount(() => {
-    firstReadyRepeatsSsrRead = document.visibilityState === "visible";
-    const forgetSsrReadWhenHidden = () => {
-      if (document.visibilityState !== "visible") firstReadyRepeatsSsrRead = false;
+    // Replay covers only this table's records, not cross-table lookups, rollups, or time-relative values, so a
+    // return to the tab reconciles the visible records.
+    const refreshOnReturn = () => {
+      if (document.visibilityState === "visible") scheduleLiveRefresh();
     };
-    document.addEventListener("visibilitychange", forgetSsrReadWhenHidden);
-    onCleanup(() => document.removeEventListener("visibilitychange", forgetSsrReadWhenHidden));
+    document.addEventListener("visibilitychange", refreshOnReturn);
 
-    liveProvider = createGridsRecordEventsProvider({
-      tableId: options.tableId,
-      initialCursor: options.initialEventCursor,
-      locale: options.locale,
-      onReady: (cursor) => {
-        const repeatsSsrRead = firstReadyRepeatsSsrRead && cursor !== null && cursor === options.initialEventCursor && !livePending();
-        firstReadyRepeatsSsrRead = false;
-        if (repeatsSsrRead) return;
-        pendingLiveCursor = cursor;
-        scheduleLiveRefresh();
-      },
-      onEvent: (event, cursor) => {
-        if (cursor) pendingLiveCursor = cursor;
-        if (!event) {
+    const subscription = liveConnection("/api/grids/live").subscribe(
+      "records",
+      { table: options.tableId },
+      {
+        cursor: options.initialEventCursor,
+        parse: (data) => GridsRecordLiveEventSchema.parse(data),
+        // The view acknowledges an update once its read is scheduled: it keeps that read pending itself, holds it
+        // while a dialog is open, repeats it on a return to the tab, and offers it manually after a failure.
+        apply: async (events) => {
+          for (const { data: event } of events) {
+            pendingLiveRecordIds.add(event.recordId);
+            document.dispatchEvent(new CustomEvent("grids:record-live-change", { detail: event }));
+            if (!options.trashMode && event.type === "record.deleted" && shouldOptimisticallyRemoveDeletedRecord(options.source().query)) {
+              removeRecord(event.recordId);
+              options.onOptimisticDelete(event.recordId);
+            }
+          }
           scheduleLiveRefresh();
-          return;
-        }
-        pendingLiveRecordIds.add(event.recordId);
-        document.dispatchEvent(new CustomEvent("grids:record-live-change", { detail: event }));
-        if (!options.trashMode && event.type === "record.deleted" && shouldOptimisticallyRemoveDeletedRecord(options.source().query)) {
-          removeRecord(event.recordId);
-          options.onOptimisticDelete(event.recordId);
-        }
-        scheduleLiveRefresh();
+        },
+        // Updates were missed: the visible records are read again.
+        resync: async () => {
+          invalidate();
+          scheduleLiveRefresh();
+        },
+        revoked: () => revoke({}),
+        unavailable: () => {
+          setLivePending(false);
+          options.onFatal({});
+        },
       },
-      onError: (error) => {
-        if (error.code === "resync_required") invalidate();
-        scheduleLiveRefresh();
-      },
-      onRevoked: revoke,
-      onFatal: (error) => {
-        setLivePending(false);
-        options.onFatal(error);
-      },
-    });
+    );
+    // Without the page's cursor the subscription starts at the current position, so the records are read once.
+    if (options.initialEventCursor === null) scheduleLiveRefresh();
 
-    liveProvider.connect();
     onCleanup(() => {
-      liveProvider?.dispose();
-      liveProvider = null;
+      document.removeEventListener("visibilitychange", refreshOnReturn);
+      subscription.close();
       liveRefreshAbort?.abort();
       if (liveRefreshTimer) clearTimeout(liveRefreshTimer);
       if (highlightTimer) clearTimeout(highlightTimer);

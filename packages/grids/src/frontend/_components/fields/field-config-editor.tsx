@@ -1256,7 +1256,7 @@ function HtmlTemplateConstraints(props: {
         </Show>
       </div>
       <Show when={!loading() && preview()?.diagnostics.length}>
-        <NoticeCard tone={preview()?.ok ? "info" : "danger"} icon={false} role={preview()?.ok ? "status" : "alert"}>
+        <NoticeCard tone={preview()?.ok ? "info" : "danger"} role={preview()?.ok ? "status" : "alert"}>
           <For each={preview()?.diagnostics}>{(diagnostic) => <div>{diagnostic.message}</div>}</For>
         </NoticeCard>
       </Show>

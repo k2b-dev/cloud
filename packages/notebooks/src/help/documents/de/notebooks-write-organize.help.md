@@ -100,7 +100,7 @@ Notizbücher zeigen einige getippte Zeichenfolgen als ein Zeichen an, wenn du ei
 
 ## Hinweisblöcke {icon="message-circle"}
 
-Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Statusangaben, die beim Überfliegen einer Notiz sichtbar sein sollen. Ein Hinweisblock zeigt seine Art nur durch die Farbe, ohne Überschrift oder Symbol. Brauchen Lesende eine Bezeichnung, beginne den Text damit, zum Beispiel mit `Risiko:`.
+Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Statusangaben, die beim Überfliegen einer Notiz sichtbar sein sollen. Schreibe `:::note`, `:::info`, `:::success`, `:::warning` oder `:::danger` in eine eigene Zeile, darunter den Text und zum Schluss `:::`. Ein Hinweisblock ist ein ruhiger Kasten: eine helle Tönung je nach Art, normaler Text und keine Überschrift und kein Symbol. Editor, Buchansicht und PDF-Export zeigen denselben Kasten. Brauchen Lesende eine Bezeichnung, beginne den Text damit, zum Beispiel mit `Risiko:`.
 
 **Gut lesbare Kästen**
 
@@ -141,7 +141,7 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 ## Links, Tags und Anhänge {icon="link"}
 
 :::reference
-- **Notizlinks:** Die Markdown-Schreibweise lautet [Label](note://shortId), der Editor kann Links jedoch auch für dich einfügen.
+- **Notizlinks:** Die Markdown-Schreibweise lautet [Label](note://shortId), der Editor kann Links jedoch auch für dich einfügen. Um eine Notiz bei einer Überschrift zu öffnen, hänge den Namen der Überschrift in Kleinbuchstaben mit Bindestrichen an: [Label](note://shortId#backup-restore) öffnet die Überschrift „Backup & Restore“. Hat die Notiz keine solche Überschrift, öffnet sie sich oben.
 - **Tags:** Verwende Tags wie #garden, um Notizen themenübergreifend zu gruppieren. Tag-Filter berücksichtigen erkannte Tags, nicht beliebige Wörter.
 - **Anhänge:** Bilder werden direkt in der Notiz dargestellt. Andere Dateien erscheinen als Links. Beide verwenden Verweise im Format attach://shortId.
 - **Anhang öffnen:** Wähle ein Bild aus, um es im Vollbild zu sehen. Wähle eine PDF-, Markdown-, Text-, JSON- oder CSV-Datei aus, um ihre Vorschau zu öffnen. Die Vorschau bietet **Herunterladen**. PDFs bieten zusätzlich **In neuem Tab öffnen**, Text- und JSON-Dateien **Kopieren**. Andere Dateien wie Archive, Audio und Video werden nach einer Bestätigung heruntergeladen, ebenso sehr große Dateien und Bilder, die in der Notiz nicht angezeigt werden. Das funktioniert im Editor, in der Buchansicht, im Detailbereich und in der Anhangsübersicht.

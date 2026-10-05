@@ -351,9 +351,7 @@ function LauncherEditor(props: {
               onValueChange={setInput}
             />
             <Show when={closeSelectionProfile()}>
-              <NoticeCard tone="info" icon="ti ti-list-check">
-                {t().closeExactRecords}
-              </NoticeCard>
+              <NoticeCard tone="info">{t().closeExactRecords}</NoticeCard>
             </Show>
             <Show when={correctionDraftProfile()}>
               <Select
@@ -377,12 +375,12 @@ function LauncherEditor(props: {
                 disabled
                 required
               />
-              <NoticeCard tone="info" icon={recordIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"}>
+              <NoticeCard tone="info">
                 {t().correctionDraftNotice({ intent: recordIntent() === "cancellation" ? t().cancellation : t().correction })}
               </NoticeCard>
             </Show>
             <Show when={!closeSelectionProfile() && !correctionDraftProfile() && missingRequiredInputs().length > 0}>
-              <NoticeCard tone="danger" icon={false} role="alert">
+              <NoticeCard tone="danger" role="alert">
                 {t().surfaceMissingInputs({ names: missingRequiredInputs().join(", ") })}
               </NoticeCard>
             </Show>
@@ -412,12 +410,12 @@ function LauncherEditor(props: {
                 )}
               </For>
               <Show when={scannerScanCount() !== 1}>
-                <NoticeCard tone="danger" icon={false} role="alert">
+                <NoticeCard tone="danger" role="alert">
                   {t().chooseOneScannedValue}
                 </NoticeCard>
               </Show>
               <Show when={missingScannerInputs().length > 0}>
-                <NoticeCard tone="danger" icon={false} role="alert">
+                <NoticeCard tone="danger" role="alert">
                   {t().chooseRequiredSources({ names: missingScannerInputs().join(", ") })}
                 </NoticeCard>
               </Show>
@@ -459,7 +457,7 @@ function LauncherEditor(props: {
                 emptyText={t().noInputNeeded}
               />
               <Show when={!customAppValidation().ok}>
-                <NoticeCard tone="danger" icon={false} role="alert">
+                <NoticeCard tone="danger" role="alert">
                   {t().validFixedValuesRequired}
                 </NoticeCard>
               </Show>

@@ -12,38 +12,25 @@
  *
  * Supported types: note, info, success, warning, danger
  *
- * `notices: "minimal"` renders only the tone colour: no icon and no automatic
- * label. The type name stays available to screen readers, and an explicit
- * title is still shown.
+ * Every block renders as the calm NoticeCard: the tone tints the surface, the
+ * text stays neutral, and there is no icon. An explicit title is the visible
+ * heading and names the block, as on a NoticeCard; without one the type name
+ * is announced to screen readers only. Email drops the visually hidden class,
+ * so a titled block must not carry the type name as well.
  */
 
-import { NOTICE_CARD_CLASSES, NOTICE_CARD_ICONS, type NoticeTone } from "@k2b/ui";
+import { NOTICE_CARD_CLASSES, type NoticeTone } from "@k2b/ui";
 import type { MarkedExtension, Tokens } from "marked";
 import { escapeHtml } from "../shared";
 
 type BlockType = "note" | "info" | "success" | "warning" | "danger";
 
 const blockConfig: Record<BlockType, { label: string; tone: NoticeTone }> = {
-  note: {
-    label: "Note",
-    tone: "neutral",
-  },
-  info: {
-    label: "Info",
-    tone: "info",
-  },
-  success: {
-    label: "Success",
-    tone: "success",
-  },
-  warning: {
-    label: "Warning",
-    tone: "warning",
-  },
-  danger: {
-    label: "Danger",
-    tone: "danger",
-  },
+  note: { label: "Note", tone: "neutral" },
+  info: { label: "Info", tone: "info" },
+  success: { label: "Success", tone: "success" },
+  warning: { label: "Warning", tone: "warning" },
+  danger: { label: "Danger", tone: "danger" },
 };
 
 const renderInlineContent = (content: string): string => {
@@ -54,9 +41,7 @@ const renderInlineContent = (content: string): string => {
     .replace(/\n/g, "<br>");
 };
 
-export type NoticeStyle = "card" | "minimal";
-
-export function infoBlocksExtension(notices: NoticeStyle = "card"): MarkedExtension {
+export function infoBlocksExtension(): MarkedExtension {
   return {
     extensions: [
       {
@@ -81,26 +66,12 @@ export function infoBlocksExtension(notices: NoticeStyle = "card"): MarkedExtens
           };
         },
         renderer(token: Tokens.Generic) {
-          const blockType = token.blockType as BlockType;
-          const config = blockConfig[blockType];
-          const content = escapeHtml(token.content as string);
-          const renderedContent = renderInlineContent(content);
-
-          if (notices === "minimal") {
-            const title = token.title ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(token.title as string)}</p>` : "";
-            return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}" role="note"><span class="sr-only">${config.label}: </span>${title}<div class="${NOTICE_CARD_CLASSES.body}">${renderedContent}</div></aside>`;
-          }
-
-          const title = escapeHtml((token.title as string | undefined) ?? config.label);
-          return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}">
-  <div class="${NOTICE_CARD_CLASSES.inner}">
-    <i class="${NOTICE_CARD_ICONS[config.tone]} ${NOTICE_CARD_CLASSES.icon}" aria-hidden="true"></i>
-    <div class="${NOTICE_CARD_CLASSES.content}">
-      <p class="${NOTICE_CARD_CLASSES.title}">${title}</p>
-      <div class="${NOTICE_CARD_CLASSES.body}">${renderedContent}</div>
-    </div>
-  </div>
-</aside>`;
+          const config = blockConfig[token.blockType as BlockType];
+          const body = renderInlineContent(escapeHtml(token.content as string));
+          const name = token.title
+            ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(token.title as string)}</p>`
+            : `<span class="sr-only">${config.label}: </span>`;
+          return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${config.tone}" role="note">${name}<div class="${NOTICE_CARD_CLASSES.body}">${body}</div></aside>`;
         },
       },
     ],

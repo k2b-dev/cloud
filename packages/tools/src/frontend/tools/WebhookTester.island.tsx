@@ -553,10 +553,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
                 </Show>
               </div>
 
-              <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
-                <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
-                <span>{t().dataNotice}</span>
-              </NoticeCard>
+              <NoticeCard tone="warning">{t().dataNotice}</NoticeCard>
 
               <Show when={endpointsQuery.error() ?? logsQuery.error()}>
                 {(error) => (

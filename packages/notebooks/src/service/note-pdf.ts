@@ -28,15 +28,18 @@ const SYMBOL_LIGATURE_CSS = `:where(${LIGATURES.filter(({ symbol }) => /[←-⋿
 /**
  * Print styles for the Book renderer's note blocks. They use `em` and plain
  * colours so they sit on top of every preset without Cloud's theme tokens.
+ * Notices print as the calm NoticeCard: a light tint per tone, no border, and
+ * the preset's own text colour, so they stay readable on paper. The tints are
+ * a step stronger than on screen because paper and printers wash them out.
  */
 const NOTE_PRINT_CSS = `
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.k2b-notice-card { margin: 0 0 1em; padding: .65em .9em; border-left: 4px solid var(--notice-accent); border-radius: 4px; background: var(--notice-tint); break-inside: avoid; }
-.k2b-notice-card[data-tone="neutral"] { --notice-accent: #64748b; --notice-tint: #f1f5f9; }
-.k2b-notice-card[data-tone="info"] { --notice-accent: #2563eb; --notice-tint: #eff6ff; }
-.k2b-notice-card[data-tone="success"] { --notice-accent: #16a34a; --notice-tint: #f0fdf4; }
-.k2b-notice-card[data-tone="warning"] { --notice-accent: #d97706; --notice-tint: #fffbeb; }
-.k2b-notice-card[data-tone="danger"] { --notice-accent: #dc2626; --notice-tint: #fef2f2; }
+.k2b-notice-card { margin: 0 0 1em; padding: .85em 1.05em; border-radius: .8em; background: var(--notice-tint); break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.k2b-notice-card[data-tone="neutral"] { --notice-tint: #f1f2f4; }
+.k2b-notice-card[data-tone="info"] { --notice-tint: #e9f1fe; }
+.k2b-notice-card[data-tone="success"] { --notice-tint: #e6f6ee; }
+.k2b-notice-card[data-tone="warning"] { --notice-tint: #fcf2da; }
+.k2b-notice-card[data-tone="danger"] { --notice-tint: #fcebeb; }
 .k2b-notice-card__body > :first-child { margin-top: 0; }
 .k2b-notice-card__body > :last-child { margin-bottom: 0; }
 .md-block-handle { display: inline-block; margin: .5em 0 .25em; padding: .05em .4em; border-radius: 3px; background: #eff6ff; color: #1d4ed8; font: 600 .75em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -81,6 +84,8 @@ const KATEX_PRINT_CSS = katexCss.replace(/@font-face\s*\{[^}]*\}/g, "");
 export type NotePdfHtmlInput = {
   markdown: string;
   notebookShortId: string;
+  /** The exported note; links to it jump within the PDF. */
+  noteShortId?: string;
   locale: string;
   templateId?: MarkdownPdfTemplateId;
   customCss?: string;
@@ -93,6 +98,7 @@ export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
   const { html } = renderNotebookBook({
     markdown: input.markdown,
     notebookId: input.notebookShortId,
+    noteId: input.noteShortId,
     locale: input.locale,
     queryResults: input.queryResults,
     print: true,

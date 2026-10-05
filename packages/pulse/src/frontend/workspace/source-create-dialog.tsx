@@ -99,12 +99,7 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                 />
               </Show>
               <Show when={kind() !== "metrics"}>
-                <NoticeCard tone="info" icon={false}>
-                  <div class="flex items-start gap-2">
-                    <i class="ti ti-info-circle mt-0.5 shrink-0 text-blue-500" />
-                    <p>{t().sourceInfo}</p>
-                  </div>
-                </NoticeCard>
+                <NoticeCard tone="info">{t().sourceInfo}</NoticeCard>
               </Show>
             </PanelDialog.Section>
           </PanelDialog.Body>

@@ -131,7 +131,8 @@ To check one folder from a terminal, `cld mail ls "Mailbox:Sent Mail"` also acce
 3. Remove stale fields such as Folder, Local tag, or Provider keyword.
 4. If the message body is still synchronizing, retry after hydration completes.
 5. If the missing words are inside a newly received attachment, wait for background extraction to finish and retry.
-6. Ask an administrator to check **Status > Search index** if broad search fails across the mailbox.
+6. **Best match** ranks the newest 1,000 matching messages of a mailbox. For a word that appears in very many messages, add a more specific word or choose **Newest first** to reach older ones.
+7. Ask an administrator to check **Status > Search index** if broad search fails across the mailbox.
 :::
 
 Local tags and internal comments exist only in Cloud. Provider folders and keywords depend on the synchronized remote state.

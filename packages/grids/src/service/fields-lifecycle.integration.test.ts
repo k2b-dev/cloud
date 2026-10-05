@@ -14,7 +14,7 @@ import {
   fieldUniqueIndexName,
 } from "./field-indexes";
 import * as fields from "./fields";
-import * as metadataEvents from "./metadata-events";
+import * as live from "./live";
 import * as mutationPolicy from "./mutation-policy";
 import * as tables from "./tables";
 
@@ -68,7 +68,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
     async () => {
       await migrate();
       const fixture = await createTableFixture(`Column append ${Bun.randomUUIDv7()}`);
-      const events = spyOn(metadataEvents, "emitTableMetadataEvent");
+      const events = spyOn(live, "publishTableMetadataChange");
       try {
         const first = await createTextField(fixture.tableId, "First");
         const second = await createTextField(fixture.tableId, "Second");
@@ -80,7 +80,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
         const after = await readTable(fixture.tableId);
         expect(after.columns).toEqual([second, first, third]);
         expect(after.updatedAt).not.toBe(before.updatedAt);
-        expect(events.mock.calls.map(([, event]) => event.type)).toEqual(["field.created", "table.updated"]);
+        expect(events.mock.calls.map(([, , type]) => type)).toEqual(["field.created", "table.updated"]);
         const [audit] = await sql<Array<{ diff: { columns: { old: unknown; new: unknown } } }>>`
           SELECT diff FROM grids.audit_log
           WHERE table_id = ${fixture.tableId}::uuid AND action = 'updated' AND diff ? 'columns'
@@ -103,7 +103,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
     async () => {
       await migrate();
       const fixture = await createTableFixture(`Column derived ${Bun.randomUUIDv7()}`);
-      const events = spyOn(metadataEvents, "emitTableMetadataEvent");
+      const events = spyOn(live, "publishTableMetadataChange");
       try {
         const first = await createTextField(fixture.tableId, "First");
         const derived = await readTable(fixture.tableId);
@@ -115,7 +115,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
         expect(stillDerived.columns).toEqual([]);
         // The version still changes, so a column list built before this field existed cannot drop it.
         expect(stillDerived.updatedAt).not.toBe(derived.updatedAt);
-        expect(events.mock.calls.map(([, event]) => event.type)).toEqual(["field.created"]);
+        expect(events.mock.calls.map(([, , type]) => type)).toEqual(["field.created"]);
 
         await setColumns(fixture.tableId, [first]);
         await createTextField(fixture.tableId, "Internal", { hideInTable: true });
@@ -201,7 +201,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
     async () => {
       await migrate();
       const fixture = await createTableFixture(`Column restore ${Bun.randomUUIDv7()}`);
-      const events = spyOn(metadataEvents, "emitTableMetadataEvent");
+      const events = spyOn(live, "publishTableMetadataChange");
       try {
         const [a, b, c] = [
           await createTextField(fixture.tableId, "A"),
@@ -216,7 +216,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
         events.mockClear();
         await restoreField(b);
         expect((await readTable(fixture.tableId)).columns).toEqual([a, c, b]);
-        expect(events.mock.calls.map(([, event]) => event.type)).toEqual(["field.restored", "table.updated"]);
+        expect(events.mock.calls.map(([, , type]) => type)).toEqual(["field.restored", "table.updated"]);
         // A list built before the restore conflicts instead of hiding the restored field again.
         const stale = await tables.update(
           fixture.tableId,
@@ -234,7 +234,7 @@ describe("table columns follow field creation, deletion, and restore", () => {
         const restored = await readTable(fixture.tableId);
         expect(restored.columns).toEqual([]);
         expect(restored.updatedAt).not.toBe(derived.updatedAt);
-        expect(events.mock.calls.map(([, event]) => event.type)).toEqual(["field.restored"]);
+        expect(events.mock.calls.map(([, , type]) => type)).toEqual(["field.restored"]);
       } finally {
         events.mockRestore();
         await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;

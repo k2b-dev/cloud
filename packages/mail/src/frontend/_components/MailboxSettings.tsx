@@ -597,17 +597,7 @@ export default function MailboxSettings(props: {
           >
             <div class="flex flex-col gap-8">
               <Show when={healthPresentation()}>
-                {(health) => (
-                  <NoticeCard tone={health().tone} icon={false} bodyClass="flex items-start gap-2" role="status">
-                    <i
-                      class={`ti ${health().tone === "warning" ? "ti-alert-triangle" : "ti-info-circle"} mt-0.5 shrink-0`}
-                      aria-hidden="true"
-                    />
-                    <span>
-                      <strong class="font-semibold text-primary">{health().title}.</strong> {health().message}
-                    </span>
-                  </NoticeCard>
-                )}
+                {(health) => <NoticeCard tone={health().tone} role="status" title={health().title} detail={health().message} />}
               </Show>
               <SettingsGroup title={messages().connectedAccount} description={messages().connectedAccountDescription}>
                 <MailConnectionSettings

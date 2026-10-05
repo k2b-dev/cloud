@@ -41,7 +41,7 @@ import type {
 import { GridsWorkflowRevisionSchema } from "../workflows/contracts";
 import { GRIDS_EVENT } from "../workflows/events";
 import { logAudit } from "./audit";
-import { emitMetadataEvent } from "./metadata-events";
+import { gridsLive, publishMetadataChange } from "./live";
 import { insertWithShortId } from "./short-id";
 import { loadWorkflowCatalog } from "./workflow-catalog";
 import { assertWorkflowEmailTemplatesAvailable, lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
@@ -127,15 +127,10 @@ const hasRecordEventTrigger = (plan: WorkflowBoundPlan): boolean => plan.trigger
 
 const recordEventTriggers = (plan: WorkflowBoundPlan) => plan.triggers.filter((trigger) => trigger.kind === "recordEvent");
 
-const metadataEvent = async (
-  type: "workflow.created" | "workflow.updated" | "workflow.deleted",
-  workflow: Pick<GridsWorkflow, "id" | "baseId">,
-  actorId: string | null,
-): Promise<void> => {
-  await Promise.all([
-    emitMetadataEvent({ type, baseId: workflow.baseId, resource: { kind: "workflow", id: workflow.id }, actorId }),
-    emitWorkflowRuntimeEvent(workflow.id),
-  ]);
+/** After the commit of a workflow change: publishes its live update and tells the runtime. */
+const workflowChanged = async (workflowId: string): Promise<void> => {
+  gridsLive.wake();
+  await emitWorkflowRuntimeEvent(workflowId);
 };
 
 // ─── Writes ──────────────────────────────────────────────────────────────────
@@ -207,13 +202,14 @@ export const createWorkflow = async (
       },
       tx,
     );
+    await publishMetadataChange(tx, baseId, "workflow.created");
     return ok(workflow.id);
   });
   if (!created.ok) return created;
 
   const workflow = await getWorkflow(created.data);
   if (!workflow) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
-  await metadataEvent("workflow.created", workflow, actorId);
+  await workflowChanged(workflow.id);
   return ok(workflow);
 };
 
@@ -308,38 +304,40 @@ export const updateWorkflow = async (
       },
       tx,
     );
+
+    /*
+     * A new plan may have changed the inputs a run option supplies, so every
+     * launcher is switched off until someone looks at it. A metadata-only edit
+     * leaves them alone — which it could not before, when renaming bumped the
+     * revision and invalidated them for nothing.
+     */
+    if (publishes) {
+      const published = await getWorkflow(id, false, tx);
+      if (!published) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
+      await tx`
+        UPDATE grids.workflow_launchers
+        SET enabled = FALSE,
+            validated_revision = ${published.revision},
+            diagnostics = ${[
+              {
+                code: "launcher.revalidate",
+                message: workflowServiceText(locale).launcherChangedReview,
+                severity: "warning",
+                path: [],
+              },
+            ]}::jsonb,
+            updated_at = now()
+        WHERE workflow_id = ${id}::uuid AND deleted_at IS NULL
+      `;
+    }
+    await publishMetadataChange(tx, current.baseId, "workflow.updated");
     return ok(null);
   });
   if (!updated.ok) return updated;
 
   const workflow = await getWorkflow(id);
   if (!workflow) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
-
-  /*
-   * A new plan may have changed the inputs a run option supplies, so every
-   * launcher is switched off until someone looks at it. A metadata-only edit
-   * leaves them alone — which it could not before, when renaming bumped the
-   * revision and invalidated them for nothing.
-   */
-  if (publishes) {
-    await sql`
-      UPDATE grids.workflow_launchers
-      SET enabled = FALSE,
-          validated_revision = ${workflow.revision},
-          diagnostics = ${[
-            {
-              code: "launcher.revalidate",
-              message: workflowServiceText(locale).launcherChangedReview,
-              severity: "warning",
-              path: [],
-            },
-          ]}::jsonb,
-          updated_at = now()
-      WHERE workflow_id = ${id}::uuid AND deleted_at IS NULL
-    `;
-  }
-
-  await metadataEvent("workflow.updated", workflow, actorId);
+  await workflowChanged(workflow.id);
   return ok(workflow);
 };
 
@@ -446,7 +444,8 @@ export const removeWorkflow = async (id: string, actorId: string | null, locale?
       },
       tx,
     );
+    await publishMetadataChange(tx, existing.baseId, "workflow.deleted");
   });
-  await metadataEvent("workflow.deleted", existing, actorId);
+  await workflowChanged(existing.id);
   return ok();
 };

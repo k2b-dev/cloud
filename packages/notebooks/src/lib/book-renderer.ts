@@ -6,6 +6,7 @@ import sanitizeHtml from "sanitize-html";
 import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages } from "./book-renderer-messages";
+import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
 import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
 import { closesNotice } from "./markdown-fences";
@@ -24,6 +25,8 @@ export type NotebookBookInput = {
    * preset loads no images yet, and math leaves out MathML the PDF drops.
    */
   print?: boolean;
+  /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
+  noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
 };
@@ -111,11 +114,18 @@ export const renderNotebookBook = (
     }
   };
 
+  // In print, a link to the rendered note stays inside the PDF: at its heading, otherwise at the top (`#top`).
+  const printAnchors = new Set<string>();
   const resolveUrl = (raw: string, image = false): string | null => {
     const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(raw)?.[1];
     if (attachmentId) return `/api/notebooks/${notebookId}/attachments/${attachmentId}/content?v=1`;
-    const noteId = /^note:\/\/([A-Za-z0-9]{6})$/.exec(raw)?.[1];
-    if (noteId && !image) return `/app/notebooks/${notebookId}/notes/${noteId}?mode=${linkMode}`;
+    const note = image ? null : parseNoteLink(raw);
+    if (note && input.print && note.noteId === input.noteId) {
+      if (!note.anchor) return "#top";
+      printAnchors.add(note.anchor);
+      return anchorHash(note.anchor);
+    }
+    if (note) return `/app/notebooks/${notebookId}/notes/${note.noteId}?mode=${linkMode}${anchorHash(note.anchor)}`;
     const url = safeUrl(raw, image);
     return url && !image ? bookHref(url, linkMode) : url;
   };
@@ -202,8 +212,7 @@ export const renderNotebookBook = (
     const { depth, tokens } = token;
     const body = this.parser.parseInline(tokens);
     const title = plainText(body);
-    const base = `heading-${text.slugify(title) || "section"}`;
-    const id = anchorId(base);
+    const id = anchorId(headingAnchor(title));
     const line = headingSource.get(token);
     headings.push({ id, depth, text: title, ...(line === undefined ? {} : { line }) });
     return `<h${depth} id="${id}">${body}</h${depth}>\n`;
@@ -216,7 +225,7 @@ export const renderNotebookBook = (
     if (wasInsideLink) return body;
     const url = resolveUrl(href);
     if (!url) return body;
-    if (/^note:\/\/[A-Za-z0-9]{6}$/.test(href))
+    if (parseNoteLink(href))
       return `<a class="notebook-book-note-link" href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}><i class="ti ti-connection" aria-hidden="true"></i>${body}</a>`;
     return `<a href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}${/^https?:/i.test(url) ? ' rel="noopener noreferrer"' : ""}>${body}</a>`;
   };
@@ -427,8 +436,15 @@ export const renderNotebookBook = (
         }
         const noticeKind = kind as NoticeKind;
         const tone: NoticeTone = NOTICE_TONES[noticeKind];
-        // Notices show their tone colour only; the type name remains for screen readers.
-        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parse(body, { async: false })}</div></aside>`;
+        // The body starts on the line after its opener; its own headings keep their source line.
+        const bodyTokens = marked.lexer(body);
+        let bodyLine = start + 2;
+        for (const token of bodyTokens) {
+          if (token.type === "heading") headingSource.set(token, bodyLine);
+          bodyLine += token.raw.split("\n").length - 1;
+        }
+        // Notices are the calm NoticeCard: tone tint, neutral text; the type name remains for screen readers.
+        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parser(bodyTokens)}</div></aside>`;
       }),
       "",
     );
@@ -453,6 +469,9 @@ export const renderNotebookBook = (
     blockHtml.set(Number(line), rendered);
     return rendered;
   });
+  // Headings are known only now. A PDF links only to an id it has, so a heading the note lacks opens its top, as in Book.
+  const headingIds = new Set(headings.map(({ id }) => id));
+  for (const anchor of printAnchors) if (!headingIds.has(anchor)) html = html.replaceAll(`href="${anchorHash(anchor)}"`, 'href="#top"');
   const sanitize = (value: string) =>
     sanitizeHtml(value, {
       allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del"],

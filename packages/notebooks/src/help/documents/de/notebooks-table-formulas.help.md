@@ -78,8 +78,8 @@ Diese Funktionen lesen eine ganze Spalte. Leere oder nicht numerische Zellen wer
 | `MEDIAN` | `MEDIAN(column)` | `=MEDIAN(Score)` | mittlere Zahl; 0 bei einer leeren Spalte |
 | `UNIQUE` | `UNIQUE(column)` | `=UNIQUE(Status)` | Anzahl unterschiedlicher, nicht leerer Werte |
 | `STDEV` | `STDEV(column)` | `=STDEV(Weight)` | Stichproben-Standardabweichung<br>Liefert 0 bei weniger als 2 Zahlen. |
-| `COUNTIF` | `COUNTIF(column, value)` | `=COUNTIF(Status, "done")` | Anzahl übereinstimmender Zellen<br>Der Text muss exakt übereinstimmen. |
-| `SUMIF` | `SUMIF(sumColumn, conditionColumn, value)` | `=SUMIF(Hours, Status, "done")` | bedingte Summe |
+| `COUNTIF` | `COUNTIF(column, value)` | `=COUNTIF(Status, "done")` | Anzahl übereinstimmender Zellen<br>Eine Zelle passt wie bei `==`: Text exakt, Zahlen und Datumswerte nach ihrem Wert. |
+| `SUMIF` | `SUMIF(sumColumn, conditionColumn, value)` | `=SUMIF(Hours, Status, "done")` | bedingte Summe<br>Vergleicht Zellen wie COUNTIF. |
 
 ### Zeilenaggregate
 
@@ -93,7 +93,7 @@ Diese Funktionen lesen die aktuelle Zeile. Die Zelle mit der Formel wird übersp
 
 ### Logik und Bedingungen
 
-Erstelle einfache Entscheidungen. Als wahr gelten Zahlen ungleich null und nicht leerer Text.
+Erstelle einfache Entscheidungen. Als wahr gelten Zahlen ungleich null und nicht leerer Text. Eine Zelle wie `0 €` ist Text, vergleiche deshalb den Betrag, zum Beispiel mit `Price > 0`.
 
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
@@ -128,7 +128,7 @@ Verwende Rechenoperatoren direkt oder Hilfsfunktionen, wenn eine Zelle formatier
 | Funktion | Syntax | Beispiel | Ergebnis und Hinweise |
 | --- | --- | --- | --- |
 | `Arithmetic` | `+  -  *  /` | `=Price * Qty` | Zahl<br>Eine Division durch 0 zeigt einen Formelfehler. |
-| `Comparisons` | `==  !=  <  <=  >  >=` | `=Hours >= 8` | 1 oder 0 |
+| `Comparisons` | `==  !=  <  <=  >  >=` | `=Hours >= 8` | 1 oder 0<br>Datumswerte wie 2026-10-12 und Zeitstempel werden zeitlich verglichen, zum Beispiel `=Due < TODAY()`. Ein Datum lässt sich nur mit einem anderen Datum der Größe nach vergleichen. |
 | `ROUND` | `ROUND(number, digits)` | `=ROUND(Price * Qty, 2)` | gerundete Zahl |
 | `ABS` | `ABS(number)` | `=ABS(Balance)` | absoluter Wert |
 | `SQRT` | `SQRT(number)` | `=SQRT(Area)` | Quadratwurzel |
@@ -143,4 +143,4 @@ Diese Funktionen liefern einfache Datumsangaben oder vergleichen Datumswerte.
 | --- | --- | --- | --- |
 | `TODAY` | `TODAY()` | `=TODAY()` | YYYY-MM-DD |
 | `NOW` | `NOW()` | `=NOW()` | YYYY-MM-DD HH:MM:SS |
-| `DATEDIFF` | `DATEDIFF(start, end, unit?)` | `=DATEDIFF(Start, Due, "d")` | Differenz als Zahl<br>Einheiten: ms, s, m, h, d. Vollständige Namen funktionieren ebenfalls. |
+| `DATEDIFF` | `DATEDIFF(start, end, unit?)` | `=DATEDIFF(Start, Due, "d")` | Differenz als Zahl<br>Einheiten: ms, s, m, h, d. Vollständige Namen funktionieren ebenfalls. Datums- und Zeitwerte ohne Zeitzone gelten als Ortszeit. |

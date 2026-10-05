@@ -113,11 +113,7 @@ export default function ProfileActions(props: Props) {
       fields: {
         notice: {
           type: "info" as const,
-          content: () => (
-            <NoticeCard tone="warning" icon={false}>
-              {t().realNameNotice}
-            </NoticeCard>
-          ),
+          content: () => <NoticeCard tone="warning">{t().realNameNotice}</NoticeCard>,
         },
         visibility: {
           type: "info" as const,
@@ -265,15 +261,15 @@ export default function ProfileActions(props: Props) {
 
               <div class="flex flex-col gap-3">
                 <span class="text-xs font-semibold text-secondary">{t().sshKeys}</span>
-                <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-1">
+                <NoticeCard tone="info" bodyClass="flex flex-col gap-1">
                   <p>
-                    {t().connectVia} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh {props.uid}@host-ip</code>
+                    {t().connectVia} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded">ssh {props.uid}@host-ip</code>
                   </p>
                   <p>
-                    {t().generateSshKey} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh-keygen -t ed25519</code>
+                    {t().generateSshKey} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded">ssh-keygen -t ed25519</code>
                   </p>
                   <p>
-                    {t().pasteSshKey} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">~/.ssh/id_ed25519.pub</code>
+                    {t().pasteSshKey} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded">~/.ssh/id_ed25519.pub</code>
                   </p>
                 </NoticeCard>
                 <Show when={keys().length > 0}>

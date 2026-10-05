@@ -54,7 +54,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
       )}
 
       {mutation.error() && (
-        <NoticeCard tone="danger" icon={false}>
+        <NoticeCard tone="danger">
           <span>{mutation.error()?.message}</span>
         </NoticeCard>
       )}

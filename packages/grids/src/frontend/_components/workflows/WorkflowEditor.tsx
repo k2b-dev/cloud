@@ -106,21 +106,21 @@ function DiagnosticsPanel(props: { diagnostics: WorkflowDiagnostic[]; validating
   const t = () => workflowMessages.resolve([locale()]).t;
   const hasDiagnostics = () => props.diagnostics.length > 0;
   return (
-    <NoticeCard tone={hasDiagnostics() ? "danger" : "success"} icon={false} role="status" aria-live="polite" aria-busy={props.validating}>
-      <div class="flex items-center gap-2 font-medium">
-        <i class={`ti ${props.validating ? "ti-loader-2 animate-spin" : hasDiagnostics() ? "ti-alert-triangle" : "ti-circle-check"}`} />
-        <span>{props.validating ? t().validating : hasDiagnostics() ? t().yamlHasDiagnostics : t().yamlValid}</span>
-      </div>
+    <NoticeCard
+      tone={hasDiagnostics() ? "danger" : "success"}
+      role="status"
+      aria-live="polite"
+      aria-busy={props.validating}
+      title={props.validating ? t().validating : hasDiagnostics() ? t().yamlHasDiagnostics : t().yamlValid}
+    >
       <Show when={hasDiagnostics()}>
-        <ul class="mt-2 space-y-1">
+        <ul class="space-y-1">
           <For each={props.diagnostics}>
             {(diagnostic) => (
               <li>
                 <Show when={diagnostic.location}>
                   {(location) => (
-                    <span class="font-mono text-[11px]">
-                      {t().diagnosticLocation({ line: location().line, column: location().column })}{" "}
-                    </span>
+                    <span class="font-mono">{t().diagnosticLocation({ line: location().line, column: location().column })} </span>
                   )}
                 </Show>
                 {diagnostic.message}

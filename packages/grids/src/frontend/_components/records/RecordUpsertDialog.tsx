@@ -2,9 +2,9 @@ import type { DateContext } from "@k2b/stdlib";
 import { Button, confirmDiscardIfDirty, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
+import type { GridsRecordLiveEvent } from "../../../live-events";
 import { initialFieldInputValue, isRecordInputField, sanitizeFieldValues } from "../fields/field-render";
 import { FieldInput, type UserInputEntry } from "../forms/form-fields";
-import type { LiveRecordEvent } from "../records-view/live-refresh";
 import { recordMessages } from "./messages";
 
 /**
@@ -78,7 +78,7 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
       let baselineData = args.record?.data ?? {};
       onMount(() => {
         const changed = (raw: Event) => {
-          const event = (raw as CustomEvent<LiveRecordEvent>).detail;
+          const event = (raw as CustomEvent<GridsRecordLiveEvent>).detail;
           if (!args.record || event.tableId !== args.record.tableId || event.recordId !== args.record.id || submitting()) return;
           if (event.version !== null && version !== undefined && event.version <= version) return;
           setConflict(true);

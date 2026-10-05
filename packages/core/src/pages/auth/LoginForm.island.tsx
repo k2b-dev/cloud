@@ -54,11 +54,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
       }}
       class="flex flex-col gap-4"
     >
-      {props.showBanner && (
-        <NoticeCard tone="info" icon={false}>
-          {t().freeIpaBanner({ appName: props.appName || t().thisApp })}
-        </NoticeCard>
-      )}
+      {props.showBanner && <NoticeCard tone="info">{t().freeIpaBanner({ appName: props.appName || t().thisApp })}</NoticeCard>}
 
       <TextInput
         label={t().usernameOrEmail}
@@ -89,7 +85,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
       </div>
 
       {mutation.error() && (
-        <NoticeCard tone="danger" icon={false}>
+        <NoticeCard tone="danger">
           <span>{mutation.error()?.message}</span>
         </NoticeCard>
       )}

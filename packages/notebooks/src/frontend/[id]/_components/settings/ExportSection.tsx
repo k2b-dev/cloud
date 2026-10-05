@@ -90,7 +90,7 @@ function SnapshotConfigFields(props: {
         disabled={props.saving}
       />
 
-      <NoticeCard tone="info" icon={false}>
+      <NoticeCard tone="info">
         {t().automaticSchedule}: <span class="font-mono text-primary">{props.status?.scheduleCron ?? "0 3 * * *"}</span>
         <span class="ml-2 text-dimmed">{t().scheduleAdminHint}</span>
       </NoticeCard>
@@ -105,14 +105,8 @@ function SnapshotConfigFields(props: {
             icon="ti ti-link"
             type="url"
           />
-          <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-            <i class="ti ti-info-circle mt-0.5 shrink-0" />
-            <div>
-              <p class="font-medium text-primary">{t().s3Endpoint}</p>
-              <p class="mt-0.5 text-dimmed">
-                {t().s3EndpointDescription} <code>notebooks/{props.notebookShortId}/</code>
-              </p>
-            </div>
+          <NoticeCard tone="info" title={t().s3Endpoint}>
+            {t().s3EndpointDescription} <code>notebooks/{props.notebookShortId}/</code>
           </NoticeCard>
           <div class="grid gap-2 md:grid-cols-2">
             <TextInput
@@ -147,10 +141,10 @@ function SnapshotConfigFields(props: {
               password
             />
           </div>
-          <NoticeCard tone="info" icon={false}>
+          <NoticeCard tone={props.missing === "none" ? "info" : "warning"}>
             {t().target}: <span class="font-medium text-primary">{props.status?.target ?? t().notConfigured}</span>
             <Show when={props.missing !== "none"}>
-              <span class="ml-2 text-amber-600 dark:text-amber-300">
+              <span class="ml-2">
                 {t().missing}: {props.missing}
               </span>
             </Show>
@@ -165,15 +159,7 @@ function SnapshotLogsSection(props: { entries: LogTableEntry[]; loading: boolean
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
   return (
-    <Show
-      when={!props.error}
-      fallback={
-        <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
-          <i class="ti ti-alert-circle mt-0.5 shrink-0" />
-          <span>{props.error}</span>
-        </NoticeCard>
-      }
-    >
+    <Show when={!props.error} fallback={<NoticeCard tone="danger">{props.error}</NoticeCard>}>
       <LogEntriesTable entries={props.entries} emptyMessage={props.loading ? t().loadingSnapshotLogs : t().noSnapshotLogs} />
     </Show>
   );
@@ -342,9 +328,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
             {t().downloadZip}
           </ButtonLink>
         </SettingsGroup.Action>
-        <NoticeCard tone="info" icon={false}>
-          {t().exportIncludes}
-        </NoticeCard>
+        <NoticeCard tone="info">{t().exportIncludes}</NoticeCard>
       </SettingsGroup>
 
       <SettingsGroup title={t().automaticSnapshots} description={t().automaticSnapshotsDescription}>
@@ -402,7 +386,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
         <SnapshotLogsSection entries={logEntries()} loading={logs.loading()} error={logError()} />
         <Show when={reconcileError()}>
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <NoticeCard tone="warning" icon={false} class="flex-1">
+            <NoticeCard tone="warning" class="flex-1">
               {reconcileError()}
             </NoticeCard>
             <Button

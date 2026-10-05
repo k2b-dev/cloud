@@ -1118,7 +1118,7 @@ function spacesCommands(locale?: string) {
             }),
             id: flag.string({ required: true, description: t({ en: "Resource ID", de: "Ressourcen-ID" }) }),
             ...(operation === "add"
-              ? { label: flag.string({ description: t({ en: "Display label", de: "Anzeigename" }) }) }
+              ? { label: flag.string({ required: true, description: t({ en: "Display label", de: "Anzeigename" }) }) }
               : yesFlag({ en: "Confirm the removal", de: "Entfernen bestätigen" })),
           },
           async run({ ctx, args, flags }) {

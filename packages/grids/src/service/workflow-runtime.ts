@@ -59,7 +59,7 @@ import { canAccessWorkflowExecutionTable, canAccessWorkflowRunTable, canExecuteW
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
 import { createWorkflowRecordEventRuntime } from "./workflow-record-events";
-import { notifyWorkflowRunEvent } from "./workflow-run-events";
+import { publishWorkflowRunEvent } from "./workflow-run-events";
 import {
   GRIDS_APP_ID,
   type GridsWorkflowAuthorization,
@@ -187,44 +187,27 @@ const workflowInvocationFingerprint = (input: {
 const eventScope = (_authorization: GridsWorkflowAuthorization | undefined): WorkflowRunEventScope => ({ kind: "workflow" });
 
 /**
- * Publishes a run transition to the browsers watching it.
+ * Publishes a run transition to the pages watching its workflow.
  *
  * Re-read rather than assembled from the event: the trace event says only that
  * something happened and to which run, and the row is what the run page has to
- * agree with. `transitionId` becomes the topic's idempotency key, so two
- * publishes of the same transition collapse into one.
+ * agree with.
  */
-const publishRunEvent = async (runId: string, transitionId: string, stepKey?: string): Promise<void> => {
+const publishRunEvent = async (runId: string, stepKey?: string): Promise<void> => {
   const [run, scope] = await Promise.all([getWorkflowRun(runId), getWorkflowRunScope(runId)]);
   if (!run) return;
   const step = stepKey ? await getWorkflowStepRun(runId, stepKey) : null;
-  await notifyWorkflowRunEvent(run, step ? [step] : [], eventScope(scope?.authorization), transitionId);
+  await publishWorkflowRunEvent(run, step ? [step] : [], eventScope(scope?.authorization));
 };
 
-/**
- * Maps a trace event onto the transition the run stream names it by.
- *
- * The ids are the ones the pre-kernel runtime published, because they are the
- * topic's idempotency key: changing them would let a redelivered transition
- * appear twice in a browser that is already mid-stream.
- */
+/** Maps a trace event onto the run, and the step, that changed. */
 const publishRunTraceEvent = async (event: WorkflowTraceEvent): Promise<void> => {
-  if (event.type === "run.started") {
-    await publishRunEvent(event.run.runId, `running:${event.run.executionGeneration}`);
-    return;
-  }
-  if (event.type === "run.canceled" || event.type === "run.finished") {
-    const state = event.type === "run.canceled" ? "canceled" : event.state;
-    await publishRunEvent(event.run.runId, `run:${event.run.executionGeneration}:${state}`);
+  if (event.type === "run.started" || event.type === "run.canceled" || event.type === "run.finished") {
+    await publishRunEvent(event.run.runId);
     return;
   }
   if (event.type === "step.started" || event.type === "step.finished" || event.type === "step.waiting") {
-    const step = event.step;
-    // The persisted status, not one derived from the outcome a second time —
-    // the executor writes the step before it announces it.
-    const persisted = await getWorkflowStepRun(step.runId, step.key);
-    const status = event.type === "step.started" ? "running" : (persisted?.status ?? "waiting");
-    await publishRunEvent(step.runId, `step:${step.key}:${step.executionGeneration}:${status}`, step.key);
+    await publishRunEvent(event.step.runId, event.step.key);
   }
 };
 

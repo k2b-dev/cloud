@@ -59,6 +59,20 @@ export default function BookController(props: Props) {
     },
   });
 
+  const anchorTarget = (hash: string): HTMLElement | null => {
+    let id = hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      /* Keep a literal malformed anchor harmless. */
+    }
+    return id ? document.getElementById(id) : null;
+  };
+  const scrollToTop = () => {
+    scrollContainer?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+  };
+
   const saveScroll = () => {
     if (!scrollContainer || pending) return;
     const scroll: ScrollPosition = {
@@ -103,17 +117,11 @@ export default function BookController(props: Props) {
       if (navigating.kind === "pop" && navigating.scroll) {
         scrollContainer?.scrollTo(navigating.scroll.left, navigating.scroll.top);
         window.scrollTo(navigating.scroll.windowX, navigating.scroll.windowY);
-      } else if (navigating.hash) {
-        let id = navigating.hash.slice(1);
-        try {
-          id = decodeURIComponent(id);
-        } catch {
-          /* Keep a literal malformed anchor harmless. */
-        }
-        document.getElementById(id)?.scrollIntoView();
       } else {
-        scrollContainer?.scrollTo(0, 0);
-        window.scrollTo(0, 0);
+        // A link to a heading the note does not have opens the note at its top.
+        const target = anchorTarget(navigating.hash);
+        if (target) target.scrollIntoView();
+        else scrollToTop();
       }
     } else if (draft) {
       const restored = article.querySelector<HTMLInputElement>(`input[name="${CSS.escape(draft.name)}"]`);
@@ -220,7 +228,11 @@ export default function BookController(props: Props) {
       // Notebook entry applies homepage/last-note redirects on the server.
       if (url.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return;
       const current = new URL(window.location.href);
-      if (url.pathname === current.pathname && url.search === current.search && url.hash) return;
+      if (url.pathname === current.pathname && url.search === current.search && url.hash) {
+        // The browser scrolls to a heading of this note; a heading it does not have leaves the reader at the top.
+        if (!anchorTarget(url.hash)) scrollToTop();
+        return;
+      }
       event.preventDefault();
       navigate(url, "push");
     };

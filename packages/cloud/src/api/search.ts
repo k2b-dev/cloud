@@ -1,5 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono";
-import { describeRoute } from "hono-openapi";
+import { describeRoute, resolver } from "hono-openapi";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { listCapabilities } from "../_internal/registry";
@@ -18,14 +18,24 @@ import { searchInvocationOperation } from "../services/identity/invocation-opera
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
-import { type SearchItem, SearchItemSchema, SearchQuerySchema, SearchResponseSchema } from "./search/schemas";
+import {
+  SEARCH_STREAM_CONTENT_TYPE,
+  type SearchItem,
+  SearchItemSchema,
+  type SearchProviderStatus,
+  SearchQuerySchema,
+  type SearchResponse,
+  SearchResponseSchema,
+  type SearchStreamLine,
+  SearchStreamLineSchema,
+} from "./search/schemas";
 
 const log = logger("search");
 const SearchProviderResultSchema = capabilityResultSchema(UniversalSearchDataSchema);
 
 /**
- * Maximum items returned to the client after merging across providers.
- * The frontend has no further limit — this caps the rendered list.
+ * Maximum items of the merged JSON response. A streamed search has no merged
+ * list: each app's line carries at most that app's provider limit.
  */
 const GLOBAL_RESULT_LIMIT = 30;
 const PROVIDER_CONCURRENCY = 8;
@@ -122,8 +132,25 @@ const startBounded = <T, R>(
   return deferred.map((entry) => entry.promise);
 };
 
-const settleBounded = async <T, R>(items: readonly T[], concurrency: number, run: (item: T, index: number) => Promise<R>) =>
-  Promise.all(startBounded(items, concurrency, run));
+/** Highest app-provided priority first, then by title. */
+const rankItems = (items: SearchItem[]) => items.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title));
+
+/** The browser asks for a stream explicitly; every other client keeps the merged JSON response. */
+const acceptsStream = (accept: string | undefined) =>
+  accept?.split(",").some((type) => type.split(";")[0]?.trim().toLowerCase() === SEARCH_STREAM_CONTENT_TYPE) ?? false;
+
+const streamHeaders = {
+  "content-type": `${SEARCH_STREAM_CONTENT_TYPE}; charset=utf-8`,
+  // Each line must reach the browser when it is written: no cache, no transformation, no proxy buffering.
+  "cache-control": "no-store, no-transform",
+  "x-accel-buffering": "no",
+} as const;
+
+const encoder = new TextEncoder();
+const lineText = (line: SearchStreamLine) => `${JSON.stringify(line)}\n`;
+const encodeLine = (line: SearchStreamLine) => encoder.encode(lineText(line));
+
+type AppOutcome = { appId: string; status: SearchProviderStatus; items: SearchItem[]; ms: number };
 
 const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
   new Promise<T>((resolve, reject) => {
@@ -160,7 +187,14 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       description: "Searches across app providers discovered via the service registry with optional tag filters.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(SearchResponseSchema, "Merged search results"),
+        200: {
+          description:
+            "Merged search results. With `Accept: application/x-ndjson`, one JSON line per app in the order the apps finish instead.",
+          content: {
+            "application/json": { schema: resolver(SearchResponseSchema) },
+            [SEARCH_STREAM_CONTENT_TYPE]: { schema: resolver(SearchStreamLineSchema) },
+          },
+        },
         400: jsonResponse(ErrorResponseSchema, "Invalid query"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "User-backed actor required"),
@@ -172,6 +206,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       expectUserBackedActor(c);
 
       const query = c.req.valid("query");
+      const stream = acceptsStream(c.req.header("accept"));
       const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
       const invocationAuthority = invocationAuthorityFromRequest(auth.getAuthority(c));
       let entries: CapabilityRegistryEntry[];
@@ -231,18 +266,24 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       const active =
         query.tag.length === 0 ? appProviders : appProviders.filter((provider) => provider.tags.some((tag) => query.tag.includes(tag)));
 
+      // Answers without a provider call: the catalog alone, or only unsupported tags.
+      const answerWithoutProviders = (body: SearchResponse) =>
+        stream
+          ? new Response(
+              [
+                lineText({ type: "start", query: body.query, apps, providers: [], ...(body.unsupportedTags ? { unsupportedTags } : {}) }),
+                lineText({ type: "done", status: "complete", count: 0 }),
+              ].join(""),
+              { headers: streamHeaders },
+            )
+          : c.json(body);
+
       if (query.q.length === 0 && query.tag.length === 0 && !query.app && !scope) {
-        return c.json({ query: "", count: 0, items: [], apps });
+        return answerWithoutProviders({ query: "", count: 0, items: [], apps });
       }
 
       if (query.tag.length > 0 && active.length === 0) {
-        return c.json({
-          query: query.q,
-          count: 0,
-          items: [],
-          apps,
-          unsupportedTags,
-        });
+        return answerWithoutProviders({ query: query.q, count: 0, items: [], apps, unsupportedTags });
       }
 
       // Single-provider queries get a larger sample for better local
@@ -252,7 +293,9 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       const effectiveProviderLimit = active.length === 1 ? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3) : query.provider_limit;
       // The same request-wide budget covers signing and provider I/O.
       const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
-      const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline]);
+      // A client that stops reading a stream, such as the browser on the next keystroke, ends the search too.
+      const streamCancelled = new AbortController();
+      const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline, streamCancelled.signal]);
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.
@@ -298,7 +341,8 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // One request-wide budget keeps latency flat as the number of apps grows.
       // Workers that have not started when the deadline expires fail fast on
       // the already-aborted signal instead of opening a fresh timeout window.
-      const settled = await settleBounded(active, PROVIDER_CONCURRENCY, async (provider, index) => {
+      const fanoutStarted = performance.now();
+      const settled = startBounded(active, PROVIDER_CONCURRENCY, async (provider, index) => {
         // Scope tags to those this provider declared. Apps no longer need
         // their own gate — the framework guarantees they only see tags
         // they understand.
@@ -395,47 +439,71 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         return validItems;
       });
 
-      const items = settled.flatMap((result, index) => {
-        if (result.status === "fulfilled") return result.value;
+      // One outcome per app, when all of its Queries have finished. Multiple
+      // focused Queries from one app must not buy that app a larger share.
+      const appIds = [...new Set(active.map((provider) => provider.appId))];
+      const outcomes = appIds.map(async (appId): Promise<AppOutcome> => {
+        const results = await Promise.all(active.flatMap((provider, index) => (provider.appId === appId ? [settled[index]!] : [])));
+        const failed = results.filter((result) => result.status === "rejected");
+        for (const result of failed) {
+          log.warn("Search provider failed", {
+            appId,
+            tags: query.tag,
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          });
+        }
+        const items = rankItems(results.flatMap((result) => (result.status === "fulfilled" ? result.value : []))).slice(
+          0,
+          effectiveProviderLimit,
+        );
+        const status = failed.length ? (providerDeadline.aborted ? "timeout" : "error") : items.length ? "ok" : "empty";
+        return { appId, status, items, ms: Math.round(performance.now() - fanoutStarted) };
+      });
+      const failure = (outcome: AppOutcome) => outcome.status === "timeout" || outcome.status === "error";
 
-        log.warn("Search provider failed", {
-          appId: active[index]?.appId ?? "unknown",
-          tags: query.tag,
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      if (stream) {
+        let cancelled = false;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const write = (line: SearchStreamLine) => {
+              if (!cancelled) controller.enqueue(encodeLine(line));
+            };
+            write({ type: "start", query: query.q, apps, providers: appIds, ...(unsupportedTags.length > 0 ? { unsupportedTags } : {}) });
+            let count = 0;
+            let partial = false;
+            // A slow app never holds back the others: each line is written when its app finishes.
+            void Promise.all(
+              outcomes.map((pending) =>
+                pending.then((outcome) => {
+                  count += outcome.items.length;
+                  partial ||= failure(outcome);
+                  write({ type: "provider", provider: outcome.appId, status: outcome.status, results: outcome.items, ms: outcome.ms });
+                }),
+              ),
+            ).then(() => {
+              write({ type: "done", status: partial ? "partial" : "complete", count });
+              if (!cancelled) controller.close();
+            });
+          },
+          cancel() {
+            cancelled = true;
+            streamCancelled.abort();
+          },
         });
-        return [];
-      });
+        return new Response(body, { headers: streamHeaders });
+      }
 
-      items.sort((a, b) => {
-        const priorityDiff = (b.priority ?? 0) - (a.priority ?? 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        return a.title.localeCompare(b.title);
-      });
-
-      // Multiple focused Queries from one app must not buy that app a larger
-      // share of the merged result set.
-      const appCounts = new Map<string, number>();
-      const appBounded = items.filter((item) => {
-        const count = appCounts.get(item.appId) ?? 0;
-        if (count >= effectiveProviderLimit) return false;
-        appCounts.set(item.appId, count + 1);
-        return true;
-      });
-      const sliced = appBounded.slice(0, GLOBAL_RESULT_LIMIT);
+      const finished = await Promise.all(outcomes);
+      const items = rankItems(finished.flatMap((outcome) => outcome.items)).slice(0, GLOBAL_RESULT_LIMIT);
+      const failedApps = finished.filter(failure).map((outcome) => outcome.appId);
 
       return c.json({
         query: query.q,
-        count: sliced.length,
-        items: sliced,
+        count: items.length,
+        items,
         apps,
         ...(unsupportedTags.length > 0 ? { unsupportedTags } : {}),
-        ...(settled.some((result) => result.status === "rejected")
-          ? {
-              failedApps: [
-                ...new Set(active.filter((_, index) => settled[index]?.status === "rejected").map((provider) => provider.appId)),
-              ],
-            }
-          : {}),
+        ...(failedApps.length > 0 ? { failedApps } : {}),
       });
     },
   );

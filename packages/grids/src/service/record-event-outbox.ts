@@ -1,7 +1,8 @@
 import { logger, stopRuntimeJobs, trace } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
-import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEventWithFederatedTargets } from "./record-events";
+import { gridsLive } from "./live";
+import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEvent } from "./record-events";
 
 const log = logger("grids:record-event-outbox");
 const RECONCILE_INTERVAL_MS = 15_000;
@@ -84,7 +85,7 @@ export const captureRecordEventSnapshot = async (
 
 export const dispatchRecordEventOutbox = async (
   id: string,
-  publish: (event: GridsRecordEvent) => Promise<void> = publishRecordEventWithFederatedTargets,
+  publish: (event: GridsRecordEvent) => Promise<void> = publishRecordEvent,
 ): Promise<"delivered" | "already-delivered" | "dead"> => {
   const active = activeDispatches.get(id);
   if (active) {
@@ -161,8 +162,8 @@ const dispatchRecordEventOutboxOnce = async (id: string, publish: (event: GridsR
 
   try {
     const event = parsePayload(row.payload);
-    // Sync publication may perform network I/O and database-backed target
-    // resolution. It must never run inside the outbox state transaction.
+    // Sync publication performs network I/O. It must never run inside the
+    // outbox state transaction.
     await publish(event);
   } catch (error) {
     await recordDeliveryFailure(row, error);
@@ -189,7 +190,9 @@ const dispatchRecordEventOutboxOnce = async (id: string, publish: (event: GridsR
 
 let runtimeStarted = false;
 
+/** Call after the commit of a record event: publishes its live update and dispatches it now. */
 export const notifyRecordEventOutbox = (outboxId: string): void => {
+  gridsLive.wake();
   if (!runtimeStarted) return;
   void runReconcile().catch((error) => {
     log.warn("Record event outbox notification reconcile failed", {
@@ -300,10 +303,10 @@ export const reapTerminalRecordEventOutbox = async (
   return rows.length;
 };
 
-/** PostgreSQL is the sole retry authority until both publications are confirmed. */
+/** PostgreSQL is the sole retry authority until the workflow queue confirmed the event. */
 export const dispatchRecordEventOutboxBatch = async (
   signal: AbortSignal,
-  publish: (event: GridsRecordEvent) => Promise<void> = publishRecordEventWithFederatedTargets,
+  publish: (event: GridsRecordEvent) => Promise<void> = publishRecordEvent,
 ): Promise<number> => {
   let dispatched = 0;
   const dispatchOne = async (id: string): Promise<void> => {

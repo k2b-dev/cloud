@@ -5,7 +5,7 @@ import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { degradeForTableSchemaChange, refreshForTableSchemaChange } from "./federated-tables";
-import { emitMetadataEvent } from "./metadata-events";
+import { gridsLive, publishMetadataChange } from "./live";
 import { writeNamedResource } from "./named-resource-conflict";
 import { insertWithShortId } from "./short-id";
 import type { CreateTableInput, Table, UpdateTableInput } from "./types";
@@ -251,21 +251,16 @@ export const create = async (input: CreateTableInput, actorId: string | null, lo
             VALUES (${row.id as string}::uuid, 1, 'draft', ${actorId}::uuid)
           `;
         }
+        await logAudit({ baseId: input.baseId, tableId: row.id as string, userId: actorId, action: "created" }, tx);
+        await publishMetadataChange(tx, input.baseId, "table.created");
         return row;
       }),
     "idx_grids_tables_live_name",
     messages.tableNameUnique,
   );
   if (!inserted.ok) return inserted;
-  const table = mapRow(inserted.data);
-  await logAudit({ baseId: input.baseId, tableId: table.id, userId: actorId, action: "created" });
-  await emitMetadataEvent({
-    type: "table.created",
-    baseId: input.baseId,
-    resource: { kind: "table", id: table.id, tableId: table.id },
-    actorId,
-  });
-  return ok(table);
+  gridsLive.wake();
+  return ok(mapRow(inserted.data));
 };
 
 export const update = async (id: string, input: UpdateTableInput, actorId: string | null, locale?: string): Promise<Result<Table>> => {
@@ -365,19 +360,12 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
     const changed = Object.keys(diff).length > 0;
     if (changed) {
       await logAudit({ baseId: table.baseId, tableId: id, userId: actorId, action: "updated", diff }, tx);
+      await publishMetadataChange(tx, table.baseId, "table.updated");
     }
     return ok({ table, changed });
   });
   if (!result.ok) return result;
-
-  if (result.data.changed) {
-    await emitMetadataEvent({
-      type: "table.updated",
-      baseId: result.data.table.baseId,
-      resource: { kind: "table", id, tableId: id },
-      actorId,
-    });
-  }
+  if (result.data.changed) gridsLive.wake();
   return ok(result.data.table);
 };
 
@@ -395,13 +383,9 @@ export const remove = async (id: string, actorId: string | null, locale?: string
     await degradeForTableSchemaChange(id, actorId, tx);
     await tx`UPDATE grids.tables SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
     await logAudit({ baseId: existing.baseId, tableId: id, userId: actorId, action: "deleted" }, tx);
+    await publishMetadataChange(tx, existing.baseId, "table.deleted");
   });
-  await emitMetadataEvent({
-    type: "table.deleted",
-    baseId: existing.baseId,
-    resource: { kind: "table", id, tableId: id },
-    actorId,
-  });
+  gridsLive.wake();
   await refreshForTableSchemaChange(id, actorId);
   return ok();
 };
@@ -427,18 +411,14 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     );
     if (!result.ok) return result;
     await logAudit({ baseId: existing.baseId, tableId: id, userId: actorId, action: "restored" }, tx);
+    await publishMetadataChange(tx, existing.baseId, "table.restored");
     return result;
   });
   if (!restored.ok) return restored;
   const row = restored.data;
   if (!row) return fail(err.internal(messages.restoreFailed));
   const table = mapRow(row);
-  await emitMetadataEvent({
-    type: "table.restored",
-    baseId: existing.baseId,
-    resource: { kind: "table", id, tableId: id },
-    actorId,
-  });
+  gridsLive.wake();
   await refreshForTableSchemaChange(id, actorId);
   return ok(table);
 };

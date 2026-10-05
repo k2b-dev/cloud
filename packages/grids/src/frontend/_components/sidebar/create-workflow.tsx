@@ -189,9 +189,7 @@ function WorkflowStarterDialog(props: {
                 required
               />
               <Show when={storedTables().length === 0}>
-                <NoticeCard tone="warning" icon="ti ti-alert-triangle">
-                  {t.noStoredTable}
-                </NoticeCard>
+                <NoticeCard tone="warning">{t.noStoredTable}</NoticeCard>
               </Show>
               <div class="flex justify-end">
                 <Button
@@ -235,9 +233,7 @@ function WorkflowStarterDialog(props: {
                 required
               />
               <Show when={correctionIntent() === "cancellation"}>
-                <NoticeCard tone="info" icon="ti ti-info-circle">
-                  {t.cancellationNotice}
-                </NoticeCard>
+                <NoticeCard tone="info">{t.cancellationNotice}</NoticeCard>
               </Show>
               <Select
                 label={t.table}
@@ -295,9 +291,7 @@ function WorkflowStarterDialog(props: {
                 clearable
               />
               <Show when={tableId() && (typeFields().length === 0 || relationFields().length === 0)}>
-                <NoticeCard tone="warning" icon="ti ti-alert-triangle">
-                  {t.starterRequirements}
-                </NoticeCard>
+                <NoticeCard tone="warning">{t.starterRequirements}</NoticeCard>
               </Show>
               <div class="flex justify-end">
                 <Button

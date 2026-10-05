@@ -223,6 +223,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
         notebookId: notebook.id,
         notebookShortId: "book01",
         noteId: "33333333-3333-4333-8333-333333333333",
+        noteShortId: "note01",
         userId: user.id,
         serviceAccountId: null,
         boundNotebookId: null,

@@ -11,7 +11,7 @@ import { markdownClient } from "./client";
 import { codeExtension } from "./extensions/code";
 import { guidedHelpExtension } from "./extensions/guided-help";
 import { imagesExtension } from "./extensions/images";
-import { infoBlocksExtension, type NoticeStyle } from "./extensions/info-blocks";
+import { infoBlocksExtension } from "./extensions/info-blocks";
 import { katexExtension } from "./extensions/katex";
 import { linksExtension } from "./extensions/links";
 import { markExtension } from "./extensions/mark";
@@ -23,7 +23,7 @@ import { taskListExtension } from "./extensions/task-list";
 type MarkdownProfile = "content" | "help";
 type LinkStyle = "widget" | "plain";
 
-const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle = "card", links: LinkStyle = "widget") => {
+const createMarked = (profile: MarkdownProfile = "content", links: LinkStyle = "widget") => {
   const marked = new Marked();
 
   marked.use({
@@ -33,7 +33,7 @@ const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle
 
   // Apply extensions in order
   // Note: katexExtension must come before codeExtension to handle ```math blocks
-  marked.use(infoBlocksExtension(notices));
+  marked.use(infoBlocksExtension());
   marked.use(taskListExtension());
   marked.use(tablesExtension());
   // Plain links keep marked's own renderer: an anchor around the link text.
@@ -51,23 +51,14 @@ const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle
 
 const marked = createMarked();
 const helpMarked = createMarked("help");
-const contentMarked = new Map<`${NoticeStyle}:${LinkStyle}`, Marked>([["card:widget", marked]]);
+const plainLinksMarked = createMarked("content", "plain");
 
 export type MarkdownRenderOptions = {
-  /** `"minimal"` shows notices as tone colour only; the type name stays for screen readers. */
-  notices?: NoticeStyle;
   /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. */
   links?: LinkStyle;
 };
 
-const markedFor = ({ notices = "card", links = "widget" }: MarkdownRenderOptions): Marked => {
-  const key = `${notices}:${links}` as const;
-  const cached = contentMarked.get(key);
-  if (cached) return cached;
-  const created = createMarked("content", notices, links);
-  contentMarked.set(key, created);
-  return created;
-};
+const markedFor = ({ links = "widget" }: MarkdownRenderOptions): Marked => (links === "plain" ? plainLinksMarked : marked);
 
 const sanitizeRenderedHtml = (html: string): string =>
   sanitizeHtml(html, {

@@ -43,6 +43,7 @@ function renderRun(initialDetail: PublicWorkspaceWorkflowRunDetail | null, level
       initialDetail,
       workflows: [],
       workflowLevels: { wf001: level },
+      liveCursor: null,
       tables: [],
       onRunUpdated: () => {},
       onSelectRun: () => {},
