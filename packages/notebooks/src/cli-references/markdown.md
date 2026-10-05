@@ -89,7 +89,7 @@ Indent a nested item to the text of its parent item: two spaces below `- `, thre
 :::
 ```
 
-The types are `note`, `info`, `success`, `warning`, and `danger`. The opening line holds only `:::` and the type. There is no title: `:::warning Before deleting` is shown as plain text. A callout shows its type through color only, so start the text with a bold label when readers need one. Close it with `:::` on its own line, indented no more than the opening line.
+The types are `note`, `info`, `success`, `warning`, and `danger`. The opening line holds only `:::` and the type. Notebooks has no callout title, even though Help pages accept one: `:::warning Before deleting` is shown as plain text. A callout shows its type through color only, so start the text with a bold label when readers need one. Close it with `:::` on its own line, indented no more than the opening line.
 
 Book renders full Markdown inside a callout, but the editor preview shows only bold, italic, inline code, and line breaks. Keep callouts to short text and put lists or tables after them.
 
