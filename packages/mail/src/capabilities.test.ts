@@ -2153,11 +2153,9 @@ describe("mail capabilities", () => {
 
       if (!result.ok) throw new Error("Expected partial search results");
       expect(result.data.data.map((item) => item.title)).toEqual(["Quarterly report"]);
-      expect(result.data.summary).toBe("Results from 1 of 2 mailboxes; “Sales” could not be searched in time.");
+      expect(result.data.summary).toBe("Results from 1 of 2 mailboxes; “Sales” could not be searched.");
       const german = await mailCapabilities.queries.search.run({ query: "report", tags: [], limit: 10 }, { ...context, locale: "de" });
-      expect(german.ok && german.data.summary).toBe(
-        "Ergebnisse aus 1 von 2 Postfächern; „Sales“ konnte nicht rechtzeitig durchsucht werden.",
-      );
+      expect(german.ok && german.data.summary).toBe("Ergebnisse aus 1 von 2 Postfächern; „Sales“ konnte nicht durchsucht werden.");
     });
 
     test("fails when no mailbox answers", async () => {
@@ -2172,13 +2170,30 @@ describe("mail capabilities", () => {
       expect(result).toEqual({ ok: false, error: searchFailed.error });
     });
 
-    test("skips a mailbox that exceeds its time budget", async () => {
+    test("fails when the answering mailboxes have no match and another mailbox was skipped", async () => {
       spyOn(mailboxes, "listMailboxes").mockResolvedValue({
         ok: true,
         data: [mailboxRow(internalMailboxId, "Support"), mailboxRow(otherMailboxId, "Sales")],
       } as never);
-      const query = spyOn(search, "searchMessages").mockImplementation(({ mailboxId }) =>
-        mailboxId === internalMailboxId ? Promise.resolve(page([hit])) : new Promise(() => undefined),
+      spyOn(search, "searchMessages").mockImplementation(async ({ mailboxId }) =>
+        mailboxId === internalMailboxId ? page([]) : searchFailed,
+      );
+
+      const result = await mailCapabilities.queries.search.run({ query: "report", tags: [], limit: 10 }, context);
+
+      expect(result).toEqual({ ok: false, error: searchFailed.error });
+    });
+
+    test("skips a mailbox whose search runs out of its time budget", async () => {
+      spyOn(mailboxes, "listMailboxes").mockResolvedValue({
+        ok: true,
+        data: [mailboxRow(internalMailboxId, "Support"), mailboxRow(otherMailboxId, "Sales")],
+      } as never);
+      // Like the search itself, the slow mailbox gives up once its budget is spent.
+      const query = spyOn(search, "searchMessages").mockImplementation(({ mailboxId, timeoutMs }) =>
+        mailboxId === internalMailboxId
+          ? Promise.resolve(page([hit]))
+          : new Promise((resolve) => setTimeout(() => resolve(search.searchExceededLimit()), timeoutMs)),
       );
       jest.useFakeTimers();
       try {
@@ -2191,10 +2206,52 @@ describe("mail capabilities", () => {
 
         if (!result.ok) throw new Error("Expected partial search results");
         expect(result.data.data.map((item) => item.title)).toEqual(["Quarterly report"]);
-        expect(result.data.summary).toBe("Results from 1 of 2 mailboxes; “Sales” could not be searched in time.");
+        expect(result.data.summary).toBe("Results from 1 of 2 mailboxes; “Sales” could not be searched.");
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    test("never runs more than four searches at once, even when searches do not stop", async () => {
+      const rows = Array.from({ length: 6 }, (_, index) =>
+        mailboxRow(`00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, `Mailbox ${index}`),
+      );
+      spyOn(mailboxes, "listMailboxes").mockResolvedValue({ ok: true, data: rows } as never);
+      const query = spyOn(search, "searchMessages").mockImplementation(() => new Promise(() => undefined));
+      jest.useFakeTimers();
+      try {
+        const pending = mailCapabilities.queries.search.run({ query: "report", tags: [], limit: 10 }, context);
+        for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+        expect(query).toHaveBeenCalledTimes(4);
+        jest.advanceTimersByTime(Math.max(...query.mock.calls.map(([params]) => params.timeoutMs ?? 0)));
+        for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+        expect(query).toHaveBeenCalledTimes(4);
+        jest.advanceTimersByTime(6_000);
+        const result = await pending;
+
+        expect(query).toHaveBeenCalledTimes(4);
+        expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT", message: "Search query exceeded the execution limit" } });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    test("starts no mailbox search once the caller cancelled", async () => {
+      spyOn(mailboxes, "listMailboxes").mockResolvedValue({
+        ok: true,
+        data: [mailboxRow(internalMailboxId, "Support"), mailboxRow(otherMailboxId, "Sales")],
+      } as never);
+      const query = spyOn(search, "searchMessages").mockResolvedValue(page([hit]));
+      const cancelled = new AbortController();
+      cancelled.abort();
+
+      const result = await mailCapabilities.queries.search.run(
+        { query: "report", tags: [], limit: 10 },
+        { ...context, signal: cancelled.signal },
+      );
+
+      expect(query).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
     });
 
     test("starts the next mailbox as soon as one finishes, a few at a time", async () => {

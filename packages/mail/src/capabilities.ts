@@ -742,7 +742,8 @@ const searchLog = logger("mail:search");
 /**
  * Universal search gives each provider eight seconds in total. Mail searches the mailboxes a few at
  * a time within a deadline below that, and each mailbox within its own budget, so a slow or failing
- * mailbox costs only its own results. Four searches at once keep most of the database pool free.
+ * mailbox costs only its own results. A search stops its own statements once its budget is spent,
+ * and its slot frees only then, so one request never runs more than four searches in the database.
  */
 const MAIL_SEARCH_DEADLINE_MS = 6_000;
 const MAILBOX_SEARCH_BUDGET_MS = 3_000;
@@ -750,35 +751,34 @@ const MAILBOX_SEARCH_CONCURRENCY = 4;
 
 const searchMailboxes = async <T extends { id: string }, R>(
   mailboxList: readonly T[],
+  signal: AbortSignal,
   run: (mailbox: T, timeoutMs: number) => Promise<Result<R>>,
 ): Promise<Array<{ mailbox: T; page: Result<R> }>> => {
   const deadline = Date.now() + MAIL_SEARCH_DEADLINE_MS;
-  const results: Array<{ mailbox: T; page: Result<R> }> = [];
+  const pages: Array<Result<R> | undefined> = [];
   let next = 0;
   const worker = async () => {
     for (let index = next++; index < mailboxList.length; index = next++) {
       const mailbox = mailboxList[index]!;
       const budget = Math.min(MAILBOX_SEARCH_BUDGET_MS, deadline - Date.now());
-      if (budget <= 0) {
-        results[index] = { mailbox, page: search.searchExceededLimit() };
-        continue;
-      }
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      // The database stops the statement at the same budget; this also bounds the wait for a connection.
-      const expired = new Promise<Result<R>>((resolve) => {
-        timer = setTimeout(() => resolve(search.searchExceededLimit()), budget);
-      });
-      const searchedPage = run(mailbox, budget).catch((error: unknown) => {
+      if (budget <= 0 || signal.aborted) continue;
+      pages[index] = await run(mailbox, budget).catch((error: unknown) => {
         searchLog.error("Mail search failed", { mailboxId: mailbox.id, error: error instanceof Error ? error.message : String(error) });
         return fail(err.internal("Mail search failed"));
       });
-      const page = await Promise.race([searchedPage, expired]);
-      clearTimeout(timer);
-      results[index] = { mailbox, page };
     }
   };
-  await Promise.all(Array.from({ length: Math.min(MAILBOX_SEARCH_CONCURRENCY, mailboxList.length) }, worker));
-  return results;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // A search that still waits for a database connection at the deadline keeps its slot, but the
+  // answer does not wait for it.
+  await Promise.race([
+    Promise.all(Array.from({ length: Math.min(MAILBOX_SEARCH_CONCURRENCY, mailboxList.length) }, worker)),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, MAIL_SEARCH_DEADLINE_MS);
+    }),
+  ]);
+  clearTimeout(timer);
+  return mailboxList.map((mailbox, index) => ({ mailbox, page: pages[index] ?? search.searchExceededLimit() }));
 };
 
 const runSearch = async (
@@ -798,7 +798,7 @@ const runSearch = async (
   })();
   if (!mailboxResult.ok) return mailboxResult;
   if (!input.query.trim()) return ok({ data: [] });
-  const searched = await searchMailboxes(mailboxResult.data, (mailbox, timeoutMs) =>
+  const searched = await searchMailboxes(mailboxResult.data, capabilityContext.signal, (mailbox, timeoutMs) =>
     search.searchMessages({
       context,
       mailboxId: mailbox.id,
@@ -816,13 +816,14 @@ const runSearch = async (
     if (!page.ok)
       searchLog.warn("Mail search skipped a mailbox", { mailboxId: mailbox.id, code: page.error.code, reason: page.error.message });
   }
-  // Every mailbox failing is a failure of the search, not an empty result.
-  const firstSkipped = skipped[0]?.page;
-  if (pages.length === 0 && firstSkipped && !firstSkipped.ok) return firstSkipped;
   const resultItems = pages
     .flatMap(({ mailbox, page }) => page.items.map((message, mailboxRank) => ({ mailbox, message, mailboxRank })))
     .sort((left, right) => left.mailboxRank - right.mailboxRank || right.message.internalDate.localeCompare(left.message.internalDate))
     .slice(0, input.limit);
+  // No result while a mailbox was skipped is not an answer: the skipped mailbox may hold the match,
+  // and universal search shows only a failure, not a result's summary.
+  const firstSkipped = skipped[0]?.page;
+  if (resultItems.length === 0 && firstSkipped && !firstSkipped.ok) return firstSkipped;
   const [mailboxIds, messageIds, conversationIds, attachmentIds] = await Promise.all([
     publicResources.publicIds(
       "mailboxes",
