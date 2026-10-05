@@ -833,40 +833,67 @@ const boundedCandidates = (params: SearchShape): boolean =>
   rankedSearch(params) || (!params.groupByConversation && params.sort === "newest");
 
 /**
- * A word in this many message bodies of a mailbox is common: walking the mailbox from its newest
- * message meets the window of candidates sooner than reading every match through the index.
+ * A word or search that one in ten of a mailbox's newest messages match is dense: walking the
+ * mailbox from its newest message meets the window of candidates within about ten messages per
+ * candidate, sooner than reading every match through the index. The newest messages show the density
+ * wherever a word matches, in a body, subject, address, folder or anything else a quick search reads.
  */
-const COMMON_WORD_MATCHES = 10 * RANKED_MATCH_WINDOW;
+const DENSITY_PROBE_MESSAGES = 500;
+const DENSE_MATCHES = DENSITY_PROBE_MESSAGES / 10;
 
 /**
- * The words of an any-field seed that are common in this mailbox. Each count stops at the threshold
- * and reads the body index, so one statement answers for every word without reading a whole mailbox.
+ * A walk through dense newest messages reads at most twice the messages per candidate that the
+ * density threshold needs. A word that thins out further down the mailbox ends the walk there, and
+ * the index finds the remaining matches.
  */
-const findCommonWords = async (db: typeof sql, mailboxId: string, seed: IndexedSeed | null): Promise<Set<string>> => {
+const WALK_MESSAGES_PER_CANDIDATE = 2 * (DENSITY_PROBE_MESSAGES / DENSE_MATCHES);
+
+/**
+ * The words of an any-field seed that are dense in this mailbox. Each word is checked against the
+ * newest messages with the same condition the search applies, one message at a time like a walk,
+ * and each count stops at the threshold.
+ */
+const findDenseWords = async (db: typeof sql, mailboxId: string, seed: IndexedSeed | null): Promise<Set<string>> => {
   if (seed?.field !== "any") return new Set();
+  const probes = wordTokens(seed.query).map(
+    (word) => sql`
+      SELECT ${word}::text AS word
+      WHERE (
+        SELECT count(*)
+        FROM (
+          SELECT 1
+          FROM recent_messages recent
+          CROSS JOIN LATERAL (
+            SELECT 1
+            FROM mail.message_contents mc
+            LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
+            WHERE mc.id = recent.id
+              AND ${compileTextTerm({ ...seed, query: word }, sql`cm.conversation_id`)}
+            OFFSET 0
+          ) recent_match
+          LIMIT ${DENSE_MATCHES}
+        ) dense_match
+      ) >= ${DENSE_MATCHES}
+    `,
+  );
   const rows = await db<{ word: string }[]>`
-    SELECT probe.word
-    FROM jsonb_array_elements_text(${wordTokens(seed.query)}::jsonb) AS probe(word)
-    WHERE (
-      SELECT count(*)
-      FROM (
-        SELECT 1
-        FROM mail.message_search_chunks probe_chunk
-        WHERE probe_chunk.mailbox_id = ${mailboxId}::uuid
-          AND probe_chunk.source_kind = 'body'
-          AND probe_chunk.search_document @@ plainto_tsquery('simple', probe.word)
-        LIMIT ${COMMON_WORD_MATCHES}
-      ) probe_match
-    ) >= ${COMMON_WORD_MATCHES}
+    WITH recent_messages AS MATERIALIZED (
+      SELECT recent.id
+      FROM mail.message_contents recent
+      WHERE recent.mailbox_id = ${mailboxId}::uuid
+      ORDER BY recent.internal_date DESC, recent.id DESC
+      LIMIT ${DENSITY_PROBE_MESSAGES}
+    )
+    ${probes.slice(1).reduce((combined, probe) => sql`${combined} UNION ALL ${probe}`, probes[0]!)}
   `;
   return new Set(rows.map((row) => row.word));
 };
 
-/** The predicate still checks common words; only the seed leaves them out. */
-const withoutCommonWords = (seed: IndexedSeed | null, commonWords: ReadonlySet<string>): IndexedSeed | null => {
-  if (seed?.field !== "any" || commonWords.size === 0) return seed;
+/** The predicate still checks dense words; only the seed leaves them out. */
+const withoutDenseWords = (seed: IndexedSeed | null, denseWords: ReadonlySet<string>): IndexedSeed | null => {
+  if (seed?.field !== "any" || denseWords.size === 0) return seed;
   const words = wordTokens(seed.query);
-  const selective = words.filter((word) => !commonWords.has(word));
+  const selective = words.filter((word) => !denseWords.has(word));
   if (selective.length === words.length) return seed;
   return selective.length > 0 ? { ...seed, query: selective.join(" ") } : null;
 };
@@ -885,14 +912,13 @@ const runSearch = async (params: {
   aggregatedScope: AggregatedViewScope | null;
   lapsedAssignees: readonly LapsedAssignee[];
   sendProblems: boolean;
-  commonWords: ReadonlySet<string>;
+  denseWords: ReadonlySet<string>;
 }): Promise<DbSearchHit[]> => {
   const predicate = compileSearchExpression(params.expression, params.currentUserId, sql`cm.conversation_id`, params.lapsedAssignees);
   const foundSeed = findIndexedSeed(params.expression);
   // Without a seed, the candidates are the mailbox's messages from the newest on, and the window stops the walk.
-  const indexedSeed = withoutCommonWords(foundSeed, params.commonWords);
+  const indexedSeed = withoutDenseWords(foundSeed, params.denseWords);
   const walk = foundSeed !== null && indexedSeed === null;
-  const indexedSeedCoversExpression = indexedSeed === params.expression;
   const conversationOnly =
     params.groupByConversation && !params.sendProblems && !foundSeed && isConversationOnlyExpression(params.expression);
   const cursor = params.cursor;
@@ -904,7 +930,9 @@ const runSearch = async (params: {
   `;
   const aggregatedScope = (conversationId: SqlFragment) =>
     params.aggregatedScope ? staysInAggregatedViews(conversationId, params.aggregatedScope) : sql`true`;
-  const indexedSeedCte = indexedSeed ? sql`indexed_seed AS MATERIALIZED (${compileIndexedSeed(indexedSeed, params.mailboxId)}),` : sql``;
+  // A walk that falls short reads its candidates through the whole seed after all.
+  const seed = walk ? foundSeed : indexedSeed;
+  const indexedSeedCte = seed ? sql`indexed_seed AS MATERIALIZED (${compileIndexedSeed(seed, params.mailboxId)}),` : sql``;
   const useConversationSeed = conversationOnly;
   const conversationSeedCte = useConversationSeed
     ? sql`
@@ -1010,10 +1038,10 @@ const runSearch = async (params: {
           OR (${message}.internal_date, ${message}.id) < (${cursor?.internalDate ?? null}::timestamptz, ${cursor?.id ?? null}::uuid)
         )`
       : sql``;
-  const candidateFilter = sql`
+  const candidateFilter = (seedCoversExpression: boolean) => sql`
     ${candidateVisibility}
     AND ${aggregatedScope(sql`cm.conversation_id`)}
-    AND (${useConversationSeed || indexedSeedCoversExpression ? sql`true` : predicate})
+    AND (${useConversationSeed || seedCoversExpression ? sql`true` : predicate})
   `;
   const candidateColumns = sql`
     mc.id,
@@ -1024,45 +1052,89 @@ const runSearch = async (params: {
   const candidateOrder = (message: SqlFragment) =>
     candidateLimit === null ? sql`` : sql`ORDER BY ${message}.internal_date DESC, ${message}.id DESC LIMIT ${candidateLimit}`;
   // Seeded and walked candidates are checked one message at a time, so Postgres probes each
-  // candidate instead of reading the matches of every condition across all mailboxes first. A walk
-  // starts at the newest message and stops at the window; the fence keeps that order.
+  // candidate instead of reading the matches of every condition across all mailboxes first.
+  const candidatesFrom = (source: SqlFragment, seedCoversExpression: boolean, afterCursor: SqlFragment) => sql`
+    SELECT candidate.*
+    FROM ${source}
+    CROSS JOIN LATERAL (
+      SELECT ${candidateColumns}
+      FROM mail.message_contents mc
+      LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
+      WHERE mc.id = source.id
+        AND mc.mailbox_id = ${params.mailboxId}::uuid
+        AND ${candidateFilter(seedCoversExpression)}
+        ${afterCursor}
+    ) candidate
+  `;
+  const seededCandidates = (seedCoversExpression: boolean) => sql`
+    ${candidatesFrom(sql`(SELECT seed.message_id AS id FROM indexed_seed seed) source`, seedCoversExpression, newestPageAfterCursor(sql`mc`))}
+    ${candidateOrder(sql`candidate`)}
+  `;
+  // A walk starts at the newest message, stops at the window, and first checks the newest messages
+  // against the whole search. When one in ten match, the walk reads at most its limit of messages;
+  // when it stops short of the window there while older messages remain, the word thinned out and
+  // the seed supplies the candidates instead. Only then is the seed read. When fewer match, as with
+  // a small folder, the walk reads on until the window is full: the seed holds at least as many
+  // messages then, because every one of its words is dense.
+  const walkLimit = walk && candidateLimit !== null ? candidateLimit * WALK_MESSAGES_PER_CANDIDATE : null;
+  const newestMessages = (count: SqlFragment) => sql`(
+    SELECT walk.id, walk.internal_date
+    FROM mail.message_contents walk
+    WHERE walk.mailbox_id = ${params.mailboxId}::uuid
+      ${newestPageAfterCursor(sql`walk`)}
+    ORDER BY walk.internal_date DESC, walk.id DESC
+    LIMIT ${count}
+  ) source`;
   const candidates =
-    indexedSeed || walk
+    walkLimit !== null
       ? sql`
-          SELECT candidate.*
-          FROM ${
-            walk
-              ? sql`(
-                  SELECT walk.id, walk.internal_date
-                  FROM mail.message_contents walk
-                  WHERE walk.mailbox_id = ${params.mailboxId}::uuid
-                    ${newestPageAfterCursor(sql`walk`)}
-                  ORDER BY walk.internal_date DESC, walk.id DESC
-                  OFFSET 0
-                ) source`
-              : sql`(SELECT seed.message_id AS id FROM indexed_seed seed) source`
-          }
-          CROSS JOIN LATERAL (
-            SELECT ${candidateColumns}
-            FROM mail.message_contents mc
-            LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
-            WHERE mc.id = source.id
-              AND mc.mailbox_id = ${params.mailboxId}::uuid
-              AND ${candidateFilter}
-              ${walk ? sql`` : newestPageAfterCursor(sql`mc`)}
-          ) candidate
-          ${candidateOrder(walk ? sql`source` : sql`candidate`)}
-        `
-      : sql`
+        SELECT * FROM walked_messages WHERE NOT (SELECT fell_short FROM walk_outcome)
+        UNION ALL
+        SELECT * FROM (${seededCandidates(foundSeed === params.expression)}) seeded WHERE (SELECT fell_short FROM walk_outcome)
+      `
+      : indexedSeed
+        ? seededCandidates(indexedSeed === params.expression)
+        : sql`
           SELECT ${candidateColumns}
           FROM ${messageSource}
           LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
           WHERE ${sourceMailboxPredicate}
             AND mc.mailbox_id = ${params.mailboxId}::uuid
-            AND ${candidateFilter}
+            AND ${candidateFilter(false)}
             ${newestPageAfterCursor(sql`mc`)}
             ${candidateOrder(sql`mc`)}
         `;
+  const walkCtes =
+    walkLimit !== null
+      ? sql`
+        walk_start AS MATERIALIZED (
+          SELECT count(*) >= ${DENSE_MATCHES} AS dense
+          FROM (
+            ${candidatesFrom(newestMessages(sql`${DENSITY_PROBE_MESSAGES}`), false, sql``)}
+            LIMIT ${DENSE_MATCHES}
+          ) start_match
+        ),
+        walked_messages AS MATERIALIZED (
+          ${candidatesFrom(newestMessages(sql`(SELECT CASE WHEN dense THEN ${walkLimit}::bigint END FROM walk_start)`), false, sql``)}
+          ${candidateOrder(sql`source`)}
+        ),
+        walk_outcome AS MATERIALIZED (
+          SELECT
+            (SELECT dense FROM walk_start)
+            AND (
+              (SELECT count(*) FROM walked_messages) < ${candidateLimit}
+              AND EXISTS (
+                SELECT 1
+                FROM mail.message_contents beyond
+                WHERE beyond.mailbox_id = ${params.mailboxId}::uuid
+                  ${newestPageAfterCursor(sql`beyond`)}
+                ORDER BY beyond.internal_date DESC, beyond.id DESC
+                OFFSET ${walkLimit}
+              )
+            ) AS fell_short
+        ),
+      `
+      : sql``;
   // Every candidate is ranked before the page is cut, so each lookup must be one index probe by
   // message: body chunks through their message index, attachment chunks through the attachments.
   const rank = !ranked
@@ -1101,6 +1173,7 @@ const runSearch = async (params: {
   return params.db<DbSearchHit[]>`
     WITH ${indexedSeedCte}
     ${conversationSeedCte}
+    ${walkCtes}
     -- Candidates carry only what ranking and paging read. Every other column is loaded for the
     -- page alone, so a word that matches most of a mailbox does not drag each message through.
     candidate_messages AS MATERIALIZED (${candidates}),
@@ -1466,20 +1539,34 @@ const runSearch = async (params: {
   `;
 };
 
-/** The longest a single search statement may run unless the caller grants a smaller budget. */
-const SEARCH_STATEMENT_TIMEOUT_MS = 5_000;
+/** The longest a search may run unless the caller grants a smaller budget. */
+const SEARCH_TIMEOUT_MS = 5_000;
+
+/** A search whose time ran out before its next statement could start. */
+class SearchDeadlineReached extends Error {}
+
+/**
+ * Gives the next statement of a search what is left of the search's time, so all its statements
+ * together end by the deadline, and stops the search when nothing is left. A search that waited
+ * for a database connection past its deadline therefore reads nothing.
+ */
+const limitToDeadline = async (tx: typeof sql, deadline: number): Promise<void> => {
+  const remainingMs = Math.floor(deadline - Date.now());
+  if (remainingMs < 1) throw new SearchDeadlineReached("Search reached its deadline");
+  await tx`SELECT set_config('statement_timeout', ${`${remainingMs}ms`}, true)`;
+};
 
 const executeSearch = async (
-  params: Omit<Parameters<typeof runSearch>[0], "db" | "commonWords"> & { timeoutMs: number },
+  params: Omit<Parameters<typeof runSearch>[0], "db" | "denseWords"> & { deadline: number },
 ): Promise<DbSearchHit[]> =>
   sql.begin(async (tx) => {
-    await tx`SELECT set_config('statement_timeout', ${`${params.timeoutMs}ms`}, true)`;
+    await limitToDeadline(tx, params.deadline);
     await tx`SET LOCAL plan_cache_mode = force_custom_plan`;
     await tx`SET LOCAL jit = off`;
-    const commonWords = boundedCandidates(params)
-      ? await findCommonWords(tx, params.mailboxId, findIndexedSeed(params.expression))
-      : new Set<string>();
-    return runSearch({ ...params, commonWords, db: tx });
+    if (!boundedCandidates(params)) return runSearch({ ...params, denseWords: new Set(), db: tx });
+    const denseWords = await findDenseWords(tx, params.mailboxId, findIndexedSeed(params.expression));
+    await limitToDeadline(tx, params.deadline);
+    return runSearch({ ...params, denseWords, db: tx });
   });
 
 /** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */
@@ -1492,8 +1579,10 @@ const searchErrorCode = (error: unknown): string | null => {
 /** A search that ran out of its time, in the database or while waiting for it. */
 export const searchExceededLimit = (): Result<never> => fail(err.badInput("Search query exceeded the execution limit"));
 
+const ranOutOfTime = (error: unknown): boolean => error instanceof SearchDeadlineReached || searchErrorCode(error) === "57014";
+
 const searchFailure = (error: unknown): Result<never> => {
-  if (searchErrorCode(error) === "57014") return searchExceededLimit();
+  if (ranOutOfTime(error)) return searchExceededLimit();
   log.error("Mail search failed", {
     code: searchErrorCode(error),
     error: error instanceof Error ? error.message : String(error),
@@ -1514,13 +1603,13 @@ const executeSearchWithFallback = async (params: {
   aggregatedScope: AggregatedViewScope | null;
   lapsedAssignees: readonly LapsedAssignee[];
   sendProblems: boolean;
-  timeoutMs: number;
+  deadline: number;
 }): Promise<Result<{ rows: DbSearchHit[]; backend: SearchCursor["backend"] }>> => {
   try {
     const rows = await executeSearch(params);
     return ok({ rows, backend: params.backend });
   } catch (error) {
-    const mayFallback = params.backend === "pg_textsearch" && !params.cursor && searchErrorCode(error) !== "57014";
+    const mayFallback = params.backend === "pg_textsearch" && !params.cursor && !ranOutOfTime(error);
     if (!mayFallback) return searchFailure(error);
   }
   try {
@@ -1553,9 +1642,10 @@ export const searchMessages = async (params: {
   sendProblems?: boolean;
   /** List a view that mixes folders: leave out conversations whose mail is kept inside its folders. */
   aggregatedView?: boolean;
-  /** The longest the search statement may run, at most the default of five seconds. */
+  /** The longest the search may run, at most the default of five seconds; its statements share this time. */
   timeoutMs?: number;
 }): Promise<Result<MessageSearchPage>> => {
+  const deadline = Date.now() + Math.max(1, Math.min(Math.floor(params.timeoutMs ?? SEARCH_TIMEOUT_MS), SEARCH_TIMEOUT_MS));
   const expression = params.request.expression;
   const complexity = validateSearchComplexity(expression);
   if (!complexity.ok) return complexity;
@@ -1602,7 +1692,7 @@ export const searchMessages = async (params: {
     aggregatedScope,
     lapsedAssignees,
     sendProblems,
-    timeoutMs: Math.max(1, Math.min(Math.floor(params.timeoutMs ?? SEARCH_STATEMENT_TIMEOUT_MS), SEARCH_STATEMENT_TIMEOUT_MS)),
+    deadline,
   });
   if (!execution.ok) return execution;
   const rows = execution.data.rows;

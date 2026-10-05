@@ -10,11 +10,18 @@ import { RANKED_MATCH_WINDOW, searchMessages } from "./search";
 
 const suite = suiteFor("database", "nats");
 
-// Every message says "routine", in more bodies than make a word common, so a ranked search walks
-// the mailbox from its newest message instead of reading every match.
+// Every message says "routine", so a ranked search walks the mailbox from its newest message
+// instead of reading every match.
 const MESSAGE_COUNT = 10 * RANKED_MATCH_WINDOW + 500;
 const RECENT_FAVORITE = 50;
 const ARCHIVED_FAVORITE = 3 * RANKED_MATCH_WINDOW;
+// The newest messages and one old message also go to a team named "Burst": dense enough near the
+// top for a walk, which then runs out of matches long before the old one.
+const BURST_RECENT = 60;
+const BURST_ARCHIVED = 5 * RANKED_MATCH_WINDOW;
+// A small folder holds a few messages across the mailbox: a word in every message is dense there,
+// but a search inside the folder is not.
+const PROJECT_MESSAGES = [2, 4 * RANKED_MATCH_WINDOW, 9 * RANKED_MATCH_WINDOW];
 
 const uniqueShortIds = (count: number): string[] => {
   const ids = new Set<string>();
@@ -26,6 +33,7 @@ suite("mail search over a word in every message", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   let context: MailRequestContext;
   let mailboxId = "";
+  let projectsFolderId = "";
 
   beforeAll(async () => {
     await migrate();
@@ -121,6 +129,17 @@ suite("mail search over a word in every message", () => {
       FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid
     `;
     await sql`
+      INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+      SELECT id, 'to', 0, 'Burst Team', 'team@example.com', 'team@example.com'
+      FROM mail.message_contents
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND message_id IN (
+          SELECT '<window-' || item || '@example.com>'
+          FROM generate_series(1, ${BURST_RECENT}) AS item
+          UNION ALL SELECT ${`<window-${BURST_ARCHIVED}@example.com>`}
+        )
+    `;
+    await sql`
       INSERT INTO mail.message_search_chunks (message_id, mailbox_id, position, search_document)
       SELECT id, mailbox_id, 0, to_tsvector('simple'::regconfig, plain_text)
       FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid
@@ -135,7 +154,27 @@ suite("mail search over a word in every message", () => {
       SELECT id, folder_id, message_id, ARRAY['\\Seen']::text[], ARRAY[]::text[]
       FROM mail.remote_message_refs WHERE folder_id = ${folder!.id}::uuid
     `;
+    const [projects] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${resource!.id}::uuid, 'window-projects', 'Projects', 'other', 'current')
+      RETURNING id
+    `;
+    projectsFolderId = projects!.id;
+    await sql`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      SELECT ${projectsFolderId}::uuid, id, 1, row_number() OVER (ORDER BY internal_date, id)
+      FROM mail.message_contents
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND message_id IN (SELECT '<window-' || item || '@example.com>' FROM jsonb_array_elements_text(${PROJECT_MESSAGES}::jsonb) AS item)
+    `;
+    await sql`
+      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+      SELECT id, folder_id, message_id, ARRAY['\\Seen']::text[], ARRAY[]::text[]
+      FROM mail.remote_message_refs WHERE folder_id = ${projectsFolderId}::uuid
+    `;
     await sql`ANALYZE mail.message_contents`;
+    await sql`ANALYZE mail.message_addresses`;
+    await sql`ANALYZE mail.message_placements`;
     await sql`ANALYZE mail.message_search_chunks`;
   }, 120_000);
 
@@ -146,12 +185,23 @@ suite("mail search over a word in every message", () => {
     }
   }, 120_000);
 
-  const search = (query: string, options: { sort?: "relevance" | "newest"; limit?: number; cursor?: string; timeoutMs?: number } = {}) =>
+  const search = (
+    query: string,
+    options: { sort?: "relevance" | "newest"; limit?: number; cursor?: string; timeoutMs?: number; folderId?: string } = {},
+  ) =>
     searchMessages({
       context,
       mailboxId,
       request: {
-        expression: { type: "text", field: "any", query, match: "words" },
+        expression: options.folderId
+          ? {
+              type: "and",
+              expressions: [
+                { type: "folder_id", folderId: options.folderId },
+                { type: "text", field: "any", query, match: "words" },
+              ],
+            }
+          : { type: "text", field: "any", query, match: "words" },
         sort: options.sort ?? "relevance",
         limit: options.limit ?? 10,
         ...(options.cursor ? { cursor: options.cursor } : {}),
@@ -187,6 +237,51 @@ suite("mail search over a word in every message", () => {
     expect([...first.data.items, ...next.data.items].map((item) => item.messageId)).toEqual(
       [1, 2, 3, 4, 5, 6].map((item) => `<window-${item}@example.com>`),
     );
+  });
+
+  test("ranks the newest matches of a word in every sender address", async () => {
+    const page = await search("sender");
+
+    if (!page.ok) throw new Error(page.error.message);
+    expect(page.data.items.map((item) => item.messageId)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `<window-${index + 1}@example.com>`),
+    );
+  });
+
+  test("finds the older matches of a word that a walk runs out of", async () => {
+    const burst = Array.from({ length: BURST_RECENT }, (_, index) => `<window-${index + 1}@example.com>`);
+    const archived = `<window-${BURST_ARCHIVED}@example.com>`;
+    const first = await search("burst", { sort: "newest", limit: 50 });
+    if (!first.ok) throw new Error(first.error.message);
+    // The second page's walk reads its limit of messages, finds ten matches, and the seed adds the old one.
+    const next = await search("burst", { sort: "newest", limit: 50, cursor: first.data.nextCursor ?? undefined });
+    if (!next.ok) throw new Error(next.error.message);
+    // A ranked walk reads the whole mailbox here, so it finds every match itself.
+    const ranked = await search("burst", { limit: 100 });
+    if (!ranked.ok) throw new Error(ranked.error.message);
+
+    expect([...first.data.items, ...next.data.items].map((item) => item.messageId)).toEqual([...burst, archived]);
+    expect(next.data.nextCursor).toBeNull();
+    expect(ranked.data.items.map((item) => item.messageId).toSorted()).toEqual([...burst, archived].toSorted());
+  });
+
+  test("finds every match of a word in every message inside a small folder", async () => {
+    const projects = PROJECT_MESSAGES.map((item) => `<window-${item}@example.com>`);
+    const first = await search("routine", { sort: "newest", limit: 2, folderId: projectsFolderId });
+    if (!first.ok) throw new Error(first.error.message);
+    const next = await search("routine", {
+      sort: "newest",
+      limit: 2,
+      folderId: projectsFolderId,
+      cursor: first.data.nextCursor ?? undefined,
+    });
+    if (!next.ok) throw new Error(next.error.message);
+    const ranked = await search("routine", { folderId: projectsFolderId });
+    if (!ranked.ok) throw new Error(ranked.error.message);
+
+    expect([...first.data.items, ...next.data.items].map((item) => item.messageId)).toEqual(projects);
+    expect(next.data.nextCursor).toBeNull();
+    expect(ranked.data.items.map((item) => item.messageId).toSorted()).toEqual(projects.toSorted());
   });
 
   test("reports a search that runs out of time as too broad, not as an internal error", async () => {

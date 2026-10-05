@@ -12,6 +12,8 @@ const enabled = process.env.MAIL_PERFORMANCE_TESTS === "1";
 const suite = enabled ? describe : describe.skip;
 const requestedMessageCount = Number.parseInt(process.env.MAIL_PERFORMANCE_MESSAGE_COUNT ?? "20000", 10);
 const MESSAGE_COUNT = Number.isFinite(requestedMessageCount) ? Math.min(Math.max(requestedMessageCount, 20_000), 100_000) : 20_000;
+// Only the oldest messages say "legacy": common in the mailbox, but not among its newest messages.
+const LEGACY_MESSAGES = 12_000;
 
 const uniqueShortIds = (count: number): string[] => {
   const ids = new Set<string>();
@@ -118,7 +120,11 @@ suite("mail large-mailbox performance", () => {
         512,
         lpad(to_hex(item::bigint), 64, '0'),
         'complete',
-        CASE WHEN item = 15000 THEN 'The quarterly cobalt invoice is ready for review' ELSE 'Routine body ' || item END,
+        CASE
+          WHEN item = 15000 THEN 'The quarterly cobalt invoice is ready for review'
+          WHEN item > ${MESSAGE_COUNT - LEGACY_MESSAGES} THEN 'Routine legacy body ' || item
+          ELSE 'Routine body ' || item
+        END,
         CASE WHEN item = 15000 THEN 'quarterly cobalt invoice' ELSE 'routine message ' || item END
       FROM generate_series(1, ${MESSAGE_COUNT}) AS item
       JOIN jsonb_array_elements_text(${messageShortIds}::jsonb) WITH ORDINALITY AS short_id(value, position)
@@ -379,6 +385,33 @@ suite("mail large-mailbox performance", () => {
     console.info(`Mail ${MESSAGE_COUNT} common-word search: ${warmDurations.map((value) => value.toFixed(1)).join(", ")} ms`);
     expect(worstWarmMs).toBeLessThan(500);
   }, 30_000);
+
+  test(`keeps quick search for a common sender or an older common word bounded at ${MESSAGE_COUNT.toLocaleString("en-US")} messages`, async () => {
+    if (!ids.mailboxId) throw new Error("Performance mailbox is unavailable");
+    // "bulk" is in every sender address and in no subject or body; "legacy" only in the oldest bodies.
+    for (const query of ["bulk", "routine bulk", "legacy", "legacy bulk"]) {
+      const durations: number[] = [];
+      for (let iteration = 0; iteration < 5; iteration += 1) {
+        const startedAt = performance.now();
+        const result = await searchMessages({
+          context,
+          mailboxId: ids.mailboxId,
+          request: {
+            expression: { type: "text", field: "any", query, match: "words" },
+            sort: "relevance",
+            limit: 20,
+          },
+        });
+        durations.push(performance.now() - startedAt);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.data.items).toHaveLength(20);
+      }
+      const warmDurations = durations.slice(1);
+      const worstWarmMs = Math.max(...warmDurations);
+      console.info(`Mail ${MESSAGE_COUNT} search for "${query}": ${warmDurations.map((value) => value.toFixed(1)).join(", ")} ms`);
+      expect(worstWarmMs).toBeLessThan(1_000);
+    }
+  }, 60_000);
 
   test(`keeps the warm inbox list bounded at ${MESSAGE_COUNT.toLocaleString("en-US")} conversations`, async () => {
     if (!ids.mailboxId) throw new Error("Performance mailbox is unavailable");
