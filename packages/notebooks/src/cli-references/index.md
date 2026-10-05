@@ -164,7 +164,7 @@ Notebook-scoped commands (`ls`, `tree`, `pull`, `tags`, `export`, `update`, and 
 2. Find the notebook with `cld notebooks ls --q <text> --json`, which matches a case-insensitive part of the name or description, then look at its structure with `cld notebooks tree <notebook>`. Several matches with the same name need the user's choice; use the ID.
 3. Search before creating duplicate knowledge: `cld notebooks search "deployment rollback" --notebook <notebook> --json`.
 4. Read the note with `cld notebooks cat <note> --json` and keep `contentHash` and `blocks`.
-   For a new note, read [Notebook Markdown](markdown.md), write the draft to a local file, and create the note with `cld notebooks write "<notebook>:<path>" --from draft.md --json`. No mirror is needed for one note.
+   For a new note, read [Notebook Markdown](markdown.md) and write the draft to a local file. `write` replaces a note that already exists at its address, so confirm with `cld notebooks stat "<notebook>:<path>"` that no note is there, then create the note with `cld notebooks write "<notebook>:<path>" --from draft.md --json`. No mirror is needed for one note.
 5. Prefer a named-block or line edit with `edit` over replacing the whole note. Pass the returned hash as `--if-content-hash` or `--if-block-hash`.
 6. Run risky edits with `edit --dry-run` first, then repeat without it. `write` has no dry run.
 7. Read the result again. A successful request does not prove the intended Markdown structure.

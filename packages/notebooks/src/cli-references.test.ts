@@ -3,6 +3,7 @@ import { evaluateFormula } from "@k2b/cloud/shared";
 import { renderNotebookBook } from "./lib/book-renderer";
 import { extractNamedDataProperties } from "./lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./lib/query-blocks";
+import { extractTags } from "./service/tags";
 
 const reference = (file: string) => Bun.file(new URL(`./cli-references/${file}`, import.meta.url)).text();
 
@@ -50,6 +51,11 @@ test("the formula examples compute the values they are meant to show", async () 
 test("a callout title is not Notebook syntax", () => {
   const { html } = renderNotebookBook({ markdown: ":::warning Before deleting\nText\n:::", notebookId: "Ab12Cd", locale: "en" });
   expect(html).not.toContain("<aside");
+});
+
+test("tags are extracted as the Markdown reference describes, also around code", () => {
+  const markdown = "`#inline` #kept\n\n```\n#fenced\n```\n\n~~~\n#tilde\n~~~\n\n    #indented\n\n#prüfung";
+  expect(extractTags(markdown)).toEqual(["kept", "tilde", "indented", "pr"]);
 });
 
 test("a note link with a heading slug opens that heading", () => {
