@@ -1443,6 +1443,44 @@ html:has(.k2b-mobile-shell) textarea {
   font-size: 16px;
 }
 
+/* One type scale on the phone: 1.125rem for the shell and dialog titles, 1rem
+   for text and buttons with section headings and names in a heavier weight,
+   0.875rem for secondary text and the options of a segmented control, and
+   0.6875rem for tab labels only. Buttons match the touch menus' items, and
+   segmented options stay compact so several fit one row. Shared components
+   that are sized for dense desktop surfaces follow the scale while a shell is
+   mounted; icon buttons keep their glyph sizes. */
+html:has(.k2b-mobile-shell) .k2b-ui,
+html:has(.k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
+  font-size: 1rem;
+}
+
+html:has(.k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
+  font-size: 1.125rem;
+  letter-spacing: normal;
+}
+
+html:has(.k2b-mobile-shell) .k2b-settings-section__heading h2,
+html:has(.k2b-mobile-shell) .k2b-notice-card__title,
+html:has(.k2b-mobile-shell) .k2b-placeholder__title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+
+html:has(.k2b-mobile-shell) .k2b-settings-section__heading p,
+html:has(.k2b-mobile-shell) .k2b-notice-card__description,
+html:has(.k2b-mobile-shell) .k2b-notice-card__body,
+html:has(.k2b-mobile-shell) .k2b-placeholder__description,
+html:has(.k2b-mobile-shell) .k2b-navigation__copy small,
+html:has(.k2b-mobile-shell) .k2b-segmented-control .k2b-segmented-control__option,
+html:has(.k2b-mobile-shell) .k2b-field__label,
+html:has(.k2b-mobile-shell) .k2b-field__description,
+html:has(.k2b-mobile-shell) .k2b-field__error {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
 /* Sized to the initial containing block rather than in vh units, so the shell
    adds no document height. Not a fixed layer: Safari colours the status bar
    from a fixed layer at the top edge, and keeps the colour it had for one that
@@ -1459,10 +1497,13 @@ html:has(.k2b-mobile-shell) textarea {
   flex: none;
 }
 
+/* As high with a title alone as with Back or a 44 px action, so the title and
+   the content stay in place between pages. */
 .k2b-ui .k2b-mobile-shell__header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
   padding: calc(env(safe-area-inset-top) + 0.75rem) max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-right)) 0.75rem
     max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-left));
   background: var(--k2b-surface-canvas);
@@ -1474,8 +1515,7 @@ html:has(.k2b-mobile-shell) textarea {
   margin: 0;
   overflow: hidden;
   font-size: 1.125rem;
-  font-weight: 650;
-  letter-spacing: -0.035em;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1492,6 +1532,18 @@ html:has(.k2b-mobile-shell) textarea {
   flex: none;
   align-items: center;
   gap: 0.75rem;
+}
+
+/* Header actions are 44 px icon targets with a glyph the size of the tab bar's,
+   and the last glyph ends at the gutter, as Back's starts at it. */
+.k2b-ui .k2b-mobile-shell__actions .k2b-icon-button {
+  min-width: 44px;
+  font-size: 1.375rem;
+}
+
+.k2b-ui .k2b-mobile-shell__actions > :last-child .k2b-icon-button,
+.k2b-ui .k2b-mobile-shell__actions > .k2b-icon-button:last-child {
+  margin-inline-end: -0.625rem;
 }
 
 .k2b-ui .k2b-mobile-shell__main {
@@ -1517,8 +1569,9 @@ html:has(.k2b-mobile-shell) textarea {
 
 /* ----------------------------------------------------------------- tab bar */
 
+/* Flat on the page canvas without a rule above it: the content's scroll fade
+   marks the edge while more content continues below. */
 .k2b-ui .k2b-tab-bar {
-  border-top: 1px solid var(--k2b-border);
   background: var(--k2b-surface-canvas);
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
@@ -1610,7 +1663,9 @@ html:has(.k2b-mobile-shell) textarea {
   gap: 1.25rem;
 }
 
-.k2b-ui .k2b-install-guide p {
+/* Only the guide's own text: a notice inside keeps its tone. */
+.k2b-ui .k2b-install-guide > p,
+.k2b-ui .k2b-install-guide__steps p {
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
@@ -1637,7 +1692,7 @@ html:has(.k2b-mobile-shell) textarea {
 
 .k2b-ui .k2b-install-guide__steps h3 {
   margin: 0 0 0.25rem;
-  font-size: 0.875rem;
+  font-size: inherit;
   font-weight: 600;
 }
 

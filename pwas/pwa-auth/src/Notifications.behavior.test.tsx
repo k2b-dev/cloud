@@ -195,6 +195,9 @@ test("push reports unsupported browsers, servers without push and iPhone tabs", 
   const { createPush } = await import("./push");
   await createRoot(async (dispose) => {
     expect(createPush(installation("apple-mobile", false), fakeBrowser({}).browser).state()).toBe("not-installed");
+    // Chrome on iPhone and an app's own browser view need the Home Screen app as well.
+    expect(createPush(installation("apple-browser", false), fakeBrowser({}).browser).state()).toBe("not-installed");
+    expect(createPush(installation("apple-in-app", false), fakeBrowser({}).browser).state()).toBe("not-installed");
     expect(createPush(installation("generic", false), fakeBrowser({}).browser).state()).toBe("unsupported");
     const noServer = createPush(installation("android", true), fakeBrowser({ permission: "default", config: 404 }).browser);
     const denied = createPush(installation("android", true), fakeBrowser({ permission: "denied" }).browser);

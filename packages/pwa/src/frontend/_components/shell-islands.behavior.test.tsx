@@ -79,7 +79,13 @@ const mount = (view: () => JSX.Element, options: { url?: string; before?: (dom: 
 const button = (dom: DomTestHarness, label: string) =>
   [...dom.document.querySelectorAll("button")].find((element) => element.textContent?.trim() === label) as HTMLButtonElement | undefined;
 const settings = () =>
-  createComponent(modules!.PhoneSettings, { account: { name: "Mia Muster" }, theme: "light", name: "iPhone", cloud: "Example Cloud" });
+  createComponent(modules!.PhoneSettings, {
+    account: { name: "Mia Muster" },
+    theme: "light",
+    name: "iPhone",
+    cloud: "Example Cloud",
+    version: "Cloud 1.0.0",
+  });
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
