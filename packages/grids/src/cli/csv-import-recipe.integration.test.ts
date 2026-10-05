@@ -7,6 +7,7 @@ import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as fields from "../service/fields";
+import { fromPublicRecordValues } from "../service/public-resources";
 import { createMany } from "../service/record-write";
 import { list } from "../service/records";
 
@@ -21,7 +22,7 @@ beforeAll(async () => {
 
 describe("CSV import recipe", () => {
   postgresTest(
-    "imports the converter's batches and lists them in CSV order, at most 500 per page",
+    "imports the converter's batches through public field IDs and lists them in CSV order, at most 500 per page",
     async () => {
       const baseId = testUuid();
       const tableId = testUuid();
@@ -36,7 +37,8 @@ describe("CSV import recipe", () => {
         const names = Array.from({ length: 501 }, (_, index) => `Person ${String(index + 1).padStart(3, "0")}`);
         await Bun.write(join(dir, "csv-to-records.ts"), converter);
         await Bun.write(join(dir, "people.csv"), ["Name,Since", ...names.map((value) => `${value},2026-10-05`)].join("\n"));
-        await Bun.write(join(dir, "columns.json"), JSON.stringify({ Name: name.data.id, Since: since.data.id }));
+        // columns.json maps headers to the public field IDs that `records shape` shows.
+        await Bun.write(join(dir, "columns.json"), JSON.stringify({ Name: name.data.shortId, Since: since.data.shortId }));
         const run = Bun.spawnSync(["bun", "csv-to-records.ts", "people.csv", "columns.json"], {
           cwd: dir,
           env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
@@ -45,7 +47,17 @@ describe("CSV import recipe", () => {
 
         for (const file of (await readdir(dir)).filter((entry) => entry.startsWith("records-")).sort()) {
           const { items } = (await Bun.file(join(dir, file)).json()) as { items: Record<string, unknown>[] };
-          const imported = await createMany(tableId, items, null, "direct");
+          // The import route converts public field IDs the same way before it creates the batch.
+          const converted = await Promise.all(items.map((item) => fromPublicRecordValues(tableId, item)));
+          const imported = await createMany(
+            tableId,
+            converted.map((item) => {
+              if (!item.ok) throw item.error;
+              return item.data;
+            }),
+            null,
+            "direct",
+          );
           if (!imported.ok) throw imported.error;
         }
 

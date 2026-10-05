@@ -62,11 +62,45 @@ test("the converter splits large files into batches of 500 and takes another del
   expect(result.batches[1]!.items[0]).toEqual({ Name01: "Person 501", Num001: "501" });
 });
 
-test("the converter fails on a mapped column the CSV does not have", async () => {
-  const result = await convert("Name\nJane\n", { Name: "Name01", Email: "Mail01" });
+test("the converter reads a quoted cell after a space", async () => {
+  const result = await convert('Name,Company,City\nJane, "Doe, Inc" , Berlin\n', { Name: "Name01", Company: "Firm01", City: "City01" });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.batches).toEqual([{ items: [{ Name01: "Jane", Firm01: "Doe, Inc", City01: "Berlin" }] }]);
+});
+
+// A subprocess converts half a million rows here, so this test gets the integration budget instead of the 5 s default.
+test("the converter numbers batches so that the shell glob keeps their order past 999 files", async () => {
+  const rows = Array.from({ length: 999 * 500 + 1 }, (_, index) => `P${index + 1}`);
+  const result = await convert(["Name", ...rows].join("\n"), { Name: "Name01" });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.files).toHaveLength(1000);
+  expect(result.files.slice(0, 2)).toEqual(["records-0001.json", "records-0002.json"]);
+  // `result.files` is sorted like the glob in the import loop, so each batch must start where the previous one ended.
+  expect(result.batches.map((batch) => batch.items[0]!.Name01)).toEqual(Array.from({ length: 1000 }, (_, index) => `P${index * 500 + 1}`));
+}, 30_000);
+
+// A malformed file must stop the recipe before any batch exists, or `records import` stores shifted or merged rows.
+test.each([
+  ["a mapped column the CSV does not have", "Name\nJane\n", 'The CSV has no column "Email".'],
+  ["an unclosed quote", 'Name,Email\n"Alice,alice@example.com\nBob,bob@example.com\n', "Row 2 opens a quote that is never closed."],
+  ["a mapped header that occurs twice", "Name,Email,Name\nAlice,alice@example.com,Bob\n", 'The CSV has the column "Name" 2 times.'],
+  [
+    "a row with more cells than the header",
+    "Name,Email\nJane,jane@example.com\n\nDoe, Jane,jane@example.com\n",
+    "Row 4 has a different number of cells than the header: 3, not 2.",
+  ],
+  ["a row with fewer cells than the header", "Name,Email\nJane\n", "Row 2 has a different number of cells than the header: 1, not 2."],
+])("the converter fails on %s and writes no file", async (_, csv, message) => {
+  const result = await convert(csv, { Name: "Name01", Email: "Mail01" });
   expect(result.exitCode).not.toBe(0);
-  expect(result.stderr).toContain('The CSV has no column "Email".');
+  expect(result.stderr).toContain(message);
   expect(result.files).toEqual([]);
+});
+
+test("the converter ignores a repeated header it does not map", async () => {
+  const result = await convert("Name,Notes,Notes\nJane,a,b\n", { Name: "Name01" });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.batches).toEqual([{ items: [{ Name01: "Jane" }] }]);
 });
 
 test("the CSV recipe and the first-rows queries use real commands and valid GQL", () => {

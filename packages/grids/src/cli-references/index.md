@@ -387,9 +387,9 @@ Grids has no CSV import, in the CLI or in the web app. Convert the CSV into `rec
    - `number` for amounts and quantities, written with a decimal point and without thousands separators, units, or currency signs: `1,5` or `1.234,50` fails the whole batch;
    - `date` for `YYYY-MM-DD`; convert `05.10.2026` or `10/05/2026` first;
    - `boolean` for `true`, `false`, `1`, or `0`;
-   - `select` stores option IDs, not labels; import such a column as `text` unless you map every label to its option ID yourself.
+   - `text` also for categories that would suit `select`: a `select` value is a JSON array of option IDs, even for a single choice, and the converter writes only plain text.
 2. Read the field public IDs with `cld grids records shape <base>:<table> --json` and write `columns.json`, which maps each CSV header to a field ID. Columns missing from the map are skipped.
-3. Save the converter below as `csv-to-records.ts` and run it with Bun. It reads quoted cells, line breaks inside quotes, a byte order mark, and Windows line endings, leaves empty cells out, and writes `records-001.json`, `records-002.json`, and so on with up to 500 records each. Run it in an empty folder, so no file from an earlier run is imported. Pass `';'` or `$'\t'` as the third argument for semicolon- or tab-separated files.
+3. Save the converter below as `csv-to-records.ts` and run it with Bun. It reads quoted cells, line breaks inside quotes, a byte order mark, and Windows line endings, leaves empty cells out, and writes `records-001.json`, `records-002.json`, and so on with up to 500 records each. It stops without writing a file when a quote is never closed, a row has more or fewer cells than the header, or a mapped header occurs more than once; the message names the row, counting the header as row 1 as a spreadsheet does. Run it in an empty folder, so no file from an earlier run is imported. Pass `';'` or `$'\t'` as the third argument for semicolon- or tab-separated files.
 4. Import the files in order. The loop stops at the first failing file and exits 1. The files before it are imported: delete them, fix the failing file, and run the loop again. After a timeout or a lost connection, check with `records ls` whether the failing batch arrived first; importing it again creates duplicates.
 
 ```json
@@ -414,8 +414,9 @@ for (let i = 0; i < text.length; i++) {
       i++;
     } else if (char === '"') quoted = false;
     else cell += char;
-  } else if (char === '"' && cell === "") {
+  } else if (char === '"' && !cell.trim()) {
     quoted = true;
+    cell = "";
   } else if (char === delimiter) {
     row.push(cell);
     cell = "";
@@ -428,17 +429,25 @@ for (let i = 0; i < text.length; i++) {
     cell += char;
   }
 }
+if (quoted) throw new Error(`Row ${rows.length + 1} opens a quote that is never closed.`);
 if (cell || row.length) rows.push([...row, cell]);
-const [firstRow = [], ...data] = rows.filter((cells) => cells.some((value) => value.trim()));
-const header = firstRow.map((name) => name.trim());
+// Rows are numbered from 1, as in a spreadsheet.
+const [first, ...data] = rows.map((cells, i) => ({ number: i + 1, cells })).filter(({ cells }) => cells.some((value) => value.trim()));
+const header = (first?.cells ?? []).map((name) => name.trim());
 for (const name of Object.keys(columns)) {
-  if (!header.includes(name)) throw new Error(`The CSV has no column "${name}".`);
+  const count = header.filter((column) => column === name).length;
+  if (count !== 1) throw new Error(count ? `The CSV has the column "${name}" ${count} times.` : `The CSV has no column "${name}".`);
 }
-const items = data.map((cells) =>
+for (const { number, cells } of data) {
+  if (cells.length !== header.length)
+    throw new Error(`Row ${number} has a different number of cells than the header: ${cells.length}, not ${header.length}.`);
+}
+const items = data.map(({ cells }) =>
   Object.fromEntries(header.flatMap((name, i) => (columns[name] && cells[i]?.trim() ? [[columns[name], cells[i].trim()]] : []))),
 );
+const digits = Math.max(3, String(Math.ceil(items.length / 500)).length);
 for (let start = 0; start < items.length; start += 500) {
-  const file = `records-${String(start / 500 + 1).padStart(3, "0")}.json`;
+  const file = `records-${String(start / 500 + 1).padStart(digits, "0")}.json`;
   await Bun.write(file, JSON.stringify({ items: items.slice(start, start + 500) }));
   console.log(file);
 }
@@ -501,7 +510,7 @@ cld grids records export Bookshop:Authors --format csv --out authors.csv
 cld grids records audit Bookshop:Authors/<record-id> --json
 ```
 
-Without a sort, `records ls` returns records in the order they were created, oldest first, so `--limit 10` gives the first ten rows of an import. A page holds at most 500 records whatever `--limit` says; pass its `nextCursor` as `--cursor` for the next page. For the first rows in another order, use GQL:
+For a stored table, `records ls` without a sort returns records in the order they were created, oldest first, so `--limit 10` gives the first ten rows of an import. A page of a stored table holds at most 500 records whatever `--limit` says; pass its `nextCursor` as `--cursor` for the next page. For the first rows in another order, use GQL:
 
 ```bash
 cld grids gql run Bookshop --query 'from table Authors; sort Name asc; limit 10' --json
