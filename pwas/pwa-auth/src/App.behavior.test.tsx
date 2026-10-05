@@ -80,6 +80,8 @@ mock.module("./authenticator", () => ({
 }));
 mock.module("./install", () => ({
   installationPlatform: () => "generic",
+  onApplePhone: () => false,
+  embedded: () => false,
   createInstallation: (): Installation => ({
     installed: () => true,
     busy: () => false,

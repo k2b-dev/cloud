@@ -2,7 +2,7 @@ import { Button, InlineGuidance, LocaleProvider, NoticeCard, PanelDialog, Status
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
-import type { Installation } from "./install";
+import { type Installation, onApplePhone } from "./install";
 import type { Preferences } from "./preferences";
 import type { Push, PushState } from "./push";
 
@@ -61,9 +61,9 @@ function DeniedSteps(props: { platform: Installation["platform"] }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const steps = createMemo(() =>
-    props.platform === "apple-mobile"
+    onApplePhone(props.platform)
       ? [t().pushDeniedIos1, t().pushDeniedIos2, t().pushDeniedIos3]
-      : props.platform === "android"
+      : props.platform === "android" || props.platform === "android-browser"
         ? [t().pushDeniedAndroid1, t().pushDeniedAndroid2, t().pushDeniedAndroid3]
         : [t().pushDeniedBrowser1, t().pushDeniedBrowser2, t().pushDeniedBrowser3],
   );

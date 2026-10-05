@@ -143,7 +143,8 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 It renders the app's document head, a
 [`MobileShell`](/en/ui/layout/mobile-shell) with a header, and a
 [`TabBar`](/en/ui/layout/tab-bar) with Start and the first three parts. Start
-lists every part and Settings, so it also serves as "More". The layout
+lists every part, so it also serves as "More", and opens Settings from its
+header. The layout
 provides the request locale, follows the person's light or dark theme, and
 sets `Referrer-Policy: no-referrer` and `frame-ancestors 'none'`. In the
 browser, it registers the app's service worker, shows an offline notice, and
@@ -196,10 +197,12 @@ grants, as on the web.
   script request below `/pwa` that does not go to the mobile app.
 - The server renders the initial data and decides permissions. Islands handle
   only the interaction. Views and filters live in the URL.
-- Design for the phone: one column, flat sections without boxes inside boxes,
-  one primary action per screen, targets of at least 44 px, nothing that needs
-  hover, public `@k2b/ui` components, light and dark, and every language the
-  application supports.
+- Design for the phone: one column, flat sections without boxes inside boxes
+  and without lines between rows or sections, one primary action per screen,
+  targets of at least 44 px, nothing that needs hover, public `@k2b/ui`
+  components, light and dark, and every language the application supports.
+  Use the shell's type scale; see its
+  [touch rules](/en/ui/layout/mobile-shell).
 
 ## Touch gestures
 

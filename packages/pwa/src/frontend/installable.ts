@@ -96,9 +96,9 @@ const offlineDocument = async (): Promise<string> => {
       font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-text-size-adjust: 100%;
     }
     main { max-width: 22rem; padding: 2rem 1.5rem; }
-    img { display: block; width: 72px; height: 72px; margin: 0 auto 0.75rem; object-fit: contain; }
+    img { display: block; width: 64px; height: 64px; margin: 0 auto 0.75rem; object-fit: contain; }
     .name { margin: 0; color: var(--secondary); font-size: 0.875rem; }
-    h1 { margin: 1.5rem 0 0.5rem; font-size: 1.25rem; font-weight: 650; letter-spacing: -0.02em; }
+    h1 { margin: 1.5rem 0 0.5rem; font-size: 1.125rem; font-weight: 600; line-height: 1.5rem; }
     p { margin: 0 0 1.5rem; color: var(--secondary); }
     button { min-height: 44px; padding: 0 1.25rem; border: 0; border-radius: 0.5rem; background: var(--solid); color: #fff; font: inherit; font-weight: 600; }
     [hidden] { display: none; }

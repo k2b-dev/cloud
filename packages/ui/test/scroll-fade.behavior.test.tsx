@@ -222,3 +222,25 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("a server-rendered mobile shell fades its content at the tab bar once observed", async () => {
+    const dom = createDomTestHarness();
+    const { observeMobileShell } = await import("../src/layout/MobileShell");
+    dom.root.innerHTML =
+      '<div class="k2b-mobile-shell"><main class="k2b-mobile-shell__main"><div class="k2b-scroll-area k2b-mobile-shell__body" data-scroll-fade-mode="both"></div></main><nav class="k2b-tab-bar"></nav></div>';
+    const shell = dom.root.firstElementChild as HTMLElement;
+    const body = shell.querySelector<HTMLElement>(".k2b-mobile-shell__body")!;
+    Object.defineProperties(body, { scrollHeight: { value: 500 }, clientHeight: { value: 200 } });
+    const stop = observeMobileShell(shell);
+    try {
+      expect(body.dataset.scrollFade).toBe("bottom");
+      body.scrollTop = 300;
+      body.dispatchEvent(new Event("scroll"));
+      expect(body.dataset.scrollFade).toBe("top");
+    } finally {
+      stop();
+      expect(body.dataset.scrollFade).toBeUndefined();
+      dom.cleanup();
+    }
+  });

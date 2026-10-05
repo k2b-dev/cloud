@@ -28,16 +28,17 @@
   margin: 0 auto;
 }
 
+/* No rules anywhere: spacing alone groups the content. The hero (icon,
+   heading, lead) is centred; steps, fields and hints start at the edge. */
 .pwa-welcome {
   padding-top: 1.5rem;
-  text-align: center;
 }
 
 .pwa-welcome__icon {
   display: block;
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 1.25rem;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 1rem;
   object-fit: contain;
 }
 
@@ -49,15 +50,20 @@
 
 .pwa-welcome__block h2 {
   margin: 0;
-  font-size: 1.375rem;
-  font-weight: 650;
-  letter-spacing: -0.03em;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  text-align: center;
   text-wrap: balance;
 }
 
-.pwa-welcome__block p {
+.pwa-welcome__block > p {
   margin: 0;
   color: var(--k2b-text-secondary);
+}
+
+.pwa-welcome__block .pwa-welcome__lead {
+  text-align: center;
 }
 
 .pwa-welcome__primary {
@@ -69,7 +75,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  text-align: start;
 }
 
 .pwa-welcome__block .pwa-welcome__message {
@@ -85,42 +90,23 @@
   display: block;
   margin: 0.5rem 0;
   font-size: 2.5rem;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
-}
-
-.pwa-welcome__link {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem 0;
-  border-block: 1px solid var(--k2b-border);
-}
-
-.pwa-welcome .k2b-install-guide {
-  text-align: start;
-}
-
-.pwa-start {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.pwa-start > .k2b-navigation + .k2b-navigation {
-  padding-top: 1rem;
-  border-top: 1px solid var(--k2b-border);
+  text-align: center;
 }
 
 .pwa-settings {
   padding-top: 0.5rem;
 }
 
+/* Every group ends 2.75rem before the next one starts: a settings section's
+   2rem plus the 0.75rem its last control keeps below itself. */
 .pwa-settings__account {
   display: flex;
   align-items: center;
   gap: 1rem;
+  margin-bottom: 2.75rem;
 }
 
 .pwa-settings__account p {
@@ -128,28 +114,37 @@
 }
 
 .pwa-settings__name-line {
-  font-weight: 600;
+  font-weight: 500;
 }
 
-.pwa-settings__meta,
-.pwa-settings__version {
+.pwa-settings__meta {
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
-}
-
-.pwa-settings__version {
-  margin: 2.5rem 0 0;
-  text-align: center;
 }
 
 .pwa-settings__name {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-bottom: 1.5rem;
 }
 
 .pwa-settings__name > .k2b-button {
   align-self: flex-start;
+}
+
+/* Signing out ends the app on this phone, so it stands apart at the end, with
+   the version as the last line. */
+.pwa-settings__end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.pwa-settings__version {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
 }

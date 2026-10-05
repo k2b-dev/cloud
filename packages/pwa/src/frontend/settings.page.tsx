@@ -22,15 +22,13 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <PwaLayout c={c} title={t.settings} back={{ href: PWA_SCOPE, label: t.back }}>
-      <div class="pwa-settings">
-        <PhoneSettings
-          account={{ name, mail: user.mail || undefined, avatar }}
-          theme={readThemeFromCookieHeader(c.req.header("Cookie"))}
-          name={device?.name ?? ""}
-          cloud={cloud}
-        />
-        <p class="pwa-settings__version">{t.version({ version: buildMetadata.version })}</p>
-      </div>
+      <PhoneSettings
+        account={{ name, mail: user.mail || undefined, avatar }}
+        theme={readThemeFromCookieHeader(c.req.header("Cookie"))}
+        name={device?.name ?? ""}
+        cloud={cloud}
+        version={t.version({ version: buildMetadata.version })}
+      />
     </PwaLayout>
   );
 });

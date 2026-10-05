@@ -1,14 +1,45 @@
 import { createSignal, onCleanup } from "solid-js";
 
-/** Which installation steps a browser needs; `in-app` is an embedded browser that cannot install at all. */
-export type InstallationPlatform = "in-app" | "apple-mobile" | "apple-desktop" | "android" | "generic";
+/**
+ * Which installation steps a browser needs. `apple-in-app` and `in-app` are browsers embedded in another app, on
+ * iPhone or iPad and elsewhere, which cannot install at all. `apple-browser` is Chrome, Firefox, Edge, or another
+ * browser on iPhone or iPad, which installs through its Share menu but less reliably than Safari. `android-browser`
+ * is an Android browser other than Chrome.
+ */
+export type InstallationPlatform =
+  | "in-app"
+  | "apple-in-app"
+  | "apple-browser"
+  | "apple-mobile"
+  | "apple-desktop"
+  | "android-browser"
+  | "android"
+  | "generic";
 
+/** Tokens of apps that open links in their own browser view. Case-sensitive, so `Line/` matches only LINE. */
+const EMBEDDED =
+  /FBAN|FBAV|FB_IAB|Instagram|LinkedInApp|Twitter|Snapchat|musical_ly|BytedanceWebview|Pinterest|MicroMessenger|\bLine\/|GSA\/|; wv\)/;
+/** Browsers on iPhone and iPad other than Safari. */
+const APPLE_BROWSER = /CriOS\/|FxiOS\/|EdgiOS\/|OPiOS\/|OPT\/|Ddg\/|DuckDuckGo\/|YaBrowser\//;
+/** Android browsers whose user agent also names Chrome. */
+const ANDROID_OTHER = /SamsungBrowser|EdgA\/|OPR\/|YaBrowser|Firefox\//;
+
+/**
+ * Classifies the browser from its user agent; `platform` and `touchPoints` only tell an iPad that reports a Mac apart.
+ * A pure function, so the server and the browser compute the same value from the same user agent. Not a device
+ * check: an installed app on iPhone may itself look like an embedded browser.
+ */
 export function installationPlatform(userAgent: string, platform: string, touchPoints: number): InstallationPlatform {
-  if (/Instagram|FBAN|FBAV|Line\/|Telegram|; wv\)/i.test(userAgent)) return "in-app";
-  // iPadOS reports a Mac; only touch points tell them apart.
-  if (/iPad|iPhone|iPod/.test(userAgent) || (platform === "MacIntel" && touchPoints > 1)) return "apple-mobile";
+  if (/iPad|iPhone|iPod/.test(userAgent) || (platform === "MacIntel" && touchPoints > 1)) {
+    if (EMBEDDED.test(userAgent)) return "apple-in-app";
+    if (APPLE_BROWSER.test(userAgent)) return "apple-browser";
+    // Safari and every real browser send `Safari/`; a bare web view inside an app, such as a QR scanner, does not.
+    if (!/Safari\//.test(userAgent)) return "apple-in-app";
+    return "apple-mobile";
+  }
+  if (EMBEDDED.test(userAgent)) return "in-app";
   if (/Macintosh/.test(userAgent) && /Safari/.test(userAgent) && !/Chrome|Chromium|Edg\//.test(userAgent)) return "apple-desktop";
-  if (/Android/.test(userAgent)) return "android";
+  if (/Android/.test(userAgent)) return /Chrome\//.test(userAgent) && !ANDROID_OTHER.test(userAgent) ? "android" : "android-browser";
   return "generic";
 }
 

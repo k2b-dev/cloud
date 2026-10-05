@@ -1,8 +1,9 @@
 # TabBar
 
 `TabBar` is the bottom navigation between a phone app's top-level pages: up to
-five native links with an icon above each label. It is flat and opaque, with a
-hairline above it and no badges.
+five native links with an icon above each label. It is flat and opaque on the
+page canvas, without a rule above it and without badges. The content's scroll
+fade marks its edge while more content continues below.
 
 ## Import
 

@@ -22,7 +22,7 @@ export type WelcomeProps = {
   cloud: string;
   /** The app icon of the installation. */
   icon: string;
-  /** The app's address, which an embedded browser copies to open it in Safari or Chrome. */
+  /** The app's address, which a browser inside another app copies to open it in Safari or Chrome. */
   url: string;
   /** The platform as the server read it from the user agent, so the installation steps render with the page. */
   platform: InstallationPlatform;
@@ -65,6 +65,8 @@ export default function Welcome(props: WelcomeProps) {
   const [install, setInstall] = createSignal(renderedPrompt(props.platform));
   const [phone, setPhone] = createSignal(isPhone(props.platform));
   const copy = clipboard.createWriter({ write: (value: string) => navigator.clipboard.writeText(value) });
+  /** A browser inside another app: the installation guide copies the link itself. */
+  const embedded = () => install().platform === "in-app" || install().platform === "apple-in-app";
 
   const failure = (answer: PhoneAnswer): string => {
     if (answer.status === 0) return t().offline;
@@ -242,7 +244,9 @@ export default function Welcome(props: WelcomeProps) {
           fallback={
             <div class="pwa-welcome__block">
               <h2>{t().connect({ cloud: props.cloud })}</h2>
-              <p>{props.state === "ended" ? t().ended : props.state === "expired" ? t().expired : t().connectLead}</p>
+              <p class="pwa-welcome__lead">
+                {props.state === "ended" ? t().ended : props.state === "expired" ? t().expired : t().connectLead}
+              </p>
               <Button class="pwa-welcome__primary" disabled={busy()} onClick={() => void scan()}>
                 <i class="ti ti-qrcode" aria-hidden="true" />
                 {t().scanCode}
@@ -283,7 +287,7 @@ export default function Welcome(props: WelcomeProps) {
               <output class="pwa-welcome__code" aria-label={t().codeLabel}>
                 {groupedCode(pending().code)}
               </output>
-              <p>{t().enterCode}</p>
+              <p class="pwa-welcome__lead">{t().enterCode}</p>
               {status()}
               <Button variant="secondary" onClick={useAnotherCode}>
                 {t().useAnotherCode}
@@ -295,23 +299,26 @@ export default function Welcome(props: WelcomeProps) {
       <div class="pwa-browser-only">
         <div class="pwa-welcome__block">
           <h2>{t().install}</h2>
-          <p>{t().installLead({ cloud: props.cloud })}</p>
-          <Show when={link()}>
+          <p class="pwa-welcome__lead">{t().installLead({ cloud: props.cloud })}</p>
+          <Show when={!embedded() && link()}>
             {(value) => (
-              <div class="pwa-welcome__link">
+              <>
                 <p>{t().installFirst}</p>
                 <Button variant="secondary" onClick={() => void copy.copy(value())}>
-                  <i class="ti ti-copy" aria-hidden="true" />
+                  <i class={copy.wasCopied() ? "ti ti-check" : "ti ti-copy"} aria-hidden="true" />
                   {copy.wasCopied() ? t().linkCopied : t().copyLink}
                 </Button>
                 <Show when={copy.error()}>
                   <p role="alert">{t().copyFailed}</p>
                 </Show>
-              </div>
+              </>
             )}
           </Show>
           <Show when={phone()} fallback={<p>{t().phonesOnly}</p>}>
-            <InstallGuide appName={props.cloud} install={install()} url={props.url} />
+            {/* Inside another app, the guide's one copy action takes the pairing link along to Safari or Chrome. If
+                copying fails, the guide shows the link to copy by hand: the app around the page already opened it, and
+                it pairs only once the code it yields is typed on the web. */}
+            <InstallGuide appName={props.cloud} install={install()} url={link() ?? props.url} />
           </Show>
           <p class="pwa-welcome__hint">{t().alreadyInstalled}</p>
         </div>

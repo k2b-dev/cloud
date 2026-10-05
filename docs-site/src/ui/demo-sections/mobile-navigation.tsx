@@ -163,7 +163,7 @@ export function TabBarDemo() {
     <DemoCard
       id="tab-bar"
       chip={{ kind: "component", name: "TabBar", from: "@k2b/ui" }}
-      description="Up to five native links with an icon above each label; the open page carries aria-current. Flat and opaque, with a hairline above."
+      description="Up to five native links with an icon above each label; the open page carries aria-current. Flat and opaque on the canvas, without a rule; the content's scroll fade marks its edge."
       code={`<TabBar label="App" items={[
   { id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: true },
   { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "/pwa/spaces" },
@@ -178,10 +178,11 @@ export function TabBarDemo() {
 
 const platforms: { value: InstallationPlatform; label: string }[] = [
   { value: "apple-mobile", label: "iPhone" },
+  { value: "apple-browser", label: "iOS Chrome" },
+  { value: "apple-in-app", label: "In an app" },
   { value: "android", label: "Android" },
   { value: "apple-desktop", label: "Mac" },
   { value: "generic", label: "Other" },
-  { value: "in-app", label: "In-app" },
 ];
 
 /** A fixed installation state per platform; a real page uses createInstallPrompt() in the browser. */
@@ -201,7 +202,7 @@ export function InstallGuideDemo() {
     <DemoCard
       id="install-guide"
       chip={{ kind: "component", name: "InstallGuide", from: "@k2b/ui" }}
-      description="Installation guidance for the browser in use: the browser's own dialog where it offers one, otherwise the steps for iPhone and iPad, Android, Safari on a Mac, other browsers, or a link to copy out of an in-app browser."
+      description="Installation guidance for the browser in use: the browser's own dialog where it offers one, otherwise the steps for iPhone and iPad, Android, Safari on a Mac, or other browsers. Inside another app, which cannot install, a warning to open the page in Safari or the browser and a link to copy."
       code={`const install = createInstallPrompt();
 <InstallGuide appName="Northwind" install={install} url={location.href} />`}
     >

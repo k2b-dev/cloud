@@ -3,7 +3,7 @@ import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/serv
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { getRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
-import { createNavigation, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
+import { createNavigation, IconButtonLink, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
 import PairingNotice from "./_components/PairingNotice.island";
@@ -32,20 +32,23 @@ export default ssr<AuthContext>(async (c) => {
       items: () =>
         parts.map((part) => ({ id: part.id, label: part.name, description: part.description, icon: part.icon, href: part.pwa.href })),
     });
-    const more = createNavigation({
-      items: () => [
-        { id: "settings", label: t.settings, description: t.settingsDescription, icon: "ti ti-settings", href: `${PWA_SCOPE}settings` },
-      ],
-    });
     return () => (
-      <PwaLayout c={c} title={cloud}>
+      <PwaLayout
+        c={c}
+        title={cloud}
+        // Settings sits in the header, as in a phone's own apps, so Start stays one list of parts.
+        actions={
+          <IconButtonLink href={`${PWA_SCOPE}settings`} label={t.settings} tooltip={false}>
+            <i class="ti ti-settings" aria-hidden="true" />
+          </IconButtonLink>
+        }
+      >
         <div class="pwa-start">
           {parts.length > 0 ? (
             <Navigation navigation={apps} label={t.apps} />
           ) : (
             <Placeholder icon="ti ti-apps" title={t.noApps} description={t.noAppsDescription} />
           )}
-          <Navigation navigation={more} label={t.settings} />
         </div>
         <PairingNotice name={user.displayName || user.uid} />
       </PwaLayout>
@@ -56,7 +59,7 @@ export default ssr<AuthContext>(async (c) => {
   if (state === "blocked") {
     return () => (
       <PwaLayout c={c} title={cloud}>
-        <Placeholder icon="ti ti-lock" title={t.blocked} action={<SignOut cloud={cloud} />} />
+        <Placeholder icon="ti ti-lock" title={t.blocked} description={t.blockedDetail} action={<SignOut cloud={cloud} />} />
         <PairingNotice />
       </PwaLayout>
     );
