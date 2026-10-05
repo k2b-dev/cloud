@@ -9,34 +9,26 @@ import { completeDeviceDecision, DeviceDecisionSchema } from "./device-action";
 import oauthErrorPage from "./error";
 import oauthPage from "./page";
 
-const consentHeaders =
-  (referrerPolicy: "no-referrer" | "same-origin"): MiddlewareHandler =>
-  async (c, next) => {
-    c.header("Cache-Control", "no-store");
-    c.header("Pragma", "no-cache");
-    c.header("Content-Security-Policy", "frame-ancestors 'none'");
-    c.header("X-Frame-Options", "DENY");
-    c.header("Referrer-Policy", referrerPolicy);
-    await next();
-  };
-// The device page's decision form is checked by Origin; with `no-referrer` browsers send `Origin: null`.
-// `same-origin` keeps the user code out of cross-origin referrers while sending the real origin to Cloud.
-const devicePageHeaders = consentHeaders("same-origin");
+// The consent and device forms are checked by Origin, and browsers send `Origin: null` for a form
+// posted from a `no-referrer` page. `same-origin` keeps request IDs and user codes out of
+// cross-origin referrers while sending Cloud its real origin.
+const decisionPageHeaders: MiddlewareHandler = async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  c.header("Pragma", "no-cache");
+  c.header("Content-Security-Policy", "frame-ancestors 'none'");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "same-origin");
+  await next();
+};
 
 export default new Hono<AuthContext>()
-  .get(
-    "/oauth/consent",
-    consentHeaders("no-referrer"),
-    auth.requireRole("authenticated", ssr.access),
-    auth.requireUser(ssr.access),
-    ...consentPage,
-  )
+  .get("/oauth/consent", decisionPageHeaders, auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...consentPage)
   .post("/oauth/consent", rateLimit(), auth.requireRole("authenticated"), auth.requireUser(), v("form", ConsentDecisionSchema), (c) =>
     completeConsent(c, c.req.valid("form")),
   )
   .get(
     "/oauth/device",
-    devicePageHeaders,
+    decisionPageHeaders,
     rateLimit(),
     auth.requireRole("authenticated", ssr.access),
     auth.requireUser(ssr.access),
@@ -44,7 +36,7 @@ export default new Hono<AuthContext>()
   )
   .post(
     "/oauth/device",
-    devicePageHeaders,
+    decisionPageHeaders,
     rateLimit(),
     auth.requireRole("authenticated"),
     auth.requireUser(),
