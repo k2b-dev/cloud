@@ -10,7 +10,7 @@ import adminPage from "./frontend/admin";
 import adminSecurityPage from "./frontend/admin-security";
 import { publicAttachmentRoutes } from "./frontend/public-attachments";
 import { mailHelp } from "./help";
-import { migrate } from "./migrate";
+import { buildOptionalSearchIndex, migrate } from "./migrate";
 import { createMailNotificationService } from "./notifications";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
@@ -42,7 +42,11 @@ const result = await app.start({
   help: mailHelp,
   openapi: apiRoutes,
   lifecycle: {
-    setup: migrate,
+    setup: async () => {
+      await migrate();
+      // Search ranks natively until the optional index is ready, so startup does not wait for it.
+      void buildOptionalSearchIndex();
+    },
     start: async () => {
       try {
         await mailNotifications.start();

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
-import { migrate } from "./migrate";
+import { buildOptionalSearchIndex, migrate } from "./migrate";
 
 const suite = suiteFor("database", "nats");
 
@@ -89,6 +89,122 @@ suite("mail baseline schema", () => {
       sent_copy_pending: "false",
       versions: 1,
     });
+  });
+
+  test("reruns without waiting for the lock a concurrent index build holds on messages", async () => {
+    await migrate();
+    const build = await sql.reserve();
+    try {
+      // CREATE INDEX CONCURRENTLY holds this lock for as long as the build runs.
+      await build`BEGIN`.simple();
+      await build`LOCK TABLE mail.message_contents IN SHARE UPDATE EXCLUSIVE MODE`.simple();
+      const startedAt = performance.now();
+      await migrate();
+      expect(performance.now() - startedAt).toBeLessThan(5_000);
+    } finally {
+      await build`ROLLBACK`.simple();
+      build.release();
+    }
+  });
+
+  test("leaves the optional BM25 index to installations with pg_textsearch", async () => {
+    const [extension] = await sql<{ installed: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed
+    `;
+    const outcome = await buildOptionalSearchIndex();
+    const [index] = await sql<{ present: boolean }[]>`
+      SELECT to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS present
+    `;
+    if (extension?.installed) {
+      expect(["built", "ready"]).toContain(outcome);
+      expect(index?.present).toBe(true);
+    } else {
+      expect(outcome).toBe("unavailable");
+      expect(index?.present).toBe(false);
+    }
+  });
+
+  test("builds the BM25 index once at a time without session locks, and replaces a broken one", async () => {
+    const [extension] = await sql<{ installed: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed
+    `;
+    // The extension is optional and CI databases run without it; run this file against one that has it.
+    if (!extension?.installed) return;
+    const index = async () => {
+      const [row] = await sql<{ method: string | null; valid: boolean | null }[]>`
+        SELECT
+          (SELECT am.amname FROM pg_class c JOIN pg_am am ON am.oid = c.relam WHERE c.oid = to_regclass('mail.message_contents_bm25_idx')) AS method,
+          (SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('mail.message_contents_bm25_idx')) AS valid
+      `;
+      return row;
+    };
+    const buildRuns = async () => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const [row] = await sql<{ pid: number }[]>`
+          SELECT pid FROM pg_stat_progress_create_index WHERE index_relid = to_regclass('mail.message_contents_bm25_idx')
+        `;
+        if (row) return row.pid;
+        await Bun.sleep(25);
+      }
+      throw new Error("The index build did not start");
+    };
+    const advisoryLocks = async () => {
+      const [row] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM pg_locks
+        WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      `;
+      return row?.count;
+    };
+    // An open write keeps a concurrent build waiting, so each check sees the build while it runs.
+    const writer = await sql.reserve();
+    const other = await sql.reserve();
+    try {
+      // An index of another kind under the name is replaced.
+      await sql`DROP INDEX IF EXISTS mail.message_contents_bm25_idx`;
+      await sql`CREATE INDEX message_contents_bm25_idx ON mail.message_contents (id)`;
+      expect(await buildOptionalSearchIndex()).toBe("built");
+      expect(await index()).toEqual({ method: "bm25", valid: true });
+
+      // While one start builds, another one leaves the build alone, and neither holds a session lock.
+      await sql`DROP INDEX mail.message_contents_bm25_idx`;
+      await writer`BEGIN`.simple();
+      await writer`LOCK TABLE mail.message_contents IN ROW EXCLUSIVE MODE`.simple();
+      const build = buildOptionalSearchIndex();
+      await buildRuns();
+      expect(await buildOptionalSearchIndex()).toBe("busy");
+      expect(await advisoryLocks()).toBe(0);
+      await writer`COMMIT`.simple();
+      expect(await build).toBe("built");
+      expect(await index()).toEqual({ method: "bm25", valid: true });
+      expect(await buildOptionalSearchIndex()).toBe("ready");
+
+      // A build that another process still runs is left alone.
+      await sql`DROP INDEX mail.message_contents_bm25_idx`;
+      await writer`BEGIN`.simple();
+      await writer`LOCK TABLE mail.message_contents IN ROW EXCLUSIVE MODE`.simple();
+      const running = other`
+        CREATE INDEX CONCURRENTLY message_contents_bm25_idx ON mail.message_contents USING bm25 (plain_text) WITH (text_config = 'simple')
+      `
+        .simple()
+        .then(
+          () => "built",
+          () => "interrupted",
+        );
+      const pid = await buildRuns();
+      expect(await buildOptionalSearchIndex()).toBe("busy");
+
+      // An interrupted build leaves an invalid index, which the next start replaces.
+      await sql`SELECT pg_cancel_backend(${pid}::int)`;
+      expect(await running).toBe("interrupted");
+      await writer`COMMIT`.simple();
+      expect(await index()).toEqual({ method: "bm25", valid: false });
+      expect(await buildOptionalSearchIndex()).toBe("built");
+      expect(await index()).toEqual({ method: "bm25", valid: true });
+    } finally {
+      await writer`ROLLBACK`.simple();
+      writer.release();
+      other.release();
+    }
   });
 
   test("turns each folder's sidebar switch into its display once, and keeps the switch for an older image", async () => {

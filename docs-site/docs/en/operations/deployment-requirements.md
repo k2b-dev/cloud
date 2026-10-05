@@ -561,3 +561,65 @@ not prove that the optional indexes are usable.
 The Filegate public origin must be reachable from the requesting user's browser
 or CLI. See [private file lists and downloads](/en/apps/filesv2#compose-private-file-lists-and-downloads)
 for the capability flow, lease expiry, and access checks.
+
+## Optional Mail search ranking
+
+Mail searches with native PostgreSQL full-text search on every supported
+version. With `pg_textsearch` installed as described in
+[Optional Help search ranking](#optional-help-search-ranking), Mail ranks with
+BM25 once its index `mail.message_contents_bm25_idx` is valid. Mailboxes set
+to `postgres` keep native ranking.
+
+Mail creates the index itself. After its schema setup, every Mail start checks
+for the extension and the index. If the index is missing or invalid, Mail
+builds it in the background with `CREATE INDEX CONCURRENTLY`:
+
+- Mail starts and searches natively while the index builds; mail keeps
+  arriving.
+- One Mail process builds at a time, coordinated through a NATS lease. A build
+  that another process or an operator is still running is left alone. Postgres
+  hides which index another database role builds, so while another role builds
+  any index in the same database, Mail logs that and leaves the build to its
+  next start. Every step is a single statement without session state, so the
+  build also works behind a transaction pooler.
+- The build has no time limit. With `pg_textsearch` 1.5.1, a build reacts to a
+  cancel request or `statement_timeout` only after it has read every message,
+  so a limit would only discard a finished build.
+- A build that fails is removed, logged as a warning from `mail:migrate`, and
+  tried again on the next start. An invalid index left by an interrupted build,
+  or an index of another kind under the same name, is replaced on the next
+  start.
+
+Build time grows with the stored message text. With 92,000 invented messages
+of about 1 KB of text each on PostgreSQL 17 and `pg_textsearch` 1.4.0, the
+build took 18 to 24 seconds and the index used 34 MB. While it runs, the build
+holds a lock that keeps autovacuum and other schema changes on Mail messages
+waiting. The current Mail setup does not need that lock once its indexes exist,
+but an older Mail image that starts during the build waits for it and can fail
+its setup until the build finishes.
+
+To decide when the build runs, create the index yourself before Mail starts,
+for example in a maintenance window. Mail then finds the valid index and skips
+its build:
+
+```sql
+SET statement_timeout = 0;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS message_contents_bm25_idx
+  ON mail.message_contents
+  USING bm25 ((COALESCE(subject, '') || ' ' || COALESCE(subject, '') || ' ' || COALESCE(plain_text, '')))
+  WITH (text_config = 'simple');
+```
+
+Check a mailbox with `cld mail status --mailbox <mailbox> --json`:
+`search.pgTextsearchInstalled` shows the extension, and `search.bm25Ready`
+turns `true` once the index is valid. To return one mailbox to native ranking,
+run `cld mail configure --mailbox <mailbox> --search-backend postgres`. To
+remove BM25 ranking for every mailbox, drop the index:
+
+```sql
+DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx;
+```
+
+Mail builds the index again on its next start while the extension stays
+installed, so set the mailboxes to `postgres` first if BM25 should stay off. See [Mail search in large mailboxes](/en/apps/mail#search-in-large-mailboxes)
+for how search bounds its work.
