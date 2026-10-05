@@ -153,6 +153,15 @@ cld spaces attachments delete Item01 File01 --yes
 
 An item's links are its Cloud references plus external URLs. `references` manages Cloud resources by type and ID; `links` manages external `http(s)` URLs (at most 20 per item, 512 characters each) and `links ls` returns both groups. A GitHub issue or pull request URL carries a `preview` with `repo`, `number`, `type`, `title`, and `state` (`open`, `closed`, `merged`) once the server has fetched it; the preview is display-only, cached briefly, and `null` when it is not yet known, the repository is private without a Space token, or the link is not a GitHub issue. Link a task to its issue instead of restating the issue in the description. A Space administrator stores a GitHub token for private repositories in the Space settings; the CLI does not manage it.
 
+A reference is a resource type and ID from the app that owns the resource; `--label` is required and is the name the task shows. Spaces stores the pair without checking it, so copy both from that app's output. A note is `notebooks.note` with the six-character note ID. A file or folder in Files is `filesv2.entry` with the `resourceId` from `cld filesv2 stat --json`:
+
+```bash
+id=$(cld filesv2 stat team:/Projects/plan.ods --json | jq -r .resourceId)
+cld spaces references add Item01 --type filesv2.entry --id "$id" --label "plan.ods"
+```
+
+A Files ID stands for the file's area and path. Replacing the file's content keeps the reference working; after a move or rename the task shows only the label and no longer opens the file, so delete the reference and add the new ID. To upload a file first, see `cld filesv2 reference`.
+
 Comments can be edited and deleted by their author for a short time. Attachments are task images; `attachments add` uploads the file as-is, subject to the 10 MB stored-file limit. An attachment is named by ID or file name; a file name used twice fails with both IDs. Preview and download links returned by `spaces.item.read` need the same read access as the task; they are not public links.
 
 ## Calendar and invitations
@@ -226,6 +235,9 @@ Every command takes `--json` (and `--jsonl` for lists), destructive commands nee
 | `comments list` | Page `{ items, page, perPage, total, hasNext }` |
 | `comments add`, `comments update` | The comment |
 | `comments delete` | `{ deleted: { id, itemId } }` |
+| `references list` | Array of references `{ ref: { type, id }, label, createdAt }` |
+| `references add` | The reference |
+| `references delete` | `{ deleted: boolean }` |
 | `links ls` | `{ references, links }`; a link is `{ url, label, createdAt, preview }` |
 | `links add` | The link with `preview: null` |
 | `links rm` | `{ deleted: boolean }` |

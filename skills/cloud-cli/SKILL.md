@@ -24,7 +24,24 @@ Modules share one command shape, so you can guess the basics before reading a re
 - **Addresses:** a resource argument takes its ID, `<container>:<path>` (container by ID or exact name), or, where the module keeps a local copy, a file path inside it. An ambiguous name fails with every candidate as `path (id)`; retry with one of the IDs. Nothing is guessed.
 - **Flags:** `--json` on every command, `--yes` for destructive or irreversible actions, `--from <file|->` for content, `--out <path>` for downloads. A command exits `0` only when it did everything; otherwise `1`.
 
-Each module's reference (`cld <app> reference`) remains authoritative for its exact commands and JSON shapes.
+Each module's reference (`cld <app> reference`) remains authoritative for its exact commands, JSON shapes, and the content syntax the app accepts.
+
+## Common tasks
+
+Start with the reference named here; it holds the exact syntax and the safe workflow.
+
+| Task | Start with |
+| --- | --- |
+| Write a note with callouts, tasks, tables, formulas, or data | `cld notebooks reference markdown.md`, then `cld notebooks write "<notebook>:<path>" --from note.md` |
+| Change part of an existing note | `cld notebooks reference`, then `cld notebooks cat <note> --json` and `cld notebooks edit` |
+| Upload a local file, create folders, or replace a file in Files | `cld filesv2 reference`, then `cld filesv2 put <local> <area>:/<folder>/ --parents` |
+| Put a spreadsheet or document (`.ods`, `.xlsx`, `.odt`, `.docx`) with content into Files | Build it locally first, for example with LibreOffice; `cld filesv2 reference` shows the commands. Then `cld filesv2 put` |
+| Write or send mail | `cld mail reference compose.md` |
+| Read or change table records and fields | `cld grids reference` and `cld grids reference schema.md` |
+| Import a CSV file into a table | `cld grids reference`, section "Import a CSV file"; there is no CSV import command |
+| Plan tasks in Spaces, or link a note or file to a task | `cld spaces reference` |
+| Import or export contacts | `cld contacts reference` |
+| Build a dashboard | `cld pulse reference dashboard-dsl.md` |
 
 ## Agent workflow
 
@@ -33,7 +50,10 @@ Each module's reference (`cld <app> reference`) remains authoritative for its ex
 - When a profile was written by `cld admin agents create`, you act as that agent account, not as the user: `cld auth status` shows `client-credentials`. You see only what the agent was granted; ask the user to grant access instead of switching to their profile.
 - Read before changing content. Use IDs returned by list or get commands when a name is not unique.
 - Use `--json` whenever the next action depends on one complete response. Use `--jsonl` for supported list commands when processing items as a stream. Keep normal output for simple inspection.
+- Before writing content into an app, such as a note, a message, a record, or a file, read that module's reference. Use only the syntax, commands, and flags it lists, and check flags with `cld <app> <command> --help`; what is not listed does not exist.
 - Pass structured or multiline content through a command's file or stdin option instead of trying to escape it in a shell argument.
+- File uploads such as `cld filesv2 put` and `cld notebooks attach` store the bytes as they are and convert nothing. Create a file in its final format locally with a tool available on the machine, then upload it.
+- Ask the user for content you do not have, such as names, figures, or dates. Do not fill a note or file with invented data.
 - Do not delete content, revoke access, or perform another destructive action without an explicit user request. Check command help for any required confirmation first.
 - A plugin the user's Cloud serves may be installed with `cld plugins install <name>` when the task needs it. Install or remove a package plugin (path, `.tgz`, `npm:`) only when the user asks for that exact package or path; it runs unsandboxed with the user's Cloud credentials, so confirm the package, version, and source shown by `cld plugins install` before you pass `--yes`.
 

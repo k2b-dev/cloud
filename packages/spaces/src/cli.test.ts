@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+import { SpaceItemResourceReferenceInputSchema } from "./contracts";
 
 /** The spaces module as a package plugin in a private config home; cld loads it like any installed module. */
 const cliHome = await mkdtemp(join(tmpdir(), "cld-spaces-cli-"));
@@ -500,6 +501,28 @@ describe("secondary resources", () => {
     expect(writes((await run(["references", "add", "Item01", ...reference, "--label", "Design"])).requests)[0]?.body).toEqual({
       ref: { type: "notebooks.note", id: "Note01" },
       label: "Design",
+    });
+    // The server requires a label, so the CLI asks for it before sending anything.
+    expect((await failing(["references", "add", "Item01", ...reference])).requests).toEqual([]);
+    // A Files entry is linked by the resourceId that `cld filesv2 stat --json` prints.
+    const fileBody = writes(
+      (
+        await run([
+          "references",
+          "add",
+          "Item01",
+          "--type",
+          "filesv2.entry",
+          "--id",
+          "Y2xvdWQ6dXNlcnM6dTEKUGxhbi5vZHM",
+          "--label",
+          "Plan.ods",
+        ])
+      ).requests,
+    )[0]?.body;
+    expect(SpaceItemResourceReferenceInputSchema.parse(fileBody)).toEqual({
+      ref: { type: "filesv2.entry", id: "Y2xvdWQ6dXNlcnM6dTEKUGxhbi5vZHM" },
+      label: "Plan.ods",
     });
     expect((await failing(["references", "delete", "Item01", ...reference])).requests).toEqual([]);
     expect((await run(["references", "delete", "Item01", ...reference, "--yes"])).json).toEqual({ deleted: true });
