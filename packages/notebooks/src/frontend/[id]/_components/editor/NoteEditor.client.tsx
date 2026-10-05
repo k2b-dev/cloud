@@ -8,12 +8,11 @@ import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
 import { NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createCodeMirror } from "solid-codemirror";
-import { type Accessor, createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
-import { renderedHeadingLine } from "../../../../lib/heading-anchors";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
@@ -56,6 +55,7 @@ import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { keepReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
@@ -110,9 +110,6 @@ type Props = EditorInstanceProps & {
   initialHref: string;
   initialDetail: SoftNavigatedDetail;
 };
-
-/** A request to open a note at one of its headings, by Book heading id. Each request is a new object. */
-type LinkedHeading = { noteId: string; id: string };
 
 export default function NoteEditor(props: Props) {
   const locale = useLocale();
@@ -419,15 +416,14 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     }),
   );
 
-  // Opening a linked heading waits for Book; once the reader moves the caret or types, the jump no longer applies.
-  let headingRequest: AbortController | undefined;
-  addExtension(
-    EditorView.updateListener.of((update) => {
-      if (update.transactions.some((tr) => tr.isUserEvent("select") || tr.isUserEvent("input") || tr.isUserEvent("delete"))) {
-        headingRequest?.abort();
-      }
-    }),
-  );
+  const linkedHeadingJump = createLinkedHeadingJump({
+    noteId: props.noteId,
+    linkedHeading: props.linkedHeading,
+    view: editorView,
+    loadHeadings: (abortSignal) => loadBlockPreview(props.readOnly ? undefined : ytext.toString(), abortSignal),
+    focus: !props.readOnly,
+  });
+  addExtension(linkedHeadingJump.extension);
 
   addExtension(editor.basicExtensions());
   addExtension(formattingKeymap({ notebookId: props.notebookId }));
@@ -701,35 +697,6 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     return true;
   };
 
-  // A link to a heading opens the note at the line Book gives that heading id. Book owns heading ids, so the editor
-  // asks it rather than reading headings itself; a heading Book cannot place in the source opens the note at its top.
-  const showLinkedHeading = (id: string) => {
-    headingRequest?.abort();
-    const request = new AbortController();
-    headingRequest = request;
-    void loadBlockPreview(props.readOnly ? undefined : ytext.toString(), request.signal)
-      .catch(() => null)
-      .then((rendered) => {
-        const view = editorView();
-        if (disposed || request.signal.aborted || !view) return;
-        headingRequest = undefined;
-        const line = rendered ? renderedHeadingLine(rendered, id, view.state.doc.toString()) : null;
-        const at = line === null ? 0 : view.state.doc.line(line).from;
-        view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "start" }) });
-        if (!props.readOnly) view.focus();
-      });
-  };
-  // Later links to a heading of this note, such as a second click on the same one or Back and Forward.
-  createEffect(
-    on(
-      props.linkedHeading,
-      (linked) => {
-        if (linked?.noteId === props.noteId) showLinkedHeading(linked.id);
-      },
-      { defer: true },
-    ),
-  );
-
   const selectInitialTitle = (attempts = 0): boolean => {
     if (disposed) return false;
     const view = editorView();
@@ -805,11 +772,10 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   onMount(() => {
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
-    const linked = props.linkedHeading();
-    if (linked?.noteId === props.noteId) showLinkedHeading(linked.id);
+    const opensHeading = linkedHeadingJump.open();
     if (!props.readOnly) {
       if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-      else if (linked?.noteId !== props.noteId) focusEditor();
+      else if (!opensHeading) focusEditor();
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,
@@ -864,7 +830,6 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
 
   onCleanup(() => {
     disposed = true;
-    headingRequest?.abort();
     for (const frame of pendingFocusFrames) cancelAnimationFrame(frame);
     pendingFocusFrames.clear();
     if (cursorIdleTimer) {
