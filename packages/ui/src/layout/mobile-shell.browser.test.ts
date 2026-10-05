@@ -40,7 +40,7 @@ render(
           label: "App",
           items: [
             { id: "start", label: "Start", icon: "ti ti-home", href: window.fixtureTabs?.start ?? "#start", current: true },
-            { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: window.fixtureTabs?.tasks ?? "#tasks" },
+            { id: "tasks", label: "Tasks", title: "My tasks", icon: "ti ti-checkbox", href: window.fixtureTabs?.tasks ?? "#tasks" },
           ],
         });
       },
@@ -426,6 +426,128 @@ describe("Tab bar taps in a phone browser", () => {
     } finally {
       release();
       await context.close();
+    }
+  });
+
+  test("a press on a tab shows its page's frame at once and loads the page before the finger lifts", async () => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    // While a load is pending, Playwright's evaluations wait for it, so the page reports its frame itself.
+    const report = `const frame = () => {
+      const shell = document.querySelector(".k2b-mobile-shell");
+      const title = shell.querySelector(".k2b-mobile-shell__title");
+      const after = getComputedStyle(title, "::after");
+      return {
+        switching: shell.hasAttribute("data-k2b-switching"),
+        title: after.visibility === "visible" && after.content !== "none" ? after.content : title.textContent,
+        titleLeft: title.getBoundingClientRect().left,
+        back: shell.querySelector(".k2b-mobile-shell__back") ? getComputedStyle(shell.querySelector(".k2b-mobile-shell__back")).display : null,
+        content: [...shell.querySelectorAll(".k2b-mobile-shell__body > *")].every((node) => getComputedStyle(node).visibility === "hidden"),
+        header: shell.querySelector(".k2b-mobile-shell__header").getBoundingClientRect().height,
+        footerTop: shell.querySelector(".k2b-tab-bar").getBoundingClientRect().top,
+      };
+    };
+    const tell = () => console.log(JSON.stringify(frame()));
+    addEventListener("pointerdown", () => setTimeout(tell));
+    requestAnimationFrame(tell);`;
+    const document = (header: string) =>
+      `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>${header} window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script><script>${report}</script></body></html>`;
+    type Frame = {
+      switching: boolean;
+      title: string;
+      titleLeft: number;
+      back: string | null;
+      content: boolean;
+      header: number;
+      footerTop: number;
+    };
+    const frames: Frame[] = [];
+    page.on("console", (message) => {
+      if (message.text().startsWith("{")) frames.push(JSON.parse(message.text()));
+    });
+    let release!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let tasksRequests = 0;
+    await page.route("https://app.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/plain") return route.fulfill({ contentType: "text/html", body: document("") });
+      if (path === "/start") return route.fulfill({ contentType: "text/html", body: document('window.fixtureHeader = "back";') });
+      if (path !== "/tasks") return route.fulfill({ status: 404 });
+      tasksRequests++;
+      await loading;
+      await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" }).catch(() => undefined);
+    });
+    const next = async (count: number) => {
+      while (frames.length < count) await Bun.sleep(10);
+      return frames[count - 1]!;
+    };
+    try {
+      // A page without Back shows where a page's title belongs.
+      await page.goto("https://app.test/plain");
+      const plain = await next(1);
+      await page.goto("https://app.test/start");
+      const before = await next(2);
+      expect(before).toMatchObject({ switching: false, title: "Tasks", back: "flex", content: false });
+
+      const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+      });
+      // The finger is still down: the page is already requested, and the shell shows its frame where that page will
+      // have it, without this page's Back, and with nothing else moving.
+      const pressed = await next(3);
+      while (tasksRequests === 0) await Bun.sleep(10);
+      expect(pressed).toEqual({
+        switching: true,
+        title: '"My tasks"',
+        titleLeft: plain.titleLeft,
+        back: "none",
+        content: true,
+        header: before.header,
+        footerTop: before.footerTop,
+      });
+
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      release();
+      await page.waitForURL("https://app.test/tasks");
+      // The click at the end of the tap found the load pending and left it alone.
+      expect(tasksRequests).toBe(1);
+    } finally {
+      release();
+      await context.close();
+    }
+  }, 20_000);
+
+  test("a page restored from the back/forward cache shows its own frame again", async () => {
+    const page = await open("back");
+    try {
+      await page.evaluate(() => {
+        const shell = document.querySelector<HTMLElement>(".k2b-mobile-shell")!;
+        // As a press on a tab leaves the page when it is put into the cache.
+        shell.setAttribute("data-k2b-switching", "");
+        shell.querySelector(".k2b-mobile-shell__title")!.setAttribute("data-k2b-next-title", "My tasks");
+        document.querySelector('.k2b-tab-bar a[data-tab="tasks"]')!.setAttribute("data-k2b-pending", "");
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      });
+      expect(
+        await page.evaluate(() => ({
+          switching: document.querySelector(".k2b-mobile-shell")!.hasAttribute("data-k2b-switching"),
+          next: document.querySelector(".k2b-mobile-shell__title")!.hasAttribute("data-k2b-next-title"),
+          pending: document.querySelectorAll("[data-k2b-pending]").length,
+          back: getComputedStyle(document.querySelector(".k2b-mobile-shell__back")!).display,
+        })),
+      ).toEqual({ switching: false, next: false, pending: 0, back: "flex" });
+    } finally {
+      await page.context().close();
     }
   });
 });

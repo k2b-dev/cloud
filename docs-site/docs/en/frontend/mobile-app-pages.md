@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add phone-first pages of an application to the installable mobile app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Pages in the mobile app
@@ -152,8 +152,14 @@ keeps the app session alive.
 
 App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick
-second tap in the tab bar would be lost. A tapped tab shows as selected while
-its page loads, and a repeat tap on it does not start the load over.
+second tap in the tab bar would be lost.
+
+A tab switches at the first touch. The tab shows as selected, the header
+shows the title of the tab's page, the content area is empty, and the page
+load starts before the finger lifts. A repeat tap does not start the load
+over. The header shows Start with the installation's name and a part with its
+`name`, so title the part's first page with the application's name, as
+Spaces does. Otherwise the title changes when the page arrives.
 
 ### Only the app's session reaches a part
 
@@ -263,3 +269,11 @@ Cover the part at its own seams, as described in
 
 To try a part on a phone, run Cloud over HTTPS at the address set in the
 installation's URL setting, open `/me/app` on a computer, and pair the phone.
+
+Judge loading speed on a production build. In production, every stylesheet,
+script, and font has a versioned address and stays in the phone's browser
+cache, so a tab switch loads only its page. A development stack serves the
+same files uncompressed and asks the server again for each of them on every
+page. Over a slow or remote connection, such as a VPN, a tab switch then takes
+a second or more, while the same switch in production takes a few hundred
+milliseconds.

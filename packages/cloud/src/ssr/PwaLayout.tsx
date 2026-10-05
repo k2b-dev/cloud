@@ -48,8 +48,9 @@ export default function PwaLayout(props: PwaLayoutProps) {
   const path = new URL(c.req.raw.url).pathname;
   const tabs = parts.slice(0, TAB_PARTS);
   const currentTab = tabs.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
+  // Start is titled with the installation's name; a part's first page carries the part's name.
   const items: TabBarItem[] = [
-    { id: "start", label: t.start, icon: "ti ti-home", href: PWA_SCOPE, current: !currentTab },
+    { id: "start", label: t.start, title: cloud, icon: "ti ti-home", href: PWA_SCOPE, current: !currentTab },
     ...tabs.map((part) => ({ id: part.id, label: part.name, icon: part.icon, href: part.pwa.href, current: part === currentTab })),
   ];
 

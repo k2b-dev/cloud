@@ -1546,6 +1546,32 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   margin-inline-end: -0.625rem;
 }
 
+/* While a tab's page loads, the shell already shows that page's frame: the
+   page's title where the title always is, without this page's Back or
+   actions, and an empty content area. The page then appears inside the same
+   frame, so nothing moves. */
+.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__header > :not(.k2b-mobile-shell__title) {
+  display: none;
+}
+
+.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__title {
+  position: relative;
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__title::after {
+  content: attr(data-k2b-next-title);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  visibility: visible;
+}
+
+.k2b-ui .k2b-mobile-shell[data-k2b-switching] .k2b-mobile-shell__body > * {
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-mobile-shell__main {
   display: flex;
   flex: 1;

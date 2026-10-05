@@ -29,6 +29,9 @@ const items: TabBarItem[] = [
 - `label` names the navigation landmark.
 - Each item has a stable `id`, a short `label`, an `icon` class, and an `href`.
   Mark the open page with `current: true`.
+- `title` is the header title of the item's page. The shell shows it while the
+  page loads. It defaults to `label`; set it when the page has a different
+  title, such as a Start tab whose page is titled with the app's name.
 - At most five items render; further items are left out. Put the rest behind a
   destination such as Start or More that lists every page.
 - The items share the width equally. Long labels end with an ellipsis, so keep
@@ -37,12 +40,13 @@ const items: TabBarItem[] = [
 The bar is a set of links, not a tab widget: each item loads a page. The server
 marks the current item, so the bar never changes after hydration.
 
-A tap selects its item at once, before the next page arrives, as on a native
-tab bar: the item takes the current item's colour while it is pressed and while
-its page loads. When the load takes longer than a moment, the item's icon
-pulses. A second tap on the item does not start the load over. Pressed and
-loading change only colour and opacity, so nothing moves. The loading state and
-the ignored repeat tap come from the shell in the browser; see
+A tap switches tabs at the first touch, as on a native tab bar: the item takes
+the current item's colour, and the shell shows the item's page frame with its
+`title` and an empty content area while the page loads. The load starts before
+the finger lifts. When it takes longer than a moment, the item's icon pulses.
+A second tap on the item does not start the load over. Pressed and loading
+change only colour and opacity, so nothing moves. The page frame, the early
+load, and the ignored repeat tap come from the shell in the browser; see
 [MobileShell](/en/ui/layout/mobile-shell#runtime).
 
 ## Accessibility
@@ -55,7 +59,8 @@ decorative; the visible label is the accessible name. Each item is at least
 ## Runtime
 
 `TabBar` is plain server-rendered markup with native links and needs no
-hydration. Its loading state needs a mounted `MobileShell` or
+hydration. Each link carries its page's title as `data-k2b-title`. The page
+frame and the loading state need a mounted `MobileShell` or
 `observeMobileShell()`; without either, the links still work, with the
 pressed colour only.
 

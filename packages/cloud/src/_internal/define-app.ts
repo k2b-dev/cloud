@@ -455,6 +455,9 @@ export const defineApp = <
       const user = c.get("user");
       c.get("page").performanceRoute =
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
+      // Pages of the mobile app render in PwaLayout, which shows no announcements, Help, or rail; reading them would
+      // only delay every tab switch.
+      if (isPwaPath(c.req.path)) return;
       await Promise.all([
         preloadLayoutAnnouncements(c),
         preloadLayoutHelp(c),
