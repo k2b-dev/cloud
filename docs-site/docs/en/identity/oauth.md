@@ -65,8 +65,11 @@ endpoint. Cloud does not accept PKCE `plain`.
 Dynamic clients additionally require an explicit `resource` on the same Cloud
 origin. Before issuing a code, Cloud shows the resource owner the client name,
 callback host, exact resource, and requested scopes. Approval and denial are
-single-use and expire after five minutes. Authorization responses include the
-issuer identifier so clients can reject mix-up attacks.
+single-use and expire after five minutes. Cloud accepts the decision only from
+a form on its own origin, the origin of the `app.url` setting; a decision sent
+from another site ends on `/oauth/error` with `invalid_request`. The consent
+page sends its address as a referrer only to Cloud itself. Authorization
+responses include the issuer identifier so clients can reject mix-up attacks.
 
 Exchange the returned code:
 
