@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { CursorMismatchError, RetentionGapError, type TopicEvent } from "@k2b/sync";
 import { z } from "zod";
 import {
@@ -592,5 +592,35 @@ describe("live engine", () => {
     expect(sockets.at(-1)?.socket.closes).toEqual([{ code: 1013, reason: "too_many_sockets" }]);
     engine.stop();
     expect(sockets[0]?.socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
+  });
+
+  test("timers never throw once Sync is gone, and a stopped engine starts nothing again", async () => {
+    // Sync stops while the engine still runs, as when a teardown drains Sync first.
+    let syncGone = false;
+    const intervals = spyOn(globalThis, "setInterval");
+    engine.stop();
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => {
+        if (syncGone) throw new Error("Sync is not available before app.start() has connected NATS");
+        return topic;
+      },
+      channels,
+    });
+    const { socket, send } = connect();
+    send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => socket.frames.length === 1);
+    const ticks = intervals.mock.calls.map(([tick]) => tick as () => void);
+    intervals.mockRestore();
+    expect(ticks).toHaveLength(2);
+
+    syncGone = true;
+    for (const tick of ticks) expect(() => tick()).not.toThrow();
+    engine.stop();
+    for (const tick of ticks) tick();
+    expect(socket.frames).toHaveLength(1);
+
+    const late = connect();
+    expect(late.socket.closes).toEqual([{ code: 1012, reason: "restart" }]);
   });
 });
