@@ -4,17 +4,12 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicGridRecord, PublicTableQueryResult } from "../../../api/public-dto";
 import type { RecordQuery } from "../../../contracts";
+import { fakeLiveConnection } from "../live-test-utils";
 
 const domTest = isServer ? test.skip : test;
-type ProviderOptions = Parameters<typeof import("./grids-record-events-provider").createGridsRecordEventsProvider>[0];
-let callbacks: ProviderOptions;
-let applied: Array<string | null> = [];
-mock.module("./grids-record-events-provider", () => ({
-  createGridsRecordEventsProvider: (opts: ProviderOptions) => {
-    callbacks = opts;
-    return { connect: () => {}, dispose: () => {}, markApplied: (cursor: string | null) => applied.push(cursor) };
-  },
-}));
+const subscriptions = fakeLiveConnection();
+/** The subscription of the controller mounted last. */
+const records = () => subscriptions.at(-1)!;
 type FetchRecords = typeof import("./fetcher").fetchTableQuery;
 let fetchRecords: FetchRecords;
 mock.module("./fetcher", () => ({ fetchTableQuery: (...args: Parameters<FetchRecords>) => fetchRecords(...args) }));
@@ -30,16 +25,11 @@ const record = (id: string): PublicGridRecord => ({
   updatedBy: null,
 });
 
-const liveEvent = (recordId: string) => ({
-  v: 1 as const,
-  baseId: "BASE01",
+const liveEvent = (recordId: string, type = "record.updated", version: number | null = 2) => ({
+  type,
   tableId: "TABLE1",
   recordId,
-  type: "record.updated" as const,
-  version: 2,
-  changedFieldIds: [],
-  actorId: null,
-  occurredAt: "2026-09-01T00:00:00Z",
+  version,
 });
 
 const until = async (condition: () => boolean) => {
@@ -62,7 +52,6 @@ const mount = async ({
   const { createRecordsDataController } = await import("./records-data-controller");
   let controller!: ReturnType<typeof createRecordsDataController>;
   let revoked = 0;
-  applied = [];
   const query = { limit: 100, sort: [{ fieldId: "FIELD1", direction: "asc" }] } as RecordQuery;
   const dispose = render(
     () =>
@@ -75,7 +64,6 @@ const mount = async ({
           initialData,
           initialError: null,
           initialEventCursor,
-          locale: "en",
           cursor,
           setCursor,
           isGrouped: () => false,
@@ -111,47 +99,50 @@ const mount = async ({
   };
 };
 
-domTest("record bursts and reconnect replace the canonical filtered slice without changing the query", async () => {
+domTest("an update burst and a resync replace the canonical filtered slice without changing the query", async () => {
   let result: PublicTableQueryResult = { items: [record("old")], nextCursor: null };
   const queries: RecordQuery[] = [];
   fetchRecords = async (args) => {
     queries.push(args.query);
     return result;
   };
-  const state = await mount();
+  const state = await mount({ initialEventCursor: "s6t.page.3" });
   try {
-    queries.length = 0;
+    expect(records()).toMatchObject({ url: "/api/grids/live", channel: "records", scope: { table: "TABLE1" }, cursor: "s6t.page.3" });
+    // The view resumes from the page's cursor and reads nothing on its own.
+    expect(queries).toHaveLength(0);
     result = { items: [record("matching")], aggregates: {}, nextCursor: null };
-    for (const [i, type] of (
-      ["record.created", "record.updated", "record.deleted", "record.restored", "record.finalized"] as const
-    ).entries()) {
-      callbacks.onEvent?.(
-        {
-          v: 1,
-          baseId: "BASE01",
-          tableId: "TABLE1",
-          recordId: "other",
-          type,
-          version: i + 1,
-          changedFieldIds: [],
-          actorId: null,
-          occurredAt: "2026-09-01T00:00:00Z",
-        },
-        `s6t.test.${i}`,
-      );
-    }
-    expect(applied).toEqual([]);
+    await records().deliver(
+      (["record.created", "record.updated", "record.deleted", "record.restored", "record.finalized"] as const).map((type, i) =>
+        liveEvent("OTHER1", type, i + 1),
+      ),
+    );
     await Bun.sleep(300);
     expect(queries).toHaveLength(1);
     expect(queries[0]!.sort).toEqual(state.query.sort);
     expect(state.controller.items().map((item) => item.id)).toEqual(["matching"]);
-    expect(applied).toEqual(["s6t.test.4"]);
-    result = { items: [record("after-reconnect")], nextCursor: null };
-    callbacks.onReady?.("s6t.test.5");
+    result = { items: [record("after-resync")], nextCursor: null };
+    await records().resync();
     await Bun.sleep(300);
-    expect(state.controller.items()[0]!.id).toBe("after-reconnect");
-    expect(applied.at(-1)).toBe("s6t.test.5");
+    expect(state.controller.items()[0]!.id).toBe("after-resync");
   } finally {
+    state.dispose();
+  }
+  expect(records().closed).toBe(true);
+});
+
+domTest("an update announces the record to open dialogs and removes a deleted one at once", async () => {
+  fetchRecords = async () => ({ items: [record("KEPT01")], nextCursor: null });
+  const state = await mount({ initialData: { items: [record("GONE01"), record("KEPT01")], nextCursor: null } });
+  const announced: unknown[] = [];
+  const announce = (event: Event) => announced.push((event as CustomEvent).detail);
+  document.addEventListener("grids:record-live-change", announce);
+  try {
+    await records().deliver([liveEvent("GONE01", "record.deleted", null)]);
+    expect(announced).toEqual([liveEvent("GONE01", "record.deleted", null)]);
+    expect(state.controller.items().map((item) => item.id)).toEqual(["KEPT01"]);
+  } finally {
+    document.removeEventListener("grids:record-live-change", announce);
     state.dispose();
   }
 });
@@ -165,21 +156,20 @@ domTest("a late query cannot repopulate records after access is revoked", async 
       resolve = r;
     });
   try {
-    callbacks.onReady?.("s6t.test.5");
+    await records().deliver([liveEvent("OTHER1")]);
     await Bun.sleep(300);
-    callbacks.onRevoked?.({ code: "access_denied", message: "Denied" });
+    records().revoke("access_denied");
     expect(state.controller.items()).toEqual([]);
     expect(state.revoked()).toBe(1);
     resolve({ items: [record("private")], nextCursor: null });
     await Bun.sleep(0);
     expect(state.controller.items()).toEqual([]);
-    expect(applied).toEqual([]);
   } finally {
     state.dispose();
   }
 });
 
-domTest("failed reconciliation keeps the old result without a retry loop or cursor acknowledgement", async () => {
+domTest("failed reconciliation keeps the old result without a retry loop", async () => {
   fetchRecords = async () => ({ items: [record("old")], nextCursor: null });
   const state = await mount();
   let calls = 0;
@@ -188,10 +178,9 @@ domTest("failed reconciliation keeps the old result without a retry loop or curs
     throw Error("offline");
   };
   try {
-    callbacks.onReady?.("s6t.test.5");
+    await records().deliver([liveEvent("OTHER1")]);
     await Bun.sleep(600);
     expect(calls).toBe(1);
-    expect(applied).toEqual([]);
     expect(state.controller.items()[0]!.id).toBe("old");
     expect(state.controller.livePending()).toBe(true);
     expect(state.controller.needsManualRefresh()).toBe(true);
@@ -215,7 +204,7 @@ const setVisibility = (state: DocumentVisibilityState) => {
   document.dispatchEvent(new Event("visibilitychange"));
 };
 
-domTest("only the first ready after mount skips the read that would repeat the SSR read", async () => {
+domTest("a return to the tab reconciles values that change without an update of this table", async () => {
   const state = await mount({ initialEventCursor: "s6t.test.3" });
   let calls = 0;
   fetchRecords = async () => {
@@ -223,50 +212,19 @@ domTest("only the first ready after mount skips the read that would repeat the S
     return { items: [record(`fresh-${calls}`)], nextCursor: null };
   };
   try {
-    // Scheduling a reconciliation marks it pending synchronously, so nothing pending means no read.
-    callbacks.onReady?.("s6t.test.3");
+    // Lookups, rollups, and time-relative values can change while the tab is away.
+    setVisibility("hidden");
     expect(state.controller.livePending()).toBe(false);
-    expect(state.controller.busy()).toBe(false);
-
-    // A reconnect resumes from the same cursor but can have missed cross-table and time-relative changes.
-    callbacks.onReady?.("s6t.test.3");
+    setVisibility("visible");
     expect(state.controller.busy()).toBe(true);
     await until(() => calls === 1 && !state.controller.busy());
     expect(state.controller.items()[0]!.id).toBe("fresh-1");
-
-    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
-    await until(() => applied.at(-1) === "s6t.test.4" && !state.controller.busy());
-    callbacks.onReady?.("s6t.test.4");
-    expect(state.controller.busy()).toBe(true);
-    await until(() => calls === 3 && !state.controller.busy());
-    expect(state.controller.items()[0]!.id).toBe("fresh-3");
   } finally {
     state.dispose();
   }
 });
 
-domTest("a page that was hidden before its first ready reconciles when it returns", async () => {
-  for (const hide of ["at mount", "after mount"] as const) {
-    const state = await mount({ initialEventCursor: "s6t.test.3", visibility: hide === "at mount" ? "hidden" : "visible" });
-    let calls = 0;
-    fetchRecords = async () => {
-      calls++;
-      return { items: [record("fresh")], nextCursor: null };
-    };
-    try {
-      if (hide === "after mount") setVisibility("hidden");
-      setVisibility("visible");
-      callbacks.onReady?.("s6t.test.3");
-      expect(state.controller.busy()).toBe(true);
-      await until(() => calls === 1 && !state.controller.busy());
-      expect(state.controller.items()[0]!.id).toBe("fresh");
-    } finally {
-      state.dispose();
-    }
-  }
-});
-
-domTest("the first ready still retries a reconciliation that failed before it", async () => {
+domTest("a resync retries a reconciliation that failed before it", async () => {
   const state = await mount({ initialEventCursor: "s6t.test.3" });
   let calls = 0;
   fetchRecords = async () => {
@@ -275,9 +233,9 @@ domTest("the first ready still retries a reconciliation that failed before it", 
     return { items: [record("fresh")], nextCursor: null };
   };
   try {
-    callbacks.onError?.({ code: "stream_failed", message: "Live updates failed." });
+    await records().deliver([liveEvent("OTHER1")]);
     await until(() => state.controller.needsManualRefresh());
-    callbacks.onReady?.("s6t.test.3");
+    await records().resync();
     expect(state.controller.needsManualRefresh()).toBe(false);
     await until(() => state.controller.items()[0]!.id === "fresh" && !state.controller.busy());
     expect(state.controller.needsManualRefresh()).toBe(false);
@@ -293,11 +251,10 @@ domTest("a denied canonical read revokes the result without waiting for the sock
     throw Object.assign(Error("Denied"), { status: 403 });
   };
   try {
-    callbacks.onReady?.("s6t.test.6");
+    await records().deliver([liveEvent("OTHER1")]);
     await Bun.sleep(300);
     expect(state.revoked()).toBe(1);
     expect(state.controller.items()).toEqual([]);
-    expect(applied).toEqual([]);
   } finally {
     state.dispose();
   }
@@ -317,7 +274,7 @@ domTest("relation labels follow each refetch and stay with earlier pages when mo
     expect(state.controller.relationLabels()).toEqual({ REL001: "Acme" });
 
     fetchRecords = async () => ({ items: [record("a")], nextCursor: "page-2", relationLabels: { REL002: "Globex" } });
-    callbacks.onReady?.("s6t.test.7");
+    await records().resync();
     await waitFor(() => state.controller.items()[0]?.id === "a");
     expect(state.controller.relationLabels()).toEqual({ REL002: "Globex" });
 
@@ -325,6 +282,24 @@ domTest("relation labels follow each refetch and stay with earlier pages when mo
     state.controller.loadNextPage();
     await waitFor(() => state.controller.items().length === 2);
     expect(state.controller.relationLabels()).toEqual({ REL002: "Globex", REL003: "Initech" });
+  } finally {
+    state.dispose();
+  }
+});
+
+domTest("without the page's cursor, the view reads its records once at the start", async () => {
+  const queries: RecordQuery[] = [];
+  // A record changed between the page's read and the subscription, which starts at the current position.
+  fetchRecords = async (args) => {
+    queries.push(args.query);
+    return { items: [record("missed")], nextCursor: null };
+  };
+  const state = await mount();
+  try {
+    expect(records().cursor).toBeNull();
+    await until(() => state.controller.items()[0]?.id === "missed");
+    await Bun.sleep(300);
+    expect(queries).toHaveLength(1);
   } finally {
     state.dispose();
   }

@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Live updates
@@ -97,6 +97,11 @@ who lost the key loses it at once. Right after, without holding up delivery,
 it runs `keys()` for its collections; a collection that gained a key loads its
 state again. Access updates that arrive while that runs share one more run.
 
+An access update checks only the subscribers of the key it names. When one
+change decides who may read several keys, for example a grant on a Base whose
+readers also follow its tables, publish an access update for each of those
+keys in the same transaction.
+
 `data` is optional; with it, viewers who keep access receive the update too.
 `publish()` writes the access change as a row of its own before the data, so
 data above 32 KiB, which becomes a resync, does not lose it.
@@ -140,7 +145,9 @@ $$;
   second.
 
 Mail writes its updates this way, from a trigger on its activity log, with
-one update per conversation and transaction.
+one update per conversation and transaction. Grids writes the updates of
+record changes from the function that also records its own record events,
+with one update per record and table in a transaction.
 
 ## Serve the channels
 
@@ -330,7 +337,7 @@ Update Cloud Core first: its migration creates the outbox.
 ```
 
 Update Core before the applications that define live updates. Contacts,
-Spaces, and Mail are the built-in applications that do.
+Spaces, Mail, and Grids are the built-in applications that do.
 
 A replica that stops closes its sockets with `1012`; the tabs reconnect to
 another replica and resume from their cursors. Each replica reads the topic

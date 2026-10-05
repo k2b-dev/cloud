@@ -16,11 +16,7 @@ export const verificationPhases = async (root: string): Promise<VerificationPhas
   const grids = (...files: string[]) => files.map((file) => join(packageRoot, file));
   const outbox = grids("src/service/record-event-outbox.integration.test.ts");
   const workflowConcurrency = grids("src/service/workflow-concurrency.integration.test.ts");
-  const sync = grids(
-    "src/service/workflow-run-events.integration.test.ts",
-    "src/service/record-events.integration.test.ts",
-    "src/service/record-event-retry.integration.test.ts",
-  );
+  const sync = grids("src/service/record-events.integration.test.ts", "src/service/record-event-retry.integration.test.ts");
   const ownSync = grids("src/service/evidence-exports.integration.test.ts");
   const bundleChecks = grids("src/frontend/_components/dialogs/AuditPolicyDialog.bundle.test.ts");
   const pdf = grids("src/service/document-query-pdf.integration.test.ts");

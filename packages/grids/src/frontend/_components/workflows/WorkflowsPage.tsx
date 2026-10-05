@@ -81,6 +81,8 @@ type Props = {
   initialOverview: PublicWorkspaceWorkflowOverview;
   onWorkflowChanged: () => void;
   onSelectRun: (runId: string | null) => void;
+  /** The page's live cursor, for the scanner's run updates. */
+  liveCursor: string | null;
 };
 
 type WorkflowRunPage = {
@@ -570,6 +572,7 @@ export default function WorkflowsPage(props: Props) {
                     workflowDescription: workflow.description,
                     initialCode: null,
                     returnHref: scannerReturnHref(workflow),
+                    liveCursor: props.liveCursor,
                     inputContract: {
                       workflow: { id: workflow.id, name: workflow.name, plan: workflow.plan },
                       tables: props.tables,

@@ -4,8 +4,8 @@ import { sql } from "bun";
 import type { MutationSource, TableMutationPolicy } from "../contracts";
 import { MutationSourceSchema, TableMutationPolicySchema } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";
+import { gridsLive, publishMetadataChange } from "./live";
 import { serviceMessagesFor } from "./messages";
-import { emitMetadataEvent } from "./metadata-events";
 import { NEXT_TABLE_VERSION } from "./tables";
 
 export type MutationOrigin = MutationSource;
@@ -316,16 +316,10 @@ export const update = async (
       },
       tx,
     );
+    await publishMetadataChange(tx, row.base_id, "table.updated");
     return ok({ baseId: row.base_id, changed: true, policy: parsed.data });
   });
   if (!result.ok) return result;
-  if (result.data.changed) {
-    await emitMetadataEvent({
-      type: "table.updated",
-      baseId: result.data.baseId,
-      resource: { kind: "table", id: tableId, tableId },
-      actorId,
-    });
-  }
+  if (result.data.changed) gridsLive.wake();
   return ok(result.data.policy);
 };

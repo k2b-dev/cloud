@@ -1,18 +1,15 @@
 import { createHash } from "node:crypto";
 import { lazySync } from "@k2b/cloud";
-import { latestTopicCursor } from "@k2b/cloud/services";
 import type { MessageMeta } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
-import { projectPublicIds } from "./public-resources";
 
-const TOPIC_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const QUEUE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const RECORD_EVENT_PAYLOAD_BYTES = 68_000;
 /**
  * 256 dead letters at the payload limit plus Sync's 4 KiB of dead-letter
- * headroom, the depth Sync gives a job or queue by default. The topic has no
- * durable consumer, and the work queue dead-letters only when PostgreSQL, which
- * records workflow delivery failures, is unavailable.
+ * headroom, the depth Sync gives a job or queue by default. The work queue
+ * dead-letters only when PostgreSQL, which records workflow delivery failures,
+ * is unavailable.
  */
 const RECORD_EVENT_DEAD_LETTER_BYTES = 256 * (RECORD_EVENT_PAYLOAD_BYTES + 4096);
 const WORK_QUEUE_TENANT = "workflow-kernel";
@@ -46,41 +43,11 @@ export const GridsRecordEventSchema = z
 
 export type GridsRecordEvent = z.infer<typeof GridsRecordEventSchema>;
 
-export const toPublicRecordEvent = async (event: GridsRecordEvent) => {
-  const [bases, tables, records, fields] = await Promise.all([
-    projectPublicIds("base", [event.baseId]),
-    projectPublicIds("table", [event.tableId]),
-    projectPublicIds("record", [event.recordId]),
-    projectPublicIds("field", event.changedFieldIds),
-  ]);
-  const required = (ids: ReadonlyMap<string, string>, id: string, resource: string) => {
-    const publicId = ids.get(id);
-    if (!publicId) throw new Error(`Missing public ID for ${resource}`);
-    return publicId;
-  };
-  return {
-    ...event,
-    baseId: required(bases, event.baseId, "base"),
-    tableId: required(tables, event.tableId, "table"),
-    recordId: required(records, event.recordId, "record"),
-    changedFieldIds: event.changedFieldIds.map((id) => required(fields, id, "field")),
-  };
-};
-
-const recordTopic = lazySync((sync) =>
-  sync.topic<GridsRecordEvent>({
-    id: "grids:records",
-    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
-    deadLetterRetention: { maxBytes: RECORD_EVENT_DEAD_LETTER_BYTES },
-    maxPayloadBytes: RECORD_EVENT_PAYLOAD_BYTES,
-  }),
-);
-
 export const recordEventWorkQueue = lazySync((sync) =>
   sync.queue<GridsRecordEvent>({
     id: "grids:workflow-record-events",
     ordering: { mode: "partitioned", partitions: RECORD_EVENT_WORK_PARTITIONS },
-    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+    retention: { maxAgeMs: QUEUE_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
     deadLetterRetention: { maxBytes: RECORD_EVENT_DEAD_LETTER_BYTES },
     maxPayloadBytes: RECORD_EVENT_PAYLOAD_BYTES,
     delivery: {
@@ -96,27 +63,17 @@ const hashEventKey = (key: string): string => createHash("sha256").update(key).d
 const recordEventIdempotencyKey = (event: GridsRecordEvent): string =>
   `${event.type}:${event.tableId}:${event.recordId}:${event.version ?? "deleted"}:${event.occurredAt}`;
 
-const publishRecordEventToTopic = (event: GridsRecordEvent, idempotencyKey: string) =>
-  recordTopic().publish({
-    tenantId: event.baseId,
-    orderingKey: event.recordId,
-    idempotencyKey,
-    data: event,
-  });
-
+/** Queues a committed record event for the workflows it triggers; `replayKey` sends it again. */
 export const publishRecordEvent = async (event: GridsRecordEvent, options: { replayKey?: string } = {}): Promise<void> => {
   const idempotencyKey = hashEventKey(recordEventIdempotencyKey(event));
   const workIdempotencyKey = options.replayKey ? `${idempotencyKey}:replay:${options.replayKey}` : idempotencyKey;
-  await Promise.all([
-    publishRecordEventToTopic(event, idempotencyKey),
-    recordEventWorkQueue().send({
-      orderingKey: event.recordId,
-      tenantId: WORK_QUEUE_TENANT,
-      idempotencyKey: hashEventKey(`${event.baseId}:${workIdempotencyKey}`),
-      meta: { baseId: event.baseId },
-      data: event,
-    }),
-  ]);
+  await recordEventWorkQueue().send({
+    orderingKey: event.recordId,
+    tenantId: WORK_QUEUE_TENANT,
+    idempotencyKey: hashEventKey(`${event.baseId}:${workIdempotencyKey}`),
+    meta: { baseId: event.baseId },
+    data: event,
+  });
 };
 
 /**
@@ -140,85 +97,3 @@ export const requeueRecordEventWork = async (input: {
     data: input.event,
   });
 };
-
-export const resolveFederatedTargetsForRecordEvent = async (
-  event: GridsRecordEvent,
-): Promise<Array<{ baseId: string; tableId: string; changedFieldIds: string[] }>> => {
-  if (event.type === "comment.created") return [];
-  const mappingCondition =
-    event.changedFieldIds.length === 0
-      ? sql`TRUE`
-      : sql`(
-          mapping.source_field_id = ANY(${sql.array(event.changedFieldIds, "UUID")}::uuid[])
-          OR mapped_source_field.type IN ('formula', 'lookup', 'rollup')
-        )`;
-  const rows = await sql<Array<{ base_id: string; table_id: string; changed_field_ids: string[] }>>`
-    SELECT target.base_id::text,
-           target.id::text AS table_id,
-           COALESCE(
-             array_agg(DISTINCT mapping.target_field_id::text) FILTER (WHERE mapping.target_field_id IS NOT NULL),
-             ARRAY[]::text[]
-           ) AS changed_field_ids
-    FROM grids.federated_table_revisions revision
-    JOIN grids.tables target
-      ON target.id = revision.table_id
-     AND target.kind = 'federated'
-     AND target.deleted_at IS NULL
-    JOIN grids.bases target_base
-      ON target_base.id = target.base_id
-     AND target_base.deleted_at IS NULL
-    JOIN grids.federated_table_sources source
-      ON source.revision_id = revision.id
-     AND source.source_table_id = ${event.tableId}::uuid
-     AND source.authorized_at IS NOT NULL
-     AND source.revoked_at IS NULL
-    LEFT JOIN grids.federated_field_mappings mapping
-      ON mapping.revision_id = revision.id
-     AND mapping.source_table_id = source.source_table_id
-    LEFT JOIN grids.fields mapped_source_field
-      ON mapped_source_field.id = mapping.source_field_id
-     AND mapped_source_field.table_id = source.source_table_id
-    WHERE revision.status = 'active'
-      AND ${mappingCondition}
-    GROUP BY target.base_id, target.id
-    HAVING ${event.changedFieldIds.length === 0 ? sql`TRUE` : sql`COUNT(mapping.target_field_id) > 0`}
-  `;
-  return rows.map((row) => ({ baseId: row.base_id, tableId: row.table_id, changedFieldIds: row.changed_field_ids }));
-};
-
-/**
- * Combined-table targets receive the projected event on the topic only. The
- * workflow queue cannot serve them: the committed snapshot belongs to the
- * source table, so a record-event trigger on a Combined table has nothing to
- * evaluate and would fail deterministically.
- */
-export const publishRecordEventWithFederatedTargets = async (
-  event: GridsRecordEvent,
-  options: { replayKey?: string } = {},
-): Promise<void> => {
-  const targets = await resolveFederatedTargetsForRecordEvent(event);
-  await Promise.all([
-    publishRecordEvent(event, options),
-    ...targets.map((target) => {
-      const projected: GridsRecordEvent = {
-        ...event,
-        baseId: target.baseId,
-        tableId: target.tableId,
-        changedFieldIds: target.changedFieldIds,
-        actorId: null,
-      };
-      return publishRecordEventToTopic(projected, hashEventKey(recordEventIdempotencyKey(projected)));
-    }),
-  ]);
-};
-
-export const liveRecordEvents = (config: { baseId: string; after?: string | null; signal?: AbortSignal }) =>
-  recordTopic()
-    .hub({ tenantId: config.baseId })
-    .subscribe({
-      after: config.after ?? undefined,
-      signal: config.signal,
-    });
-
-export const latestRecordEventCursor = async (baseId: string): Promise<string> =>
-  latestTopicCursor({ topic: recordTopic(), resourceId: "grids:records", tenantId: baseId });

@@ -1,7 +1,6 @@
 import { logger } from "@k2b/cloud/services";
 import { gridsService } from "../../../service";
-import { latestMetadataEventCursor } from "../../../service/metadata-events";
-import { latestRecordEventCursor } from "../../../service/record-events";
+import { gridsLive } from "../../../service/live";
 import { loadWorkspaceRevision } from "../../../service/workspace-revision";
 import { resolveWorkspaceMessages } from "./messages";
 import { loadWorkspaceRequest } from "./workspace-request-state";
@@ -13,24 +12,18 @@ export type { GridsWorkspaceState } from "./workspace-state-model";
 const log = logger("grids:workspace-state");
 
 type WorkspaceStateDeps = {
-  latestMetadataEventCursor: (baseId: string) => Promise<string | null>;
-  latestRecordEventCursor: (baseId: string) => Promise<string | null>;
+  liveCursor: () => Promise<string | null>;
   loadRevision?: typeof loadWorkspaceRevision;
 };
 
-const defaultDeps: WorkspaceStateDeps = {
-  latestMetadataEventCursor,
-  latestRecordEventCursor,
-};
+const defaultDeps: WorkspaceStateDeps = { liveCursor: gridsLive.cursor };
 
-const loadEventCursor = async (stream: "metadata" | "records", load: () => Promise<string | null>): Promise<string | null> => {
+/** Without a cursor the page still renders; its live subscriptions start at the topic's position then. */
+const loadLiveCursor = async (load: () => Promise<string | null>): Promise<string | null> => {
   try {
     return await load();
   } catch (error) {
-    log.warn("Could not capture workspace event cursor", {
-      stream,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    log.warn("Could not capture the workspace live cursor", { error: error instanceof Error ? error.message : String(error) });
     return null;
   }
 };
@@ -42,13 +35,10 @@ export const loadGridsWorkspaceState = async (
   const t = resolveWorkspaceMessages(params.locale);
   const base = await gridsService.base.getByShortId(params.baseShortId);
   if (!base) return { kind: "notFound", title: t.notFound, message: t.baseNotFound };
-  const [metadataCursor, recordCursor] = await Promise.all([
-    loadEventCursor("metadata", () => deps.latestMetadataEventCursor(base.id)),
-    loadEventCursor("records", () => deps.latestRecordEventCursor(base.id)),
-  ]);
   // Capture before loading the catalog: a concurrent schema edit must remain detectable.
+  const liveCursor = await loadLiveCursor(deps.liveCursor);
   const revision = await (deps.loadRevision ?? loadWorkspaceRevision)(base.id);
-  const request = await loadWorkspaceRequest(params, base, { metadata: metadataCursor, records: recordCursor });
+  const request = await loadWorkspaceRequest(params, base, liveCursor);
   if ("kind" in request) return request;
   const state = await loadWorkspaceRoute(request);
   return state.kind === "ok" ? { ...state, workspaceRevision: revision } : state;

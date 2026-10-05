@@ -314,7 +314,6 @@ export default function RecordsView(props: Props) {
     initialData: props.initialData,
     initialError: props.initialError,
     initialEventCursor: props.initialEventCursor,
-    locale: locale(),
     cursor,
     setCursor,
     isGrouped,

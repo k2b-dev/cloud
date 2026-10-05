@@ -26,8 +26,7 @@ const workspaceState = (): PublicOkWorkspaceState => ({
   canCreateTables: false,
   canUseEditMode: false,
   canUseQueryWorkspace: false,
-  metadataEventCursor: null,
-  recordEventCursor: null,
+  liveCursor: null,
   catalog: {
     customApps: [],
     workflows: [],

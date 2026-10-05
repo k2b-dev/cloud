@@ -25,8 +25,7 @@ const state = (): PublicOkWorkspaceState => ({
   canCreateTables: true,
   canUseEditMode: true,
   canUseQueryWorkspace: true,
-  metadataEventCursor: null,
-  recordEventCursor: null,
+  liveCursor: null,
   navigation: { revision: 3, groups: [] },
   route: { kind: "overview" },
   catalog: {

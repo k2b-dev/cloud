@@ -108,7 +108,7 @@ const loadTablePage = async (fixture: Fixture, search: Record<string, unknown>) 
       href: url.href,
       activeTableSlug: fixture.tablePublicId,
     },
-    { latestMetadataEventCursor: async () => null, latestRecordEventCursor: async () => null },
+    { liveCursor: async () => null },
   );
   if (state.kind !== "ok" || state.route.kind !== "records") throw new Error(`Expected a records page, got ${state.kind}`);
   const publicState = await projectPublicWorkspaceState(state);
