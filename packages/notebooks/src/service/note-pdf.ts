@@ -84,7 +84,7 @@ const KATEX_PRINT_CSS = katexCss.replace(/@font-face\s*\{[^}]*\}/g, "");
 export type NotePdfHtmlInput = {
   markdown: string;
   notebookShortId: string;
-  /** The exported note; links to its own headings jump within the PDF. */
+  /** The exported note; links to it jump within the PDF. */
   noteShortId?: string;
   locale: string;
   templateId?: MarkdownPdfTemplateId;

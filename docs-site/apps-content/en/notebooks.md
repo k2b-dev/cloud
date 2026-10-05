@@ -47,7 +47,8 @@ note list.
 - Download the current note as Markdown or as an A4 PDF using the Document,
   Report, Compact, or Custom print style. PDF generation uses the current live
   editor content and does not store a generated copy. In the PDF, links to the
-  note's own headings jump within the document.
+  note itself jump within the document: to the linked heading, or to the top
+  when the note has no such heading.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
 

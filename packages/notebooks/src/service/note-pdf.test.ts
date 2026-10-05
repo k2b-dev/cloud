@@ -75,13 +75,22 @@ describe("note PDF HTML", () => {
     expect(selected).toEqual(["!=", "->", "<-", "<->", "<=", "<=>", "=>", ">="].sort());
   });
 
-  test("links to a heading of the exported note jump within the PDF; other note links keep their address", () => {
-    const html = build("# Guide\n\n[Steps](note://DEF456#restore) [Top](note://DEF456) [Other](note://GHI789#restore)\n\n## Restore", {
-      noteShortId: "DEF456",
-    });
+  test("links to the exported note jump within the PDF; links to other notes keep their address", () => {
+    const html = build(
+      [
+        "# Guide",
+        "[Steps](note://DEF456#restore) [Missing](note://DEF456#nope) [Top](note://DEF456) [Other](note://GHI789#restore)",
+        "| Link |\n| --- |\n| [Cell](note://DEF456#nope) |",
+        "## Restore",
+      ].join("\n\n"),
+      { noteShortId: "DEF456" },
+    );
     expect(html).toContain('<a class="notebook-book-note-link" href="#heading-restore">');
     expect(html).toContain('<h2 id="heading-restore">Restore</h2>');
-    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book"');
+    // A heading the note does not have opens its top, like the bare link: the PDF has no `#heading-nope` to jump to.
+    expect(html.match(/href="#top"/g)).toHaveLength(3);
+    expect(html).not.toContain("#heading-nope");
+    expect(html).not.toContain("/notes/DEF456");
     expect(html).toContain('href="/app/notebooks/ABC123/notes/GHI789?mode=book#heading-restore"');
   });
 

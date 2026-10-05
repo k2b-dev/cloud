@@ -42,16 +42,16 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     }
   }, 120_000);
 
-  test("a link to a heading of the exported note jumps within the PDF", async () => {
-    const markdown = "# Guide\n\n[Restore steps](note://DEF456#restore)\n\n## Restore\n\nDone.";
+  test("a link to the exported note jumps within the PDF, to its heading or to its top", async () => {
+    const markdown =
+      "# Guide\n\n[Restore steps](note://DEF456#restore) [Missing](note://DEF456#nope) [Top](note://DEF456)\n\n## Restore\n\nDone.";
     const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", noteShortId: "DEF456", locale: "en" });
-    const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Guide" }, config)).pdf;
+    const raw = Buffer.from((await renderHtmlToPdfWithConfig({ html, title: "Guide" }, config)).pdf).toString("latin1");
     // Chromium writes link annotations uncompressed; a named destination is a link inside the document.
-    const links =
-      Buffer.from(pdf)
-        .toString("latin1")
-        .match(/\/Subtype \/Link\b[^>]*>/g) ?? [];
-    expect(links).toEqual([expect.stringContaining("/Dest /heading-restore")]);
+    const links = raw.match(/\/Subtype \/Link\b[^>]*>/g) ?? [];
+    expect(links.map((link) => /\/Dest \/([^\s>]+)/.exec(link)?.[1])).toEqual(["heading-restore", "top", "top"]);
+    // Chromium places `#top` at the top edge of the note's only page.
+    expect(raw).toMatch(/\/top \[\d+ 0 R \/XYZ 0 [\d.]+ 0\]/);
   }, 60_000);
 
   test("ligatures print like the reader and copy as text", async () => {
