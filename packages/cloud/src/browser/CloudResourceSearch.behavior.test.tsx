@@ -427,6 +427,34 @@ test("public navigation search browses and filters Tools without calling authent
   }
 });
 
+test("public navigation search has no filters to load", async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      requests++;
+      return new Response(null, { status: 401 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+  const dispose = render(() => <CloudResourceSearch searchResources={false} onSelect={() => {}} onClose={() => {}} />, dom.root);
+  try {
+    await waitFor(() => dom.root.textContent?.includes("Search available pages.") ?? false, "the idle hint");
+    await Bun.sleep(20);
+    expect(dom.root.querySelector(".cloud-resource-search__tag-skeleton")).toBeNull();
+    expect(dom.root.querySelector(".cloud-resource-search__quick")?.getAttribute("aria-busy")).toBe("false");
+    expect(Array.from(dom.root.querySelectorAll("button")).map((button) => button.textContent)).not.toContain("All filters");
+    expect(requests).toBe(0);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
 if (!isServer)
   test("context actions are visible but never implicitly selected; > discovers global actions", async () => {
     const dom = createDomTestHarness();
@@ -855,6 +883,11 @@ describe("streamed search results", () => {
       stream.close();
       await waitFor(() => view.status().includes("Mail did not respond in time"), "the timeout row");
       expect(view.dom.root.textContent).not.toContain("No matches");
+      // Screen readers hear the missing answer too, so it never sounds like “not found”.
+      await waitFor(
+        () => politeAnnouncements().includes("Search complete, 1 result. Mail did not respond in time"),
+        "the announcement with the timeout",
+      );
       const first = view.rows()[0];
       const searches = view.requests.length;
 
@@ -893,6 +926,140 @@ describe("streamed search results", () => {
       stream.close();
       await waitFor(() => view.dom.root.textContent?.includes("Mail: no matches for “invoice”") ?? false, "the narrowed empty state");
       expect(view.dom.root.textContent).not.toContain("No matches. Try another search term.");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("does not call a search narrowed when only one app happens to search", async () => {
+    const view = await setup();
+    try {
+      const stream = await view.type("invoice");
+      stream.write({ type: "start", query: "invoice", apps: streamApps, providers: ["mail"] });
+      stream.write(providerLine("mail", []));
+      stream.write({ type: "done", status: "complete", count: 0 });
+      stream.close();
+      await waitFor(() => view.dom.root.textContent?.includes("No matches. Try another search term.") ?? false, "no matches");
+      expect(view.dom.root.textContent).not.toContain("Mail: no matches");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("keeps what arrived and names the apps that never answered when the stream breaks off", async () => {
+    const view = await setup();
+    try {
+      const stream = await view.type("plan");
+      stream.write({ type: "start", query: "plan", apps: streamApps, providers: ["files", "mail"] });
+      stream.write(providerLine("files", [found("files", "Plan.pdf")]));
+      await waitFor(() => view.rows().length === 1, "the fast app");
+      const [row] = view.rows();
+      // The connection drops before Mail answers and before the last line.
+      stream.close();
+      await waitFor(() => view.status().includes("Mail is not available right now"), "the app that never answered");
+      expect(view.status()).not.toContain("still searching");
+      expect(view.dom.root.textContent).not.toContain("currently unavailable");
+      expect(view.rows().length === 1 && view.rows()[0] === row).toBeTrue();
+      expect(view.dom.root.querySelector(".cloud-resource-search__body")?.getAttribute("aria-busy")).toBe("false");
+      await waitFor(
+        () => politeAnnouncements().includes("Search complete, 1 result. Mail is not available right now"),
+        "the announcement with the missing app",
+      );
+
+      Array.from(view.dom.root.querySelectorAll<HTMLButtonElement>(".cloud-resource-search__status button"))
+        .find((button) => button.textContent === "Try again")!
+        .click();
+      await waitFor(() => view.requests.at(-1)!.url.searchParams.get("app") === "mail", "the retry for that app");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("says the search failed below the rows when it breaks off before any app answered", async () => {
+    const view = await setup({
+      navigationItems: [
+        {
+          ...item("Planner"),
+          appId: "tools",
+          appName: "Tools",
+          ref: { type: "cloud.navigation", id: "tools:planner" },
+          href: "/tools/planner",
+          readable: false,
+        },
+      ],
+    });
+    try {
+      const stream = await view.type("plan");
+      await waitFor(() => view.rows().length === 1, "the matching page");
+      const [page] = view.rows();
+      stream.close();
+      await waitFor(() => view.dom.root.textContent?.includes("Search is currently unavailable.") ?? false, "the failure");
+      const failure = Array.from(view.dom.root.querySelectorAll(".cloud-resource-search__hint")).find((hint) =>
+        hint.textContent?.includes("currently unavailable"),
+      )!;
+      // The page stays where it was; the failure follows it instead of pushing it down.
+      expect(view.rows().length === 1 && view.rows()[0] === page).toBeTrue();
+      expect(page!.compareDocumentPosition(failure) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      await Bun.sleep(150);
+      expect(politeAnnouncements()).not.toContain("Search complete");
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("keeps the rows on screen while typing, but never brings back rows from before an empty search", async () => {
+    const view = await setup();
+    try {
+      const first = await view.type("pla");
+      first.write({ type: "start", query: "pla", apps: streamApps, providers: ["files"] });
+      first.write(providerLine("files", [found("files", "Plan.pdf")]));
+      first.write({ type: "done", status: "complete", count: 1 });
+      first.close();
+      await waitFor(() => view.rows().length === 1, "the first results");
+      // Typing faster than the apps answer keeps the last rows on screen instead of blanking the list.
+      await view.type("plaxq");
+      const empty = await view.type("plaxqz");
+      expect(view.rows().length).toBe(1);
+      expect(view.rows()[0]!.getAttribute("aria-disabled")).toBe("true");
+      empty.write({ type: "start", query: "plaxqz", apps: streamApps, providers: ["files", "mail"] });
+      empty.write(providerLine("files", []));
+      empty.write(providerLine("mail", []));
+      empty.write({ type: "done", status: "complete", count: 0 });
+      empty.close();
+      await waitFor(() => view.dom.root.textContent?.includes("No matches") ?? false, "no matches");
+      expect(view.rows().length).toBe(0);
+      // The next search starts from what is on screen now: nothing, not the rows from two searches back.
+      await view.type("plaxqzy");
+      await Bun.sleep(20);
+      expect(view.rows().length).toBe(0);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("actions that load after rows are on screen wait for the next keystroke instead of pushing them down", async () => {
+    const { createSignal } = await import("solid-js");
+    const [commands, setCommands] = createSignal<import("./search-commands").PaletteCommand[]>([]);
+    const view = await setup({
+      get commands() {
+        return commands();
+      },
+      onCommand: () => {},
+    });
+    try {
+      const stream = await view.type("plan");
+      stream.write({ type: "start", query: "plan", apps: streamApps, providers: ["files", "mail"] });
+      stream.write(providerLine("files", [found("files", "Plan.pdf")]));
+      await waitFor(() => view.rows().length === 1, "the fast app");
+      const [row] = view.rows();
+      setCommands([
+        { id: "spaces.plans", title: "Plans board", description: "Open in Spaces", action: { command: "spaces.plans", input: {} } },
+      ]);
+      await Bun.sleep(20);
+      expect(view.rows().length === 1 && view.rows()[0] === row).toBeTrue();
+
+      await view.type("plans");
+      await waitFor(() => view.rows()[0]?.textContent?.includes("Plans board") ?? false, "the action with the next keystroke");
     } finally {
       view.cleanup();
     }

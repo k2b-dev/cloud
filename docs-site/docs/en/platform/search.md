@@ -253,16 +253,23 @@ inside the filter view. It uses the same padded hover surface as **Actions**.
 Results are grouped by application, and each application's section appears as
 soon as that application answers. New sections are appended below the ones
 already shown, so nothing on screen moves and the keyboard selection stays on
-its result. Matching pages and actions, which need no server, come first.
+its result. Matching pages and actions come first. An action that finishes
+loading after results are on screen appears with the next keystroke instead
+of pushing them down.
 While applications are still searching, a calm line below the results names
 them, for example “Files and Mail are still searching…”. “No matches” appears
 only after every application has answered. An application that did not
 answer in time or failed gets its own line, for example “Mail did not respond
 in time · Try again”; **Try again** searches only that application and appends
-its results. A search narrowed to one application by its chip or a tag has one
+its results. When the connection breaks off, the results already shown stay
+and every application that had not answered gets that line. Only a search
+that fails before it names its applications says “Search is currently
+unavailable”, below anything already on screen.
+A search narrowed to one application by its chip or a tag has one
 state at a time: searching, its results, or **Mail: no matches for “invoice”**.
 When every application has answered, screen readers hear “Search complete,
-3 results”.
+3 results”, followed by each application that did not answer, such as “Mail
+did not respond in time”.
 
 Desktop search shows a preview beside the
 input and result list. The centered dialog keeps its width, top position, and

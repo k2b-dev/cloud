@@ -39,8 +39,9 @@ placeholders reserve the suggestion row so opening the dialog does not shift
 its layout.
 
 Desktop results share the dialog with a preview that starts at its top edge.
-The dialog keeps a constant width and top position as results arrive; it grows
-downward and scrolls within the available viewport height.
+From the first search character until the input is cleared, the dialog keeps
+its width, top position, and height; arriving results scroll inside it instead
+of resizing it.
 Small screens show one column with an optional **Details** view. The result list
 uses `ScrollArea` fades. Each application's results appear as it answers and
 are appended below earlier ones; a quiet line below the results names the

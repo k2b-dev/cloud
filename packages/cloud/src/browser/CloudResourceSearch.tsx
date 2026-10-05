@@ -12,6 +12,7 @@ import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
 import { commandSearchItem, matchingCommands, type PaletteCommand } from "./search-commands";
 import {
   applySearchLine,
+  breakSearchRun,
   emptySearchRun,
   failedSearchApps,
   retrySearchApp,
@@ -130,15 +131,20 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const [catalogApps, setCatalogApps] = createSignal<SearchApp[]>();
   // The last rows a run showed stay until the next run shows its first rows, so typing does not blank the list.
   const [stale, setStale] = createSignal<{ url: string; blocks: SearchBlock[] }>();
+  /** The run shows its own rows, or that it found none, instead of the stale ones. */
+  const shownRun = () => run().blocks.length > 0 || searchFinished(run());
   let controller: AbortController | undefined;
   const startRun = (url: string) => {
     controller?.abort();
     const own = new AbortController();
     controller = own;
     const previous = runUrl();
-    if (previous && run().blocks.length) setStale({ url: previous, blocks: run().blocks });
+    // What is on screen stays: the last run's rows, or none after it found nothing; a run that showed nothing yet
+    // leaves the rows before it.
+    if (previous && shownRun()) setStale({ url: previous, blocks: run().blocks });
     setRunUrl(url);
     if (props.searchResources === false) {
+      setCatalogApps([]);
       setRun({ ...emptySearchRun(), done: true });
       return;
     }
@@ -152,7 +158,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
         setRun((current) => applySearchLine(current, line));
       },
     }).catch(() => {
-      if (controller === own && !own.signal.aborted) setRun((current) => ({ ...current, failed: true }));
+      if (controller === own && !own.signal.aborted) setRun(breakSearchRun);
     });
   };
   /** Searches one app again within the current run; its rows, if any, are appended at the end. */
@@ -188,7 +194,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const pendingApps = () => (current() ? searchingApps(run()) : []);
   const failedApps = () => (current() ? failedSearchApps(run()) : []);
   const appName = (appId: string) => run().apps.find((app) => app.id === appId)?.name ?? appId;
-  const narrowedApp = () => (run().providers.length === 1 ? run().providers[0] : undefined);
+  const failureText = (failure: ReturnType<typeof failedSearchApps>[number]) =>
+    failure.status === "timeout" ? t().appTimedOut({ app: appName(failure.appId) }) : t().appUnavailable({ app: appName(failure.appId) });
+  // Only a search the user narrowed with the app chip or a tag names its one app when nothing matched.
+  const narrowedApp = () => ((Boolean(appId()) || tags().length > 0) && run().providers.length === 1 ? run().providers[0] : undefined);
   const catalog = createMemo(() => searchTags(catalogApps() ?? [], appId()));
   const quickTags = createMemo(() =>
     catalog()
@@ -216,7 +225,6 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       (loaded.get("scope_tag") ?? undefined) === scope()?.tag
     );
   };
-  const shownRun = () => run().blocks.length > 0 || searchFinished(run());
   const shownBlocks = () => {
     const source = shownRun() ? { url: runUrl() ?? "", blocks: run().blocks } : stale();
     return source && sameScope(source.url) ? source.blocks : [];
@@ -228,8 +236,21 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       ? [...groupByApp(navigation()), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))]
       : [],
   );
+  const searchContext = () => JSON.stringify([desiredUrl(), commandMode(), commandQuery()]);
+  /**
+   * Actions come first. One that starts to match after rows below the actions are on screen, such as from a catalog
+   * that loaded late, waits for the next keystroke instead of pushing those rows down.
+   */
+  const shownCommands = createMemo<{ context: string; commands: PaletteCommand[] }>((previous) => {
+    const context = searchContext();
+    const matching = visibleCommands();
+    if (previous?.context !== context || results().length === 0) return { context, commands: matching };
+    return { context, commands: matching.filter((command) => previous.commands.some((shown) => shown.id === command.id)) };
+  });
   const items = createMemo(() => {
-    const commands = visibleCommands().map((command) => commandSearchItem(command, command.context ? t().contextActions : t().actions));
+    const commands = shownCommands().commands.map((command) =>
+      commandSearchItem(command, command.context ? t().contextActions : t().actions),
+    );
     // Instant rows come first: streamed app sections are appended below them and never push them down.
     return [...commands, ...results()];
   });
@@ -277,7 +298,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   });
   createEffect(
     on(
-      () => ({ rows: items(), context: JSON.stringify([desiredUrl(), commandMode(), commandQuery()]) }),
+      () => ({ rows: items(), context: searchContext() }),
       (current, previous) => {
         if (userSelected && previous?.context === current.context) {
           const selected = previous.rows[activeIndex()];
@@ -298,7 +319,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     on(
       () => canSearch() && !commandMode() && finished(),
       (done, wasDone) => {
-        if (done && !wasDone) announce(t().searchDone({ count: results().length }));
+        if (!done || wasDone) return;
+        // Apps that did not answer are part of the outcome, so a missing answer never sounds like “not found”.
+        if (run().failed) announce(t().searchFailed);
+        else announce([t().searchDone({ count: results().length }), ...failedApps().map(failureText)].join(". "));
       },
     ),
   );
@@ -552,14 +576,6 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   </p>
                 )}
               </Show>
-              <Show when={current() && run().failed}>
-                <div class="cloud-resource-search__hint" role="status">
-                  {t().searchFailed}{" "}
-                  <Button variant="text" size="xs" onClick={() => startRun(searchUrl())}>
-                    {t().retry}
-                  </Button>
-                </div>
-              </Show>
               <Show when={!canSearch() && !commandMode()}>
                 <div class="cloud-resource-search__idle">
                   <p>{props.selectionMode ? t().pickerHint : props.searchResources === false ? t().navigationHint : t().startHint}</p>
@@ -675,9 +691,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                   <For each={failedApps()}>
                     {(failure) => (
                       <p>
-                        {failure.status === "timeout"
-                          ? t().appTimedOut({ app: appName(failure.appId) })
-                          : t().appUnavailable({ app: appName(failure.appId) })}
+                        {failureText(failure)}
                         <span aria-hidden="true">·</span>
                         <Button variant="text" size="xs" onClick={() => retryApp(failure.appId)}>
                           {t().retry}
@@ -685,6 +699,15 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                       </p>
                     )}
                   </For>
+                </div>
+              </Show>
+              {/* Below the rows, so pages and actions already on screen stay where they are. */}
+              <Show when={current() && run().failed}>
+                <div class="cloud-resource-search__hint" role="status">
+                  {t().searchFailed}{" "}
+                  <Button variant="text" size="xs" onClick={() => startRun(searchUrl())}>
+                    {t().retry}
+                  </Button>
                 </div>
               </Show>
               <Show when={noMatches()}>

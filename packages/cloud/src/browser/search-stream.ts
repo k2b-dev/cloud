@@ -19,9 +19,9 @@ export type SearchRun = {
   status: Record<string, SearchAppStatus>;
   blocks: SearchBlock[];
   unsupportedTags: string[];
-  /** The server closed the stream; a retried app may still search afterwards. */
+  /** The stream has ended; a retried app may still search afterwards. */
   done: boolean;
-  /** The request failed as a whole. */
+  /** The request failed before any app was named. */
   failed: boolean;
 };
 
@@ -57,6 +57,19 @@ export const applySearchLine = (run: SearchRun, line: SearchStreamLine): SearchR
     blocks: items.length ? [...run.blocks, { appId: line.provider, items }] : run.blocks,
   };
 };
+
+/**
+ * The request failed or the stream broke off. Once apps were named, the rows that arrived stay and every app still
+ * searching has failed on its own, with its own retry; before that, the search failed as a whole.
+ */
+export const breakSearchRun = (run: SearchRun): SearchRun =>
+  run.providers.length
+    ? {
+        ...run,
+        done: true,
+        status: Object.fromEntries(Object.entries(run.status).map(([appId, status]) => [appId, status === "searching" ? "error" : status])),
+      }
+    : { ...run, failed: true };
 
 /** Marks an app as searching again before its retry starts. */
 export const retrySearchApp = (run: SearchRun, appId: string): SearchRun => ({

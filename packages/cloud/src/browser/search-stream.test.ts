@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { SearchItem, SearchStreamLine } from "../api/search/schemas";
 import {
   applySearchLine,
+  breakSearchRun,
   emptySearchRun,
   failedSearchApps,
   searchFinished,
@@ -50,6 +51,19 @@ describe("streamed search run", () => {
     expect(run.blocks.map((block) => block.appId)).toEqual(["mail"]);
     expect(failedSearchApps(run)).toEqual([{ appId: "files", status: "timeout" }]);
     expect(searchFinished(run)).toBeTrue();
+  });
+
+  test("a broken stream keeps what arrived and fails only the apps that never answered", () => {
+    let run = applySearchLine(emptySearchRun(), { type: "start", query: "plan", apps: [], providers: ["files", "mail"] });
+    run = applySearchLine(run, { type: "provider", provider: "files", status: "ok", results: [item("files", "a")], ms: 3 });
+    run = breakSearchRun(run);
+    expect(run.failed).toBeFalse();
+    expect(run.blocks.map((block) => block.appId)).toEqual(["files"]);
+    expect(run.status).toEqual({ files: "ok", mail: "error" });
+    expect(failedSearchApps(run)).toEqual([{ appId: "mail", status: "error" }]);
+    expect(searchFinished(run)).toBeTrue();
+    // Before any app is named, the search failed as a whole.
+    expect(breakSearchRun(emptySearchRun()).failed).toBeTrue();
   });
 
   test("reads lines split across chunks", async () => {
