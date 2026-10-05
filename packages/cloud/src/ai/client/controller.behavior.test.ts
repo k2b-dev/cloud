@@ -803,6 +803,82 @@ describe("AI controller stream sessions", () => {
     dom.cleanup();
   });
 
+  test.each([
+    ["a newer refresh", (controller: ReturnType<typeof createAiChatController>) => controller.refreshActiveConversation()],
+    [
+      "leaving and reopening the chat",
+      async (controller: ReturnType<typeof createAiChatController>) => {
+        await controller.openConversation("Chat02");
+        await controller.openConversation("Chat01");
+      },
+    ],
+  ])("a refresh that fails late after %s does not end the chat", async (_case, overtake) => {
+    const calls: string[] = [];
+    const transport: AiConversationStreamTransport = {
+      subscribe: ({ conversationId }) => {
+        calls.push(`subscribe:${conversationId}`);
+        return { close: () => calls.push(`close:${conversationId}`) };
+      },
+    };
+    // The first load of Chat01 waits; every later load finds the chat.
+    let failLate!: () => void;
+    let chat01Loads = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        const id = /^\/api\/ai\/conversations\/(Chat0\d)$/.exec(new URL(String(input), "http://cloud.test").pathname)?.[1];
+        if (!id) return Response.json({});
+        if (id === "Chat01" && ++chat01Loads === 1)
+          return new Promise<Response>((resolve) => {
+            failLate = () => resolve(Response.json({ message: "Not found" }, { status: 404 }));
+          });
+        return Response.json({ conversation: conversation(id), messages: [], activeTurn: null });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "Chat01",
+        initialDetail: { conversation: conversation("Chat01"), messages: [], activeTurn: null },
+        streamTransport: transport,
+      });
+    });
+
+    const late = controller.refreshActiveConversation();
+    await overtake(controller);
+    failLate();
+
+    expect(await late).toBe(true);
+    expect(controller.error()).toBeNull();
+    expect(calls.at(-1)).toBe("subscribe:Chat01");
+    dispose();
+  });
+
+  test("opening a chat that is gone shows the reason in the page's language", async () => {
+    globalThis.fetch = Object.assign(async () => Response.json({ message: "Conversation not found" }, { status: 404 }), {
+      preconnect: originalFetch.preconnect,
+    });
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "de";
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "Chat01",
+        initialDetail: { conversation: conversation("Chat01"), messages: [], activeTurn: null },
+        streamTransport: { subscribe: () => ({ close() {} }) },
+      });
+    });
+
+    expect(await controller.openConversation("Chat02")).toBe("failed");
+    expect(controller.error()).toBe("Dieser Chat ist nicht mehr verfügbar.");
+    dispose();
+    dom.cleanup();
+  });
+
   test("subscribes again after a stream ended with an error once the person returns to the chat", async () => {
     type Subscription = Parameters<AiConversationStreamTransport["subscribe"]>[0];
     const subscriptions: Subscription[] = [];

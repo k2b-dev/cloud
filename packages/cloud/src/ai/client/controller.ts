@@ -161,6 +161,10 @@ const streamErrorText = (code: AiStreamErrorCode): string => {
   return code === "access_denied" ? t.streamAccessDenied : t.streamNotFound;
 };
 
+/** A chat that cannot continue says why in the page's language; any other error shows its own message. */
+const errorText = (error: unknown, fallback: string): string =>
+  error instanceof AiStreamError ? streamErrorText(error.code) : error instanceof Error ? error.message : fallback;
+
 export const createAiChatController = (options: CreateAiChatControllerOptions) => {
   const [activeConversationId, setActiveConversationIdSignal] = createSignal<string | null>(options.initialConversationId ?? null);
   const [globalError, setGlobalError] = createSignal<string | null>(options.initialError ?? null);
@@ -357,7 +361,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   /** Stops the chat's stream for good and shows why. */
   const endStream = (conversationId: string, error: Error) => {
     closeStream();
-    streamError = error instanceof AiStreamError ? streamErrorText(error.code) : error.message;
+    streamError = errorText(error, error.message);
     setConversationError(conversationId, streamError);
   };
 
@@ -417,13 +421,20 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     } catch {}
   };
 
+  /** Loads a chat. A status after which no retry can load it throws an `AiStreamError`, like the stream's. */
+  const fetchDetail = async (conversationId: string, fallback: string): Promise<AiConversationDetail> => {
+    const response = await fetch(url(`/conversations/${conversationId}`));
+    if (response.ok) return (await response.json()) as AiConversationDetail;
+    const message = await readError(response, fallback);
+    const ended = terminalAiStreamErrorCode(response.status);
+    throw ended ? new AiStreamError(ended, message) : new Error(message);
+  };
+
   const loadDetail = async (conversationId: string, shouldReportError: () => boolean): Promise<AiConversationDetail | null> => {
     try {
-      return await request<AiConversationDetail>(`/conversations/${conversationId}`, { method: "GET" }, "Failed to open conversation");
+      return await fetchDetail(conversationId, "Failed to open conversation");
     } catch (loadError) {
-      if (shouldReportError()) {
-        setConversationError(conversationId, loadError instanceof Error ? loadError.message : "Failed to open conversation");
-      }
+      if (shouldReportError()) setConversationError(conversationId, errorText(loadError, "Failed to open conversation"));
       return null;
     }
   };
@@ -501,28 +512,28 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   /**
    * Loads the active chat again. Resolves `false` when it no longer exists or
    * is no longer readable: the chat then ends like its stream, with the reason
-   * as its error, because no retry can load it.
+   * as its error, because no retry can load it. A response that a newer
+   * refresh or a newer opening of a chat overtook changes nothing.
    */
   const refreshActiveConversation = async (): Promise<boolean> => {
     const conversationId = activeConversationId();
     if (!conversationId) return true;
     const refreshGeneration = ++conversationRefreshGeneration;
     const openGeneration = conversationOpenGeneration;
-    const response = await fetch(url(`/conversations/${conversationId}`));
-    const ended = terminalAiStreamErrorCode(response.status);
-    if (ended) {
-      const error = new AiStreamError(ended, await readError(response, "Failed to refresh conversation"));
-      if (isActiveConversation(conversationId)) endStream(conversationId, error);
-      return false;
-    }
-    if (!response.ok) throw new Error(await readError(response, "Failed to refresh conversation"));
-    const detail = (await response.json()) as AiConversationDetail;
-    if (
+    const overtaken = () =>
       !isActiveConversation(conversationId) ||
       refreshGeneration !== conversationRefreshGeneration ||
-      openGeneration !== conversationOpenGeneration
-    )
-      return true;
+      openGeneration !== conversationOpenGeneration;
+    let detail: AiConversationDetail;
+    try {
+      detail = await fetchDetail(conversationId, "Failed to refresh conversation");
+    } catch (refreshError) {
+      if (!(refreshError instanceof AiStreamError)) throw refreshError;
+      if (overtaken()) return true;
+      endStream(conversationId, refreshError);
+      return false;
+    }
+    if (overtaken()) return true;
     const currentDraft = state.conversation?.draft;
     if (currentDraft && currentDraft.revision > detail.conversation.draft.revision) detail.conversation.draft = currentDraft;
     const windowOldest = detail.messages[0]?.seq;

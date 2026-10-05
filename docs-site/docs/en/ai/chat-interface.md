@@ -123,9 +123,11 @@ snapshot, so a frontend tool runs once and a resolved approval does not
 reappear. When access to the conversation ends, the controller stops the
 stream and shows, in the page's language, why the chat cannot continue,
 instead of reconnecting. `refreshActiveConversation()` does the same and
-resolves `false` when the chat is gone, so a caller does not retry it.
-Reopening or refreshing the chat, or acting in it, subscribes again; the error
-clears once the new stream connects.
+resolves `false` when the chat is gone, so a caller does not retry it; an
+answer that a newer refresh or opening of a chat overtook changes nothing.
+Opening a chat that is gone shows the same reason. Reopening or refreshing the
+chat, or acting in it, subscribes again; the error clears once the new stream
+connects.
 
 Lists, Sources, files, tasks, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
