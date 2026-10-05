@@ -8,6 +8,7 @@
  * Mail was first deployed; a developer machine that still holds the old chain
  * is reset by dropping the schema.
  */
+import { lazySync } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
@@ -221,12 +222,14 @@ export const migrate = async (): Promise<void> => {
   }
 };
 
-const BM25_INDEX_LOCK_KEY = "cloud.mail.message-contents-bm25";
 /**
- * The longest the background build may run. It holds a lock that keeps other schema changes on
- * messages waiting, so a larger installation creates the index in a maintenance window instead.
+ * One Mail process builds at a time: a second build on the same table deadlocks with the first, and
+ * Postgres cancels one of them. The lease is renewed while the build runs.
  */
-const BM25_INDEX_BUILD_TIMEOUT = "30min";
+const BM25_INDEX_LEASE_MS = 60_000;
+const searchIndexBuildMutex = lazySync((sync) =>
+  sync.mutex({ id: "mail:search-index-build", ttlMs: BM25_INDEX_LEASE_MS, retry: { maxAttempts: 1 } }),
+);
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
@@ -236,79 +239,106 @@ const BM25_INDEX_DDL = `CREATE INDEX CONCURRENTLY IF NOT EXISTS message_contents
   ON mail.message_contents USING bm25 ((COALESCE(subject, '') || ' ' || COALESCE(subject, '') || ' ' || COALESCE(plain_text, '')))
   WITH (text_config = 'simple')`;
 
-const readBm25IndexState = async (db: SqlClient) => {
-  const [state] = await db<{ installed: boolean; present: boolean; valid: boolean }[]>`
+/**
+ * The index as the database sees it. Search uses it only when it is a valid BM25 index; `building`
+ * tells a build that is still running, in any process, from one that was interrupted. Postgres
+ * hides which index another role builds, so any index build of another role in this database
+ * counts, such as an operator's own build of this index.
+ */
+const readBm25IndexState = async () => {
+  const [state] = await sql<{ installed: boolean; present: boolean; valid: boolean; building: boolean }[]>`
     SELECT
       EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed,
       to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS present,
-      COALESCE((
-        SELECT index_state.indisvalid AND index_state.indisready AND index_state.indislive
+      EXISTS (
+        SELECT 1
         FROM pg_index index_state
+        JOIN pg_class index_class ON index_class.oid = index_state.indexrelid
+        JOIN pg_am access_method ON access_method.oid = index_class.relam
         WHERE index_state.indexrelid = to_regclass('mail.message_contents_bm25_idx')
-      ), false) AS valid
+          AND access_method.amname = 'bm25'
+          AND index_state.indisvalid
+          AND index_state.indisready
+          AND index_state.indislive
+      ) AS valid,
+      EXISTS (
+        SELECT 1
+        FROM pg_stat_progress_create_index progress
+        WHERE progress.datname = current_database()
+          AND (progress.index_relid = to_regclass('mail.message_contents_bm25_idx') OR progress.index_relid IS NULL)
+      ) AS building
   `;
-  return state ?? { installed: false, present: false, valid: false };
+  return state ?? { installed: false, present: false, valid: false, building: false };
+};
+
+const dropBm25Index = async (): Promise<void> => {
+  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
 };
 
 /**
  * Builds the optional BM25 index when the operator installed pg_textsearch. The build runs
- * concurrently, so mail keeps arriving, and one replica builds at a time. Mail does not wait for it:
- * search ranks natively until the index is valid. A build that fails or runs out of time is removed,
- * and the next start tries again; an invalid index from an interrupted build is replaced.
- * Never throws.
+ * concurrently, so mail keeps arriving, and under a NATS lease, so one process builds at a time.
+ * Mail does not wait for it: search ranks natively until the index is valid. A build that fails is
+ * removed, and the next start tries again; an index left invalid by an interrupted build is
+ * replaced, and one that another process is still building is left alone.
+ * Every database step is one statement without session state, so a transaction pooler may send
+ * each to another backend. Never throws.
  */
 export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready" | "busy" | "built" | "failed"> => {
-  let connection: Awaited<ReturnType<typeof sql.reserve>> | undefined;
-  let locked = false;
-  let originalTimeout: string | undefined;
-  let reusable = true;
   try {
-    connection = await sql.reserve();
-    const before = await readBm25IndexState(connection);
+    const before = await readBm25IndexState();
     if (!before.installed) return "unavailable";
     if (before.valid) return "ready";
-    const [lock] = await connection<{ acquired: boolean }[]>`
-      SELECT pg_try_advisory_lock(hashtextextended(${BM25_INDEX_LOCK_KEY}, 0)) AS acquired
-    `;
-    if (!lock?.acquired) return "busy";
-    locked = true;
-    // Another replica may have finished the build since the first look.
-    const state = await readBm25IndexState(connection);
-    if (state.valid) return "ready";
-    const [setting] = await connection<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`;
-    originalTimeout = setting?.timeout ?? "0";
-    await connection`SELECT set_config('statement_timeout', ${BM25_INDEX_BUILD_TIMEOUT}, false)`;
-    // An interrupted build leaves an invalid index behind, which IF NOT EXISTS would keep.
-    if (state.present) await connection`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
-    log.info("Building the optional BM25 index for Mail search");
-    const startedAt = performance.now();
+    const mutex = searchIndexBuildMutex();
+    const lease = await mutex.acquire({ resource: "message-contents-bm25" });
+    if (!lease) return "busy";
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), BM25_INDEX_LEASE_MS / 3);
+    renewal.unref();
     try {
-      await connection.unsafe(BM25_INDEX_DDL).simple();
-    } catch (error) {
-      log.warn("Optional BM25 index for Mail search was not built; search stays native", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await connection`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
-      return "failed";
+      return await buildBm25Index();
+    } finally {
+      clearInterval(renewal);
+      await mutex.release(lease).catch(() => false);
     }
-    log.info("Built the optional BM25 index for Mail search", { durationMs: Math.round(performance.now() - startedAt) });
-    return "built";
   } catch (error) {
-    reusable = false;
     log.warn("Optional BM25 index for Mail search is unavailable; search stays native", {
       error: error instanceof Error ? error.message : String(error),
     });
     return "failed";
-  } finally {
-    if (connection) {
-      try {
-        if (originalTimeout !== undefined) await connection`SELECT set_config('statement_timeout', ${originalTimeout}, false)`;
-        if (locked) await connection`SELECT pg_advisory_unlock(hashtextextended(${BM25_INDEX_LOCK_KEY}, 0))`;
-      } catch {
-        reusable = false;
-      }
-      if (reusable) connection.release();
-      else await connection.close({ timeout: 0 }).catch(() => undefined);
-    }
   }
+};
+
+const buildBm25Index = async (): Promise<"ready" | "busy" | "built" | "failed"> => {
+  // Another process may have finished the build since the first look, or still build it, for
+  // example an operator in a maintenance window or a process whose lease ran out.
+  const before = await readBm25IndexState();
+  if (before.valid) return "ready";
+  if (before.building) {
+    log.info("An index build is already running in this database; the next start checks the optional BM25 index again");
+    return "busy";
+  }
+  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
+  if (before.present) await dropBm25Index();
+  log.info("Building the optional BM25 index for Mail search");
+  const startedAt = performance.now();
+  // The build runs until it is done. pg_textsearch reacts to a cancel request or statement_timeout
+  // only once it has read every message, so a time limit would discard a finished build and repeat
+  // it on the next start.
+  try {
+    await sql.unsafe(BM25_INDEX_DDL).simple();
+  } catch (error) {
+    const after = await readBm25IndexState();
+    if (after.valid) return "ready";
+    if (after.building) return "busy";
+    log.warn("Optional BM25 index for Mail search was not built; search stays native", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await dropBm25Index();
+    return "failed";
+  }
+  // IF NOT EXISTS skips the build when another build created the index in the meantime; it waits
+  // for that build, and the index is valid only if that build succeeded.
+  if (!(await readBm25IndexState()).valid) return "busy";
+  log.info("Built the optional BM25 index for Mail search", { durationMs: Math.round(performance.now() - startedAt) });
+  return "built";
 };

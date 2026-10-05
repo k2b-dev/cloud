@@ -576,21 +576,31 @@ builds it in the background with `CREATE INDEX CONCURRENTLY`:
 
 - Mail starts and searches natively while the index builds; mail keeps
   arriving.
-- One replica builds at a time; the others skip the build.
-- A build may run for 30 minutes. A build that fails or runs out of time is
-  removed, logged as a warning from `mail:migrate`, and tried again on the next
-  start. An invalid index left by an interrupted build is replaced the same way.
+- One Mail process builds at a time, coordinated through a NATS lease. A build
+  that another process or an operator is still running is left alone. Postgres
+  hides which index another database role builds, so while another role builds
+  any index in the same database, Mail logs that and leaves the build to its
+  next start. Every step is a single statement without session state, so the
+  build also works behind a transaction pooler.
+- The build has no time limit. With `pg_textsearch` 1.5.1, a build reacts to a
+  cancel request or `statement_timeout` only after it has read every message,
+  so a limit would only discard a finished build.
+- A build that fails is removed, logged as a warning from `mail:migrate`, and
+  tried again on the next start. An invalid index left by an interrupted build,
+  or an index of another kind under the same name, is replaced on the next
+  start.
 
 Build time grows with the stored message text. With 92,000 invented messages
 of about 1 KB of text each on PostgreSQL 17 and `pg_textsearch` 1.4.0, the
 build took 18 to 24 seconds and the index used 34 MB. While it runs, the build
-holds a lock that makes other schema changes on Mail messages wait. The current
-Mail setup does not need that lock once its indexes exist, but an older Mail
-image that starts during the build waits for it and can fail its setup until
-the build finishes.
+holds a lock that keeps autovacuum and other schema changes on Mail messages
+waiting. The current Mail setup does not need that lock once its indexes exist,
+but an older Mail image that starts during the build waits for it and can fail
+its setup until the build finishes.
 
-If the build runs out of time on a very large installation, create the index
-once in a maintenance window:
+To decide when the build runs, create the index yourself before Mail starts,
+for example in a maintenance window. Mail then finds the valid index and skips
+its build:
 
 ```sql
 SET statement_timeout = 0;
