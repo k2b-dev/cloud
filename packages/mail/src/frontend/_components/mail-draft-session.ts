@@ -1,15 +1,14 @@
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 import type { Accessor } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { AcquiredDraftLease, DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
-import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../../live-events";
+import { MailLiveEventSchema } from "../../live-events";
 import { readApiError } from "./api-response";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { advanceMailDraftJournalAfterSave, type MailDraftJournal, readMailDraftJournal } from "./mail-draft-journal";
 import { type DraftLeaseHeartbeatResult, recoverDraftLeaseHeartbeat } from "./mail-draft-lease-recovery";
 import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
-import { createMailLiveInvalidationHub } from "./mail-live-invalidation-hub";
 
 type ComposerStatus = "local" | "preparing" | "saved" | "saving" | "error" | "readonly";
 
@@ -29,6 +28,9 @@ export const createSerializedDraftMutationQueue = () => {
     return result;
   };
 };
+
+/** How often an open composer renews its lease, and how often it tries again after Mail stopped answering. */
+const LEASE_HEARTBEAT_MS = 10_000;
 
 const journalKey = (mailboxId: string, draftId: string): string => `cloud:mail:draft:${mailboxId}:${draftId}`;
 
@@ -239,12 +241,7 @@ export const createMailDraftSession = (options: {
         if (heartbeatController === controller) heartbeatController = null;
       }
       if (options.isDisposed() || generation !== heartbeatGeneration) return;
-      if (heartbeat.kind === "unavailable") {
-        setLeaseConflict(null);
-        setStatus("readonly");
-        setStatusMessage(t().connectionLost);
-        return;
-      }
+      if (heartbeat.kind === "unavailable") return waitForConnection();
       if (heartbeat.kind === "rejected") {
         setLease(null);
         await refreshDraftLifecycle().catch(() => undefined);
@@ -255,7 +252,18 @@ export const createMailDraftSession = (options: {
       setLease(heartbeat.lease);
       setLeaseConflict(null);
       startHeartbeat();
-    }, 10_000);
+    }, LEASE_HEARTBEAT_MS);
+  };
+
+  /**
+   * Mail did not answer the lease renewal. The composer stays read-only and resumes its lease again at the
+   * heartbeat interval, so it becomes editable once Mail answers, without a reload or a live update.
+   */
+  const waitForConnection = () => {
+    setLeaseConflict(null);
+    setStatus("readonly");
+    setStatusMessage(t().connectionLost);
+    heartbeatTimer = setTimeout(() => void resumeCurrentLease({ quiet: true }), LEASE_HEARTBEAT_MS);
   };
 
   const acquireLease = async (currentDraft: MailDraft, takeover = false): Promise<AcquiredDraftLease | null> => {
@@ -440,14 +448,15 @@ export const createMailDraftSession = (options: {
     });
   };
 
-  const resumeCurrentLease = async () => {
+  /** `quiet` keeps a read-only composer as it is while the attempt runs. */
+  const resumeCurrentLease = async ({ quiet = false }: { quiet?: boolean } = {}) => {
     const currentDraft = draft();
     const currentLease = lease();
     if (options.isDisposed() || !currentDraft) return;
     if (!currentLease) return void (await ensureDraft());
     stopHeartbeat();
     const generation = heartbeatGeneration;
-    setStatus("preparing");
+    if (!quiet) setStatus("preparing");
     const controller = new AbortController();
     heartbeatController = controller;
     let heartbeat: DraftLeaseHeartbeatResult;
@@ -471,12 +480,7 @@ export const createMailDraftSession = (options: {
       startHeartbeat();
       return;
     }
-    if (heartbeat.kind === "unavailable") {
-      setLeaseConflict(null);
-      setStatus("readonly");
-      setStatusMessage(t().connectionLost);
-      return;
-    }
+    if (heartbeat.kind === "unavailable") return waitForConnection();
     setLease(null);
     await ensureDraft();
   };
@@ -530,64 +534,30 @@ export const createMailDraftSession = (options: {
       setInitialized(true);
       return;
     }
-    let markApplied: (cursor: string | null | undefined) => void = () => undefined;
-    const liveHub = createMailLiveInvalidationHub({
-      delayMs: 100,
-      isBlocked: () => false,
-      onApplied: (cursor) => markApplied(cursor),
-      onFailed: () => undefined,
-    });
-    liveHub.register({
-      matches: (invalidation) => {
-        if (invalidation.conversationIds === null) return true;
-        const conversationId = draft()?.conversationId;
-        return Boolean(conversationId && invalidation.conversationIds.has(conversationId));
+    // A send, a discard, or another person's lease on this draft arrives as a change of its conversation or
+    // mailbox. The lease heartbeat keeps the draft safe without live updates and resumes the lease after an
+    // outage, so a subscription that ends leaves the composer as it is.
+    const reconcile = () =>
+      reconcileDraftSessionAfterLiveInvalidation({
+        refreshLifecycle: refreshDraftLifecycle,
+        hasLifecycleTransition: () => Boolean(lifecycleTransition()),
+        resumeLease: () => resumeCurrentLease(),
+      });
+    const live = liveConnection("/api/mail/live").subscribe(
+      "mailbox",
+      { mailbox: options.mailboxId },
+      {
+        cursor: null,
+        parse: (data) => MailLiveEventSchema.parse(data),
+        apply: async (events) => {
+          const conversationId = draft()?.conversationId ?? null;
+          if (events.some(({ data }) => data.conversationId === null || data.conversationId === conversationId)) await reconcile();
+        },
+        resync: reconcile,
+        unavailable: () => undefined,
       },
-      invalidate: () =>
-        reconcileDraftSessionAfterLiveInvalidation({
-          refreshLifecycle: refreshDraftLifecycle,
-          hasLifecycleTransition: () => Boolean(lifecycleTransition()),
-          resumeLease: resumeCurrentLease,
-        }),
-    });
-    const live = createLiveWebSocket<MailLiveServerMessage>({
-      url: "/api/mail/ws",
-      initialCursor: null,
-      activity: "visible",
-      subscribe: (cursor) =>
-        ({
-          type: MAIL_LIVE_WS_TYPE.subscribe,
-          payload: { mailboxId: options.mailboxId, fromCursor: cursor },
-        }) satisfies MailLiveClientMessage,
-      parse: (raw) => {
-        const message = parseMailLiveServerMessage(raw);
-        if (!message) throw new Error("Invalid Mail live server message");
-        return message;
-      },
-      onMessage: (message, controls) => {
-        if (message.payload.mailboxId && message.payload.mailboxId !== options.mailboxId) {
-          controls.terminate({ code: "resource_mismatch", message: "Mail live subscription changed resources" });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.ready) {
-          liveHub.schedule({ cursor: message.payload.cursor, conversationId: null });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.event) {
-          liveHub.schedule({ cursor: message.payload.cursor, conversationId: message.payload.event.conversationId });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.revoked) {
-          controls.terminate({ code: message.payload.code, message: message.payload.message });
-        }
-      },
-    });
-    markApplied = live.markApplied;
-    live.connect();
-    onCleanup(() => {
-      liveHub.dispose();
-      live.dispose();
-    });
+    );
+    onCleanup(() => live.close());
     void ensureDraft();
   });
 

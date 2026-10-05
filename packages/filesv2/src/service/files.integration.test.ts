@@ -2110,6 +2110,26 @@ suite("Files service and durable bindings", () => {
     expect((await service.retry(admin, pending!.id)).state).toBe("complete");
     expect((await service.retry(admin, pending!.id)).state).toBe("complete");
   });
+  test("pending archive recovery compares snapshot ids only when Filegate still publishes one", async () => {
+    const admin = await user("admin", "local", true);
+    directory("cloud", "users/admin", 0, 0, "0700");
+    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await sql`ALTER TABLE filesv2.operations ADD CONSTRAINT test_pause_finish CHECK (state<>'complete')`.simple();
+    try {
+      await expect(service.archive(admin, { area: "cloud", kind: "users", name: "admin" })).rejects.toThrow();
+    } finally {
+      await sql`ALTER TABLE filesv2.operations DROP CONSTRAINT test_pause_finish`.simple();
+    }
+    const [pending] = await sql<
+      { id: string; target: string }[]
+    >`SELECT id,target FROM filesv2.operations WHERE action='archive' AND state='pending'`;
+    await sql`UPDATE filesv2.operations SET snapshot=snapshot || '{"id":"6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10"}'::jsonb WHERE id=${pending!.id}::uuid`;
+    const moved = nodes.get(`cloud:${pending!.target}`)!;
+    nodes.set(`cloud:${pending!.target}`, { ...moved, id: "0b6f8f55-2d0e-4b6a-8f7e-3c2a1d9e4b21" });
+    await expect(service.retry(admin, pending!.id)).rejects.toMatchObject({ code: "source_changed" });
+    nodes.set(`cloud:${pending!.target}`, moved);
+    expect((await service.retry(admin, pending!.id)).state).toBe("complete");
+  });
   test("per-action archive destinations stay separate from active trees and survive default changes", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");

@@ -14,8 +14,8 @@ import type { SmtpConnectionConfig } from "./connectors/contract";
 import { isMailReceivedSinceSend, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
-import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { mailLive } from "./live";
 import { localStateProjectionSchema, rollbackLocalStateProjection } from "./local-state-projection";
 import {
   enqueueMaintenanceCommand,
@@ -28,7 +28,6 @@ import { isOperatorMaintenanceKind } from "./operator-actions";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import {
   hasSyncedSentCopy,
-  loadOutboundProjectionByOutbox,
   recordOutboundSentAt,
   recordSentCopyPlacement,
   reopenUnprovenSendWithSentCopy,
@@ -307,7 +306,7 @@ const commandState = async (
     return updated;
   });
   if (!updated) return false;
-  await notifyMailInvalidations();
+  mailLive.wake();
   if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
     await publishMailWorkflowDependency({
       mailboxId: updated.mailbox_id,
@@ -1563,13 +1562,7 @@ const finishFolderOperation = async (
     });
     await commandState(command, state);
   });
-  await publishMailMailboxEvent({
-    mailboxId: command.mailbox_id,
-    conversationId: null,
-    reason: "folder",
-    targetId: folderId ?? operation.folder?.folder_id ?? null,
-    activityId: `folder-command:${command.id}:${state}`,
-  });
+  mailLive.wake();
 };
 
 const executeFreshFolderOperation = async (
@@ -2328,31 +2321,6 @@ const resetUnstartedOutboxClaim = async (outboxId: string, claim: OutboxClaim): 
     return true;
   });
 
-const publishOutboundSubmissionChange = async (params: {
-  outboxId: string;
-  state: string;
-  attempt: number;
-  activityId?: string | null;
-}): Promise<void> => {
-  try {
-    const projection = await loadOutboundProjectionByOutbox(sql, params.outboxId);
-    if (!projection) return;
-    await publishMailCollaborationEvent({
-      mailboxId: projection.mailboxId,
-      conversationId: projection.conversationId,
-      reason: "outbound",
-      targetId: projection.messageId,
-      activityId: params.activityId ?? `outbound-state:${params.outboxId}:${params.attempt}:${params.state}`,
-    });
-  } catch (error) {
-    log.warn("Failed to publish outbound message state", {
-      outboxId: params.outboxId,
-      state: params.state,
-      code: normalizeCode(error, "OUTBOUND_STATE_EVENT_FAILED"),
-    });
-  }
-};
-
 const loadSenderBinding = async (command: DbCommandExecution, senderIdentityId: string): Promise<DbSenderBinding> => {
   const [sender] = await sql<DbSenderBinding[]>`
     SELECT
@@ -2608,21 +2576,10 @@ const finishOutbox = async (params: {
     };
   });
   if (result.updated) {
-    await publishOutboundSubmissionChange({
-      outboxId: params.outbox.id,
-      state: params.outboxState,
-      attempt: params.outbox.attempt,
-      activityId: result.transition?.activityId,
-    });
+    mailLive.wake();
   }
   if (result.updated && typeof parseJsonRecord(params.command.payload).scheduledAt === "string") {
-    await publishMailMailboxEvent({
-      mailboxId: params.command.mailbox_id,
-      conversationId: null,
-      reason: "scheduled_send",
-      targetId: params.outbox.id,
-      activityId: `scheduled-send-state:${params.outbox.id}:${params.outbox.attempt}:${params.outboxState}`,
-    });
+    mailLive.wake();
   }
   if (result.updated && ["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(params.commandState)) {
     await publishMailWorkflowDependency({
@@ -2678,20 +2635,10 @@ const scheduleOutboxRetry = async (params: {
     return true;
   });
   if (updated) {
-    await publishOutboundSubmissionChange({
-      outboxId: params.outbox.id,
-      state: "scheduled",
-      attempt: params.outbox.attempt,
-    });
+    mailLive.wake();
   }
   if (updated && typeof parseJsonRecord(params.command.payload).scheduledAt === "string") {
-    await publishMailMailboxEvent({
-      mailboxId: params.command.mailbox_id,
-      conversationId: null,
-      reason: "scheduled_send",
-      targetId: params.outbox.id,
-      activityId: `scheduled-send-retry:${params.outbox.id}:${params.outbox.attempt}`,
-    });
+    mailLive.wake();
   }
 };
 
@@ -2805,7 +2752,7 @@ const recordSentCopy = async (outbox: DbOutboxExecution, sender: DbSenderBinding
   const folderId = sender.sent_folder_id;
   try {
     await sql.begin((tx) => recordSentCopyPlacement(tx, { outboxId: outbox.id, bindingId: outbox.selected_binding_id, folderId, uids }));
-    await notifyMailInvalidations();
+    mailLive.wake();
   } catch (error) {
     log.warn("Sent copy placement waits for the next folder sync", {
       outboxId: outbox.id,
@@ -3178,7 +3125,7 @@ const giveUpUnknownOutbox = async (outbox: DbOutboxExecution, command: DbCommand
   await finishOutbox({ outbox, command, outboxState: "needs_attention", commandState: "needs_attention", draftState: "sent", error });
   // The folder sync may have placed the provider's copy while this check ran; then it proves the send after all.
   if (outbox.message_id && (await reopenUnprovenSendWithSentCopy(sql, { messageId: outbox.message_id }))) {
-    await publishOutboundSubmissionChange({ outboxId: outbox.id, state: "unknown", attempt: outbox.attempt });
+    mailLive.wake();
   }
 };
 
@@ -3277,7 +3224,7 @@ const reconcileSentCopy = async (
         AND attempt = ${outbox.attempt}
         AND state = ${outbox.state}
     `;
-    await publishOutboundSubmissionChange({ outboxId: outbox.id, state: "sent", attempt: outbox.attempt });
+    mailLive.wake();
   } else {
     await deferSentCopy(outbox);
   }
@@ -3385,11 +3332,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
     claim = await claimOutbox(outboxId);
     if (!claim) return null;
     const activeClaim = claim;
-    await publishOutboundSubmissionChange({
-      outboxId,
-      state: activeClaim.claimedOutboxState,
-      attempt: activeClaim.claimedOutboxAttempt,
-    });
+    mailLive.wake();
     const loaded = await loadOutbox(outboxId);
     if (!loaded) throw Object.assign(new Error("Claimed outbox submission is unavailable"), { code: "OUTBOX_UNAVAILABLE" });
     return await withLeaseHeartbeat({
@@ -3416,11 +3359,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
         return false;
       });
       if (reset) {
-        await publishOutboundSubmissionChange({
-          outboxId,
-          state: claim.previousOutboxState,
-          attempt: claim.previousOutboxAttempt,
-        });
+        mailLive.wake();
       }
     }
     throw error;

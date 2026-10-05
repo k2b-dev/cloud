@@ -11,8 +11,8 @@ import {
 } from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
-import { publishMailMailboxEvent } from "./events";
 import { type FolderDisplayState, loadFolderDisplayState } from "./folder-display";
+import { mailLive } from "./live";
 import { listFolders, type MailFolderView } from "./messages";
 
 type SqlClient = typeof sql;
@@ -179,13 +179,7 @@ export const setFolderDisplay = async (params: {
       return ok(change);
     });
     if (result.ok && activityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "folder",
-        targetId: params.folderId,
-        activityId,
-      });
+      mailLive.wake();
     }
     return result;
   } catch (error) {
@@ -289,13 +283,7 @@ export const dismissUnavailableFolder = async (params: {
       return ok({ folderId: params.folderId, dismissedFolderCount: folderIds.length });
     });
     if (result.ok && activityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "folder",
-        targetId: params.folderId,
-        activityId,
-      });
+      mailLive.wake();
     }
     return result;
   } catch (error) {

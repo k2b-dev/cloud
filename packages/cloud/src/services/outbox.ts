@@ -36,7 +36,7 @@ export type OutboxRow = {
 };
 
 export type PgOutboxConfig<Row extends OutboxRow> = {
-  /** Schema-qualified table, e.g. `mail.live_invalidation_outbox`. */
+  /** Schema-qualified table, e.g. `events.outbox`. */
   table: string;
   /** Log source. */
   name: string;

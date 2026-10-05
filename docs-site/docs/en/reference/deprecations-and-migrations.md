@@ -10,6 +10,73 @@ updated: 2026-10-04
 
 # Deprecations and migrations
 
+## Mail writes live updates through the platform outbox
+
+Mail writes its live updates through the platform outbox that Core's migration
+creates, from the trigger on its activity log, so they are part of the
+transaction that records a change. Update Core before Mail: Mail does not start
+until `events.outbox` exists. See
+[Live updates](/en/docs/automation/live-updates).
+
+Mail pages follow a mailbox on `/api/mail/live` with the channel `mailbox`,
+which reads the topic `cloud:live:mail` and checks the reader's access when it
+delivers an update. The mailbox view, the composer, and the mailing list dialog
+of a page share one socket instead of opening one each, and a returning tab
+receives what it missed instead of loading the view again. The socket accepts
+every credential the Mail API accepts, so pages in the phone app receive live
+updates too.
+
+The first Mail start after the update replaces `mail.enqueue_live_invalidation()`
+and drops `mail.live_invalidation_outbox`. The function keeps its signature, so
+replicas of the previous version that still run during a rolling update write
+their changes to the platform outbox as well, and the new replicas publish them.
+A tab connected to a previous replica receives no updates until that replica
+stops; for one release, `/api/mail/ws` then closes its socket with
+`login_required`. A mailbox view reloads once. A compose page opened on its own
+before the update receives no live updates until it is reloaded; its draft
+lease still protects the draft. Previous replicas log
+`Outbox reconcile failed` until they stop, because their table is gone.
+
+Nothing writes the previous topic, `mail:invalidations`, anymore. Its events
+expire after 24 hours, but its stream keeps its 1 GiB reservation until the
+next release removes it together with `/api/mail/ws`; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
+If you roll Mail back to the previous version, its pages receive no live
+updates until Mail is updated again, because the database keeps the new
+function. Reloading a page shows the current state. The updates written
+meanwhile wait in `events.outbox` and are published by the next Mail start.
+
+## Files supports Filegate 7
+
+Files is tested with Filegate 7.0; Filegate 6.1 keeps working. Upgrading the
+Filegate daemon needs no migration: the index format, the `/v1` API, and leases
+stay the same, and the root volumes and `state_dir` stay in place.
+
+Upgrade Cloud before or together with the daemon. Filegate 7 publishes file IDs
+only on roots with stable IDs, and earlier Files releases compare the IDs they
+recorded under Filegate 6.1. On roots with `index: true` and `managed: false`,
+those releases cannot finish these operations if they were still open when
+the daemon changed:
+
+- moving files and folders into the trash and restoring them from it;
+- archiving, restoring, and deleting directories.
+
+Repeating a completed trash restore also fails. These releases report
+`source_changed` or `operation_unresolved` indefinitely. The current release
+compares IDs only when both sides have one and otherwise compares modification
+time and size, so these operations complete on their next retry or trash
+listing.
+
+Filegate 7 reports stable file IDs (`stableIds`) only for roots with both
+`index: true` and `managed: true`. Such a root needs Filegate as its only
+writer and readable and writable `user.*` extended attributes on the real
+mount. Files does not use these IDs yet. An ID stays valid only while the file
+keeps its device and inode, so back up each root with its `.filegate`
+directory, ownership, ACLs, and extended attributes together with the complete
+`state_dir`, with Filegate stopped. Restoring copies onto new inodes or another
+device assigns new IDs. Follow Filegate's backup and recovery guide.
+
 ## Spaces writes live updates through the platform outbox
 
 Spaces writes its live updates in the transaction that makes the change,
@@ -135,7 +202,7 @@ There is no automatic migration. Files never read the legacy application's
 settings or storage, and nothing moves on upgrade. An installation that still
 runs `app-files` must move its users to Files before it upgrades:
 
-1. Set up Files with Filegate 6.1 as described in
+1. Set up Files with Filegate 7.0 as described in
    [Deployment requirements](/en/docs/operations/deployment-requirements), and
    map the home and group directories the legacy app served to Files storage.
 2. Verify that users see and can open their files in `/app/filesv2`.

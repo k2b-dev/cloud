@@ -3,8 +3,7 @@ import { sql } from "bun";
 import type { ActorRef, UpdateConversationSummary } from "../contracts";
 import type { MailRequestContext } from "./auth";
 import { insertActivity, requireMailboxCollaborationPermission } from "./collaboration";
-import type { MailConversationChangedEvent } from "./events";
-import { publishMailCollaborationEvent } from "./events";
+import { type MailActivityChange, mailLive } from "./live";
 
 type SqlClient = typeof sql;
 
@@ -22,7 +21,7 @@ type SummaryRow = {
 
 export type ConversationSummaryMutation = {
   value: ConversationContentSummary;
-  event: Omit<MailConversationChangedEvent, "type" | "at"> | null;
+  event: MailActivityChange | null;
 };
 
 const mapSummary = (row: SummaryRow): ConversationContentSummary => ({
@@ -167,7 +166,7 @@ export const updateConversationSummary = async (params: {
   try {
     const result = await sql.begin((db) => updateConversationSummaryInTransaction({ ...params, db }));
     if (!result.ok) return result;
-    if (result.data.event) await publishMailCollaborationEvent(result.data.event);
+    if (result.data.event) mailLive.wake();
     return ok(result.data.value);
   } catch {
     return fail(err.internal("Failed to update conversation summary"));

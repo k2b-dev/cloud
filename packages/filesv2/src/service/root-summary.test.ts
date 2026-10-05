@@ -5,6 +5,7 @@ import { rootSummary } from "./root-summary";
 const root = (stats: Stats | null): RootInfo => ({
   name: "files",
   managed: false,
+  stableIds: false,
   execution: false,
   index: { enabled: true, rebuilding: false, scanned: 0, lastBuilt: null, durationMs: 0 },
   stats,

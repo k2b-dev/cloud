@@ -23,8 +23,8 @@ import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { renderComposeDraft } from "./compose-templates";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
-import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
 import { resolveMailExecution } from "./execution";
+import { mailLive } from "./live";
 import { createBlobReadable } from "./message-blobs";
 import { BASE_MAINTENANCE_KINDS, getOperatorActionEligibility } from "./operator-actions";
 import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
@@ -937,20 +937,14 @@ const publishCreatedOutboundProjection = async (command: MailCommand): Promise<v
   const conversationId = command.result.conversationId;
   const outboxId = command.result.outboxSubmissionId;
   if (typeof messageId !== "string" || typeof conversationId !== "string" || typeof outboxId !== "string") return;
-  await publishMailCollaborationEvent({
-    mailboxId: command.mailboxId,
-    conversationId,
-    reason: "outbound",
-    targetId: messageId,
-    activityId: `outbound-message-created:${outboxId}`,
-  });
+  mailLive.wake();
   await enqueueAttachmentExtractionsForMessage(messageId).catch((error) => {
     logAttachmentExtractionEnqueueFailure(messageId, error);
   });
 };
 
 export const enqueueCreatedActorCommands = async (commands: MailCommand[]): Promise<void> => {
-  if (commands.length > 0) await notifyMailInvalidations();
+  if (commands.length > 0) mailLive.wake();
   await Promise.all(
     commands.map(async (command) => {
       await enqueueMailCommand(command.id, command.kind).catch(() => undefined);
@@ -977,18 +971,12 @@ const invalidateSentDraftLeases = async (commands: MailCommand[]): Promise<void>
 const createActorCommandWithActor = async (params: CreateActorCommandInternalParams): Promise<Result<MailCommand>> => {
   try {
     const result = await sql.begin((tx) => createActorCommandInTransaction(params, tx));
-    if (result.ok) await notifyMailInvalidations();
+    if (result.ok) mailLive.wake();
     if (result.ok) await invalidateSentDraftLeases([result.data]);
     if (result.ok && params.enqueue !== false) await enqueueMailCommand(result.data.id, result.data.kind).catch(() => undefined);
     if (result.ok) await publishCreatedOutboundProjection(result.data);
     if (result.ok && params.input.kind === "send" && params.input.scheduledAt) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "scheduled_send",
-        targetId: result.data.id,
-        activityId: `scheduled-send-created:${result.data.id}`,
-      });
+      mailLive.wake();
     }
     return result.ok ? ok(await normalizeCommand(result.data)) : result;
   } catch (error) {
@@ -1045,17 +1033,11 @@ export const createWorkflowCommandInTransaction = (
   );
 
 export const enqueueCreatedWorkflowCommand = async (command: MailCommand, input: ActorCommandInput): Promise<void> => {
-  await notifyMailInvalidations();
+  mailLive.wake();
   await enqueueMailCommand(command.id, command.kind).catch(() => undefined);
   await publishCreatedOutboundProjection(command);
   if (input.kind === "send" && input.scheduledAt) {
-    await publishMailMailboxEvent({
-      mailboxId: command.mailboxId,
-      conversationId: null,
-      reason: "scheduled_send",
-      targetId: command.id,
-      activityId: `scheduled-send-created:${command.id}`,
-    });
+    mailLive.wake();
   }
 };
 
@@ -1069,7 +1051,7 @@ export const createWorkflowCommand = async (params: {
   afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
 }): Promise<Result<MailCommand>> => {
   const result = await sql.begin((tx) => createWorkflowCommandInTransaction(params, tx));
-  if (result.ok && params.enqueue === false) await notifyMailInvalidations();
+  if (result.ok && params.enqueue === false) mailLive.wake();
   if (result.ok && params.enqueue !== false) await enqueueCreatedWorkflowCommand(result.data, params.input);
   return result.ok ? ok(await normalizeCommand(result.data)) : result;
 };
@@ -1220,7 +1202,7 @@ export const createMaintenanceCommand = async (params: {
       );
       return ok(mapCommand(row));
     });
-    if (result.ok) await notifyMailInvalidations();
+    if (result.ok) mailLive.wake();
     if (result.ok && params.enqueue !== false) await enqueueMailCommand(result.data.id, result.data.kind).catch(() => undefined);
     return result;
   } catch (error) {

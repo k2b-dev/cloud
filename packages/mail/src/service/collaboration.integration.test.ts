@@ -18,7 +18,6 @@ import {
 import type { ConnectorEnvelope } from "./connectors";
 import { updateConversationCollaboration } from "./conversation-assignments";
 import { getConversationSummary, updateConversationSummary } from "./conversation-summary";
-import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { createMailbox } from "./mailboxes";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { getConversationViewCounts, listConversations } from "./messages";
@@ -52,7 +51,6 @@ suite("mail collaboration backend", () => {
   const userIds: string[] = [];
   const accessIds: string[] = [];
   let mailboxId = "";
-  let mailboxShortId = "";
   let conversationId = "";
   let conversationShortId = "";
   let messageId = "";
@@ -97,10 +95,6 @@ suite("mail collaboration backend", () => {
     });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
-    const [mailboxIdentity] = await sql<{ short_id: string }[]>`
-      SELECT short_id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid
-    `;
-    mailboxShortId = mailboxIdentity!.short_id;
     const writerAccess = await grantMailboxAccess({
       context: ownerContext,
       mailboxId,
@@ -214,14 +208,7 @@ suite("mail collaboration backend", () => {
       input: { expectedRevision: 1, assigneeUserId: reader.id },
     });
     expect(invalidAssignee.ok).toBe(false);
-    const eventAbort = new AbortController();
-    const eventCursor = await latestMailInvalidationCursor();
-    const nextEvent = (async () => {
-      for await (const event of liveMailInvalidations({ after: eventCursor, signal: eventAbort.signal })) {
-        if (event.data.mailboxId === mailboxShortId) return event;
-      }
-      throw new Error("Mail invalidation stream ended");
-    })();
+    const [before] = await sql<{ seq: string }[]>`SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events.outbox`;
     const future = new Date(Date.now() + 60 * 60_000).toISOString();
     const waiting = await updateConversationCollaboration({
       locale: "en",
@@ -238,19 +225,11 @@ suite("mail collaboration backend", () => {
     if (!waiting.ok) return;
     expect(waiting.data).toMatchObject({ workStatus: "needs_action", revision: 2 });
     expect(waiting.data.assignee?.id).toBe(writer.id);
-    const liveEvent = await Promise.race([
-      nextEvent,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for Mail collaboration event")), 5_000)),
-    ]);
-    eventAbort.abort();
-    expect(liveEvent.data).toMatchObject({
-      type: "mail.invalidated",
-      mailboxId: mailboxShortId,
-      changeId: expect.any(String),
-    });
-    expect([null, conversationShortId]).toContain(liveEvent.data.conversationId);
-    expect(liveEvent.data.mailboxId).not.toBe(mailboxId);
-    expect(liveEvent.data.conversationId).not.toBe(conversationId);
+    // The change wrote its live update under the mailbox, naming the conversation by its public ID.
+    const updates = await sql<{ payload: { d: { conversationId: string | null } } }[]>`
+      SELECT payload FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailboxId} AND seq > ${before!.seq}::bigint
+    `;
+    expect(updates.map((row) => row.payload.d)).toContainEqual({ conversationId: conversationShortId });
 
     const stale = await updateConversationCollaboration({
       locale: "en",

@@ -113,7 +113,7 @@ services:
       - "127.0.0.1:8081:4000"
 
   filegate:
-    image: ghcr.io/k2b-dev/filegate:6.1.0
+    image: ghcr.io/k2b-dev/filegate:7.0.0
     platform: linux/amd64
     container_name: filegate
     restart: unless-stopped

@@ -148,10 +148,12 @@ import {
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
 import { localizeMailError } from "../service/error-messages";
+import { mailLive } from "../service/live";
+import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadMailboxConversationDetail, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
-import wsRoutes from "../ws";
+import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import contactDirectoryRoutes from "./contact-directory";
 import {
@@ -2971,10 +2973,12 @@ const adminApi = new Hono<MailApiContext>()
 
 const authenticatedApi = new Hono<MailApiContext>().route("/", resourceRoutes).route("/", adminApi).route("/", mailOperationsApi);
 
+// The live socket and the stub for tabs from before it own their authentication and rate limits.
 const api = new Hono<MailApiContext>()
+  .route("/live", mailLive.routes(mailLiveChannels))
+  .route("/ws", legacyLiveRoutes)
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
-  .route("/ws", wsRoutes)
   .route("/", authenticatedApi);
 
 export default api;

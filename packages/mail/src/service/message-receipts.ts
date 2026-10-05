@@ -1,5 +1,5 @@
 import type { sql } from "bun";
-import type { MailConversationChangedEvent } from "./events";
+import type { MailActivityChange } from "./live";
 
 type SqlClient = typeof sql;
 
@@ -82,7 +82,7 @@ export const recordMessageReceipt = async (params: {
   mailboxId: string;
   reportMessageId: string;
   receipt: ParsedMessageReceipt;
-}): Promise<Omit<MailConversationChangedEvent, "type" | "at"> | null> => {
+}): Promise<MailActivityChange | null> => {
   await params.db`
     SELECT pg_advisory_xact_lock(hashtextextended('mail-receipt:' || ${params.reportMessageId}, 0))
   `;
