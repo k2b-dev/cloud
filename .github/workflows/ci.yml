@@ -168,10 +168,24 @@ jobs:
           POSTGRES_USER: cloud
           POSTGRES_PASSWORD: cloud
           POSTGRES_DB: cloud_ci_test
+          # Log every statement that takes 250 ms or longer, with its plan, so
+          # a slow run can be told apart from a slow database. The runner
+          # prints the service log under "Stop containers"; the log options
+          # below bound it. See contributing/testing.md.
+          POSTGRES_INITDB_ARGS: &postgres-diagnostics >-
+            -c shared_preload_libraries=auto_explain
+            -c "log_line_prefix=%m [%p] %q%d %a: "
+            -c log_min_duration_statement=250ms
+            -c log_parameter_max_length=256
+            -c auto_explain.log_min_duration=250ms
+            -c auto_explain.log_analyze=off
+            -c auto_explain.log_nested_statements=on
+            -c auto_explain.log_parameter_max_length=256
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U cloud -d cloud_ci_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
+          --log-opt max-size=4m --log-opt max-file=2
       valkey:
         image: valkey/valkey:8-alpine
         ports: ["6379:6379"]
@@ -247,9 +261,16 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
           sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
           # Match the connection budget in compose.yml and compose.sync-test.yml.
+          # Slow statements and plans as in the integration job; PostgreSQL 15
+          # has no auto_explain.log_parameter_max_length.
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
+            --log-opt max-size=4m --log-opt max-file=2 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
-            postgres:15-alpine -c max_connections=300
+            postgres:15-alpine -c max_connections=300 \
+            -c shared_preload_libraries=auto_explain -c "log_line_prefix=%m [%p] %q%d %a: " \
+            -c log_min_duration_statement=250ms -c log_parameter_max_length=256 \
+            -c auto_explain.log_min_duration=250ms -c auto_explain.log_analyze=off \
+            -c auto_explain.log_nested_statements=on
           docker run --detach --name grids-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           timeout 60s bash -c 'until docker exec grids-postgres pg_isready -U grids_test -d grids_test; do sleep 1; done'
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
@@ -268,7 +289,11 @@ jobs:
           path: ${{ runner.temp }}/grids-certification
           if-no-files-found: ignore
       - if: always()
-        run: docker rm --force grids-postgres grids-nats
+        run: |
+          echo "::group::grids-postgres log"
+          docker logs grids-postgres 2>&1 || true
+          echo "::endgroup::"
+          docker rm --force grids-postgres grids-nats
 
   ui:
     needs: [changes, setup]
@@ -339,10 +364,12 @@ jobs:
           POSTGRES_USER: cloud
           POSTGRES_PASSWORD: cloud
           POSTGRES_DB: cloud_packed_test
+          POSTGRES_INITDB_ARGS: *postgres-diagnostics
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U cloud -d cloud_packed_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
+          --log-opt max-size=4m --log-opt max-file=2
       valkey:
         image: valkey/valkey:8-alpine
         ports: ["6379:6379"]

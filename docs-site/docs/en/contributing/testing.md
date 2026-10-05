@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-09-29
+updated: 2026-10-05
 ---
 
 # Testing
@@ -322,3 +322,58 @@ slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
 Grids, and Mail images, boots them against fresh infrastructure, and runs the
 Grids and Mail browser smokes against that stack. It runs independently of the
 Assistant browser suites, so a failure in one does not hide the other's result.
+
+### Read slow statements from a CI run
+
+The test PostgreSQL in the `integration`, `grids`, and `packed` jobs logs every
+statement that takes 250 ms or longer, and `auto_explain` logs the plan of
+every query that takes as long, including queries that run inside functions.
+Use these entries when a test got slower in CI but not locally: they tell a
+slow database apart from a slow test process.
+
+Find the PostgreSQL log in the job log:
+
+- `integration` and `packed`: open the `Stop containers` step and look for
+  `Print service container logs:` followed by the `postgres` container name.
+- `grids`: open the last step and expand the `grids-postgres log` group.
+
+To search it, download the job log and filter it, for example:
+
+```bash
+gh run view --job <job-id> --log > job.log
+grep -n -A 20 'duration: .* plan:' job.log
+```
+
+Each entry starts with the time in UTC, the process ID, the database, and the
+application name. Integration suites create databases named after their prefix,
+such as `mail_..._test`, so the database names the suite. Test connections
+usually set no application name and show `[unknown]`. A slow query produces
+two entries, the plan and the statement:
+
+```text
+2026-10-05 13:12:03.456 UTC [812] mail_a931..._test [unknown]: LOG:  duration: 903.211 ms  plan:
+	Query Text: SELECT ... WHERE mc.mailbox_id = $3 ::uuid
+	Query Parameters: $1 = '...', $2 = '...', $3 = '...'
+	Nested Loop  (cost=0.84..16.90 rows=1 width=28)
+	  ...
+2026-10-05 13:12:03.457 UTC [812] mail_a931..._test [unknown]: LOG:  duration: 903.530 ms  execute ...
+```
+
+GitHub prefixes every job log line with its UTC time, so compare entries with
+the time of the slow tests:
+
+- Entries in the slow window show which statements took the time. The plan
+  shows the chosen strategy with estimated costs; a `JIT:` section means the
+  query was compiled. The plan has no actual row counts or timings, so
+  reproduce a suspicious plan locally with `EXPLAIN (ANALYZE, BUFFERS)`.
+- No entries in the slow window mean that no single statement took 250 ms or
+  longer. The time went to the test process, the network, or many shorter
+  statements.
+- PostgreSQL logs checkpoints by default. A long checkpoint in the same window
+  can point to slow disk writes on the runner.
+
+The log is bounded: Docker keeps two log files of 4 MB for each PostgreSQL
+container and drops the oldest entries when both are full. A full local
+integration run writes about 0.7 MB, most of it the text of large migrations
+that took longer than 250 ms. If the log no longer starts with the database
+initialization, entries were dropped. Parameter values are cut after 256 bytes.
