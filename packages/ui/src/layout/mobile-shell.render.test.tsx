@@ -14,7 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { MobileShell, TabBar } = await import("../index");
 
 const items = [
-  { id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: true },
+  { id: "start", label: "Start", title: "Example Cloud", icon: "ti ti-home", href: "/pwa/", current: true },
   { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "/pwa/tasks" },
   { id: "contacts", label: "Contacts", icon: "ti ti-address-book", href: "/pwa/contacts" },
   { id: "notes", label: "Notes", icon: "ti ti-notes", href: "/pwa/notes" },
@@ -30,9 +30,10 @@ describe("TabBar", () => {
     expect(html.match(/<li>/g)?.length).toBe(5);
     expect(html).not.toContain("Chat");
     expect(html).toContain(
-      '<a href="/pwa/" aria-current="page" data-tab="start"><i class="ti ti-home" aria-hidden="true"></i><span>Start</span></a>',
+      '<a href="/pwa/" aria-current="page" data-tab="start" data-k2b-title="Example Cloud"><i class="ti ti-home" aria-hidden="true"></i><span>Start</span></a>',
     );
-    expect(html).toContain('<a href="/pwa/tasks" data-tab="tasks">');
+    // Each link names the title of its page, which the shell shows while that page loads; the label by default.
+    expect(html).toContain('<a href="/pwa/tasks" data-tab="tasks" data-k2b-title="Tasks">');
     expect(html.match(/aria-current/g)?.length).toBe(1);
   });
 });

@@ -42,8 +42,14 @@ const persistentToastInset = (body: HTMLElement): number => {
 
 /** Marks the link whose page is loading; the tab bar shows it as selected. */
 const PENDING = "data-k2b-pending";
+/** On a link: the title of the page it opens. Such a link switches the shell to that page's frame at the first touch. */
+const PAGE_TITLE = "data-k2b-title";
+/** On the root while the shell shows the frame of the page that is loading. */
+const SWITCHING = "data-k2b-switching";
+/** On the header title while the shell switches: the loading page's title, which the title shows instead. */
+const NEXT_TITLE = "data-k2b-next-title";
 
-/** The link a click follows as a page load of this origin, or null when the click does something else. */
+/** The link a click or press follows as a page load of this origin, or null when it does something else. */
 const pageLink = (root: HTMLElement, event: MouseEvent): HTMLAnchorElement | null => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
   const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
@@ -58,30 +64,62 @@ const pageLink = (root: HTMLElement, event: MouseEvent): HTMLAnchorElement | nul
 /**
  * Taps on the shell's links. iOS shows `:active` only while the page listens to touches, so a tap gets its pressed
  * state at once. A link's page keeps loading while the old page stays visible; a second tap on it would cancel that
- * load and start it over, so it is ignored. Returns the cleanup.
+ * load and start it over, so it is ignored. A link that names its page's title, such as a tab, shows that page's
+ * frame at the first touch instead of at the end of the tap: its title and an empty content area, until the page
+ * arrives. Returns the cleanup.
  */
 const observeLinkTaps = (root: HTMLElement): (() => void) => {
+  /** The link marked as the next page. */
   let pending: string | undefined;
+  /** Whether its page is loading; a pressed tab waits for its click. */
+  let loading = false;
   const clear = () => {
     pending = undefined;
+    loading = false;
     for (const link of root.querySelectorAll(`[${PENDING}]`)) link.removeAttribute(PENDING);
+    root.removeAttribute(SWITCHING);
+    root.querySelector(".k2b-mobile-shell__title")?.removeAttribute(NEXT_TITLE);
+  };
+  const mark = (link: HTMLAnchorElement) => {
+    clear();
+    pending = link.href;
+    link.setAttribute(PENDING, "");
+    const title = link.getAttribute(PAGE_TITLE);
+    const heading = root.querySelector(".k2b-mobile-shell__title");
+    if (title === null || !heading) return;
+    heading.setAttribute(NEXT_TITLE, title);
+    root.setAttribute(SWITCHING, "");
   };
   const touch = () => {};
+  // A press on a tab shows its page's frame while the finger is still down. The page itself loads with the click
+  // that ends the tap, as for any link: only the end of a touch counts as the person's action, and a load that
+  // started before it could let the browser's Back skip this page.
+  const press = (event: PointerEvent) => {
+    if (!event.isPrimary) return;
+    const link = pageLink(root, event);
+    if (!link?.hasAttribute(PAGE_TITLE) || (link.href === pending && loading)) return;
+    mark(link);
+  };
+  // A press that the browser takes over, such as one that turns into a scroll, ends without a click and takes its
+  // frame back.
+  const cancel = (event: PointerEvent) => {
+    if (event.isPrimary && !loading) clear();
+  };
   // On the window, so it runs after every handler of the click, including delegated ones that prevent it.
   const click = (event: MouseEvent) => {
     const link = pageLink(root, event);
-    if (link && link.href === pending) {
+    if (link && link.href === pending && loading) {
       event.preventDefault();
       return;
     }
     // Any other tap ends the wait, also for a link that answered with a download instead of a page.
     clear();
     if (!link) return;
-    pending = link.href;
-    link.setAttribute(PENDING, "");
+    mark(link);
+    loading = true;
   };
   // iOS sends no click for a tap on content without an action, so the end of a tap anywhere else ends the wait as
-  // well. A touch that scrolls ends without a pointerup and keeps it.
+  // well. A touch that scrolls ends without a pointerup and keeps a load's wait.
   const release = (event: PointerEvent) => {
     if (pending === undefined) return;
     const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
@@ -92,11 +130,15 @@ const observeLinkTaps = (root: HTMLElement): (() => void) => {
     if (event.persisted) clear();
   };
   document.addEventListener("touchstart", touch, { passive: true });
+  window.addEventListener("pointerdown", press);
+  window.addEventListener("pointercancel", cancel);
   window.addEventListener("pointerup", release);
   window.addEventListener("click", click);
   window.addEventListener("pageshow", show);
   return () => {
     document.removeEventListener("touchstart", touch);
+    window.removeEventListener("pointerdown", press);
+    window.removeEventListener("pointercancel", cancel);
     window.removeEventListener("pointerup", release);
     window.removeEventListener("click", click);
     window.removeEventListener("pageshow", show);

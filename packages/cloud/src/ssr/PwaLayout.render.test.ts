@@ -141,6 +141,7 @@ const tabs = (document: Document) =>
   [...document.querySelectorAll<HTMLAnchorElement>(".k2b-tab-bar a")].map((link) => ({
     href: link.getAttribute("href"),
     label: link.textContent,
+    title: link.dataset.k2bTitle,
     current: link.getAttribute("aria-current") === "page",
   }));
 
@@ -207,10 +208,11 @@ describe("PwaLayout", () => {
     apps = [shell, part("zeta", "Zeta"), part("inventory", "Inventory"), part("alpha", "Alpha"), part("beta", "Beta")];
     const { document } = await render("/pwa/inventory/42");
     expect(tabs(document)).toEqual([
-      { href: "/pwa/", label: "Start", current: false },
-      { href: "/pwa/alpha", label: "Alpha", current: false },
-      { href: "/pwa/beta", label: "Beta", current: false },
-      { href: "/pwa/inventory", label: "Inventory", current: true },
+      // While a tab's page loads, the header shows that page's title: Start's is the installation, a part's its name.
+      { href: "/pwa/", label: "Start", title: "Example Cloud", current: false },
+      { href: "/pwa/alpha", label: "Alpha", title: "Alpha", current: false },
+      { href: "/pwa/beta", label: "Beta", title: "Beta", current: false },
+      { href: "/pwa/inventory", label: "Inventory", title: "Inventory", current: true },
     ]);
     expect(document.querySelector(".k2b-tab-bar")?.getAttribute("aria-label")).toBe("App");
   });
@@ -219,7 +221,7 @@ describe("PwaLayout", () => {
     signIn("app");
     apps = [shell, part("alpha", "Alpha"), part("beta", "Beta"), part("gamma", "Gamma"), part("inventory", "Inventory")];
     const { document } = await render("/pwa/inventory");
-    expect(tabs(document).filter((tab) => tab.current)).toEqual([{ href: "/pwa/", label: "Start", current: true }]);
+    expect(tabs(document).filter((tab) => tab.current)).toEqual([{ href: "/pwa/", label: "Start", title: "Example Cloud", current: true }]);
   });
 
   test("hides the tab bar without parts and without a user, and keeps the session alive only for a user", async () => {
