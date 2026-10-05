@@ -25,7 +25,7 @@ export type NotebookBookInput = {
    * preset loads no images yet, and math leaves out MathML the PDF drops.
    */
   print?: boolean;
-  /** Short ID of the rendered note. In print, a link to one of its own headings stays inside the document. */
+  /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
   noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
@@ -114,11 +114,17 @@ export const renderNotebookBook = (
     }
   };
 
+  // In print, a link to the rendered note stays inside the PDF: at its heading, otherwise at the top (`#top`).
+  const printAnchors = new Set<string>();
   const resolveUrl = (raw: string, image = false): string | null => {
     const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(raw)?.[1];
     if (attachmentId) return `/api/notebooks/${notebookId}/attachments/${attachmentId}/content?v=1`;
     const note = image ? null : parseNoteLink(raw);
-    if (note?.anchor && input.print && note.noteId === input.noteId) return anchorHash(note.anchor);
+    if (note && input.print && note.noteId === input.noteId) {
+      if (!note.anchor) return "#top";
+      printAnchors.add(note.anchor);
+      return anchorHash(note.anchor);
+    }
     if (note) return `/app/notebooks/${notebookId}/notes/${note.noteId}?mode=${linkMode}${anchorHash(note.anchor)}`;
     const url = safeUrl(raw, image);
     return url && !image ? bookHref(url, linkMode) : url;
@@ -463,6 +469,9 @@ export const renderNotebookBook = (
     blockHtml.set(Number(line), rendered);
     return rendered;
   });
+  // Headings are known only now. A PDF links only to an id it has, so a heading the note lacks opens its top, as in Book.
+  const headingIds = new Set(headings.map(({ id }) => id));
+  for (const anchor of printAnchors) if (!headingIds.has(anchor)) html = html.replaceAll(`href="${anchorHash(anchor)}"`, 'href="#top"');
   const sanitize = (value: string) =>
     sanitizeHtml(value, {
       allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del"],

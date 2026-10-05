@@ -47,7 +47,8 @@ note list.
 - Download the current note as Markdown or as an A4 PDF using the Document,
   Report, Compact, or Custom print style. PDF generation uses the current live
   editor content and does not store a generated copy. In the PDF, links to the
-  note's own headings jump within the document.
+  note itself jump within the document: to the linked heading, or to the top
+  when the note has no such heading.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
 
@@ -301,11 +302,13 @@ the mirror stay `note://` links. A link to a heading keeps its anchor in both
 forms, as in `note://Ab12Cd#backup-restore` and `backup.md#backup-restore`.
 The anchor is the heading text in lowercase with hyphens, so this link opens
 the heading "Backup & Restore" in Book and in the editor; a heading the note
-does not have opens the note at its top. When siblings share a title, their
-file names carry the note ID, as in `backup--Ab12Cd.md`; this suffix exists
-only in the mirror. Each file starts with `id`, `title`, and `updatedAt` front
-matter, and `.cld-notebook.json` records one `path`, `contentHash`,
-`fileHash`, and `updatedAt` per note.
+does not have opens the note at its top. When headings repeat, the second
+one is `#backup-restore-2`, the third `#backup-restore-3`, and so on. Leave
+out the `heading-` that Book's address shows. When siblings share a title,
+their file names carry the note ID, as in `backup--Ab12Cd.md`; this suffix
+exists only in the mirror. Each file starts with `id`, `title`, and
+`updatedAt` front matter, and `.cld-notebook.json` records one `path`,
+`contentHash`, `fileHash`, and `updatedAt` per note.
 
 Changes go back through `write`, `edit`, `mv`, and `rm`, which accept mirror
 files and update the mirror immediately. Writing a mirror file, or editing
