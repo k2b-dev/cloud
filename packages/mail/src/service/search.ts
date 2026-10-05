@@ -22,6 +22,14 @@ import {
 type SqlFragment = Bun.SQL.Query<unknown>;
 const log = logger("mail:search");
 
+/**
+ * Best match ranks only the newest matches of a mailbox. Postgres full-text search cannot return
+ * the best-ranked rows without scoring every match, and a common word matches most of a large
+ * mailbox; ranking costs tens of microseconds per message, so this window keeps a search well inside
+ * its statement budget. Newest still lists every match.
+ */
+export const RANKED_MATCH_WINDOW = 1_000;
+
 export type MessageSearchHit = {
   id: string;
   conversationId: string | null;
@@ -631,6 +639,7 @@ const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment
     CROSS JOIN LATERAL unnest(seed_placement.keywords) seed_keyword(value)
     WHERE seed_message.mailbox_id = ${mailboxId}::uuid
       AND seed_placement.deleted_at IS NULL
+      AND seed_placement.keywords <> '{}'
       AND ${textMatch(sql`seed_keyword.value`, query, "words")}
 
     UNION
@@ -814,6 +823,54 @@ const detectBackend = async (mailboxId: string): Promise<"native" | "pg_textsear
   return row?.enabled ? "pg_textsearch" : "native";
 };
 
+type SearchShape = { expression: MailSearchExpression; sort: SearchCursor["sort"]; groupByConversation: boolean };
+
+const rankedSearch = (params: SearchShape): boolean =>
+  params.sort === "relevance" && positiveQueries(params.expression).join(" OR ").slice(0, 4_000) !== "";
+
+/** Only a ranked search or a newest message page bounds its candidates, so only they may walk the mailbox. */
+const boundedCandidates = (params: SearchShape): boolean =>
+  rankedSearch(params) || (!params.groupByConversation && params.sort === "newest");
+
+/**
+ * A word in this many message bodies of a mailbox is common: walking the mailbox from its newest
+ * message meets the window of candidates sooner than reading every match through the index.
+ */
+const COMMON_WORD_MATCHES = 10 * RANKED_MATCH_WINDOW;
+
+/**
+ * The words of an any-field seed that are common in this mailbox. Each count stops at the threshold
+ * and reads the body index, so one statement answers for every word without reading a whole mailbox.
+ */
+const findCommonWords = async (db: typeof sql, mailboxId: string, seed: IndexedSeed | null): Promise<Set<string>> => {
+  if (seed?.field !== "any") return new Set();
+  const rows = await db<{ word: string }[]>`
+    SELECT probe.word
+    FROM jsonb_array_elements_text(${wordTokens(seed.query)}::jsonb) AS probe(word)
+    WHERE (
+      SELECT count(*)
+      FROM (
+        SELECT 1
+        FROM mail.message_search_chunks probe_chunk
+        WHERE probe_chunk.mailbox_id = ${mailboxId}::uuid
+          AND probe_chunk.source_kind = 'body'
+          AND probe_chunk.search_document @@ plainto_tsquery('simple', probe.word)
+        LIMIT ${COMMON_WORD_MATCHES}
+      ) probe_match
+    ) >= ${COMMON_WORD_MATCHES}
+  `;
+  return new Set(rows.map((row) => row.word));
+};
+
+/** The predicate still checks common words; only the seed leaves them out. */
+const withoutCommonWords = (seed: IndexedSeed | null, commonWords: ReadonlySet<string>): IndexedSeed | null => {
+  if (seed?.field !== "any" || commonWords.size === 0) return seed;
+  const words = wordTokens(seed.query);
+  const selective = words.filter((word) => !commonWords.has(word));
+  if (selective.length === words.length) return seed;
+  return selective.length > 0 ? { ...seed, query: selective.join(" ") } : null;
+};
+
 const runSearch = async (params: {
   db: typeof sql;
   mailboxId: string;
@@ -828,12 +885,16 @@ const runSearch = async (params: {
   aggregatedScope: AggregatedViewScope | null;
   lapsedAssignees: readonly LapsedAssignee[];
   sendProblems: boolean;
+  commonWords: ReadonlySet<string>;
 }): Promise<DbSearchHit[]> => {
   const predicate = compileSearchExpression(params.expression, params.currentUserId, sql`cm.conversation_id`, params.lapsedAssignees);
-  const indexedSeed = findIndexedSeed(params.expression);
+  const foundSeed = findIndexedSeed(params.expression);
+  // Without a seed, the candidates are the mailbox's messages from the newest on, and the window stops the walk.
+  const indexedSeed = withoutCommonWords(foundSeed, params.commonWords);
+  const walk = foundSeed !== null && indexedSeed === null;
   const indexedSeedCoversExpression = indexedSeed === params.expression;
   const conversationOnly =
-    params.groupByConversation && !params.sendProblems && !indexedSeed && isConversationOnlyExpression(params.expression);
+    params.groupByConversation && !params.sendProblems && !foundSeed && isConversationOnlyExpression(params.expression);
   const cursor = params.cursor;
   const limit = params.limit + 1;
   const includedPlacement = (folderId: SqlFragment) => sql`
@@ -899,17 +960,7 @@ const runSearch = async (params: {
           LIMIT 1
         ) mc
       `
-    : indexedSeed
-      ? sql`
-          indexed_seed seed
-          CROSS JOIN LATERAL (
-            SELECT seeded_message.*
-            FROM mail.message_contents seeded_message
-            WHERE seeded_message.id = seed.message_id
-            OFFSET 0
-          ) mc
-        `
-      : sql`mail.message_contents mc`;
+    : sql`mail.message_contents mc`;
   const visiblePlacement = sql`EXISTS (
     SELECT 1 FROM mail.message_placements visible
     WHERE visible.message_id = mc.id
@@ -948,34 +999,95 @@ const runSearch = async (params: {
       : textMatch(sql`attachment_extraction.markdown`, term.query, term.match),
   );
   const attachmentPredicate = attachmentPredicates.length > 0 ? combineOr(attachmentPredicates) : sql`false`;
-  const messageNewestPage =
-    !params.groupByConversation && params.sort === "newest"
-      ? sql`
-          AND (
-            ${cursor?.id ?? null}::uuid IS NULL
-            OR (mc.internal_date, mc.id) < (${cursor?.internalDate ?? null}::timestamptz, ${cursor?.id ?? null}::uuid)
-          )
-          ORDER BY mc.internal_date DESC, mc.id DESC
-          LIMIT ${limit}
-        `
+  const ranked = rankedSearch(params);
+  const newestMessagePage = !params.groupByConversation && params.sort === "newest";
+  // A newest message page and a ranked search keep only the newest candidates.
+  const candidateLimit = newestMessagePage ? limit : ranked ? RANKED_MATCH_WINDOW : null;
+  const newestPageAfterCursor = (message: SqlFragment) =>
+    newestMessagePage
+      ? sql`AND (
+          ${cursor?.id ?? null}::uuid IS NULL
+          OR (${message}.internal_date, ${message}.id) < (${cursor?.internalDate ?? null}::timestamptz, ${cursor?.id ?? null}::uuid)
+        )`
       : sql``;
-  const rank =
-    params.sort === "newest" || !queryText
-      ? sql`0::double precision`
-      : params.backend === "pg_textsearch"
-        ? sql`-((COALESCE(mc.subject, '') || ' ' || COALESCE(mc.subject, '') || ' ' || COALESCE(mc.plain_text, ''))
+  const candidateFilter = sql`
+    ${candidateVisibility}
+    AND ${aggregatedScope(sql`cm.conversation_id`)}
+    AND (${useConversationSeed || indexedSeedCoversExpression ? sql`true` : predicate})
+  `;
+  const candidateColumns = sql`
+    mc.id,
+    CASE WHEN ${params.groupByConversation} THEN COALESCE(cm.conversation_id, mc.id) ELSE mc.id END AS result_id,
+    cm.conversation_id,
+    mc.internal_date
+  `;
+  const candidateOrder = (message: SqlFragment) =>
+    candidateLimit === null ? sql`` : sql`ORDER BY ${message}.internal_date DESC, ${message}.id DESC LIMIT ${candidateLimit}`;
+  // Seeded and walked candidates are checked one message at a time, so Postgres probes each
+  // candidate instead of reading the matches of every condition across all mailboxes first. A walk
+  // starts at the newest message and stops at the window; the fence keeps that order.
+  const candidates =
+    indexedSeed || walk
+      ? sql`
+          SELECT candidate.*
+          FROM ${
+            walk
+              ? sql`(
+                  SELECT walk.id, walk.internal_date
+                  FROM mail.message_contents walk
+                  WHERE walk.mailbox_id = ${params.mailboxId}::uuid
+                    ${newestPageAfterCursor(sql`walk`)}
+                  ORDER BY walk.internal_date DESC, walk.id DESC
+                  OFFSET 0
+                ) source`
+              : sql`(SELECT seed.message_id AS id FROM indexed_seed seed) source`
+          }
+          CROSS JOIN LATERAL (
+            SELECT ${candidateColumns}
+            FROM mail.message_contents mc
+            LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
+            WHERE mc.id = source.id
+              AND mc.mailbox_id = ${params.mailboxId}::uuid
+              AND ${candidateFilter}
+              ${walk ? sql`` : newestPageAfterCursor(sql`mc`)}
+          ) candidate
+          ${candidateOrder(walk ? sql`source` : sql`candidate`)}
+        `
+      : sql`
+          SELECT ${candidateColumns}
+          FROM ${messageSource}
+          LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
+          WHERE ${sourceMailboxPredicate}
+            AND mc.mailbox_id = ${params.mailboxId}::uuid
+            AND ${candidateFilter}
+            ${newestPageAfterCursor(sql`mc`)}
+            ${candidateOrder(sql`mc`)}
+        `;
+  // Every candidate is ranked before the page is cut, so each lookup must be one index probe by
+  // message: body chunks through their message index, attachment chunks through the attachments.
+  const rank = !ranked
+    ? sql`0::double precision`
+    : params.backend === "pg_textsearch"
+      ? sql`-((COALESCE(rank_message.subject, '') || ' ' || COALESCE(rank_message.subject, '') || ' ' || COALESCE(rank_message.plain_text, ''))
             <@> to_bm25query(${queryText}, 'mail.message_contents_bm25_idx'))::double precision`
-        : sql`(
-            2 * ts_rank_cd(mc.subject_search_document, websearch_to_tsquery('simple', ${queryText}))
-            + COALESCE((
-              SELECT MAX(ts_rank_cd(rank_chunk.search_document, websearch_to_tsquery('simple', ${queryText})))
-              FROM mail.message_search_chunks rank_chunk
-              WHERE rank_chunk.message_id = mc.id
-                AND rank_chunk.mailbox_id = ${params.mailboxId}::uuid
-                AND (
-                  rank_chunk.source_kind = 'body'
-                  OR rank_chunk.extractor_version = ${MAIL_ATTACHMENT_EXTRACTOR_VERSION}
-                )
+      : sql`(
+            2 * ts_rank_cd(rank_message.subject_search_document, websearch_to_tsquery('simple', ${queryText}))
+            + COALESCE(GREATEST(
+              (
+                SELECT MAX(ts_rank_cd(rank_chunk.search_document, websearch_to_tsquery('simple', ${queryText})))
+                FROM mail.message_search_chunks rank_chunk
+                WHERE rank_chunk.message_id = mc.id
+                  AND rank_chunk.source_kind = 'body'
+              ),
+              (
+                SELECT MAX(ts_rank_cd(rank_chunk.search_document, websearch_to_tsquery('simple', ${queryText})))
+                FROM mail.attachments rank_attachment
+                JOIN mail.message_search_chunks rank_chunk
+                  ON rank_chunk.attachment_id = rank_attachment.id
+                 AND rank_chunk.source_kind = 'attachment'
+                 AND rank_chunk.extractor_version = ${MAIL_ATTACHMENT_EXTRACTOR_VERSION}
+                WHERE rank_attachment.message_id = mc.id
+              )
             ), 0)
           )::double precision`;
   const snippet = queryText
@@ -989,61 +1101,18 @@ const runSearch = async (params: {
   return params.db<DbSearchHit[]>`
     WITH ${indexedSeedCte}
     ${conversationSeedCte}
-    candidate_messages AS MATERIALIZED (
-      SELECT
-        mc.id,
-        CASE WHEN ${params.groupByConversation} THEN COALESCE(cm.conversation_id, mc.id) ELSE mc.id END AS result_id,
-        cm.conversation_id,
-        mc.subject,
-        mc.message_id,
-        mc.internal_date,
-        mc.sent_at,
-        mc.plain_text,
-        mc.subject_search_document
-      FROM ${messageSource}
-      LEFT JOIN mail.conversation_messages cm ON cm.message_id = mc.id
-      WHERE ${sourceMailboxPredicate}
-        AND mc.mailbox_id = ${params.mailboxId}::uuid
-        AND ${candidateVisibility}
-        AND ${aggregatedScope(sql`cm.conversation_id`)}
-        AND (${useConversationSeed || indexedSeedCoversExpression ? sql`true` : predicate})
-        ${messageNewestPage}
-    ),
-    matched_messages AS (
+    -- Candidates carry only what ranking and paging read. Every other column is loaded for the
+    -- page alone, so a word that matches most of a mailbox does not drag each message through.
+    candidate_messages AS MATERIALIZED (${candidates}),
+    matched_messages AS MATERIALIZED (
       SELECT
         mc.id,
         mc.result_id,
         mc.conversation_id,
-        mc.subject,
-        mc.message_id,
         mc.internal_date,
-        mc.sent_at,
-        mc.plain_text,
-        COALESCE(from_rows.addresses, '[]'::jsonb) AS from_addresses,
-        COALESCE(to_rows.addresses, '[]'::jsonb) AS to_addresses,
-        COALESCE(placement.flags, ARRAY[]::text[]) AS flags,
-        EXISTS (SELECT 1 FROM mail.attachments attachment WHERE attachment.message_id = mc.id) AS has_attachments,
         ${rank} AS rank
       FROM candidate_messages mc
-      LEFT JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object('name', ma.display_name, 'address', ma.email) ORDER BY ma.position) AS addresses
-        FROM mail.message_addresses ma
-        WHERE ma.message_id = mc.id AND ma.role = 'from'
-      ) from_rows ON true
-      LEFT JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object('name', ma.display_name, 'address', ma.email) ORDER BY ma.position) AS addresses
-        FROM mail.message_addresses ma
-        WHERE ma.message_id = mc.id AND ma.role = 'to'
-      ) to_rows ON true
-      LEFT JOIN LATERAL (
-        SELECT mp.flags
-        FROM mail.message_placements mp
-        WHERE mp.message_id = mc.id
-          AND mp.deleted_at IS NULL
-          AND ${includedPlacement(sql`mp.folder_id`)}
-        ORDER BY mp.updated_at DESC
-        LIMIT 1
-      ) placement ON true
+      JOIN mail.message_contents rank_message ON rank_message.id = mc.id
     ),
     ranked_matches AS (
       SELECT
@@ -1095,6 +1164,39 @@ const runSearch = async (params: {
         CASE WHEN ${params.groupByConversation} THEN COALESCE(page_conversation.latest_message_at, internal_date) ELSE internal_date END DESC,
         result_id DESC
       LIMIT ${limit}
+    ),
+    page_details AS (
+      SELECT
+        page.*,
+        message.subject,
+        message.message_id,
+        message.sent_at,
+        message.plain_text,
+        COALESCE(from_rows.addresses, '[]'::jsonb) AS from_addresses,
+        COALESCE(to_rows.addresses, '[]'::jsonb) AS to_addresses,
+        COALESCE(placement.flags, ARRAY[]::text[]) AS flags,
+        EXISTS (SELECT 1 FROM mail.attachments attachment WHERE attachment.message_id = page.id) AS has_attachments
+      FROM page_candidates page
+      JOIN mail.message_contents message ON message.id = page.id
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object('name', ma.display_name, 'address', ma.email) ORDER BY ma.position) AS addresses
+        FROM mail.message_addresses ma
+        WHERE ma.message_id = page.id AND ma.role = 'from'
+      ) from_rows ON true
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object('name', ma.display_name, 'address', ma.email) ORDER BY ma.position) AS addresses
+        FROM mail.message_addresses ma
+        WHERE ma.message_id = page.id AND ma.role = 'to'
+      ) to_rows ON true
+      LEFT JOIN LATERAL (
+        SELECT mp.flags
+        FROM mail.message_placements mp
+        WHERE mp.message_id = page.id
+          AND mp.deleted_at IS NULL
+          AND ${includedPlacement(sql`mp.folder_id`)}
+        ORDER BY mp.updated_at DESC
+        LIMIT 1
+      ) placement ON true
     ),
     projected AS (
       SELECT
@@ -1196,7 +1298,7 @@ const runSearch = async (params: {
           ELSE conversation_unread_state.folder_ids
         END AS unread_folder_ids,
         deduplicated.rank
-      FROM page_candidates deduplicated
+      FROM page_details deduplicated
       LEFT JOIN mail.conversations conversation ON conversation.id = deduplicated.conversation_id
       LEFT JOIN LATERAL (
         SELECT reference.value
@@ -1364,21 +1466,34 @@ const runSearch = async (params: {
   `;
 };
 
-const executeSearch = async (params: Omit<Parameters<typeof runSearch>[0], "db">): Promise<DbSearchHit[]> =>
+/** The longest a single search statement may run unless the caller grants a smaller budget. */
+const SEARCH_STATEMENT_TIMEOUT_MS = 5_000;
+
+const executeSearch = async (
+  params: Omit<Parameters<typeof runSearch>[0], "db" | "commonWords"> & { timeoutMs: number },
+): Promise<DbSearchHit[]> =>
   sql.begin(async (tx) => {
-    await tx`SET LOCAL statement_timeout = '5s'`;
+    await tx`SELECT set_config('statement_timeout', ${`${params.timeoutMs}ms`}, true)`;
     await tx`SET LOCAL plan_cache_mode = force_custom_plan`;
     await tx`SET LOCAL jit = off`;
-    return runSearch({ ...params, db: tx });
+    const commonWords = boundedCandidates(params)
+      ? await findCommonWords(tx, params.mailboxId, findIndexedSeed(params.expression))
+      : new Set<string>();
+    return runSearch({ ...params, commonWords, db: tx });
   });
 
+/** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */
 const searchErrorCode = (error: unknown): string | null => {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" ? code : null;
+  const candidate = error as { code?: unknown; errno?: unknown } | null;
+  if (typeof candidate?.errno === "string") return candidate.errno;
+  return typeof candidate?.code === "string" ? candidate.code : null;
 };
 
+/** A search that ran out of its time, in the database or while waiting for it. */
+export const searchExceededLimit = (): Result<never> => fail(err.badInput("Search query exceeded the execution limit"));
+
 const searchFailure = (error: unknown): Result<never> => {
-  if (searchErrorCode(error) === "57014") return fail(err.badInput("Search query exceeded the execution limit"));
+  if (searchErrorCode(error) === "57014") return searchExceededLimit();
   log.error("Mail search failed", {
     code: searchErrorCode(error),
     error: error instanceof Error ? error.message : String(error),
@@ -1399,6 +1514,7 @@ const executeSearchWithFallback = async (params: {
   aggregatedScope: AggregatedViewScope | null;
   lapsedAssignees: readonly LapsedAssignee[];
   sendProblems: boolean;
+  timeoutMs: number;
 }): Promise<Result<{ rows: DbSearchHit[]; backend: SearchCursor["backend"] }>> => {
   try {
     const rows = await executeSearch(params);
@@ -1437,6 +1553,8 @@ export const searchMessages = async (params: {
   sendProblems?: boolean;
   /** List a view that mixes folders: leave out conversations whose mail is kept inside its folders. */
   aggregatedView?: boolean;
+  /** The longest the search statement may run, at most the default of five seconds. */
+  timeoutMs?: number;
 }): Promise<Result<MessageSearchPage>> => {
   const expression = params.request.expression;
   const complexity = validateSearchComplexity(expression);
@@ -1484,6 +1602,7 @@ export const searchMessages = async (params: {
     aggregatedScope,
     lapsedAssignees,
     sendProblems,
+    timeoutMs: Math.max(1, Math.min(Math.floor(params.timeoutMs ?? SEARCH_STATEMENT_TIMEOUT_MS), SEARCH_STATEMENT_TIMEOUT_MS)),
   });
   if (!execution.ok) return execution;
   const rows = execution.data.rows;

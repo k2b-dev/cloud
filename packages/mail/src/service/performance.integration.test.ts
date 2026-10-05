@@ -356,6 +356,30 @@ suite("mail large-mailbox performance", () => {
     expect(worstWarmMs).toBeLessThan(500);
   }, 30_000);
 
+  test(`keeps quick search for a word in every message bounded at ${MESSAGE_COUNT.toLocaleString("en-US")} messages`, async () => {
+    if (!ids.mailboxId) throw new Error("Performance mailbox is unavailable");
+    const durations: number[] = [];
+    for (let iteration = 0; iteration < 5; iteration += 1) {
+      const startedAt = performance.now();
+      const result = await searchMessages({
+        context,
+        mailboxId: ids.mailboxId,
+        request: {
+          expression: { type: "text", field: "any", query: "routine", match: "words" },
+          sort: "relevance",
+          limit: 20,
+        },
+      });
+      durations.push(performance.now() - startedAt);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.data.items).toHaveLength(20);
+    }
+    const warmDurations = durations.slice(1);
+    const worstWarmMs = Math.max(...warmDurations);
+    console.info(`Mail ${MESSAGE_COUNT} common-word search: ${warmDurations.map((value) => value.toFixed(1)).join(", ")} ms`);
+    expect(worstWarmMs).toBeLessThan(500);
+  }, 30_000);
+
   test(`keeps the warm inbox list bounded at ${MESSAGE_COUNT.toLocaleString("en-US")} conversations`, async () => {
     if (!ids.mailboxId) throw new Error("Performance mailbox is unavailable");
     const durations: number[] = [];
