@@ -106,6 +106,14 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   `.simple();
   await addCommandQueuePosition(tx);
   await writeLiveUpdatesToPlatformOutbox(tx);
+  // A message only some recipients accepted keeps needing attention for the others while its Sent
+  // copy is retried: the flag marks that retry next to the partial outcome, and the index lets the
+  // scheduler find those few rows among all settled sends.
+  await tx`ALTER TABLE mail.outbox_submissions ADD COLUMN IF NOT EXISTS sent_copy_pending boolean DEFAULT false NOT NULL`.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS outbox_sent_copy_pending_idx ON mail.outbox_submissions USING btree (id)
+    WHERE sent_copy_pending
+  `.simple();
 };
 
 /**
