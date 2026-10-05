@@ -288,7 +288,8 @@ jobs:
           name: grids-certification-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/grids-certification
           if-no-files-found: ignore
-      - if: always()
+      - name: Print the Postgres log and remove containers
+        if: always()
         run: |
           echo "::group::grids-postgres log"
           docker logs grids-postgres 2>&1 || true
