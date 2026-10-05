@@ -4,7 +4,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
-import { emitMetadataEvent } from "./metadata-events";
+import { gridsLive, publishMetadataChange } from "./live";
 import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 
 const ACCESS_RESOURCES = {
@@ -239,16 +239,6 @@ const logAccessAudit = async (params: {
   );
 };
 
-const emitAccessChanged = async (binding: AccessBinding | null, accessId: string, actorId: string | null): Promise<void> => {
-  if (!binding) return;
-  await emitMetadataEvent({
-    type: "access.changed",
-    baseId: binding.baseId,
-    resource: { kind: "access", id: accessId },
-    actorId,
-  });
-};
-
 export const grantAccess = async (params: {
   resourceType: AccessResourceType;
   resourceId: string;
@@ -282,10 +272,11 @@ export const grantAccess = async (params: {
       nextPermission: params.permission,
       client: tx,
     });
+    await publishMetadataChange(tx, binding.baseId, "access.changed");
     return ok({ accessId: created.data.id });
   });
   if (!result.ok) return fail(result.error);
-  await emitAccessChanged(await resolveAccessBinding(result.data.accessId), result.data.accessId, params.actorId ?? null);
+  gridsLive.wake();
   return result;
 };
 
@@ -371,10 +362,11 @@ export const updateAccessLevel = async (
     if (access.permission !== level) {
       await logAccessAudit({ action: "access.updated", binding, access, actorId, nextPermission: level, client: tx });
     }
+    await publishMetadataChange(tx, binding.baseId, "access.changed");
     return ok(binding);
   });
   if (!result.ok) return fail(result.error);
-  await emitAccessChanged(result.data, accessId, actorId);
+  gridsLive.wake();
   return ok();
 };
 
@@ -396,10 +388,11 @@ export const revokeAccess = async (
     const deleted = await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
     if (deleted.count === 0) return fail(err.notFound(messages.accessEntry));
     await logAccessAudit({ action: "access.revoked", binding, access, actorId, nextPermission: null, client: tx });
+    await publishMetadataChange(tx, binding.baseId, "access.changed");
     return ok(binding);
   });
   if (!result.ok) return fail(result.error);
-  await emitAccessChanged(result.data, accessId, actorId);
+  gridsLive.wake();
   return ok();
 };
 

@@ -1,9 +1,10 @@
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { retry } from "@k2b/sync/retry";
 import { Button, dialogCore, NoticeCard, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
+import { GridsMetadataLiveEventSchema } from "../../../live-events";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
-import { createGridsMetadataEventsProvider } from "./grids-metadata-events-provider";
 import { workspaceMessages } from "./messages";
 import { setWorkspaceLiveStatus, workspaceLiveStatus, workspaceResourceAppliedEvent } from "./workspace-live-state";
 import { createWorkspaceRevisionController } from "./workspace-revision-controller";
@@ -28,7 +29,7 @@ export default function WorkspaceMetadataRefresh(props: {
   onMount(() => {
     let disposed = false;
     let revoked = false;
-    // After a terminal close no events arrive, so a later successful check cannot mean live updates are back.
+    // Once live updates stopped, a later successful check cannot mean they are back.
     let liveEnded = false;
     // Live failures inform in a toast, so the workspace never moves; a later successful check dismisses it while the socket lives.
     let failure: ToastHandle | null = null;
@@ -81,24 +82,25 @@ export default function WorkspaceMetadataRefresh(props: {
         if (state.revoked) return revoke();
         setChanged(state.changed);
       },
-      markApplied: (cursor) => provider.markApplied(cursor),
       onError: showFailure,
     });
-    const provider = createGridsMetadataEventsProvider({
-      baseId: props.baseId,
-      initialCursor: props.initialCursor,
-      locale: locale(),
-      onReady: controller.check,
-      onEvent: controller.check,
-      onError: (error) => controller.check(error.code === "resync_required" ? null : undefined),
-      onRevoked: revoke,
-      onFatal: () => {
-        liveEnded = true;
-        showFailure();
-        controller.check();
+    // An update only says that the structure or access changed; the revision check decides what that means here.
+    const subscription = liveConnection("/api/grids/live").subscribe(
+      "metadata",
+      { base: props.baseId },
+      {
+        cursor: props.initialCursor,
+        parse: (data) => GridsMetadataLiveEventSchema.parse(data),
+        apply: async () => controller.check(),
+        resync: async () => controller.check(true),
+        revoked: revoke,
+        unavailable: () => {
+          liveEnded = true;
+          showFailure();
+          controller.check();
+        },
       },
-    });
-    provider.connect();
+    );
     // Short ids are unique across Bases, so no Base check is needed here.
     const applied = (raw: Event) => {
       const { key, revision } = (raw as CustomEvent<{ key: string; revision: string }>).detail;
@@ -106,19 +108,11 @@ export default function WorkspaceMetadataRefresh(props: {
       controller.check();
     };
     document.addEventListener(workspaceResourceAppliedEvent, applied);
-    // Detect missed best-effort publications, without reloading record data.
-    const recheck = () => {
-      if (!revoked && document.visibilityState === "visible") controller.check();
-    };
-    const timer = setInterval(recheck, 30_000);
-    document.addEventListener("visibilitychange", recheck);
     onCleanup(() => {
       disposed = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", recheck);
       document.removeEventListener(workspaceResourceAppliedEvent, applied);
       controller.dispose();
-      provider.dispose();
+      subscription.close();
       clearFailure();
       setWorkspaceLiveStatus({ revoked: false, message: "" });
     });

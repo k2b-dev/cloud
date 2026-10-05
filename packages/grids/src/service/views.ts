@@ -12,7 +12,7 @@ import { mapFieldRow } from "./field-read";
 import { bindAuthoredFormula } from "./formula-authoring";
 import { compileFormulaSourceToSql } from "./formula-sql-compiler";
 import { parseJsonbRow } from "./jsonb";
-import { emitTableMetadataEvent } from "./metadata-events";
+import { gridsLive, publishTableMetadataChange } from "./live";
 import { writeNamedResource } from "./named-resource-conflict";
 import { insertWithShortId } from "./short-id";
 
@@ -228,7 +228,7 @@ export const create = async (input: CreateViewServiceInput, actorId: string | nu
     if (!table) return fail(err.notFound(messages.table));
     const validUi = await validateViewUiFields(input.tableId, uiParsed.data, tx, locale);
     if (!validUi.ok) return validUi;
-    return writeNamedResource(
+    const created = await writeNamedResource(
       () =>
         tx.savepoint(() =>
           insertWithShortId<DbRow>(async (shortId) => {
@@ -255,21 +255,18 @@ export const create = async (input: CreateViewServiceInput, actorId: string | nu
       "idx_grids_views_live_name",
       messages.viewNameUnique,
     );
+    if (!created.ok) return created;
+    const view = mapRow(created.data);
+    await logAudit(
+      { tableId: input.tableId, userId: actorId, action: "created", diff: { view: { old: null, new: { id: view.id, name: view.name } } } },
+      tx,
+    );
+    await publishTableMetadataChange(tx, input.tableId, "view.created");
+    return created;
   });
   if (!inserted.ok) return inserted;
-  const view = mapRow(inserted.data);
-  await logAudit({
-    tableId: input.tableId,
-    userId: actorId,
-    action: "created",
-    diff: { view: { old: null, new: { id: view.id, name: view.name } } },
-  });
-  await emitTableMetadataEvent(input.tableId, {
-    type: "view.created",
-    resource: { kind: "view", id: view.id, tableId: input.tableId },
-    actorId,
-  });
-  return ok(view);
+  gridsLive.wake();
+  return ok(mapRow(inserted.data));
 };
 
 type UpdateViewServiceInput = {
@@ -320,7 +317,7 @@ export const update = async (id: string, input: UpdateViewServiceInput, actorId:
     if (!table) return fail(err.notFound(messages.table));
     const validUi = await validateViewUiFields(existing.tableId, uiParsed.data, tx, locale);
     if (!validUi.ok) return validUi;
-    return writeNamedResource(
+    const written = await writeNamedResource(
       () =>
         tx.savepoint(async (sp) => {
           const [row] = await sp<DbRow[]>`
@@ -341,18 +338,20 @@ export const update = async (id: string, input: UpdateViewServiceInput, actorId:
       "idx_grids_views_live_name",
       messages.viewNameUnique,
     );
+    if (!written.ok || !written.data) return written;
+    const name = mapRow(written.data).name;
+    await logAudit(
+      { tableId: existing.tableId, userId: actorId, action: "updated", diff: { view: { old: existing.name, new: name } } },
+      tx,
+    );
+    await publishTableMetadataChange(tx, existing.tableId, "view.updated");
+    return written;
   });
   if (!updated.ok) return updated;
   const row = updated.data;
   if (!row) return fail(err.internal(messages.updateFailed));
-  const view = mapRow(row);
-  await logAudit({ tableId: existing.tableId, userId: actorId, action: "updated", diff: { view: { old: existing.name, new: view.name } } });
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "view.updated",
-    resource: { kind: "view", id: view.id, tableId: existing.tableId },
-    actorId,
-  });
-  return ok(view);
+  gridsLive.wake();
+  return ok(mapRow(row));
 };
 
 /**
@@ -362,13 +361,12 @@ export const remove = async (id: string, actorId: string | null, locale?: string
   const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
   if (!existing) return fail(err.notFound(messages.view));
-  await sql`UPDATE grids.views SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
-  await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" });
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "view.deleted",
-    resource: { kind: "view", id, tableId: existing.tableId },
-    actorId,
+  await sql.begin(async (tx) => {
+    await tx`UPDATE grids.views SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
+    await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" }, tx);
+    await publishTableMetadataChange(tx, existing.tableId, "view.deleted");
   });
+  gridsLive.wake();
   return ok();
 };
 
@@ -377,27 +375,28 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
   const existing = await get(id, { includeDeleted: true });
   if (!existing) return fail(err.notFound(messages.view));
   if (existing.deletedAt === null) return ok(existing);
-  const restored = await writeNamedResource(
-    async () => {
-      const [row] = await sql<DbRow[]>`
-        UPDATE grids.views SET deleted_at = NULL, updated_at = now()
-        WHERE id = ${id}::uuid
-        RETURNING id, short_id, table_id, name, description, icon, source, ui, owner_user_id, position, deleted_at, created_at, updated_at
-      `;
-      return row;
-    },
-    "idx_grids_views_live_name",
-    messages.viewNameUnique,
-  );
+  const restored = await sql.begin(async (tx) => {
+    const written = await writeNamedResource(
+      () =>
+        tx.savepoint(async (sp) => {
+          const [row] = await sp<DbRow[]>`
+            UPDATE grids.views SET deleted_at = NULL, updated_at = now()
+            WHERE id = ${id}::uuid
+            RETURNING id, short_id, table_id, name, description, icon, source, ui, owner_user_id, position, deleted_at, created_at, updated_at
+          `;
+          return row;
+        }),
+      "idx_grids_views_live_name",
+      messages.viewNameUnique,
+    );
+    if (!written.ok || !written.data) return written;
+    await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
+    await publishTableMetadataChange(tx, existing.tableId, "view.restored");
+    return written;
+  });
   if (!restored.ok) return restored;
   const row = restored.data;
   if (!row) return fail(err.internal(messages.restoreFailed));
-  const view = mapRow(row);
-  await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" });
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "view.restored",
-    resource: { kind: "view", id, tableId: existing.tableId },
-    actorId,
-  });
-  return ok(view);
+  gridsLive.wake();
+  return ok(mapRow(row));
 };

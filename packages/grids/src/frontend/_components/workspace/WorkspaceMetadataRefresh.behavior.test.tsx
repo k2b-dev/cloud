@@ -1,18 +1,15 @@
-import { expect, mock, spyOn, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
+import { fakeLiveConnection } from "../live-test-utils";
 
 const domTest = isServer ? test.skip : test;
-type Options = Parameters<typeof import("./grids-metadata-events-provider").createGridsMetadataEventsProvider>[0];
-let callbacks: Options;
-mock.module("./grids-metadata-events-provider", () => ({
-  createGridsMetadataEventsProvider: (opts: Options) => {
-    callbacks = opts;
-    return { connect: () => {}, dispose: () => {}, markApplied: () => {} };
-  },
-}));
+const subscriptions = fakeLiveConnection();
+/** The subscription of the island rendered last. */
+const metadata = () => subscriptions.at(-1)!;
+const changed = { type: "table.updated" };
 
 domTest("structure changes preserve input, batch the notice, and reload only after explicit confirmation", async () => {
   const dom = createDomTestHarness();
@@ -41,7 +38,7 @@ domTest("structure changes preserve input, batch the notice, and reload only aft
     () =>
       createComponent(WorkspaceMetadataRefresh, {
         baseId: "BASE01",
-        initialCursor: null,
+        initialCursor: "s6t.page.7",
         revision: initial,
         activeKeys: ["table:TABLE1"],
         canWrite: true,
@@ -50,13 +47,16 @@ domTest("structure changes preserve input, batch the notice, and reload only aft
     dom.root,
   );
   try {
-    callbacks.onReady?.(null);
+    expect(metadata()).toMatchObject({ url: "/api/grids/live", channel: "metadata", scope: { base: "BASE01" }, cursor: "s6t.page.7" });
+    // The page resumes from its own cursor: neither the start nor a return to the tab reads the revision.
+    document.dispatchEvent(new Event("visibilitychange"));
     await Bun.sleep(300);
+    expect(requests).toBe(0);
     expect(dom.root.querySelector('[role="status"]')).toBeNull();
     snapshot = { ...snapshot, revision: "two", resources: { "table:TABLE1": "two" } };
-    for (let i = 0; i < 20; i++) callbacks.onEvent?.(`s6t.test.${i}`);
+    for (let i = 0; i < 20; i++) await metadata().deliver([changed]);
     await Bun.sleep(300);
-    expect(requests).toBe(2);
+    expect(requests).toBe(1);
     expect(dom.root.querySelectorAll('[role="status"]')).toHaveLength(1);
     expect(workspaceLiveStatus().revoked).toBe(false);
     expect(input.value).toBe("unsaved");
@@ -70,11 +70,12 @@ domTest("structure changes preserve input, batch the notice, and reload only aft
     button.click();
     await Bun.sleep(0);
     expect(reload).toHaveBeenCalledTimes(1);
-    callbacks.onReady?.(null);
+    await metadata().deliver([changed]);
     await Bun.sleep(300);
     expect(dom.root.querySelectorAll('[role="status"]')).toHaveLength(1);
   } finally {
     dispose();
+    expect(metadata().closed).toBe(true);
     fetchMock.mockRestore();
     reload.mockRestore();
     confirm.mockRestore();
@@ -115,21 +116,19 @@ domTest("this tab's own structure writes and changes outside the active area sta
     dom.root,
   );
   try {
-    callbacks.onReady?.(null);
-    await Bun.sleep(300);
     const response = await apiClient.views[":viewId"].$patch({ param: { viewId: "VIEW01" }, json: { source: "from Items where x = 1" } });
     expect(response.ok).toBe(true);
-    callbacks.onEvent?.("s6t.test.own");
+    await metadata().deliver([{ type: "view.updated" }]);
     await Bun.sleep(300);
     expect(dom.root.querySelector('[role="status"]')).toBeNull();
     // Another table or a new resource in the Base does not concern this area.
     snapshot = { ...snapshot, revision: "three", resources: { ...snapshot.resources, "table:OTHER1": "two", "form:NEW001": "one" } };
-    callbacks.onEvent?.("s6t.test.other");
+    await metadata().deliver([changed, { type: "form.created" }]);
     await Bun.sleep(300);
     expect(dom.root.querySelector('[role="status"]')).toBeNull();
     // A foreign change to the active table does.
     snapshot = { ...snapshot, revision: "four", resources: { ...snapshot.resources, "table:TABLE1": "foreign" } };
-    callbacks.onEvent?.("s6t.test.foreign");
+    await metadata().deliver([changed]);
     await Bun.sleep(300);
     expect(dom.root.querySelector('[role="status"]')?.textContent).toContain("Workspace changed");
     expect(dom.root.textContent).not.toContain("paused");
@@ -163,7 +162,7 @@ domTest("revocation hides SSR content and closes resource dialogs immediately", 
     dom.root,
   );
   try {
-    callbacks.onRevoked?.({ code: "access_denied", message: "denied" });
+    metadata().revoke("access_denied");
     expect(content.style.display).toBe("none");
     expect(workspaceLiveStatus().revoked).toBe(true);
     expect(close).toHaveBeenCalled();
@@ -220,19 +219,19 @@ domTest("a failed check is retried, and a lasting failure informs in a toast wit
     dom.root,
   );
   try {
-    // The tab returns while the network is still coming back.
-    callbacks.onReady?.(null);
+    // Updates were missed while the network was still coming back.
+    await metadata().resync();
     await until(() => requests === 3);
     expect(reloadAction()).toBeUndefined();
 
     failuresLeft = Number.POSITIVE_INFINITY;
-    callbacks.onEvent?.("s6t.test.1");
+    await metadata().deliver([changed]);
     await until(() => reloadAction() !== undefined);
     expect(requests).toBe(6);
     expect(dom.root.querySelector('[role="status"]')).toBeNull();
 
     failuresLeft = 0;
-    callbacks.onEvent?.("s6t.test.2");
+    await metadata().deliver([changed]);
     await until(() => reloadAction() === undefined);
   } finally {
     dispose();
@@ -272,8 +271,8 @@ domTest("after live updates end, a successful check keeps the toast", async () =
     dom.root,
   );
   try {
-    // The server closed the socket for good, for example after an invalid message.
-    callbacks.onFatal?.({ code: "invalid_message", message: "Invalid" });
+    // Live updates stopped for good, for example because the session ended.
+    metadata().fail();
     await until(() => requests === 1);
     await Bun.sleep(300);
     expect(reloadAction()).toBeDefined();

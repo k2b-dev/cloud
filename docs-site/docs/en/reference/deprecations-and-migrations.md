@@ -5,10 +5,61 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Deprecations and migrations
+
+## Grids writes live updates through the platform outbox
+
+Grids writes its live updates through the platform outbox that Core's
+migration creates, in the transaction that makes a change, so a committed
+change can no longer miss open pages. Update Core before Grids: Grids does not
+start until `events.outbox` exists. See
+[Live updates](/en/docs/automation/live-updates).
+
+Grids pages share one socket on `/api/grids/live` with three channels:
+`records` follows the records of one table, `metadata` the structure and
+access of one Base, and `runs` the runs of one workflow. The socket reads the
+topic `cloud:live:grids` and checks, when it delivers an update, that the
+reader may read the Base, by the same rules as the Grids API. It accepts every
+credential the Grids API accepts, so pages in the phone app receive live
+updates too. A returning tab receives what it missed instead of checking the
+Base structure again; the check every 30 seconds is gone.
+
+`grids.enqueue_record_event()` keeps its signature. Besides the record event
+that feeds record-event workflows and the change feed (`/changes`), it now
+writes the live update of the table, and of every Combined table that shows a
+changed field. The change feed, record-event triggers, and their workflow queue
+are unchanged. A run update is written right after the workflow runtime has
+stored the transition; one above 32 KiB makes open run details read the run
+again.
+
+A workflow action in a published Grids app no longer holds its status request
+open until the run changes. The page asks for the status again after half a
+second, then less often, at most every two seconds, as it already did when
+live updates were unavailable.
+
+The first Grids start after the update replaces
+`grids.enqueue_record_event()`. Replicas of the previous version that still
+run during a rolling update then write the live updates of record changes as
+well, and the new replicas publish them; structure and run updates of an old
+replica reach only tabs connected to it. A replica of the previous version
+that starts during the rollout puts the previous function back, so new tabs
+miss record updates until a new replica starts again. For one release,
+`/api/grids/ws` closes the socket of a tab opened before the update with
+`reload_required`; the tab shows that live updates stopped and offers a
+reload.
+
+Nothing writes the previous topics `grids:records`, `grids:metadata`, and
+`grids:workflow-runs` anymore. Their streams keep their reservations of 1 GiB,
+128 MiB, and 512 MiB until the next release removes them together with
+`/api/grids/ws`; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
+If you roll Grids back, its start restores the previous function and live
+updates work as before. Updates the new version wrote but did not publish yet
+wait in `events.outbox` until Grids is updated again.
 
 ## Mail writes live updates through the platform outbox
 

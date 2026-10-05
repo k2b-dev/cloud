@@ -1,37 +1,6 @@
 import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQueryResult } from "../../../api/public-dto";
 import type { RecordQuery } from "../../../contracts";
 
-export type LiveRecordEvent = {
-  v: 1;
-  type: "record.created" | "record.updated" | "record.deleted" | "record.restored" | "record.finalized";
-  baseId: string;
-  tableId: string;
-  recordId: string;
-  version: number | null;
-  changedFieldIds: string[];
-  actorId: string | null;
-  occurredAt: string;
-};
-
-const TERMINAL_LIVE_ERROR_CODES = new Set(["login_required", "access_denied", "not_found"]);
-
-export const isTerminalLiveErrorCode = (code: unknown): code is string => typeof code === "string" && TERMINAL_LIVE_ERROR_CODES.has(code);
-
-export const isLiveRecordEventForTable = (event: unknown, tableId: string): event is LiveRecordEvent => {
-  if (!event || typeof event !== "object") return false;
-  const candidate = event as Partial<LiveRecordEvent>;
-  return (
-    candidate.v === 1 &&
-    (candidate.type === "record.created" ||
-      candidate.type === "record.updated" ||
-      candidate.type === "record.deleted" ||
-      candidate.type === "record.restored" ||
-      candidate.type === "record.finalized") &&
-    candidate.tableId === tableId &&
-    typeof candidate.recordId === "string"
-  );
-};
-
 export const visibleIdsFromResult = (result: TableQueryResult | undefined): string[] =>
   ((result?.items ?? []) as GridRecord[]).map((record) => record.id);
 

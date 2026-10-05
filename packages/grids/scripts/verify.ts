@@ -44,7 +44,7 @@ if (argv.includes("--bootstrap")) {
   // Callers (this script and scripts/diagnostics.ts) pass the isolated database as DATABASE_URL.
   const databaseUrl = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
   if (!/^\/grids_verify_[a-f0-9]{16,32}(?:_test)?$/.test(databaseUrl.pathname)) throw new Error("Unexpected verification database");
-  for (const path of ["auth", "audit", "logging", "settings", "notifications", "workflows"]) {
+  for (const path of ["auth", "audit", "logging", "settings", "notifications", "workflows", "events"]) {
     const { migrate } = await import(`${root}/packages/core/src/migrate/core/${path}.ts`);
     await migrate();
   }

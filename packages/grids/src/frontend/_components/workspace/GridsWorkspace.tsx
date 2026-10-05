@@ -96,7 +96,7 @@ export default function GridsWorkspace(props: { state: PublicOkWorkspaceState; c
       <RememberGridsPath />
       <WorkspaceMetadataRefresh
         baseId={props.state.base.id}
-        initialCursor={props.state.metadataEventCursor}
+        initialCursor={props.state.liveCursor}
         revision={props.state.workspaceRevision}
         activeKeys={activeKeys}
         canWrite={props.state.canCreateTables}

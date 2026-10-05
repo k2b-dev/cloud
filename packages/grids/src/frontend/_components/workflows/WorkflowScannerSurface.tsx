@@ -1,3 +1,4 @@
+import { type LiveSubscription, liveConnection } from "@k2b/cloud/browser/live";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, ScrollArea, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -8,6 +9,7 @@ import {
   PublicGridsWorkflowStepRunListSchema,
   PublicWorkflowInvocationReceiptSchema,
 } from "../../../api/workflow-public-contracts";
+import { GridsRunLiveEventSchema } from "../../../live-events";
 import type { GridsScannerPromptInputSource } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { createScannerEngine, type ScannerDetection, type ScannerEngine } from "./scanner-engine";
@@ -28,7 +30,6 @@ import { openFinancialExportDialog } from "./FinancialExportDialog";
 import { financialExportMessages } from "./financial-export-messages";
 import { workflowMessages } from "./messages";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
-import { createWorkflowRunEventsProvider, isTerminalWorkflowRunLiveErrorCode } from "./workflow-run-events-provider";
 import { acquireScannerStream, stopScannerStream } from "./workflow-scanner-camera";
 import { retainVisibleScannerLogs } from "./workflow-scanner-log";
 import { invokeWorkflowScannerRequest, type WorkflowScannerTransport, workflowScannerResponseKind } from "./workflow-scanner-request";
@@ -53,6 +54,8 @@ export type WorkflowScannerState = {
   initialCode: string | null;
   returnHref: string | null;
   inputContract?: WorkflowScannerInputContract;
+  /** The page's live cursor; runs started since the page was rendered replay. */
+  liveCursor?: string | null;
 };
 
 type ScanStatus = "queued" | "running" | "succeeded" | "failed";
@@ -187,8 +190,9 @@ export default function WorkflowScannerSurface(props: Props) {
   let decoding = false;
   let initialCodeSubmitted = false;
   let fallbackTimer: ReturnType<typeof setInterval> | null = null;
-  let watchdogTimer: ReturnType<typeof setInterval> | null = null;
-  let streamReady = false;
+  // Published apps, and pages whose live updates stopped, read their active runs instead.
+  let polling = props.transport?.live === false;
+  let runUpdates: LiveSubscription | null = null;
   const pendingRunEvents = createWorkflowRunEventBuffer();
 
   const [cameraRunning, setCameraRunning] = createSignal(false);
@@ -399,25 +403,13 @@ export default function WorkflowScannerSurface(props: Props) {
     fallbackTimer = null;
   };
 
-  const stopWatchdog = () => {
-    if (watchdogTimer) clearInterval(watchdogTimer);
-    watchdogTimer = null;
-  };
-
   const startFallback = () => {
     if (fallbackTimer || disposed || document.visibilityState !== "visible") return;
     fallbackTimer = setInterval(() => void refreshActiveRuns(), 2500);
   };
 
-  const startWatchdog = () => {
-    if (watchdogTimer || disposed || document.visibilityState !== "visible") return;
-    watchdogTimer = setInterval(() => void refreshActiveRuns(), 10_000);
-  };
-
   const stopForTerminalLiveError = (error: { message: string }) => {
-    streamReady = false;
     stopFallback();
-    stopWatchdog();
     setPauseReason(error.message);
     setCameraError(error.message);
     stopCamera();
@@ -436,50 +428,41 @@ export default function WorkflowScannerSurface(props: Props) {
   };
 
   const syncLiveVisibility = () => {
+    if (!polling) return;
     if (document.visibilityState !== "visible") {
-      streamReady = false;
       stopFallback();
-      stopWatchdog();
       return;
     }
-    if (props.transport?.live === false) {
-      startFallback();
-      void refreshActiveRuns();
-      return;
-    }
-    startWatchdog();
-    if (!streamReady) startFallback();
+    startFallback();
     void refreshActiveRuns();
   };
 
-  const runEvents = createWorkflowRunEventsProvider({
-    workflowId: props.state.workflowId,
-    locale: locale(),
-    onReady: () => {
-      streamReady = true;
-      stopFallback();
-      void refreshActiveRuns();
-    },
-    onEvent: (event) => {
-      const item = logs().find((candidate) => candidate.runId === event.run.id);
-      if (item) {
-        applyRun(item.id, event.run, event.steps);
-        if (event.run.status === "waiting") void refreshRun(item.id, event.run.id).catch(() => undefined);
-        return;
-      }
-      pendingRunEvents.push(event);
-    },
-    onError: () => {
-      streamReady = false;
-      startFallback();
-    },
-    onRevoked: stopForTerminalLiveError,
-    onFatal: (error) => {
-      streamReady = false;
-      if (isTerminalWorkflowRunLiveErrorCode(error.code)) stopForTerminalLiveError(error);
-      else startFallback();
-    },
-  });
+  const followRuns = () =>
+    liveConnection("/api/grids/live").subscribe(
+      "runs",
+      { workflow: props.state.workflowId },
+      {
+        cursor: props.state.liveCursor ?? null,
+        parse: (data) => GridsRunLiveEventSchema.parse(data),
+        apply: async (events) => {
+          for (const { data: event } of events) {
+            const item = logs().find((candidate) => candidate.runId === event.run.id);
+            if (!item) {
+              pendingRunEvents.push(event);
+              continue;
+            }
+            applyRun(item.id, event.run, event.steps);
+            if (event.run.status === "waiting") void refreshRun(item.id, event.run.id).catch(() => undefined);
+          }
+        },
+        resync: refreshActiveRuns,
+        revoked: () => stopForTerminalLiveError({ message: t().workflowAccessRevoked }),
+        unavailable: () => {
+          polling = true;
+          syncLiveVisibility();
+        },
+      },
+    );
 
   const submitScan = async (item: Pick<ScanLogItem, "id" | "code" | "inputs">) => {
     try {
@@ -508,9 +491,6 @@ export default function WorkflowScannerSurface(props: Props) {
         const status = receipt.status === "queued" ? "queued" : "running";
         updateLog(item.id, { runId, status, message: status === "queued" ? t().queued : t().running });
       }
-      setTimeout(() => {
-        if (!disposed) void refreshRun(item.id, runId).catch(() => !streamReady && startFallback());
-      }, 1500);
     } catch (error) {
       updateLog(item.id, {
         status: "failed",
@@ -698,11 +678,8 @@ export default function WorkflowScannerSurface(props: Props) {
     if (typeof window === "undefined") return;
     window.addEventListener("resize", updateVideoBox);
     document.addEventListener("visibilitychange", syncLiveVisibility);
-    if (props.transport?.live === false) startFallback();
-    else {
-      runEvents.connect();
-      startWatchdog();
-    }
+    if (polling) startFallback();
+    else runUpdates = followRuns();
     void initializeScanner();
   });
 
@@ -713,9 +690,8 @@ export default function WorkflowScannerSurface(props: Props) {
     window.removeEventListener("resize", updateVideoBox);
     document.removeEventListener("visibilitychange", syncLiveVisibility);
     stopFallback();
-    stopWatchdog();
     pendingRunEvents.clear();
-    runEvents.dispose();
+    runUpdates?.close();
     stopCamera();
   });
 

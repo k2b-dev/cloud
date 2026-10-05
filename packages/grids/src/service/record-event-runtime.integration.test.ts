@@ -43,9 +43,12 @@ if (!databaseName) {
       await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
       const { migrate: migrateWorkflows } = await import("../../../core/src/migrate/core/workflows");
       const { migrate: migrateLogging } = await import("../../../core/src/migrate/core/logging");
+      const { migrate: migrateEvents } = await import("../../../core/src/migrate/core/events");
       const { migrate } = await import("../migrate");
       await migrateWorkflows();
       await migrateLogging();
+      // Record writes also write their live updates to the platform outbox.
+      await migrateEvents();
       await migrate();
       checkpoint("migrated");
       const baseId = crypto.randomUUID();
@@ -108,7 +111,7 @@ if (!databaseName) {
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       const events = await import("./record-events");
-      const publish = spyOn(events, "publishRecordEventWithFederatedTargets").mockImplementation(async () => {
+      const publish = spyOn(events, "publishRecordEvent").mockImplementation(async () => {
         entered.resolve();
         await release.promise;
       });
@@ -144,7 +147,7 @@ if (!databaseName) {
       await enqueueRecordEvent(sql, event(recordId, 6));
       const stalledEntered = Promise.withResolvers<void>();
       const stalledRelease = Promise.withResolvers<void>();
-      const stalledPublish = spyOn(events, "publishRecordEventWithFederatedTargets").mockImplementation(async () => {
+      const stalledPublish = spyOn(events, "publishRecordEvent").mockImplementation(async () => {
         stalledEntered.resolve();
         await stalledRelease.promise;
       });

@@ -10,27 +10,26 @@ const initial: RevisionSnapshot = {
 const tick = () => Bun.sleep(280);
 
 describe("workspace structure reconciliation", () => {
-  test("resync cannot reapply an expired cursor from an in-flight check", async () => {
+  test("a resync discards the check that was already running", async () => {
     const pending: Array<(value: RevisionSnapshot) => void> = [];
-    const cursors: Array<string | null> = [];
+    const applied: unknown[] = [];
     const controller = createWorkspaceRevisionController({
       initial,
-      activeKeys: [],
+      activeKeys: ["table:active"],
       load: () => new Promise((resolve) => pending.push(resolve)),
-      apply: () => {},
-      markApplied: (cursor) => cursors.push(cursor),
+      apply: (state) => applied.push(state),
       onError: () => {},
     });
     try {
-      controller.check("expired");
+      controller.check();
       await tick();
-      controller.check(null);
-      pending[0]!(initial);
+      controller.check(true);
+      pending[0]!({ ...initial, resources: { ...initial.resources, "table:active": "stale" } });
       await Bun.sleep(0);
-      expect(cursors).toEqual([]);
+      expect(applied).toEqual([]);
       pending[1]!(initial);
       await Bun.sleep(0);
-      expect(cursors).toEqual([null]);
+      expect(applied).toEqual([{ changed: false, revoked: false }]);
     } finally {
       controller.dispose();
     }
@@ -45,7 +44,6 @@ describe("workspace structure reconciliation", () => {
       apply: (state) => {
         applied = state;
       },
-      markApplied: () => {},
       onError: () => {},
     });
     try {
@@ -67,7 +65,6 @@ describe("workspace structure reconciliation", () => {
     let snapshot = initial;
     let calls = 0;
     const applied: unknown[] = [];
-    const cursors: Array<string | null> = [];
     const controller = createWorkspaceRevisionController({
       initial,
       activeKeys: ["table:active"],
@@ -76,17 +73,15 @@ describe("workspace structure reconciliation", () => {
         return snapshot;
       },
       apply: (state) => applied.push(state),
-      markApplied: (cursor) => cursors.push(cursor),
       onError: () => {
         throw Error("unexpected");
       },
     });
     try {
-      for (let i = 0; i < 20; i++) controller.check(`cursor-${i}`);
+      for (let i = 0; i < 20; i++) controller.check();
       await tick();
       expect(calls).toBe(1);
       expect(applied).toEqual([{ changed: false, revoked: false }]);
-      expect(cursors).toEqual(["cursor-19"]);
       snapshot = { ...initial, revision: "two", resources: { ...initial.resources, "table:other": "c", "table:new": "d" } };
       controller.check();
       await tick();
@@ -106,7 +101,6 @@ describe("workspace structure reconciliation", () => {
       apply: (state) => {
         applied = state;
       },
-      markApplied: () => {},
       onError: () => {},
     });
     try {
@@ -127,40 +121,40 @@ describe("workspace structure reconciliation", () => {
     }
   });
 
-  test("only acknowledges a successful covering snapshot, with one follow-up during a request", async () => {
+  test("changes during a request lead to one follow-up check", async () => {
     const pending: Array<(value: RevisionSnapshot) => void> = [];
-    const cursors: Array<string | null> = [];
+    let applied = 0;
     const controller = createWorkspaceRevisionController({
       initial,
       activeKeys: [],
       load: () => new Promise((resolve) => pending.push(resolve)),
-      apply: () => {},
-      markApplied: (cursor) => cursors.push(cursor),
+      apply: () => {
+        applied++;
+      },
       onError: () => {},
     });
     try {
-      controller.check("first");
+      controller.check();
       await tick();
-      controller.check("second");
-      controller.check("third");
+      controller.check();
+      controller.check();
       expect(pending).toHaveLength(1);
-      expect(cursors).toEqual([]);
       pending[0]!(initial);
       await Bun.sleep(0);
-      expect(cursors).toEqual(["first"]);
+      expect(applied).toBe(1);
       expect(pending).toHaveLength(2);
       pending[1]!(initial);
       await Bun.sleep(0);
-      expect(cursors).toEqual(["first", "third"]);
+      expect(applied).toBe(2);
+      expect(pending).toHaveLength(2);
     } finally {
       controller.dispose();
     }
   });
 
-  test("failure does not acknowledge or loop; disposal ignores late success", async () => {
+  test("failure does not loop; disposal ignores late success", async () => {
     let calls = 0;
     let errors = 0;
-    const cursors: Array<string | null> = [];
     const controller = createWorkspaceRevisionController({
       initial,
       activeKeys: [],
@@ -169,17 +163,15 @@ describe("workspace structure reconciliation", () => {
         throw Error("offline");
       },
       apply: () => {},
-      markApplied: (c) => cursors.push(c),
       onError: () => {
         errors++;
       },
     });
-    controller.check("first");
+    controller.check();
     await tick();
     await tick();
     expect(calls).toBe(1);
     expect(errors).toBe(1);
-    expect(cursors).toEqual([]);
     controller.dispose();
     controller.check();
     await tick();
@@ -199,18 +191,16 @@ describe("workspace structure reconciliation", () => {
       apply: () => {
         throw Error("must not apply");
       },
-      markApplied: (c) => cursors.push(c),
       onError: () => {
         errors++;
       },
     });
-    late.check("late");
+    late.check();
     await tick();
     late.dispose();
     resolve(initial);
     await Bun.sleep(0);
     expect(signal.aborted).toBe(true);
-    expect(cursors).toEqual([]);
     expect(errors).toBe(1);
   });
 });

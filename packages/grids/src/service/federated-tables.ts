@@ -21,8 +21,8 @@ import { buildComputedProjections, buildFormulaSqlProjections } from "./computed
 import { mapFieldRow } from "./field-read";
 import { outputSqlTypeForField } from "./field-storage";
 import { parseJsonbRow } from "./jsonb";
+import { gridsLive, publishTableMetadataChange } from "./live";
 import { serviceMessagesFor } from "./messages";
-import { emitTableMetadataEvent } from "./metadata-events";
 import { hasAtLeast } from "./permission-resolver";
 import type { Field } from "./types";
 
@@ -844,14 +844,11 @@ export const updateDraft = async (
     );
     const updated = await draftRow(tableId, tx);
     if (!updated) return fail(err.internal(t.draftDisappeared));
+    await publishTableMetadataChange(tx, tableId, "table.updated");
     return ok(await loadRevision(tx, updated));
   });
   if (result.ok) {
-    await emitTableMetadataEvent(tableId, {
-      type: "table.updated",
-      resource: { kind: "table", id: tableId },
-      actorId,
-    });
+    gridsLive.wake();
     await refreshRelationDependents([tableId], actorId);
   }
   return result;
@@ -1017,14 +1014,12 @@ export const publishDraft = async (
       tx,
     );
     const active = await getRevisionByStatus(tableId, ["active"], tx);
-    return active ? ok(active) : fail(err.internal(t.publicationLoadFailed));
+    if (!active) return fail(err.internal(t.publicationLoadFailed));
+    await publishTableMetadataChange(tx, tableId, "table.updated");
+    return ok(active);
   });
   if (result.ok) {
-    await emitTableMetadataEvent(tableId, {
-      type: "table.updated",
-      resource: { kind: "table", id: tableId },
-      actorId,
-    });
+    gridsLive.wake();
     await refreshRelationDependents([tableId], actorId);
   }
   return result;
@@ -1080,14 +1075,11 @@ export const revokeSource = async (
       },
       tx,
     );
+    await publishTableMetadataChange(tx, targetTableId, "table.updated");
     return ok();
   });
   if (result.ok) {
-    await emitTableMetadataEvent(targetTableId, {
-      type: "table.updated",
-      resource: { kind: "table", id: targetTableId },
-      actorId,
-    });
+    gridsLive.wake();
     await refreshRelationDependents([targetTableId], actorId);
   }
   return result;
@@ -1246,17 +1238,10 @@ const refreshRevisionRows = async (rows: DbRow[], actorId: string | null, schema
       const refreshed = await refreshRevision(revision, actorId, tx);
       if (refreshed.changed) tableIds.add(refreshed.tableId);
     }
+    for (const tableId of tableIds) await publishTableMetadataChange(tx, tableId, "table.updated");
     return [...tableIds];
   });
-  await Promise.all(
-    changed.map((tableId) =>
-      emitTableMetadataEvent(tableId, {
-        type: "table.updated",
-        resource: { kind: "table", id: tableId },
-        actorId,
-      }),
-    ),
-  );
+  if (changed.length > 0) gridsLive.wake();
   return [...changed];
 };
 

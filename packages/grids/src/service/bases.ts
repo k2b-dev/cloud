@@ -8,7 +8,7 @@ import { logAudit } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { degradeForSourceBaseChange, refreshForSourceBase } from "./federated-tables";
 import { parseJsonbRow } from "./jsonb";
-import { emitMetadataEvent } from "./metadata-events";
+import { gridsLive, publishMetadataChange } from "./live";
 import { insertWithShortId } from "./short-id";
 import type { Base, CreateBaseInput, UpdateBaseInput } from "./types";
 
@@ -258,12 +258,6 @@ export const create = async (input: CreateBaseInput, actorId: string | null, loc
   }
 
   await logAudit({ baseId: base.id, userId: actorId, action: "created" });
-  await emitMetadataEvent({
-    type: "base.created",
-    baseId: base.id,
-    resource: { kind: "base", id: base.id },
-    actorId,
-  });
   return ok(base);
 };
 
@@ -281,36 +275,33 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
     documentDefaults: input.documentDefaults !== undefined ? input.documentDefaults : existing.documentDefaults,
   };
 
-  const [row] = await sql<DbRow[]>`
-    UPDATE grids.bases
-    SET name = ${next.name},
-        description = ${next.description},
-        document_defaults = ${next.documentDefaults}::jsonb,
-        updated_at = now()
-    WHERE id = ${id}::uuid AND deleted_at IS NULL
-    RETURNING ${COLS}
-  `;
-  if (!row) return fail(err.internal(messages.updateFailed));
-  const base = mapRow(row);
-
-  const diff: Record<string, { old: unknown; new: unknown }> = {};
-  if (next.name !== existing.name) diff.name = { old: existing.name, new: next.name };
-  if (next.description !== existing.description) {
-    diff.description = { old: existing.description, new: next.description };
-  }
-  if (JSON.stringify(next.documentDefaults) !== JSON.stringify(existing.documentDefaults)) {
-    diff.documentDefaults = { old: existing.documentDefaults, new: next.documentDefaults };
-  }
-  if (Object.keys(diff).length > 0) {
-    await logAudit({ baseId: id, userId: actorId, action: "updated", diff });
-    await emitMetadataEvent({
-      type: "base.updated",
-      baseId: id,
-      resource: { kind: "base", id },
-      actorId,
-    });
-  }
-
+  const base = await sql.begin(async (tx) => {
+    const [row] = await tx<DbRow[]>`
+      UPDATE grids.bases
+      SET name = ${next.name},
+          description = ${next.description},
+          document_defaults = ${next.documentDefaults}::jsonb,
+          updated_at = now()
+      WHERE id = ${id}::uuid AND deleted_at IS NULL
+      RETURNING ${COLS}
+    `;
+    if (!row) return null;
+    const diff: Record<string, { old: unknown; new: unknown }> = {};
+    if (next.name !== existing.name) diff.name = { old: existing.name, new: next.name };
+    if (next.description !== existing.description) {
+      diff.description = { old: existing.description, new: next.description };
+    }
+    if (JSON.stringify(next.documentDefaults) !== JSON.stringify(existing.documentDefaults)) {
+      diff.documentDefaults = { old: existing.documentDefaults, new: next.documentDefaults };
+    }
+    if (Object.keys(diff).length > 0) {
+      await logAudit({ baseId: id, userId: actorId, action: "updated", diff }, tx);
+      await publishMetadataChange(tx, id, "base.updated");
+    }
+    return mapRow(row);
+  });
+  if (!base) return fail(err.internal(messages.updateFailed));
+  gridsLive.wake();
   return ok(base);
 };
 
@@ -331,15 +322,11 @@ export const remove = async (id: string, actorId: string | null, locale?: string
     `;
     if (result.count === 0) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "deleted" }, tx);
+    await publishMetadataChange(tx, id, "base.deleted");
     return ok();
   });
   if (!removed.ok) return removed;
-  await emitMetadataEvent({
-    type: "base.deleted",
-    baseId: id,
-    resource: { kind: "base", id },
-    actorId,
-  });
+  gridsLive.wake();
   await refreshForSourceBase(id, actorId);
   return ok();
 };
@@ -361,17 +348,12 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     `;
     if (!row) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "restored" }, tx);
+    await publishMetadataChange(tx, id, "base.restored");
     return ok(row);
   });
   if (!restored.ok) return restored;
-  const row = restored.data;
-  const base = mapRow(row);
-  await emitMetadataEvent({
-    type: "base.restored",
-    baseId: id,
-    resource: { kind: "base", id },
-    actorId,
-  });
+  const base = mapRow(restored.data);
+  gridsLive.wake();
   await refreshForSourceBase(id, actorId);
   return ok(base);
 };

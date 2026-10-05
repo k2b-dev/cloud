@@ -1,19 +1,15 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { fakeLiveConnection } from "../live-test-utils";
 import type { PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
 
 const domTest = isServer ? test.skip : test;
+const subscriptions = fakeLiveConnection();
 
-domTest("a waiting event during a detail refresh queues the authorized export-review reload", async () => {
+domTest("a waiting update during a detail refresh queues the authorized export-review reload", async () => {
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;
-  const provider = await import("./workflow-run-events-provider");
-  let events: Parameters<typeof provider.createWorkflowRunEventsProvider>[0] | undefined;
-  const live = spyOn(provider, "createWorkflowRunEventsProvider").mockImplementation((options) => {
-    events = options;
-    return { connect() {}, dispose() {}, markApplied() {}, resetCursor() {}, send: () => true };
-  });
   const initial: PublicWorkspaceWorkflowRunDetail = {
     run: {
       id: "RUN001",
@@ -85,6 +81,7 @@ domTest("a waiting event during a detail refresh queues the authorized export-re
         workflows={[]}
         workflowLevels={{}}
         tables={[]}
+        liveCursor="s6t.page.4"
         onRunUpdated={() => {}}
         onSelectRun={() => {}}
         onClose={() => {}}
@@ -94,15 +91,17 @@ domTest("a waiting event during a detail refresh queues the authorized export-re
   );
   try {
     await Bun.sleep(30);
-    expect(events).toBeDefined();
-    events!.onReady?.();
+    // The panel follows the run's workflow from the page's cursor and reads nothing until something changes.
+    const [runs] = subscriptions;
+    expect(runs).toMatchObject({ url: "/api/grids/live", channel: "runs", scope: { workflow: "WORK01" }, cursor: "s6t.page.4" });
+    expect(reads).toBe(0);
+    void runs!.resync();
     await Bun.sleep(30);
     expect(reads).toBe(1);
     const { documentConfirmation: _confirmation, ...stepSummary } = waiting.steps[0]!;
-    events!.onEvent?.(
+    await runs!.deliver([
       { v: 1, baseId: "BASE01", workflowId: "WORK01", run: waiting.run, steps: [stepSummary], scope: { kind: "workflow" } },
-      null,
-    );
+    ]);
     expect(reads).toBe(1);
     finishFirst!(Response.json(initial));
     await Bun.sleep(80);
@@ -111,7 +110,7 @@ domTest("a waiting event during a detail refresh queues the authorized export-re
     expect(Array.from(dom.root.querySelectorAll("button")).some((button) => button.textContent?.includes("Review export"))).toBe(true);
   } finally {
     dispose();
-    live.mockRestore();
+    expect(subscriptions[0]?.closed).toBe(true);
     globalThis.fetch = originalFetch;
     dom.cleanup();
   }

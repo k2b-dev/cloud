@@ -214,9 +214,9 @@ type PublicWorkspaceState =
       canCreateTables: boolean;
       canUseEditMode: boolean;
       canUseQueryWorkspace: boolean;
-      metadataEventCursor: string | null;
+      /** The live topic's position when the page was rendered; every live subscription of the page resumes after it. */
+      liveCursor: string | null;
       workspaceRevision?: import("../../../service/workspace-revision").WorkspaceRevision;
-      recordEventCursor: string | null;
       dateConfig?: DateContext;
       catalog: PublicWorkspaceCatalog;
       route: PublicWorkspaceRoute;

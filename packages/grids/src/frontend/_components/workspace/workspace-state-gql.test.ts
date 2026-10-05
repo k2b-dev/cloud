@@ -7,8 +7,7 @@ import { loadGridsWorkspaceState } from "./workspace-state";
 const loadWorkspaceState = (params: Parameters<typeof loadGridsWorkspaceState>[0]) =>
   loadGridsWorkspaceState(params, {
     loadRevision: async () => ({ revision: "fixture", resources: {} }),
-    latestMetadataEventCursor: async () => null,
-    latestRecordEventCursor: async () => null,
+    liveCursor: async () => null,
   });
 
 const viewerId = "44444444-4444-4444-8444-444444444444";

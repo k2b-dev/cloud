@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # Live updates
@@ -140,7 +140,9 @@ $$;
   second.
 
 Mail writes its updates this way, from a trigger on its activity log, with
-one update per conversation and transaction.
+one update per conversation and transaction. Grids writes the updates of
+record changes from the function that also records its own record events,
+with one update per record and table in a transaction.
 
 ## Serve the channels
 
@@ -330,7 +332,7 @@ Update Cloud Core first: its migration creates the outbox.
 ```
 
 Update Core before the applications that define live updates. Contacts,
-Spaces, and Mail are the built-in applications that do.
+Spaces, Mail, and Grids are the built-in applications that do.
 
 A replica that stops closes its sockets with `1012`; the tabs reconnect to
 another replica and resume from their cursors. Each replica reads the topic

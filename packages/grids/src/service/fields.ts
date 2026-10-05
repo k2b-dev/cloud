@@ -24,8 +24,8 @@ import { materializeFieldDefault, validateDefaultValue, validateFieldConfig, val
 import { assertFinalizedResultTypes, lockFinalizedSchema } from "./finalized-schema";
 import { bindAuthoredField } from "./formula-authoring";
 import { assertFormulaSchema } from "./formula-schema-validation";
+import { gridsLive, publishTableMetadataChange } from "./live";
 import { refreshLocalCalculations } from "./local-calculation-storage";
-import { emitTableMetadataEvent } from "./metadata-events";
 import { namedResourceConflict, writeNamedResource } from "./named-resource-conflict";
 import { numberSeriesFormatForField, provisionFieldNumberSeries, setNumberSeriesArchived, syncNumberSeriesFormat } from "./number-series";
 import { validateObjectListSchemaChange } from "./object-list-schema";
@@ -257,7 +257,7 @@ const prepareFieldCreate = async (input: CreateFieldInput, locale?: string): Pro
   });
 };
 
-type InsertedField = { field: Field; columnsChanged: boolean };
+type InsertedField = { field: Field };
 
 type LockedTableColumns = { base_id: string; columns: unknown };
 
@@ -352,7 +352,9 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
       tx,
     );
     const columnsChanged = await addFieldToTableColumns(tx, table, inserted, actorId);
-    return ok({ field: inserted, columnsChanged });
+    await publishTableMetadataChange(tx, inserted.tableId, "field.created");
+    if (columnsChanged) await publishTableMetadataChange(tx, inserted.tableId, "table.updated");
+    return ok({ field: inserted });
   });
 
 const prepareCreateUniqueIndex = async (field: Field, locale?: string): Promise<Result<boolean>> => {
@@ -393,24 +395,13 @@ export const create = async (input: CreateFieldInput, actorId: string | null, lo
   if (!uniqueIndex.ok) return uniqueIndex;
   const inserted = await insertWithUniqueIndexCleanup(prepared.data, actorId, uniqueIndex.data, locale);
   if (!inserted.ok) return inserted;
-  const { field, columnsChanged } = inserted.data;
+  const { field } = inserted.data;
+  gridsLive.wake();
 
   if (field.indexed) {
     void ensureFieldIndex(field.id, field.type, field.tableId, field.config);
   }
 
-  await emitTableMetadataEvent(input.tableId, {
-    type: "field.created",
-    resource: { kind: "field", id: field.id, tableId: input.tableId },
-    actorId,
-  });
-  if (columnsChanged) {
-    await emitTableMetadataEvent(input.tableId, {
-      type: "table.updated",
-      resource: { kind: "table", id: input.tableId, tableId: input.tableId },
-      actorId,
-    });
-  }
   if (prepared.data.tableKind === "federated") await refreshForTableSchemaChange(input.tableId, actorId);
   return ok(field);
 };
@@ -574,13 +565,10 @@ const compensateUniqueConstraintDisable = async (
       ) {
         await refreshLocalCalculations(tx, field.tableId);
       }
+      await publishTableMetadataChange(tx, field.tableId, "field.updated");
       return restoredResult.data;
     });
-    await emitTableMetadataEvent(field.tableId, {
-      type: "field.updated",
-      resource: { kind: "field", id: field.id, tableId: field.tableId },
-      actorId,
-    });
+    gridsLive.wake();
     return restored;
   } catch (error) {
     log.error("Failed to compensate unique-constraint disable", { fieldId: field.id, error: String(error) });
@@ -715,6 +703,7 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
           await refreshLocalCalculations(tx, field.tableId);
         }
 
+        await publishTableMetadataChange(tx, field.tableId, "field.updated");
         return ok(field);
       })
       .catch((e: unknown) => {
@@ -740,15 +729,11 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
     return txResult;
   }
   const field = txResult.data;
+  gridsLive.wake();
 
   const synchronizedField = await syncFieldIndexes(existing, field, actorId, locale);
   if (!synchronizedField.ok) return synchronizedField;
 
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "field.updated",
-    resource: { kind: "field", id: synchronizedField.data.id, tableId: existing.tableId },
-    actorId,
-  });
   await refreshForTableSchemaChange(existing.tableId, actorId);
   return synchronizedField;
 };
@@ -800,12 +785,9 @@ export const reorder = async (tableId: string, fieldIds: string[], actorId: stri
       },
       tx,
     );
+    await publishTableMetadataChange(tx, tableId, "field.reordered");
   });
-  await emitTableMetadataEvent(tableId, {
-    type: "field.reordered",
-    resource: { kind: "field", id: tableId, tableId },
-    actorId,
-  });
+  gridsLive.wake();
   if (parentTable.kind === "federated") await refreshForTableSchemaChange(tableId, actorId);
 
   return ok();
@@ -847,7 +829,6 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
   }
   let restored: Result<Field>;
   let rejectedSchema: Result<Field> | undefined;
-  let columnsChanged = false;
   try {
     restored = await sql.begin(async (tx): Promise<Result<Field>> => {
       await lockFinalizedSchema(tx, existing.tableId);
@@ -889,7 +870,9 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
       }
       await refreshLocalCalculations(tx, existing.tableId);
       await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
-      columnsChanged = await addFieldToTableColumns(tx, table, result.data, actorId);
+      const columnsChanged = await addFieldToTableColumns(tx, table, result.data, actorId);
+      await publishTableMetadataChange(tx, existing.tableId, "field.restored");
+      if (columnsChanged) await publishTableMetadataChange(tx, existing.tableId, "table.updated");
       return result;
     });
   } catch (error) {
@@ -901,18 +884,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     if (restoreUniqueIndex) await dropFieldUniqueIndex(id);
     return restored;
   }
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "field.restored",
-    resource: { kind: "field", id, tableId: existing.tableId },
-    actorId,
-  });
-  if (columnsChanged) {
-    await emitTableMetadataEvent(existing.tableId, {
-      type: "table.updated",
-      resource: { kind: "table", id: existing.tableId, tableId: existing.tableId },
-      actorId,
-    });
-  }
+  gridsLive.wake();
   // Re-create the expression index if the field was indexed.
   if (existing.indexed) void ensureFieldIndex(id, existing.type, existing.tableId, existing.config);
   await refreshForTableSchemaChange(existing.tableId, actorId);
@@ -999,18 +971,15 @@ export const softDelete = async (id: string, actorId: string | null, locale?: st
         WHERE id = ${view.id}::uuid
       `;
     }
+    await publishTableMetadataChange(tx, existing.tableId, "field.deleted");
     return ok();
   });
   if (!deleted.ok) return deleted;
+  gridsLive.wake();
 
   // Drop any expression index since the field is gone.
   if (existing.indexed) void dropFieldIndex(id);
   if (existing.uniqueConstraint) await dropFieldUniqueIndex(id);
-  await emitTableMetadataEvent(existing.tableId, {
-    type: "field.deleted",
-    resource: { kind: "field", id, tableId: existing.tableId },
-    actorId,
-  });
   await refreshForTableSchemaChange(existing.tableId, actorId);
   return ok();
 };

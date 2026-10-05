@@ -31,7 +31,7 @@ import { prepareCustomAppDocumentPreview } from "../service/custom-app-document-
 import { resolvePublishedCustomAppForm } from "../service/custom-app-published-form";
 import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
-import { waitForCustomAppWorkflowChange, workflowCommittedChanges } from "../service/custom-app-workflow-progress";
+import { workflowCommittedChanges } from "../service/custom-app-workflow-progress";
 import type { CustomApp, CustomAppDraftSave, CustomAppSummary } from "../service/custom-apps";
 import { getMaxFileSizeBytes } from "../service/file-limits";
 import { principalReferencesFromRecords } from "../service/principal-values";
@@ -47,7 +47,6 @@ import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
 import { getWorkflow } from "../service/workflow-definitions";
 import { getLauncher } from "../service/workflow-launchers";
-import { latestWorkflowRunEventCursor } from "../service/workflow-run-events";
 import {
   findCustomAppActionRun,
   type GridsWorkflowRunScope,
@@ -767,8 +766,6 @@ export const createCustomAppsApi = (
     getWorkflowRunScope?: typeof getWorkflowRunScope;
     findCustomAppActionRun?: typeof findCustomAppActionRun;
     getWorkflowRun?: typeof gridsService.workflow.getRun;
-    waitForWorkflowChange?: typeof waitForCustomAppWorkflowChange;
-    workflowRunEventCursor?: typeof latestWorkflowRunEventCursor;
   } = {},
 ) => {
   const loadOptionalActor = deps.loadOptionalActor ?? auth.requireRole("*");
@@ -1673,95 +1670,70 @@ export const createCustomAppsApi = (
       "/runtime/:shortId/:pageId/:blockId/actions/:actionId/runs/:runId",
       requirePublicIdParam("runId", "workflowRun", "Workflow run"),
       async (c) => {
-        let watch: { baseId: string; workflowId: string; runId: string; after: string } | undefined;
-        let live = true;
-        let canWait = false;
-        const readStatus = async () => {
-          const access = await resolvePublishedRunAccess(c);
-          if (!access) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-          const scope = await loadWorkflowRunScope(internalIdParam(c, "runId")!);
-          // Capture the cursor before reading state so an intervening completion is replayed.
-          const eventCursor =
-            scope && live
-              ? await (deps.workflowRunEventCursor ?? latestWorkflowRunEventCursor)(scope.baseId, scope.workflow.id).catch(() => null)
+        const access = await resolvePublishedRunAccess(c);
+        if (!access) return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
+        const scope = await loadWorkflowRunScope(internalIdParam(c, "runId")!);
+        const run = await getWorkflowRun(internalIdParam(c, "runId")!);
+        const publicPageParams = await ownedActionRunParams(c, access.app, scope);
+        if (
+          !scope ||
+          !run ||
+          !publicPageParams ||
+          run.baseId !== access.app.baseId ||
+          run.workflowId !== scope.workflow.id ||
+          run.launcherId !== scope.launcherId
+        )
+          return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
+        const runtime = { ...access, publicPageParams };
+        const page = runtime.definition.pages.find((candidate) => candidate.id === c.req.param("pageId"));
+        const block = page?.rows
+          .flatMap((row) => row.columns.flatMap((column) => column.blocks))
+          .find((candidate) => candidate.id === c.req.param("blockId"));
+        const action =
+          block?.type === "actions"
+            ? block.actions.find((candidate) => candidate.id === c.req.param("actionId"))
+            : block?.type === "records" || block?.type === "referenced_records"
+              ? block.rowActions?.find((candidate) => candidate.id === c.req.param("actionId"))
               : null;
-          const run = await getWorkflowRun(internalIdParam(c, "runId")!);
-          const publicPageParams = await ownedActionRunParams(c, access.app, scope);
-          if (
-            !scope ||
-            !run ||
-            !publicPageParams ||
-            run.baseId !== access.app.baseId ||
-            run.workflowId !== scope.workflow.id ||
-            run.launcherId !== scope.launcherId
-          )
-            return c.json({ message: apiMessages(c).workflowRunNotFound }, 404);
-          const runtime = { ...access, publicPageParams };
-          const page = runtime.definition.pages.find((candidate) => candidate.id === c.req.param("pageId"));
-          const block = page?.rows
-            .flatMap((row) => row.columns.flatMap((column) => column.blocks))
-            .find((candidate) => candidate.id === c.req.param("blockId"));
-          const action =
-            block?.type === "actions"
-              ? block.actions.find((candidate) => candidate.id === c.req.param("actionId"))
-              : block?.type === "records" || block?.type === "referenced_records"
-                ? block.rowActions?.find((candidate) => candidate.id === c.req.param("actionId"))
-                : null;
-          const workflowAction =
-            action && "launcherId" in action && (await resolvePublicId("workflowLauncher", action.launcherId)) === scope.launcherId
-              ? action
-              : null;
-          watch = eventCursor ? { baseId: run.baseId, workflowId: scope.workflow.id, runId: run.id, after: eventCursor } : undefined;
-          const committedChanges = await workflowCommittedChanges(run.id);
-          const status =
-            run.status === "succeeded"
-              ? "succeeded"
-              : ["failed", "canceled", "needs_attention"].includes(run.status)
-                ? "failed"
-                : "running";
-          let navigateTo: string | undefined;
-          const navigation = workflowAction && "onSuccessNavigate" in workflowAction ? workflowAction.onSuccessNavigate : undefined;
-          if (status === "succeeded" && navigation) {
-            const targetPage = runtime.definition.pages.find((candidate) => candidate.id === navigation.pageId);
-            const [publicResult] = await toPublicWorkflowPayloads([run.result]);
-            const params = targetPage
-              ? customAppWorkflowSuccessParams(navigation, targetPage, runtime.publicPageParams, publicResult)
-              : null;
-            if (params) {
-              const target = await resolvePublishedCustomAppRuntime({
-                access: runtime.access,
-                shortId: runtime.app.shortId,
-                pageId: navigation.pageId,
-                query: params,
-                dateConfig: runtime.dateConfig,
-                signal: c.req.raw.signal,
-              });
-              if (target && (await loadRuntimeBindingContext(target))) {
-                navigateTo = customAppPageHref(runtime.app.shortId, navigation.pageId, params);
-              }
+        const workflowAction =
+          action && "launcherId" in action && (await resolvePublicId("workflowLauncher", action.launcherId)) === scope.launcherId
+            ? action
+            : null;
+        const committedChanges = await workflowCommittedChanges(run.id);
+        const status =
+          run.status === "succeeded" ? "succeeded" : ["failed", "canceled", "needs_attention"].includes(run.status) ? "failed" : "running";
+        let navigateTo: string | undefined;
+        const navigation = workflowAction && "onSuccessNavigate" in workflowAction ? workflowAction.onSuccessNavigate : undefined;
+        if (status === "succeeded" && navigation) {
+          const targetPage = runtime.definition.pages.find((candidate) => candidate.id === navigation.pageId);
+          const [publicResult] = await toPublicWorkflowPayloads([run.result]);
+          const params = targetPage ? customAppWorkflowSuccessParams(navigation, targetPage, runtime.publicPageParams, publicResult) : null;
+          if (params) {
+            const target = await resolvePublishedCustomAppRuntime({
+              access: runtime.access,
+              shortId: runtime.app.shortId,
+              pageId: navigation.pageId,
+              query: params,
+              dateConfig: runtime.dateConfig,
+              signal: c.req.raw.signal,
+            });
+            if (target && (await loadRuntimeBindingContext(target))) {
+              navigateTo = customAppPageHref(runtime.app.shortId, navigation.pageId, params);
             }
           }
-          const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
-          canWait = status === "running" && !confirmation && c.req.header("X-Workflow-Changes") === String(committedChanges);
-          return c.json({
-            live: Boolean(eventCursor),
-            committedChanges,
-            status,
-            ...(navigateTo ? { navigateTo } : {}),
-            message: customAppWorkflowStatusMessage(run, apiMessages(c)),
-            ...(confirmation
-              ? {
-                  documentConfirmation: { ...confirmation, runId: await requiredPublicId("workflowRun", run.id) },
-                }
-              : {}),
-          });
-        };
-        const response = await readStatus();
-        if (!watch || !response.ok || !canWait) return response;
-        live = await (deps.waitForWorkflowChange ?? waitForCustomAppWorkflowChange)({ ...watch, signal: c.req.raw.signal });
-        c.req.raw.signal.throwIfAborted();
-        // Re-check current App access and original actor/action ownership after waiting.
-        return readStatus();
+        }
+        const confirmation = run.status === "waiting" ? await getWorkflowDocumentConfirmation(run.id) : undefined;
+        return c.json({
+          committedChanges,
+          status,
+          ...(navigateTo ? { navigateTo } : {}),
+          message: customAppWorkflowStatusMessage(run, apiMessages(c)),
+          ...(confirmation
+            ? {
+                documentConfirmation: { ...confirmation, runId: await requiredPublicId("workflowRun", run.id) },
+              }
+            : {}),
+        });
       },
     )
     .get("/by-base/:baseId", requirePublicIdParam("baseId", "base", "Base"), async (c) => {
