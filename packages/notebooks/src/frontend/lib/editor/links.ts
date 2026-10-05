@@ -3,14 +3,11 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { fileIcons } from "@k2b/stdlib";
+import { anchorHash, parseNoteLink } from "../../../lib/heading-anchors";
 import { openAttachmentById } from "../attachment-preview";
 import { navigateToNotebookNote } from "../soft-navigation";
 import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 import { buildAttachmentContentUrl, extractAttachmentId, isSafeMarkdownUrl } from "./attachment-url";
-
-/** Internal `note://<shortId>` markdown scheme — distinct from
- *  user-typed external URLs so we can render note links as pills. */
-const NOTE_LINK_URL_REGEX = /^note:\/\/[0-9a-zA-Z]{6}$/;
 
 type LinkData = {
   label: string;
@@ -144,31 +141,28 @@ class LinkWidget extends WidgetType {
   }
 }
 
-/** Extract the 6-char short-id from a `note://<shortId>` URL, else null. */
-const NOTE_LINK_SHORT_ID_REGEX = /^note:\/\/([0-9a-zA-Z]{6})$/;
-const extractNoteShortId = (url: string): string | null => url.match(NOTE_LINK_SHORT_ID_REGEX)?.[1] ?? null;
-
 const parseLinkSyntax = (text: string, notebookId: string): LinkData | null => {
   const match = text.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
   if (!match || !match[1] || !match[2]) return null;
   const url = match[2];
   const attachmentId = extractAttachmentId(url);
-  const noteShortId = extractNoteShortId(url);
-  if (!attachmentId && !noteShortId && !isSafeMarkdownUrl(url)) return null;
+  // Internal `note://<shortId>` links, also to a heading, render as pills rather than external links.
+  const note = parseNoteLink(url);
+  if (!attachmentId && !note && !isSafeMarkdownUrl(url)) return null;
   // Note links resolve to `/app/notebooks/<currentNotebookShortId>/notes/<targetShortId>`.
   // We assume same-notebook (the most common case); cross-notebook
   // references resolve via the page-handler's lenient lookup, which
   // 404s gracefully if the target lives elsewhere.
   const resolvedUrl = attachmentId
     ? buildAttachmentContentUrl(notebookId, attachmentId)
-    : noteShortId
-      ? `/app/notebooks/${encodeURIComponent(notebookId)}/notes/${encodeURIComponent(noteShortId)}`
+    : note
+      ? `/app/notebooks/${encodeURIComponent(notebookId)}/notes/${encodeURIComponent(note.noteId)}${anchorHash(note.anchor)}`
       : url;
   return {
     label: match[1],
     url,
     resolvedUrl,
-    isNoteLink: NOTE_LINK_URL_REGEX.test(url),
+    isNoteLink: note !== null,
     attachmentId,
     notebookId,
   };

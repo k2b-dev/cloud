@@ -2013,6 +2013,7 @@ const app = new Hono<AuthContext>()
           notebookId,
           notebookShortId: notebook!.shortId,
           noteId: note.data.id,
+          noteShortId: note.data.shortId,
           userId: subject.userId,
           serviceAccountId: subject.serviceAccountId,
           // checkNotebookAccess admitted a resource-bound account only for this notebook.

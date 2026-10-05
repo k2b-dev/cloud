@@ -7,6 +7,7 @@ test.each(["write", "readonly"])("note navigation targets retain %s on ordinary 
     expect(resolveSameNotebookNoteTarget(href, current, "book01")).toEqual({
       noteShortId: "note02",
       canonicalHref: `/app/notebooks/book01/notes/note02?mode=${mode}`,
+      hash: "",
     });
   }
   expect(resolveSameNotebookNoteTarget("/app/notebooks/book01/notes/note02?mode=versions", current, "book01")).toBeNull();
@@ -16,9 +17,28 @@ test.each(["write", "readonly"])("note navigation targets retain %s on ordinary 
   expect(resolveSameNotebookNoteTarget("https://other.example/app/notebooks/book01/notes/note02", current, "book01")).toBeNull();
 });
 
-const target = (noteShortId: string): NoteNavigationTarget => ({
+test("note navigation targets keep a link to a heading and leave other fragments to the browser", () => {
+  const current = "https://cloud.example/app/notebooks/book01/notes/note01";
+  for (const href of ["note://note02#Backup%20&%20Restore", "/app/notebooks/book01/notes/note02#heading-backup-restore"]) {
+    expect(resolveSameNotebookNoteTarget(href, current, "book01")).toEqual({
+      noteShortId: "note02",
+      canonicalHref: "/app/notebooks/book01/notes/note02",
+      hash: "#heading-backup-restore",
+    });
+  }
+  expect(resolveSameNotebookNoteTarget("#heading-restore", current, "book01")).toMatchObject({
+    noteShortId: "note01",
+    hash: "#heading-restore",
+  });
+  expect(resolveSameNotebookNoteTarget("note://note02#", current, "book01")?.hash).toBe("");
+  expect(resolveSameNotebookNoteTarget("/app/notebooks/book01/notes/note02#comments", current, "book01")).toBeNull();
+  expect(resolveSameNotebookNoteTarget("/app/notebooks/book01/notes/note02#heading-<b>", current, "book01")).toBeNull();
+});
+
+const target = (noteShortId: string, hash = ""): NoteNavigationTarget => ({
   noteShortId,
   canonicalHref: `/app/notebooks/book/notes/${noteShortId}`,
+  hash,
 });
 
 const setup = () => {
@@ -34,6 +54,9 @@ const setup = () => {
     pushHistory: (href) => {
       currentHref = href;
       order.push(`history:${href}`);
+    },
+    showHeading: (noteShortId, heading) => {
+      if (heading) order.push(`heading:${noteShortId}#${heading}`);
     },
   });
   const apply = (noteShortId: string) =>
@@ -89,6 +112,29 @@ describe("note navigation coordinator", () => {
     expect(state.apply("note-b")).toBe(true);
     expect(await second).toEqual({ kind: "applied", href: target("note-b").canonicalHref });
     expect(state.order).toEqual([`apply:${target("note-b").canonicalHref}`, `history:${target("note-b").canonicalHref}`]);
+  });
+
+  test("opens a heading of the open note in place on every click, without a second history entry", async () => {
+    const state = setup();
+    const href = `${target("note-a").canonicalHref}#heading-restore`;
+
+    expect(await state.coordinator.navigate(target("note-a", "#heading-restore"), true)).toEqual({ kind: "applied", href });
+    expect(await state.coordinator.navigate(target("note-a", "#heading-restore"), true)).toEqual({ kind: "applied", href });
+    // Back to the note's own entry: nothing to open.
+    expect(await state.coordinator.navigate(target("note-a"), false)).toEqual({ kind: "applied", href: target("note-a").canonicalHref });
+    expect(state.sources).toEqual([]);
+    expect(state.order).toEqual([`history:${href}`, "heading:note-a#heading-restore", "heading:note-a#heading-restore"]);
+  });
+
+  test("switches to another note in place and opens its heading after the note applies", async () => {
+    const state = setup();
+    const pending = state.coordinator.navigate(target("note-b", "#heading-restore"), true);
+
+    expect(state.sources).toEqual([target("note-b").canonicalHref]);
+    expect(state.apply("note-b")).toBe(true);
+    const href = `${target("note-b").canonicalHref}#heading-restore`;
+    expect(await pending).toEqual({ kind: "applied", href });
+    expect(state.order).toEqual([`apply:${target("note-b").canonicalHref}`, `history:${href}`, "heading:note-b#heading-restore"]);
   });
 
   test("applies popstate-style navigation without pushing history", async () => {

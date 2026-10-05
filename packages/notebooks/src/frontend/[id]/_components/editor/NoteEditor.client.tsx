@@ -8,11 +8,12 @@ import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
 import { NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createCodeMirror } from "solid-codemirror";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
+import { renderedHeadingLine } from "../../../../lib/heading-anchors";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
@@ -55,7 +56,7 @@ import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
-import { createNoteNavigationCoordinator, resolveSameNotebookNoteTarget } from "./note-navigation";
+import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { keepReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createTabKeyPreference } from "./tab-key-preference";
@@ -110,6 +111,9 @@ type Props = EditorInstanceProps & {
   initialDetail: SoftNavigatedDetail;
 };
 
+/** A request to open a note at one of its headings, by Book heading id. Each request is a new object. */
+type LinkedHeading = { noteId: string; id: string };
+
 export default function NoteEditor(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
@@ -121,12 +125,17 @@ export default function NoteEditor(props: Props) {
   });
   const [routeSource, setRouteSource] = createSignal(initialHref);
   const [failedSource, setFailedSource] = createSignal<string | null>(null);
+  const initialHeading = headingFromHash(window.location.hash);
+  const [linkedHeading, setLinkedHeading] = createSignal<LinkedHeading | null>(
+    initialHeading ? { noteId: initialEditorProps.noteId, id: initialHeading } : null,
+  );
   const navigation = createNoteNavigationCoordinator({
     initialSource: initialHref,
     currentNoteShortId: () => current().noteId,
-    currentHref: () => `${window.location.pathname}${window.location.search}`,
+    currentHref: () => `${window.location.pathname}${window.location.search}${window.location.hash}`,
     setSource: setRouteSource,
     pushHistory: (href) => window.history.pushState({}, "", href),
+    showHeading: (noteId, id) => setLinkedHeading(id ? { noteId, id } : null),
   });
 
   const requestNote = async (href: string, abortSignal: AbortSignal): Promise<LoadedNote> => {
@@ -220,11 +229,13 @@ export default function NoteEditor(props: Props) {
   });
 
   const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
-    if (props.readOnly) return { kind: "fallback" };
     const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
     if (!target) return { kind: "fallback" };
     const mode = requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams);
-    if (mode && mode !== "write") return { kind: "fallback" };
+    if (props.readOnly) {
+      // Read-only opens another note with a page load; the open note stays, so a link to its heading opens in place.
+      if (target.noteShortId !== current().noteId || (mode && mode !== "readonly")) return { kind: "fallback" };
+    } else if (mode && mode !== "write") return { kind: "fallback" };
     return await navigation.navigate(target, push);
   };
 
@@ -247,7 +258,7 @@ export default function NoteEditor(props: Props) {
       }
       event.preventDefault();
       void navigateSoft(href, true).then((result) => {
-        if (result.kind === "fallback") window.location.assign(target.canonicalHref);
+        if (result.kind === "fallback") window.location.assign(`${target.canonicalHref}${target.hash}`);
       });
     };
 
@@ -288,7 +299,7 @@ export default function NoteEditor(props: Props) {
   return (
     <div class="relative flex-1 min-w-0 flex flex-col overflow-hidden">
       <Show when={current()} keyed>
-        {(note) => <EditorInstance {...note} />}
+        {(note) => <EditorInstance {...note} linkedHeading={linkedHeading} />}
       </Show>
       <Show when={showRouteLoading()}>
         <div class="pointer-events-none absolute inset-0 z-30 flex items-start justify-center pt-4" aria-live="polite" aria-busy="true">
@@ -302,7 +313,7 @@ export default function NoteEditor(props: Props) {
   );
 }
 
-function EditorInstance(props: EditorInstanceProps) {
+function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null> }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
@@ -338,6 +349,15 @@ function EditorInstance(props: EditorInstanceProps) {
     value: ytext.toString(),
   });
 
+  // Book's rendering of the draft, or of the saved note in read-only mode: block previews and heading lines.
+  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal) => {
+    const response = await apiClient[":id"].notes[":noteId"]["block-preview"].$post(
+      { param: { id: props.notebookId, noteId: props.noteId }, json: markdown === undefined ? {} : { markdown } },
+      { init: { signal: abortSignal } },
+    );
+    if (!response.ok) throw new Error(queryBlockMessages.resolve([locale()]).t.failed);
+    return response.json();
+  };
   const blockPreviews = createQueryBlockPreviews({
     notebookId: props.notebookId,
     noteId: props.noteId,
@@ -346,14 +366,7 @@ function EditorInstance(props: EditorInstanceProps) {
     view: editorView,
     enabled: richMode,
     locale,
-    load: async (markdown, abortSignal) => {
-      const response = await apiClient[":id"].notes[":noteId"]["block-preview"].$post(
-        { param: { id: props.notebookId, noteId: props.noteId }, json: markdown === undefined ? {} : { markdown } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(queryBlockMessages.resolve([locale()]).t.failed);
-      return response.json();
-    },
+    load: loadBlockPreview,
   });
   addExtension(blockPreviews.listener);
 
@@ -402,6 +415,16 @@ function EditorInstance(props: EditorInstanceProps) {
       if (!update.view.hasFocus) return;
       if (update.docChanged || update.selectionSet) {
         markCursorActivity(update.view);
+      }
+    }),
+  );
+
+  // Opening a linked heading waits for Book; once the reader moves the caret or types, the jump no longer applies.
+  let headingRequest: AbortController | undefined;
+  addExtension(
+    EditorView.updateListener.of((update) => {
+      if (update.transactions.some((tr) => tr.isUserEvent("select") || tr.isUserEvent("input") || tr.isUserEvent("delete"))) {
+        headingRequest?.abort();
       }
     }),
   );
@@ -678,6 +701,35 @@ function EditorInstance(props: EditorInstanceProps) {
     return true;
   };
 
+  // A link to a heading opens the note at the line Book gives that heading id. Book owns heading ids, so the editor
+  // asks it rather than reading headings itself; a heading Book cannot place in the source opens the note at its top.
+  const showLinkedHeading = (id: string) => {
+    headingRequest?.abort();
+    const request = new AbortController();
+    headingRequest = request;
+    void loadBlockPreview(props.readOnly ? undefined : ytext.toString(), request.signal)
+      .catch(() => null)
+      .then((rendered) => {
+        const view = editorView();
+        if (disposed || request.signal.aborted || !view) return;
+        headingRequest = undefined;
+        const line = rendered ? renderedHeadingLine(rendered, id, view.state.doc.toString()) : null;
+        const at = line === null ? 0 : view.state.doc.line(line).from;
+        view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: "start" }) });
+        if (!props.readOnly) view.focus();
+      });
+  };
+  // Later links to a heading of this note, such as a second click on the same one or Back and Forward.
+  createEffect(
+    on(
+      props.linkedHeading,
+      (linked) => {
+        if (linked?.noteId === props.noteId) showLinkedHeading(linked.id);
+      },
+      { defer: true },
+    ),
+  );
+
   const selectInitialTitle = (attempts = 0): boolean => {
     if (disposed) return false;
     const view = editorView();
@@ -753,9 +805,11 @@ function EditorInstance(props: EditorInstanceProps) {
   onMount(() => {
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
+    const linked = props.linkedHeading();
+    if (linked?.noteId === props.noteId) showLinkedHeading(linked.id);
     if (!props.readOnly) {
       if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-      else focusEditor();
+      else if (linked?.noteId !== props.noteId) focusEditor();
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,
@@ -810,6 +864,7 @@ function EditorInstance(props: EditorInstanceProps) {
 
   onCleanup(() => {
     disposed = true;
+    headingRequest?.abort();
     for (const frame of pendingFocusFrames) cancelAnimationFrame(frame);
     pendingFocusFrames.clear();
     if (cursorIdleTimer) {

@@ -10,6 +10,7 @@ import {
   parseProgressValue,
 } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
+import { anchorHash, parseNoteLink } from "../../lib/heading-anchors";
 import { notebookWorkspaceMessages } from "../[id]/messages";
 import { prettyTableMessages } from "./pretty-table-messages";
 
@@ -23,7 +24,7 @@ export type PrettyTableData = {
 };
 
 const TAG_RE = /(^|\s)#([a-zA-Z][\w-]*(?:\/[\w-]+)*)/g;
-const NOTE_LINK_RE = /\[([^\]]+)\]\(note:\/\/([0-9a-zA-Z]{6})\)/g;
+const NOTE_LINK_RE = /\[([^\]]+)\]\((note:\/\/[0-9a-zA-Z]{6}(?:#[^)\s]*)?)\)/g;
 const MARKDOWN_LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+|tel:[^)\s]+)\)/g;
 const INLINE_CODE_RE = /`([^`\n]+)`/g;
 const ISO_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -69,8 +70,10 @@ const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string)
 
   const placeholders: string[] = [];
   const withProtectedLinks = raw
-    .replace(NOTE_LINK_RE, (_match, label: string, shortId: string) => {
-      const href = notebookId ? `/app/notebooks/${notebookId}/notes/${shortId}` : `note://${shortId}`;
+    .replace(NOTE_LINK_RE, (match, label: string, link: string) => {
+      const note = parseNoteLink(link);
+      if (!note) return match;
+      const href = notebookId ? `/app/notebooks/${notebookId}/notes/${note.noteId}${anchorHash(note.anchor)}` : link;
       const html =
         `<a class="cm-note-link note-link inline-flex items-center gap-1 rounded-md bg-blue-50/80 px-1.5 py-0.5 text-blue-700 no-underline align-baseline font-medium shadow-[var(--ui-shadow-surface)] hover:bg-blue-100/80 dark:bg-blue-950/35 dark:text-blue-300 dark:hover:bg-blue-900/35" href="${escapeHtml(href)}">` +
         `<i class="ti ti-connection text-xs"></i><span>${escapeHtml(label)}</span></a>`;

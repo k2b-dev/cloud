@@ -75,6 +75,16 @@ describe("note PDF HTML", () => {
     expect(selected).toEqual(["!=", "->", "<-", "<->", "<=", "<=>", "=>", ">="].sort());
   });
 
+  test("links to a heading of the exported note jump within the PDF; other note links keep their address", () => {
+    const html = build("# Guide\n\n[Steps](note://DEF456#restore) [Top](note://DEF456) [Other](note://GHI789#restore)\n\n## Restore", {
+      noteShortId: "DEF456",
+    });
+    expect(html).toContain('<a class="notebook-book-note-link" href="#heading-restore">');
+    expect(html).toContain('<h2 id="heading-restore">Restore</h2>');
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book"');
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/GHI789?mode=book#heading-restore"');
+  });
+
   test("layers note styles between the preset and custom CSS", () => {
     const html = build(":::info\nHello\n:::", { templateId: "compact", customCss: ".k2b-notice-card { border: 0; }" });
     const preset = html.indexOf("@page { size: A4; margin: 14mm");

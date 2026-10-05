@@ -95,7 +95,15 @@ describe("Notebook Book HTML", () => {
 
   test("preview source positions never point to headings inside code or nested Markdown", () => {
     const document = render("```md\n# Same\n```\n\n> # Same\n\n:::info\n# Same\n:::\n\n# Same\n\nTitle\n=====");
-    expect(document.headings.map(({ line }) => line)).toEqual([undefined, undefined, 11, 13]);
+    // A notice's own headings keep their exact line; a quoted heading has none.
+    expect(document.headings.map(({ line }) => line)).toEqual([undefined, 8, 11, 13]);
+    const notice = render(":::warning\n\nText\n\n## Restore\nMore\n### Steps ###\n\n> ## Quoted\n:::\n\n## Restore");
+    expect(notice.headings.map(({ id, line }) => [id, line])).toEqual([
+      ["heading-restore", 5],
+      ["heading-steps", 7],
+      ["heading-quoted", undefined],
+      ["heading-restore-2", 12],
+    ]);
   });
 
   test("invalid directives retain visible preview diagnostics without executable HTML", () => {
@@ -286,6 +294,28 @@ describe("Notebook Book HTML", () => {
     expect(html).not.toContain("/tags/code");
     expect(html).not.toContain("/tags/label");
     expect(html).toContain('class="notebook-book-tag"');
+  });
+
+  test("note links to a heading open the note at the heading's Book id", () => {
+    const { html } = render(
+      "[Restore](note://DEF456#restore) [Steps](note://DEF456#Backup%20&%20Restore) [Top](note://DEF456#---)\n\n| Link |\n| --- |\n| [Cell](note://DEF456#restore) |",
+    );
+    expect(html).toContain(
+      '<a class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"><i class="ti ti-connection" aria-hidden="true"></i>Restore</a>',
+    );
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-backup-restore"');
+    // An anchor without a heading slug opens the note at its top.
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book">');
+    expect(html.match(/#heading-restore"/g)).toHaveLength(2);
+    expect(html).not.toContain("note://");
+    // The anchor never carries markup or a script into the link.
+    const hostile = render('[x](note://DEF456#"><script>alert(1)</script>) [y](note://DEF456#javascript:alert(1))').html;
+    expect(hostile).not.toContain("<script");
+    expect(hostile).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-javascript-alert-1"');
+    expect(render("[Note](note://DEF456#restore)", "en").html).toContain("#heading-restore");
+    expect(
+      renderNotebookBook({ markdown: "[Note](note://DEF456#restore)", notebookId: "ABC123", locale: "en", print: true }).html,
+    ).toContain('class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"');
   });
 
   test("note badges preserve inline labels and titles without styling external links as notes", () => {
