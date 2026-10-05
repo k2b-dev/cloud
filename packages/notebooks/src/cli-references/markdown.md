@@ -18,7 +18,7 @@ Every construct that Notebooks renders, with one compact example each. Read this
 
 ## Basics
 
-A note is GitHub-flavored Markdown; a single line break stays a line break. The editor, Book, and the PDF export render the same source. `cat` always returns that source, never rendered values such as formula results.
+A note is GitHub-flavored Markdown; a single line break stays a line break. Book, the editor, and the PDF export all render this source. `cat` always returns that source, never rendered values such as formula results.
 
 The first `# Heading` is the note title. Use `##` and deeper levels for sections. A heading needs a space after the `#`; `#word` is a tag.
 
@@ -34,7 +34,7 @@ The first `# Heading` is the note title. Use `##` and deeper levels for sections
 | `> quoted text` | a quote |
 | `---` after a blank line | a horizontal rule |
 
-Two unescaped `$` signs on one line become math, so write amounts as `\$5`. Raw HTML is shown as text. Footnotes and GitHub alerts (`> [!WARNING]`) are not supported; use a [callout](#callouts) instead. The reader shows `->` as `→` and `!=` as `≠` without changing the source; write `\->` to keep the characters.
+Two `$` signs on one line become math. Write an amount as `\$5`, which Book and the PDF show as `$5`; the editor ignores the backslash, so write `5 USD` when a line holds two amounts. Raw HTML is shown as text. Footnotes and GitHub alerts (`> [!WARNING]`) are not supported; use a [callout](#callouts) instead. The reader shows `->` as `→` and `!=` as `≠` without changing the source; write `\->` to keep the characters.
 
 ## Links, tags, and attachments
 
@@ -50,7 +50,7 @@ Two unescaped `$` signs on one line become math, so write amounts as `\$5`. Raw 
 
 - **Note links** use the six-character note ID from `ls`, `search`, or `cat --json`. Only the bare ID links; `note://Ab12Cd#section` shows as plain text.
 - **Tags** start with `#` and an ASCII letter, followed by ASCII letters, digits, `_`, or `-`; `/` nests them. Write them at the start of a line or after a space. They are stored in lowercase. Any other character ends the tag: `#prüfung` becomes `#pr`, so write `#pruefung`. Tags inside code are ignored. Tags come only from the content; `write` has no tag option.
-- **Attachments** come from `cld notebooks attach <note> <file>`, which prints the Markdown to paste. Images render inline, other files as links. `=400x`, `=x300`, or `=400x300` after the address sets the image size. External `https://` images render, too.
+- **Attachments** come from `cld notebooks attach <note> <file>`, which prints the Markdown to paste. Images render inline, other files as links; the PDF export shows an image only as its label. `=400x`, `=x300`, or `=400x300` after the address sets the image size. External `https://` images render, too.
 
 There are no mentions of people and no embedded notes. Typing `[[` in the editor only opens a picker that inserts a `note://` link.
 
@@ -78,7 +78,7 @@ Indent a nested item to the text of its parent item: two spaces below `- `, thre
 | Sum | | | =SUM(Total) |
 ```
 
-`:---`, `:---:`, and `---:` align a column. A cell that starts with `=` is a formula; read [Table formulas](formulas.md) before you write one. Other cells accept inline formatting, links, tags, and math. A cell holding only an ISO timestamp, such as `2026-10-12T09:00:00Z`, is shown in the reader's locale.
+`:---`, `:---:`, and `---:` align a column. A cell that starts with `=` is a formula; read [Table formulas](formulas.md) before you write one. Other cells accept bold, italic, strikethrough, inline code, links, and tags. Keep math, highlights, and images out of cells: the editor shows their source, and a cell that starts with `==` is a broken formula there. A cell holding only an ISO timestamp, such as `2026-10-12T09:00:00Z`, is shown in the reader's locale.
 
 ## Callouts
 
@@ -109,7 +109,7 @@ E = mc^2
 $$
 ````
 
-A language name after the opening fence highlights code. A `mermaid` fence renders a diagram in the editor and in Book. `$$ … $$` or a `math` fence renders display math.
+A language name after the opening fence highlights code. A `mermaid` fence renders a diagram in the editor and in Book; the PDF export shows its source. `$$ … $$` or a `math` fence renders display math.
 
 ## Named blocks
 
@@ -119,7 +119,7 @@ A language name after the opening fence highlights code. A `mermaid` fence rende
 - [ ] Goals
 ```
 
-Put `@name` on its own line directly above a table, a list, a `:::data` block, or a heading. A name starts with an ASCII letter and has at most 64 letters, digits, `_`, or `-`. A named heading covers its section up to the next heading of the same or a higher level. Above anything else, such as a callout or a paragraph, the handle has the type `unknown`, appears as text, and addresses nothing; name the surrounding section instead. Use names with `cat --block` and `edit --replace-block`; see [Named blocks](index.md#named-blocks) in the CLI reference.
+Put `@name` on its own line directly above a table, a list, a `:::data` block, or a heading. A name starts with an ASCII letter and has at most 64 letters, digits, `_`, or `-`. A named heading covers its section up to the next heading of the same or a higher level. Above anything else, such as a callout or a paragraph, the handle has the type `unknown`, appears as text, and covers only the next line: `cat --block` returns nothing, and `--replace-block` replaces just that line, which breaks a callout. Do not edit such a block; name the surrounding section instead. Use names with `cat --block` and `edit --replace-block`; see [Named blocks](index.md#named-blocks) in the CLI reference.
 
 ## Data blocks
 
@@ -137,7 +137,7 @@ teams:
 :::
 ```
 
-Values are text, numbers, `true` or `false`, or flat lists with two spaces before each `-`. Quote text that looks like a number, such as `"0042"`. Dates stay text: queries match them with `eq`, `in`, or `starts-with` (`2026-10`), not with `gt` or `lt`. Book shows the block as a card of keys and values. The complete rules are in [Declarative summaries](index.md#declarative-summaries).
+Values are text, numbers, `true` or `false`, or flat lists with two spaces before each `-`. Quote text that would read as a number or boolean, such as `"42"` or `"true"`. Text that starts with `[`, `]`, `{`, `}`, `&`, `*`, `!`, `|`, `>`, `@`, or a backtick must be quoted, such as `"@ada"`, or the block is invalid. Values show as plain text, without links or formatting. Dates stay text: queries match them with `eq`, `in`, or `starts-with` (`2026-10`), not with `gt` or `lt`. Book shows the block as a card of keys and values. The complete rules are in [Declarative summaries](index.md#declarative-summaries).
 
 ## Contents and queries
 

@@ -16,7 +16,7 @@ This is the complete formula language available in Markdown table cells. Functio
 
 A table cell is a formula when its content starts with `=`. Function names and column names are case-insensitive. Reference a column by its header: a bare name contains only ASCII letters, digits, and `_` and does not start with a digit; wrap every other name in backticks, such as `` =SUM(`Größe (m²)`) `` or `` =`Unit price` * Quantity ``. Text values use double quotes. Comparisons return `1` for true and `0` for false.
 
-Write numbers with a decimal point and without thousands separators or currency signs: `1,5` reads as `1`, and `12.000` as `12`.
+Write numbers with a decimal point and without thousands separators, units, or currency signs: in calculations, `1,5` counts as `1`, and `12.000` as `12`.
 
 Formulas compute when the note is displayed. `cat`, `search`, and queries see the formula source, not its result. A formula can use other formula cells; a cycle shows an error in the cell.
 
@@ -57,7 +57,7 @@ Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`. ISO dates such as `2026-10-12` and
 
 `COUNTIF` and `SUMIF` match a cell the way `==` does: text exactly, numbers and ISO dates by value. A `5 €` cell matches both `5` and `"5 €"`, but not `"5.00 €"`.
 
-A column aggregate reads every row of the column except its own cell, including other summary rows. Empty, non-numeric, and failing cells are skipped; `COUNT` counts non-empty cells. Keep one summary row at the end of a table. A row in which at least half of the formulas are aggregates is shown as a total row.
+A column aggregate reads every row of the column except its own cell, including other summary rows. Empty, non-numeric, and failing cells are skipped; `COUNT` counts non-empty cells. Keep one summary row at the end of a table. A row in which at least half of the formulas start with `SUM`, `AVG`, `MEAN`, `MIN`, `MAX`, `COUNT`, `MEDIAN`, `ROWSUM`, `ROWAVG`, or `ROWMEAN` is styled as a total row.
 
 ## Current-row aggregates
 
@@ -110,7 +110,7 @@ Truthy means a non-zero number or non-empty text. A cell such as `0 €` or `0%`
 | `NOW()` | Current date and time. |
 | `DATEDIFF(start, end, unit?)` | Difference between dates. |
 
-Write dates as ISO dates, such as `2026-10-12`. `TODAY()` returns the current date as `YYYY-MM-DD` and `NOW()` as `YYYY-MM-DD HH:MM:SS`, both at the time the note is displayed. `DATEDIFF` returns `end` minus `start`, negative when `end` is earlier, in days unless a unit is given. Units are `ms`, `s`, `m`, `h`, and `d`, or `milliseconds`, `seconds`, `minutes`, `hours`, and `days`. Results can be fractional; wrap them in `ROUND(…, 0)` for whole numbers. Dates and timestamps without an offset are local time, like `TODAY()` and `NOW()`, in `DATEDIFF` and in comparisons alike. Two dates are always a whole number of days apart, also across a daylight saving change.
+Write dates as ISO dates, such as `2026-10-12`, or ISO timestamps, such as `2026-10-12T09:00:00Z`, in a cell or in quotes. `TODAY()` returns the current date as `YYYY-MM-DD` and `NOW()` as `YYYY-MM-DD HH:MM:SS`, both at the time the note is displayed. `DATEDIFF` returns `end` minus `start`, negative when `end` is earlier, in days unless a unit is given. Units are `ms`, `s`, `m`, `h`, and `d`, or `milliseconds`, `seconds`, `minutes`, `hours`, and `days`. Results can be fractional; wrap them in `ROUND(…, 0)` for whole numbers. Dates and timestamps without an offset are local time, like `TODAY()` and `NOW()`, in `DATEDIFF` and in comparisons alike. Two dates are always a whole number of days apart, also across a daylight saving change.
 
 ## Formula examples
 

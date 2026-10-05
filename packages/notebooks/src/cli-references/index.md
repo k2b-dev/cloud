@@ -100,7 +100,7 @@ limit: 25
 
 The example reads `state` and `reviewed` from each note's `@status` data block. You choose block and property names; there are no required wiki metadata fields. Property paths use `block.key`. Each part starts with an ASCII letter and contains at most 64 letters, digits, underscores, or hyphens. Names and keys are case-sensitive.
 
-Data values are strings, numbers, booleans, or flat lists of these values, not nested objects. Write data list items on separate lines with two spaces before `-`; inline arrays belong to query filters, not data blocks. Quote numeric-looking strings. Each data block allows 64 fields, each list 128 items, and each string 2,000 characters. Duplicate names or keys prevent the affected named data from being indexed.
+Data values are strings, numbers, booleans, or flat lists of these values, not nested objects. Write data list items on separate lines with two spaces before `-`; inline arrays belong to query filters, not data blocks. Quote text that would read as a number or boolean, such as `"42"` or `"true"`. Text that starts with `[`, `]`, `{`, `}`, `&`, `*`, `!`, `|`, `>`, `@`, or a backtick must be quoted, or the block is invalid. Each data block allows 64 fields, each list 128 items, and each string 2,000 characters. Duplicate names or keys prevent the affected named data from being indexed.
 
 The configuration is a small YAML-like format, not general YAML. Follow the example's indentation: two spaces for list items and sort fields, four for filter continuations. Use unquoted setting names and field paths. Comments, anchors, nested objects, and arbitrary YAML syntax are not supported.
 
@@ -356,7 +356,7 @@ owner: ops
 MD
 ```
 
-Supported block types are `table`, `list`, `data`, `section`, and `unknown`. A handle above anything else, such as a callout or a paragraph, has the type `unknown` and addresses nothing; name the surrounding heading instead. A name may occur more than once; select a duplicate with `--index`. For data blocks, `cat --block` returns the inner data text, but `--replace-block` replaces the whole block including its delimiters and keeps `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement.
+Supported block types are `table`, `list`, `data`, `section`, and `unknown`. A handle above anything else, such as a callout or a paragraph, has the type `unknown` and covers only the next line: `cat --block` returns nothing, and `--replace-block` replaces just that line. Do not edit such a block; name the surrounding heading instead. A name may occur more than once; select a duplicate with `--index`. For data blocks, `cat --block` returns the inner data text, but `--replace-block` replaces the whole block including its delimiters and keeps `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement.
 
 ## Attachments, versions, and exports
 

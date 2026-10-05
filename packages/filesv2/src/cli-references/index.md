@@ -165,10 +165,13 @@ becomes a version depends on the storage; `versions list` shows it.
 There is no recursive upload. Upload a folder file by file, one at a time:
 
 ```bash
-cd ./handout && find . -type f -print0 | while IFS= read -r -d '' f; do
-  cld filesv2 put "$f" "team:/Events/Handout/${f#./}" --parents --json || break
-done
+( cd ./handout && find . -type f -print0 | while IFS= read -r -d '' f; do
+    cld filesv2 put "$f" "team:/Events/Handout/${f#./}" --parents --json < /dev/null || exit 1
+  done )
 ```
+
+The loop stops at the first failure and exits 1; files uploaded before it stay
+in place. The parentheses keep your shell in its current folder.
 
 ### Office files with content
 

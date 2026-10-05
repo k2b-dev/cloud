@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { evaluateFormula } from "@k2b/cloud/shared";
 import { renderNotebookBook } from "./lib/book-renderer";
 import { extractNamedDataProperties } from "./lib/named-blocks";
@@ -22,6 +22,28 @@ test("every Markdown example in the agent references renders as documented", asy
     expect(html.replace(/<pre>[\s\S]*?<\/pre>/g, ""), markdown).not.toContain(":::");
     const callouts = markdown.match(/^:::(?:note|info|success|warning|danger)$/gm) ?? [];
     expect(html.match(/<aside /g)?.length ?? 0, markdown).toBe(callouts.length);
+  }
+});
+
+test("the formula examples compute the values they are meant to show", async () => {
+  // TODAY() reads the local date; noon keeps it 2026-10-05 in every time zone.
+  setSystemTime(new Date(2026, 9, 5, 12));
+  try {
+    const examples = (await Promise.all(["index.md", "markdown.md", "formulas.md"].map(reference))).flatMap(markdownExamples);
+    const computed = examples
+      .filter((markdown) => /\| =/.test(markdown))
+      .map((markdown) =>
+        [
+          ...renderNotebookBook({ markdown, notebookId: "Ab12Cd", locale: "en" }).html.matchAll(/md-formula-ok[^>]*><i[^>]*><\/i>([^<]*)/g),
+        ].map((match) => match[1]),
+      );
+    expect(computed).toEqual([
+      ["60", "12", "72"], // markdown.md, tables: Price * Quantity and SUM(Total)
+      ["3", "7"], // markdown.md, complete example: days left until 2026-10-08 and 2026-10-12
+      ["60", "60"], // formulas.md: Price * Quantity and SUM(Total)
+    ]);
+  } finally {
+    setSystemTime();
   }
 });
 
