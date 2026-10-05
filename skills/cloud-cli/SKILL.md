@@ -38,7 +38,8 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | Put a spreadsheet or document (`.ods`, `.xlsx`, `.odt`, `.docx`) with content into Files | Build it locally first, for example with LibreOffice; `cld filesv2 reference` shows the commands. Then `cld filesv2 put` |
 | Write or send mail | `cld mail reference compose.md` |
 | Read or change table records and fields | `cld grids reference` and `cld grids reference schema.md` |
-| Plan tasks in Spaces | `cld spaces reference` |
+| Import a CSV file into a table | `cld grids reference`, section "Import a CSV file"; there is no CSV import command |
+| Plan tasks in Spaces, or link a note or file to a task | `cld spaces reference` |
 | Import or export contacts | `cld contacts reference` |
 | Build a dashboard | `cld pulse reference dashboard-dsl.md` |
 

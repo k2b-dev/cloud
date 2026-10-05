@@ -378,6 +378,85 @@ file uploads, edits, deletes, and restores are unavailable.
 
 Use `--if-version` for optimistic concurrency when updating a previously read record. `records import` accepts an array or `{ "items": [...] }` and creates the batch in one transaction.
 
+### Import a CSV file
+
+Grids has no CSV import, in the CLI or in the web app. Convert the CSV into `records import` payloads: each call takes at most 500 records and creates all of them or none.
+
+1. Create the table and one field per column you keep. Choose the type from the values, not from the header:
+   - `text` for names, codes, phone numbers, postal codes, and anything with leading zeros;
+   - `number` for amounts and quantities, written with a decimal point and without thousands separators, units, or currency signs: `1,5` or `1.234,50` fails the whole batch;
+   - `date` for `YYYY-MM-DD`; convert `05.10.2026` or `10/05/2026` first;
+   - `boolean` for `true`, `false`, `1`, or `0`;
+   - `select` stores option IDs, not labels; import such a column as `text` unless you map every label to its option ID yourself.
+2. Read the field public IDs with `cld grids records shape <base>:<table> --json` and write `columns.json`, which maps each CSV header to a field ID. Columns missing from the map are skipped.
+3. Save the converter below as `csv-to-records.ts` and run it with Bun. It reads quoted cells, line breaks inside quotes, a byte order mark, and Windows line endings, leaves empty cells out, and writes `records-001.json`, `records-002.json`, and so on with up to 500 records each. Run it in an empty folder, so no file from an earlier run is imported. Pass `';'` or `$'\t'` as the third argument for semicolon- or tab-separated files.
+4. Import the files in order. The loop stops at the first failing file and exits 1. The files before it are imported: delete them, fix the failing file, and run the loop again. After a timeout or a lost connection, check with `records ls` whether the failing batch arrived first; importing it again creates duplicates.
+
+```json
+{ "Name": "<field-id>", "Email": "<field-id>", "Since": "<field-id>" }
+```
+
+```ts
+// csv-to-records.ts: bun csv-to-records.ts <data.csv> <columns.json> [delimiter]
+const [csvFile, columnsFile, delimiter = ","] = Bun.argv.slice(2);
+if (!csvFile || !columnsFile) throw new Error("Usage: bun csv-to-records.ts <data.csv> <columns.json> [delimiter]");
+const text = (await Bun.file(csvFile).text()).replace(/^\uFEFF/, "");
+const columns: Record<string, string> = await Bun.file(columnsFile).json();
+const rows: string[][] = [];
+let row: string[] = [];
+let cell = "";
+let quoted = false;
+for (let i = 0; i < text.length; i++) {
+  const char = text[i];
+  if (quoted) {
+    if (char === '"' && text[i + 1] === '"') {
+      cell += '"';
+      i++;
+    } else if (char === '"') quoted = false;
+    else cell += char;
+  } else if (char === '"' && cell === "") {
+    quoted = true;
+  } else if (char === delimiter) {
+    row.push(cell);
+    cell = "";
+  } else if (char === "\n" || char === "\r") {
+    if (char === "\r" && text[i + 1] === "\n") i++;
+    rows.push([...row, cell]);
+    row = [];
+    cell = "";
+  } else {
+    cell += char;
+  }
+}
+if (cell || row.length) rows.push([...row, cell]);
+const [firstRow = [], ...data] = rows.filter((cells) => cells.some((value) => value.trim()));
+const header = firstRow.map((name) => name.trim());
+for (const name of Object.keys(columns)) {
+  if (!header.includes(name)) throw new Error(`The CSV has no column "${name}".`);
+}
+const items = data.map((cells) =>
+  Object.fromEntries(header.flatMap((name, i) => (columns[name] && cells[i]?.trim() ? [[columns[name], cells[i].trim()]] : []))),
+);
+for (let start = 0; start < items.length; start += 500) {
+  const file = `records-${String(start / 500 + 1).padStart(3, "0")}.json`;
+  await Bun.write(file, JSON.stringify({ items: items.slice(start, start + 500) }));
+  console.log(file);
+}
+```
+
+```bash
+cld grids tables add Contacts --name People --json
+cld grids fields create Contacts:People --name Name --type text --json
+cld grids fields create Contacts:People --name Email --type text --json
+cld grids fields create Contacts:People --name Since --type date --json
+cld grids records shape Contacts:People --json
+bun csv-to-records.ts people.csv columns.json
+( for f in records-*.json; do
+    cld grids records import Contacts:People --body-file "$f" --json > /dev/null || { echo "Stopped at $f" >&2; exit 1; }
+  done )
+cld grids records ls Contacts:People --limit 5 --json
+```
+
 ### Typed rows inside a record
 
 Use `object_list` for a bounded list owned by one record, such as invoice positions. Use a related table instead when rows need independent permissions, links, or lifecycle. Inspect `fields type object_list --json` and `records shape <table> --json` before writing.
@@ -420,6 +499,13 @@ cld grids records ls Bookshop:Authors --q Butler --limit 100 --json
 cld grids records ls Bookshop:Authors --finalization awaiting-review --json
 cld grids records export Bookshop:Authors --format csv --out authors.csv
 cld grids records audit Bookshop:Authors/<record-id> --json
+```
+
+Without a sort, `records ls` returns records in the order they were created, oldest first, so `--limit 10` gives the first ten rows of an import. A page holds at most 500 records whatever `--limit` says; pass its `nextCursor` as `--cursor` for the next page. For the first rows in another order, use GQL:
+
+```bash
+cld grids gql run Bookshop --query 'from table Authors; sort Name asc; limit 10' --json
+cld grids gql run Bookshop --query 'from table Authors; sort record.createdAt desc; limit 10' --json
 ```
 
 Durable history is an irreversible opt-in for a stored table. Inspect the current status first, then enable it explicitly. The enable command

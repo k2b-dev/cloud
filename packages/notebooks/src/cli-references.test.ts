@@ -52,6 +52,16 @@ test("a callout title is not Notebook syntax", () => {
   expect(html).not.toContain("<aside");
 });
 
+test("a note link with a heading slug opens that heading", () => {
+  const { html } = renderNotebookBook({
+    markdown: "## Backup & Restore\n\n[Restore steps](note://Ab12Cd#backup-restore)",
+    notebookId: "Ab12Cd",
+    locale: "en",
+  });
+  expect(html).toContain('id="heading-backup-restore"');
+  expect(html).toContain('href="/app/notebooks/Ab12Cd/notes/Ab12Cd?mode=book#heading-backup-restore"');
+});
+
 test("the formula reference names only functions the evaluator knows", async () => {
   const names = new Set([...(await reference("formulas.md")).matchAll(/`([A-Z]+)\(/g)].map((match) => match[1]!));
   expect(names.size).toBeGreaterThan(30);

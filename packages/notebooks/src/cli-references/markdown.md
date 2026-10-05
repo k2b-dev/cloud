@@ -41,6 +41,7 @@ Two `$` signs on one line become math. Write an amount as `\$5`, which Book and 
 ```markdown
 [Cloud docs](https://example.com/docs)
 [Backup runbook](note://Ab12Cd)
+[Restore steps](note://Ab12Cd#restore)
 
 #projects #kickoff/q4
 
@@ -48,7 +49,7 @@ Two `$` signs on one line become math. Write an amount as `\$5`, which Book and 
 [Offer.pdf](attach://Pq56Rs)
 ```
 
-- **Note links** use the six-character note ID from `ls`, `search`, or `cat --json`. Only the bare ID links; `note://Ab12Cd#section` shows as plain text.
+- **Note links** use the six-character note ID from `ls`, `search`, or `cat --json`. Add a heading's slug after `#` to open the note at that heading: `#restore` for "Restore", `#backup-restore` for "Backup & Restore". A heading the note does not have opens the note at its top.
 - **Tags** start with `#` and an ASCII letter, followed by ASCII letters, digits, `_`, or `-`; `/` nests them. Write them at the start of a line or after a space. They are stored in lowercase. Any other character ends the tag: `#prüfung` becomes `#pr`, so write `#pruefung`. Tags inside code are ignored. Tags come only from the content; `write` has no tag option.
 - **Attachments** come from `cld notebooks attach <note> <file>`, which prints the Markdown to paste. Images render inline, other files as links; the PDF export shows an image only as its label. `=400x`, `=x300`, or `=400x300` after the address sets the image size. External `https://` images render, too.
 
