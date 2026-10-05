@@ -115,7 +115,7 @@ type AssistantChatContextQueryProps = {
 
 const createAssistantChatContextState = (props: AssistantChatContextQueryProps) => {
   const live = useAssistantLive();
-  const snapshot = query.create<string, AssistantChatContextSnapshot, AssistantLiveInvalidation>({
+  const snapshot = query.create<string, AssistantChatContextSnapshot | null, AssistantLiveInvalidation>({
     source: () => props.chatId,
     initial: props.initial ? { source: props.initial.chatId, data: props.initial } : undefined,
     load: (chatId, { abortSignal }) => assistantApi.loadChatContext(chatId, abortSignal),

@@ -1,6 +1,6 @@
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
-import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "../frontend/assistant-live";
+import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { appTab } from "./workspace-state";
 
@@ -13,7 +13,7 @@ render(() => {
     for (let i = 0; i < 20; i++)
       controller.open({ kind: "view", key: `view-${i}`, title: `Long report number ${i}`, render: () => "Report" });
   return createComponent(AssistantLiveProvider, {
-    value: createAssistantLiveInvalidationHub({ onApplied: () => {} }),
+    value: createAssistantLiveHub(),
     get children() {
       return createComponent(ArtifactWorkspace, { controller, userId: id, refreshKey: "initial", onEditTask: () => {} });
     },

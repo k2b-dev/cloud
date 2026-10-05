@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-09-05
+updated: 2026-10-05
 ---
 
 # Chat runtime and streaming
@@ -57,15 +57,16 @@ count toward progress. Tool arguments, outputs and conversation history are not
 included in this projection. The same owner checks apply to initial and live
 reads, and live updates do not change activity-based ordering.
 
-The existing live connection invalidates this snapshot on task and tool changes.
-Text tokens alone do not invalidate the sidebar. Reconnection reloads authorized
-state before acknowledging its cursor; no per-conversation socket is required.
+AI live updates invalidate this snapshot on task and tool changes. Text tokens
+alone do not invalidate the sidebar. A reconnect replays the missed updates, and
+the browser reloads authorized state before it moves its cursor; no
+per-conversation socket is required.
 
 ## Diagnose runtime failures
 
 Use the existing Core log and trace views. Filter logs by `ai:runtime`,
-`ai:message-queue`, `ai:executor`, `ai:files`, `ai:transcription`, or
-`ai:live-routes`.
+`ai:message-queue`, `ai:executor`, `ai:files`, or `ai:transcription`. AI live
+updates log under `events:live` with the application ID `core`.
 Queue dispatch errors carry `conversationId`, `messageId` and
 `queue_dispatch_failed`. Heartbeat, recovery and completion-publication warnings
 carry conversation and turn IDs. A heartbeat warning is emitted once per failure
@@ -214,7 +215,7 @@ language-dependent automatic retries.
 | `/conversations/:id/turns` | Start, steer, or stop work |
 | `/conversations/:id/stream` | Receive the conversation event feed over SSE |
 | `/conversations/:id/files` | Manage conversation files |
-| `/live` | Multiplex browser invalidations and the visible conversation over one WebSocket |
+| `/live` | Receive the user's AI live updates over Core's live socket, channel `user` |
 
 The router also supports message retry, forks, compaction, pending tool
 actions, conversation enrichment, and paged history.
@@ -271,58 +272,44 @@ idempotent.
 Each execution attempt starts with one atomic, server-ordered block baseline.
 Resuming after an approval or frontend-tool response therefore keeps every
 existing item in its persisted timeline position while new output is appended.
-The same event feed backs both browser WebSockets and SSE. Use `parseAiSse()`
+The conversation stream uses SSE. Use `parseAiSse()`
 from `@k2b/cloud/ai/browser` for a low-level or CLI client. This
 client entry point also exports attachment limits, `guessAiMediaType()`,
 `isAiImageMediaType()`, the card, survey, text-editor, and local-bash input
 schemas, and `CLOUD_AI_TEXT_EDITOR_MAX_CHARS`. These helpers do not initialize
 Cloud server services. Import AI types with `import type` from
 `@k2b/cloud/ai`. Solid applications should use
-`createAiChatController()` from `@k2b/cloud/ai/solid`; it uses SSE by
-default and accepts a supported conversation-stream transport when its host
-already owns a shared connection.
-
-Assistant uses one `/api/ai/live` WebSocket for two independent logical
-channels: `ai.live` invalidates durable user projections, while `ai.turn`
-carries only the currently visible conversation. Enhanced navigation replaces
-the turn subscription without reconnecting the socket. Reconnect performs the
-normal full refresh for invalidations and starts the visible conversation from
-a fresh authorized state snapshot. The CLI and low-level consumers continue to
-use `/conversations/:id/stream` over SSE.
+`createAiChatController()` from `@k2b/cloud/ai/solid`; it subscribes to the
+visible conversation over SSE. Changing chats closes the previous stream and
+opens one for the new chat; every connection, including a reconnect, starts
+from a fresh authorized state snapshot. Assistant, the CLI, and low-level
+consumers all use `/conversations/:id/stream`. Over HTTP/1.1 each open
+Assistant tab holds one of the browser's six connections to the host; over
+HTTP/2 the streams share one connection. A proxy in front of Cloud must not
+buffer `text/event-stream` responses.
 
 An open SSE stream re-checks its credential and the conversation every 5
 seconds. A revoked session or API key, an expired account, or a conversation
 that is archived or no longer the caller's ends the stream. The next
 connection attempt then receives 401, 403, or 404. The controller's default
-SSE transport does not retry these statuses. Like the WebSocket's turn error,
-it stops the stream: `streamStatus()` becomes `idle` and `error()` shows the
-server's message. Reopening or refreshing the chat, or acting in it, subscribes
-again. Other failures keep reconnecting with backoff.
+SSE transport does not retry these statuses. It stops the stream:
+`streamStatus()` becomes `idle` and `error()` explains, in the page's language,
+that the session ended, that access to the chat ended, or that the chat is no
+longer available. The transport reports the status as an `AiStreamError` code;
+the controller chooses the text. Reopening or refreshing the chat, or acting in
+it, subscribes again. Other failures keep reconnecting with backoff.
 
 The server closes a stream once its reader has left about 4 MiB unread. The
 event that crosses that limit is still queued, and a `state` snapshot or a
-`turn_finished` event with its stored messages can be larger than one live
+`turn_finished` event with its stored messages can be larger than one stream
 event. The client then reconnects and continues from a fresh state snapshot.
 
-The controller folds both transports into the same projection and exposes the
+The controller folds the stream into one projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,
 approval, and frontend-tool actions. Do not put conversation and Project lists,
 metadata, Sources, files, scheduled tasks, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
-
-Core exposes live updates at `/api/ai/live`. Committed AI writes invalidate
-the affected views.
-The browser still reloads each affected projection through its authorized HTTP
-query before it advances the event cursor.
-
-The connection is isolated by user, and its active conversation is
-re-authorized periodically. Losing access ends that conversation channel;
-invalid or expired authentication revokes the whole connection. Project context can be shared through
-normal Cloud access grants, but each conversation remains owned by its creator
-and only appears in that user's stream and queries. On reconnect, the route establishes a new head
-cursor and the client refreshes every registered AI projection. This is the
-authoritative recovery path when retained replay is insufficient.
 
 Action responses are idempotent. Retrying the same response is safe and
 re-enqueues its continuation; a conflicting response for an already resolved
@@ -331,6 +318,50 @@ responses before rendering, so resolved approval controls do not reappear and
 plain browser tools are not executed again merely because the page reloaded.
 
 Do not maintain a second client-side chat state machine.
+
+## AI live updates
+
+Core serves AI live updates on the shared
+[live layer](/en/docs/automation/live-updates) at `/api/ai/live`, with one
+channel, `user`, and an empty scope. Its data is an `AiInvalidation` from
+`@k2b/cloud/ai/live-events`: which of the nine `AI_INVALIDATION_DOMAINS`
+changed, and for which conversation or Project. Database triggers on the AI
+tables write each update in the transaction of the change, keyed
+`u:<user ID>`, so a rolled-back write publishes nothing. A Project change is
+written for every user who can read the Project at that moment, including
+nested groups and grants to all signed-in people; a grant change reaches the
+readers before and after it. A conversation change reaches only its owner.
+
+A socket follows only its own user's key, and its credential is checked again
+every 10 seconds; an ended session closes it with `1008`. A third-party UI
+subscribes like Assistant and reads the cursor before its snapshot:
+
+```ts
+// Server, before loading the page's state
+import { aiLive } from "@k2b/cloud/ai/live";
+const cursor = await aiLive.cursor();
+
+// Browser
+import { AiInvalidationSchema } from "@k2b/cloud/ai/live-events";
+import { liveConnection } from "@k2b/cloud/browser/live";
+
+liveConnection("/api/ai/live").subscribe("user", {}, {
+  cursor,
+  parse: (data) => AiInvalidationSchema.parse(data),
+  apply: async (events) => reloadViewsFor(events.map((event) => event.data)),
+  resync: reloadEveryView,
+  unavailable: showUpdatesPaused,
+});
+```
+
+The browser reloads each affected view through its authorized HTTP query
+before it moves the cursor. A reconnect replays what the tab missed; a cursor
+outside the replay window receives `resync`, which reloads every view. Core's
+window holds the latest updates of all users together, so a tab that was away
+during much activity reloads instead of replaying.
+Project context can be shared through normal Cloud access grants, but each
+conversation remains owned by its creator and only appears in that user's
+updates and queries.
 
 ## Treat turns as asynchronous
 
@@ -387,8 +418,8 @@ attempts. Input snapshots remain available for explicit retries after failure
 and are released after success or discard. A crash around provider completion
 can repeat the provider request and its charge.
 
-The existing AI WebSocket publishes `conversation-dictations` invalidations,
-not audio or transcript content. A database trigger creates the outbox entry
+AI live updates carry `conversation-dictations` invalidations, not audio or
+transcript content. A database trigger creates the outbox entry
 in the same transaction as each status change. Initial loading, reconnect, and
 returning to a chat reload pending dictations through HTTP. A completed upload
 also refreshes that query to cover completion before subscription.
@@ -449,10 +480,11 @@ work and attributed to the scheduled turn.
 
 ### Background Assistant tabs
 
-The Assistant live connection uses `activity: "always"`. Hiding the browser tab
-does not unsubscribe the active conversation or close its WebSocket. This does
-not override browser suspension, operating-system sleep, reload, or closing the
-tab. Agent Code Mode execution uses an Assistant-owned isolated Chromium host,
+Hiding the browser tab does not close the visible conversation's SSE stream,
+so a turn keeps streaming and its frontend tools keep running. The live socket
+closes while the tab is hidden and replays the missed updates when it returns.
+This does not override browser suspension, operating-system sleep, reload, or
+closing the tab. Agent Code Mode execution uses an Assistant-owned isolated Chromium host,
 so changing or closing the user tab does not pause code or simulated UI actions.
 The interactive Studio preview remains browser-owned. Opening an app, selecting
 local files, entering secrets and answering approval prompts still need a user

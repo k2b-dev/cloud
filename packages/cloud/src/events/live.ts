@@ -61,13 +61,14 @@ export const liveOutbox = (appId: string, publish: (row: LiveOutboxRow) => Promi
     where: { kind: "live", app_id: appId },
     orderBy: "ordering_key",
     sequence: "seq",
-    onDelivered: "delete",
     reconcileIntervalMs: RECONCILE_INTERVAL_MS,
     publish,
   });
 
 /** Applications whose live updates this process defines, with the wake of their running dispatcher. */
 const dispatchers = new Map<string, (() => void) | null>();
+/** Applications whose live socket this process mounts; only the started application may be among them. */
+const served = new Set<string>();
 /** Live sockets served by this process; they close when the application stops. */
 const engines = new Set<LiveEngine>();
 /** Set when the application stops delivery: its engines stay stopped until delivery starts again. */
@@ -89,26 +90,27 @@ const logStaleRows = async (appId: string): Promise<void> => {
 };
 
 /**
- * Publishes the rows of the live definitions in this process. `app.start()`
- * calls it with the started application's ID; it does nothing without a
- * definition, and fails when a definition names another application or Core
- * has not created the outbox yet.
+ * Publishes the rows of the started application's live definitions. `app.start()`
+ * calls it with the started application's ID. A definition of another
+ * application only reads that application's cursor, and its rows are published
+ * by that application. It does nothing without a definition of the started
+ * application, and fails when this process mounts the socket of another
+ * application or Core has not created the outbox yet.
  */
-export const startLiveOutbox = async (startedAppId: string): Promise<(() => Promise<void>) | null> => {
-  const appIds = [...dispatchers.keys()];
-  if (appIds.length === 0) return null;
-  const foreign = appIds.filter((appId) => appId !== startedAppId);
+export const startLiveOutbox = async (appId: string): Promise<(() => Promise<void>) | null> => {
+  const foreign = [...served].filter((other) => other !== appId);
   if (foreign.length > 0) {
     throw new Error(
-      `defineLive() names "${foreign.join('", "')}", but this process starts "${startedAppId}". Use the ID from the application's declaration.`,
+      `This process mounts the live socket of "${foreign.join('", "')}", but starts "${appId}". Use the ID from the application's declaration.`,
     );
   }
+  if (!dispatchers.has(appId)) return null;
   const [installed] = await sql<{ ready: boolean }[]>`
     SELECT to_regprocedure('events.enqueue(uuid,text,text,text,jsonb,text)') IS NOT NULL AS ready
   `;
   if (!installed?.ready) {
     throw new Error(
-      `"${appIds.join('", "')}" writes live updates to events.outbox, which does not exist. Update Cloud Core first: its migration creates the outbox.`,
+      `"${appId}" writes live updates to events.outbox, which does not exist. Update Cloud Core first: its migration creates the outbox.`,
     );
   }
   // Delivery starts again: the engines stopped before give way to new ones.
@@ -116,26 +118,21 @@ export const startLiveOutbox = async (startedAppId: string): Promise<(() => Prom
     engines.clear();
     stopped = false;
   }
-  const stops = appIds.map((appId) => {
-    const topic = liveTopics()(appId);
-    const outbox = liveOutbox(appId, (row) => topic.publish({ data: row.payload, orderingKey: row.ordering_key, idempotencyKey: row.id }));
-    outbox.start();
-    dispatchers.set(appId, () => void outbox.notify());
-    const staleCheck = setInterval(() => {
-      logStaleRows(appId).catch((error) =>
-        log.warn("Live outbox check failed", { appId, error: error instanceof Error ? error.message : String(error) }),
-      );
-    }, STALE_CHECK_INTERVAL_MS);
-    staleCheck.unref();
-    return async () => {
-      clearInterval(staleCheck);
-      dispatchers.set(appId, null);
-      await outbox.stop();
-    };
-  });
+  const topic = liveTopics()(appId);
+  const outbox = liveOutbox(appId, (row) => topic.publish({ data: row.payload, orderingKey: row.ordering_key, idempotencyKey: row.id }));
+  outbox.start();
+  dispatchers.set(appId, () => void outbox.notify());
+  const staleCheck = setInterval(() => {
+    logStaleRows(appId).catch((error) =>
+      log.warn("Live outbox check failed", { appId, error: error instanceof Error ? error.message : String(error) }),
+    );
+  }, STALE_CHECK_INTERVAL_MS);
+  staleCheck.unref();
   return async () => {
     stopLiveEngines();
-    await Promise.all(stops.map((stop) => stop()));
+    clearInterval(staleCheck);
+    dispatchers.set(appId, null);
+    await outbox.stop();
   };
 };
 
@@ -215,8 +212,9 @@ const refusalOf = async (c: Context<AuthContext>): Promise<Refusal | null> => {
  * Live updates of one application: hints, optionally with data, for its own
  * open tabs. Define them once at module scope; `app.start()` then publishes the
  * rows that `publish()` writes, and `routes()` serves them to browsers.
- * `appId` is required and must be the ID that the process starts; it is never
- * derived from the process.
+ * `appId` is required and is never derived from the process. Another
+ * application's process may hold the definition to read its `cursor()` or
+ * write updates; only the application itself publishes and serves them.
  */
 export const defineLive = <const Event extends z.ZodType>(definition: { appId: string; event: Event }) => {
   const { appId, event } = definition;
@@ -250,7 +248,8 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
     /** The topic head. Read it before loading the snapshot it belongs to. */
     cursor: (): Promise<string> => liveTopics()(appId).head(),
     /**
-     * The live socket with these channels. Mount it once, at `/api/<app>/live`.
+     * The live socket with these channels. Mount it once, at `/api/<app>/live`,
+     * in the application's own process: `app.start()` of another application fails.
      * It authenticates like any API request; a session needs the Cloud origin
      * and an OAuth token the `read` scope. A refused socket receives `error`
      * and closes with 1008. Channels are passed here, not to
@@ -258,6 +257,7 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
      * themselves publish updates.
      */
     routes: <const Scopes extends Record<string, z.ZodType>>(channels: { [Name in keyof Scopes]: LiveChannel<Scopes[Name]> }) => {
+      served.add(appId);
       let engine: LiveEngine | null = null;
       const serve = (): LiveEngine => {
         if (engine && engines.has(engine)) return engine;

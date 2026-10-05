@@ -1,11 +1,11 @@
 import { AppWorkspace, Dropdown } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { AssistantChatContextPanel, type ContextView } from "../frontend/AssistantChatContext";
-import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "../frontend/assistant-live";
+import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { appTab, contextTab, fileTab } from "./workspace-state";
 
-const live = createAssistantLiveInvalidationHub({ onApplied: () => {} });
+const live = createAssistantLiveHub();
 render(() => {
   const controller = createArtifactWorkspace();
   const open = (view: ContextView) =>

@@ -9,7 +9,7 @@ import type {
   AiStoredMessage,
 } from "@k2b/cloud/ai";
 import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
-import { type AiLiveConnection, createAiChatController, createAiLiveConnection } from "@k2b/cloud/ai/solid";
+import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
@@ -30,6 +30,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -74,7 +75,8 @@ import { createAssistantDictation } from "./assistant-dictation";
 import {
   type AssistantLiveInvalidation,
   AssistantLiveProvider,
-  createAssistantLiveInvalidationHub,
+  createAssistantLiveHub,
+  followAssistantLive,
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
@@ -215,32 +217,7 @@ export default function AssistantWorkspace(props: Props) {
     Boolean(modelId && props.models.some((model) => model.id === modelId));
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
-  let liveConnection: AiLiveConnection | null = null;
-  const liveHub = createAssistantLiveInvalidationHub({
-    onApplied: (cursor) => {
-      setLiveError(null);
-      liveConnection?.markApplied(cursor);
-    },
-    onFailed: (attempt, error) => {
-      setLiveError(t().liveRetry);
-      if (attempt === 1)
-        console.warn("Assistant live refresh failed", {
-          code: "live_refresh_failed",
-          errorType: error instanceof Error ? error.name : "unknown",
-        });
-    },
-  });
-  liveConnection = createAiLiveConnection({
-    initialCursor: props.initialLiveCursor,
-    onLiveMessage: (message) => {
-      if (message.type === "ai.live.event") liveHub.scheduleEvent(message.payload.cursor, message.payload.event);
-      else if (message.type === "ai.live.scope_changed") liveHub.scheduleScopeRefresh();
-      else if (message.type === "ai.live.ready" && message.payload.recovered) {
-        liveHub.scheduleScopeRefresh(message.payload.cursor);
-      }
-    },
-    onFatal: (error) => setLiveError(error.message),
-  });
+  const liveHub = createAssistantLiveHub();
 
   const codeApprovals = createCodeApprovals();
   const chat = createAiChatController({
@@ -250,7 +227,6 @@ export default function AssistantWorkspace(props: Props) {
     initialTimeline: props.initialDetail?.timeline,
     initialError: props.status.error?.message ?? null,
     trackViewedState: true,
-    streamTransport: liveConnection.streamTransport,
     clientToolIds: [...CODE_RUNTIME_TOOL_NAMES],
     frontendTools: createArtifactAgentRuntime(artifactWorkspace.open, codeApprovals.ask, "chat-tool", browserHttpHost),
   });
@@ -299,16 +275,24 @@ export default function AssistantWorkspace(props: Props) {
       return Boolean(conversationId && (!invalidation.conversationIds || invalidation.conversationIds.has(conversationId)));
     },
     invalidate: async () => {
-      await Promise.all([chat.refreshActiveConversation(), queuedMessages.refresh()]);
+      // A chat that is gone shows why; its queue cannot load either.
+      if (await chat.refreshActiveConversation()) await queuedMessages.refresh();
     },
   });
-  onMount(() => liveConnection?.connect());
+  onMount(() => {
+    const subscription = followAssistantLive(liveHub, {
+      cursor: props.initialLiveCursor,
+      failing: (failing) => setLiveError(failing ? t().liveRetry : null),
+      // The page loads the current state, once.
+      stopped: () => {
+        if (!reloadOnce("assistant:live")) setLiveError(t().liveUnavailable);
+      },
+    });
+    onCleanup(() => subscription.close());
+  });
   onCleanup(() => {
     unregisterSidebar();
     unregisterConversation();
-    liveHub.dispose();
-    liveConnection?.dispose();
-    liveConnection = null;
   });
 
   // Model selection is per chat: an explicit pick only applies to the chat it
@@ -951,7 +935,6 @@ export default function AssistantWorkspace(props: Props) {
       await Promise.all([
         chat.refreshActiveConversation(),
         sidebar.invalidate({
-          cursor: null,
           domains: new Set(["conversation-list"]),
           conversationIds: new Set([updated.id]),
           projectIds: null,
@@ -1369,7 +1352,6 @@ export default function AssistantWorkspace(props: Props) {
                 await Promise.all([
                   chat.refreshActiveConversation(),
                   sidebar.invalidate({
-                    cursor: null,
                     domains: new Set(["conversation-list"]),
                     conversationIds: new Set([updated.id]),
                     projectIds: null,
@@ -1527,7 +1509,6 @@ export default function AssistantWorkspace(props: Props) {
 
   const updateConversation = (updated: AiConversation) => {
     void sidebar.invalidate({
-      cursor: null,
       domains: new Set(["conversation-list"]),
       conversationIds: new Set([updated.id]),
       projectIds: null,
@@ -1567,7 +1548,6 @@ export default function AssistantWorkspace(props: Props) {
 
   const archiveConversation = (archived: AiConversation) => {
     void sidebar.invalidate({
-      cursor: null,
       domains: new Set(["conversation-list"]),
       conversationIds: new Set([archived.id]),
       projectIds: null,

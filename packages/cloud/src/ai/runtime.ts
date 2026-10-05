@@ -12,7 +12,6 @@ import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-model
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
-import { startAiInvalidationRuntime, stopAiInvalidationRuntime } from "./live-outbox";
 import { drainQueuedMessages } from "./message-queue";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
@@ -577,7 +576,6 @@ export const startAiRuntime = (
     },
   };
   running = state;
-  startAiInvalidationRuntime();
   log.info("AI runtime started", { workerId: AI_WORKER_ID, concurrency });
   return releaseAiRuntime(listener);
 };
@@ -591,10 +589,7 @@ const releaseAiRuntime = (listener: ((event: AiTurnFinalizedEvent) => Promise<vo
     if (!state) return;
     if (listener) state.listeners.delete(listener);
     refCount = Math.max(0, refCount - 1);
-    if (refCount === 0) {
-      state.stop();
-      void stopAiInvalidationRuntime();
-    }
+    if (refCount === 0) state.stop();
   };
 };
 

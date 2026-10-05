@@ -10,6 +10,78 @@ updated: 2026-10-05
 
 # Deprecations and migrations
 
+## Assistant live updates use the shared live layer
+
+Core now serves AI live updates on the shared live layer, at the same path
+`/api/ai/live`, with one channel, `user`. Database triggers on the AI tables
+write them to the platform outbox in the transaction of each change; who
+receives a Project change is still decided when it is written. The visible
+conversation streams over SSE in the browser too, from
+`/api/ai/conversations/:id/stream`, as in the CLI. A returning tab replays the
+updates it missed instead of reloading every Assistant view. See
+[AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates).
+
+The previous AI live protocol, its table, and its dispatcher are removed.
+Code that used these exports stops type-checking:
+
+| Removed | Use instead |
+| --- | --- |
+| `aiLiveRoutes`, `AiLiveRoutes`, and `AiLiveRoutesConfig` from `@k2b/cloud/ai/live` | Nothing: Core mounts the AI live socket |
+| `latestAiInvalidationCursor(userId)` from `@k2b/cloud/ai/live` | `aiLive.cursor()` from `@k2b/cloud/ai/live` |
+| `AI_LIVE_WS_TYPE`, `AiLiveClientMessage`, `AiLiveClientMessageSchema`, `AiLiveServerMessage`, `AiLiveServerMessageSchema`, `AiLiveCursorSchema`, `AiLiveRevocationCode`, `AiLiveErrorCode`, `AiTurnErrorCode`, `AiStreamEventSchema`, `aiTurnEventMessage`, and `parseAiLiveServerMessage` from `@k2b/cloud/ai/live-events` and `@k2b/cloud/ai` | `liveConnection()` from `@k2b/cloud/browser/live` speaks the socket protocol; parse the data with `AiInvalidationSchema` |
+| `createAiLiveConnection`, `AiLiveConnection`, and `CreateAiLiveConnectionOptions` from `@k2b/cloud/ai/solid` | `createAiChatController()` with its default SSE stream, plus `liveConnection("/api/ai/live").subscribe("user", {}, …)` |
+| `createPgOutbox()` options `onDelivered` and `maxAttempts`, and its unordered mode without `orderBy` and `sequence`, from `@k2b/cloud/services/outbox` | `orderBy` and `sequence` are required; a published row is deleted, and a failing row is retried until it is published |
+
+`AI_INVALIDATION_DOMAINS`, `AiInvalidationSchema`, `createAiChatController()`,
+`AiConversationStreamTransport`, `parseAiSse()`, and the conversation SSE
+route stay. The data of an AI live update is the `AiInvalidation` it was
+before.
+
+### Update Core first
+
+1. Replace every Core replica with this release, and make sure no Core replica
+   of an earlier release starts again afterwards. Core's migration replaces
+   `ai.enqueue_live_for_user()`; an earlier Core that starts again restores
+   its own version, and its updates then reach no current Assistant tab.
+2. Then update Assistant and Gateway Ops.
+
+Assistant tabs that are open during the update lose their live socket once
+and show "Live access changed or expired." until they are reloaded. Turns keep
+running on the server; a frontend tool or approval that waits for such a tab
+waits until it is reloaded. A tab of the new Assistant that reaches an earlier
+Core reloads once and then shows that live updates stopped.
+
+Gateway health reports an error on Core while `ai.enqueue_live_for_user()`
+does not write to `events.outbox`: "AI live updates are not published: an
+older Core restored ai.enqueue_live_for_user". Stop every older Core replica,
+then restart one current Core replica; its migration restores the function.
+Gateway Ops of this release also reports this error while Core's migration
+has not run yet.
+
+Proxies in front of Cloud must not buffer `text/event-stream` responses,
+because browsers now stream conversations over SSE.
+
+### Roll back
+
+Roll back Core, Assistant, and Gateway Ops together, as the whole release.
+Gateway Ops of this release would report the function that the earlier Core
+restores as the error above and ask you to stop that Core. The earlier Core
+restores its table and function when it starts. AI live updates that this
+release wrote but had not published yet stay in `events.outbox`; they are
+hints only, and you can delete them:
+
+```sql
+DELETE FROM events.outbox WHERE kind = 'live' AND app_id = 'core';
+```
+
+### Removed in a later release
+
+Nothing writes `ai.live_invalidation_outbox` or the topic
+`cloud-ai-invalidations` anymore. Until a later release removes both, an
+earlier Core that still runs during the update finds an empty table instead of
+an error, and the topic keeps its 128 MiB reservation; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
 ## Notices have one calm look
 
 `NoticeCard` from `@k2b/ui` has one appearance: a light tint of its tone, no

@@ -13,6 +13,14 @@ const backfillAiShortIds = async (
 };
 
 export const migrateCloudAi = async (): Promise<void> => {
+  // AI writes its live updates to Core's platform outbox, in the transaction of every
+  // AI write: without events.enqueue(), every one of them would fail.
+  const [outbox] = await sql<{ ready: boolean }[]>`
+    SELECT to_regprocedure('events.enqueue(uuid,text,text,text,jsonb,text)') IS NOT NULL AS ready
+  `;
+  if (!outbox?.ready) {
+    throw new Error("AI live updates write to events.outbox, which does not exist. Run Core's events migration before the AI migration.");
+  }
   await sql`CREATE SCHEMA IF NOT EXISTS ai`.simple();
   console.log("  ✓ ai schema");
 
@@ -1722,10 +1730,12 @@ export const migrateCloudAi = async (): Promise<void> => {
     WHERE project_id IS NOT NULL AND archived_at IS NULL
   `.simple();
 
-  // Durable Realtime UI invalidations. Triggers live at the persistence seam so
-  // route, worker, tool, enrichment, and scheduler writes cannot bypass them.
-  // The outbox row commits or rolls back with the authoritative domain write;
-  // publishing remains an after-commit runtime responsibility.
+  // Live updates. Triggers live at the persistence seam so route, worker, tool,
+  // enrichment, and scheduler writes cannot bypass them. They write to Core's
+  // platform outbox in the transaction of the domain write (see the start of this migration).
+
+  // The previous outbox. Nothing writes it anymore; an older Core that still runs during
+  // an update finds it empty. The cleanup release drops it with the topic cloud-ai-invalidations.
   await sql`
     CREATE TABLE IF NOT EXISTS ai.live_invalidation_outbox (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1786,6 +1796,10 @@ export const migrateCloudAi = async (): Promise<void> => {
     DROP FUNCTION IF EXISTS ai.enqueue_live_for_user(UUID, TEXT, UUID, TEXT, TEXT, TEXT[])
   `.simple();
 
+  // Every AI live update goes through this function: one update for one user,
+  // keyed `u:<user>`, on Core's live topic. Its data is an `AiInvalidation`.
+  // No coalesce key: the last payload would win and drop the domains of earlier ones.
+  // Gateway health reports a body without events.enqueue: an older Core restored its own.
   await sql`
     CREATE OR REPLACE FUNCTION ai.enqueue_live_for_user(
       p_change_id UUID,
@@ -1796,11 +1810,23 @@ export const migrateCloudAi = async (): Promise<void> => {
     ) RETURNS void AS $$
     BEGIN
       IF p_user_id IS NULL OR cardinality(p_domains) = 0 THEN RETURN; END IF;
-      INSERT INTO ai.live_invalidation_outbox (
-        change_id, audience_user_id, conversation_short_id, project_short_id, domains
-      ) VALUES (
-        p_change_id, p_user_id, p_conversation_short_id, p_project_short_id,
-        ARRAY(SELECT DISTINCT domain FROM unnest(p_domains) domain ORDER BY domain)
+      PERFORM events.enqueue(
+        gen_random_uuid(),
+        'core',
+        'live',
+        'u:' || p_user_id::text,
+        jsonb_build_object(
+          'v', 1,
+          'k', 'u:' || p_user_id::text,
+          'd', jsonb_build_object(
+            'type', 'ai.invalidated',
+            'changeId', p_change_id,
+            'conversationId', p_conversation_short_id,
+            'projectId', p_project_short_id,
+            'domains', to_jsonb(ARRAY(SELECT DISTINCT domain FROM unnest(p_domains) domain ORDER BY domain)),
+            'at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+          )
+        )
       );
     END
     $$ LANGUAGE plpgsql
@@ -2213,13 +2239,6 @@ export const migrateCloudAi = async (): Promise<void> => {
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_dictations_pending ON ai.dictations(conversation_id, created_at, id) WHERE disposition = 'pending'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_dictations_recovery ON ai.dictations(status, next_attempt_at, lease_until) WHERE status IN ('queued', 'running')`.simple();
-  await sql.begin(async (tx) => {
-    await tx`ALTER TABLE ai.live_invalidation_outbox DROP CONSTRAINT IF EXISTS ai_live_invalidation_domains_check`;
-    await tx`ALTER TABLE ai.live_invalidation_outbox ADD CONSTRAINT ai_live_invalidation_domains_check CHECK (
-      domains <@ ARRAY['conversation-list', 'conversation-detail', 'conversation-sources', 'conversation-files', 'conversation-tasks',
-        'conversation-dictations', 'project-list', 'project-detail', 'project-context']::text[] AND cardinality(domains) > 0
-    )`;
-  });
   await sql`DROP TRIGGER IF EXISTS ai_live_dictations_changed ON ai.dictations`.simple();
   await sql`DROP TRIGGER IF EXISTS ai_live_dictations_state_changed ON ai.dictations`.simple();
   await sql`CREATE TRIGGER ai_live_dictations_changed AFTER INSERT OR DELETE ON ai.dictations

@@ -130,11 +130,11 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("bg-amber-50");
   });
 
-  test("multiplexes live updates and the visible turn on one workspace connection", async () => {
+  test("follows AI live updates on Core's shared live socket and streams the visible turn over SSE", async () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 
-    expect(workspace.match(/createAiLiveConnection\(\{/g)).toHaveLength(1);
-    expect(workspace).toContain("streamTransport: liveConnection.streamTransport");
+    expect(workspace.match(/followAssistantLive\(liveHub/g)).toHaveLength(1);
+    expect(workspace).not.toContain("streamTransport");
     expect(workspace).not.toContain("createLiveWebSocket");
     expect(workspace).not.toContain("subscribeAiStream");
   });

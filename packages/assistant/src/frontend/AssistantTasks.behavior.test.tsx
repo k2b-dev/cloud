@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import type { AiChatTaskOccurrenceView, AiChatTaskView } from "@k2b/cloud/ai";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "./assistant-live";
+import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
 const task: AiChatTaskView = {
@@ -24,7 +24,7 @@ test("task list opens the selected task without a manual form; details expose ac
   const { AssistantTaskDetail, AssistantTasksView } = await import("./AssistantTasksDialog");
   const { toast } = await import("@k2b/ui");
   const confirmation = spyOn(toast, "success").mockReturnValue({ dismiss() {}, update() {} });
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined, delayMs: 1 });
+  const live = createAssistantLiveHub();
   let occurrences: AiChatTaskOccurrenceView[] = [];
   let selected = "",
     edit: { id: string; repair: boolean } | undefined;
@@ -109,12 +109,12 @@ test("task list opens the selected task without a manual form; details expose ac
         completedAt: null,
       },
     ];
-    live.scheduleScopeRefresh();
+    void live.resync();
     await tick();
     await tick();
     expect(dom.root.textContent).toContain("Running");
     occurrences = [{ ...occurrences[0]!, state: "completed", resultText: "Calendar checked." }];
-    live.scheduleScopeRefresh();
+    void live.resync();
     await tick();
     await tick();
     button("Latest result").click();
@@ -136,7 +136,6 @@ test("task list opens the selected task without a manual form; details expose ac
     dispose();
     fetchMock.mockRestore();
     confirmation.mockRestore();
-    live.dispose();
     dom.cleanup();
   }
 });

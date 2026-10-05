@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { AssistantLiveProvider, createAssistantLiveInvalidationHub } from "../frontend/assistant-live";
+import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 
 // Load once outside any test, so the cold Solid transform of the workspace's source graph does not count against the
 // 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
@@ -21,7 +21,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
 
 test("a PDF file tab previews the conversation file bytes instead of the attachment download URL", async () => {
   const dom = createDomTestHarness();
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const live = createAssistantLiveHub();
   // A real PDF header carries a binary comment line; bytes above 0x7f must survive the base64 round trip.
   const pdf = new Uint8Array([...new TextEncoder().encode("%PDF-1.7\n%"), 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]);
   const requests: string[] = [];
@@ -78,7 +78,7 @@ for (const [path, content, highlighted] of [
 ] as const) {
   test(`a read-only ${path} tab keeps its copy action without the preview frame`, async () => {
     const dom = createDomTestHarness();
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const id = "00000000-0000-4000-8000-000000000001";
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(

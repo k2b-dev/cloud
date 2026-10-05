@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
+import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { AiStreamSseEvent, AiTurnBlock, AiTurnSnapshot } from "../protocol";
 import type { AiConversation } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
@@ -633,14 +634,18 @@ describe("AI controller stream sessions", () => {
     expect(calls).toEqual(["subscribe:Chat01", "close:Chat01"]);
   });
 
-  test("shows the server's reason and stops when the default stream loses access", async () => {
+  test.each([
+    ["en", 403, "You no longer have access to this chat."],
+    ["de", 404, "Dieser Chat ist nicht mehr verfügbar."],
+    ["de", 401, "Deine Sitzung ist abgelaufen. Melde dich erneut an, um diesen Chat fortzusetzen."],
+  ] as const)("in %s, a %d from the default stream stops it and shows the reason in the page's language", async (locale, status, text) => {
     const streamRequests: string[] = [];
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
         const path = new URL(String(input), "http://cloud.test").pathname;
         if (path.endsWith("/stream")) {
           streamRequests.push(path);
-          return Response.json({ message: "Conversation access changed" }, { status: 403 });
+          return Response.json({ message: "Conversation access changed" }, { status });
         }
         return Response.json({});
       },
@@ -649,6 +654,9 @@ describe("AI controller stream sessions", () => {
     const current = conversation("Chat01");
     let dispose!: () => void;
     let controller!: ReturnType<typeof createAiChatController>;
+    // The server renders the request's locale into `<html lang>`.
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = locale;
     createRoot((rootDispose) => {
       dispose = rootDispose;
       controller = createAiChatController({
@@ -660,11 +668,215 @@ describe("AI controller stream sessions", () => {
 
     for (let i = 0; i < 20 && controller.error() === null; i++) await Bun.sleep(1);
 
-    expect(controller.error()).toBe("Conversation access changed");
+    expect(controller.error()).toBe(text);
     expect(controller.streamStatus()).toBe("idle");
     await Bun.sleep(700);
     expect(streamRequests).toEqual(["/api/ai/conversations/Chat01/stream"]);
     dispose();
+    dom.cleanup();
+  });
+
+  test("over the default SSE stream, a frontend tool runs once across a reconnect, and switching chats closes the old stream", async () => {
+    const encoder = new TextEncoder();
+    const streams: { path: string; signal: AbortSignal }[] = [];
+    const actions: string[] = [];
+    const waiting = {
+      turnId: "turn-tool",
+      attempt: 1,
+      status: "waiting_for_action" as const,
+      seq: 3,
+      blocks: [
+        {
+          id: "tool-block",
+          kind: "tool" as const,
+          callId: "call-1",
+          name: "browser_tool",
+          args: { n: 1 },
+          status: "awaiting_client" as const,
+        },
+      ],
+      modelProfileId: null,
+      createdAt: "2026-10-05T10:00:00.000Z",
+    };
+    const sse = (event: unknown, end: boolean) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(`event: state\ndata: ${JSON.stringify(event)}\n\n`));
+            if (end) controller.close();
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(input), "http://cloud.test").pathname;
+        if (path.endsWith("/stream")) {
+          streams.push({ path, signal: init?.signal as AbortSignal });
+          const id = path.split("/").at(-2) as string;
+          // The first stream of Chat01 ends, as when a server restarts; its reconnect gets the same snapshot.
+          const first = streams.filter((stream) => stream.path === path).length === 1;
+          return sse({ type: "state", conversation: conversation(id), messages: [], activeTurn: id === "Chat01" ? waiting : null }, first);
+        }
+        if (path.includes("/actions/")) {
+          actions.push(path);
+          return Response.json({});
+        }
+        if (path === "/api/ai/conversations/Chat02")
+          return Response.json({ conversation: conversation("Chat02"), messages: [], activeTurn: null });
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const runs: unknown[] = [];
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "Chat01",
+        initialDetail: { conversation: conversation("Chat01"), messages: [], activeTurn: null },
+        frontendTools: {
+          browser_tool: async ({ args }) => {
+            runs.push(args);
+            return { ok: true };
+          },
+        },
+      });
+    });
+
+    for (let i = 0; i < 200 && streams.length < 2; i++) await Bun.sleep(10);
+    await Bun.sleep(20);
+    expect(streams.map((stream) => stream.path)).toEqual(["/api/ai/conversations/Chat01/stream", "/api/ai/conversations/Chat01/stream"]);
+    expect(runs).toEqual([{ n: 1 }]);
+    expect(actions).toEqual(["/api/ai/conversations/Chat01/turns/turn-tool/actions/call-1"]);
+
+    expect(await controller.openConversation("Chat02")).toBe("opened");
+    expect(streams[1]?.signal.aborted).toBe(true);
+    expect(streams.at(-1)?.path).toBe("/api/ai/conversations/Chat02/stream");
+    expect(streams.at(-1)?.signal.aborted).toBe(false);
+    dispose();
+    expect(streams.at(-1)?.signal.aborted).toBe(true);
+  });
+
+  test("refreshing a chat that is gone ends it with the reason instead of failing", async () => {
+    const calls: string[] = [];
+    const transport: AiConversationStreamTransport = {
+      subscribe: ({ conversationId }) => {
+        calls.push(`subscribe:${conversationId}`);
+        return { close: () => calls.push(`close:${conversationId}`) };
+      },
+    };
+    let status = 200;
+    globalThis.fetch = Object.assign(
+      async () =>
+        status === 200
+          ? Response.json({ conversation: conversation("Chat01"), messages: [], activeTurn: null })
+          : Response.json({ message: "Not found" }, { status }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "en";
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "Chat01",
+        initialDetail: { conversation: conversation("Chat01"), messages: [], activeTurn: null },
+        streamTransport: transport,
+      });
+    });
+
+    expect(await controller.refreshActiveConversation()).toBe(true);
+    expect(controller.error()).toBeNull();
+    status = 404;
+    expect(await controller.refreshActiveConversation()).toBe(false);
+    expect(controller.error()).toBe("This chat is no longer available.");
+    expect(controller.streamStatus()).toBe("idle");
+    expect(calls).toEqual(["subscribe:Chat01", "close:Chat01"]);
+
+    // Any other failure may heal: it rejects, and the caller retries.
+    status = 503;
+    await expect(controller.refreshActiveConversation()).rejects.toThrow("Not found");
+    dispose();
+    dom.cleanup();
+  });
+
+  test.each([
+    ["a newer refresh", (controller: ReturnType<typeof createAiChatController>) => controller.refreshActiveConversation()],
+    [
+      "leaving and reopening the chat",
+      async (controller: ReturnType<typeof createAiChatController>) => {
+        await controller.openConversation("Chat02");
+        await controller.openConversation("Chat01");
+      },
+    ],
+  ])("a refresh that fails late after %s does not end the chat", async (_case, overtake) => {
+    const calls: string[] = [];
+    const transport: AiConversationStreamTransport = {
+      subscribe: ({ conversationId }) => {
+        calls.push(`subscribe:${conversationId}`);
+        return { close: () => calls.push(`close:${conversationId}`) };
+      },
+    };
+    // The first load of Chat01 waits; every later load finds the chat.
+    let failLate!: () => void;
+    let chat01Loads = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        const id = /^\/api\/ai\/conversations\/(Chat0\d)$/.exec(new URL(String(input), "http://cloud.test").pathname)?.[1];
+        if (!id) return Response.json({});
+        if (id === "Chat01" && ++chat01Loads === 1)
+          return new Promise<Response>((resolve) => {
+            failLate = () => resolve(Response.json({ message: "Not found" }, { status: 404 }));
+          });
+        return Response.json({ conversation: conversation(id), messages: [], activeTurn: null });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "Chat01",
+        initialDetail: { conversation: conversation("Chat01"), messages: [], activeTurn: null },
+        streamTransport: transport,
+      });
+    });
+
+    const late = controller.refreshActiveConversation();
+    await overtake(controller);
+    failLate();
+
+    expect(await late).toBe(true);
+    expect(controller.error()).toBeNull();
+    expect(calls.at(-1)).toBe("subscribe:Chat01");
+    dispose();
+  });
+
+  test("opening a chat that is gone shows the reason in the page's language", async () => {
+    globalThis.fetch = Object.assign(async () => Response.json({ message: "Conversation not found" }, { status: 404 }), {
+      preconnect: originalFetch.preconnect,
+    });
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "de";
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "Chat01",
+        initialDetail: { conversation: conversation("Chat01"), messages: [], activeTurn: null },
+        streamTransport: { subscribe: () => ({ close() {} }) },
+      });
+    });
+
+    expect(await controller.openConversation("Chat02")).toBe("failed");
+    expect(controller.error()).toBe("Dieser Chat ist nicht mehr verfügbar.");
+    dispose();
+    dom.cleanup();
   });
 
   test("subscribes again after a stream ended with an error once the person returns to the chat", async () => {

@@ -29,7 +29,7 @@ afterAll(() => {
 const { assistantChatContextHasContent, assistantChatContextHasPanel, AssistantChatContextContent, AssistantChatContextPanel } =
   await import("./AssistantChatContext");
 const { AssistantChatContextSurface } = await import("./AssistantChatContextSurfaces");
-const { AssistantLiveProvider, createAssistantLiveInvalidationHub } = await import("./assistant-live");
+const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
 
 const source = (kind: AiConversationSource["kind"], key: string): AiConversationSource => ({
   kind,
@@ -67,7 +67,7 @@ describe("Assistant chat context", () => {
   });
 
   test("renders the resource preview below its title", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const reference = source("resource", "mail.message:MsG123");
     reference.ref = { type: "mail.message", id: "MsG123" };
     reference.title = "Quarterly update";
@@ -92,7 +92,6 @@ describe("Assistant chat context", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).toContain("Quarterly update");
     expect(html).not.toContain("Mail message");
@@ -127,7 +126,7 @@ describe("Assistant chat context", () => {
   });
 
   test("omits the compact Paper after a successfully loaded empty context", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const renderPanel = (initial: AssistantChatContextSnapshot) =>
       renderToString(() =>
         createComponent(AssistantLiveProvider, {
@@ -160,11 +159,10 @@ describe("Assistant chat context", () => {
     expect(renderPanel(empty)).not.toContain('data-assistant-context="compact"');
     expect(assistantChatContextHasContent(populated)).toBeTrue();
     expect(renderPanel(populated)).toContain('data-assistant-context="compact"');
-    live.dispose();
   });
 
   test("keeps unknown non-Project context closed while it loads", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -173,14 +171,13 @@ describe("Assistant chat context", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).not.toContain('data-assistant-context="compact"');
     expect(html).not.toContain("Loading context");
   });
 
   test("renders only populated context sections", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -201,7 +198,6 @@ describe("Assistant chat context", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).toContain("Sources");
     expect(html).toContain("Cloud docs");
@@ -220,7 +216,7 @@ describe("Assistant chat context", () => {
   });
 
   test("counts files in section titles and only adds View all for hidden rows", () => {
-    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const live = createAssistantLiveHub();
     const file = (path: string, mediaType: string) => ({
       path,
       size: 42,
@@ -258,7 +254,6 @@ describe("Assistant chat context", () => {
         },
       }),
     );
-    live.dispose();
 
     expect(html).toContain("4 Images");
     expect(html).toContain("4 Files");

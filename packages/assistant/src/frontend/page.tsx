@@ -7,7 +7,7 @@ import {
   listAssistantAiModels,
   loadAiStreamState,
 } from "@k2b/cloud/ai";
-import { latestAiInvalidationCursor } from "@k2b/cloud/ai/live";
+import { aiLive } from "@k2b/cloud/ai/live";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
@@ -28,7 +28,7 @@ export default ssr<AuthContext>(async (c) => {
   const requestedProjectId = url.searchParams.get("project") ?? undefined;
   const initialArtifactPath = url.searchParams.get("artifact");
   const subject = { type: "user" as const, userId: user.id };
-  const initialLiveCursor = await latestAiInvalidationCursor(user.id);
+  const initialLiveCursor = await aiLive.cursor();
   const [status, models, prefs, sidebar, appUrl, initialQuotas] = await Promise.all([
     assistantAiSettingsState(subject),
     listAssistantAiModels(subject),

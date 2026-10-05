@@ -5,7 +5,7 @@
  * cross-app imports.
  */
 
-import { aiLiveRoutes } from "@k2b/cloud/ai/live";
+import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
 import { createCoreApiRouter, createMcpProtectedResourceRoutes, createPwaPhoneRoutes } from "@k2b/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
@@ -40,7 +40,7 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
-  .route("/api/ai/live", aiLiveRoutes)
+  .route("/api/ai/live", aiLive.routes(aiLiveChannels))
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)
   .route("/api/_internal/identity/v1", identityOAuthIssuanceRoutes)
