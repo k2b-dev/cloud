@@ -39,9 +39,7 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
 
   return (
     <div class="grid gap-4" style={accentTokens(props.accentColor)}>
-      <NoticeCard tone="neutral" icon={false}>
-        {t().anonymousFeedbackPrivacy}
-      </NoticeCard>
+      <NoticeCard tone="neutral">{t().anonymousFeedbackPrivacy}</NoticeCard>
       <fieldset class="grid gap-2">
         <legend class="mb-2 flex w-full items-baseline justify-between gap-3 text-sm font-medium text-primary">
           <span>{t().rating}</span>

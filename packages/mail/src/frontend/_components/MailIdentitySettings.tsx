@@ -493,10 +493,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   })}
                   onBack={closeEditor}
                 />
-                <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-                  <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-                  <p>{messages().verifyIdentityNotice}</p>
-                </NoticeCard>
+                <NoticeCard tone="info">{messages().verifyIdentityNotice}</NoticeCard>
                 <Select
                   label={messages().connectedAccount}
                   value={bindingId}
@@ -538,11 +535,8 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                 <Show
                   when={identity().status === "verified"}
                   fallback={
-                    <NoticeCard tone="warning" icon={false} bodyClass="flex items-center justify-between gap-3" role="status">
-                      <span class="flex min-w-0 items-start gap-2">
-                        <i class="ti ti-alert-circle mt-0.5 shrink-0" aria-hidden="true" />
-                        <span>{messages().identityNotReady}</span>
-                      </span>
+                    <NoticeCard tone="warning" bodyClass="flex items-center justify-between gap-3" role="status">
+                      <span class="min-w-0">{messages().identityNotReady}</span>
                       <Button
                         variant="secondary"
                         size="sm"
@@ -556,9 +550,8 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     </NoticeCard>
                   }
                 >
-                  <NoticeCard tone="success" icon={false} bodyClass="flex items-start gap-2" role="status">
-                    <i class="ti ti-circle-check mt-0.5 shrink-0" aria-hidden="true" />
-                    <p>{messages().identityReady}</p>
+                  <NoticeCard tone="success" role="status">
+                    {messages().identityReady}
                   </NoticeCard>
                 </Show>
               )}

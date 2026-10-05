@@ -166,6 +166,11 @@ describe("Provider dialog", () => {
       await ui.choose("Usage", "Audio transcription");
       ui.section("Costs");
       expect(ui.document.body.textContent).toContain("Audio transcription is not included in token pricing");
+      // Uncapped provider charges are a reviewable risk, as for a chat model without prices.
+      const audioCosts = [...ui.document.querySelectorAll(".k2b-notice-card")].find((notice) =>
+        notice.textContent?.includes("Audio transcription is not included in token pricing"),
+      );
+      expect(audioCosts?.getAttribute("data-tone")).toBe("warning");
       expect(ui.document.querySelector('[role="switch"][aria-label="Set reference prices"]')).toBeNull();
       ui.section("Connection");
       await ui.choose("Usage", "Text / Chat");

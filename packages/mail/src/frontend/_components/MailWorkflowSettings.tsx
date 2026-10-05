@@ -299,10 +299,7 @@ function WorkflowEditor(props: {
               />
             }
           >
-            <NoticeCard tone="success" icon={false} bodyClass="flex items-start gap-2">
-              <i class="ti ti-check mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{messages().referenceNumbersReady({ pattern: referenceConfiguration()!.pattern })}</span>
-            </NoticeCard>
+            <NoticeCard tone="success">{messages().referenceNumbersReady({ pattern: referenceConfiguration()!.pattern })}</NoticeCard>
           </Show>
         </PanelDialog.Section>
         <PanelDialog.Section title={messages().workflowYaml} subtitle={messages().workflowYamlDescription} icon="ti ti-code">
@@ -330,13 +327,14 @@ function WorkflowEditor(props: {
           </div>
           <Show when={validation()}>
             {(result) => (
-              <NoticeCard tone={result().valid ? "success" : "danger"} icon={false} role="status">
-                <p class="text-sm font-medium">
-                  {validating() ? messages().validating : result().valid ? messages().yamlValid : messages().fixValidationErrors}
-                </p>
+              <NoticeCard
+                tone={result().valid ? "success" : "danger"}
+                role="status"
+                title={validating() ? messages().validating : result().valid ? messages().yamlValid : messages().fixValidationErrors}
+              >
                 <For each={result().diagnostics}>
                   {(diagnostic) => (
-                    <p class="mt-1 font-mono text-xs">
+                    <p class="font-mono">
                       {diagnostic.location
                         ? messages().diagnosticLocation({ line: diagnostic.location.line, column: diagnostic.location.column })
                         : ""}

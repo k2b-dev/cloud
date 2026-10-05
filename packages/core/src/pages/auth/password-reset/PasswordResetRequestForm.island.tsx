@@ -41,11 +41,7 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
       }}
       class="flex flex-col gap-4"
     >
-      {sent() && (
-        <NoticeCard tone="success" icon={false}>
-          {t().resetSent}
-        </NoticeCard>
-      )}
+      {sent() && <NoticeCard tone="success">{t().resetSent}</NoticeCard>}
 
       <TextInput
         label={t().emailAddress}
@@ -59,7 +55,7 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
       />
 
       {mutation.error() && (
-        <NoticeCard tone="danger" icon={false}>
+        <NoticeCard tone="danger">
           <span>{mutation.error()?.message}</span>
         </NoticeCard>
       )}

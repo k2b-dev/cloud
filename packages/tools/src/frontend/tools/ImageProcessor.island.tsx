@@ -772,9 +772,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             <p class="text-xs text-dimmed">{t().keepOriginalSize}</p>
 
             <Show when={exportError()}>
-              <NoticeCard tone="danger" icon={false} bodyClass="flex items-center gap-2">
-                <i class="ti ti-alert-circle" /> {exportError()}
-              </NoticeCard>
+              <NoticeCard tone="danger">{exportError()}</NoticeCard>
             </Show>
 
             <Show when={progress() !== null}>

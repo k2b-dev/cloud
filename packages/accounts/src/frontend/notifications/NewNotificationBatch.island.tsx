@@ -357,22 +357,7 @@ function BatchDialog(props: { close: () => void }) {
             </PanelDialog.Section>
 
             <PanelDialog.Section title={messages().livePreview} subtitle={messages().livePreviewDescription} icon="ti ti-eye">
-              <NoticeCard
-                tone={previewQuery.error() ? "danger" : previewLoading() ? "info" : "neutral"}
-                icon={false}
-                bodyClass="flex items-start gap-2"
-              >
-                <i
-                  class={
-                    previewLoading()
-                      ? "ti ti-loader-2 mt-0.5 shrink-0 animate-spin"
-                      : previewQuery.error()
-                        ? "ti ti-alert-circle mt-0.5 shrink-0"
-                        : "ti ti-users mt-0.5 shrink-0"
-                  }
-                />
-                <span>{previewLabel()}</span>
-              </NoticeCard>
+              <NoticeCard tone={previewQuery.error() ? "danger" : previewLoading() ? "info" : "neutral"}>{previewLabel()}</NoticeCard>
             </PanelDialog.Section>
           </aside>
         </div>

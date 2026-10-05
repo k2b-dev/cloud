@@ -369,7 +369,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
             />
             <PanelDialog.Body>
               <Show when={editorBusy()}>
-                <NoticeCard tone="info" icon="ti ti-refresh" role="status" title={messages().synchronizationRunning}>
+                <NoticeCard tone="info" role="status" title={messages().synchronizationRunning}>
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <span>{messages().editorSynchronizationRunning}</span>
                     <Button
@@ -424,7 +424,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 </div>
                 <Show when={discoverySource()}>
                   {(source) => (
-                    <NoticeCard tone="success" icon={false} role="status">
+                    <NoticeCard tone="success" role="status">
                       {messages().settingsFilledFrom({ source: source() })}
                     </NoticeCard>
                   )}

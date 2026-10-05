@@ -319,9 +319,7 @@ export function TablesOverviewSection(props: { baseId: string }) {
           <i class="ti ti-table-search" aria-hidden="true" /> {messages().reviewTables}
         </Button>
       </SettingsGroup.Action>
-      <NoticeCard tone="info" icon="ti ti-table-options">
-        {messages().tableOverviewGuidance}
-      </NoticeCard>
+      <NoticeCard tone="info">{messages().tableOverviewGuidance}</NoticeCard>
     </SettingsGroup>
   );
 }

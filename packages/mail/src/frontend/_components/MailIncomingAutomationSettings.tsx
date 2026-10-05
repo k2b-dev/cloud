@@ -1574,10 +1574,7 @@ function IncomingAutomationEditor(props: {
               />
             }
           >
-            <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-              <i class="ti ti-sparkles mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{messages().aiFlowNotice({ count: maxAiCalls(steps()) })}</span>
-            </NoticeCard>
+            <NoticeCard tone="info">{messages().aiFlowNotice({ count: maxAiCalls(steps()) })}</NoticeCard>
           </Show>
           <Switch
             label={messages().automationActive}

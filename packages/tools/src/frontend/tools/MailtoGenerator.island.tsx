@@ -90,11 +90,8 @@ export default function MailtoGenerator() {
 
   return (
     <div class="flex flex-col gap-4">
-      <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
-        <i class="ti ti-alert-triangle shrink-0 mt-0.5" />
-        <span>
-          <code>mailto:</code> {t().noticeReplyTo}
-        </span>
+      <NoticeCard tone="warning">
+        <code>mailto:</code> {t().noticeReplyTo}
       </NoticeCard>
 
       <div class="paper p-4 flex flex-col gap-3">

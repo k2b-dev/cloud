@@ -33,14 +33,7 @@ export function StudioPermissions(props: {
       <Show when={!projects.error && projects()?.length}>
         <NoticeCard tone="info" title={t().projectAccessTitle} detail={t().projectScriptsHelp}>
           <ul class="flex flex-col gap-1">
-            <For each={projects()}>
-              {(project) => (
-                <li class="flex items-center gap-2 text-sm">
-                  <i class="ti ti-folders" aria-hidden="true" />
-                  {project.name ?? t().inaccessibleProject}
-                </li>
-              )}
-            </For>
+            <For each={projects()}>{(project) => <li>{project.name ?? t().inaccessibleProject}</li>}</For>
           </ul>
         </NoticeCard>
       </Show>

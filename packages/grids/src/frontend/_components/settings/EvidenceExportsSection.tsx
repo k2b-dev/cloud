@@ -318,7 +318,7 @@ function EvidenceExportDialog(props: {
               })}
             >
               <Show when={preview.warnings.length > 0}>
-                <ul class="mt-2 list-disc space-y-1 pl-4 text-xs">
+                <ul class="list-disc space-y-1 pl-4">
                   <For each={preview.warnings}>{(warning) => <li>{warning}</li>}</For>
                 </ul>
               </Show>

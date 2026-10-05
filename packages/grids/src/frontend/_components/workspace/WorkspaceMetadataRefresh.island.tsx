@@ -125,7 +125,7 @@ export default function WorkspaceMetadataRefresh(props: {
   return (
     <Show when={changed() || workspaceLiveStatus().revoked}>
       <div class="mb-[var(--ui-space-shell)] shrink-0" role="status">
-        <NoticeCard icon="ti ti-refresh" title={workspaceLiveStatus().revoked ? t().accessDenied : t().workspaceChanged}>
+        <NoticeCard tone="warning" title={workspaceLiveStatus().revoked ? t().accessDenied : t().workspaceChanged}>
           <p>{workspaceLiveStatus().revoked ? t().accessRevoked : t().structureChanged}</p>
           <Button variant="secondary" class="mt-3" onClick={() => void reload()}>
             {t().reload}

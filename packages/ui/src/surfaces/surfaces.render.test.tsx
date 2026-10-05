@@ -202,7 +202,15 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
   test("renders persistent notices and an empty-safe responsive compound grid", () => {
     const info = renderToString(() => createComponent(NoticeCard, { title: "Scheduled maintenance", tone: "info" }));
-    const neutral = renderToString(() => createComponent(NoticeCard, { title: "Release note", tone: "neutral" }));
+    const neutral = renderToString(() => createComponent(NoticeCard, { title: "Release note" }));
+    const deadline = renderToString(() =>
+      createComponent(NoticeCard, {
+        title: "Submit your request",
+        meta: "Due 22 Nov",
+        detail: "Late requests are planned automatically.",
+        tone: "warning",
+      }),
+    );
     const success = renderToString(() => createComponent(NoticeCard, { children: "Import complete", tone: "success", role: "status" }));
     const notice = renderToString(() =>
       createComponent(NoticeCard, {
@@ -225,16 +233,18 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     );
 
     expect(info).toContain('data-tone="info"');
-    expect(info).toContain("ti ti-info-circle");
     expect(neutral).toContain('data-tone="neutral"');
-    expect(neutral).toContain("ti ti-note");
     expect(success).toContain('data-tone="success"');
     expect(success).toContain('role="status"');
     expect(success).toContain("k2b-notice-card__body");
-    expect(success).toContain("ti ti-circle-check");
     expect(notice).toContain('data-tone="danger"');
-    expect(notice).toContain("ti ti-alert-circle");
     expect(notice).toContain("Retrying in the background.");
+    // No tone draws an icon; the words and the tint carry the meaning.
+    for (const html of [info, neutral, success, notice, deadline]) expect(html).not.toContain("<i");
+    expect(deadline).toContain(
+      '<div class="k2b-notice-card__head"><p class="k2b-notice-card__title">Submit your request</p><span class="k2b-notice-card__meta">Due 22 Nov</span></div>',
+    );
+    expect(info).not.toContain("k2b-notice-card__meta");
     expect(empty).toBe("");
     expect(grid).toContain('data-columns="two"');
     expect(grid.match(/k2b-notice-card/g)?.length).toBeGreaterThanOrEqual(2);

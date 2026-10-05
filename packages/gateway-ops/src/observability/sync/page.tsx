@@ -156,7 +156,7 @@ export default ssr<AuthContext>(async (c) => {
           </ButtonLink>
         </div>
         <SyncNatsFilterBar path="/admin/observability/sync" search={url.search} apps={registeredApps.map((app) => app.id)} />
-        <NoticeCard tone="info" icon="ti ti-layers-intersect" title={t.syncLayersTitle} detail={t.syncLayersNotice} />
+        <NoticeCard tone="info" title={t.syncLayersTitle} detail={t.syncLayersNotice} />
         <div>
           <ButtonLink href="/admin/observability/nats" variant="secondary" size="sm">
             NATS

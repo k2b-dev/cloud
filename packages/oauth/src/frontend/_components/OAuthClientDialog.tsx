@@ -177,7 +177,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
             <Show
               when={props.mode === "create"}
               fallback={
-                <NoticeCard tone="info" icon={false}>
+                <NoticeCard tone="info">
                   {t().clientId}: <code>{props.mode === "edit" ? props.client.clientId : ""}</code>
                 </NoticeCard>
               }
@@ -261,10 +261,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
                 onValueChange={setSpecific}
               />
               <Show when={specific()}>
-                <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
-                  <i class="ti ti-info-circle mt-0.5 shrink-0" />
-                  <span>{t().nestedGroups}</span>
-                </NoticeCard>
+                <NoticeCard tone="info">{t().nestedGroups}</NoticeCard>
                 <EntitySearch
                   includeUsers
                   includeGroups

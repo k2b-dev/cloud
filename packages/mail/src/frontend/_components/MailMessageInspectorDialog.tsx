@@ -155,7 +155,7 @@ function MailMessageInspectorDialog(props: {
             {(current) => (
               <>
                 <Show when={current().warnings.length > 0}>
-                  <NoticeCard tone="warning" icon={false} bodyClass="flex flex-col gap-1" role="status">
+                  <NoticeCard tone="warning" bodyClass="flex flex-col gap-1" role="status">
                     <For each={current().warnings}>{(warning) => <p>{warning}</p>}</For>
                   </NoticeCard>
                 </Show>
@@ -421,7 +421,7 @@ function MailMessageInspectorDialog(props: {
                             </ButtonLink>
                           </div>
                           <Show when={preview().truncated}>
-                            <NoticeCard tone="neutral" icon={false} class="mb-3">
+                            <NoticeCard tone="neutral" class="mb-3">
                               {messages().sourcePreviewLimited}
                             </NoticeCard>
                           </Show>

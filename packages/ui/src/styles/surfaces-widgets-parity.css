@@ -217,31 +217,54 @@
 .k2b-ui .k2b-not-found__copy p { margin: 0.25rem 0 0; color: var(--k2b-text-muted); font-size: 0.875rem; line-height: 1.25rem; }
 
 /* ------------------------------------------------------------ NoticeCard --
- * The tone tint alone separates a notice from its host, so a notice inside a
- * framed section is not a second box. The neutral tint is translucent so it
- * stays visible on white and on muted hosts alike. The transparent border
- * keeps an outline in forced colours, where the tint disappears.
+ * A calm notice: a light tone tint without a border carries the tone, and
+ * the text stays in neutral ink at reading size. Only the optional meta pill
+ * repeats the tone colour, so the words (title, pill, body) always say what
+ * the tint means. The tint alone separates a notice from its host, so a
+ * notice inside a framed section is not a second box. The neutral tint is
+ * translucent so it stays visible on white and on muted hosts alike. The
+ * transparent border keeps an outline in forced colours, where the tint
+ * disappears. Markdown renderers emit the same classes without the content
+ * wrapper, so spacing follows siblings rather than a flex gap.
  */
 .k2b-ui .k2b-notice-card {
+  --k2b-notice-ink: var(--k2b-text-secondary);
+  --k2b-notice-surface: color-mix(in srgb, var(--k2b-text) 4%, transparent);
   display: block;
-  line-height: 1.5;
-  padding: 0.75rem;
+  padding: 1rem 1.125rem;
   border: 1px solid transparent;
-  border-radius: var(--k2b-radius-surface);
+  border-radius: calc(var(--k2b-radius-surface) + 0.25rem);
   color: var(--k2b-text-secondary);
-  background: color-mix(in srgb, var(--k2b-text) 6%, transparent);
+  background: var(--k2b-notice-surface);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
 }
-.k2b-ui .k2b-notice-card[data-tone="info"] { color: var(--k2b-info-text); background: var(--k2b-info-surface); }
-.k2b-ui .k2b-notice-card[data-tone="success"] { color: var(--k2b-success-text); background: var(--k2b-success-surface); }
-.k2b-ui .k2b-notice-card[data-tone="warning"] { color: var(--k2b-warning-text); background: var(--k2b-warning-surface); }
-.k2b-ui .k2b-notice-card[data-tone="danger"] { color: var(--k2b-danger-text); background: var(--k2b-danger-surface); }
-.k2b-ui .k2b-notice-card__inner { display: flex; align-items: flex-start; gap: 0.5rem; }
-/* Glyph and detail inherit the tone colour rather than a neutral. */
-.k2b-ui .k2b-notice-card__icon { flex: 0 0 auto; margin-top: 0.1875rem; color: inherit; font-size: 0.875rem; }
+.k2b-ui .k2b-notice-card[data-tone="info"] { --k2b-notice-ink: var(--k2b-info-text); --k2b-notice-surface: var(--k2b-info-surface); }
+.k2b-ui .k2b-notice-card[data-tone="success"] { --k2b-notice-ink: var(--k2b-success-text); --k2b-notice-surface: var(--k2b-success-surface); }
+.k2b-ui .k2b-notice-card[data-tone="warning"] { --k2b-notice-ink: var(--k2b-warning-text); --k2b-notice-surface: var(--k2b-warning-surface); }
+.k2b-ui .k2b-notice-card[data-tone="danger"] { --k2b-notice-ink: var(--k2b-danger-text); --k2b-notice-surface: var(--k2b-danger-surface); }
+/* The dark tone surfaces are saturated; a notice uses a lighter share of them so it stays calm. */
+.k2b-ui[data-theme="dark"] .k2b-notice-card:not([data-tone="neutral"]),
+.k2b-ui.k2b-dark .k2b-notice-card:not([data-tone="neutral"]),
+.dark .k2b-ui .k2b-notice-card:not([data-tone="neutral"]) { background: color-mix(in srgb, var(--k2b-notice-surface) 60%, transparent); }
 .k2b-ui .k2b-notice-card__content { min-width: 0; }
-.k2b-ui .k2b-notice-card__title { margin: 0; color: inherit; font-size: 0.8125rem; font-weight: 600; line-height: 1.25rem; }
-.k2b-ui .k2b-notice-card__description { margin: 0.125rem 0 0; color: inherit; font-size: 0.75rem; line-height: 1.125rem; }
-.k2b-ui .k2b-notice-card__body { min-width: 0; color: inherit; font-size: 0.75rem; line-height: 1.25rem; }
+.k2b-ui .k2b-notice-card__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem; }
+.k2b-ui .k2b-notice-card__title { min-width: 0; margin: 0; color: var(--k2b-text); font-weight: 600; }
+.k2b-ui .k2b-notice-card__meta {
+  flex: 0 0 auto;
+  max-width: 100%;
+  padding: 0.125rem 0.625rem;
+  border-radius: 999px;
+  color: var(--k2b-notice-ink);
+  background: color-mix(in srgb, var(--k2b-surface) 72%, transparent);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.125rem;
+}
+.k2b-ui .k2b-notice-card__description { margin: 0; }
+.k2b-ui .k2b-notice-card__body { min-width: 0; }
+.k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0.25rem; }
+.k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.75rem; }
 .k2b-ui .k2b-notice-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
 @media (min-width: 48rem) {
   .k2b-ui .k2b-notice-grid[data-columns="two"],

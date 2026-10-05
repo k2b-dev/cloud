@@ -94,11 +94,7 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
         locale={locale()}
       />
 
-      {error() && (
-        <NoticeCard tone="danger" icon={false}>
-          {error()}
-        </NoticeCard>
-      )}
+      {error() && <NoticeCard tone="danger">{error()}</NoticeCard>}
 
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>

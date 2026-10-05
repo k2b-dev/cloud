@@ -81,14 +81,7 @@ const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
             detail={text("Members of these projects can read and use this Skill. Editing permissions stay unchanged.")}
           >
             <ul class="flex flex-col gap-1">
-              <For each={projects}>
-                {(project) => (
-                  <li class="flex items-center gap-2 text-sm">
-                    <i class="ti ti-folders" aria-hidden="true" />
-                    {project.name ?? text("Project without access to its details")}
-                  </li>
-                )}
-              </For>
+              <For each={projects}>{(project) => <li>{project.name ?? text("Project without access to its details")}</li>}</For>
             </ul>
           </NoticeCard>
         </Show>

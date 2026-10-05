@@ -80,3 +80,25 @@ describe("HTML mail message locale", () => {
     expect(html).not.toContain("Show quoted text");
   });
 });
+
+describe("blocked remote images", () => {
+  test("explain the block in a calm notice that opens with its text, not an icon", () => {
+    const image = "00000000-0000-4000-8000-000000000001";
+    const html = renderToString(() =>
+      createComponent(MailMessageBody, {
+        mailboxId: "Box001",
+        messageId: "Msg001",
+        format: "html",
+        html: `<p>Newsletter</p><img alt="Banner" data-mail-remote-image="${image}">`,
+        plainText: null,
+        attachments: [],
+        remoteContent: { imageIds: [image], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+        onSelectionChange: () => {},
+      }),
+    );
+
+    const body = /<div class="k2b-notice-card__body[^"]*">([\s\S]*)/.exec(html)?.[1] ?? "";
+    expect(html).toContain('data-tone="neutral"');
+    expect(body).toStartWith('<span class="min-w-48 flex-1">Remote images are blocked to protect your privacy.</span>');
+  });
+});

@@ -149,12 +149,14 @@ describe("@k2b/ui stylesheet hygiene", () => {
     expect(surfaces).toMatch(
       /\.k2b-status-badge\[data-tone="degraded"\] \.k2b-status-badge__dot\s*\{\s*background:\s*var\(--k2b-warning-500\);/,
     );
+    // Notices keep neutral ink: the tone only tints the surface and the meta pill.
     expect(surfaces).toContain(
-      '.k2b-ui .k2b-notice-card[data-tone="info"] { color: var(--k2b-info-text); background: var(--k2b-info-surface); }',
+      '.k2b-ui .k2b-notice-card[data-tone="info"] { --k2b-notice-ink: var(--k2b-info-text); --k2b-notice-surface: var(--k2b-info-surface); }',
     );
     expect(surfaces).toContain(
-      '.k2b-ui .k2b-notice-card[data-tone="success"] { color: var(--k2b-success-text); background: var(--k2b-success-surface); }',
+      '.k2b-ui .k2b-notice-card[data-tone="success"] { --k2b-notice-ink: var(--k2b-success-text); --k2b-notice-surface: var(--k2b-success-surface); }',
     );
+    expect(surfaces).toMatch(/\.k2b-ui \.k2b-notice-card__title \{[^}]*color: var\(--k2b-text\);/);
     expect(plex).not.toContain("ibm-plex-sans-condensed");
   });
 

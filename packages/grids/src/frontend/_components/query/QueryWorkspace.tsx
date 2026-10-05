@@ -523,7 +523,7 @@ export default function QueryWorkspace(props: Props) {
                   />
                 </div>
                 <Show when={queryHref(props.queryPath, query()).length > MAX_SYNCED_QUERY_HREF_LENGTH}>
-                  <NoticeCard tone="warning" icon={false} class="mx-3 mt-3">
+                  <NoticeCard tone="warning" class="mx-3 mt-3">
                     {t.queryTooLong}
                   </NoticeCard>
                 </Show>

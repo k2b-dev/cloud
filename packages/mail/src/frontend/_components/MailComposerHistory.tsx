@@ -65,9 +65,7 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
             return (
               <div class="flex flex-col gap-3">
                 <Show when={message().security && message().security?.risk !== "none"}>
-                  <NoticeCard tone="warning" icon="ti ti-shield-exclamation">
-                    {t().unsafeMessage}
-                  </NoticeCard>
+                  <NoticeCard tone="warning">{t().unsafeMessage}</NoticeCard>
                 </Show>
                 <Show
                   when={message().plainText || message().sanitizedHtml}
@@ -195,7 +193,7 @@ export default function MailComposerHistory(props: {
           >
             <Show when={history.error()}>
               {(error) => (
-                <NoticeCard tone="warning" icon="ti ti-refresh-alert" class="m-3">
+                <NoticeCard tone="warning" class="m-3">
                   <span>{error().message}</span>{" "}
                   <button type="button" class="font-semibold underline" onClick={() => void history.refresh()}>
                     {t().retry}

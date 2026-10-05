@@ -221,12 +221,7 @@ export default ssr<AuthContext>(async (c) => {
                       : null,
                   ].filter((value): value is { title: string; detail: string } => value !== null)[index] ?? issue;
                 return (
-                  <NoticeCard
-                    tone={issue.severity === "error" ? "danger" : "warning"}
-                    icon={issue.severity === "error" ? "ti ti-alert-circle" : "ti ti-clock-exclamation"}
-                    title={localized.title}
-                    detail={localized.detail}
-                  />
+                  <NoticeCard tone={issue.severity === "error" ? "danger" : "warning"} title={localized.title} detail={localized.detail} />
                 );
               })}
             </div>

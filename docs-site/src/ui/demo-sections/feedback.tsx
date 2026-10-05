@@ -31,7 +31,7 @@ const BlocksDemo = () => (
   { tone: "neutral", title: "Release note", detail: "Version 2.4 is available." },
   { tone: "info", title: "Import ready", detail: "12 rows validated." },
   { tone: "success", title: "Import complete", detail: "12 rows created." },
-  { tone: "warning", title: "Review needed", detail: "2 rows have no owner." },
+  { tone: "warning", title: "Review needed", meta: "Due Friday", detail: "2 rows have no owner." },
   { tone: "danger", title: "Source unavailable", detail: "Retrying in the background." },
 ] as const;
 
@@ -57,7 +57,7 @@ const BlocksDemo = () => (
           { tone: "neutral" as const, title: "Release note", detail: "Version 2.4 is available." },
           { tone: "info" as const, title: "Import ready", detail: "12 rows validated." },
           { tone: "success" as const, title: "Import complete", detail: "12 rows created." },
-          { tone: "warning" as const, title: "Review needed", detail: "2 rows have no owner." },
+          { tone: "warning" as const, title: "Review needed", meta: "Due Friday", detail: "2 rows have no owner." },
           { tone: "danger" as const, title: "Source unavailable", detail: "Retrying in the background." },
         ]}
       >

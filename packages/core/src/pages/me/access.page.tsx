@@ -54,7 +54,7 @@ export default ssr<AuthContext>(async (c) => {
             <SettingsSection title={t.freeIpaAccount} subtitle={t.freeIpaAccountDescription}>
               {pendingRequest ? (
                 <div class="flex flex-col gap-3">
-                  <NoticeCard tone="info" icon={false}>
+                  <NoticeCard tone="info">
                     {t.requestPendingSince({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) })}
                   </NoticeCard>
                   <div class="flex justify-end">

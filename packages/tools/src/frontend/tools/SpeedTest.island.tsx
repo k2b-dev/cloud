@@ -331,10 +331,7 @@ export default function SpeedTest(props: SpeedTestProps) {
 
   return (
     <div class="flex flex-col gap-4">
-      <NoticeCard tone="warning" icon={false} bodyClass="flex items-center gap-2">
-        <i class="ti ti-cloud-upload shrink-0" />
-        <span>{t().dataNotice}</span>
-      </NoticeCard>
+      <NoticeCard tone="warning">{t().dataNotice}</NoticeCard>
 
       <div class="paper p-4 flex flex-col gap-4">
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -389,9 +386,7 @@ export default function SpeedTest(props: SpeedTestProps) {
         </div>
 
         <Show when={error()}>
-          <NoticeCard tone="danger" icon={false}>
-            {error()}
-          </NoticeCard>
+          <NoticeCard tone="danger">{error()}</NoticeCard>
         </Show>
       </div>
 

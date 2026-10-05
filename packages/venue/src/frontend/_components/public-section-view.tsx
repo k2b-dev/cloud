@@ -63,7 +63,7 @@ export function PublicSectionView(props: { section: PublicSection; timeZone: str
   return (
     <Switch>
       <Match when={props.section.kind === "notice"}>
-        <NoticeCard tone="warning" icon="ti ti-speakerphone" bodyClass="!text-sm" data-section-kind="notice">
+        <NoticeCard tone="warning" data-section-kind="notice">
           <SectionHeading>{props.section.title}</SectionHeading>
           <Show when={sectionText(props.section, "text") || sectionText(props.section, "markdown")}>
             {(text) => <p class="mt-1 whitespace-pre-line">{text()}</p>}

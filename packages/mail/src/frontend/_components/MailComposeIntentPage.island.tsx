@@ -269,14 +269,7 @@ export default function MailComposeIntentPage(props: {
           when={props.mailboxes.length > 0}
           fallback={<Placeholder state="empty" title={t().noWritableMailbox} description={t().noWritableMailboxDescription} />}
         >
-          <Show
-            when={parsedIntent().ok}
-            fallback={
-              <NoticeCard tone="danger" icon={false}>
-                {intentError()}
-              </NoticeCard>
-            }
-          >
+          <Show when={parsedIntent().ok} fallback={<NoticeCard tone="danger">{intentError()}</NoticeCard>}>
             <div class="flex flex-col gap-3">
               <Select
                 label={t().mailbox}
@@ -304,7 +297,7 @@ export default function MailComposeIntentPage(props: {
               />
               <Show when={identityError()}>
                 {(message) => (
-                  <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3" role="alert">
+                  <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3" role="alert">
                     <span>{message()}</span>
                     <Button variant="secondary" size="sm" type="button" onClick={() => void identityResults.refresh()}>
                       {t().retry}
@@ -313,9 +306,7 @@ export default function MailComposeIntentPage(props: {
                 )}
               </Show>
               <Show when={mailboxId() && !identityLoading() && !identityError() && identities().length === 0}>
-                <NoticeCard tone="neutral" icon={false}>
-                  {t().noVerifiedSender}
-                </NoticeCard>
+                <NoticeCard tone="neutral">{t().noVerifiedSender}</NoticeCard>
               </Show>
             </div>
             <Show when={commandError()}>

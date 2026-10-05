@@ -69,7 +69,7 @@ class InfoBlockWidget extends WidgetType {
       event.stopPropagation();
     };
 
-    // Tone colour only; the type name remains for screen readers.
+    // The calm NoticeCard: tone tint and neutral text; the type name remains for screen readers.
     const block = document.createElement("div");
     block.className = NOTICE_CARD_CLASSES.root;
     block.dataset.tone = blockTones[this.blockData.type];
@@ -105,9 +105,9 @@ class InfoBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight() {
-    // One 20px body line per source line plus the card's padding and border.
+    // One 22px body line per source line plus the card's padding and border.
     const lines = this.blockData.content.split("\n").length;
-    return lines * 20 + 26;
+    return lines * 22 + 34;
   }
 }
 
@@ -155,7 +155,7 @@ const findInfoBlocks = (state: EditorState, labels: Record<BlockType, string>): 
   return { decorations: set, atomicDecorations: set, ranges };
 };
 
-/** `locale` names each notice type for screen readers; the rendered block shows only its tone colour. */
+/** `locale` names each notice type for screen readers; the rendered block shows it as the tone tint. */
 export const infoBlocksExtension = (locale: string): Extension => {
   const { t } = bookRendererMessages.resolve([locale]);
   const labels = { note: t.note, info: t.info, success: t.success, warning: t.warning, danger: t.danger };

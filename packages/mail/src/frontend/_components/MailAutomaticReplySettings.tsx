@@ -545,9 +545,8 @@ function AutomaticReplyEditor(props: {
               <Show
                 when={props.canConfigureReference}
                 fallback={
-                  <NoticeCard tone="warning" icon={false} class="mt-2" bodyClass="flex items-start gap-2">
-                    <i class="ti ti-alert-triangle mt-0.5 shrink-0" aria-hidden="true" />
-                    <span>{messages().referenceRequiredBeforeSave}</span>
+                  <NoticeCard tone="warning" class="mt-2">
+                    {messages().referenceRequiredBeforeSave}
                   </NoticeCard>
                 }
               >

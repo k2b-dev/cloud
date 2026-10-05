@@ -1761,6 +1761,11 @@
   margin-block: 1.1428571em;
 }
 
+/* Markdown notices sit one paragraph apart from the surrounding prose. */
+.k2b-ui :where(.k2b-content-markdown) :where(.k2b-notice-card) {
+  margin-block: 1.1428571em;
+}
+
 .k2b-ui :where(.k2b-content-markdown[data-heading-scale="compact"]) :where(p) {
   margin-block: 0.5em;
 }

@@ -183,7 +183,6 @@ export default ssr<AuthContext>(async (c) => {
         {state.user ? (
           <NoticeCard
             tone="info"
-            icon="ti ti-user"
             title={`${t.user}: ${state.user}`}
             detail={
               <span class="flex flex-wrap gap-2">

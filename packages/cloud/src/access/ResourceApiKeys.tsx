@@ -68,9 +68,7 @@ function TokenDialog(props: { token: string }) {
   const t = () => accessMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-4">
-      <NoticeCard tone="warning" icon={false}>
-        {t().copyOnce}
-      </NoticeCard>
+      <NoticeCard tone="warning">{t().copyOnce}</NoticeCard>
       <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
         <code class="block break-all font-mono text-xs text-primary">{props.token}</code>
       </div>

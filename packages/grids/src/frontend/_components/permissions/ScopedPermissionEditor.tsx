@@ -68,7 +68,7 @@ export function ScopedPermissionEditor(props: Props) {
       fallback={
         <Show when={!loading() && loadError()} fallback={<Placeholder state="loading" align="left" title={t().loadingAccess} />}>
           {(message) => (
-            <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3">
+            <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3">
               <span>{message()}</span>
               <Button variant="secondary" size="sm" type="button" onClick={() => void load()}>
                 <i class="ti ti-refresh" /> {t().retry}

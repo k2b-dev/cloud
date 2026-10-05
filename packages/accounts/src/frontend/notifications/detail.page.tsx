@@ -229,7 +229,7 @@ export default ssr<AuthContext>(async (c) => {
                 <h2 class="text-sm font-semibold text-primary">{t.audience}</h2>
                 <p class="mt-1 text-xs text-dimmed">{isLegacyRuleAudience ? t.legacyAudienceDescription : t.explicitAudienceDescription}</p>
                 {isLegacyRuleAudience && batch.status === "draft" ? (
-                  <NoticeCard tone="warning" icon={false} class="mt-2">
+                  <NoticeCard tone="warning" class="mt-2">
                     {t.legacyDraftBlocked}
                   </NoticeCard>
                 ) : null}

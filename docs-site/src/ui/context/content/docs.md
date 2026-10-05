@@ -42,7 +42,7 @@ The [API reference](#api-reference) defines `DocConcept`, `DocRow` and code opti
 
 `DocConceptGrid` and `DocRows` add the `ti` family class themselves, so their
 `icon` values are bare Tabler names such as `ti-shield-lock`. This differs from
-`Widget`, `StatCell`, and `NoticeCard`, which take the complete class.
+`Widget` and `StatCell`, which take the complete class.
 
 ## Code examples
 

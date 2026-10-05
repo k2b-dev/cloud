@@ -350,11 +350,7 @@ export function createUserActions(props: UserActionsProps) {
           ? {
               mailInfo: {
                 type: "info" as const,
-                content: () => (
-                  <NoticeCard tone="warning" icon={false}>
-                    {messages().emailSyncWarning}
-                  </NoticeCard>
-                ),
+                content: () => <NoticeCard tone="warning">{messages().emailSyncWarning}</NoticeCard>,
               },
             }
           : {}),
