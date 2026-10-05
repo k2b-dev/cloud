@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { newShortId } from "./lib/short-id";
-import { migrate } from "./migrate";
+import { buildOptionalSearchIndex, migrate } from "./migrate";
 
 const suite = suiteFor("database", "nats");
 
@@ -89,6 +89,39 @@ suite("mail baseline schema", () => {
       sent_copy_pending: "false",
       versions: 1,
     });
+  });
+
+  test("reruns without waiting for the lock a concurrent index build holds on messages", async () => {
+    await migrate();
+    const build = await sql.reserve();
+    try {
+      // CREATE INDEX CONCURRENTLY holds this lock for as long as the build runs.
+      await build`BEGIN`.simple();
+      await build`LOCK TABLE mail.message_contents IN SHARE UPDATE EXCLUSIVE MODE`.simple();
+      const startedAt = performance.now();
+      await migrate();
+      expect(performance.now() - startedAt).toBeLessThan(5_000);
+    } finally {
+      await build`ROLLBACK`.simple();
+      build.release();
+    }
+  });
+
+  test("leaves the optional BM25 index to installations with pg_textsearch", async () => {
+    const [extension] = await sql<{ installed: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed
+    `;
+    const outcome = await buildOptionalSearchIndex();
+    const [index] = await sql<{ present: boolean }[]>`
+      SELECT to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS present
+    `;
+    if (extension?.installed) {
+      expect(["built", "ready"]).toContain(outcome);
+      expect(index?.present).toBe(true);
+    } else {
+      expect(outcome).toBe("unavailable");
+      expect(index?.present).toBe(false);
+    }
   });
 
   test("turns each folder's sidebar switch into its display once, and keeps the switch for an older image", async () => {

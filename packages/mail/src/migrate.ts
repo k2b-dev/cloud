@@ -8,6 +8,7 @@
  * Mail was first deployed; a developer machine that still holds the old chain
  * is reset by dropping the schema.
  */
+import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
 import baselineSchema from "./schema.sql" with { type: "text" };
@@ -18,6 +19,7 @@ const BASELINE_VERSION = 1;
 const BASELINE_NAME = "baseline";
 
 const MIGRATION_LOCK_KEY = "cloud.mail.migrations";
+const log = logger("mail:migrate");
 
 /** Refuse databases created by the removed migration chain instead of half-upgrading them. */
 const assertBaselineOnly = (applied: readonly { version: number; name: string }[]): void => {
@@ -81,10 +83,16 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   `.simple();
   // Body downloads in progress, so the recovery of claims a stopped worker left behind reads only
   // them instead of every message. Building it reads the table once, on the first start after the update.
-  await tx`
-    CREATE INDEX IF NOT EXISTS message_contents_hydration_claim_idx ON mail.message_contents USING btree (hydration_claimed_at)
-    WHERE hydration_status = 'hydrating'
-  `.simple();
+  // Even when the index exists, CREATE INDEX waits for the table lock that a running BM25 build holds.
+  const [claimIndex] = await tx<{ present: boolean }[]>`
+    SELECT to_regclass('mail.message_contents_hydration_claim_idx') IS NOT NULL AS present
+  `;
+  if (!claimIndex?.present) {
+    await tx`
+      CREATE INDEX IF NOT EXISTS message_contents_hydration_claim_idx ON mail.message_contents USING btree (hydration_claimed_at)
+      WHERE hydration_status = 'hydrating'
+    `.simple();
+  }
   // Folders the provider fills from the others (Gmail's Important and Starred). Discovery sets it.
   await tx`ALTER TABLE mail.folders ADD COLUMN IF NOT EXISTS provider_collection boolean DEFAULT false NOT NULL`.simple();
   // A folder's display replaces its sidebar switch: shown folders keep their mail everywhere, hidden
@@ -182,9 +190,11 @@ const addCommandQueuePosition = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.commands ALTER COLUMN queue_position SET DEFAULT nextval('mail.commands_queue_position_seq')`.simple();
 };
 
+/** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */
 const migrationErrorCode = (error: unknown): string | null => {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" ? code : null;
+  const candidate = error as { code?: unknown; errno?: unknown } | null;
+  if (typeof candidate?.errno === "string") return candidate.errno;
+  return typeof candidate?.code === "string" ? candidate.code : null;
 };
 
 /**
@@ -207,6 +217,98 @@ export const migrate = async (): Promise<void> => {
     } catch (error) {
       if (migrationErrorCode(error) !== "55P03" || attempt === 2) throw error;
       await Bun.sleep(250 * 2 ** attempt);
+    }
+  }
+};
+
+const BM25_INDEX_LOCK_KEY = "cloud.mail.message-contents-bm25";
+/**
+ * The longest the background build may run. It holds a lock that keeps other schema changes on
+ * messages waiting, so a larger installation creates the index in a maintenance window instead.
+ */
+const BM25_INDEX_BUILD_TIMEOUT = "30min";
+
+/**
+ * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
+ * then the body, so it must stay identical to the rank in `service/search.ts`.
+ */
+const BM25_INDEX_DDL = `CREATE INDEX CONCURRENTLY IF NOT EXISTS message_contents_bm25_idx
+  ON mail.message_contents USING bm25 ((COALESCE(subject, '') || ' ' || COALESCE(subject, '') || ' ' || COALESCE(plain_text, '')))
+  WITH (text_config = 'simple')`;
+
+const readBm25IndexState = async (db: SqlClient) => {
+  const [state] = await db<{ installed: boolean; present: boolean; valid: boolean }[]>`
+    SELECT
+      EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') AS installed,
+      to_regclass('mail.message_contents_bm25_idx') IS NOT NULL AS present,
+      COALESCE((
+        SELECT index_state.indisvalid AND index_state.indisready AND index_state.indislive
+        FROM pg_index index_state
+        WHERE index_state.indexrelid = to_regclass('mail.message_contents_bm25_idx')
+      ), false) AS valid
+  `;
+  return state ?? { installed: false, present: false, valid: false };
+};
+
+/**
+ * Builds the optional BM25 index when the operator installed pg_textsearch. The build runs
+ * concurrently, so mail keeps arriving, and one replica builds at a time. Mail does not wait for it:
+ * search ranks natively until the index is valid. A build that fails or runs out of time is removed,
+ * and the next start tries again; an invalid index from an interrupted build is replaced.
+ * Never throws.
+ */
+export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready" | "busy" | "built" | "failed"> => {
+  let connection: Awaited<ReturnType<typeof sql.reserve>> | undefined;
+  let locked = false;
+  let originalTimeout: string | undefined;
+  let reusable = true;
+  try {
+    connection = await sql.reserve();
+    const before = await readBm25IndexState(connection);
+    if (!before.installed) return "unavailable";
+    if (before.valid) return "ready";
+    const [lock] = await connection<{ acquired: boolean }[]>`
+      SELECT pg_try_advisory_lock(hashtextextended(${BM25_INDEX_LOCK_KEY}, 0)) AS acquired
+    `;
+    if (!lock?.acquired) return "busy";
+    locked = true;
+    // Another replica may have finished the build since the first look.
+    const state = await readBm25IndexState(connection);
+    if (state.valid) return "ready";
+    const [setting] = await connection<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`;
+    originalTimeout = setting?.timeout ?? "0";
+    await connection`SELECT set_config('statement_timeout', ${BM25_INDEX_BUILD_TIMEOUT}, false)`;
+    // An interrupted build leaves an invalid index behind, which IF NOT EXISTS would keep.
+    if (state.present) await connection`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
+    log.info("Building the optional BM25 index for Mail search");
+    const startedAt = performance.now();
+    try {
+      await connection.unsafe(BM25_INDEX_DDL).simple();
+    } catch (error) {
+      log.warn("Optional BM25 index for Mail search was not built; search stays native", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await connection`DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx`.simple();
+      return "failed";
+    }
+    log.info("Built the optional BM25 index for Mail search", { durationMs: Math.round(performance.now() - startedAt) });
+    return "built";
+  } catch (error) {
+    reusable = false;
+    log.warn("Optional BM25 index for Mail search is unavailable; search stays native", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "failed";
+  } finally {
+    if (connection) {
+      try {
+        if (originalTimeout !== undefined) await connection`SELECT set_config('statement_timeout', ${originalTimeout}, false)`;
+        if (locked) await connection`SELECT pg_advisory_unlock(hashtextextended(${BM25_INDEX_LOCK_KEY}, 0))`;
+      } catch {
+        reusable = false;
+      }
+      if (reusable) connection.release();
+      else await connection.close({ timeout: 0 }).catch(() => undefined);
     }
   }
 };
