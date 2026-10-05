@@ -358,8 +358,9 @@ application name:
   `cloud:<app>`.
 
 A slow query produces a statement entry and a plan entry with the same process
-ID. They can come in either order: for a prepared statement, the `execute`
-entry and its parameters come first.
+ID. They can come in either order: for a prepared query that returns rows,
+the `execute` entry and its parameters come first; for an `INSERT`, `UPDATE`,
+or `DELETE` without `RETURNING`, the plan comes first.
 
 ```text
 2026-10-05 13:12:03.456 UTC [812] mail_a931..._test [unknown]: LOG:  duration: 903.530 ms  execute P...: SELECT ... WHERE mc.mailbox_id = $3 ::uuid
