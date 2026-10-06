@@ -352,3 +352,20 @@ for (const [status, upstreamCode, code, expectedStatus] of [
     ).rejects.toEqual(expected);
   });
 }
+
+for (const [failure, expected] of [
+  [new FilegateError(403, "permission_denied", "private"), { code: "FORBIDDEN", message: "forbidden", status: 403 }],
+  [new FilegateError(404, "missing", "private"), { code: "NOT_FOUND", message: "File entry not found", status: 404 }],
+  [new FilegateError(409, "execution_mismatch", "private"), { code: "identity_changed", message: "identity_changed", status: 409 }],
+  [new FilegateError(502, "upstream_failure", "private"), { code: "unavailable", message: "unavailable", status: 503 }],
+  [new MockFilesError("unavailable", 503), { code: "unavailable", message: "unavailable", status: 503 }],
+] as const) {
+  test(`entry reader answers ${failure.name} ${failure.code} without upstream details`, async () => {
+    ids.set("ref", { baseId: base.id, path: "report.pdf" });
+    serviceFailure = failure;
+    const read = filesCapabilities.queries["entry.read"].run({ id: "ref" }, context);
+    // Access answers stay reader results; other failures are thrown as sanitized service errors.
+    if (expected.status === 403 || expected.status === 404) expect(await read).toMatchObject({ ok: false, error: expected });
+    else await expect(read).rejects.toEqual(expected);
+  });
+}

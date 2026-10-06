@@ -5,8 +5,10 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { apiError } from "./api/api-error";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
@@ -71,9 +73,12 @@ export const filesCapabilities = defineCapabilities({
             },
           });
         } catch (error) {
-          if (error instanceof FilesError && error.status === 404) return fail(err.notFound("File entry"));
-          if (error instanceof FilesError && error.status === 403) return fail(err.forbidden(error.code));
-          throw error;
+          if (!(error instanceof FilesError || error instanceof FilegateError)) throw error;
+          // Storage failures answer as in the Files API, never with Filegate's own status or message.
+          const { code, status } = apiError(error);
+          if (status === 404) return fail(err.notFound("File entry"));
+          if (status === 403) return fail(err.forbidden(code));
+          throw { code, message: code, status };
         }
       },
     },
