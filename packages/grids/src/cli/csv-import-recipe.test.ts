@@ -12,9 +12,13 @@ const converter = section.match(/```ts\n(\/\/ csv-to-records\.ts[\s\S]*?)```/)![
 const dirs: string[] = [];
 afterAll(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
 
-const convert = async (csv: string, columns: Record<string, string>, delimiter?: string) => {
-  const dir = await mkdtemp(join(tmpdir(), "grids-csv-recipe-"));
-  dirs.push(dir);
+type Column = string | { field: string; format: string };
+
+const convert = async (csv: string | Uint8Array, columns: Record<string, Column>, delimiter?: string, dir?: string) => {
+  if (!dir) {
+    dir = await mkdtemp(join(tmpdir(), "grids-csv-recipe-"));
+    dirs.push(dir);
+  }
   await Bun.write(join(dir, "csv-to-records.ts"), converter);
   await Bun.write(join(dir, "data.csv"), csv);
   await Bun.write(join(dir, "columns.json"), JSON.stringify(columns));
@@ -95,6 +99,100 @@ test.each([
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain(message);
   expect(result.files).toEqual([]);
+});
+
+test("the converter rewrites decimal commas and dd.mm.yyyy dates into values the field types accept", async () => {
+  const csv = "Name;Fee;Since\nAda;1.234,50;05.10.2026\nBob;-7;1.2.2026\nCy;1234;29.02.2028\nDi;0,5;\nEd;0;05.10.0099\n";
+  const columns = { Name: "Name01", Fee: { field: "Fee001", format: "decimal-comma" }, Since: { field: "Date01", format: "dd.mm.yyyy" } };
+  const result = await convert(csv, columns, ";");
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.batches).toEqual([
+    {
+      items: [
+        { Name01: "Ada", Fee001: "1234.50", Date01: "2026-10-05" },
+        { Name01: "Bob", Fee001: "-7", Date01: "2026-02-01" },
+        { Name01: "Cy", Fee001: "1234", Date01: "2028-02-29" },
+        { Name01: "Di", Fee001: "0.5" },
+        { Name01: "Ed", Fee001: "0", Date01: "0099-10-05" },
+      ],
+    },
+  ]);
+  for (const item of result.batches[0]!.items) {
+    expect(VALUE_FIELD_TYPES.number!.validate(item.Fee001, {}, false).ok, item.Fee001).toBe(true);
+    if (item.Date01) expect(VALUE_FIELD_TYPES.date!.validate(item.Date01, {}, false).ok, item.Date01).toBe(true);
+  }
+});
+
+test.each([
+  ["a currency sign", "Fee\n1.234,50 €\n", 'Row 2, column "Fee": "1.234,50 €" does not match the format decimal-comma.'],
+  ["a decimal point in a decimal-comma column", "Fee\n12.5\n", 'Row 2, column "Fee": "12.5" does not match the format decimal-comma.'],
+  ["a day that does not exist", "Since\n31.02.2026\n", 'Row 2, column "Since": "31.02.2026" does not match the format dd.mm.yyyy.'],
+  [
+    "an ISO date in a dd.mm.yyyy column",
+    "Since\n2026-10-05\n",
+    'Row 2, column "Since": "2026-10-05" does not match the format dd.mm.yyyy.',
+  ],
+])("the converter fails on %s and writes no file", async (_, csv, message) => {
+  const header = csv.split("\n")[0]!;
+  const format = header === "Fee" ? "decimal-comma" : "dd.mm.yyyy";
+  const result = await convert(csv, { [header]: { field: "Fld001", format } }, ";");
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain(message);
+  expect(result.files).toEqual([]);
+});
+
+// toString is inherited by every object, so only the converter's own formats count.
+test.each(["german", "toString"])("the converter rejects the unknown format %s before it writes a file", async (format) => {
+  const result = await convert("Fee\n1,5\n", { Fee: { field: "Fee001", format } }, ";");
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain(`Column "Fee" has the unknown format "${format}".`);
+  expect(result.files).toEqual([]);
+});
+
+test("the converter skips unmapped headers that name inherited object keys", async () => {
+  const result = await convert("Name,constructor,toString,__proto__\nAda,a,b,c\n", { Name: "Name01" });
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.batches).toEqual([{ items: [{ Name01: "Ada" }] }]);
+});
+
+test("the converter reports a missing CSV file as missing, not as an encoding problem", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "grids-csv-recipe-"));
+  dirs.push(dir);
+  await Bun.write(join(dir, "csv-to-records.ts"), converter);
+  await Bun.write(join(dir, "columns.json"), "{}");
+  const run = Bun.spawnSync(["bun", "csv-to-records.ts", "missing.csv", "columns.json"], {
+    cwd: dir,
+    env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+  });
+  expect(run.exitCode).not.toBe(0);
+  expect(run.stderr.toString()).toContain("ENOENT");
+  expect(run.stderr.toString()).not.toContain("not UTF-8");
+});
+
+test("the converter refuses a Windows-1252 file, and the documented iconv command makes it readable", async () => {
+  // "Jürgen;Köln;1.234,50" with ü, ö as single Windows-1252 bytes.
+  const latin = new Uint8Array([
+    ...new TextEncoder().encode("Name;City;Fee\nJ"),
+    0xfc,
+    ...new TextEncoder().encode("rgen;K"),
+    0xf6,
+    ...new TextEncoder().encode("ln;1.234,50\n"),
+  ]);
+  const columns = { Name: "Name01", City: "City01", Fee: { field: "Fee001", format: "decimal-comma" } };
+  const refused = await convert(latin, columns, ";");
+  expect(refused.exitCode).not.toBe(0);
+  expect(refused.stderr).toContain("data.csv is not UTF-8. Convert it first: iconv -f WINDOWS-1252 -t UTF-8 data.csv > data-utf8.csv");
+  expect(refused.files).toEqual([]);
+
+  const dir = await mkdtemp(join(tmpdir(), "grids-csv-recipe-"));
+  dirs.push(dir);
+  await Bun.write(join(dir, "latin.csv"), latin);
+  const command = section.match(/`(iconv -f WINDOWS-1252 -t UTF-8 data\.csv > data-utf8\.csv)`/)![1]!.replace("data.csv", "latin.csv");
+  const iconv = Bun.spawnSync(["sh", "-c", command], { cwd: dir });
+  expect(iconv.exitCode, iconv.stderr.toString()).toBe(0);
+  const converted = await convert(await Bun.file(join(dir, "data-utf8.csv")).bytes(), columns, ";", dir);
+  expect(converted.exitCode, converted.stderr).toBe(0);
+  expect(converted.batches).toEqual([{ items: [{ Name01: "Jürgen", City01: "Köln", Fee001: "1234.50" }] }]);
 });
 
 test("the converter ignores a repeated header it does not map", async () => {
