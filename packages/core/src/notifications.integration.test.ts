@@ -21,7 +21,8 @@ suite("Core notice for a newly paired phone", () => {
     // Read, never change, the shared installation settings: other suites rely on them in parallel.
     const timeZone = (await settings.get<string>("app.timezone")).trim() || "UTC";
     const configured = (await settings.get<string>("app.url")).trim();
-    const base = configured ? (/^https?:\/\//.test(configured) ? configured : `https://${configured}`).replace(/\/+$/, "") : "";
+    let base = !configured || /^https?:\/\//.test(configured) ? configured : `https://${configured}`;
+    while (base.endsWith("/")) base = base.slice(0, -1);
 
     const en = await notice.render(data, { locale: "en" });
     expect(en).toMatchObject({ title: "New phone paired", targetHref: "/me/app" });

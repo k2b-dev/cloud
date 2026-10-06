@@ -68,8 +68,10 @@ const configuredLocale = (locale?: string): Promise<string> => (locale ? Promise
 const absoluteUrl = async (path: string): Promise<string> => {
   const configured = (await settings.get<string>("app.url")).trim();
   if (!configured) return path;
-  const baseUrl = configured.startsWith("http://") || configured.startsWith("https://") ? configured : `https://${configured}`;
-  return `${baseUrl.replace(/\/+$/, "")}${path}`;
+  let baseUrl = configured.startsWith("http://") || configured.startsWith("https://") ? configured : `https://${configured}`;
+  // A loop, because /\/+$/ backtracks polynomially on a value with many slashes inside.
+  while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+  return `${baseUrl}${path}`;
 };
 const accountExtensionUrl = (): Promise<string> => absoluteUrl("/auth/extend");
 
