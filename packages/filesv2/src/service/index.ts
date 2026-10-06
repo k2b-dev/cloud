@@ -46,17 +46,19 @@ import type {
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, withRootLock, withUploadLock } from "../data/operations";
-import { persistedEntryRefId, resolveEntryRefId } from "../data/references";
+import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
+import { parseStableEntryRefId } from "../resource-ref";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
 import { documentTemplate } from "./document-template";
 import { FilesError } from "./errors";
+import { fileEntry } from "./file-entry";
 import { createDirectoryLifecycle } from "./lifecycle";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
@@ -84,14 +86,6 @@ const withWopiSrc = (action: string, wopiSrc: string) =>
   `${action}${action.endsWith("?") || action.endsWith("&") ? "" : action.includes("?") ? "&" : "?"}WOPISrc=${encodeURIComponent(wopiSrc)}`;
 /** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
 const SEARCH_SCAN_LIMIT = 10_000;
-const fileEntry = (relative: string, node: Node): FileEntry => ({
-  name: relative.split("/").at(-1)!,
-  path: relative,
-  directory: node.directory,
-  size: node.size,
-  modified: node.modified,
-  revision: node.revision,
-});
 const filesystemCursor = z.tuple([
   z.string().max(8192).nullable(),
   z
@@ -199,6 +193,8 @@ export function createFilesService(
       versioningEnabled: info.versioning.enabled,
       managed: info.managed,
       executionEnabled: info.execution,
+      // A 6.1 daemon omits the field; only an explicit capability promises IDs that survive rename and move.
+      stableIds: info.stableIds === true,
     };
     const result = (status: BaseSummary["status"], reason: string | null, binding: Binding | null = null): Inspection => ({
       candidate: item,
@@ -290,29 +286,27 @@ export function createFilesService(
       throw error;
     }
   }
-  async function authorized(
-    actor: RequestActor,
-    baseId: string,
-    path: string,
-    directory?: boolean,
-    snapshot?: Awaited<ReturnType<typeof context>>,
-  ) {
+  /** The actor's base, usable and bound, before any path in it is looked at. */
+  async function authorizedBase(actor: RequestActor, baseId: string, snapshot?: Awaited<ReturnType<typeof context>>) {
     const state = snapshot ?? (await context(actor));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
     if (!item) throw new FilesError("not_found", 404);
     const issue = issueFor(state.config, item.area, state.self.availability);
     if (issue) throw new FilesError(issue, 403);
-    const client = deps.connect(state.config);
-    let root = client.root(item.root);
-    const info = await root.info();
-    let inspection = await inspect(root, item, info, state.config.url);
+    const service = deps.connect(state.config).root(item.root);
+    const info = await service.info();
+    let inspection = await inspect(service, item, info, state.config.url);
     if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
       await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-      inspection = await inspect(root, item, info, state.config.url);
+      inspection = await inspect(service, item, info, state.config.url);
     }
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const execution = executionFor({ inspection, state });
-    if (execution) root = root.as(execution);
+    return { state, item, info, inspection, service, root: execution ? service.as(execution) : service };
+  }
+  /** An existing entry in that base, after the path checks the actor's execution identity must pass. */
+  async function authorizedPath(base: Awaited<ReturnType<typeof authorizedBase>>, path: string, directory?: boolean) {
+    const { state, item, info, inspection, root } = base;
     const relative = userPath(path);
     const target = joinPath(item.path, relative);
     let node: Node;
@@ -327,6 +321,15 @@ export function createFilesService(
     if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4);
     if (directory !== undefined && node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
     return { root, inspection, target, relative, state, node, info };
+  }
+  async function authorized(
+    actor: RequestActor,
+    baseId: string,
+    path: string,
+    directory?: boolean,
+    snapshot?: Awaited<ReturnType<typeof context>>,
+  ) {
+    return authorizedPath(await authorizedBase(actor, baseId, snapshot), path, directory);
   }
   function executionFor(current: { inspection: Inspection; state: Awaited<ReturnType<typeof context>> }): ExecutionIdentity | null {
     if (current.inspection.candidate.area !== "freeipa") return null;
@@ -386,7 +389,8 @@ export function createFilesService(
     for (const node of candidates) {
       try {
         const actions = await entryActions(current, node, node.path);
-        if (actions.share) return { ...fileEntry(node.path.slice(current.inspection.candidate.path.length + 1), node), actions };
+        if (actions.share)
+          return { ...fileEntry(current.inspection.summary, node.path.slice(current.inspection.candidate.path.length + 1), node), actions };
       } catch (error) {
         if (!(error instanceof FilegateError && [403, 404].includes(error.status))) throw error;
       }
@@ -502,14 +506,55 @@ export function createFilesService(
   };
   async function entry(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
     if (!input.path) throw new FilesError("invalid_path");
-    const current = await authorized(actor, input.baseId, input.path);
+    return entryResult(await authorized(actor, input.baseId, input.path));
+  }
+  async function entryResult(current: Awaited<ReturnType<typeof authorized>>): Promise<EntryResult> {
     const favorite = await favorites.has(current.state.self.user.id, current.inspection.binding!.id, current.relative);
+    const result = fileEntry(current.inspection.summary, current.relative, current.node);
     return {
       base: current.inspection.summary,
-      entry: { ...fileEntry(current.relative, current.node), actions: await entryActions(current) },
+      entry: { ...result, actions: await entryActions(current) },
       favorite,
-      resourceId: await persistedEntryRefId(input.baseId, current.relative),
+      resourceId: await entryRef(current.inspection.summary.id, result),
     };
+  }
+  /**
+   * The authorized entry a file ID names. Path refs decode to their base and path. A stable ref needs a base the
+   * actor can use before Filegate is asked for the ID, so no answer depends on files in storage the actor cannot use.
+   * Every failure to resolve it is `not_found`; storage outages stay outages. After the usual path checks, the entry
+   * must still be the same file.
+   */
+  async function located(actor: RequestActor, id: string, directory?: boolean) {
+    const stable = parseStableEntryRefId(id);
+    if (!stable) {
+      const ref = await resolveEntryRefId(id);
+      if (!ref) throw new FilesError("not_found", 404);
+      return authorized(actor, ref.baseId, ref.path, directory);
+    }
+    const base = await authorizedBase(actor, stable.baseId);
+    let node: Node;
+    try {
+      // Unscoped like `info()`: the Unix checks follow on the resolved path with the actor's execution identity.
+      node = await base.service.resolve(stable.fileId);
+    } catch (error) {
+      // Unknown, invalid, or disabled IDs (`feature_disabled` once `managed` is off) are not found.
+      if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) throw new FilesError("not_found", 404);
+      if (error instanceof FilegateError) throw error;
+      throw new FilesError("unavailable", 503, { cause: error });
+    }
+    const { item } = base;
+    if (node.root !== item.root || !node.path.startsWith(`${item.path}/`)) throw new FilesError("not_found", 404);
+    const path = node.path.slice(item.path.length + 1);
+    if (path.split("/")[0] === "trash") throw new FilesError("not_found", 404);
+    try {
+      const current = await authorizedPath(base, path, directory);
+      if (current.node.id !== stable.fileId) throw new FilesError("not_found", 404);
+      return current;
+    } catch (error) {
+      // Moved away between resolve and stat: still the same unresolvable ref.
+      if (error instanceof FilegateError && error.status === 404) throw new FilesError("not_found", 404);
+      throw error;
+    }
   }
   /** WOPI calls carry only the editor token; user, file and rights are resolved fresh on every call. */
   async function wopiFile(token: string, id: string) {
@@ -540,7 +585,7 @@ export function createFilesService(
         if (current.inspection.binding?.id !== row.base_id) continue;
         output.push({
           base: { id, name: item.name, kind: item.kind, area: item.area },
-          entry: fileEntry(current.relative, current.node),
+          entry: fileEntry(current.inspection.summary, current.relative, current.node),
           markedAt: row.marked_at.toISOString(),
         });
       } catch (error) {
@@ -553,6 +598,11 @@ export function createFilesService(
       }
     }
     return output;
+  }
+  async function downloadLease(current: Awaited<ReturnType<typeof authorized>>): Promise<DownloadLease> {
+    void rememberOpened(current);
+    const lease = await current.root.directDownload(current.target, { expiresIn: 60, fileName: current.relative.split("/").at(-1)! });
+    return { url: lease.url, method: "GET", expires: lease.expires };
   }
   const rememberOpened = (current: Awaited<ReturnType<typeof authorized>>) =>
     recent
@@ -583,7 +633,7 @@ export function createFilesService(
     if (node.root !== row.root || node.directory || node.size !== row.size || node.path !== joinPath(current.target, current.name))
       throw new FilesError("upload_changed", 409);
     relativePath(node.path, false);
-    return fileEntry([...row.path.split("/").slice(0, -1), node.path.split("/").at(-1)!].join("/"), node);
+    return fileEntry(current.inspection.summary, [...row.path.split("/").slice(0, -1), node.path.split("/").at(-1)!].join("/"), node);
   }
   function checkUploadSession(
     current: Awaited<ReturnType<typeof writableParent>>,
@@ -843,7 +893,10 @@ export function createFilesService(
         if (!node.path.startsWith(`${current.target}/`) || node.path.slice(current.target.length + 1).includes("/"))
           throw new FilesError("unavailable", 503);
         if (!relative || relative.split("/")[0] === "trash") continue;
-        items.push({ ...fileEntry(relative, node), actions: await entryActions(current, node, node.path, create) });
+        items.push({
+          ...fileEntry(current.inspection.summary, relative, node),
+          actions: await entryActions(current, node, node.path, create),
+        });
       }
       return {
         base: current.inspection.summary,
@@ -883,7 +936,7 @@ export function createFilesService(
         if (input.scope === "folder" && node.path.slice(current.target.length + 1).includes("/")) continue;
         const actions = await entryActions(current, node, node.path);
         if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
-        items.push({ ...fileEntry(relative, node), actions });
+        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions });
       }
       return {
         base: current.inspection.summary,
@@ -898,7 +951,7 @@ export function createFilesService(
     async mkdir(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       const current = await writableParent(actor, input.baseId, input.path);
       const node = await current.root.mkdir(joinPath(current.target, current.name), { ownership: ownershipFor(current, true) });
-      return { base: current.inspection.summary, entry: fileEntry(current.relative, node) };
+      return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, current.relative, node) };
     },
     async upload(
       actor: RequestActor,
@@ -1004,7 +1057,7 @@ export function createFilesService(
         await forgetMarks(source, source.relative);
         return {
           base: source.inspection.summary,
-          entry: fileEntry(userPath(node.path.slice(source.inspection.candidate.path.length + 1)), node),
+          entry: fileEntry(source.inspection.summary, userPath(node.path.slice(source.inspection.candidate.path.length + 1)), node),
         };
       });
     },
@@ -1025,7 +1078,7 @@ export function createFilesService(
       const result = await runFileBatch(input.paths, prepare, async (prepared, path) =>
         publish(prepared.source.root.name, async () => {
           const { source, destination } = await prepare(path);
-          if (destination.relative === source.relative) return fileEntry(source.relative, source.node);
+          if (destination.relative === source.relative) return fileEntry(source.inspection.summary, source.relative, source.node);
           const transferred = await source.root.transfer(source.target, source.root.name, joinPath(destination.target, source.name), {
             move: true,
             onConflict: "error",
@@ -1035,7 +1088,11 @@ export function createFilesService(
           if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
             throw new FilesError("unavailable", 503);
           await forgetMarks(source, source.relative);
-          return fileEntry(userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node);
+          return fileEntry(
+            destination.inspection.summary,
+            userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
+            node,
+          );
         }),
       );
       return { base, ...result };
@@ -1076,7 +1133,7 @@ export function createFilesService(
         const node = transferred.node;
         if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
           throw new FilesError("unavailable", 503);
-        return fileEntry(userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node);
+        return fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node);
       });
       return { base, ...result };
     },
@@ -1114,7 +1171,7 @@ export function createFilesService(
       return publish(current.root.name, async () => {
         const fresh = await versionFile(actor, input.baseId, input.path, true);
         const node = await fresh.root.restore(fresh.target, input.id);
-        return { base: fresh.inspection.summary, entry: fileEntry(fresh.relative, node) };
+        return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
     async restoreVersionAs(actor: RequestActor, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
@@ -1145,7 +1202,7 @@ export function createFilesService(
         throw new FilesError("unavailable", 503);
       return {
         base: current.inspection.summary,
-        entry: fileEntry(userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node),
+        entry: fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node),
       };
     },
     async deleteVersion(actor: RequestActor, input: { baseId: string; path: string; id: string }): Promise<void> {
@@ -1172,7 +1229,7 @@ export function createFilesService(
           kind: "markdown",
           managed: current.info.managed,
           base: current.inspection.summary,
-          entry: fileEntry(current.relative, current.node),
+          entry: fileEntry(current.inspection.summary, current.relative, current.node),
           canWrite: actions.write,
           url: lease.url,
         };
@@ -1196,7 +1253,7 @@ export function createFilesService(
       const expiresAt = Date.now() + EDITOR_TOKEN_TTL_MS;
       return {
         base: current.inspection.summary,
-        entry: fileEntry(current.relative, current.node),
+        entry: fileEntry(current.inspection.summary, current.relative, current.node),
         action: withWopiSrc(action, wopiSrc),
         token: signEditorToken({ userId: current.state.self.user.id, baseId: input.baseId, path: current.relative, expiresAt }),
         tokenTtl: expiresAt,
@@ -1222,7 +1279,7 @@ export function createFilesService(
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
       const node = await writeBytes({ ...current, target }, new Blob([bytes]), "error");
-      return { base: current.inspection.summary, entry: fileEntry(current.relative, node) };
+      return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, current.relative, node) };
     },
     /** A new document starts in the administrator's format; the extension is appended here. */
     async createDocument(actor: RequestActor, input: { baseId: string; path: string; kind: DocumentKind }): Promise<EntryResult> {
@@ -1237,7 +1294,7 @@ export function createFilesService(
         if (!(error instanceof FilegateError && error.status === 404)) throw error;
       }
       const node = await writeBytes({ ...current, target }, await documentTemplate(extension), "error");
-      return { base: current.inspection.summary, entry: fileEntry(relative, node) };
+      return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, relative, node) };
     },
     async editorFileInfo(token: string, id: string) {
       const current = await wopiFile(token, id);
@@ -1338,11 +1395,11 @@ export function createFilesService(
       await uploads.finish(row.id, "aborted", null);
     },
     entry,
-    /** A file ID (`resourceId`, or a `filesv2.entry` ref) resolves like its area and path, with the same access checks. */
+    /** A file ID (`resourceId`, or a `filesv2.entry` ref) resolves to its current area and path, with the same access checks. */
     async entryById(actor: RequestActor, id: string): Promise<EntryResult> {
-      const ref = await resolveEntryRefId(id);
-      if (!ref) throw new FilesError("not_found", 404);
-      return entry(actor, ref);
+      const current = await located(actor, id);
+      if (!current.relative) throw new FilesError("invalid_path");
+      return entryResult(current);
     },
     async recent(actor: RequestActor): Promise<MarkedEntry[]> {
       const self = await deps.identities.self(actor);
@@ -1380,12 +1437,8 @@ export function createFilesService(
       const lease = await current.root.directThumbnail(current.target, { width: dimension, height: dimension, expiresIn: 60 });
       return { url: lease.url, method: "GET", expires: lease.expires };
     },
-    async capabilityDownload(
-      actor: RequestActor,
-      input: { baseId: string; path: string; revision: string },
-      signal: AbortSignal,
-    ): Promise<Response> {
-      const current = await authorized(actor, input.baseId, input.path, false);
+    async capabilityDownload(actor: RequestActor, input: { id: string; revision: string }, signal: AbortSignal): Promise<Response> {
+      const current = await located(actor, input.id, false);
       if (markdownRevision(current.node) !== input.revision) throw new FilesError("write_conflict", 409);
       const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
       return deps.connect(current.state.config).downloadRaw(lease, signal);
@@ -1437,10 +1490,11 @@ export function createFilesService(
     },
     async download(actor: RequestActor, input: { baseId: string; path: string }): Promise<DownloadLease> {
       if (!input.path) throw new FilesError("not_file");
-      const current = await authorized(actor, input.baseId, input.path, false);
-      void rememberOpened(current);
-      const lease = await current.root.directDownload(current.target, { expiresIn: 60, fileName: current.relative.split("/").at(-1)! });
-      return { url: lease.url, method: "GET", expires: lease.expires };
+      return downloadLease(await authorized(actor, input.baseId, input.path, false));
+    },
+    /** Leases stay path-based: the file ID was checked against the authorized path just before. */
+    async downloadById(actor: RequestActor, id: string): Promise<DownloadLease> {
+      return downloadLease(await located(actor, id, false));
     },
     /** A PDF for the browser's own viewer: the same read right as a download, and only for a PDF by name and content. */
     async inlinePdf(

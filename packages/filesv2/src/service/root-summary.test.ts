@@ -49,6 +49,13 @@ test("unknown index freshness cannot be presented as filesystem totals", () => {
     observation: { complete: true, freshness: "unknown", source: "index", indexBuilt: "2026-09-18T12:00:00Z" },
   });
 });
+test("stable file IDs are reported only when Filegate says so", () => {
+  expect(rootSummary(root(null)).stableIds).toBe(false);
+  expect(rootSummary({ ...root(null), managed: true, stableIds: true }).stableIds).toBe(true);
+  // A 6.1 daemon does not send the field at all.
+  const { stableIds: _omitted, ...older } = root(null);
+  expect(rootSummary(older as RootInfo).stableIds).toBe(false);
+});
 test("complete observed scans preserve real zeroes and their observation interval", () => {
   expect(rootSummary(root(observed))).toMatchObject({ files: 5, directories: 2, bytes: 10 });
   expect(rootSummary(root({ ...observed, files: 0, directories: 0, bytes: 0 }))).toMatchObject({

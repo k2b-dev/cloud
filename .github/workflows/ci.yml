@@ -209,7 +209,8 @@ jobs:
       - name: Start NATS JetStream and install poppler
         run: |
           set -euo pipefail
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine
+          # The Files stable-reference suite starts its own Filegate from these images.
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0 debian:13-slim
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
           sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/

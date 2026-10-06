@@ -5,7 +5,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
 import { BrowseQuerySchema, CONTENT_STREAM_LIMIT } from "./contracts";
-import { persistedEntryRefId, resolveEntryRefId } from "./data/references";
+import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { filesUrl } from "./frontend/urls";
 import { FilesError, filesService } from "./service";
@@ -52,12 +52,13 @@ async function domain<T>(run: () => Promise<T>): Promise<T> {
     throw e;
   }
 }
-const item = async (baseId: string, entry: z.infer<typeof Entry>) => ({
+type ListedEntry = z.infer<typeof Entry> & { resourceId?: string };
+const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => ({
   ...entry,
   revision: markdownRevision(entry),
-  ref: { type: "filesv2.entry" as const, id: await persistedEntryRefId(baseId, entry.path) },
+  ref: { type: "filesv2.entry" as const, id: await entryRef(baseId, { path: entry.path, resourceId }) },
 });
-const result = async (baseId: string, entry: z.infer<typeof Entry>): Promise<CapabilityResult<z.infer<typeof Result>>> => ({
+const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityResult<z.infer<typeof Result>>> => ({
   data: { baseId, entry: await item(baseId, entry) },
   links: [{ rel: "open", href: filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")) }],
 });
@@ -177,20 +178,16 @@ export const fileQueries = {
       read: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
         domain(async () => {
           const source = sourceRef.parse(JSON.parse(s.id));
-          const ref = await resolveEntryRefId(source.id);
-          if (!ref) throw err.notFound("File");
-          return filesService.capabilityDownload(readActor(c), { ...ref, revision: source.revision }, c.signal);
+          return filesService.capabilityDownload(readActor(c), source, c.signal);
         }),
     },
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
       domain(async () => {
-        const ref = await resolveEntryRefId(input.id);
-        if (!ref) return fail(err.notFound("File"));
-        const file = await filesService.entry(readActor(c), ref);
+        const file = await filesService.entryById(readActor(c), input.id);
         if (file.entry.directory) return fail(err.badInput("Choose a file, not a folder"));
         if (file.entry.size > CONTENT_STREAM_LIMIT) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
         return ok({
-          ...(await result(ref.baseId, file.entry)),
+          ...(await result(file.base.id, file.entry)),
           stream: {
             id: JSON.stringify({ id: input.id, revision: markdownRevision(file.entry) }),
             direction: "read" as const,
@@ -217,10 +214,7 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
       domain(async () => {
-        const actor = readActor(c);
-        const ref = await resolveEntryRefId(input.id);
-        if (!ref) return fail(err.notFound("File"));
-        return ok({ data: await filesService.download(actor, ref) });
+        return ok({ data: await filesService.downloadById(readActor(c), input.id) });
       }),
   },
 };

@@ -5,9 +5,11 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { persistedEntryRefId, resolveEntryRefId } from "./data/references";
+import { apiError } from "./api/api-error";
+import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
 import { filesUrl } from "./frontend/urls";
@@ -57,10 +59,8 @@ export const filesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const actor = userActor(context);
         if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
-        const ref = await resolveEntryRefId(input.id);
-        if (!ref) return fail(err.notFound("File entry"));
         try {
-          const result = await filesService.entry(actor, ref);
+          const result = await filesService.entryById(actor, input.id);
           return ok({
             refs: [{ type: ENTRY_TYPE, id: input.id, title: result.entry.name }],
             links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
@@ -73,9 +73,12 @@ export const filesCapabilities = defineCapabilities({
             },
           });
         } catch (error) {
-          if (error instanceof FilesError && error.status === 404) return fail(err.notFound("File entry"));
-          if (error instanceof FilesError && error.status === 403) return fail(err.forbidden(error.code));
-          throw error;
+          if (!(error instanceof FilesError || error instanceof FilegateError)) throw error;
+          // Storage failures answer as in the Files API, never with Filegate's own status or message.
+          const { code, status } = apiError(error);
+          if (status === 404) return fail(err.notFound("File entry"));
+          if (status === 403) return fail(err.forbidden(code));
+          throw { code, message: code, status };
         }
       },
     },
@@ -105,7 +108,7 @@ export const filesCapabilities = defineCapabilities({
         );
         const data = await Promise.all(
           entries.slice(0, limit).map(async ({ page, entry }) => {
-            const id = await persistedEntryRefId(page.base.id, entry.path);
+            const id = await entryRef(page.base.id, entry);
             const folder = parent(entry.path);
             return {
               ref: { type: ENTRY_TYPE, id },

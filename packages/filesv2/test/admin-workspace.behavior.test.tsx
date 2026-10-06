@@ -102,6 +102,7 @@ describe("Filesv2 admin workspace", () => {
     expect(requests).toHaveLength(0);
     expect(dom.root.textContent).toContain("Unknown");
     expect(dom.root.textContent).toContain("Atomic conflict checks: Unknown");
+    expect(dom.root.textContent).toContain("Stable file IDs: Unknown");
     expect(dom.root.textContent).toContain("Unix execution: Unknown");
     expect(dom.root.textContent).toContain("No filesystem scan is available");
     tab("Directories").click();
@@ -174,6 +175,7 @@ describe("Filesv2 admin workspace", () => {
     const { dom } = await setup("overview", {
       ...result.root!,
       managed: true,
+      stableIds: true,
       executionEnabled: false,
       observation: {
         complete: state.complete,
@@ -185,6 +187,7 @@ describe("Filesv2 admin workspace", () => {
     });
     await flush();
     expect(dom.root.textContent).toContain("Atomic conflict checks: On");
+    expect(dom.root.textContent).toContain("Stable file IDs: On");
     expect(dom.root.textContent).toContain("Unix execution: Off");
     expect(dom.root.textContent).toContain(state.notice);
     expect(dom.root.textContent?.includes("Last complete scan:")).toBe(state.showDate);

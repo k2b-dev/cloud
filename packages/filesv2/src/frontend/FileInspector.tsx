@@ -11,7 +11,7 @@ import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
-import { filesUrl } from "./urls";
+import { referenceHref } from "./urls";
 
 /** Identity, quick preview, facts, actions and versions of one entry; a summary for several. */
 export default function FileInspector(props: {
@@ -100,11 +100,9 @@ export default function FileInspector(props: {
   const [notPdf, setNotPdf] = createSignal<string | null>(null);
   const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
   const copyReference = (item: FileEntry) => {
-    const id = details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
+    const id = item.resourceId ?? details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
     if (!id) return;
-    const href = item.directory
-      ? filesUrl(props.base.id, item.path)
-      : filesUrl(props.base.id, item.path.split("/").slice(0, -1).join("/"), null, item.path);
+    const href = referenceHref(props.base.id, item, id);
     void refClipboard.copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href });
   };
   const copyLabel = () =>

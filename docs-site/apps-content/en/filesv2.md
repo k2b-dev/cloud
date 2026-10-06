@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Files
@@ -207,6 +207,27 @@ when another process or an NFS client writes directly. It does not block externa
 writers or make their writes atomic. Cloud reads these capabilities; it does not
 provide duplicate activation switches.
 
+Overview also shows **Stable file IDs** for the root. Filegate 7 reports them
+(`stableIds`) only for roots with both `index: true` and `managed: true`; only
+then do Files references survive rename and move (see
+[Refer to files and folders](#refer-to-files-and-folders)). Such a root needs:
+
+- Filegate as its only writer. Read-only access, such as a backup reader or a
+  read-only export, is fine. Filegate does not enforce this promise.
+- Readable and writable `user.*` extended attributes on the real mount, and no
+  hard links to indexed files.
+- Backups that keep device and inode identity. Stop Filegate, then back up each
+  root with its `.filegate` directory, ownership, ACLs, and extended attributes
+  together with the complete `state_dir`. Restoring copies onto new inodes or
+  another device assigns new IDs, and every stable reference into that root
+  becomes `not_found`; path references survive such a restore. Test one
+  restore before you rely on stable references.
+
+Turning `managed` off later makes stable references `not_found` until it is on
+again; Filegate keeps the IDs. FreeIPA roots that users also reach over NFS,
+SSH, or a desktop are usually not exclusive Filegate writers and keep path
+references.
+
 FreeIPA roots require **execution** so Filegate performs file access using the
 Cloud-resolved UID, primary GID, and supplementary groups. Configure the daemon's
 privileged execution mode explicitly according to the Filegate operator guide;
@@ -294,6 +315,59 @@ Multi-entry moves, copies, and trash actions report results per item. Selecting
 a folder and one of its children processes the folder once. Successful items
 remain completed when another item fails; retry only the failed items. A batch
 is not an atomic transaction.
+
+## Refer to files and folders
+
+Other apps keep a Files entry as a `filesv2.entry` ref, for example a Spaces
+link, a Grids resource field, Assistant App data, or a copied reference from
+the details panel. Files hands out one of these forms; treat
+all of them as opaque:
+
+| Form | Handed out | Follows rename and move |
+| --- | --- | --- |
+| `n:<baseId>:<fileId>` | On roots with stable file IDs, for every entry Filegate has identified | Yes |
+| Inline path ref (base64url of base and path) | Elsewhere, when the encoded ref fits 512 characters | No |
+| `p:<sha256>` | Elsewhere, for longer paths; stored by Files | No |
+
+Only the Files server mints refs, in one place. An entry that Filegate has not
+identified yet keeps a path ref even on a root with stable IDs. Editor (WOPI)
+file IDs stay path-based and are not `filesv2.entry` refs.
+
+Resolving a stable ref first checks that the actor can use its base, as for
+any path in it, and only then asks Filegate for the current path, so no answer
+depends on files in storage the actor cannot use. The usual path checks
+follow: the current path must lie inside the same base and outside its trash,
+and must still hold the same file. A stable ref therefore never grants access.
+Download links still name the checked path: if another file takes that path in
+the same instant, the link serves that file from the same base.
+
+| Change | Stable ref | Path ref |
+| --- | --- | --- |
+| Rename or move within the base, including the contents of a moved folder | Keeps working and shows the new path | Breaks |
+| Replace content, save in the editor, restore a version | Keeps working | Keeps working |
+| Copy or duplicate | The copy gets its own ref; the original keeps its ref | The copy gets its own ref |
+| Move to the trash | `not_found` | `not_found` |
+| Restore from the trash | Works again, also under a new name | Works only at the same path |
+| Delete and create a new file at the same path | `not_found` | Names the new file |
+| Access to the base removed | `not_found` | `not_found` |
+
+Refs saved before keep their form and their path meaning; Files does not
+rewrite refs that other apps stored. The same file can therefore have an older
+path ref and a newer stable ref. Equal refs name the same entry; different refs
+do not prove different files. `GET /api/filesv2/entries/<id>` and
+`cld filesv2 stat` return the entry's current `resourceId` for any ref.
+
+A stable ref that cannot be resolved is `not_found` (404), whatever the
+reason: unknown or foreign base, unknown ID, `managed` turned off, a path
+outside the base or in its trash. If the base is one of the actor's but cannot
+be used, for example because of a binding conflict, every ID in it answers like
+any path there: 403 with the reason. Storage outages and network failures stay
+`unavailable` (503), so a short Filegate outage never looks like a deleted
+file. After resolution, the path checks answer as for any path, for example
+403 when FreeIPA Unix permissions deny the file. `/app/filesv2/ref/<id>` opens
+the entry wherever it is now. **Copy Cloud reference** puts that link on the
+clipboard as plain text for stable refs; for path refs the text is a link to
+the folder with the entry selected.
 
 ## Understand the source of truth
 
@@ -386,7 +460,8 @@ The same operations are available through `cld filesv2`. Sign in with
 files as `<area>:/path`: `me` is your personal area, and a group area is its
 exact group name or group ID. `cld filesv2 ls` lists your areas with their IDs;
 a full area ID such as `cloud:groups:<uuid>` also works as the area. A file ID,
-the `resourceId` from `stat --json`, works in place of any file address.
+the `resourceId` from `stat --json`, works in place of any file address,
+including a stable `n:…` ID.
 
 ```sh
 cld filesv2 ls --json
@@ -574,9 +649,11 @@ null, including empty filtered pages.
 Every Files item carries `{type:"filesv2.entry",id}` beside its metadata.
 Keep this ref with the row, alongside `grids.document` refs from Grids. Use
 both fields as the identity and each type's own reader/download operation.
-Files refs remain stable for a base/path, including long paths, but do not
-pin bytes or grant permissions. A rename or move changes the ref; replacing
-the file at the same path does not. Refresh stale rows before acting on them.
+Files refs do not pin bytes or grant permissions. On roots with stable file
+IDs, a ref keeps naming the same entry across rename and move; elsewhere it
+names a base and path, so a rename or move changes it. See
+[Refer to files and folders](#refer-to-files-and-folders). Refresh stale rows
+before acting on them.
 
 Listing never issues a download URL. When a user requests a file download,
 call `filesv2.content.download` with `{id: selectedRef.id}`. The capability

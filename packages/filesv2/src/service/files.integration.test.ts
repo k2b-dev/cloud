@@ -962,7 +962,7 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/source.txt", 1001, 2001, "0600", false);
     const baseId = (await service.bases(actor)).items[0]!.id;
     await expect(
-      service.capabilityDownload(actor, { baseId, path: "source.txt", revision: "stale" }, new AbortController().signal),
+      service.capabilityDownload(actor, { id: entryRefId(baseId, "source.txt")!, revision: "stale" }, new AbortController().signal),
     ).rejects.toMatchObject({ code: "write_conflict" });
     for (const length of [3, 5]) {
       const upload = await service.upload(actor, {

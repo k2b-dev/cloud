@@ -160,7 +160,7 @@ id=$(cld filesv2 stat team:/Projects/plan.ods --json | jq -r .resourceId)
 cld spaces references add Item01 --type filesv2.entry --id "$id" --label "plan.ods"
 ```
 
-A Files ID stands for the file's area and path. Replacing the file's content keeps the reference working; after a move or rename the task shows only the label and no longer opens the file, so delete the reference and add the new ID. To upload a file first, see `cld filesv2 reference`.
+On storage with stable file IDs (`n:…`), the reference keeps opening the file or folder after a rename or move. Elsewhere the ID names the area and path: replacing the content keeps it working, but after a move or rename the task shows only the label, so delete the reference and add the new ID. `cld filesv2 reference` explains both forms under "Keep file references" and how to upload a file first.
 
 Comments can be edited and deleted by their author for a short time. Attachments are task images; `attachments add` uploads the file as-is, subject to the 10 MB stored-file limit. An attachment is named by ID or file name; a file name used twice fails with both IDs. Preview and download links returned by `spaces.item.read` need the same read access as the task; they are not public links.
 

@@ -306,6 +306,13 @@ certification, and an image boot smoke when `packages/cloud` or the
 `Dockerfile` changed.
 Run the same commands locally before opening a pull request.
 
+An integration suite that starts its own container needs only Docker and its
+`CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
+stable-reference suite starts a private Filegate this way. The integration job
+pulls such images first, with retries, because `docker run` does not retry a
+failed pull. When you add a suite like this or change its image, add the image
+to that pull step in `.github/workflows/ci.yml`.
+
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a
 path-filtered job listed in its `MAY_SKIP` variable. Any other result fails it
