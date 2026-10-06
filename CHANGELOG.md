@@ -3,6 +3,39 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.30.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.29.0...cloud-v0.30.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai:** deliver Assistant live updates over the shared live layer ([#652](https://github.com/k2b-dev/cloud/issues/652))
+
+### Features
+
+* **accounts:** tell people when a phone is paired with their account ([#658](https://github.com/k2b-dev/cloud/issues/658)) ([bbe3f6a](https://github.com/k2b-dev/cloud/commit/bbe3f6ab01bb24c31b14bc218be0c6a7189739cc))
+* **ai:** deliver Assistant live updates over the shared live layer ([#652](https://github.com/k2b-dev/cloud/issues/652)) ([662c62f](https://github.com/k2b-dev/cloud/commit/662c62fb10b29ee53b1570534beeb85ec756d52c))
+* **cloud:** add the file-provider contract and Files provider operations ([#664](https://github.com/k2b-dev/cloud/issues/664)) ([0e22339](https://github.com/k2b-dev/cloud/commit/0e223391e948beaafd6835adaabde7ffcec3dad6))
+* **cloud:** read capability manifests from newer Cloud releases ([#662](https://github.com/k2b-dev/cloud/issues/662)) ([c34ae94](https://github.com/k2b-dev/cloud/commit/c34ae942dfb7dd299f4f13b96c8aa0fd127c2966))
+* **files:** keep file references stable across rename and move ([#654](https://github.com/k2b-dev/cloud/issues/654)) ([133ae2a](https://github.com/k2b-dev/cloud/commit/133ae2a9f24dabcabd64d49bf933ad01aa9ebc22))
+* **pwa:** switch app tabs at the first touch ([#640](https://github.com/k2b-dev/cloud/issues/640)) ([74cad11](https://github.com/k2b-dev/cloud/commit/74cad11ad1accdc9267c90e5fdc7c7695547f802))
+* **search:** show fast results at once and say which apps are still searching ([#642](https://github.com/k2b-dev/cloud/issues/642)) ([2997ac7](https://github.com/k2b-dev/cloud/commit/2997ac7d07fa3fe99ed698b7380bd3287b27a8ce))
+* **ui:** render info blocks in every Markdown view ([#655](https://github.com/k2b-dev/cloud/issues/655)) ([d1382ed](https://github.com/k2b-dev/cloud/commit/d1382ed0d25ad8ef149e484dbcb401429b6f09fd))
+
+
+### Bug Fixes
+
+* **cloud:** compute and compare table dates as dates ([#643](https://github.com/k2b-dev/cloud/issues/643)) ([f708d28](https://github.com/k2b-dev/cloud/commit/f708d28b7f557de8f3a00a9a55d29bd709d566b5))
+* **cloud:** show a formula error for impossible table dates ([#650](https://github.com/k2b-dev/cloud/issues/650)) ([148fa1c](https://github.com/k2b-dev/cloud/commit/148fa1c91125105ea184c0b2522fffd468b4667e))
+* **core:** sign-in actions read in the order they are shown ([#660](https://github.com/k2b-dev/cloud/issues/660)) ([4b3bf97](https://github.com/k2b-dev/cloud/commit/4b3bf9727a0ca3bf00156a80db04cae3a567f65c))
+* **filesv2:** create new office documents on A4 paper ([#661](https://github.com/k2b-dev/cloud/issues/661)) ([6189217](https://github.com/k2b-dev/cloud/commit/6189217dec966080d32bd135872b14c0fb4d53f3))
+* **filesv2:** open Collabora in the Cloud language ([#659](https://github.com/k2b-dev/cloud/issues/659)) ([75bfe28](https://github.com/k2b-dev/cloud/commit/75bfe2816bc8ae8a92a9d540989472b74fb5c042))
+* **live:** resync returning subscriptions after access changes they missed ([#666](https://github.com/k2b-dev/cloud/issues/666)) ([7850a18](https://github.com/k2b-dev/cloud/commit/7850a183a1a374bde9e8a48b66b4bbe1a3aa6316))
+* **mail:** answer searches in large mailboxes within the time limit ([#646](https://github.com/k2b-dev/cloud/issues/646)) ([8c38d37](https://github.com/k2b-dev/cloud/commit/8c38d37034f853980ba0ac20b43e1b2248a21a60))
+* **mail:** hold scheduled sends while the mailbox needs a new login and tell the author ([#629](https://github.com/k2b-dev/cloud/issues/629)) ([62125be](https://github.com/k2b-dev/cloud/commit/62125be838964b09da4c225456b03ac398192b9b))
+* **notebooks:** open note links that point to a heading ([#644](https://github.com/k2b-dev/cloud/issues/644)) ([222cebd](https://github.com/k2b-dev/cloud/commit/222cebdd61237324a30deb6946bb1bca1e647278))
+* **notebooks:** stop late heading jumps and keep PDF note links inside the PDF ([#645](https://github.com/k2b-dev/cloud/issues/645)) ([0d879b0](https://github.com/k2b-dev/cloud/commit/0d879b0c9afcadc99696773502ae9585646d3202))
+* **ui:** keep focus that moved before a dialog's first frame ([#665](https://github.com/k2b-dev/cloud/issues/665)) ([2573f5c](https://github.com/k2b-dev/cloud/commit/2573f5cec1019a2e146c458f4dfc85a64b96443a))
+
 ## [0.29.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.28.0...cloud-v0.29.0) (2026-10-05)
 
 

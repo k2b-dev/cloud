@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.13.0...npm-ui-v0.14.0) (2026-10-06)
+
+
+### Features
+
+* **pwa:** switch app tabs at the first touch ([#640](https://github.com/k2b-dev/cloud/issues/640)) ([74cad11](https://github.com/k2b-dev/cloud/commit/74cad11ad1accdc9267c90e5fdc7c7695547f802))
+* **ui:** render info blocks in every Markdown view ([#655](https://github.com/k2b-dev/cloud/issues/655)) ([d1382ed](https://github.com/k2b-dev/cloud/commit/d1382ed0d25ad8ef149e484dbcb401429b6f09fd))
+
+
+### Bug Fixes
+
+* **ui:** keep focus that moved before a dialog's first frame ([#665](https://github.com/k2b-dev/cloud/issues/665)) ([2573f5c](https://github.com/k2b-dev/cloud/commit/2573f5cec1019a2e146c458f4dfc85a64b96443a))
+
 ## [0.13.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.12.0...npm-ui-v0.13.0) (2026-10-05)
 
 
