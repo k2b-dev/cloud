@@ -95,5 +95,7 @@ export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
+export type { VirtualFeedController, VirtualFeedProps, VirtualFeedScrollOptions } from "./VirtualFeed";
+export { VirtualFeed } from "./VirtualFeed";
 export type { ZoomPanAction, ZoomPanFullscreen, ZoomPanViewportProps } from "./ZoomPanViewport";
 export { ZoomPanViewport } from "./ZoomPanViewport";

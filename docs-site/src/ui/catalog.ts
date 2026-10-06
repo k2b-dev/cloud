@@ -219,6 +219,12 @@ const portableSections = [
       page("pagination", "Pagination", "ti ti-arrow-right", "Server-friendly href pagination with compact page windows."),
       page("code", "Code", "ti ti-code", "Selectable source with language-aware highlighting and copy."),
       page("logs", "Logs", "ti ti-list-details", "Semantic timestamped log entries with structured metadata."),
+      page(
+        "virtual-feed",
+        "VirtualFeed",
+        "ti ti-timeline-event-text",
+        "Long feeds that load at both ends, stay at the end, and keep the reading position to the pixel.",
+      ),
       page("structured-data", "Structured data", "ti ti-braces", "Formatted and raw JSON-like data disclosure."),
       page("media", "Media previews", "ti ti-photo", "Image lightboxes, PDF previews, and zoomable content."),
       page("files", "Files", "ti ti-folders", "Generic file trees, browser composition, and content-aware previews."),
@@ -308,7 +314,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 122;
+export const portableUiComponentCount = 123;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
