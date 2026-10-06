@@ -155,9 +155,9 @@ jobs:
           tags=$(jq -nc --arg release "$RELEASE" --argjson extra "$EXTRA_TAGS" '[$release] + $extra | unique')
           [[ "$(jq -r '.[]' <<<"$tags" | grep -cE '^(main|latest)$')" == "0" ]] || { echo "Mutable tags are never published." >&2; exit 1; }
           sources=("$IMAGE@$amd64" "$IMAGE@$arm64")
-          # Never read the new index back from the registry: GHCR can answer
-          # "not found" for a tag it accepted a moment ago. Check the index
-          # before pushing it and take its digest from the push itself.
+          # Never look the new index up by tag: GHCR can answer "not found"
+          # for a tag it accepted a moment ago. Check the index before
+          # pushing it and take its digest from the push itself.
           platforms=$(docker buildx imagetools create --dry-run "${sources[@]}" | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"')
           for platform in linux/amd64 linux/arm64; do
             grep -qx "$platform" <<<"$platforms" || { echo "$IMAGE index lacks $platform" >&2; exit 1; }
