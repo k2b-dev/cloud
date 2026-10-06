@@ -133,6 +133,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let pendingAnnouncement: T[] = [];
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  /** "Jump to latest" asked for the newest page while a newer page was still loading. */
+  let wantNewest = false;
   let observeRow: (row: HTMLElement) => void = () => {};
   let unobserveRow: (row: HTMLElement) => void = () => {};
   const owner = getOwner();
@@ -140,6 +142,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const rowOf = new WeakMap<Element, Row<T>>();
 
   const [version, setVersion] = createSignal(0);
+  /** Changes with every new `items` array, so separators see a replaced predecessor. */
+  const [listVersion, setListVersion] = createSignal(0);
   const [tabStop, setTabStop] = createSignal(-1);
   // Known on the server too, so the empty slot never flashes for a feed that has items.
   const [count, setCount] = createSignal(untrack(() => props.items.length));
@@ -235,7 +239,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const createRow = (item: T, key: string, at: number): Row<T> =>
     createRoot((dispose) => {
       const [index, setIndex] = createSignal(at);
-      const separator = () => props.separator?.(item, list[index() - 1]);
+      const separator = () => (listVersion(), props.separator?.(item, list[index() - 1]));
       const node = (
         <div
           class="k2b-virtual-feed__item"
@@ -281,11 +285,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const renderRows = (indices: readonly number[]) => {
     const wanted = new Map<string, number>();
     for (const index of indices) wanted.set(keys[index]!, index);
-    let lostFocus = false;
+    const active = feed.contains(document.activeElement) ? (document.activeElement as HTMLElement) : undefined;
     for (const [key, row] of rows) {
       const index = wanted.get(key);
       if (index !== undefined && list[index] === row.item) continue;
-      lostFocus ||= row.node.contains(document.activeElement);
       unobserveRow(row.node);
       row.node.remove();
       row.dispose();
@@ -306,8 +309,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       if (row.node === cursor) cursor = cursor.nextSibling;
       else feed.insertBefore(row.node, cursor);
     }
-    // A focused item that was removed or replaced leaves focus in the feed rather than on the document.
-    if (lostFocus) viewport.focus({ preventScroll: true });
+    // Only reordered items move a node, which blurs it; a removed or replaced item leaves focus in the feed.
+    if (active && document.activeElement !== active) (active.isConnected ? active : viewport).focus({ preventScroll: true });
   };
 
   /**
@@ -374,8 +377,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     if (excess <= 0) return;
     const height = viewport.clientHeight;
     const top = stick ? total() - height : offsetOf(anchor.index) - anchor.delta;
-    const first = Math.min(indexAt(top - height - OVERSCAN), anchor.index);
-    const last = Math.max(indexAt(top + 2 * height + OVERSCAN), anchor.index);
+    // While following the end the anchor is not maintained; only the visible end counts.
+    const first = Math.min(indexAt(top - height - OVERSCAN), stick ? hi : anchor.index);
+    const last = Math.max(indexAt(top + 2 * height + OVERSCAN), stick ? lo : anchor.index);
     if (side === "start") while (excess > 0 && lo < first) excess -= sizes[lo++]!;
     else while (excess > 0 && hi - 1 > last) excess -= sizes[--hi]!;
     dirtyFrom = 0;
@@ -398,6 +402,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       .catch(() => undefined)
       .then(() => {
         setLoading(false);
+        if (direction !== "older" && wantNewest) {
+          wantNewest = false;
+          load("newest");
+          return;
+        }
         // Keep loading while the reader still sits at the edge and the last page arrived.
         if (list !== before && viewport) checkEdges();
       });
@@ -451,6 +460,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
 
   /** Applies a new `items` array: appends follow the end, prepends and other changes keep the anchor by key. */
   const sync = (next: readonly T[]) => {
+    // The reader may have scrolled in this frame before its scroll event ran; take that position first.
+    if (keys.length > 0 && Math.abs(viewport.scrollTop - lastTop) > 0.5) {
+      lastTop = viewport.scrollTop;
+      captureAnchor();
+    }
     const length = next.length;
     const nextKeys = next.map(props.getKey);
     const previous = keys.length;
@@ -522,6 +536,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     keys = nextKeys;
     dirtyFrom = 0;
     setCount(length);
+    setListVersion((value) => value + 1);
     recompute();
     if (total() > MAX_WINDOW) {
       const center = stick ? hi - 1 : anchor.index;
@@ -547,9 +562,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       return;
     }
     setStick(true);
+    // Loading the newest page first keeps newer paging from starting next to it; a newer page in flight goes first.
+    if (props.hasNewer) {
+      if (loadingNewer()) wantNewest = true;
+      else load("newest");
+    }
     if (hi < list.length) windowAround(list.length - 1);
     restore(true);
-    if (props.hasNewer) load("newest");
   };
 
   const scrollToKey = (key: string, options: VirtualFeedScrollOptions = {}) => {

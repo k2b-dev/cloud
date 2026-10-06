@@ -34,7 +34,7 @@ const make = (seq) => {
   }
   return { id: "m" + seq, seq, lines: image ? 0 : lines, image, text: image ? "" : words.join(" "), grow: createSignal(0) };
 };
-const all = Array.from({ length: older + visible + 1000 }, (_, seq) => make(seq));
+const all = Array.from({ length: older + visible + (options.future ?? 1000) }, (_, seq) => make(seq));
 let first = older;
 let next = older + visible;
 const [items, setItems] = createSignal(all.slice(first, next));
@@ -193,6 +193,18 @@ window.feed = {
     all.find((item) => item.id === key).grow[1](px);
   },
   setMarker,
+  replace(key, seq) {
+    setItems((current) => current.map((item) => (item.id === key ? { ...item, seq } : item)));
+  },
+  swap(a, b) {
+    setItems((current) => {
+      const next = [...current];
+      const i = next.findIndex((item) => item.id === a);
+      const j = next.findIndex((item) => item.id === b);
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  },
 };
 `;
 const build = await Bun.build({
@@ -230,12 +242,14 @@ type Feed = {
   append: (count: number) => void;
   grow: (key: string, px: number) => void;
   setMarker: (key: string | undefined) => void;
+  replace: (key: string, seq: number) => void;
+  swap: (a: string, b: string) => void;
 };
 declare const probe: Probe;
 declare const feed: Feed;
 
 const open = async (
-  options: { count?: number; older?: number; locale?: string; separators?: boolean; marker?: string } = {},
+  options: { count?: number; older?: number; future?: number; locale?: string; separators?: boolean; marker?: string } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const page = await (await browser.newContext({ viewport: { width: 720, height: 800 }, ...context })).newPage();
@@ -335,6 +349,23 @@ describe(`VirtualFeed in ${browserName}`, () => {
     await page.close();
   });
 
+  test("keeps a scroll that happened just before new items arrived in the same frame", async () => {
+    const page = await open();
+    // The scroll event of this scroll runs only after the append, so the feed must notice the scroll itself.
+    await page.evaluate(() => {
+      feed.viewport().scrollTop -= 800;
+      feed.append(2);
+    });
+    await frames(page, 4);
+    expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
+    const fromEnd = await page.evaluate(() => {
+      const port = feed.viewport();
+      return port.scrollHeight - port.scrollTop - port.clientHeight;
+    });
+    expect(fromEnd).toBeGreaterThan(700);
+    await page.close();
+  });
+
   test("holds the position to the pixel while older pages load above", async () => {
     const page = await open({ count: 120, older: 50 });
     await page.evaluate(() => {
@@ -427,6 +458,11 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect((await active()).key).toBe("m299");
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
 
+    // Reordered items move nodes; the focused one keeps focus.
+    await page.evaluate(() => feed.swap("m298", "m299"));
+    await frames(page, 2);
+    expect((await active()).key).toBe("m299");
+
     // Three items within a second become one polite announcement.
     await page.evaluate(() => {
       feed.append(2);
@@ -447,6 +483,11 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(await page.locator('[data-key="m250"] .k2b-virtual-feed__separator').textContent()).toBe("Day 50");
     expect(await page.locator('[data-key="m251"] .k2b-virtual-feed__separator').count()).toBe(0);
     expect(await page.locator('[data-key="m250"] .k2b-virtual-feed__marker').textContent()).toBe("New");
+    // A replaced predecessor that now falls on the same day removes the separator.
+    await page.evaluate(() => feed.replace("m249", 250));
+    expect(await page.locator('[data-key="m250"] .k2b-virtual-feed__separator').count()).toBe(0);
+    await page.evaluate(() => feed.replace("m249", 249));
+    expect(await page.locator('[data-key="m250"] .k2b-virtual-feed__separator').textContent()).toBe("Day 50");
 
     // Scroll so that the marker sits just above the visible rows, then let it go away as when read elsewhere.
     await page.evaluate(() => {
@@ -512,7 +553,7 @@ describe(`VirtualFeed in ${browserName}`, () => {
   });
 
   test("lays out 100,000 items in a bounded window and keeps the position when the window moves", async () => {
-    const page = await open({ count: 100_000 });
+    const page = await open({ count: 100_000, future: 60_000 });
     const layout = await page.evaluate(() => ({
       height: (document.querySelector('[role="feed"]') as HTMLElement).offsetHeight,
       rows: document.querySelectorAll('[role="article"]').length,
@@ -541,6 +582,14 @@ describe(`VirtualFeed in ${browserName}`, () => {
     const endTop = await page.evaluate((key) => document.querySelector(`[data-key="${key}"]`)!.getBoundingClientRect().top, watch);
     expect(Math.abs(endTop - startTop - 500)).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => (document.querySelector('[role="feed"]') as HTMLElement).offsetHeight)).toBeLessThanOrEqual(8_000_000);
+
+    // Following the end, appended items push the window forward instead of growing it past the cap.
+    await page.locator(".k2b-virtual-feed__end").click();
+    await frames(page, 4);
+    await page.evaluate(() => feed.append(60_000));
+    await frames(page, 6);
+    expect(await page.evaluate(() => (document.querySelector('[role="feed"]') as HTMLElement).offsetHeight)).toBeLessThanOrEqual(8_000_000);
+    expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
 
     // A jump to the very first item moves the window there, and Jump to latest comes back.
     expect(await page.evaluate(() => feed.controller.scrollToKey("m0", { align: "start" }))).toBe(true);
