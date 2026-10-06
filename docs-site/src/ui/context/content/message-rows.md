@@ -6,11 +6,16 @@ the accent tint. Messages by the same author within five minutes form a group:
 only the first shows the avatar, name, and time. `MessageSystemRow` is a quiet,
 centered line for something that happened, such as a person joining.
 
+A row can also show the message it answers, a forward or edit marker, images,
+videos, and files, a link preview and a card, reactions, a thread bar, and a
+message that is still being written.
+
 Every part of a row has its final height when it mounts, so the rows compose
 with [`VirtualFeed`](/en/ui/content/virtual-feed) and the feed keeps its
 positions. The application owns the messages, their order, sending, read
-state, and every action. The rows own layout, the safe text rendering, the
-send state, and the action toolbar.
+state, reactions, threads, uploads, and every action. The rows own layout, the
+safe text rendering, the reserved areas, the send state, and the action
+toolbar.
 
 ## Import
 
@@ -20,9 +25,16 @@ import {
   MessageSystemRow,
   startsMessageGroup,
   type MessageRowAction,
+  type MessageRowAttachment,
   type MessageRowAuthor,
+  type MessageRowFile,
+  type MessageRowMedia,
+  type MessageRowProgress,
   type MessageRowProps,
+  type MessageRowQuote,
+  type MessageRowReaction,
   type MessageRowStatus,
+  type MessageRowThread,
   type MessageSystemRowProps,
 } from "@k2b/ui";
 ```
@@ -110,6 +122,116 @@ const send = async (message: ChatMessage) => {
 };
 ```
 
+### Quotes, forwards, and edits
+
+`quote` shows the message this one answers above the bubble: a reply arrow,
+the quoted author's name, and the quoted text, at most two lines. Pass the
+quoted text as plain text. With `onSelect`, the quote is a button, for example
+to jump to the quoted message with `VirtualFeed`'s `scrollToKey`.
+
+`forwarded` adds a "Forwarded" line above the bubble. `edited` ends the last
+paragraph of the text with a quiet "edited", so it takes no line of its own
+unless the text ends in a code block, list, or table.
+
+### Deleted messages
+
+`deleted` replaces the bubble with "This message was deleted", outlined
+instead of filled and as tall as a one-line message. A deleted message shows
+no text, quote, markers, attachments, previews, or reactions, even when they
+are passed. The thread bar, the send state line, and the actions stay as the
+application passes them.
+
+### Attachments
+
+`attachments` lists images, videos, and files. Images and videos come first,
+in a grid with areas reserved before anything loads, then files as chips.
+
+- **Images and videos** (`kind: "image"` or `"video"`) need `src` (for a
+  video, its poster frame), `alt`, and the stored pixel `width` and `height`.
+  A single picture keeps its aspect ratio, at most 20 rem tall and never
+  wider than its stored width or the row. A ratio beyond 1:2 or 3:1 is
+  cropped to that bound. Two to four pictures share a square grid, three with
+  a wide first cell. More than four show the first four, and the last one says
+  how many more there are ("+2").
+- **Files** (`kind: "file"`) show an icon chosen from `name` and `mediaType`,
+  or your `icon`, the name, and an optional `detail` such as "PDF · 412 KB".
+
+There is no placeholder picture: the reserved area shows a quiet fill until
+the image arrives, and the image only paints into it. Store the size of every
+image and video poster when it is uploaded; a picture without a size reserves
+a 4:3 area.
+
+Each attachment opens through `onOpen`, for example in a lightbox, or through
+`href` in a new tab. Without either, it is shown but is not a control. URLs
+must be relative or use `https`, `http`, or `blob`, and a picture's `src` may
+also be a `data:image/` URL; other images do not load and other links do not
+open. A picture is named by its `alt`, plus "Video"
+and the duration for a video and the number of hidden pictures for the last
+cell of a full grid. A message with attachments and an empty `text` shows no
+bubble.
+
+### Link previews and cards
+
+`linkPreview` and `card` are slots below the attachments: a preview of a link
+in the text, and a card for an element the message refers to, such as a task
+or a document. The application builds both, ideally with `@k2b/ui` surfaces,
+and gives them their final height when they mount. A preview that is fetched
+later should be passed only once its data is there, or reserve its height from
+the start.
+
+### Reactions
+
+`reactions` shows a bar of chips: the emoji and the count, the reader's own
+reactions highlighted. With `onToggleReaction`, every chip is a toggle button
+that reports its `key`; without it, the chips are not controls.
+`onAddReaction` adds an "Add reaction" button at the end of the bar and
+receives that button, so a picker can open next to it. A chip's `label`, for
+example "Nora, Tobias", is read by screen readers and shown as a tooltip.
+
+The bar has one fixed height. Chips never wrap; when there are more than fit,
+the chips scroll sideways and "Add reaction" stays in place. On an own
+message, the bar shares its line with the send state.
+
+The bar shows whenever `reactions` is set, also to an empty list, and keeps
+its height while chips come and go. While it is empty, "Add reaction" shows
+only while the message is hovered or focused, like the actions. Only a
+message whose `reactions` changes from unset to a list grows, by one line.
+Decide per message where that line is reserved:
+
+- Pass `reactions` to every own message. The bar shares the line of the send
+  state, so it costs a few pixels.
+- Pass it to every message that has or had a reaction, and keep passing an
+  empty list after the last one is removed, so removing never moves anything.
+- Leave it out on others' messages without reactions. A reserved, empty line
+  under every message would pull each group apart.
+
+The first reaction on another person's message then adds one line. Inside
+`VirtualFeed`, the reader keeps their place: at the end, the end stays in
+view; scrolled up, the item at the top stays, and only the rows below the
+reacted message move, once. Where nothing may ever move, such as a feed of
+announcements, pass `reactions` to every message.
+
+### Threads
+
+`thread` adds a bar of fixed height below the message that opens its replies
+through `onOpen`. It shows up to three of the `participants`, the reply count,
+and "Last reply" with the application's formatted `lastReply` time; a long
+time ends in an ellipsis. Pass `thread` from the first reply on. The first
+reply adds the bar like a new line; every later reply only changes its text.
+
+### Messages in progress
+
+`progress` marks a message that is still being written, by a person or an
+automated author alike: its line shows a spinner, the application's `status`
+text, such as "Writing" or "Searching the files", and, with `onStop`, a "Stop"
+button. While the text is empty, the bubble shows three quiet dots instead. The
+text is `aria-busy` while `progress` is set, so screen readers wait for it.
+
+A message in progress grows as its text arrives. `VirtualFeed` keeps the
+reader at the end while they are there. When `progress` ends, the line goes
+away unless `status` or `receipt` is set, so set `status` on own messages to
+keep it.
+
 ### Actions
 
 `actions` are icon buttons with a label each. They appear as a small toolbar
@@ -129,8 +251,16 @@ optional `time` with `dateTime`. It never belongs to a group; pass
 The rows render no landmark or `article` themselves. Inside `VirtualFeed`,
 each item is an `article` in a `feed`, with arrow keys between messages. Pass
 `itemLabel` with the author and time so each article has a name. Tab moves from
-a message into its links, code blocks, "Show more", "Retry", and its actions;
+a message into its quote, links, code blocks, "Show more", attachments, the
+thread bar, reaction chips, "Add reaction", "Retry" or "Stop", and its actions;
 the toolbar shows while focus is inside the row.
+
+The quote is read as "In reply to" the author. Reaction chips are toggle
+buttons with `aria-pressed`, named by emoji, count, and `label` ("👍 3
+reactions: Nora, Tobias"), in a group named "Reactions". The thread bar is one
+button named by its count and last reply; its avatars are hidden. Pictures are
+named by their `alt` text, and the attachments form a group named
+"Attachments".
 
 The avatar is hidden from screen readers because the name follows it.
 A continuation row carries the author and time as visually hidden text. The
@@ -142,11 +272,15 @@ failed send. Code blocks are focusable so keyboard users can scroll them.
 
 The rows render the same markup on the server and in the browser. They read
 the inherited locale for their own words in English and German: "Sending",
-"Not sent", "Retry", "Show more", "Copy", and the label of the toolbar.
-Application text, such as the receipt, the badge, and action labels, comes
-localized from the application.
+"Not sent", "Retry", "Show more", "Copy", the label of the toolbar, "In reply
+to", "Forwarded", "edited", "This message was deleted", "Video", the count of
+hidden pictures, "Reactions", "Add reaction", the reaction counts, the reply
+count, "Last reply", and "Stop". Application text, such as the receipt, the
+badge, the progress status, reaction labels, alt text, and action labels,
+comes localized from the application.
 
-Copy uses the browser clipboard. A web font that loads after a row mounted
+Copy uses the browser clipboard. Images load lazily into their reserved
+areas. A web font that loads after a row mounted
 changes its height like any text; `VirtualFeed` measures again and keeps the
 reading position.
 
@@ -161,6 +295,7 @@ const entry = (message?: ChatEntry) => message && { author: message.authorId, at
   getKey={(message) => message.id}
   estimateSize={(message) => (message.system ? 36 : 60)}
   label="Project Northern Lights"
+  controller={(controller) => (feed = controller)}
   itemLabel={(message) => (message.system ? undefined : `${people.get(message.authorId)!.name}, ${clock(message.at)}`)}
 >
   {(message, index) =>
@@ -179,6 +314,21 @@ const entry = (message?: ChatEntry) => message && { author: message.authorId, at
         status={message.authorId === me ? message.status : undefined}
         receipt={readBy(message)}
         onRetry={() => resend(message)}
+        quote={message.replyTo && { ...quoteOf(message.replyTo), onSelect: () => feed.scrollToKey(message.replyTo!, { highlight: true }) }}
+        edited={message.editedAt !== undefined}
+        deleted={message.deletedAt !== undefined}
+        attachments={message.files.map((file) =>
+          file.width ? { kind: "image", src: file.previewUrl, alt: file.alt, width: file.width, height: file.height, onOpen: () => openLightbox(file) }
+            : { kind: "file", name: file.name, detail: describe(file), mediaType: file.type, href: file.url },
+        )}
+        reactions={
+          message.authorId === me || message.hadReactions
+            ? message.reactions.map((reaction) => ({ ...reaction, own: reaction.by.includes(me) }))
+            : undefined
+        }
+        onToggleReaction={(emoji) => toggleReaction(message, emoji)}
+        onAddReaction={(anchor) => openEmojiPicker(anchor, message)}
+        thread={message.replies > 0 ? { count: message.replies, lastReply: clock(message.lastReplyAt), onOpen: () => openThread(message) } : undefined}
         actions={[{ id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => reply(message) }]}
       />
     )

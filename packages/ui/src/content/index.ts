@@ -83,9 +83,16 @@ export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewP
 export type {
   MessageGroupEntry,
   MessageRowAction,
+  MessageRowAttachment,
   MessageRowAuthor,
+  MessageRowFile,
+  MessageRowMedia,
+  MessageRowProgress,
   MessageRowProps,
+  MessageRowQuote,
+  MessageRowReaction,
   MessageRowStatus,
+  MessageRowThread,
   MessageSystemRowProps,
 } from "./MessageRow";
 export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";

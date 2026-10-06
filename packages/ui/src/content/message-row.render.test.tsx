@@ -229,6 +229,231 @@ describe("MessageRow", () => {
   });
 });
 
+describe("MessageRow rich content", () => {
+  const image = { kind: "image", src: "/media/grid.webp", alt: "Tile grid", width: 1200, height: 800 } as const;
+  const pdf = { kind: "file", name: "Testplan.pdf", detail: "PDF · 412 KB", mediaType: "application/pdf" } as const;
+
+  for (const [locale, words] of [
+    [
+      "en",
+      {
+        replyTo: "In reply to",
+        forwarded: "Forwarded",
+        edited: "edited",
+        deleted: "This message was deleted",
+        reactions: "Reactions",
+        add: "Add reaction",
+        one: "👍 1 reaction: Nora",
+        many: "☕ 3 reactions",
+        replies: "3 replies",
+        reply: "1 reply",
+        last: "Last reply 10:42",
+        stop: "Stop",
+        video: "Clip, Video 0:42",
+        more: "Four, 2 more",
+      },
+    ],
+    [
+      "de",
+      {
+        replyTo: "Antwort auf",
+        forwarded: "Weitergeleitet",
+        edited: "bearbeitet",
+        deleted: "Diese Nachricht wurde gelöscht",
+        reactions: "Reaktionen",
+        add: "Reaktion hinzufügen",
+        one: "👍 1 Reaktion: Nora",
+        many: "☕ 3 Reaktionen",
+        replies: "3 Antworten",
+        reply: "1 Antwort",
+        last: "Letzte Antwort 10:42",
+        stop: "Stoppen",
+        video: "Clip, Video 0:42",
+        more: "Four, 2 weitere",
+      },
+    ],
+  ] as const) {
+    test(`marks a quote, a forward, and an edit (${locale})`, () => {
+      const html = row({ quote: { author: "Tobias Kern", text: "The API is done." }, forwarded: true, edited: true }, locale);
+
+      expect(textOf(html)).toBe(
+        `NB Nora Brandt 09:31 ${words.forwarded} ${words.replyTo} Tobias Kern The API is done. Hello ${words.edited}`,
+      );
+      expect(html).toMatch(/<div class="k2b-message-row__quote"><i class="ti ti-arrow-back-up" aria-hidden="true">/);
+      // The marker ends the last paragraph instead of taking a line of its own.
+      expect(html).toContain(`<p>Hello <span class="k2b-message-row__edited">${words.edited}</span></p>`);
+      expect(row({ text: "```\ncode\n```", edited: true }, locale)).toContain(
+        `</div><p><span class="k2b-message-row__edited">${words.edited}</span></p>`,
+      );
+      expect(row({ quote: { author: "Tobias Kern", text: "The API is done.", onSelect: () => {} } }, locale)).toMatch(
+        /<button type="button" class="k2b-message-row__quote">/,
+      );
+    });
+
+    test(`replaces a deleted message with a placeholder and keeps its thread (${locale})`, () => {
+      const html = row(
+        {
+          text: "",
+          deleted: true,
+          edited: true,
+          forwarded: true,
+          quote: { author: "Tobias Kern", text: "Quoted" },
+          attachments: [image, pdf],
+          linkPreview: "Preview",
+          card: "Card",
+          reactions: [{ key: "👍", emoji: "👍", count: 1 }],
+          thread: { count: 1, lastReply: "10:42", onOpen: () => {} },
+        },
+        locale,
+      );
+
+      expect(html).toContain('class="k2b-message-row__bubble" data-deleted=""');
+      expect(textOf(html)).toBe(`NB Nora Brandt 09:31 ${words.deleted} ${words.reply} ${words.last}`);
+      for (const part of ["__quote", "__marker", "__edited", "__media", "__files", "__slot", "__reactions", "__text"])
+        expect(html).not.toContain(`k2b-message-row${part}`);
+    });
+
+    test(`shows reactions as toggles with counts and names (${locale})`, () => {
+      const html = row(
+        {
+          reactions: [
+            { key: "👍", emoji: "👍", count: 1, own: true, label: "Nora" },
+            { key: "☕", emoji: "☕", count: 3 },
+          ],
+          onToggleReaction: () => {},
+          onAddReaction: () => {},
+        },
+        locale,
+      );
+
+      expect(html).toMatch(new RegExp(`class="k2b-message-row__reactions" role="group" aria-label="${words.reactions}"`));
+      expect(html).toContain(`aria-pressed="true" aria-label="${words.one}" title="Nora" data-own=""`);
+      expect(html).toContain(`aria-pressed="false" aria-label="${words.many}"`);
+      expect(html).toMatch(new RegExp(`<button[^>]*aria-label="${words.add}"`));
+      // Read-only reactions are not controls, and a reserved bar stays even while it is empty.
+      const readOnly = row({ reactions: [{ key: "👍", emoji: "👍", count: 1, label: "Nora" }] }, locale);
+      expect(readOnly).toContain(`<span class="k2b-message-row__reaction" role="img" aria-label="${words.one}"`);
+      expect(readOnly).not.toContain("aria-pressed");
+      expect(row({ reactions: [], onAddReaction: () => {} }, locale)).toMatch(/class="k2b-message-row__reactions"[^>]*data-empty=""/);
+      expect(row({}, locale)).not.toContain("k2b-message-row__reactions");
+    });
+
+    test(`opens a thread from a bar with people, count, and last reply (${locale})`, () => {
+      const people = ["Ada", "Ben", "Cleo", "Dan"].map((name) => ({ name }));
+      const html = row(
+        { thread: { count: 3, participants: people, lastReply: "10:42", lastReplyDateTime: "2026-10-06T08:42:00Z", onOpen: () => {} } },
+        locale,
+      );
+
+      expect(html).toMatch(
+        /<button type="button" class="k2b-message-row__thread"><span class="k2b-message-row__thread-people" aria-hidden="true">/,
+      );
+      expect(html.match(/class="k2b-avatar ?" data-size="xs"/g)).toHaveLength(3);
+      expect(html).toContain(`<span class="k2b-message-row__thread-count">${words.replies}</span>`);
+      expect(html).toContain(`datetime="2026-10-06T08:42:00.000Z">${words.last}</time>`);
+    });
+
+    test(`shows the same progress line and Stop for every author (${locale})`, () => {
+      const person = row({ text: "", progress: { status: "Writing", onStop: () => {} } }, locale);
+      const agent = row(
+        { author: { name: "Minutes", icon: "ti ti-robot" }, text: "", progress: { status: "Writing", onStop: () => {} } },
+        locale,
+      );
+      const line = (html: string) => html.slice(html.indexOf('class="k2b-message-row__line"'));
+
+      expect(line(person)).toBe(line(agent));
+      expect(textOf(line(person))).toEndWith(`Writing ${words.stop}`);
+      expect(person).toContain('class="k2b-message-row__writing"><span class="k2b-chat-progress-dots" aria-hidden="true">');
+      const streaming = row({ text: "Half a sen", progress: { status: "Writing" } }, locale);
+      expect(streaming).toMatch(/class="k2b-content-markdown k2b-message-row__text"[^>]*aria-busy="true"/);
+      expect(textOf(line(streaming))).toEndWith("Writing");
+    });
+
+    test(`names images, videos, and the rest of a full grid (${locale})`, () => {
+      const html = row(
+        {
+          attachments: [
+            { ...image, alt: "One", onOpen: () => {} },
+            { kind: "video", src: "/clip.webp", alt: "Clip", width: 1920, height: 1080, duration: "0:42", onOpen: () => {} },
+            { ...image, alt: "Three", onOpen: () => {} },
+            { ...image, alt: "Four", onOpen: () => {} },
+            { ...image, alt: "Five" },
+            { ...image, alt: "Six" },
+          ],
+        },
+        locale,
+      );
+
+      expect(html).toContain('data-count="4"');
+      expect(html.match(/<img /g)).toHaveLength(4);
+      expect(html).toContain(`aria-label="${words.video}"`);
+      expect(html).toContain(`aria-label="${words.more}"`);
+      expect(html).toContain('<span class="k2b-message-row__media-more" aria-hidden="true">+2</span>');
+    });
+  }
+
+  test("reserves a single image's area from its stored size before it loads", () => {
+    const style = (attachment: object) => {
+      const html = row({ attachments: [attachment as typeof image] });
+      return {
+        width: html.match(/class="k2b-message-row__media"[^>]*style="width: ?([^"]+)"/)?.[1],
+        ratio: html.match(/class="k2b-message-row__media-item" style="aspect-ratio: ?([^;"]+)/)?.[1],
+      };
+    };
+
+    expect(style(image)).toEqual({ width: "min(100%, 1200px, calc(var(--k2b-message-media-height) * 1.5))", ratio: "1.5" });
+    // Very tall and very wide pictures are cropped to a ratio that still reads in a conversation.
+    expect(style({ ...image, width: 400, height: 4000 }).ratio).toBe("0.5");
+    expect(style({ ...image, width: 9000, height: 1000 }).ratio).toBe("3");
+    expect(style({ ...image, width: 0, height: 0 })).toEqual({
+      width: "min(100%, calc(var(--k2b-message-media-height) * 1.3333333333333333))",
+      ratio: "1.3333333333333333",
+    });
+    const html = row({ attachments: [image] });
+    expect(html).toMatch(/<img[^>]*src="\/media\/grid.webp"[^>]*alt[ =][^>]*width="1200"[^>]*height="800"[^>]*loading="lazy"/);
+    // Without a way to open it, the picture itself carries the description.
+    expect(html).toMatch(/<span class="k2b-message-row__media-item" style="aspect-ratio: ?1.5;?" role="img" aria-label="Tile grid">/);
+    expect(html).toContain("data-media");
+    expect(row()).not.toContain("data-media");
+  });
+
+  test("shows files as chips and opens attachments only from safe URLs", () => {
+    const html = row({
+      attachments: [
+        { ...pdf, href: "https://example.com/testplan.pdf" },
+        { kind: "file", name: "notes.zip", href: "javascript:alert(1)" },
+        { kind: "file", name: "photo.heic", icon: "ti ti-photo", href: "/files/photo.heic" },
+        { ...image, src: "javascript:alert(2)", href: "data:text/html,hi" },
+      ],
+    });
+
+    expect(html).toMatch(
+      /<a class="k2b-message-row__file"[^>]* href="https:\/\/example.com\/testplan.pdf" target="_blank" rel="noopener noreferrer"><span class="k2b-message-row__file-icon" aria-hidden="true"><i class="ti ti-file-type-pdf">/,
+    );
+    expect(textOf(html)).toContain("Testplan.pdf PDF · 412 KB notes.zip photo.heic");
+    expect(html).toMatch(
+      /<span class="k2b-message-row__file"[^>]*><span class="k2b-message-row__file-icon" aria-hidden="true"><i class="ti ti-file-zip">/,
+    );
+    expect(html).toContain('href="/files/photo.heic"');
+    expect(html).toContain('<i class="ti ti-photo">');
+    expect(html).not.toMatch(/javascript:|data:text/);
+    // A picture may be inline image data; a link may not.
+    const inline = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+    expect(row({ attachments: [{ ...image, src: inline, href: inline }] })).toMatch(
+      /<span class="k2b-message-row__media-item"[^>]*><img src="data:image\/svg\+xml,/,
+    );
+    // A message of attachments alone has no empty bubble.
+    expect(row({ text: " ", attachments: [pdf] })).not.toContain("k2b-message-row__bubble");
+  });
+
+  test("places the caller's link preview and card below the attachments", () => {
+    const html = row({ attachments: [pdf], linkPreview: "Preview", card: "Card" });
+
+    expect(html.indexOf("k2b-message-row__files")).toBeLessThan(html.indexOf('<div class="k2b-message-row__slot">Preview</div>'));
+    expect(html.indexOf("Preview")).toBeLessThan(html.indexOf('<div class="k2b-message-row__slot">Card</div>'));
+  });
+});
+
 describe("MessageSystemRow", () => {
   test("renders a quiet centered line with an optional icon and time", () => {
     const html = renderToString(() =>
@@ -301,6 +526,30 @@ describe("MessageRow styles", () => {
     expect(clamp.get("max-height")).toEqual(["calc(10 * var(--k2b-message-line))"]);
     // A box that can scroll would scroll to a focused link instead of opening.
     expect(clamp.get("overflow")).toEqual(["clip"]);
+  });
+
+  test("gives rich content fixed heights and reserved areas", () => {
+    expect(declarations(".k2b-ui .k2b-message-row__thread").get("height")).toEqual(["1.75rem"]);
+    expect(declarations(".k2b-ui .k2b-message-row__thread").get("white-space")).toEqual(["nowrap"]);
+    expect(declarations(".k2b-ui .k2b-message-row__reactions").get("height")).toEqual(["1.625rem"]);
+    expect(declarations(".k2b-ui .k2b-message-row__reaction-list").get("overflow-x")).toEqual(["auto"]);
+    expect(declarations(".k2b-ui .k2b-message-row__file").get("height")).toEqual(["2.75rem"]);
+    expect(declarations(".k2b-ui .k2b-message-row__quote-text").get("-webkit-line-clamp")).toEqual(["2"]);
+    // The image never sizes its area; it covers the area the row reserved.
+    const picture = declarations(".k2b-ui .k2b-message-row__media-item img");
+    expect(picture.get("position")).toEqual(["absolute"]);
+    expect(picture.get("object-fit")).toEqual(["cover"]);
+    expect(declarations(".k2b-ui .k2b-message-row__media-item").get("aspect-ratio")).toEqual(["1"]);
+    // An empty, reserved bar shows "Add reaction" by paint only, like the actions.
+    expect(declarations(".k2b-ui .k2b-message-row__reactions[data-empty] .k2b-message-row__react").get("opacity")).toEqual(["0"]);
+    expect(
+      [
+        ...declarations(
+          ".k2b-ui .k2b-message-row:hover .k2b-message-row__reactions[data-empty] .k2b-message-row__react",
+          "@media (hover: hover)",
+        ).keys(),
+      ].sort(),
+    ).toEqual(["opacity", "pointer-events"]);
   });
 
   test("gives every avatar tint a rule", () => {
