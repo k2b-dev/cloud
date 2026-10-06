@@ -410,8 +410,10 @@ existing files.
 Once configured, office files open in an editor view that fills the main area,
 and the plus menu offers a new text document, spreadsheet or presentation. New
 documents start from an empty template in the configured default format:
-OpenDocument unless the administrator selects Microsoft Office formats. Users
-who may only read a FreeIPA file get the editor in view mode.
+OpenDocument unless the administrator selects Microsoft Office formats. New
+text documents and spreadsheets print on A4 portrait in every language;
+Collabora takes the paper for presentation notes and handouts from the Cloud
+language. Users who may only read a FreeIPA file get the editor in view mode.
 
 Collabora talks to Files through WOPI under `/api/filesv2/wopi`. The editor
 token it receives names one user and one file and carries no rights: every
