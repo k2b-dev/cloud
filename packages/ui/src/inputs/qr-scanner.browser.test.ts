@@ -36,22 +36,25 @@ const CODE = "https://cloud.example/pair#code";
 const svg = qr.toSvg(CODE);
 const code = { text: CODE, path: /<path d="([^"]+)"/.exec(svg)![1]!, size: Number(/viewBox="-4 -4 (\d+)/.exec(svg)![1]) - 8 };
 
-type Detector = "none" | "empty" | "reject" | "transient";
+type Detector = "none" | "empty" | "reject" | "transient" | "broken";
 type Camera = "fake" | "code" | "rear-overconstrained" | "NotReadableError" | "NotAllowedError" | "NotFoundError";
 type Calls = { results: string[]; errors: string[]; stops: number };
 type Probe = { scanner: Calls; detects: number; requests: MediaTrackConstraints[]; codeVisible: boolean };
 
 /**
  * Stands in for the parts a phone decides: the native BarcodeDetector of Chrome for Android, which answers an empty
- * frame with no barcodes, and a camera that films the code or refuses with the error a browser gives.
+ * frame with no barcodes, a camera that films the code or refuses with the error a browser gives, and a browser that
+ * cannot start the decoder worker.
  */
 function stubDevice({
   detector,
   camera,
+  blockWorker,
   code,
 }: {
   detector: Detector;
   camera: Camera;
+  blockWorker: boolean;
   code: { text: string; path: string; size: number };
 }) {
   const probe = globalThis as unknown as Probe;
@@ -63,6 +66,7 @@ function stubDevice({
       configurable: true,
       value: class {
         static async getSupportedFormats() {
+          if (detector === "broken") throw new DOMException("Barcode detection is unavailable.", "NotSupportedError");
           return ["qr_code"];
         }
         async detect() {
@@ -84,6 +88,16 @@ function stubDevice({
               boundingBox: new DOMRectReadOnly(0, 0, 1, 1),
             },
           ];
+        }
+      },
+    });
+  }
+  if (blockWorker) {
+    Object.defineProperty(globalThis, "Worker", {
+      configurable: true,
+      value: class {
+        constructor() {
+          throw new DOMException("The worker could not start.", "SecurityError");
         }
       },
     });
@@ -143,9 +157,19 @@ afterAll(async () => {
   await browser?.close();
 });
 
-async function open(options: { detector: Detector; camera: Camera; context?: BrowserContextOptions }): Promise<Page> {
+async function open(options: {
+  detector: Detector;
+  camera: Camera;
+  context?: BrowserContextOptions;
+  blockWorker?: boolean;
+}): Promise<Page> {
   const context = await browser.newContext(options.context ?? phone);
-  await context.addInitScript(stubDevice, { detector: options.detector, camera: options.camera, code });
+  await context.addInitScript(stubDevice, {
+    detector: options.detector,
+    camera: options.camera,
+    blockWorker: options.blockWorker ?? false,
+    code,
+  });
   // getUserMedia needs a secure context, so the page has an https address.
   await context.route("https://scanner.test/**", (route) =>
     route.fulfill({
@@ -214,11 +238,13 @@ describe("@k2b/ui QrScanner in a browser", () => {
     }
   }, 30_000);
 
-  test("a detector error on one frame neither stops nor fails the camera", async () => {
+  test("a detector error on one frame neither stops nor fails the camera; the worker reads on for the page", async () => {
     const page = await open({ detector: "transient", camera: "code" });
     try {
       await settled(page);
       expect(await calls(page)).toEqual({ results: [CODE], errors: [], stops: 0 });
+      // The stub detector never returns the code: the worker read it, and the detector was not asked again.
+      expect((await probe(page)).detects).toBe(1);
     } finally {
       await page.context().close();
     }
@@ -256,7 +282,7 @@ describe("@k2b/ui QrScanner in a browser", () => {
 
   for (const [camera, reason, requests] of [
     ["NotAllowedError", "denied", 1],
-    ["NotReadableError", "in-use", 1],
+    ["NotReadableError", "in-use", 6],
     ["NotFoundError", "no-camera", 6],
   ] as const) {
     test(`reports ${camera} from the camera as "${reason}"`, async () => {
@@ -264,8 +290,24 @@ describe("@k2b/ui QrScanner in a browser", () => {
       try {
         await settled(page);
         expect(await calls(page)).toEqual({ results: [], errors: [reason], stops: 0 });
-        // Asking again could show the permission prompt again; only a missing camera is worth a looser request.
+        // Only a refusal ends the search, since asking again could show the permission prompt again.
         expect((await probe(page)).requests.length).toBe(requests);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
+  for (const [story, detector, blockWorker] of [
+    ["the browser's detector cannot start", "broken", false],
+    ["the detector fails, then the worker cannot start", "reject", true],
+  ] as const) {
+    test(`stops the camera and reports "unavailable" when no scanning engine loads: ${story}`, async () => {
+      const page = await open({ detector, camera: "code", blockWorker });
+      try {
+        await settled(page);
+        expect(await calls(page)).toEqual({ results: [], errors: ["unavailable"], stops: 0 });
+        expect(await page.locator("video").evaluate((video: HTMLVideoElement) => video.srcObject === null)).toBe(true);
       } finally {
         await page.context().close();
       }

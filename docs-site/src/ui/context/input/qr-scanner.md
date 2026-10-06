@@ -20,7 +20,7 @@ camera could not start. The messages come from the application's catalog:
 const cameraMessages: Record<QrScannerError, string> = {
   denied: "Camera access is off. Allow it in the settings, or paste the link instead.",
   "no-camera": "No camera was found. Paste the link instead.",
-  "in-use": "Another app is using the camera. Close it and try again, or paste the link instead.",
+  "in-use": "The camera is busy or could not start. Close other apps that use it and try again, or paste the link instead.",
   unavailable: "The camera could not start. Paste the link instead.",
 };
 
@@ -48,20 +48,23 @@ const cameraMessages: Record<QrScannerError, string> = {
   rejected code is reported again only after a second without any code.
 - `onStop()` asks the host to unmount the scanner when the page is hidden or
   left.
-- `onError(reason)` reports that the camera could not start, with the reason
-  the browser gives: `"denied"` when camera access is off, `"no-camera"` when
-  no camera was found, `"in-use"` when another app holds the camera, and
-  `"unavailable"` for anything else, such as a page without a secure context.
-  Show a message for each reason next to the other way in. The scanner has
-  already stopped, and it reports nothing after it unmounts.
+- `onError(reason)` reports that the camera or the scanning engine could not
+  start, with the reason the browser gives: `"denied"` when camera access is
+  off, `"no-camera"` when no camera was found, `"in-use"` when the camera is
+  busy or could not start, most often because another app holds it, and
+  `"unavailable"` for anything else, such as a page without a secure context or
+  a scanning engine that does not load. Show a message for each reason next to
+  the other way in. The scanner has already stopped, and it reports nothing
+  after it unmounts.
 - A frame that cannot be decoded never ends the session or reaches `onError`:
   the camera keeps running until a code is accepted or the host unmounts it.
 - `instructions` replaces the generic hint shown while the camera runs.
 
 Each mount owns one camera session. Unmounting stops the camera at once, even
-while the browser still asks for permission. The scanner asks for the rear
-camera first and takes any camera only when no rear camera fits; it does not
-ask again after a refusal, so the permission prompt appears at most once.
+while the browser still asks for permission, and no further camera request
+follows. The scanner asks for the rear camera first, then for any camera, and
+tries a smaller size when a request fails. It never asks again after a refusal,
+so the permission prompt appears at most once.
 
 ## Accessibility
 
@@ -77,8 +80,10 @@ engine ([qr-scanner](https://github.com/nimiq/qr-scanner)) loads only when a
 scanner mounts. It uses the browser's own barcode detector where one exists,
 such as Chrome on Android, and a bundled decoder elsewhere, such as Safari. When
 the browser's detector fails instead of reading, the scanner switches to the
-bundled decoder for the page and keeps scanning. Decoded content and camera
-frames are never logged.
+bundled decoder for the page and keeps scanning. The bundled decoder runs as a
+worker from a `blob:` address, so a page with a Content Security Policy must
+allow it, for example with `worker-src blob:`; otherwise the scanner cannot read
+codes. Decoded content and camera frames are never logged.
 
 ## Example
 

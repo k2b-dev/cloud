@@ -19,7 +19,7 @@ export const shellMessages = i18n.define({
       pairingHint: "Get a code on the web: profile menu → App → Pair a phone.",
       cameraDenied: "Camera access is off. Allow it in settings, or paste the link instead.",
       cameraMissing: "No camera found. Paste the link instead.",
-      cameraInUse: "Another app is using the camera. Close it and try again, or paste the link instead.",
+      cameraInUse: "The camera is busy or could not start. Close other apps that use it and try again, or paste the link instead.",
       cameraUnavailable: "Camera not available. Paste the link instead.",
       invalidLink: "This isn't a pairing link. Copy the link on the web again.",
       otherCloudLink: "This link belongs to another Cloud. Open that Cloud's app instead.",
@@ -88,7 +88,8 @@ export const shellMessages = i18n.define({
       pairingHint: "Einen Code bekommst du im Web: Profilmenü → App → Telefon koppeln.",
       cameraDenied: "Der Kamerazugriff ist aus. Erlaube ihn in den Einstellungen oder füge stattdessen den Link ein.",
       cameraMissing: "Keine Kamera gefunden. Füge stattdessen den Link ein.",
-      cameraInUse: "Eine andere App nutzt die Kamera. Schließe sie und versuche es erneut oder füge stattdessen den Link ein.",
+      cameraInUse:
+        "Die Kamera ist belegt oder ließ sich nicht starten. Schließe andere Apps, die sie nutzen, und versuche es erneut oder füge stattdessen den Link ein.",
       cameraUnavailable: "Kamera nicht verfügbar. Füge stattdessen den Link ein.",
       invalidLink: "Das ist kein Kopplungslink. Kopiere den Link im Web erneut.",
       otherCloudLink: "Dieser Link gehört zu einer anderen Cloud. Öffne stattdessen deren App.",

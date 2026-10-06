@@ -215,9 +215,9 @@ The PWA removes its fragment from browser history before contacting the Cloud.
 
 The in-app scanner requests camera access only after a click. Its images stay
 on the device; closing or hiding the page stops the camera. If the camera
-cannot start, the app says why: access is off, no camera was found, or another
-app is using it. Paste the link instead. Scanning never skips issuer consent or
-confirmation.
+cannot start, the app says why: access is off, no camera was found, or the
+camera is busy, most often because another app uses it. Paste the link instead.
+Scanning never skips issuer consent or confirmation.
 
 Check the Cloud address before trusting it. Choose an account label for this
 device and a device name, compare the code in both windows, and confirm in the

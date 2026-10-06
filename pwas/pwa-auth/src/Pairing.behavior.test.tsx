@@ -46,7 +46,10 @@ for (const [name, message] of [
     "Camera access is off. Allow it for Cloud Login in your browser or phone settings, or paste the pairing link instead.",
   ],
   ["NotFoundError", "No camera was found on this device. Paste the pairing link instead."],
-  ["NotReadableError", "Another app is using the camera. Close it and try again, or paste the pairing link instead."],
+  [
+    "NotReadableError",
+    "The camera is busy or could not start. Close other apps that use it and try again, or paste the pairing link instead.",
+  ],
   ["AbortError", "The camera could not be started. Try again, or paste the pairing link instead."],
 ] as const) {
   test(`a camera that answers ${name} says why and returns to the pairing link field`, async () => {

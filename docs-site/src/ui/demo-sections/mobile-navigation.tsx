@@ -260,7 +260,7 @@ export function QrScannerDemo() {
                 {
                   denied: "Camera access is off.",
                   "no-camera": "No camera was found.",
-                  "in-use": "Another app is using the camera.",
+                  "in-use": "The camera is busy or could not start.",
                   unavailable: "The camera could not start.",
                 }[reason],
               );
