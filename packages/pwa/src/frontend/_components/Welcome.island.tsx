@@ -22,7 +22,7 @@ export type WelcomeProps = {
   cloud: string;
   /** The app icon of the installation. */
   icon: string;
-  /** The app's address, which a browser inside another app copies to open it in Safari or Chrome. */
+  /** The app's absolute address, which a browser inside another app copies and Samsung Internet opens in Chrome. */
   url: string;
   /** The platform as the server read it from the user agent, so the installation steps render with the page. */
   platform: InstallationPlatform;

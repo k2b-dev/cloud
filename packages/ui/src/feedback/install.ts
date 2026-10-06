@@ -3,8 +3,9 @@ import { createSignal, onCleanup } from "solid-js";
 /**
  * Which installation steps a browser needs. `apple-in-app` and `in-app` are browsers embedded in another app, on
  * iPhone or iPad and elsewhere, which cannot install at all. `apple-browser` is Chrome, Firefox, Edge, or another
- * browser on iPhone or iPad, which installs through its Share menu but less reliably than Safari. `android-browser`
- * is an Android browser other than Chrome.
+ * browser on iPhone or iPad, which installs through its Share menu but less reliably than Safari. `android-samsung` is
+ * Samsung Internet on Android, whose installed apps Android may block as built for an older Android version.
+ * `android-browser` is another Android browser, such as Firefox or Edge.
  */
 export type InstallationPlatform =
   | "in-app"
@@ -12,6 +13,7 @@ export type InstallationPlatform =
   | "apple-browser"
   | "apple-mobile"
   | "apple-desktop"
+  | "android-samsung"
   | "android-browser"
   | "android"
   | "generic";
@@ -22,7 +24,7 @@ const EMBEDDED =
 /** Browsers on iPhone and iPad other than Safari. */
 const APPLE_BROWSER = /CriOS\/|FxiOS\/|EdgiOS\/|OPiOS\/|OPT\/|Ddg\/|DuckDuckGo\/|YaBrowser\//;
 /** Android browsers whose user agent also names Chrome. */
-const ANDROID_OTHER = /SamsungBrowser|EdgA\/|OPR\/|YaBrowser|Firefox\//;
+const ANDROID_OTHER = /EdgA\/|OPR\/|YaBrowser|Firefox\//;
 
 /**
  * Classifies the browser from its user agent; `platform` and `touchPoints` only tell an iPad that reports a Mac apart.
@@ -39,7 +41,10 @@ export function installationPlatform(userAgent: string, platform: string, touchP
   }
   if (EMBEDDED.test(userAgent)) return "in-app";
   if (/Macintosh/.test(userAgent) && /Safari/.test(userAgent) && !/Chrome|Chromium|Edg\//.test(userAgent)) return "apple-desktop";
-  if (/Android/.test(userAgent)) return /Chrome\//.test(userAgent) && !ANDROID_OTHER.test(userAgent) ? "android" : "android-browser";
+  if (/Android/.test(userAgent)) {
+    if (/SamsungBrowser\//.test(userAgent)) return "android-samsung";
+    return /Chrome\//.test(userAgent) && !ANDROID_OTHER.test(userAgent) ? "android" : "android-browser";
+  }
   return "generic";
 }
 

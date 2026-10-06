@@ -181,6 +181,7 @@ const platforms: { value: InstallationPlatform; label: string }[] = [
   { value: "apple-browser", label: "iOS Chrome" },
   { value: "apple-in-app", label: "In an app" },
   { value: "android", label: "Android" },
+  { value: "android-samsung", label: "Samsung" },
   { value: "apple-desktop", label: "Mac" },
   { value: "generic", label: "Other" },
 ];
@@ -202,7 +203,7 @@ export function InstallGuideDemo() {
     <DemoCard
       id="install-guide"
       chip={{ kind: "component", name: "InstallGuide", from: "@k2b/ui" }}
-      description="Installation guidance for the browser in use: the browser's own dialog where it offers one, otherwise the steps for iPhone and iPad, Android, Safari on a Mac, or other browsers. Inside another app, which cannot install, a warning to open the page in Safari or the browser and a link to copy."
+      description="Installation guidance for the browser in use: the browser's own dialog where it offers one, otherwise the steps for iPhone and iPad, Android, Safari on a Mac, or other browsers. Samsung Internet gets a link to Chrome, because Android may block the apps it installs. Inside another app, which cannot install, a warning to open the page in Safari or the browser and a link to copy."
       code={`const install = createInstallPrompt();
 <InstallGuide appName="Northwind" install={install} url={location.href} />`}
     >

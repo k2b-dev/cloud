@@ -1,6 +1,6 @@
 import { clipboard } from "@k2b/stdlib/solid";
-import { createMemo, For, type JSX, Show } from "solid-js";
-import { Button } from "../actions/Button";
+import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
+import { Button, ButtonLink } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { NoticeCard } from "../surfaces/NoticeCard";
 import type { InstallPrompt } from "./install";
@@ -10,8 +10,9 @@ export type InstallGuideProps = {
   appName: string;
   install: InstallPrompt;
   /**
-   * The address a browser inside another app copies, to open it in Safari or Chrome. Shown as text when copying
-   * fails, so it can be copied by hand.
+   * The absolute address of the page to install. A browser inside another app copies it, to open it in Safari or
+   * Chrome, and shows it as text when copying fails, so it can be copied by hand. Samsung Internet opens an http or
+   * https address in Chrome.
    */
   url: string;
   /**
@@ -23,10 +24,27 @@ export type InstallGuideProps = {
 };
 
 /**
+ * Opens `url` in Chrome on Android. Without Chrome, the browser loads `url` itself. Only an absolute http or https
+ * address has an intent; anything else returns `undefined`.
+ */
+const chromeIntent = (url: string) => {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (target.protocol !== "https:" && target.protocol !== "http:") return undefined;
+  const scheme = target.protocol.slice(0, -1);
+  return `intent://${target.host}${target.pathname}${target.search}${target.hash}#Intent;scheme=${scheme};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+};
+
+/**
  * Explains how to install the current page as an app on this platform: the browser's own dialog where it offers
  * one, otherwise the steps for Safari on iPhone, iPad, and Mac, other browsers on iPhone and iPad, Android, and other
  * browsers. A browser inside another app cannot install, so it gets a warning and the link to copy into Safari or
- * Chrome instead. The host owns the surrounding surface, its heading, and dismissal.
+ * Chrome instead. Samsung Internet gets a link to Chrome even when it offers its own dialog, because Android may block
+ * the app package it builds. The host owns the surrounding surface, its heading, and dismissal.
  */
 export function InstallGuide(props: InstallGuideProps): JSX.Element {
   const messages = useUiMessages();
@@ -72,76 +90,87 @@ export function InstallGuide(props: InstallGuideProps): JSX.Element {
       <Show when={state().failed()}>
         <p role="alert">{messages().installFailed}</p>
       </Show>
-      <Show
-        when={state().requested()}
+      <Switch
         fallback={
-          <Show
-            when={state().canPrompt() || state().busy()}
-            fallback={
-              <Show
-                when={embedded()}
-                fallback={
-                  <>
-                    <Show when={hint()}>{(hint) => <NoticeCard tone="info" title={hint().title} detail={hint().detail} />}</Show>
-                    <ol class="k2b-install-guide__steps">
-                      <For each={steps()}>
-                        {(step) => (
-                          <li>
-                            <span class="k2b-install-guide__step-icon">
-                              <i class={step.icon} aria-hidden="true" />
-                            </span>
-                            <div>
-                              <h3>{step.title}</h3>
-                              <p>{step.detail}</p>
-                            </div>
-                          </li>
-                        )}
-                      </For>
-                    </ol>
-                    <Show when={state().platform === "apple-mobile"}>
-                      <p>{messages().installSafariFallback}</p>
-                    </Show>
-                    <Show when={props.note}>
-                      <p>{props.note}</p>
-                    </Show>
-                    <Show when={state().platform === "generic"}>
-                      <p>{messages().installUnavailable}</p>
-                    </Show>
-                  </>
-                }
-              >
-                <NoticeCard
-                  tone="warning"
-                  title={state().platform === "apple-in-app" ? messages().installAppleInAppTitle : messages().installInAppTitle}
-                  detail={
-                    state().platform === "apple-in-app"
-                      ? messages().installAppleInAppDetail({ appName: props.appName })
-                      : messages().installInAppDetail({ appName: props.appName })
-                  }
-                />
-                <Button variant="secondary" onClick={() => void copy.copy(props.url)}>
-                  <i class={copy.wasCopied() ? "ti ti-check" : "ti ti-copy"} aria-hidden="true" />
-                  {copy.wasCopied() ? messages().installLinkCopied : messages().installCopyLink}
-                </Button>
-                <Show when={copy.error()}>
-                  <p role="alert">{messages().installCopyFailed}</p>
-                  <code>{props.url}</code>
-                </Show>
-                <Show when={props.note}>
-                  <p>{props.note}</p>
-                </Show>
-              </Show>
-            }
-          >
-            <p>{messages().installNative({ appName: props.appName })}</p>
-            <Button loading={state().busy()} onClick={() => void state().install()}>
-              {messages().installApp}
-            </Button>
-          </Show>
+          <>
+            <Show when={hint()}>{(hint) => <NoticeCard tone="info" title={hint().title} detail={hint().detail} />}</Show>
+            <ol class="k2b-install-guide__steps">
+              <For each={steps()}>
+                {(step) => (
+                  <li>
+                    <span class="k2b-install-guide__step-icon">
+                      <i class={step.icon} aria-hidden="true" />
+                    </span>
+                    <div>
+                      <h3>{step.title}</h3>
+                      <p>{step.detail}</p>
+                    </div>
+                  </li>
+                )}
+              </For>
+            </ol>
+            <Show when={state().platform === "apple-mobile"}>
+              <p>{messages().installSafariFallback}</p>
+            </Show>
+            <Show when={props.note}>
+              <p>{props.note}</p>
+            </Show>
+            <Show when={state().platform === "generic"}>
+              <p>{messages().installUnavailable}</p>
+            </Show>
+          </>
         }
       >
-        <p role="status">{messages().installRequested}</p>
-      </Show>
+        <Match when={state().requested()}>
+          <p role="status">{messages().installRequested}</p>
+        </Match>
+        <Match when={state().platform === "android-samsung"}>
+          <NoticeCard
+            tone="info"
+            title={messages().installSamsungTitle}
+            detail={messages().installSamsungDetail({ appName: props.appName })}
+          />
+          <Show when={chromeIntent(props.url)}>
+            {(href) => (
+              <ButtonLink href={href()}>
+                <i class="ti ti-brand-chrome" aria-hidden="true" />
+                {messages().installOpenChrome}
+              </ButtonLink>
+            )}
+          </Show>
+          <Show when={props.note}>
+            <p>{props.note}</p>
+          </Show>
+        </Match>
+        <Match when={state().canPrompt() || state().busy()}>
+          <p>{messages().installNative({ appName: props.appName })}</p>
+          <Button loading={state().busy()} onClick={() => void state().install()}>
+            {messages().installApp}
+          </Button>
+        </Match>
+        <Match when={embedded()}>
+          <NoticeCard
+            tone="warning"
+            title={state().platform === "apple-in-app" ? messages().installAppleInAppTitle : messages().installInAppTitle}
+            detail={
+              state().platform === "apple-in-app"
+                ? messages().installAppleInAppDetail({ appName: props.appName })
+                : messages().installInAppDetail({ appName: props.appName })
+            }
+          />
+          <Button variant="secondary" onClick={() => void copy.copy(props.url)}>
+            <i class={copy.wasCopied() ? "ti ti-check" : "ti ti-copy"} aria-hidden="true" />
+            {copy.wasCopied() ? messages().installLinkCopied : messages().installCopyLink}
+          </Button>
+          <Show when={copy.error()}>
+            <p role="alert">{messages().installCopyFailed}</p>
+            <code>{props.url}</code>
+          </Show>
+          <Show when={props.note}>
+            <p>{props.note}</p>
+          </Show>
+        </Match>
+      </Switch>
     </div>
   );
 }

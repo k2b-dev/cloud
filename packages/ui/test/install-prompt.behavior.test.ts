@@ -129,4 +129,37 @@ describe("InstallGuide", () => {
     expect(installButton()).toBeDefined();
     expect(dom.root.textContent).toContain("Your browser can install Northwind.");
   });
+
+  test("Samsung Internet links to Chrome instead of its own dialog, and keeps the link's fragment", async () => {
+    dom = createDomTestHarness();
+    Object.defineProperty(globalThis, "matchMedia", { configurable: true, value: dom.window.matchMedia.bind(dom.window) });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value:
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36",
+    });
+    const { default: InstallGuide } = await import("../src/feedback/InstallGuide");
+    const install = createRoot((done) => {
+      dispose = done;
+      return createInstallPrompt();
+    });
+    const stopGuide = render(
+      () => createComponent(InstallGuide, { appName: "Northwind", install, url: "https://cloud.example/app/#pair=abc" }),
+      dom.root,
+    );
+    const stopPrompt = dispose;
+    dispose = () => {
+      stopGuide();
+      stopPrompt?.();
+    };
+    offer("accepted");
+    expect(install.platform).toBe("android-samsung");
+    expect(install.canPrompt()).toBe(true);
+    expect([...dom.root.querySelectorAll("button")].map((button) => button.textContent?.trim())).not.toContain("Install app");
+    const chrome = dom.root.querySelector("a");
+    expect(chrome?.textContent?.trim()).toBe("Open in Chrome");
+    expect(chrome?.getAttribute("href")).toBe(
+      "intent://cloud.example/app/#pair=abc#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=https%3A%2F%2Fcloud.example%2Fapp%2F%23pair%3Dabc;end",
+    );
+  });
 });
