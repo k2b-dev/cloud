@@ -378,17 +378,20 @@ describe("live engine", () => {
     expect(authorizeCalls.filter((call) => call.key === "c")).toEqual([{ key: "c", viewers: ["user:ada"] }]);
   });
 
-  test("a collection that resumes after an access update of one of its keys resyncs", async () => {
+  test("a collection that resumes after an access update that gave it a key resyncs; without one it replays", async () => {
+    // Bob's subscription shows when the replica has delivered what was published.
+    const watcher = connect("bob");
+    watcher.send({ t: "sub", id: "a", channel: "item", scope: { key: "a" } });
     const first = connect();
     first.send({ t: "sub", id: "all", channel: "list", scope: {} });
-    await until(() => first.framesOf("all").length === 1);
+    await until(() => first.framesOf("all").length === 1 && watcher.framesOf("a").length === 1);
     const cursor = first.framesOf("all")[0]?.cursor as string;
     first.handle.closed();
     readers.set("c", new Set(["user:ada"]));
     topic.publish({ v: 1, k: "c", a: true });
     topic.publish(event("c", 2));
     topic.publish(event("a", 3));
-    await Bun.sleep(30);
+    await until(() => watcher.framesOf("a").length === 2);
     const back = connect();
     back.send({ t: "sub", id: "all", channel: "list", scope: {}, after: cursor });
     await until(() => back.framesOf("all").length === 1);
@@ -402,9 +405,11 @@ describe("live engine", () => {
   });
 
   test("a collection that resumes after losing a key with an access update resyncs and never sees that key again", async () => {
+    const watcher = connect("bob");
+    watcher.send({ t: "sub", id: "a", channel: "item", scope: { key: "a" } });
     const first = connect();
     first.send({ t: "sub", id: "all", channel: "list", scope: {} });
-    await until(() => first.framesOf("all").length === 1);
+    await until(() => first.framesOf("all").length === 1 && watcher.framesOf("a").length === 1);
     topic.publish(event("a", 1));
     await until(() => first.framesOf("all").length === 2);
     const cursor = first.framesOf("all")[1]?.cursor as string;
@@ -414,7 +419,7 @@ describe("live engine", () => {
     topic.publish({ v: 1, k: "b", a: true });
     topic.publish(event("b", 3));
     topic.publish(event("a", 4));
-    await Bun.sleep(30);
+    await until(() => watcher.framesOf("a").length === 3);
     const back = connect();
     back.send({ t: "sub", id: "all", channel: "list", scope: {}, after: cursor });
     await until(() => ["ready", "resync"].includes(back.framesOf("all").at(-1)?.t ?? ""));
@@ -423,6 +428,86 @@ describe("live engine", () => {
     topic.publish(event("a", 6));
     await until(() => back.framesOf("all").length === 2);
     expect(back.framesOf("all")[1]).toEqual({ t: "event", id: "all", cursor: "s6t.app.6", data: { n: 6 } });
+  });
+
+  test("a collection that resumes while its replica still checks a missed access update resyncs", async () => {
+    let gate: Promise<void> | null = null;
+    let open = () => {};
+    const gated = async (key: string, viewers: readonly LiveViewer[]) => {
+      const allowed = await authorize(key, viewers);
+      if (gate && key === "b") await gate;
+      return allowed;
+    };
+    engine.stop();
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        item: { ...(channels.item as LiveChannel), authorize: gated },
+        list: { ...(channels.list as LiveChannel), authorize: gated },
+      },
+    });
+    readers.set("b", new Set(["user:ada", "user:bob"]));
+    const bob = connect("bob");
+    bob.send({ t: "sub", id: "b", channel: "item", scope: { key: "b" } });
+    const first = connect();
+    first.send({ t: "sub", id: "all", channel: "list", scope: {} });
+    await until(() => first.framesOf("all").length === 1 && bob.framesOf("b").length === 1);
+    const cursor = first.framesOf("all")[0]?.cursor as string;
+    first.handle.closed();
+    // Ada loses "b". The replica has read the announcement, but still checks bob before it delivers it.
+    readers.set("b", new Set(["user:bob"]));
+    gate = new Promise<void>((resolve) => (open = resolve));
+    authorizeCalls = [];
+    topic.publish({ v: 1, k: "b", a: true });
+    await until(() => authorizeCalls.some((call) => call.key === "b"));
+    const back = connect();
+    back.send({ t: "sub", id: "all", channel: "list", scope: {}, after: cursor });
+    await until(() => ["ready", "resync"].includes(back.framesOf("all").at(-1)?.t ?? ""));
+    gate = null;
+    open();
+    expect(back.framesOf("all")).toEqual([{ t: "resync", id: "all", cursor: "s6t.app.0" }]);
+  });
+
+  test("a subscription that resumes while an access update arrives resyncs instead of replaying with the older answer", async () => {
+    let gate: Promise<void> | null = null;
+    let open = () => {};
+    engine.stop();
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: {
+        item: {
+          ...(channels.item as LiveChannel),
+          authorize: async (key, viewers) => {
+            const allowed = await authorize(key, viewers);
+            if (gate && key === "b") await gate;
+            return allowed;
+          },
+        },
+      },
+    });
+    topic.publish(event("b", 1));
+    const watcher = connect("bob");
+    watcher.send({ t: "sub", id: "a", channel: "item", scope: { key: "a" } });
+    await until(() => watcher.framesOf("a").length === 1);
+    gate = new Promise<void>((resolve) => (open = resolve));
+    const ada = connect();
+    ada.send({ t: "sub", id: "b", channel: "item", scope: { key: "b" }, after: "s6t.app.1" });
+    // Ada's check has read "allowed" but not answered when she loses "b" and "b" changes again.
+    await until(() => authorizeCalls.some((call) => call.key === "b"));
+    readers.set("b", new Set());
+    topic.publish({ v: 1, k: "b", a: true });
+    topic.publish(event("b", 3));
+    topic.publish(event("a", 4));
+    await until(() => watcher.framesOf("a").length === 2);
+    gate = null;
+    open();
+    await until(() => ["ready", "resync"].includes(ada.framesOf("b").at(-1)?.t ?? ""));
+    expect(ada.framesOf("b")).toEqual([{ t: "resync", id: "b", cursor: "s6t.app.4" }]);
+    topic.publish(event("b", 5));
+    await until(() => ada.framesOf("b").length === 2);
+    expect(ada.framesOf("b")[1]).toEqual({ t: "revoked", id: "b", code: "access_denied" });
   });
 
   test("an answer requested before an access update is used once but not cached", async () => {
