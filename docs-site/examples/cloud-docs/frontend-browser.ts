@@ -1,4 +1,5 @@
 import { api } from "@k2b/cloud/browser";
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { liveConnection } from "@k2b/cloud/browser/live";
 import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
@@ -53,4 +54,12 @@ export const diagramConfig = () => mermaidConfig({ dark: document.documentElemen
 /** Reload after a terminal live error at most once per board; afterwards the caller shows a reload button. */
 export const reloadBoardAfterLiveFailure = (boardId: string, showUnavailable: () => void) => {
   if (!reloadOnce(`tasks:live:${boardId}`)) showUnavailable();
+};
+
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+
+/** Adds files from this device or a Cloud app through the upload path the app already has. */
+export const attachFiles = async (uploadAttachments: (files: File[]) => Promise<void>) => {
+  const files = await chooseFiles({ multiple: true, maxBytes: MAX_ATTACHMENT_BYTES });
+  if (files.length > 0) await uploadAttachments(files);
 };
