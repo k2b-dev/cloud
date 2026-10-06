@@ -261,6 +261,9 @@ position, such as messages or activity, use
 [`VirtualFeed`](/en/ui/content/virtual-feed) instead of a hand-made list. It
 renders only the items near the visible area and keeps the visible item in
 place while pages load and rows change size.
+For messages in a conversation, render each item with
+[`MessageRow`](/en/ui/content/message-rows), which groups messages by author,
+renders safe Markdown, and keeps every row's height from the moment it mounts.
 
 When a standalone scroll region needs to be announced, give it an appropriate
 landmark and accessible name. Add a tab stop only when keyboard users would

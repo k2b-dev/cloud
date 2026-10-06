@@ -225,6 +225,12 @@ const portableSections = [
         "ti ti-timeline-event-text",
         "Long feeds that load at both ends, stay at the end, and keep the reading position to the pixel.",
       ),
+      page(
+        "message-rows",
+        "Message rows",
+        "ti ti-message-2",
+        "Grouped conversation messages with avatars, safe Markdown, send state, and actions that never move the layout.",
+      ),
       page("structured-data", "Structured data", "ti ti-braces", "Formatted and raw JSON-like data disclosure."),
       page("media", "Media previews", "ti ti-photo", "Image lightboxes, PDF previews, and zoomable content."),
       page("files", "Files", "ti ti-folders", "Generic file trees, browser composition, and content-aware previews."),
@@ -320,7 +326,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 123;
+export const portableUiComponentCount = 125;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

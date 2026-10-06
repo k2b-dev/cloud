@@ -11,6 +11,10 @@ The application owns the items, their order, paging, and every row's content.
 The component owns scrolling, measuring, the reading position, the "Jump to
 latest" overlay, and the feed semantics for assistive technology.
 
+For a conversation, render each item with
+[`MessageRow`](/en/ui/content/message-rows); its rows have their final height
+when they mount.
+
 ## Import
 
 ```tsx
