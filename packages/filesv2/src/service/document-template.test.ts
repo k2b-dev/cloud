@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { extractZip } from "@k2b/stdlib/browser";
 import { documentTemplate } from "./document-template";
 
 const root = resolve(import.meta.dir, "../../../..");
@@ -10,6 +11,16 @@ describe("document templates", () => {
   test("every supported extension has a non-empty template in the source tree", async () => {
     for (const extension of extensions) {
       expect((await documentTemplate(extension)).size, extension).toBeGreaterThan(0);
+    }
+  });
+
+  test("no template pins a language, so new documents take the editor's language and its spelling dictionary", async () => {
+    for (const extension of extensions) {
+      const entries = await extractZip(new Uint8Array(await (await documentTemplate(extension)).arrayBuffer()));
+      for (const entry of entries.filter((candidate) => candidate.filename.endsWith(".xml")))
+        expect(new TextDecoder().decode(entry.data), `${extension}: ${entry.filename}`).not.toMatch(
+          /\blang=|<w:lang\b|<dc:language>|fo:language=/,
+        );
     }
   });
 
