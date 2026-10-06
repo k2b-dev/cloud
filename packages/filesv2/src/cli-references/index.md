@@ -122,6 +122,26 @@ access or 404 for externally removed results; restart without `--after`.
 Missing, conflicting, or unknown storage is an error, never an empty folder;
 unknown statistics remain null.
 
+### Find a file in every area
+
+`search` needs an area. When you do not know the area, search every area you
+can use:
+
+```bash
+cld filesv2 ls --json | jq -r '.items[] | select(.status == "existing") | .id' |
+  while IFS= read -r area; do
+    cld filesv2 search "$area:/" report --json < /dev/null |
+      jq -r --arg area "$area" '(.items[] | "\($area):/\(.path)"), (select(.next) | "\($area): more hits, narrow the query")'
+  done
+```
+
+Each line is an address that `stat`, `get`, and the other commands accept, or a
+note that an area has more hits than one page holds. When the search of an area
+fails, the loop prints the error and goes on, so a missing hit does not prove
+that the file does not exist. `cld capabilities query filesv2 entry.search` is
+quicker for a signed-in person, but it searches at most ten areas, one page
+each.
+
 ## Transfer files
 
 ```bash
@@ -206,17 +226,34 @@ a tool that is available, such as LibreOffice or a document library, check it,
 then upload it with `put`. LibreOffice converts without a window:
 
 ```bash
-soffice --headless --convert-to ods --infilter=CSV:44,34,76,1 participants.csv   # UTF-8 CSV, comma-separated
-soffice --headless --convert-to xlsx --infilter=CSV:44,34,76,1 participants.csv
-soffice --headless --convert-to odt minutes.html
-soffice --headless --convert-to 'docx:MS Word 2007 XML' minutes.html
+profile="-env:UserInstallation=file:///tmp/lo-convert-$(id -u)"
+soffice "$profile" --headless --convert-to ods --infilter=CSV:44,34,76,1 participants.csv   # UTF-8 CSV, comma-separated
+soffice "$profile" --headless --convert-to xlsx --infilter=CSV:44,34,76,1 participants.csv
+soffice "$profile" --headless --convert-to odt minutes.html
+soffice "$profile" --headless --convert-to 'docx:MS Word 2007 XML' minutes.html
 cld filesv2 put ./participants.ods team:/Events/ --parents
 ```
 
 The output lands in the working directory under the input's name with the new
-extension. Use real data from the user or another Cloud source; do not invent
-rows. `documents create --kind spreadsheet` only creates an empty document for
-the browser editor.
+extension. `-env:UserInstallation` gives the conversion its own LibreOffice
+profile: a LibreOffice that is already open holds the default profile, and a
+conversion that shares it is handed to that instance and can end without
+writing a file. Check that the output file exists before you upload it.
+Convert a CSV that is not UTF-8 with `iconv` first, as in `cld grids
+reference`, section "Import a CSV file".
+
+Without LibreOffice, Python writes the Office formats reliably with `openpyxl`
+(`.xlsx`) and `python-docx` (`.docx`). Install them into a virtual environment
+when the system Python has neither, then write the file with a short script:
+
+```bash
+python3 -m venv .office && .office/bin/pip install openpyxl python-docx
+.office/bin/python make-participants.py
+```
+
+Write numbers and dates as numbers and dates, not as text. Use real data from
+the user or another Cloud source; do not invent rows. `documents create --kind
+spreadsheet` only creates an empty document for the browser editor.
 
 ## Organize files
 

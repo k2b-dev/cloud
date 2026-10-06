@@ -11,6 +11,7 @@ Use `cld spaces` to list and change work, track agent handoffs, manage task depe
 - [Address spaces and items](#address-spaces-and-items)
 - [List and read work](#list-and-read-work)
 - [Add and change items](#add-and-change-items)
+- [Write Markdown](#write-markdown)
 - [Track implementation work and handoffs](#track-implementation-work-and-handoffs)
 - [Dependencies](#dependencies)
 - [Comments, checklists, references, links, and attachments](#comments-checklists-references-links-and-attachments)
@@ -74,6 +75,7 @@ cld spaces show Item01 --context --json
 ```bash
 cld spaces add "Roadmap":"Publish release notes" --deadline 2026-10-20 --estimate-minutes 90 --assignee me
 cld spaces add "Roadmap":"Launch review" --starts-at 2026-10-20T10:00:00Z --ends-at 2026-10-20T11:00:00Z
+cld spaces add "Roadmap":"Migrate the archive" --priority high --from task.md
 cld spaces set "Roadmap":"Publish release notes" --priority high --from notes.md
 cld spaces set Item01 --clear-tags --clear-assignees --clear-estimate
 cld spaces mv Item01 "In progress"
@@ -88,12 +90,16 @@ cld spaces rm Item01 --yes
 cld spaces create "Hiring" --description "Open roles"
 ```
 
-- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column.
-- `set` changes only the fields you pass. `--description <text>` or `--from <file|->` replaces the description (5,000 characters at most). Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
+- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the same field flags as `set`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most).
+- `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
 - Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
+
+## Write Markdown
+
+Descriptions, comments, progress notes, and completion results are Markdown: headings, emphasis, strikethrough, lists, task lists, tables, links, images, inline code, and code blocks. Task list boxes are display-only; use `checklist` for steps that people tick off. Raw HTML is shown as text. Info blocks (`:::note`), math, and diagrams do not render and stay text or a code block; `> [!NOTE]` is an ordinary quote.
 
 ## Track implementation work and handoffs
 

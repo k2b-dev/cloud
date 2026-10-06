@@ -1306,3 +1306,48 @@ test("areas resolve by name through cld, ambiguity reports 409 with every candid
   expect(conflict.exitCode).toBe(1);
   expect(conflict.stderr).toContain("path_conflict");
 }, 20_000);
+
+test("the documented loop finds a file in every area and names the areas with more hits or a failed search", async () => {
+  const team = { ...base, id: `cloud:groups:${identityId}`, kind: "groups", name: "team" };
+  const ops = { ...base, id: "freeipa:groups:22222222-2222-4222-8222-222222222222", area: "freeipa", kind: "groups", name: "ops" };
+  const gone = { ...base, id: "cloud:groups:33333333-3333-4333-8333-333333333333", kind: "groups", name: "gone", status: "missing" };
+  const searched: string[] = [];
+  const cloud = serve((request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/filesv2/bases") return Response.json({ items: [base, team, ops, gone], issues: [], editor: null });
+    const id = decodeURIComponent(url.pathname.split("/")[4]!);
+    searched.push(`${id} ${url.searchParams.get("q")} ${url.searchParams.get("path")}`);
+    const hit = (path: string) => ({ ...entry, name: path.split("/").at(-1), path });
+    if (id === base.id) return Response.json({ base, path: "", query: "report", items: [hit("Documents/report.pdf")], next: null });
+    if (id === team.id)
+      return Response.json({ base: team, path: "", query: "report", items: [hit("Q3/report.ods"), hit("Q4/report.ods")], next: "cursor" });
+    return Response.json({ code: "search_limited", message: "search_limited" }, { status: 413 });
+  });
+  const reference = await readFile(join(repoRoot, "packages/filesv2/src/cli-references/index.md"), "utf8");
+  const loop = reference.split("### Find a file in every area")[1]!.match(/```bash\n([\s\S]*?)```/)![1]!;
+  const bin = await directory();
+  const config = join(bin, "config.json");
+  await writeFile(config, "{}", { mode: 0o600 });
+  // `cld` on PATH runs this checkout's CLI against the fake Cloud, as an installed `cld` would.
+  const cli = `"${process.execPath}" run "${join(repoRoot, "packages/cloud-cli/src/index.ts")}" --server "${cloud.url.href}" --token ${cloudToken}`;
+  await writeFile(join(bin, "cld"), `#!/bin/sh\nexec ${cli} "$@"\n`, { mode: 0o755 });
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    CLD_CONFIG: config,
+    CLD_LOCALE: "en",
+    XDG_CONFIG_HOME: pluginsHome,
+  };
+  delete env.CLD_TOKEN;
+  delete env.CLD_SERVER;
+  const result = await finish(Bun.spawn({ cmd: ["bash", "-c", loop], cwd: bin, env, stdout: "pipe", stderr: "pipe" }));
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stdout.trim().split("\n")).toEqual([
+    `${base.id}:/Documents/report.pdf`,
+    `${team.id}:/Q3/report.ods`,
+    `${team.id}:/Q4/report.ods`,
+    `${team.id}: more hits, narrow the query`,
+  ]);
+  expect(result.stderr).toContain("search_limited");
+  expect(searched).toEqual([`${base.id} report `, `${team.id} report `, `${ops.id} report `]);
+}, 30_000);

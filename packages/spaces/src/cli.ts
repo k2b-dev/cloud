@@ -582,6 +582,7 @@ function spacesCommands(locale?: string) {
         examples: [
           'cld spaces add "Roadmap":"Publish release notes" --deadline 2026-10-20 --assignee me',
           'cld spaces add "Roadmap":"Launch review" --starts-at 2026-10-20T10:00:00Z --ends-at 2026-10-20T11:00:00Z',
+          'cld spaces add "Roadmap":"Migrate the archive" --priority high --from task.md',
         ],
         async run({ ctx, args, flags }) {
           const address = parseCliAddress(args.target);

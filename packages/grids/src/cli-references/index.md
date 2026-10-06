@@ -382,26 +382,52 @@ Use `--if-version` for optimistic concurrency when updating a previously read re
 
 Grids has no CSV import, in the CLI or in the web app. Convert the CSV into `records import` payloads: each call takes at most 500 records and creates all of them or none.
 
-1. Create the table and one field per column you keep. Choose the type from the values, not from the header:
+1. Check the encoding with `file -i data.csv` (`file -I` on macOS). `utf-8` and `us-ascii` are ready. A spreadsheet export from Windows usually shows `iso-8859-1` or `unknown-8bit`: convert it with `iconv -f WINDOWS-1252 -t UTF-8 data.csv > data-utf8.csv` and use the new file. For another charset, pass the name `file` shows to `iconv -f`. The converter refuses a file that is not UTF-8.
+2. Create the table and one field per column you keep. Choose the type from the values, not from the header:
    - `text` for names, codes, phone numbers, postal codes, and anything with leading zeros;
-   - `number` for amounts and quantities, written with a decimal point and without thousands separators, units, or currency signs: `1,5` or `1.234,50` fails the whole batch;
-   - `date` for `YYYY-MM-DD`; convert `05.10.2026` or `10/05/2026` first;
+   - `number` for amounts and quantities, without units or currency signs. The converter passes `1234.50` as it is; give a column with decimal commas such as `1.234,50` the format `decimal-comma`;
+   - `date` for `YYYY-MM-DD`; give a column with `05.10.2026` the format `dd.mm.yyyy`, and convert other forms such as `10/05/2026` first;
    - `boolean` for `true`, `false`, `1`, or `0`;
    - `text` also for categories that would suit `select`: a `select` value is a JSON array of option IDs, even for a single choice, and the converter writes only plain text.
-2. Read the field public IDs with `cld grids records shape <base>:<table> --json` and write `columns.json`, which maps each CSV header to a field ID. Columns missing from the map are skipped.
-3. Save the converter below as `csv-to-records.ts` and run it with Bun. It reads quoted cells, line breaks inside quotes, a byte order mark, and Windows line endings, leaves empty cells out, and writes `records-001.json`, `records-002.json`, and so on with up to 500 records each. It stops without writing a file when a quote is never closed, a row has more or fewer cells than the header, or a mapped header occurs more than once; the message names the row, counting the header as row 1 as a spreadsheet does. Run it in an empty folder, so no file from an earlier run is imported. Pass `';'` or `$'\t'` as the third argument for semicolon- or tab-separated files.
-4. Import the files in order. The loop stops at the first failing file and exits 1. The files before it are imported: delete them, fix the failing file, and run the loop again. After a timeout or a lost connection, check with `records ls` whether the failing batch arrived first; importing it again creates duplicates.
+3. Read the field public IDs with `cld grids records shape <base>:<table> --json` and write `columns.json`, which maps each CSV header to a field ID, or to `{ "field": "<field-id>", "format": "decimal-comma" }` or `"dd.mm.yyyy"` for a column the converter must rewrite. Columns missing from the map are skipped.
+4. Save the converter below as `csv-to-records.ts` and run it with Bun. It reads quoted cells, line breaks inside quotes, a byte order mark, and Windows line endings, leaves empty cells out, and writes `records-001.json`, `records-002.json`, and so on with up to 500 records each. It stops without writing a file when the file is not UTF-8, a quote is never closed, a row has more or fewer cells than the header, a mapped header occurs more than once, or a value does not match its format, such as `1.234,50 €`, `12.5` in a `decimal-comma` column, or `31.02.2026`; the message names the row, counting the header as row 1 as a spreadsheet does. Run it in an empty folder, so no file from an earlier run is imported. Pass `';'` or `$'\t'` as the third argument for semicolon- or tab-separated files.
+5. Import the files in order. The loop stops at the first failing file and exits 1. The files before it are imported: delete them, fix the failing file, and run the loop again. After a timeout or a lost connection, check with `records ls` whether the failing batch arrived first; importing it again creates duplicates.
+6. Check the result with `gql run`: `from table <table>; limit 10` prints the first ten records in import order as a table with the field names as headers. `records ls` prints only IDs and versions as text, and its JSON keys values by field ID.
 
 ```json
-{ "Name": "<field-id>", "Email": "<field-id>", "Since": "<field-id>" }
+{
+  "Name": "<field-id>",
+  "Email": "<field-id>",
+  "Since": { "field": "<field-id>", "format": "dd.mm.yyyy" },
+  "Fee": { "field": "<field-id>", "format": "decimal-comma" }
+}
 ```
 
 ```ts
 // csv-to-records.ts: bun csv-to-records.ts <data.csv> <columns.json> [delimiter]
 const [csvFile, columnsFile, delimiter = ","] = Bun.argv.slice(2);
 if (!csvFile || !columnsFile) throw new Error("Usage: bun csv-to-records.ts <data.csv> <columns.json> [delimiter]");
-const text = (await Bun.file(csvFile).text()).replace(/^\uFEFF/, "");
-const columns: Record<string, string> = await Bun.file(columnsFile).json();
+let text: string;
+try {
+  // fatal: a byte that is not UTF-8 stops the run instead of becoming "�". The decoder drops a byte order mark.
+  text = new TextDecoder("utf-8", { fatal: true }).decode(await Bun.file(csvFile).bytes());
+} catch {
+  throw new Error(`${csvFile} is not UTF-8. Convert it first: iconv -f WINDOWS-1252 -t UTF-8 ${csvFile} > data-utf8.csv`);
+}
+const formats: Record<string, (value: string) => string | null> = {
+  // 1.234,50 -> 1234.50; 12.5 and 1.234,50 € are refused.
+  "decimal-comma": (value) => (/^-?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?$/.test(value) ? value.replaceAll(".", "").replace(",", ".") : null),
+  // 05.10.2026 -> 2026-10-05; 31.02.2026 is refused.
+  "dd.mm.yyyy": (value) => {
+    const match = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value);
+    if (!match) return null;
+    const [day = "", month = "", year = ""] = match.slice(1);
+    const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    return new Date(Date.UTC(+year, +month - 1, +day)).toISOString().startsWith(iso) ? iso : null;
+  },
+};
+type Column = string | { field: string; format: string };
+const columns: Record<string, Column> = await Bun.file(columnsFile).json();
 const rows: string[][] = [];
 let row: string[] = [];
 let cell = "";
@@ -434,16 +460,27 @@ if (cell || row.length) rows.push([...row, cell]);
 // Rows are numbered from 1, as in a spreadsheet.
 const [first, ...data] = rows.map((cells, i) => ({ number: i + 1, cells })).filter(({ cells }) => cells.some((value) => value.trim()));
 const header = (first?.cells ?? []).map((name) => name.trim());
-for (const name of Object.keys(columns)) {
+for (const [name, column] of Object.entries(columns)) {
   const count = header.filter((column) => column === name).length;
   if (count !== 1) throw new Error(count ? `The CSV has the column "${name}" ${count} times.` : `The CSV has no column "${name}".`);
+  if (typeof column !== "string" && !formats[column.format]) throw new Error(`Column "${name}" has the unknown format "${column.format}".`);
 }
 for (const { number, cells } of data) {
   if (cells.length !== header.length)
     throw new Error(`Row ${number} has a different number of cells than the header: ${cells.length}, not ${header.length}.`);
 }
-const items = data.map(({ cells }) =>
-  Object.fromEntries(header.flatMap((name, i) => (columns[name] && cells[i]?.trim() ? [[columns[name], cells[i].trim()]] : []))),
+const items = data.map(({ number, cells }) =>
+  Object.fromEntries(
+    header.flatMap((name, i) => {
+      const column = columns[name];
+      const value = cells[i]?.trim();
+      if (!column || !value) return [];
+      if (typeof column === "string") return [[column, value]];
+      const converted = formats[column.format]!(value);
+      if (converted === null) throw new Error(`Row ${number}, column "${name}": "${value}" does not match the format ${column.format}.`);
+      return [[column.field, converted]];
+    }),
+  ),
 );
 const digits = Math.max(3, String(Math.ceil(items.length / 500)).length);
 for (let start = 0; start < items.length; start += 500) {
@@ -454,16 +491,18 @@ for (let start = 0; start < items.length; start += 500) {
 ```
 
 ```bash
+file -i people.csv
 cld grids tables add Contacts --name People --json
 cld grids fields create Contacts:People --name Name --type text --json
 cld grids fields create Contacts:People --name Email --type text --json
 cld grids fields create Contacts:People --name Since --type date --json
+cld grids fields create Contacts:People --name Fee --type number --json
 cld grids records shape Contacts:People --json
-bun csv-to-records.ts people.csv columns.json
+bun csv-to-records.ts people.csv columns.json ';'
 ( for f in records-*.json; do
     cld grids records import Contacts:People --body-file "$f" --json > /dev/null || { echo "Stopped at $f" >&2; exit 1; }
   done )
-cld grids records ls Contacts:People --limit 5 --json
+cld grids gql run Contacts --query 'from table People; limit 10'
 ```
 
 ### Typed rows inside a record
@@ -510,9 +549,10 @@ cld grids records export Bookshop:Authors --format csv --out authors.csv
 cld grids records audit Bookshop:Authors/<record-id> --json
 ```
 
-For a stored table, `records ls` without a sort returns records in the order they were created, oldest first, so `--limit 10` gives the first ten rows of an import. A page of a stored table holds at most 500 records whatever `--limit` says; pass its `nextCursor` as `--cursor` for the next page. For the first rows in another order, use GQL:
+For a stored table, `records ls` and GQL without a `sort` return records in the order they were created, oldest first, so a limit of 10 gives the first ten rows of an import. A `records ls` page of a stored table holds at most 500 records whatever `--limit` says; pass its `nextCursor` as `--cursor` for the next page. To read rows with their field names, or in another order, use GQL. Its text output is a table with the field names as headers; with `--json`, `columns[].label` names each key of `rows[].values`:
 
 ```bash
+cld grids gql run Bookshop --query 'from table Authors; limit 10'
 cld grids gql run Bookshop --query 'from table Authors; sort Name asc; limit 10' --json
 cld grids gql run Bookshop --query 'from table Authors; sort record.createdAt desc; limit 10' --json
 ```
