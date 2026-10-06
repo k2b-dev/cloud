@@ -213,8 +213,21 @@ The component owns the create dialog, permission and expiry inputs, local list
 updates, revoke confirmation, and one-time token display. The application owns
 the API routes and their authorization.
 
-Keep human and group grants in `PermissionEditor`. Hide service-account entries
-from that editor unless administrators need to manage them directly.
+Keep every other grant in `PermissionEditor` next to the key list, and hide
+only the resource-bound entries that `ResourceApiKeys` manages:
+
+```tsx
+<PermissionEditor
+  initialEntries={entries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
+  grantAccess={grantAccess}
+  updateAccess={updateAccess}
+  revokeAccess={revokeAccess}
+/>
+```
+
+Agents and standalone service accounts stay visible with their kind, because
+they can manage the resource; see
+[Show the last manager](/en/docs/identity/authorization#show-the-last-manager).
 
 `ResourceApiKeys` accepts:
 

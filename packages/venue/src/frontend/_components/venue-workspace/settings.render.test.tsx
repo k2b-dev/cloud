@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -75,7 +76,7 @@ const dashboard = (permission: Venue["permission"], data: Partial<VenueDashboard
 
 const render = (
   permission: Venue["permission"],
-  options: { locale?: string; tab?: "general" | "schedule"; data?: Partial<VenueDashboard> } = {},
+  options: { locale?: string; tab?: "general" | "access" | "schedule"; data?: Partial<VenueDashboard>; accessEntries?: AccessEntry[] } = {},
 ) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -83,7 +84,7 @@ const render = (
       get children() {
         return createComponent(SettingsDialog, {
           dashboard: dashboard(permission, options.data),
-          accessEntries: [],
+          accessEntries: options.accessEntries ?? [],
           apiKeys: [],
           initialTab: options.tab,
           close: () => {},
@@ -180,5 +181,46 @@ describe("Venue settings: Schedule", () => {
     expect(html.match(/>Paused</g)).toHaveLength(1);
     expect(html.match(/role="switch"/g)).toHaveLength(3);
     expect(html).toContain("“Monday bar” is active");
+  });
+});
+
+describe("Venue settings: Access", () => {
+  const manager = (
+    id: string,
+    principal: AccessEntry["principal"],
+    displayName: string,
+    extra: Partial<AccessEntry> = {},
+  ): AccessEntry => ({
+    id,
+    principal,
+    permission: "admin",
+    displayName,
+    createdAt: timestamp,
+    ...extra,
+  });
+  const person = manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace");
+  const agent = manager("access-agent", { type: "service_account", serviceAccountId: "agent-1" }, "Shift planner", {
+    serviceAccountKind: "agent",
+  });
+  const apiKey = manager("access-key", { type: "service_account", serviceAccountId: "key-1" }, "Corner Café API keys", {
+    serviceAccountKind: "resource_bound",
+  });
+  // The editor marks the only manager's remove button with the reason it cannot be removed.
+  const lockedRows = (html: string) => html.match(/aria-description=/g)?.length ?? 0;
+
+  test("shows an agent that manages the venue, so a person managing next to it is not locked", () => {
+    const html = render("admin", { tab: "access", accessEntries: [person, agent, apiKey] });
+
+    expect(html).toContain("Ada Lovelace");
+    expect(html).toContain("Shift planner");
+    expect(html).toContain("(Agent)");
+    expect(lockedRows(html)).toBe(0);
+  });
+
+  test("keeps API keys in their own section and does not count them as managers", () => {
+    const html = render("admin", { tab: "access", accessEntries: [person, apiKey] });
+
+    expect(html).not.toContain("Corner Café API keys");
+    expect(lockedRows(html)).toBe(1);
   });
 });

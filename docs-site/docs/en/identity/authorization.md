@@ -472,6 +472,14 @@ keeps its size, so granting a second manager unlocks it without moving
 anything. The editor counts only the entries it shows; the service stays the
 authority, and its `LAST_MANAGER` message reaches the person as an error.
 
+Pass the editor every entry that can count as a manager. Agents and standalone
+service accounts manage a resource like people do, so they keep their row and
+their kind label. Hide only entries that never count: an editor next to
+[`ResourceApiKeys`](/en/docs/identity/resource-api-keys#add-the-api-key-ui)
+hides the resource-bound entries that the key list manages. An editor that hid
+an agent with “Manage” would lock the person who manages next to it, although
+the service accepts their change.
+
 Rows for all signed-in users and for the public always show the editor's
 localized label, whatever `displayName` the entry carries.
 
