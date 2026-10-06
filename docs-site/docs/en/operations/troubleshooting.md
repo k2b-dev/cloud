@@ -5,7 +5,7 @@ section: Operations
 order: 1180
 description: Diagnose common application registration, request, data, and runtime failures.
 tags: [troubleshooting, health, diagnostics]
-updated: 2026-09-30
+updated: 2026-10-06
 ---
 
 # Troubleshooting
@@ -91,6 +91,18 @@ service health.
 
 Valkey defaults to localhost when `REDIS_URL` is absent. That is normally wrong
 inside a container.
+
+## Postgres requires pg_textsearch
+
+Core or Notebooks setup, an application that publishes new Help content, Mail,
+or a `psql` query fails with
+`pg_textsearch must be loaded via shared_preload_libraries` or
+`could not access file "$libdir/pg_textsearch"`. The database has optional BM25
+indexes, and this Postgres server does not load their library. Native search
+cannot take over, because Postgres rejects every statement on those tables.
+
+Load the library again, or remove BM25 while it is loaded; see
+[Keep the library loaded while BM25 indexes exist](/en/docs/operations/deployment-requirements#keep-the-library-loaded-while-bm25-indexes-exist).
 
 ## Authentication works but access is denied
 
