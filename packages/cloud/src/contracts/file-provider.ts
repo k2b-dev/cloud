@@ -29,7 +29,7 @@ export const FileProviderListInputSchema = z
   .object({
     parent: ProviderIdSchema.optional().describe("Folder ID returned by this provider; omit for the provider root."),
     query: z.string().max(200).optional().describe("Optional name filter inside the folder."),
-    cursor: CursorSchema.optional().describe("Opaque cursor returned by the previous page."),
+    cursor: CursorSchema.optional().describe("Opaque cursor returned by the previous page; keep parent, query, and limit unchanged."),
     limit: z.number().int().min(1).max(100).default(50).describe("Maximum number of entries to return."),
   })
   .strict();
@@ -100,9 +100,16 @@ export const FileProviderSaveDataSchema = z
   .loose();
 
 /**
+ * The error code `save` answers, with status `409`, when the name already
+ * exists in the folder. Consumers ask for another name only on this code;
+ * every other failure keeps its own code, even with status `409`.
+ */
+export const FILE_PROVIDER_NAME_CONFLICT = "FILE_NAME_CONFLICT";
+
+/**
  * The three file-provider functions. `read` streams the file's bytes, `save`
  * is an idempotent Action with a write stream that only creates files: an
- * existing name is a `409` conflict.
+ * existing name fails with `FILE_PROVIDER_NAME_CONFLICT`.
  */
 export const fileProvider = {
   list: { kind: "query", input: FileProviderListInputSchema, data: FileProviderListDataSchema },

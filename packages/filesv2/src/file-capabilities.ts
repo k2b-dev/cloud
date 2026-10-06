@@ -4,13 +4,14 @@ import {
   type CapabilityExecutionContext,
   type CapabilityResult,
   type CapabilityStream,
+  FILE_PROVIDER_NAME_CONFLICT,
   type FileProviderEntry,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
   FileProviderSaveInputSchema,
 } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
-import { err, fail, fileIcons, ok } from "@k2b/stdlib";
+import { err, fail, fileIcons, isServiceError, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
 import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry } from "./contracts";
@@ -63,16 +64,34 @@ async function domain<T>(run: () => Promise<T>): Promise<T> {
     throw e;
   }
 }
+/** Files reports a taken name as these 409 codes; provider.save answers all of them with the contract's one code. */
+const NAME_TAKEN = new Set(["path_conflict", "not_file", "write_conflict"]);
+async function saveDomain<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await domain(run);
+  } catch (e) {
+    if (isServiceError(e) && e.status === 409 && NAME_TAKEN.has(e.code))
+      throw { code: FILE_PROVIDER_NAME_CONFLICT, message: "A file or folder with this name already exists", status: 409 };
+    throw e;
+  }
+}
 type ListedEntry = z.infer<typeof Entry> & { resourceId?: string };
 const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => ({
   ...entry,
   revision: markdownRevision(entry),
   ref: { type: "filesv2.entry" as const, id: await entryRef(baseId, { path: entry.path, resourceId }) },
 });
-const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityResult<z.infer<typeof Result>>> => ({
-  data: { baseId, entry: await item(baseId, entry) },
-  links: [{ rel: "open", href: filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")) }],
-});
+/** Capability links hold at most 2,048 characters; a deep path opens through the entry's deep link instead. */
+const openLink = (href: string, id: string) => [
+  { rel: "open" as const, href: href.length <= 2048 ? href : `/app/filesv2/ref/${encodeURIComponent(id)}` },
+];
+const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityResult<z.infer<typeof Result>>> => {
+  const listed = await item(baseId, entry);
+  return {
+    data: { baseId, entry: listed },
+    links: openLink(filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")), listed.ref.id),
+  };
+};
 /** Bun's media type table, by extension only; Files never sniffs content. */
 const mediaTypeOf = (name: string) => Bun.file(name).type;
 
@@ -93,7 +112,11 @@ const providerRoot = async (c: CapabilityExecutionContext, input: z.output<typeo
   const locale = c.locale ?? "en";
   const messages = browserMessages.resolve([locale]).t;
   const q = input.query?.trim().toLocaleLowerCase();
-  const bases = (await filesService.bases(readActor(c))).items
+  const available = await filesService.bases(readActor(c));
+  // An outage must not look like lost storage: fail the whole root, even beside usable bases, so consumers offer a retry.
+  if (available.issues.some((issue) => issue.code === "unavailable") || available.items.some((base) => base.reason === "unavailable"))
+    throw new FilesError("unavailable", 503);
+  const bases = available.items
     .filter((base) => base.status === "existing")
     .map((base) => ({ base, name: baseLabel(base, messages, locale) }))
     .filter(({ name }) => !q || name.toLocaleLowerCase().includes(q))
@@ -121,25 +144,28 @@ const SavedFile = z
       .optional(),
   })
   .strict();
-const savedFile = async (baseId: string, entry: FileEntry): Promise<CapabilityResult<z.infer<typeof SavedFile>>> => ({
-  data: { file: { id: await entryRef(baseId, entry), name: entry.name, size: entry.size } },
-  links: [{ rel: "open", href: filesUrl(baseId, entry.path.split("/").slice(0, -1).join("/")) }],
-});
+const savedFile = async (baseId: string, entry: FileEntry): Promise<CapabilityResult<z.infer<typeof SavedFile>>> => {
+  const id = await entryRef(baseId, entry);
+  return {
+    data: { file: { id, name: entry.name, size: entry.size } },
+    links: openLink(filesUrl(baseId, entry.path.split("/").slice(0, -1).join("/")), id),
+  };
+};
 
 const uploadRef = z.object({ baseId: Base, id: z.uuid() }).strict();
 const joinName = (folder: string, name: string) => (folder ? `${folder}/${name}` : name);
-/** The write stream of an upload session; `receipt` shapes the completed result for its Action. */
-const uploadStream = <T>(receipt: (baseId: string, entry: FileEntry) => Promise<CapabilityResult<T>>) => ({
+/** The write stream of an upload session; `receipt` shapes the completed result and `errors` the failures of its Action. */
+const uploadStream = <T>(receipt: (baseId: string, entry: FileEntry) => Promise<CapabilityResult<T>>, errors = domain) => ({
   direction: "write" as const,
   maxBytes: CONTENT_STREAM_LIMIT,
   write: async (s: CapabilityStream, body: ReadableStream<Uint8Array>, c: CapabilityExecutionContext) =>
-    domain(async () => {
+    errors(async () => {
       const ref = uploadRef.parse(JSON.parse(s.id));
       const saved = await filesService.capabilityUpload(readActor(c), ref, body, c.signal);
       return receipt(ref.baseId, saved.entry);
     }),
   status: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-    domain(async () => {
+    errors(async () => {
       const ref = uploadRef.parse(JSON.parse(s.id));
       const status = await filesService.capabilityUploadStatus(readActor(c), ref);
       return status.state === "completed" ? { state: "completed" as const, result: await receipt(ref.baseId, status.entry) } : status;
@@ -396,7 +422,7 @@ export const fileActions = {
   "provider.save": {
     title: "Save a new file",
     description:
-      "Create one new file in a writable folder from provider.list, then send its bytes through the write stream. Never replaces: an existing name is a 409 conflict; choose another name.",
+      "Create one new file in a writable folder from provider.list, then send its bytes through the write stream. Never replaces: an existing name fails with code FILE_NAME_CONFLICT; choose another name.",
     input: FileProviderSaveInputSchema,
     data: SavedFile,
     openWorld: false,
@@ -408,7 +434,7 @@ export const fileActions = {
         return ok({ message: `Create ${joinName(folder.path, input.name)} (${input.size} bytes) in ${folder.baseId}.` });
       }),
     run: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      saveDomain(async () => {
         if (input.size > CONTENT_STREAM_LIMIT) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
         const actor = readActor(c);
         const folder = await filesService.folderLocation(actor, input.parent);
@@ -431,7 +457,7 @@ export const fileActions = {
           },
         });
       }),
-    stream: uploadStream(savedFile),
+    stream: uploadStream(savedFile, saveDomain),
   },
   "entry.trash": action("Move entry to trash", Target, async (input, c) => {
     successfulEntry(await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));

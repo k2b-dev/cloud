@@ -651,13 +651,17 @@ Files is a [file provider](/en/docs/platform/file-providers): other apps can
 browse, open, and save files in it through the shared contract.
 
 - `provider.list` shows a person's usable storage bases as the root, under the
-  names Files shows, such as **My files**. Inside a base it lists readable
+  names Files shows, such as **My files**. While storage cannot be reached,
+  the root fails with `unavailable` (503), even if other bases work, so an
+  outage never looks like missing storage. Inside a base it lists readable
   folders first, then files, filtered by name inside the folder. A folder is
   writable when the person may create files in it.
 - `content.read` opens a file, up to 50 MiB.
 - `provider.save` creates a new file in a writable folder, up to 50 MiB. It
-  never replaces a file: an existing name is a `409` conflict, and a retry
-  with the same idempotency key returns the same upload.
+  never replaces a file or folder: an existing name fails with
+  `FILE_NAME_CONFLICT` (409), also when it appears during the transfer. Other
+  failures keep their own codes, such as `insufficient_space`. A retry with
+  the same idempotency key returns the same upload.
 
 Every call checks the person's current storage access and, on FreeIPA
 storage, their Unix permissions, exactly as browsing in Files does. Entry IDs

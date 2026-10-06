@@ -951,7 +951,8 @@ export function createFilesService(
     /**
      * One page of a folder named by its file ID, for apps that choose or save files through Files. Only readable
      * children are listed, filtered by name inside the folder, folders first. A Filegate read returns at most
-     * `pageSize` entries, so one page holds at most 2 × pageSize − 1 where folders end and files begin.
+     * `pageSize` entries, so one page holds at most 2 × pageSize − 1 where folders end and files begin. The name
+     * filter applies to each Filegate page, so a narrow filter in a large folder returns empty pages that continue.
      */
     async folder(
       actor: RequestActor,

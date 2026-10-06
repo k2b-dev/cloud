@@ -36,7 +36,10 @@ function, and `FILE_PROVIDER_FUNCTIONS` lists their names. `save` must declare
 - **`list`** returns one page of a folder: `writable`, up to 100 `items`, and
   `next`. Without `parent`, it returns your root. Folders may be virtual: Files
   shows a person's storage bases as root folders. `query` filters names inside
-  the folder; `cursor` continues a page; `limit` is 1 to 100 and defaults to 50.
+  the folder; `limit` is 1 to 100 and defaults to 50. `cursor` continues from
+  the previous page; send it with the same `parent`, `query`, and `limit`. A
+  provider may reject a cursor with other values; Files answers
+  `409 cursor_invalid`.
 - **Entries** are `folder` or `file`, with an opaque `id` of up to 2,048
   characters and a `name`. Files also carry `size` and may carry `mediaType`.
   Both kinds may carry `updatedAt`, a Tabler `icon` class, and up to three
@@ -46,8 +49,11 @@ function, and `FILE_PROVIDER_FUNCTIONS` lists their names. `save` must declare
   the file's media type in the stream descriptor.
 - **`save`** takes a `parent` folder `id`, a single file `name`, a
   `mediaType`, and the exact `size`, and returns a write stream. It only
-  creates files: when the name exists, answer `409`, from the Action or from
-  the stream's `write` or `status`. The completed write returns
+  creates files: when the name exists, fail with status `409` and the code
+  `FILE_PROVIDER_NAME_CONFLICT` (`FILE_NAME_CONFLICT`), from the Action or from
+  the stream's `write` or `status`. Consumers ask for another name only on
+  this code. Every other failure keeps its own code, even with status `409`,
+  for example when storage is full. The completed write returns
   `{ file: { id, name, size } }`; the call that opens the stream has no file
   yet.
 
@@ -98,7 +104,7 @@ export const archiveCapabilities = defineCapabilities({
   actions: {
     "document.save": {
       title: "Archive a new document",
-      description: "Create one new document in a writable folder; an existing name is a conflict.",
+      description: "Create one new document in a writable folder; an existing name fails with FILE_NAME_CONFLICT.",
       input: FileProviderSaveInputSchema,
       data: FileProviderSaveDataSchema,
       destructive: false,
@@ -121,7 +127,9 @@ export const archiveCapabilities = defineCapabilities({
 The undeclared functions stand for your own permission-aware service code.
 `describeDocument` returns `{ data, stream }` with the descriptor of the
 document's current revision; `reserveDocument` returns `{ data: {}, stream }`
-for a durable upload reservation. Follow
+for a durable upload reservation. When the name exists, `reserveDocument` and
+`storeDocument` throw
+`{ code: FILE_PROVIDER_NAME_CONFLICT, message, status: 409 }`. Follow
 [Binary streams](/en/docs/platform/capabilities#binary-streams) for
 descriptors, receipts, and recovery.
 
@@ -137,6 +145,8 @@ Keep these rules in every call:
   the caller's current permission; `save` still checks it again.
 - Keep identifiers and cursors opaque. A page may be short or empty and still
   continue while `next` is set; return `next: null` on the last page.
+- Fail when storage cannot be reached, for example with `503`. Never answer
+  an outage with an empty or shorter page; it looks like lost files.
 - Bound `maxBytes` by what you can serve. Consumers combine it with their own
   limit, and Core rejects larger transfers.
 - Make `save` idempotent per key: a retry with the same key returns the same
@@ -161,7 +171,8 @@ A capability is compatible when:
   string syntax stays yours, but required fields, numeric bounds, and closed
   objects must fit the contract.
 - **Result.** Every result you can return satisfies the contract data schema.
-  Extra fields and narrower types are fine.
+  Extra fields and narrower types are fine, and literal values must lie within
+  the contract's bounds.
 
 Test a declaration with the same function Cloud uses:
 

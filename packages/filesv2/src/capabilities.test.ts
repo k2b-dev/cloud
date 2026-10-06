@@ -3,8 +3,10 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
   capabilityResultSchema,
+  FILE_PROVIDER_NAME_CONFLICT,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
+  FileProviderSaveDataSchema,
   fileProviderIssues,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
@@ -33,7 +35,9 @@ const uploadInputs: unknown[] = [];
 const folderCalls: unknown[] = [];
 let folderWritable = true;
 let baseItems: Array<Record<string, unknown>> | null = null;
+let baseIssues: Array<{ area: string; code: string }> = [];
 let readName: string | null = null;
+let uploaded: FileEntry | null = null;
 const ids = new Map<string, { baseId: string; path: string }>();
 const persistedEntryRefId = async (baseId: string, path: string) => {
   const id = entryRefId(baseId, path) ?? `p:${"a".repeat(64)}`;
@@ -69,7 +73,19 @@ const lease = { url: "https://storage.example.test/direct/opaque-token", method:
 mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
-    bases: async () => ({ items: baseItems ?? Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })) }),
+    bases: async () => ({
+      items: baseItems ?? Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })),
+      issues: baseIssues,
+    }),
+    capabilityUpload: async (_actor: unknown, input: { baseId: string }, body: ReadableStream<Uint8Array>) => {
+      await body.cancel();
+      if (serviceFailure) throw serviceFailure;
+      return { base: { ...base, id: input.baseId }, entry: uploaded };
+    },
+    capabilityUploadStatus: async () => {
+      if (serviceFailure) throw serviceFailure;
+      return { state: "completed", entry: uploaded };
+    },
     upload: async (_actor: unknown, input: { idempotencyKey: string }) => {
       if (serviceFailure) throw serviceFailure;
       uploadKeys.push(input.idempotencyKey);
@@ -149,7 +165,9 @@ afterEach(() => {
   folderCalls.length = 0;
   folderWritable = true;
   baseItems = null;
+  baseIssues = [];
   readName = null;
+  uploaded = null;
 });
 const entry = (path: string): FileEntry => ({ name: "report", path, directory: false, size: 4, modified: "2026-09-19" });
 
@@ -538,7 +556,84 @@ describe("Files as a file provider", () => {
     expect(uploadKeys[3]).not.toBe(uploadKeys[0]);
 
     expect(await save.run({ ...input, size: 50 * 1024 * 1024 + 1 }, caller)).toMatchObject({ ok: false, error: { status: 400 } });
+  });
+
+  test("the root fails while storage is unreachable instead of listing fewer bases", async () => {
+    const group = { ...base, id: "freeipa:groups:a", name: "alpha", area: "freeipa", kind: "groups" };
+    baseItems = [{ ...base, id: "cloud:users:me", name: "alice" }];
+    baseIssues = [{ area: "freeipa", code: "unavailable" }];
+    await expect(listProvider({})).rejects.toMatchObject({ code: "unavailable", status: 503 });
+    baseIssues = [];
+    baseItems.push({ ...group, status: "unknown", reason: "unavailable" });
+    await expect(listProvider({})).rejects.toMatchObject({ code: "unavailable", status: 503 });
+    // A configuration state is not an outage: the bases the person cannot use stay out of the root.
+    baseItems[1] = { ...group, status: "unknown", reason: "identity_incomplete" };
+    baseIssues = [{ area: "freeipa", code: "freeipa_disabled" }];
+    const root = await listProvider({});
+    if (!root.ok) throw new Error("expected root page");
+    expect(root.data.data.items.map((item) => item.name)).toEqual(["My files"]);
+  });
+
+  test("save reports a taken name with the contract code and every other failure with its own", async () => {
+    ids.set("docs-id", { baseId: "base", path: "Docs" });
+    const save = filesCapabilities.actions["provider.save"];
+    const stream = save.stream!;
+    const caller = { ...context, idempotencyKey: "save-key" };
+    const input = { parent: "docs-id", name: "report.pdf", mediaType: "application/pdf", size: 4 };
+    const offer = { id: JSON.stringify({ baseId: "base", id: crypto.randomUUID() }) } as Parameters<typeof stream.status>[0];
+    const write = () => stream.write(offer, new Blob(["data"]).stream(), caller);
+    const conflict = { code: FILE_PROVIDER_NAME_CONFLICT, status: 409 };
+
+    // A file or folder of that name before the transfer, a folder that appeared since, or a file published meanwhile.
+    for (const code of ["path_conflict", "not_file", "write_conflict"]) {
+      serviceFailure = new MockFilesError(code, 409);
+      await expect(save.run(input, caller)).rejects.toMatchObject(conflict);
+      await expect(write()).rejects.toMatchObject(conflict);
+      await expect(stream.status(offer, caller)).rejects.toMatchObject(conflict);
+    }
+    for (const [code, status] of [
+      ["insufficient_space", 409],
+      ["upload_changed", 409],
+      ["operation_conflict", 409],
+      ["not_file", 400],
+      ["unavailable", 503],
+    ] as const) {
+      serviceFailure = new MockFilesError(code, status);
+      await expect(save.run(input, caller)).rejects.toMatchObject({ code, status });
+      await expect(write()).rejects.toMatchObject({ code, status });
+    }
+    // Files' own upload keeps its codes.
     serviceFailure = new MockFilesError("path_conflict", 409);
-    await expect(save.run(input, caller)).rejects.toMatchObject({ code: "path_conflict", status: 409 });
+    await expect(
+      filesCapabilities.actions["content.create"].stream.write(offer, new Blob(["data"]).stream(), caller),
+    ).rejects.toMatchObject({
+      code: "path_conflict",
+      status: 409,
+    });
+  });
+
+  test("a receipt for a very deep folder stays valid with the entry's deep link", async () => {
+    const folder = Array.from({ length: 12 }, (_, index) => `${index}${"報告書".repeat(7)}`).join("/");
+    uploaded = { name: "report.pdf", path: `${folder}/report.pdf`, directory: false, size: 4, modified };
+    const stream = filesCapabilities.actions["provider.save"].stream!;
+    const offer = { id: JSON.stringify({ baseId: "base", id: crypto.randomUUID() }) } as Parameters<typeof stream.status>[0];
+    const receipt = await stream.write(offer, new Blob(["data"]).stream(), context);
+    const id = receipt.data?.file?.id ?? "";
+    expect(receipt).toEqual({
+      data: { file: { id, name: "report.pdf", size: 4 } },
+      links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }],
+    });
+    expect(capabilityResultSchema(FileProviderSaveDataSchema).safeParse(receipt).success).toBe(true);
+    expect(capabilityResultSchema(filesCapabilities.actions["provider.save"].data).safeParse(receipt).success).toBe(true);
+
+    // A shallow folder keeps its folder link, and content.read follows the same bound.
+    uploaded = { ...uploaded, path: "Docs/report.pdf" };
+    expect((await stream.write(offer, new Blob(["data"]).stream(), context)).links).toEqual([
+      { rel: "open", href: "/app/filesv2?base=base&path=Docs" },
+    ]);
+    ids.set("deep-id", { baseId: "base", path: `${folder}/report.pdf` });
+    const read = await filesCapabilities.queries["content.read"].run({ id: "deep-id" }, context);
+    if (!read.ok) throw new Error("expected read");
+    expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }]);
   });
 });
