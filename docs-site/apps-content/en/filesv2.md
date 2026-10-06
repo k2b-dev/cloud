@@ -435,6 +435,10 @@ The editor uses the Cloud theme when opened, even if Collabora saved a different
 UI preference. An open Collabora editor keeps its initial theme; close and reopen
 it after a theme change. It is never reloaded automatically while editing.
 
+The editor also opens in the Cloud language. Collabora uses it for its menus and
+for spellchecking text that does not set its own language, so new documents
+carry no language and are checked in the Cloud language.
+
 Several Collabora instances need sticky routing on the `WOPISrc` parameter,
 which is a Collabora deployment concern; Files scales horizontally
 unchanged.
