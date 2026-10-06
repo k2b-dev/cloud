@@ -34,8 +34,11 @@ import {
   TemplatePreview,
   TemplateSampleData,
   TextInput,
+  Toolbar,
   toast,
   useLocale,
+  VirtualFeed,
+  type VirtualFeedController,
   ZoomPanViewport,
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
@@ -294,6 +297,98 @@ const LogsDemo = () => (
     />
   </DemoCard>
 );
+
+type FeedEvent = { id: string; at: number; text: string };
+const feedPhrases = [
+  "Build finished",
+  "Preview deployed to the staging environment",
+  "Review requested",
+  "Tests passed in all three browsers after the flaky timeout was replaced by an explicit wait for the network to settle",
+  "Release notes updated",
+  "Dependency update proposed with a summary of every changed package and the reason for the change",
+];
+const FEED_TOTAL = 5_000;
+const feedStart = Date.UTC(2026, 6, 1, 8);
+const feedEvent = (seq: number): FeedEvent => ({
+  id: `event-${seq}`,
+  at: feedStart + seq * 7 * 60_000,
+  text: `#${seq + 1} ${feedPhrases[(seq * 7) % feedPhrases.length]}`,
+});
+const feedDay = new Intl.DateTimeFormat("en", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+const feedTime = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "UTC" });
+const sameDay = (a: number, b: number) => Math.floor(a / 86_400_000) === Math.floor(b / 86_400_000);
+
+const VirtualFeedDemo = () => {
+  // The newest 1,000 of 5,000 events are loaded; older pages load while scrolling up.
+  const [events, setEvents] = createSignal(Array.from({ length: 1_000 }, (_, index) => feedEvent(FEED_TOTAL - 1_000 + index)));
+  let next = FEED_TOTAL;
+  let feed: VirtualFeedController | undefined;
+  const loadOlder = () =>
+    new Promise<void>((done) =>
+      setTimeout(() => {
+        const first = Number(events()[0]!.id.slice(6));
+        const page = Array.from({ length: Math.min(250, first) }, (_, index) => feedEvent(first - Math.min(250, first) + index));
+        setEvents((current) => [...page, ...current]);
+        done();
+      }, 400),
+    );
+  const add = (count: number) => setEvents((current) => [...current, ...Array.from({ length: count }, () => feedEvent(next++))]);
+  return (
+    <DemoCard
+      id="virtual-feed"
+      chip={{ kind: "component", name: "VirtualFeed", from: "@k2b/ui" }}
+      description="5,000 events with day separators, a marker, older pages loading at the top, and Jump to latest. Scroll up, then add events: nothing moves."
+      code={`<VirtualFeed
+  items={events()}
+  getKey={(event) => event.id}
+  estimateSize={() => 40}
+  label="Release activity"
+  separator={(event, previous) => (previous && sameDay(event.at, previous.at) ? undefined : day(event.at))}
+  markerKey={firstUnseenId()}
+  hasOlder={hasOlder()}
+  onLoadOlder={loadOlder}
+  controller={(controller) => (feed = controller)}
+>
+  {(event) => <EventRow event={event} />}
+</VirtualFeed>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="Feed actions" wrap>
+          <Button size="sm" variant="subtle" onClick={() => add(1)}>
+            Add an event
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => add(3)}>
+            Add 3 events
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => feed?.scrollToKey(`event-${FEED_TOTAL - 300}`, { highlight: true })}>
+            Jump to #{FEED_TOTAL - 299}
+          </Button>
+        </Toolbar>
+        <div style={{ display: "flex", height: "26rem" }}>
+          <VirtualFeed
+            items={events()}
+            getKey={(event) => event.id}
+            estimateSize={() => 40}
+            label="Release activity"
+            itemLabel={(event) => feedTime.format(event.at)}
+            separator={(event, previous) => (previous && sameDay(event.at, previous.at) ? undefined : feedDay.format(event.at))}
+            markerKey={`event-${FEED_TOTAL - 6}`}
+            hasOlder={Number(events()[0]?.id.slice(6)) > 0}
+            onLoadOlder={loadOlder}
+            controller={(controller) => (feed = controller)}
+          >
+            {(event) => (
+              <div style={{ display: "grid", "grid-template-columns": "3rem 1fr", gap: "0.75rem", padding: "0.375rem 0.75rem" }}>
+                <time style={{ color: "var(--k2b-text-muted)", "font-variant-numeric": "tabular-nums" }}>{feedTime.format(event.at)}</time>
+                <span>{event.text}</span>
+              </div>
+            )}
+          </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
 
 const StructuredDemo = () => (
   <DemoCard
@@ -797,6 +892,11 @@ const demos: DemoSection = {
   logs: () => (
     <DemoGrid columns="one">
       <LogsDemo />
+    </DemoGrid>
+  ),
+  "virtual-feed": () => (
+    <DemoGrid columns="one">
+      <VirtualFeedDemo />
     </DemoGrid>
   ),
   "structured-data": () => (

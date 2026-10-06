@@ -22,6 +22,7 @@ import contentMedia from "./content/media.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
+import contentVirtualFeed from "./content/virtual-feed.md" with { type: "text" };
 import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
@@ -142,6 +143,7 @@ const catalogContextSources = {
   "content/pagination": { file: "layout/pagination.md", content: contentPagination },
   "content/code": { file: "content/code.md", content: contentCode },
   "content/logs": { file: "content/logs.md", content: contentLogs },
+  "content/virtual-feed": { file: "content/virtual-feed.md", content: contentVirtualFeed },
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },
   "content/media": { file: "content/media.md", content: contentMedia },
   "content/files": { file: "content/files.md", content: contentFiles },

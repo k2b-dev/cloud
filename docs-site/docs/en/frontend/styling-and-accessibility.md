@@ -251,10 +251,16 @@ Treat the content length as dynamic when it can change through:
 
 The surrounding layout still owns the region's height, flex behavior, padding,
 and spacing. Keep one scroll owner for each full-height region. Do not wrap
-`DetailPanel.Body`, `PanelDialog.Body`, `DataTable`, `ChatTimeline`, or another
-component that already owns scrolling in an additional `ScrollArea`. Do not
-use it for a horizontal-only strip or add a bounded scroll region where the
-page should grow naturally.
+`DetailPanel.Body`, `PanelDialog.Body`, `DataTable`, `ChatTimeline`,
+`VirtualFeed`, or another component that already owns scrolling in an
+additional `ScrollArea`. Do not use it for a horizontal-only strip or add a
+bounded scroll region where the page should grow naturally.
+
+For a long feed that loads more items at either end and must keep the reading
+position, such as messages or activity, use
+[`VirtualFeed`](/en/ui/content/virtual-feed) instead of a hand-made list. It
+renders only the items near the visible area and keeps the visible item in
+place while pages load and rows change size.
 
 When a standalone scroll region needs to be announced, give it an appropriate
 landmark and accessible name. Add a tab stop only when keyboard users would
