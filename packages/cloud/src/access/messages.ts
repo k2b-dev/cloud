@@ -26,6 +26,9 @@ export const accessMessages = i18n.define({
       anyoneWithLink: "Anyone with the link",
       permissionFor: ({ name }: { name: string }) => `Permission for ${name}`,
       remove: ({ name }: { name: string }) => `Remove ${name}`,
+      lastManager: ({ level }: { level: string }) =>
+        `The last entry with “${level}” access can't be lowered or removed. Give another person or group “${level}” access first.`,
+      lastManagerOption: ({ level }: { level: string }) => `Available once another person or group has “${level}” access`,
       read: "Read",
       readDescription: "Read this resource through the app API.",
       write: "Write",
@@ -86,6 +89,9 @@ export const accessMessages = i18n.define({
       anyoneWithLink: "Alle mit dem Link",
       permissionFor: ({ name }) => `Berechtigung für ${name}`,
       remove: ({ name }) => `${name} entfernen`,
+      lastManager: ({ level }) =>
+        `Der letzte Eintrag mit Zugriff „${level}“ kann nicht herabgestuft oder entfernt werden. Gib zuerst einer anderen Person oder Gruppe Zugriff „${level}“.`,
+      lastManagerOption: ({ level }) => `Möglich, sobald eine weitere Person oder Gruppe Zugriff „${level}“ hat`,
       read: "Lesen",
       readDescription: "Diese Ressource über die App-API lesen.",
       write: "Schreiben",

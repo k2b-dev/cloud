@@ -3,6 +3,7 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   err,
   fail,
   getEffectivePermission,
@@ -12,13 +13,13 @@ import {
   type Principal,
   type Result,
   resolveDisplayNames,
-  updateAccess,
 } from "@k2b/cloud/server";
 import {
   coreSettings,
   isStandaloneServiceAccountKind,
   isUniqueViolation,
   logger,
+  type ServiceAccountKind,
   serviceAccounts,
   toPgUuidArray,
 } from "@k2b/cloud/services";
@@ -379,8 +380,9 @@ const icsDate = (date: Date): string =>
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}/, "");
 
-const listAccess = async (venueId: string): Promise<AccessEntry[]> => {
-  const rows = await sql<
+/** The venue's grants without display names; pass the transaction that locked the venue to read them for a change. */
+const readAccessEntries = async (venueId: string, db: SqlClient = sql): Promise<AccessEntry[]> => {
+  const rows = await db<
     {
       access_id: string;
       user_id: string | null;
@@ -389,32 +391,36 @@ const listAccess = async (venueId: string): Promise<AccessEntry[]> => {
       authenticated_only: boolean;
       permission: PermissionLevel;
       created_at: Date;
+      service_account_kind: ServiceAccountKind | null;
     }[]
   >`
-    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
+    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at,
+           sa.kind AS service_account_kind
     FROM venue.venue_access va
     JOIN auth.access a ON a.id = va.access_id
+    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
     WHERE va.venue_id = ${venueId}::uuid
     ORDER BY a.created_at
   `;
 
-  return resolveDisplayNames(
-    rows.map((row) => ({
-      id: row.access_id,
-      principal: row.user_id
-        ? { type: "user", userId: row.user_id }
-        : row.group_id
-          ? { type: "group", groupId: row.group_id }
-          : row.service_account_id
-            ? { type: "service_account", serviceAccountId: row.service_account_id }
-            : row.authenticated_only
-              ? { type: "authenticated" }
-              : { type: "public" },
-      permission: row.permission,
-      createdAt: row.created_at.toISOString(),
-    })),
-  );
+  return rows.map((row) => ({
+    id: row.access_id,
+    principal: row.user_id
+      ? { type: "user", userId: row.user_id }
+      : row.group_id
+        ? { type: "group", groupId: row.group_id }
+        : row.service_account_id
+          ? { type: "service_account", serviceAccountId: row.service_account_id }
+          : row.authenticated_only
+            ? { type: "authenticated" }
+            : { type: "public" },
+    permission: row.permission,
+    createdAt: row.created_at.toISOString(),
+    serviceAccountKind: row.service_account_kind ?? undefined,
+  }));
 };
+
+const listAccess = async (venueId: string): Promise<AccessEntry[]> => resolveDisplayNames(await readAccessEntries(venueId));
 
 const createOwnerAccessInTx = async (tx: SqlClient, userId: string): Promise<Result<{ id: string }>> => {
   const [user] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
@@ -832,25 +838,43 @@ const grantAccess = async (venueId: string, principal: Principal, permission: Pe
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };
 
-const changeAccess = async (venueId: string, accessId: string, permission: PermissionLevel): Promise<Result<AccessEntry>> => {
-  const entries = await listAccess(venueId);
-  if (!entries.some((entry) => entry.id === accessId)) return fail(err.notFound("Access entry"));
-  const updated = await updateAccess({ id: accessId, permission });
+/**
+ * Change or remove one grant under the venue row lock, so concurrent changes see
+ * each other and none of them leaves the venue without a manager.
+ */
+const writeAccess = (venueId: string, accessId: string, permission: PermissionLevel | null, locale?: string): Promise<Result<void>> =>
+  sql.begin(async (tx): Promise<Result<void>> => {
+    await tx`SELECT id FROM venue.venues WHERE id = ${venueId}::uuid FOR UPDATE`;
+    const before = await readAccessEntries(venueId, tx);
+    if (!before.some((entry) => entry.id === accessId)) return fail(err.notFound("Access entry"));
+    const after =
+      permission === null
+        ? before.filter((entry) => entry.id !== accessId)
+        : before.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry));
+    const guarded = ensureManagerRemains({ before, after, locale });
+    if (!guarded.ok) return fail(guarded.error);
+    const changed =
+      permission === null
+        ? await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`
+        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${accessId}::uuid`;
+    return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
+  });
+
+const changeAccess = async (
+  venueId: string,
+  accessId: string,
+  permission: PermissionLevel,
+  locale?: string,
+): Promise<Result<AccessEntry>> => {
+  const updated = await writeAccess(venueId, accessId, permission, locale);
   if (!updated.ok) return updated;
   const next = await listAccess(venueId);
   const entry = next.find((candidate) => candidate.id === accessId);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };
 
-const revokeAccess = async (venueId: string, accessId: string): Promise<Result<void>> => {
-  const entries = await listAccess(venueId);
-  const target = entries.find((entry) => entry.id === accessId);
-  if (!target) return fail(err.notFound("Access entry"));
-  const remainingAdmins = entries.filter((entry) => entry.id !== accessId && entry.permission === "admin").length;
-  if (target.permission === "admin" && remainingAdmins === 0) return fail(err.badInput("A venue needs at least one admin"));
-  await deleteAccess({ id: accessId });
-  return ok();
-};
+const revokeAccess = (venueId: string, accessId: string, locale?: string): Promise<Result<void>> =>
+  writeAccess(venueId, accessId, null, locale);
 
 const listOpeningRules = async (venueId: string): Promise<OpeningRule[]> => {
   const rows = await sql<DbOpeningRule[]>`

@@ -1,5 +1,15 @@
-import { type AccessEntry, err, fail, ok, type PermissionLevel, type Principal, type Result, resolveDisplayNames } from "@k2b/cloud/server";
-import { toPgUuidArray } from "@k2b/cloud/services";
+import {
+  type AccessEntry,
+  ensureManagerRemains,
+  err,
+  fail,
+  ok,
+  type PermissionLevel,
+  type Principal,
+  type Result,
+  resolveDisplayNames,
+} from "@k2b/cloud/server";
+import { type ServiceAccountKind, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { PulseBase } from "../contracts";
 import { withShortId } from "../lib/short-id";
@@ -235,40 +245,60 @@ export const grantBaseAccess = async (params: {
   return entry ? ok(entry) : fail(err.internal("Failed to resolve access entry"));
 };
 
-const hasBaseAccessBinding = async (baseId: string, accessId: string): Promise<boolean> => {
-  const [row] = await sql<{ exists: boolean }[]>`
-    SELECT EXISTS(
-      SELECT 1 FROM pulse.base_access WHERE base_id = ${baseId}::uuid AND access_id = ${accessId}::uuid
-    ) AS exists
-  `;
-  return row?.exists === true;
-};
+/**
+ * Change or remove one base grant under the base row lock, so concurrent changes
+ * see each other and none of them leaves the base without a manager.
+ */
+const changeBaseAccess = (
+  params: { baseId: string; accessId: string; locale?: string },
+  permission: Exclude<PermissionLevel, "none"> | null,
+): Promise<Result<void>> =>
+  sql.begin(async (tx): Promise<Result<void>> => {
+    await tx`SELECT id FROM pulse.bases WHERE id = ${params.baseId}::uuid FOR UPDATE`;
+    const rows = await tx<(AccessRow & { service_account_kind: ServiceAccountKind | null })[]>`
+      SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at,
+             sa.kind AS service_account_kind
+      FROM pulse.base_access ba
+      JOIN auth.access a ON a.id = ba.access_id
+      LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
+      WHERE ba.base_id = ${params.baseId}::uuid
+    `;
+    const before = rows.map((row) => ({ ...mapAccessRow(row), serviceAccountKind: row.service_account_kind }));
+    if (!before.some((entry) => entry.id === params.accessId)) return fail(err.notFound("Access entry"));
+    const after =
+      permission === null
+        ? before.filter((entry) => entry.id !== params.accessId)
+        : before.map((entry) => (entry.id === params.accessId ? { ...entry, permission } : entry));
+    const guarded = ensureManagerRemains({ before, after, locale: params.locale });
+    if (!guarded.ok) return fail(guarded.error);
+    const changed =
+      permission === null
+        ? await tx`DELETE FROM auth.access WHERE id = ${params.accessId}::uuid`
+        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${params.accessId}::uuid`;
+    return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
+  });
 
 export const updateBaseAccess = async (params: {
   baseId: string;
   accessId: string;
   user: AccessScope;
   permission: Exclude<PermissionLevel, "none">;
+  locale?: string;
 }): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  if (!(await hasBaseAccessBinding(params.baseId, params.accessId))) return fail(err.notFound("Access entry"));
-  const updated = await sql`
-    UPDATE auth.access
-    SET permission = ${params.permission}::auth.permission_level
-    WHERE id = ${params.accessId}::uuid
-  `;
-  if (updated.count === 0) return fail(err.notFound("Access entry"));
-  return ok();
+  return changeBaseAccess(params, params.permission);
 };
 
-export const revokeBaseAccess = async (params: { baseId: string; accessId: string; user: AccessScope }): Promise<Result<void>> => {
+export const revokeBaseAccess = async (params: {
+  baseId: string;
+  accessId: string;
+  user: AccessScope;
+  locale?: string;
+}): Promise<Result<void>> => {
   const access = await requireBaseAccess(params.baseId, params.user, "admin");
   if (!access.ok) return fail(access.error);
-  if (!(await hasBaseAccessBinding(params.baseId, params.accessId))) return fail(err.notFound("Access entry"));
-  const deleted = await sql`DELETE FROM auth.access WHERE id = ${params.accessId}::uuid`;
-  if (deleted.count === 0) return fail(err.notFound("Access entry"));
-  return ok();
+  return changeBaseAccess(params, null);
 };
 
 export const getBase = async (baseId: string, user: AccessScope): Promise<Result<PulseBase>> => {

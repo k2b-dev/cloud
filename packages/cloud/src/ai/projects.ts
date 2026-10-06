@@ -82,6 +82,7 @@ export type AiProjectAccess = {
   principal: Principal;
   permission: AiProjectPermission;
   displayName?: string;
+  avatarHash?: string | null;
   /** Kind of a `service_account` principal; presentation only. */
   serviceAccountKind?: ServiceAccountKind;
   createdAt: string;
@@ -157,6 +158,7 @@ type ProjectAccessRow = {
   permission: AiProjectPermission;
   created_at: Date | string;
   display_name: string | null;
+  avatar_hash: string | null;
   service_account_kind: ServiceAccountKind | null;
 };
 
@@ -260,6 +262,7 @@ const toProjectAccess = (row: ProjectAccessRow): AiProjectAccess => ({
           : { type: "public" },
   permission: row.permission,
   displayName: row.display_name ?? undefined,
+  ...(row.user_id ? { avatarHash: row.avatar_hash } : {}),
   serviceAccountKind: row.service_account_kind ?? undefined,
   createdAt: iso(row.created_at),
 });
@@ -290,9 +293,9 @@ const listProjectAccess = async (projectId: string, db: SQL = sql): Promise<AiPr
   const rows = await db<ProjectAccessRow[]>`
     SELECT project_access.short_id, access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
            access.permission, access.created_at,
-           COALESCE(users.display_name, groups.name, service_accounts.name,
+           COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name,
              CASE WHEN access.authenticated_only THEN 'All authenticated users' ELSE 'Public' END) AS display_name,
-           service_accounts.kind AS service_account_kind
+           users.avatar_hash, service_accounts.kind AS service_account_kind
     FROM ai.project_access project_access
     JOIN auth.access access ON access.id = project_access.access_id
     LEFT JOIN auth.users users ON users.id = access.user_id

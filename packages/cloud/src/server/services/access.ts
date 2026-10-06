@@ -1,5 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQLQuery, sql } from "bun";
+import { type ManagerCandidate, removesLastManager } from "../../access/managers";
+import { accessMessages } from "../../access/messages";
 import { recursiveGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
@@ -236,6 +238,28 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
   }
 
   return ok();
+};
+
+/**
+ * Refuse a grant change that would leave a resource without a manager.
+ *
+ * Pass the resource's entries before and after the change, read in the
+ * transaction that writes it after locking the resource, so concurrent changes
+ * see each other. A manager is an `admin` entry for a user, a group, all
+ * signed-in users, or a standalone or agent service account; service-account
+ * entries need their `serviceAccountKind`. Only a change from at least one
+ * manager to none fails, with status 409 and code `LAST_MANAGER`. An app whose
+ * own precedence lets another entry shadow `admin` drops the shadowed entries
+ * from both lists first.
+ */
+export const ensureManagerRemains = (params: {
+  before: readonly ManagerCandidate[];
+  after: readonly ManagerCandidate[];
+  locale?: string | null;
+}): Result<void> => {
+  if (!removesLastManager(params.before, params.after)) return ok();
+  const { t } = accessMessages.resolve(params.locale ? [params.locale] : []);
+  return fail({ code: "LAST_MANAGER", message: t.lastManager({ level: t.manage }), status: 409 });
 };
 
 /** Resolve direct and nested group memberships from the authoritative database mirror. */

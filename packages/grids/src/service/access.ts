@@ -1,4 +1,11 @@
-import type { AccessEntry, AccessSubject, PermissionLevel, Principal } from "@k2b/cloud/server";
+import {
+  type AccessEntry,
+  type AccessSubject,
+  ensureManagerRemains,
+  type PermissionLevel,
+  type Principal,
+  resolveDisplayNames,
+} from "@k2b/cloud/server";
 import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -34,8 +41,6 @@ type DbAccessRow = {
   authenticated_only: boolean;
   permission: PermissionLevel;
   created_at: Date;
-  display_name: string | null;
-  service_account_kind: ServiceAccountKind | null;
 };
 
 type DbAccessSnapshot = {
@@ -124,9 +129,63 @@ const mapAccessRow = (row: DbAccessRow): AccessEntry => ({
   principal: principalFromRow(row),
   permission: row.permission,
   createdAt: row.created_at.toISOString(),
-  displayName: row.display_name ?? undefined,
-  serviceAccountKind: row.service_account_kind ?? undefined,
 });
+
+type ManagerGuardEntry = {
+  id: string;
+  principal: Principal;
+  permission: PermissionLevel;
+  serviceAccountKind: ServiceAccountKind | null;
+};
+
+/** The principal tier a 'none' grant shadows. Without expanding membership, a group deny may hide every group. */
+const denyScope = (principal: Principal): string | null => {
+  switch (principal.type) {
+    case "user":
+      return `user:${principal.userId}`;
+    case "service_account":
+      return `service_account:${principal.serviceAccountId}`;
+    case "group":
+      return "group";
+    case "authenticated":
+      return "authenticated";
+    case "public":
+      return null;
+  }
+};
+
+/** Drop the entries a deny in the same tier shadows, so only grants that still apply count as managers. */
+const unshadowedEntries = (entries: ManagerGuardEntry[]): ManagerGuardEntry[] => {
+  const denied = new Set(entries.filter((entry) => entry.permission === "none").map((entry) => denyScope(entry.principal)));
+  return entries.filter((entry) => !denied.has(denyScope(entry.principal)));
+};
+
+/**
+ * Refuse a base grant change that leaves the base without a manager. Call it after
+ * lockBaseAuthorization, which serializes every grant change of the base.
+ */
+const ensureBaseManagerRemains = async (
+  binding: AccessBinding,
+  change: (entries: ManagerGuardEntry[]) => ManagerGuardEntry[],
+  client: SqlClient,
+  locale?: string,
+): Promise<Result<void>> => {
+  if (binding.resourceType !== "base") return ok();
+  const rows = await client<(DbAccessSnapshot & { service_account_kind: ServiceAccountKind | null })[]>`
+    SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, sa.kind AS service_account_kind
+    FROM grids.base_access ba
+    JOIN auth.access a ON a.id = ba.access_id
+    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
+    WHERE ba.base_id = ${binding.baseId}::uuid
+  `;
+  const before = rows.map((row) => ({
+    id: row.id,
+    principal: principalFromRow(row),
+    permission: row.permission,
+    serviceAccountKind: row.service_account_kind,
+  }));
+  return ensureManagerRemains({ before: unshadowedEntries(before), after: unshadowedEntries(change(before)), locale });
+};
 
 const resourceIdFromBinding = (binding: AccessBinding): string => (binding.resourceType === "base" ? binding.baseId : binding.customAppId);
 
@@ -259,6 +318,16 @@ export const grantAccess = async (params: {
     await lockBaseAuthorization([binding.baseId], tx);
     const authorized = await authorizeMutation(binding, params.authorization, tx, params.locale);
     if (!authorized.ok) return fail(authorized.error);
+    // Only a deny can take Manage away; it shadows the allows in its tier.
+    if (params.permission === "none") {
+      const guarded = await ensureBaseManagerRemains(
+        binding,
+        (entries) => [...entries, { id: "", principal: params.principal, permission: "none", serviceAccountKind: null }],
+        tx,
+        params.locale,
+      );
+      if (!guarded.ok) return fail(guarded.error);
+    }
     const created = await insertAccessRow({ principal: params.principal, permission: params.permission }, tx, params.locale);
     if (!created.ok) return fail(created.error);
     await insertAccessBinding(params.resourceType, params.resourceId, created.data.id, tx);
@@ -283,17 +352,13 @@ export const grantAccess = async (params: {
 const listAccess = async (resourceType: AccessResourceType, resourceId: string): Promise<AccessEntry[]> => {
   const definition = ACCESS_RESOURCES[resourceType];
   const rows = await sql<DbAccessRow[]>`
-    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only,
-           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL) AS display_name, sa.kind AS service_account_kind
+    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
     FROM ${sql.unsafe(definition.junctionTable)} binding
     JOIN auth.access a ON a.id = binding.access_id
-    LEFT JOIN auth.users u ON u.id = a.user_id
-    LEFT JOIN auth.groups g ON g.id = a.group_id
-    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
     WHERE ${sql.unsafe(`binding.${definition.junctionResourceColumn}`)} = ${resourceId}::uuid
     ORDER BY a.created_at
   `;
-  return rows.map(mapAccessRow);
+  return resolveDisplayNames(rows.map(mapAccessRow));
 };
 
 export const listBaseAccess = (baseId: string) => listAccess("base", baseId);
@@ -302,39 +367,33 @@ export const listCustomAppAccess = (customAppId: string) => listAccess("customAp
 export const listAccessForBaseTree = async (baseId: string): Promise<ScopedAccessEntry[]> => {
   const rows = await sql<(DbAccessRow & { resource_type: AccessResourceType; resource_id: string; resource_name: string })[]>`
     SELECT 'base'::text AS resource_type, b.id::text AS resource_id, b.name AS resource_name,
-           a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only,
-           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL) AS display_name, sa.kind AS service_account_kind
+           a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
     FROM grids.base_access ba
     JOIN grids.bases b ON b.id = ba.base_id AND b.deleted_at IS NULL
     JOIN auth.access a ON a.id = ba.access_id
-    LEFT JOIN auth.users u ON u.id = a.user_id
-    LEFT JOIN auth.groups g ON g.id = a.group_id
-    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
     WHERE ba.base_id = ${baseId}::uuid
 
     UNION ALL
 
     SELECT 'customApp'::text, app.id::text, app.name,
-           a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only,
-           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL), sa.kind
+           a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
     FROM grids.custom_app_access caa
     JOIN grids.custom_apps app ON app.id = caa.custom_app_id AND app.deleted_at IS NULL
     JOIN auth.access a ON a.id = caa.access_id
-    LEFT JOIN auth.users u ON u.id = a.user_id
-    LEFT JOIN auth.groups g ON g.id = a.group_id
-    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
     WHERE app.base_id = ${baseId}::uuid
 
     ORDER BY resource_type, resource_name, created_at
   `;
-  return rows.map((row) => ({
-    ...mapAccessRow(row),
-    resourceType: row.resource_type,
-    resourceId: row.resource_id,
-    resourceName: row.resource_name,
-    tableId: null,
-    tableName: null,
-  }));
+  return resolveDisplayNames(
+    rows.map((row) => ({
+      ...mapAccessRow(row),
+      resourceType: row.resource_type,
+      resourceId: row.resource_id,
+      resourceName: row.resource_name,
+      tableId: null,
+      tableName: null,
+    })),
+  );
 };
 
 export const updateAccessLevel = async (
@@ -355,6 +414,13 @@ export const updateAccessLevel = async (
     if (!authorized.ok) return fail(authorized.error);
     const access = await getAccessSnapshot(accessId, tx);
     if (!access) return fail(err.notFound(messages.accessEntry));
+    const guarded = await ensureBaseManagerRemains(
+      binding,
+      (entries) => entries.map((entry) => (entry.id === accessId ? { ...entry, permission: level } : entry)),
+      tx,
+      locale,
+    );
+    if (!guarded.ok) return fail(guarded.error);
     const update = await tx`
       UPDATE auth.access SET permission = ${level}::auth.permission_level WHERE id = ${accessId}::uuid
     `;
@@ -385,6 +451,8 @@ export const revokeAccess = async (
     if (!authorized.ok) return fail(authorized.error);
     const access = await getAccessSnapshot(accessId, tx);
     if (!access) return fail(err.notFound(messages.accessEntry));
+    const guarded = await ensureBaseManagerRemains(binding, (entries) => entries.filter((entry) => entry.id !== accessId), tx, locale);
+    if (!guarded.ok) return fail(guarded.error);
     const deleted = await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
     if (deleted.count === 0) return fail(err.notFound(messages.accessEntry));
     await logAccessAudit({ action: "access.revoked", binding, access, actorId, nextPermission: null, client: tx });

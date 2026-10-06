@@ -19,6 +19,7 @@ export {
   buildAccessPrincipalTierConditions,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   getAccess,
   getEffectiveGroupIds,
   getEffectiveGroups,

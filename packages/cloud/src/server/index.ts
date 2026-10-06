@@ -65,6 +65,7 @@ export {
   buildAccessPrincipalTierConditions,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   err,
   fail,
   freeipa,
