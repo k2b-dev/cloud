@@ -355,12 +355,15 @@ path ref and a newer stable ref. Equal refs name the same entry; different refs
 do not prove different files. `GET /api/filesv2/entries/<id>` and
 `cld filesv2 stat` return the entry's current `resourceId` for any ref.
 
-A ref that cannot be resolved is `not_found` (404), whatever the reason.
-Storage outages and network failures stay `unavailable` (503), so a short
-Filegate outage never looks like a deleted file. `/app/filesv2/ref/<id>` opens
-the entry wherever it is now. **Copy reference** puts that link on the clipboard
-as plain text for stable refs; for path refs the text is a link to the folder
-with the entry selected.
+A stable ref that cannot be resolved is `not_found` (404), whatever the
+reason: unknown or foreign base, unknown ID, `managed` turned off, a path
+outside the base or in its trash. Storage outages and network failures stay
+`unavailable` (503), so a short Filegate outage never looks like a deleted
+file. After resolution, the path checks answer as for any path, for example
+403 when FreeIPA Unix permissions deny the file. `/app/filesv2/ref/<id>` opens
+the entry wherever it is now. **Copy Cloud reference** puts that link on the
+clipboard as plain text for stable refs; for path refs the text is a link to
+the folder with the entry selected.
 
 ## Understand the source of truth
 
