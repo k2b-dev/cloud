@@ -131,7 +131,9 @@ phones with their platform and last use, and marks the phone you are using.
 2. In the app, tap **Scan code**, or copy the link and tap **Paste link**.
    Without the app, scanning the code with the phone's camera opens the page
    that shows how to install it; on the phone itself, choose **Install the
-   app**.
+   app**. On Android, install it from Chrome. In Samsung Internet, the page
+   offers **Open in Chrome** instead, because Android may block an app
+   installed from there as built for an older Android version.
 3. The app shows a six-digit code. Enter it in the dialog and choose **Pair**.
    The third wrong code ends the pairing; start again for a new one.
 4. The app finishes on its own, and the phone appears in the list.

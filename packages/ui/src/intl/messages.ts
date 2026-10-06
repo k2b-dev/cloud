@@ -430,7 +430,7 @@ const uiMessages = i18n.define({
         "In this browser, look for “Install” or “Add to Home screen” in the menu. If that isn’t there, open this page in Chrome.",
       installSamsungTitle: "Install with Chrome",
       installSamsungDetail: ({ appName }: { appName: string }) =>
-        `Samsung Internet builds its own app package, which Android 14 and later may block as “built for an older version of Android”. The warning is about that package, not about ${appName}. Chrome installs ${appName} without it.`,
+        `On Samsung phones, Samsung Internet builds its own app package, which Android 14 and later may block as “built for an older version of Android”. That warning is about the package, not about ${appName}. Chrome installs ${appName} without it. Without Chrome, use this browser’s menu and continue through that warning.`,
       installOpenChrome: "Open in Chrome",
       installCopyLink: "Copy link",
       installLinkCopied: "Link copied",
@@ -868,7 +868,7 @@ const uiMessages = i18n.define({
         "Suche in diesem Browser im Menü nach „Installieren“ oder „Zum Startbildschirm hinzufügen“. Fehlt der Eintrag, öffne diese Seite in Chrome.",
       installSamsungTitle: "Mit Chrome installieren",
       installSamsungDetail: ({ appName }) =>
-        `Samsung Internet erstellt ein eigenes App-Paket, das Android ab Version 14 als „für eine ältere Android-Version entwickelt“ blockieren kann. Die Warnung betrifft dieses Paket, nicht ${appName}. Mit Chrome installierst du ${appName} ohne sie.`,
+        `Auf Samsung-Handys erstellt Samsung Internet ein eigenes App-Paket, das Android ab Version 14 als „für eine ältere Android-Version entwickelt“ blockieren kann. Diese Warnung betrifft das Paket, nicht ${appName}. Mit Chrome installierst du ${appName} ohne sie. Ohne Chrome nutze das Menü dieses Browsers und fahre trotz dieser Warnung fort.`,
       installOpenChrome: "In Chrome öffnen",
       installCopyLink: "Link kopieren",
       installLinkCopied: "Link kopiert",

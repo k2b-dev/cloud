@@ -10,8 +10,9 @@ export type InstallGuideProps = {
   appName: string;
   install: InstallPrompt;
   /**
-   * The address a browser inside another app copies, to open it in Safari or Chrome. Shown as text when copying
-   * fails, so it can be copied by hand.
+   * The absolute address of the page to install. A browser inside another app copies it, to open it in Safari or
+   * Chrome, and shows it as text when copying fails, so it can be copied by hand. Samsung Internet opens an http or
+   * https address in Chrome.
    */
   url: string;
   /**
@@ -22,9 +23,18 @@ export type InstallGuideProps = {
   class?: string;
 };
 
-/** Opens `url` in Chrome on Android. Without Chrome, the browser loads `url` itself. */
+/**
+ * Opens `url` in Chrome on Android. Without Chrome, the browser loads `url` itself. Only an absolute http or https
+ * address has an intent; anything else returns `undefined`.
+ */
 const chromeIntent = (url: string) => {
-  const target = new URL(url);
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (target.protocol !== "https:" && target.protocol !== "http:") return undefined;
   const scheme = target.protocol.slice(0, -1);
   return `intent://${target.host}${target.pathname}${target.search}${target.hash}#Intent;scheme=${scheme};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
 };
@@ -120,10 +130,14 @@ export function InstallGuide(props: InstallGuideProps): JSX.Element {
             title={messages().installSamsungTitle}
             detail={messages().installSamsungDetail({ appName: props.appName })}
           />
-          <ButtonLink href={chromeIntent(props.url)}>
-            <i class="ti ti-brand-chrome" aria-hidden="true" />
-            {messages().installOpenChrome}
-          </ButtonLink>
+          <Show when={chromeIntent(props.url)}>
+            {(href) => (
+              <ButtonLink href={href()}>
+                <i class="ti ti-brand-chrome" aria-hidden="true" />
+                {messages().installOpenChrome}
+              </ButtonLink>
+            )}
+          </Show>
           <Show when={props.note}>
             <p>{props.note}</p>
           </Show>

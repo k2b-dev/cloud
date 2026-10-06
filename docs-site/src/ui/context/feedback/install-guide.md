@@ -11,8 +11,9 @@ installs most reliably.
 Samsung Internet on Android gets no steps and no Install button, even when it
 offers its own dialog. On Samsung phones it builds its own app package, which
 Android 14 and later may block as built for an older version of Android. The
-guide explains that warning and shows **Open in Chrome**, a link that opens
-`url` in Chrome; without Chrome, the browser loads `url` itself.
+guide explains that warning, says to use the browser's menu and continue
+through it only without Chrome, and shows **Open in Chrome**, a link that
+opens `url` in Chrome; without Chrome, the browser loads `url` itself.
 
 A browser inside another app, such as a social, mail, or QR-scanner app,
 cannot install at all. There the guide shows a warning instead of steps: open
@@ -48,7 +49,8 @@ const install = createInstallPrompt();
   and **Open in Chrome** opens from Samsung Internet, for example the app's
   start page or a link the person must take along, including its fragment.
   When copying fails, the guide shows it as text to copy by hand, so pass only
-  an address the person may see on screen.
+  an address the person may see on screen. Without an absolute `http` or
+  `https` address, Samsung Internet gets no **Open in Chrome** link.
 - `note` adds an application note under the steps, or under the link inside
   another app, for example what else the installed app enables or where the
   app offers installation again. Pass the note that fits `install.platform`.

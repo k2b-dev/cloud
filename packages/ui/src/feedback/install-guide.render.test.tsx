@@ -27,12 +27,12 @@ const prompt = (
   install: async () => {},
 });
 
-const render = (install: InstallPrompt, locale = "en", note?: string) =>
+const render = (install: InstallPrompt, locale = "en", note?: string, url = "https://cloud.example/pwa/") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(InstallGuide, { appName: "Northwind", install, url: "https://cloud.example/pwa/", note });
+        return createComponent(InstallGuide, { appName: "Northwind", install, url, note });
       },
     }),
   );
@@ -96,7 +96,9 @@ describe("InstallGuide", () => {
     for (const canPrompt of [false, true]) {
       const html = render(prompt("android-samsung", { canPrompt }), "en", "Notifications work in the app.");
       expect(notice(html)).toEqual(["info", "Install with Chrome"]);
-      expect(html).toContain("“built for an older version of Android”. The warning is about that package, not about Northwind.");
+      expect(html).toContain("On Samsung phones, Samsung Internet builds its own app package");
+      expect(html).toContain("“built for an older version of Android”. That warning is about the package, not about Northwind.");
+      expect(html).toContain("Without Chrome, use this browser’s menu and continue through that warning.");
       expect(html).toContain(
         'href="intent://cloud.example/pwa/#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=https%3A%2F%2Fcloud.example%2Fpwa%2F;end"',
       );
@@ -108,7 +110,18 @@ describe("InstallGuide", () => {
     const german = render(prompt("android-samsung"), "de");
     expect(notice(german)).toEqual(["info", "Mit Chrome installieren"]);
     expect(german).toContain("„für eine ältere Android-Version entwickelt“");
+    expect(german).toContain("Ohne Chrome nutze das Menü dieses Browsers und fahre trotz dieser Warnung fort.");
     expect(german).toContain("In Chrome öffnen");
+  });
+
+  test("Samsung Internet keeps the explanation but offers no Chrome link for an address Chrome cannot open", () => {
+    for (const url of ["/pwa/", "mailto:team@cloud.example"]) {
+      const html = render(prompt("android-samsung", { canPrompt: true }), "en", undefined, url);
+      expect(notice(html)).toEqual(["info", "Install with Chrome"]);
+      expect(html).not.toContain("intent://");
+      expect(html).not.toContain("Open in Chrome");
+      expect(html).not.toContain("Install app");
+    }
   });
 
   test("the browser's own dialog, its request, and its failure replace the steps", () => {
