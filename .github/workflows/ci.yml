@@ -531,11 +531,12 @@ jobs:
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
-          # The path-filtered jobs, exactly those with an `if:`. Only they may
-          # be skipped; every other job must succeed (`ci-gate` check).
+          # The path-filtered jobs, whose `if:` reads the `changes` outputs.
+          # Only they may be skipped; every other job must succeed (`ci-gate` check).
           MAY_SKIP: grids ui docs packed bundles images
         run: |
           set -euo pipefail
+          jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           failed=$(echo "$RESULTS" | jq -r --arg maySkip "$MAY_SKIP" '
             ($maySkip | split(" ")) as $maySkip
