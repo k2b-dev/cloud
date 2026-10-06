@@ -410,7 +410,8 @@ export default function BookSettingsForm(props: Props) {
             <Show when={props.context().accessEntries} keyed>
               {(accessEntries) => (
                 <PermissionEditor
-                  initialEntries={accessEntries.filter((entry) => entry.principal.type !== "service_account")}
+                  // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
+                  initialEntries={accessEntries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
                   canEdit={!coverageBlocked()}
                   grantAccess={async (principal, permission) => {
                     return grantAccess({ bookId: bookId(), principal, permission });

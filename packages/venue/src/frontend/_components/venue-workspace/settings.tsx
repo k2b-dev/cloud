@@ -999,7 +999,8 @@ export function SettingsDialog(props: {
                   <Show keyed when={settings().accessEntries}>
                     {(entries) => (
                       <PermissionEditor
-                        initialEntries={entries.filter((entry) => entry.principal.type !== "service_account")}
+                        // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
+                        initialEntries={entries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
                         canEdit
                         allowedLevels={[
                           { level: "read", label: t().read },

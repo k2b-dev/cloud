@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { SpaceColumn, SpaceDetail } from "@/contracts";
+import type { AccessEntry, SpaceColumn, SpaceDetail } from "@/contracts";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-settings-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: SpaceEditPanel } = await import("./SpaceEditPanel.tsx");
 const { StatusesSection } = await import("./StatusesSection.tsx");
+const { PermissionsSection } = await import("./AccessSection.tsx");
 const { spaceMessages } = await import("../../messages.ts");
 const { LocaleProvider } = await import("@k2b/ui");
 
@@ -157,5 +158,55 @@ describe("Spaces settings", () => {
     expect(html).toContain("Allgemeine Angaben");
     expect(html).toContain("Keine ungespeicherten Änderungen");
     expect(html).not.toContain("Danger zone");
+  });
+});
+
+describe("Spaces settings: Access", () => {
+  const manager = (
+    id: string,
+    principal: AccessEntry["principal"],
+    displayName: string,
+    extra: Partial<AccessEntry> = {},
+  ): AccessEntry => ({
+    id,
+    principal,
+    permission: "admin",
+    displayName,
+    createdAt: "2026-08-10T10:00:00.000Z",
+    ...extra,
+  });
+  const person = manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace");
+  const agent = manager("access-agent", { type: "service_account", serviceAccountId: "agent-1" }, "Triage agent", {
+    serviceAccountKind: "agent",
+  });
+  const apiKey = manager("access-key", { type: "service_account", serviceAccountId: "key-1" }, "Launch API keys", {
+    serviceAccountKind: "resource_bound",
+  });
+  const renderAccess = (accessEntries: AccessEntry[]) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return createComponent(PermissionsSection, { spaceId, accessEntries });
+        },
+      }),
+    );
+  // The editor marks the only manager's remove button with the reason it cannot be removed.
+  const lockedRows = (html: string) => html.match(/aria-description=/g)?.length ?? 0;
+
+  test("shows an agent that manages the space, so a person managing next to it is not locked", () => {
+    const html = renderAccess([person, agent, apiKey]);
+
+    expect(html).toContain("Ada Lovelace");
+    expect(html).toContain("Triage agent");
+    expect(html).toContain("(Agent)");
+    expect(lockedRows(html)).toBe(0);
+  });
+
+  test("keeps API keys in their own section and does not count them as managers", () => {
+    const html = renderAccess([person, apiKey]);
+
+    expect(html).not.toContain("Launch API keys");
+    expect(lockedRows(html)).toBe(1);
   });
 });

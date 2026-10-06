@@ -125,7 +125,8 @@ export function PermissionsSection(props: { notebook: Notebook }) {
         >
           {(entries) => (
             <PermissionEditor
-              initialEntries={entries.filter((entry) => entry.principal.type !== "service_account")}
+              // The API keys section manages resource-bound keys; every other grant, agents included, shows here.
+              initialEntries={entries.filter((entry) => entry.serviceAccountKind !== "resource_bound")}
               canEdit
               grantAccess={async (principal, permission) => {
                 const response = await apiClient[":id"].access.$post({
