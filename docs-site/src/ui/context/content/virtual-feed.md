@@ -38,11 +38,11 @@ its end in view while the reader is there. When the reader has scrolled up,
 the item at the bottom edge stays in place.
 
 `estimateSize` only needs to be close. Every row is measured when it mounts,
-and the feed corrects the position before the frame is drawn. Close estimates
-make the scrollbar steadier during fast scrolling. Give rows their final
-height at mount where possible, for example with reserved space for images of
-known size. Content that grows later is handled, but it moves the rows below it
-within the visible area.
+and the feed makes up the difference before the frame is drawn, so what the
+reader sees does not move. Close estimates make the scrollbar steadier during
+fast scrolling. Give rows their final height at mount where possible, for
+example with reserved space for images of known size. Content that grows later
+is handled, but it moves the rows below it within the visible area.
 
 ### Load more at both ends
 
@@ -77,7 +77,8 @@ mounted:
   around it first and call it again. `align` is `"center"` (default) or
   `"start"`; `highlight` tints the item briefly. The item stays in place
   afterwards.
-- `scrollToEnd()` follows the end again.
+- `scrollToEnd()` follows the end again. Call it after the reader sends an
+  item, so the item shows even while the feed still coasts from a fling.
 - `isAtEnd()` tells whether new items keep the feed at the end.
 
 `onEndChange` reports when the reader reaches or leaves the end, for example
@@ -111,6 +112,80 @@ scrollbar therefore covers the laid-out window, not every loaded item. A
 focused item that the window leaves behind is unmounted, and focus moves to
 the scroll area.
 
+## Reading position
+
+The feed follows the end while the reader is there. Otherwise it keeps the
+item at the top of the view where it is. When the view gets shorter or taller,
+for example when an on-screen keyboard opens, the item at its bottom edge
+stays in place. A scroll step that reveals an item above in the same frame
+as that item changes size moves the items the reader saw by the step alone:
+the item that was at the top before the step keeps its place.
+
+### What counts as the reader
+
+Every change of the scroll position that the feed did not make is the
+reader's, whatever caused it: touch and momentum, the wheel, keys, the
+scrollbar, focus moving into the feed, `scrollIntoView`, find in page, or
+assistive technology. The feed keeps the new position and leaves or reaches
+the end with it. Three moves are not the reader's:
+
+- the scroll event of the feed's own write;
+- a clamp: when a size change shortens the scroll range, the engine moves the
+  position onto the new end. The feed treats that as the size change, so a
+  reader a few pixels above the end stays there;
+- what is left of a momentum after the application jumped with
+  `scrollToEnd()` or `scrollToKey()`, and other scrolls without the reader's
+  input in that short time (see "Jumps during a scroll").
+
+The end is judged in the geometry the position was last applied to. A scroll
+step that lands in the same frame as a viewport resize counts against the
+height from before the resize. Items appended while the reader scrolls away
+from the end do not move the end the reader is heading for. A scroll that
+reaches that end follows the end. The new items show with the feed's next
+correction, at the latest when the scroll ends, and from then on the end
+includes them: a reader who moves up again leaves the end.
+
+### During a scroll
+
+From the first touch or scroll until the scroll ends, the feed does not write
+the scroll position when rows grow or shrink, items are appended, or the
+viewport resizes: a write would fight the finger, its momentum, or a scroll
+animation. The feed moves the rows instead, so what the reader sees stays
+where the reader put it in every frame. Touches are followed on
+the element they began on, so a touch ends even when the feed removed that
+row meanwhile.
+
+Near the start, moved rows would show empty space above the first item, or
+put the first items out of the scroll range's reach. Within 600 px of the
+start, the feed therefore writes corrections at once, also during a scroll,
+together with any correction it held back until the reader got there. That
+write moves nothing on screen either.
+
+A scroll ends at the engine's `scrollend` when no movement follows in the next
+two frames. Engines also fire `scrollend` for the feed's own writes, and iOS
+delivers it late enough to land in a later fling, even in a pause of its slow
+tail. The first `scrollend` within 1 second of a write that moved the position
+is therefore that write's, and a `scrollend` followed by movement does not
+count. When no `scrollend` comes, the scroll ends 1 second after its last
+move; in engines without `scrollend`, after 300 ms. A finger that lifts after
+its scroll ended ends it when no momentum follows in the next two frames. When
+the scroll ends, the feed writes the held-back correction in one step that
+moves nothing on screen.
+
+Structural changes are corrected at once, also during a scroll: pages loaded
+above the reader, removed or reordered items, the loaded window moving, and
+keyboard moves between items.
+
+### Jumps during a scroll
+
+`scrollToEnd()` and `scrollToKey()` win over a scroll that is still coasting.
+The feed jumps at once and stops the momentum where the engine allows it. It
+puts back what is left of the momentum until nothing has moved for 300 ms,
+or until the reader touches, clicks, wheels, or presses a key. Until then,
+other scrolls that no such input started are put back as well, for example
+from focus that the application moves without `preventScroll`,
+`scrollIntoView`, or assistive technology.
+
 ## Accessibility
 
 The feed uses the `feed` role with your `label`, and every item is an
@@ -140,12 +215,6 @@ feed are dropped.
 The server renders the empty scroll area with its label; rows appear after
 hydration, because they need the browser to measure them. Pass `empty` for
 content shown while `items` is empty.
-
-On iOS, writing the scroll position during a touch or momentum scroll stops
-the scroll. While a finger or momentum moves the feed, measuring corrections
-wait until scrolling comes to rest, and content may shift briefly during that
-time. Items added below the reader wait as well. Pages loaded above the reader
-are corrected at once.
 
 ## Example
 
