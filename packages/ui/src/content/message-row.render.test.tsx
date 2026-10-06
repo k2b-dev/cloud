@@ -139,12 +139,37 @@ describe("MessageRow", () => {
     expect(row({ text: Array.from({ length: 15 }, () => "Line").join("\n") })).toContain("data-collapsed");
   });
 
+  test("decides the collapse from what renders, not from the source", () => {
+    const collapsed = (text: string) => row({ text }).includes("data-collapsed");
+    const fence = (lines: string[]) => `\`\`\`\n${lines.join("\n")}\n\`\`\``;
+
+    // Link destinations and reference definitions show nothing.
+    expect(collapsed(`[docs](https://example.com/${"x".repeat(1500)})`)).toBe(false);
+    expect(collapsed(Array.from({ length: 8 }, (_, index) => `- [Link ${index}](https://example.com/${"y".repeat(220)})`).join("\n"))).toBe(
+      false,
+    );
+    expect(
+      collapsed(`Short text\n\n${Array.from({ length: 14 }, (_, index) => `[r${index}]: https://example.com/${index}`).join("\n")}`),
+    ).toBe(false);
+    // Code scrolls instead of wrapping, and every line of it shows, blank ones too.
+    expect(collapsed(fence(Array.from({ length: 5 }, () => "log ".repeat(75))))).toBe(false);
+    expect(collapsed(fence(Array.from({ length: 12 }, (_, index) => `line ${index}`)))).toBe(false);
+    expect(collapsed(fence(Array.from({ length: 12 }, (_, index) => `line ${index}\n`)))).toBe(true);
+    expect(collapsed(fence(Array.from({ length: 14 }, (_, index) => `line ${index}`)))).toBe(true);
+    // A list item, a table row, and a quoted line each take a line of their own.
+    expect(collapsed(Array.from({ length: 15 }, (_, index) => `- ${index}`).join("\n"))).toBe(true);
+    expect(collapsed(`| a | b |\n| - | - |\n${Array.from({ length: 14 }, () => "| 1 | 2 |").join("\n")}`)).toBe(true);
+    expect(collapsed(Array.from({ length: 15 }, (_, index) => `> ${index}`).join("\n"))).toBe(true);
+    expect(collapsed(`:::note Plan\n${Array.from({ length: 15 }, (_, index) => `Step ${index}`).join("\n")}\n:::`)).toBe(true);
+  });
+
   test("renders a safe Markdown subset: raw HTML and unsafe links stay text, links open in a new tab", () => {
     const html = row({
       text: [
         '<img src=x onerror="alert(1)"> <script>alert(2)</script>',
         "[run](javascript:alert(3)) [data](data:text/html,hi) [ftp](ftp://example.com/file) <javascript:alert(4)>",
         "[docs](https://example.com/docs) [mail](mailto:team@example.com) https://example.org",
+        "[rel](/settings/x) [proto](//evil.example/x) [query](?a=1) [bare](example.com)",
         "![chart](https://example.com/chart.png)",
         "**bold** _italic_ `code`",
         "line one\nline two",
@@ -155,6 +180,9 @@ describe("MessageRow", () => {
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(html).toContain("&lt;script&gt;alert(2)&lt;/script&gt;");
     expect(textOf(html)).toContain("run data ftp javascript:alert(4)");
+    // A relative link would lead somewhere else on every page that shows the conversation.
+    expect(textOf(html)).toContain("rel proto query bare");
+    expect(html).not.toMatch(/href="(?:\/|\?|example\.com)/);
     expect(html).toContain('<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">docs</a>');
     expect(html).toContain('<a href="mailto:team@example.com" target="_blank" rel="noopener noreferrer">mail</a>');
     expect(html).toContain('<a href="https://example.org" target="_blank" rel="noopener noreferrer">https://example.org</a>');
@@ -244,16 +272,20 @@ describe("MessageRow styles", () => {
     const bar = declarations(".k2b-ui .k2b-message-row__actions");
     expect(bar.get("position")).toEqual(["absolute"]);
     expect(bar.get("opacity")).toEqual(["0"]);
-    for (const selector of [
-      ".k2b-ui .k2b-message-row:is(:hover, :focus-within) .k2b-message-row__actions",
-      ".k2b-ui :focus > .k2b-message-row .k2b-message-row__actions",
-    ])
-      expect([...declarations(selector).keys()].sort()).toEqual(["opacity", "pointer-events"]);
+    for (const [selector, context] of [
+      [".k2b-ui .k2b-message-row:focus-within .k2b-message-row__actions", ""],
+      [".k2b-ui :focus > .k2b-message-row .k2b-message-row__actions", ""],
+      // A tap's emulated hover must not show the actions and press one in the same tap.
+      [".k2b-ui .k2b-message-row:hover .k2b-message-row__actions", "@media (hover: hover)"],
+    ] as const)
+      expect([...declarations(selector, context).keys()].sort()).toEqual(["opacity", "pointer-events"]);
+    expect(rules.some((rule) => rule.selector.includes(".k2b-message-row:hover") && rule.context === "")).toBe(false);
     expect(declarations(".k2b-ui .k2b-message-row__line").get("height")).toEqual(["1.25rem"]);
     expect(declarations(".k2b-ui .k2b-message-row__meta").get("height")).toEqual(["1.25rem"]);
-    expect(declarations(".k2b-ui .k2b-message-row__text[data-collapsed]").get("max-height")).toEqual([
-      "calc(10 * var(--k2b-message-line))",
-    ]);
+    const clamp = declarations(".k2b-ui .k2b-message-row__text[data-collapsed]");
+    expect(clamp.get("max-height")).toEqual(["calc(10 * var(--k2b-message-line))"]);
+    // A box that can scroll would scroll to a focused link instead of opening.
+    expect(clamp.get("overflow")).toEqual(["clip"]);
   });
 
   test("gives every avatar tint a rule", () => {

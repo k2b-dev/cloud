@@ -42,7 +42,7 @@ const code = "Here is the call:\\n\\n\`\`\`ts\\nconst response = await fetch('/a
 const [statuses, setStatuses] = createSignal({ m6: "pending", m7: "sent", m8: "failed" });
 const [receipt, setReceipt] = createSignal();
 window.retried = 0;
-const messages = [
+const messages = (options.messages ?? [
   { id: "m1", system: true, text: "Nora added Tobias", minute: 0 },
   { id: "m2", author: "nora", text: "Ich habe die Testfälle für die Anmeldung ergänzt.", minute: 1 },
   { id: "m3", author: "nora", text: "Der **Testplan** liegt im Wiki.", minute: 2 },
@@ -53,8 +53,10 @@ const messages = [
   { id: "m8", author: "me", own: true, text: "Sending this one failed.", minute: 8 },
   { id: "m9", author: "mara", text: longText, minute: 20 },
   { id: "m10", author: "tobias", text: unsafe, minute: 21 },
-].map((message) => ({ ...message, at: start + message.minute * 60_000 }));
-const index = new Map(messages.map((message, position) => [message.id, position]));
+]).map((message) => ({ ...message, at: start + message.minute * 60_000 }));
+// Items change either in place, through the status signal above, or as new objects, as most applications update them.
+const [items, setItems] = createSignal(messages);
+const replace = (id, patch) => setItems((list) => list.map((message) => (message.id === id ? { ...message, ...patch } : message)));
 const entryOf = (message) => message && { author: message.author ?? "system", at: message.at, system: message.system };
 const actions = [
   { id: "reply", label: options.locale === "de" ? "Antworten" : "Reply", icon: "ti ti-arrow-back-up", onSelect: () => (window.replied = (window.replied ?? 0) + 1) },
@@ -63,12 +65,14 @@ const actions = [
 const time = (message) => new Date(message.at).toISOString().slice(11, 16);
 const feed = () =>
   createComponent(VirtualFeed, {
-    items: messages,
+    get items() {
+      return items();
+    },
     getKey: (message) => message.id,
     estimateSize: () => 64,
     label: "Conversation",
     itemLabel: (message) => (message.system ? undefined : people[message.author].name + ", " + time(message)),
-    children: (message) =>
+    children: (message, position) =>
       message.system
         ? createComponent(MessageSystemRow, { icon: "ti ti-user-plus", time: time(message), children: message.text })
         : createComponent(MessageRow, {
@@ -77,10 +81,10 @@ const feed = () =>
             time: time(message),
             dateTime: new Date(message.at),
             own: message.own,
-            groupStart: startsMessageGroup(entryOf(message), entryOf(messages[index.get(message.id) - 1])),
+            groupStart: startsMessageGroup(entryOf(message), entryOf(items()[position() - 1])),
             badge: message.badge ? "Agent" : undefined,
             get status() {
-              return message.own ? statuses()[message.id] : undefined;
+              return message.own ? (message.status ?? statuses()[message.id]) : undefined;
             },
             get receipt() {
               return message.id === "m7" ? receipt() : undefined;
@@ -93,7 +97,7 @@ render(
   () => createComponent(LocaleProvider, { locale: options.locale ?? "en", get children() { return feed(); } }),
   document.getElementById("app"),
 );
-window.fixture = { setStatuses, setReceipt };
+window.fixture = { setStatuses, setReceipt, replace };
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -114,21 +118,32 @@ afterAll(async () => {
 });
 
 type Theme = "light" | "dark";
-type Fixture = { setStatuses: (next: Record<string, string>) => void; setReceipt: (text?: string) => void };
+type Message = { id: string; author: string; text: string; minute: number; own?: boolean; status?: string };
+type Fixture = {
+  setStatuses: (next: Record<string, string>) => void;
+  setReceipt: (text?: string) => void;
+  replace: (id: string, patch: Partial<Message>) => void;
+};
 declare const fixture: Fixture;
 declare const retried: number;
-declare const replied: number | undefined;
 declare const hit: number | undefined;
+const replied = (page: Page) => page.evaluate(() => (window as unknown as { replied?: number }).replied ?? 0);
 
-const open = async (options: { width?: number; theme?: Theme; locale?: "en" | "de" } = {}): Promise<Page> => {
+const open = async (
+  options: { width?: number; theme?: Theme; locale?: "en" | "de"; touch?: boolean; messages?: Message[] } = {},
+): Promise<Page> => {
   const width = options.width ?? 720;
-  const page = await browser.newPage({ viewport: { width, height: 1400 } });
+  const page = await browser.newPage({
+    viewport: { width, height: 1400 },
+    ...(options.touch ? { hasTouch: true, isMobile: true } : {}),
+  });
   page.on("dialog", (dialog) => void dialog.dismiss());
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
   await page.setContent(
-    `<!doctype html><html lang="${options.locale ?? "en"}"><head><style>${css}</style><style>${fonts}</style>` +
+    `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta name="viewport" content="width=device-width">` +
+      `<style>${css}</style><style>${fonts}</style>` +
       "<style>*,*::before,*::after{transition:none!important}</style></head>" +
       `<body class="k2b-ui${options.theme === "dark" ? " k2b-dark" : ""}" style="margin:0;background:var(--k2b-surface)">` +
       `<div id="app" style="display:flex;width:${width}px;height:1400px"></div></body></html>`,
@@ -145,25 +160,30 @@ const open = async (options: { width?: number; theme?: Theme; locale?: "en" | "d
       ].map((font) => document.fonts.load(font)),
     );
   });
-  await page.evaluate((locale) => {
-    (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale };
-    // Record every row's height from the frame it mounts in; a later change would move the rows below it.
-    const heights = new Map<string, number[]>();
-    (window as unknown as { heights: typeof heights }).heights = heights;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const key = (entry.target as HTMLElement).dataset.key!;
-        heights.set(key, [...(heights.get(key) ?? []), entry.borderBoxSize[0]!.blockSize]);
-      }
-    });
-    new MutationObserver((records) => {
-      for (const record of records)
-        for (const node of record.addedNodes) if (node instanceof HTMLElement && node.dataset.key) observer.observe(node);
-    }).observe(document.getElementById("app")!, { childList: true, subtree: true });
-  }, options.locale ?? "en");
+  await page.evaluate(
+    ([locale, messages]) => {
+      (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale, messages };
+      // Record every row's height from the frame it mounts in; a later change would move the rows below it.
+      const heights = new Map<string, number[]>();
+      (window as unknown as { heights: typeof heights }).heights = heights;
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          // A replaced item's old row reports its removal as a height of 0.
+          if (!entry.target.isConnected) continue;
+          const key = (entry.target as HTMLElement).dataset.key!;
+          heights.set(key, [...(heights.get(key) ?? []), entry.borderBoxSize[0]!.blockSize]);
+        }
+      });
+      new MutationObserver((records) => {
+        for (const record of records)
+          for (const node of record.addedNodes) if (node instanceof HTMLElement && node.dataset.key) observer.observe(node);
+      }).observe(document.getElementById("app")!, { childList: true, subtree: true });
+    },
+    [options.locale ?? "en", options.messages] as const,
+  );
   await page.addScriptTag({ content: script });
-  await page.locator('[data-key="m10"] .k2b-message-row').waitFor();
-  await page.mouse.move(width - 1, 1399);
+  await page.locator(`[data-key="${options.messages?.at(-1)?.id ?? "m10"}"] .k2b-message-row`).waitFor();
+  if (!options.touch) await page.mouse.move(width - 1, 1399);
   return page;
 };
 
@@ -202,7 +222,165 @@ describe(`MessageRow in ${browserName}`, () => {
       expect(await boxes(page)).toEqual(before);
 
       await page.keyboard.press("Enter");
-      expect(await page.evaluate(() => replied)).toBe(1);
+      expect(await replied(page)).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a tap where the hidden actions sit runs none of them; it focuses the message and shows them", async () => {
+    const page = await open({ width: 390, touch: true });
+    try {
+      const reply = rowOf(page, "m4").getByRole("button", { name: "Reply" });
+      const box = (await reply.boundingBox())!;
+      const center = [box.x + box.width / 2, box.y + box.height / 2] as const;
+      expect(await opacity(page, "m4")).toBe("0");
+
+      await page.touchscreen.tap(...center);
+      expect(await replied(page)).toBe(0);
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("m4");
+      expect(await opacity(page, "m4")).toBe("1");
+
+      await page.touchscreen.tap(...center);
+      expect(await replied(page)).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a collapsed message opens when focus reaches its hidden or faded part and never scrolls inside", async () => {
+    const lines = (count: number, links: Record<number, string>) =>
+      Array.from({ length: count }, (_, index) =>
+        links[index + 1]
+          ? `Line ${index + 1} with [${links[index + 1]}](https://example.com/${links[index + 1]})`
+          : `Line ${index + 1} of the checklist`,
+      ).join("\n");
+    const page = await open({
+      messages: [
+        { id: "c1", author: "nora", text: lines(20, { 2: "early", 18: "late" }), minute: 1 },
+        { id: "c2", author: "tobias", text: lines(16, { 10: "faded" }), minute: 2 },
+      ],
+    });
+    try {
+      const state = (key: string) =>
+        rowOf(page, key).evaluate((row) => {
+          const text = row.querySelector<HTMLElement>(".k2b-message-row__text")!;
+          const focused = document.activeElement!.getBoundingClientRect();
+          const box = text.getBoundingClientRect();
+          return {
+            focused: document.activeElement!.textContent,
+            collapsed: text.hasAttribute("data-collapsed"),
+            scrollTop: text.scrollTop,
+            visible: focused.top >= box.top && focused.bottom <= box.bottom,
+          };
+        });
+
+      await rowOf(page, "c1").focus();
+      await page.keyboard.press("Tab");
+      expect(await state("c1")).toEqual({ focused: "early", collapsed: true, scrollTop: 0, visible: true });
+      await page.keyboard.press("Tab");
+      expect(await state("c1")).toEqual({ focused: "late", collapsed: false, scrollTop: 0, visible: true });
+
+      await rowOf(page, "c2").focus();
+      await page.keyboard.press("Tab");
+      expect(await state("c2")).toEqual({ focused: "faded", collapsed: false, scrollTop: 0, visible: true });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("collapses exactly the messages whose rendered text is taller than the clamp", async () => {
+    const page = await open({
+      messages: [
+        { id: "k1", author: "nora", text: `[docs](https://example.com/${"x".repeat(1500)})`, minute: 1 },
+        { id: "k2", author: "tobias", text: `\`\`\`\n${Array.from({ length: 5 }, () => "log ".repeat(75)).join("\n")}\n\`\`\``, minute: 2 },
+        {
+          id: "k3",
+          author: "nora",
+          text: Array.from({ length: 8 }, (_, index) => `- [Link ${index + 1}](https://example.com/${"y".repeat(220)})`).join("\n"),
+          minute: 3,
+        },
+        {
+          id: "k4",
+          author: "tobias",
+          text: `Short text\n\n${Array.from({ length: 14 }, (_, index) => `[r${index}]: https://example.com/${index}`).join("\n")}`,
+          minute: 4,
+        },
+        {
+          id: "k5",
+          author: "nora",
+          text: `\`\`\`\n${Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n\n")}\n\`\`\``,
+          minute: 5,
+        },
+        {
+          id: "k6",
+          author: "tobias",
+          text: Array.from({ length: 24 }, (_, index) => `Line ${index + 1} of the release checklist`).join("\n"),
+          minute: 6,
+        },
+      ],
+    });
+    try {
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (row) => {
+          const text = row.querySelector<HTMLElement>(".k2b-message-row__text")!;
+          const line = Number.parseFloat(getComputedStyle(text).lineHeight);
+          const content = text.lastElementChild!.getBoundingClientRect().bottom;
+          return {
+            key: row.dataset.key,
+            collapsed: text.hasAttribute("data-collapsed"),
+            hiddenLines: Math.round((content - text.getBoundingClientRect().bottom) / line),
+            more: row.querySelector(".k2b-message-row__more") !== null,
+          };
+        }),
+      );
+      expect(rows.map(({ key, collapsed, more }) => ({ key, collapsed, more }))).toEqual([
+        { key: "k1", collapsed: false, more: false },
+        { key: "k2", collapsed: false, more: false },
+        { key: "k3", collapsed: false, more: false },
+        { key: "k4", collapsed: false, more: false },
+        { key: "k5", collapsed: true, more: true },
+        { key: "k6", collapsed: true, more: true },
+      ]);
+      for (const row of rows) if (row.collapsed) expect(row.hiddenLines, row.key).toBeGreaterThanOrEqual(2);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a replaced item keeps its row's height and focus, and the row announces nothing", async () => {
+    const page = await open();
+    try {
+      await rowOf(page, "m6").focus();
+      await page.evaluate(() => fixture.replace("m6", { status: "failed" }));
+      await page.evaluate(() => fixture.setStatuses({ m6: "pending", m7: "failed", m8: "failed" }));
+      await page.waitForTimeout(400);
+
+      expect((await rowOf(page, "m6").locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ")).toBe("Not sent Retry");
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("m6");
+      const heights = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
+      for (const [key, sizes] of Object.entries(heights)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+      // The application announces a failed send where it learns of it; a row may not even be mounted then.
+      expect(await page.evaluate(() => document.querySelector("[data-k2b-live]")?.textContent ?? "")).not.toContain("Not sent");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a long code language never pushes Copy out of the block on a narrow phone", async () => {
+    const page = await open({
+      width: 320,
+      locale: "de",
+      messages: [{ id: "x1", author: "nora", text: "\`\`\`WWWWWWWWWWWWWWWWWWWWWWWW\nconst a = 1;\n\`\`\`", minute: 1 }],
+    });
+    try {
+      const layout = await rowOf(page, "x1").evaluate((row) => {
+        const block = row.querySelector(".k2b-message-row__code")!.getBoundingClientRect();
+        const copy = row.querySelector(".k2b-message-row__copy")!.getBoundingClientRect();
+        const label = row.querySelector<HTMLElement>(".k2b-message-row__code-label")!;
+        return { inside: copy.right <= block.right && copy.left >= block.left, truncated: label.scrollWidth > label.clientWidth };
+      });
+      expect(layout).toEqual({ inside: true, truncated: true });
     } finally {
       await page.close();
     }

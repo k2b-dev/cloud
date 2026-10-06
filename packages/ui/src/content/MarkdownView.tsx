@@ -131,23 +131,13 @@ export const createSafeRenderer = (options: MarkdownRenderOptions = {}): Rendere
 };
 
 export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOptions = {}): string =>
-  renderSafeMarkdownWith(markdown, options, createSafeRenderer(options));
+  createSafeMarked(options.locale).parse(markdown, { async: false, renderer: createSafeRenderer(options) }) as string;
 
 /**
- * Internal to the package: renders with a safe renderer that a component adjusted, for example to add controls to
- * code blocks. `breaks` turns single line breaks into `<br>`, as people expect in short messages.
+ * Internal to the package: the Markdown grammar of `renderSafeMarkdown`, for a component that renders with an adjusted
+ * safe renderer or reads the tokens, as `MessageRow` does.
  */
-export const renderSafeMarkdownWith = (
-  markdown: string,
-  options: Pick<MarkdownRenderOptions, "locale">,
-  renderer: Renderer,
-  breaks = false,
-): string =>
-  new Marked(markdownInfoBlocks({ locale: options.locale })).parse(markdown, {
-    async: false,
-    breaks,
-    renderer,
-  }) as string;
+export const createSafeMarked = (locale?: string): Marked => new Marked(markdownInfoBlocks({ locale }));
 
 /**
  * Markdown View Component (SSR)

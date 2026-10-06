@@ -1,22 +1,25 @@
-import type { Tokens } from "marked";
-import { createEffect, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
+import type { Token, Tokens } from "marked";
+import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { copyText } from "../actions/CopyButton";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { Avatar } from "../surfaces/Avatar";
-import { createSafeRenderer, escapeHtml, renderSafeMarkdownWith } from "./MarkdownView";
+import { createSafeMarked, createSafeRenderer, escapeHtml } from "./MarkdownView";
 
 /** Messages by the same author within this time continue a group. */
 const GROUP_WINDOW_MS = 5 * 60_000;
 /**
- * A message collapses to ten lines (`.k2b-message-row__text[data-collapsed]`) when its source has more lines than
- * this. A line of the source is at least one line on screen, and every `LINE_CHARS` characters are at least one
- * more, so a collapsed message always hides some text.
+ * A message collapses to ten lines (`.k2b-message-row__text[data-collapsed]`) when its rendered text takes more lines
+ * than this. `renderedLines` counts the fewest lines the text takes at any width, so a collapsed message always hides
+ * some of it.
  */
 const COLLAPSE_LINES = 14;
+/** Visible characters that take at least one line of a message, even at its widest. */
 const LINE_CHARS = 100;
+/** Lines at the bottom of a collapsed message that fade out, as `.k2b-message-row__text[data-collapsed]` draws them. */
+const FADE_LINES = 2;
 const COPIED_MS = 2_000;
 /** Links in messages may only use these schemes; other links show as their text. */
 const LINK_PROTOCOLS = ["https:", "http:", "mailto:"] as const;
@@ -44,7 +47,7 @@ export type MessageRowAction = {
 
 export type MessageRowProps = {
   author: MessageRowAuthor;
-  /** Message text as Markdown. Raw HTML shows as text; links may use `https`, `http`, or `mailto`. */
+  /** Message text as Markdown. Raw HTML shows as text; links must be absolute and use `https`, `http`, or `mailto`. */
   text: string;
   /** Visible time, formatted by the caller, so server and browser render the same text. */
   time: string;
@@ -101,15 +104,65 @@ export const startsMessageGroup = (entry: MessageGroupEntry, previous?: MessageG
   return !(gap >= 0 && gap <= GROUP_WINDOW_MS);
 };
 
-/** Decided from the text alone, so the row has its final height when it mounts. */
-const collapses = (text: string): boolean => {
-  let lines = 0;
-  for (const line of text.split("\n")) {
-    const length = line.trim().length;
-    if (length > 0) lines += Math.ceil(length / LINE_CHARS);
-    if (lines > COLLAPSE_LINES) return true;
+/** Text that wraps: every `LINE_CHARS` visible characters of a line take at least one line. */
+const wrappedLines = (text: string): number =>
+  text.split("\n").reduce((lines, line) => lines + Math.ceil(line.trim().length / LINE_CHARS), 0);
+
+/** What inline tokens show: a link its label, never its destination. */
+const inlineText = (tokens: readonly Token[]): string => {
+  let text = "";
+  for (const token of tokens) {
+    if (token.type === "br") text += "\n";
+    else if ("tokens" in token && token.tokens) text += inlineText(token.tokens);
+    else if ("text" in token) text += token.text;
   }
-  return false;
+  return text;
+};
+
+/**
+ * The fewest lines the rendered tokens take at any width. Code never wraps, so each of its lines is one line, blank
+ * ones too, and its bar one more. Link destinations and reference definitions show nothing. Decided from the text
+ * alone, so the row has its final height when it mounts.
+ */
+const renderedLines = (tokens: readonly Token[]): number => {
+  let lines = 0;
+  for (const token of tokens) {
+    switch (token.type) {
+      case "code":
+        lines += token.text.split("\n").length + 1;
+        break;
+      case "list":
+        for (const item of token.items) lines += Math.max(1, renderedLines(item.tokens));
+        break;
+      case "table":
+        lines += token.rows.length + (token.header.some((cell: Tokens.TableCell) => cell.text.trim()) ? 1 : 0);
+        break;
+      case "paragraph":
+      case "heading":
+      case "text":
+        lines += wrappedLines(token.tokens ? inlineText(token.tokens) : token.text);
+        break;
+      case "hr":
+        lines += 1;
+        break;
+      case "space":
+      case "def":
+        break;
+      default:
+        if ("tokens" in token && token.tokens) lines += renderedLines(token.tokens);
+        else if ("text" in token) lines += wrappedLines(token.text);
+    }
+  }
+  return lines;
+};
+
+/** Messages link only to absolute URLs; a relative one would lead somewhere else on every page that shows it. */
+const isAbsoluteUrl = (href: string): boolean => {
+  try {
+    return new URL(href).protocol !== "";
+  } catch {
+    return false;
+  }
 };
 
 const dateTimeOf = (value: string | Date | undefined): string | undefined => {
@@ -118,23 +171,30 @@ const dateTimeOf = (value: string | Date | undefined): string | undefined => {
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 };
 
-/** The safe Markdown of `MarkdownView` with line breaks kept and a copy control above every code block. */
-const renderMessage = (text: string, locale: string, messages: UiMessages): string => {
+/**
+ * Renders the safe Markdown of `MarkdownView` with line breaks kept, absolute links only, and a copy control above
+ * every code block, and counts the fewest lines it takes.
+ */
+const renderMessage = (text: string, locale: string, messages: UiMessages): { html: string; lines: number } => {
   const renderer = createSafeRenderer({ allowImages: false, linkProtocols: LINK_PROTOCOLS, linkTarget: "_blank", locale });
+  const renderLink = renderer.link.bind(renderer);
+  renderer.link = (token: Tokens.Link) => (isAbsoluteUrl(token.href) ? renderLink(token) : renderer.parser.parseInline(token.tokens));
   const renderCode = renderer.code.bind(renderer);
   renderer.code = (token: Tokens.Code) => {
     const language = token.lang?.match(/^\S{1,24}/)?.[0];
     const block = renderCode(token).replace(/^<pre>/, '<pre tabindex="0">');
     return (
       '<div class="k2b-message-row__code"><div class="k2b-message-row__code-bar">' +
-      `<span>${escapeHtml(language ?? messages.code)}</span>` +
+      `<span class="k2b-message-row__code-label">${escapeHtml(language ?? messages.code)}</span>` +
       '<button type="button" class="k2b-message-row__copy">' +
       `<span class="k2b-message-row__copy-idle"><i class="ti ti-copy" aria-hidden="true"></i>${escapeHtml(messages.copy)}</span>` +
       `<span class="k2b-message-row__copy-done"><i class="ti ti-check" aria-hidden="true"></i>${escapeHtml(messages.copied)}</span>` +
       `</button></div>${block}</div>`
     );
   };
-  return renderSafeMarkdownWith(text, { locale }, renderer, true);
+  const marked = createSafeMarked(locale).setOptions({ breaks: true, renderer });
+  const tokens = marked.lexer(text);
+  return { html: marked.parser(tokens), lines: renderedLines(tokens) };
 };
 
 /**
@@ -147,7 +207,8 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   const locale = useLocale();
   const textId = `k2b-message-${createUniqueId()}`;
   const [expanded, setExpanded] = createSignal(false);
-  const collapsible = () => collapses(props.text);
+  const rendered = createMemo(() => renderMessage(props.text, locale(), messages()));
+  const collapsible = () => rendered().lines > COLLAPSE_LINES;
   const collapsed = () => collapsible() && !expanded();
   const groupStart = () => props.groupStart ?? true;
   const hasLine = () => props.status !== undefined || props.receipt !== undefined;
@@ -155,17 +216,6 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   onCleanup(() => clearTimeout(copiedTimer));
-
-  // A send that fails after the row is shown is said out loud; the line only shows it.
-  createEffect(
-    on(
-      () => props.status,
-      (status, previous) => {
-        if (status === "failed" && previous !== "failed") announce(messages().messageNotSent);
-      },
-      { defer: true },
-    ),
-  );
 
   const copyCode = (event: MouseEvent) => {
     const button = (event.target as Element | null)?.closest?.<HTMLButtonElement>(".k2b-message-row__copy");
@@ -183,11 +233,12 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     );
   };
 
-  // A keyboard user tabbing to a link hidden below the fold of a collapsed message gets the whole message.
+  // A keyboard user who reaches a link or code block in the hidden or faded part of a collapsed message gets the whole
+  // message. The collapsed text clips instead of scrolling, so the browser cannot scroll it to the target instead.
   const revealFocus = (event: FocusEvent) => {
-    if (!collapsed()) return;
-    const target = event.target as HTMLElement;
-    if (target.getBoundingClientRect().bottom > text.getBoundingClientRect().bottom) setExpanded(true);
+    if (!collapsed() || !(event.target instanceof Element)) return;
+    const fade = text.getBoundingClientRect().bottom - FADE_LINES * Number.parseFloat(getComputedStyle(text).lineHeight);
+    if (event.target.getBoundingClientRect().bottom > fade) setExpanded(true);
   };
 
   const header = () => (
@@ -251,7 +302,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             data-collapsed={collapsed() ? "" : undefined}
             onClick={copyCode}
             onFocusIn={revealFocus}
-            innerHTML={renderMessage(props.text, locale(), messages())}
+            innerHTML={rendered().html}
           />
           <Show when={collapsible()}>
             <Button

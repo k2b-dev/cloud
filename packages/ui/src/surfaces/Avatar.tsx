@@ -26,7 +26,7 @@ const initialsFor = (name: string): string => {
 const TINTS = 10;
 
 /**
- * The tint behind initials and icons, from the name, so a person has one color wherever their avatar appears. The
+ * The tint behind initials and icons, from the name, so the same name has one color wherever an avatar shows it. The
  * hash is the one of `@k2b/stdlib`'s generated avatar.
  */
 const tintFor = (name: string): number => {

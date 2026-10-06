@@ -1,4 +1,5 @@
 import {
+  announce,
   Button,
   CodeDisplay,
   DataTable,
@@ -447,7 +448,11 @@ const MessageRowsDemo = () => {
       ...current,
       { id, author: "me", at: last.at + 60_000, text: fails ? "This one will not get through." : "On my way.", status: "pending" },
     ]);
-    setTimeout(() => update(id, fails ? "failed" : "sent"), 900);
+    setTimeout(() => {
+      update(id, fails ? "failed" : "sent");
+      // The application announces a failed send; the row may not even be mounted when it fails.
+      if (fails) announce("Not sent");
+    }, 900);
   };
   const receive = () => {
     const last = entries().at(-1)!;

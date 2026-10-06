@@ -36,8 +36,9 @@ machine-readable time. Set `own` for the reader's own messages; they show no
 avatar and no name.
 
 Without a picture, the avatar shows initials on a tint that the name decides,
-the same `Avatar` that the rest of `@k2b/ui` uses, so a person has one color
-everywhere.
+the same `Avatar` that the rest of `@k2b/ui` uses, so the same name has the
+same color everywhere. Pass the display name that the application shows for
+the person elsewhere.
 
 ### Groups
 
@@ -58,19 +59,26 @@ The text is a safe subset of Markdown, rendered like `MarkdownView` with HTML
 turned off:
 
 - Raw HTML shows as text.
-- Links may use `https`, `http`, or `mailto`; any other link, such as
-  `javascript:`, shows as its text. Links open in a new tab with
-  `rel="noopener noreferrer"`.
+- Links must be absolute and use `https`, `http`, or `mailto`; any other
+  link, such as `javascript:` or a relative `/settings`, shows as its text. A
+  relative link would lead somewhere else on every page that shows the
+  conversation. Links open in a new tab with `rel="noopener noreferrer"`.
 - Images show their description and load nothing.
 - A single line break is kept, as people expect in messages.
 - Code blocks show their language and a "Copy" button above the code. Long
   lines scroll inside the block, not the page.
 
-A long message mounts collapsed to ten lines with "Show more". Whether it
-collapses is decided from the text alone: more than 14 lines, counting every
-100 characters of a line as one more. That way the row never changes height
-after it mounts. "Show more" and "Show less" change the height only when the
-reader asks. A row that unmounts while the feed scrolls mounts collapsed again.
+A long message mounts collapsed to ten lines with "Show more"; its last two
+lines fade out. Whether it collapses is decided from the rendered text alone,
+not from the width: it collapses when it takes more than 14 lines. A line of
+text counts as one line for every started 100 visible characters, every line
+of a code block counts as one, blank ones included, and link destinations and
+reference definitions count as nothing. That way the row never changes height
+after it mounts, and a collapsed message always hides some of its text.
+"Show more" and "Show less" change the height only when the reader asks, or
+when keyboard focus reaches a link or code block in the hidden or faded part.
+A row that unmounts while the feed scrolls, or whose item is replaced, mounts
+collapsed again.
 
 ### Send state and read line
 
@@ -84,16 +92,31 @@ reader asks. A row that unmounts while the feed scrolls mounts collapsed again.
 Nora, Tobias"; it ends in an ellipsis when it is too long. The line exists
 while `status` or `receipt` is set. Set `status` on every own message from the
 start, so the line is reserved and a send that completes, fails, or is read
-never moves the rows below it. A send that fails after the row is shown is
-announced.
+never moves the rows below it.
+
+The row shows the send state but does not announce it: a send can fail while
+its row is scrolled away and not mounted. Announce a failure where the
+application learns of it, for example with `announce` from `@k2b/ui`:
+
+```tsx
+const send = async (message: ChatMessage) => {
+  try {
+    await postMessage(message);
+    update(message.id, { status: "sent" });
+  } catch {
+    update(message.id, { status: "failed" });
+    announce(t().messageNotSent);
+  }
+};
+```
 
 ### Actions
 
 `actions` are icon buttons with a label each. They appear as a small toolbar
-over the top corner of the row while the pointer rests on it or focus is
-inside it, so they never move anything. On a phone, a tap on the message
-focuses its row and shows them. Keep the list short, about two to four
-actions.
+over the top corner of the row while a mouse or pen rests on it or focus is
+inside it, so they never move anything. On a phone or tablet, the first tap
+on a message focuses its row and shows them without pressing the action under
+the finger. Keep the list short, about two to four actions.
 
 ### System rows
 
@@ -112,8 +135,8 @@ the toolbar shows while focus is inside the row.
 The avatar is hidden from screen readers because the name follows it.
 A continuation row carries the author and time as visually hidden text. The
 "Show more" button has `aria-expanded` and `aria-controls`. A copied code
-block and a failed send are announced in the shared live region. Code blocks
-are focusable so keyboard users can scroll them.
+block is announced in the shared live region; the application announces a
+failed send. Code blocks are focusable so keyboard users can scroll them.
 
 ## Runtime
 
