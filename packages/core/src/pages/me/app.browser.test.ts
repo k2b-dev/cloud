@@ -13,8 +13,9 @@ import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
+import { launchBrowser } from "../../../../ui/test/browser";
 import { accountMessages } from "./messages";
 
 // `/me/app` must read like the other account tabs: one frame, flat sections, one type scale, no overflow on a phone.
@@ -144,7 +145,7 @@ beforeAll(async () => {
   css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
@@ -164,7 +165,8 @@ type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const head = (lang: string, dark = false) =>
-  `<!doctype html><html lang="${lang}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+  // Playwright's WebKit ignores the charset of a routed response, so the page names it, as a Cloud page does.
+  `<!doctype html><html lang="${lang}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>`;
 
 const open = async (view: View, dark = false) => {
@@ -340,6 +342,13 @@ describe("the pairing dialog in a browser", () => {
               return { height: dialog.getBoundingClientRect().height, overflow: body.scrollHeight - body.clientHeight };
             });
           };
+          // Keys go to the focused element. Playwright sees the code step before the dialog's first frame, where the
+          // dialog puts focus in the code, so each code waits for that focus.
+          const enter = async (code: string) => {
+            await tab.waitForFunction(() => document.activeElement?.matches(".k2b-pin-input__digit") ?? false);
+            await tab.keyboard.type(code);
+            await tab.keyboard.press("Enter");
+          };
           await tab.goto(`${origin}/me/app`);
           await tab.getByRole("button", { name: t.pwaPair }).click();
           await measure("starting", t.pwaPreparing);
@@ -348,17 +357,14 @@ describe("the pairing dialog in a browser", () => {
           // The tab keeps the pairing; a reload resumes it and reads at once, and the phone has claimed it meanwhile.
           await tab.reload();
           await measure("code", t.pwaClaimed({ name: "Jonas' iPhone 15 Pro" }));
-          await tab.keyboard.type("111111");
-          await tab.keyboard.press("Enter");
+          await enter("111111");
           await measure("wrong code", t.pwaWrongCode({ count: 2 }));
-          await tab.keyboard.type("222222");
-          await tab.keyboard.press("Enter");
+          await enter("222222");
           await tab
             .locator("dialog")
             .getByText(t.pwaWrongCode({ count: 1 }))
             .waitFor();
-          await tab.keyboard.type("333333");
-          await tab.keyboard.press("Enter");
+          await enter("333333");
           await measure("too many wrong codes", t.pwaTooManyTries);
           results.push({
             width: view.width,

@@ -887,12 +887,15 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
 }
 
 /* A text button: 2rem tall to see and press, 1.25rem in the layout, so a
-   one-line toast does not grow. */
+   one-line toast does not grow. At least 2.25rem wide, so a short label keeps
+   its whole touch area (see below). */
 .k2b-ui .k2b-toast__action {
   display: inline-flex;
   height: 2rem;
+  min-width: 2.25rem;
   flex: none;
   align-items: center;
+  justify-content: center;
   margin: -0.375rem 0 -0.375rem auto;
   padding: 0 0.5rem;
   border: 0;
@@ -1056,11 +1059,13 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
 
 /* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
    2rem action and close button on coarse pointers, without changing the
-   toast. The action keeps the 0.625rem column gap to the close button, which
-   is more than the close button's hit area reaches into it, and both areas
-   end at the toast's outer edge, so neither reaches the other or the next
-   toast. In a titled progress toast the action sits on the summary line
-   below the bar, where the close button's area ends. */
+   toast. The action keeps the 0.625rem column gap to the close button: the
+   close button's area reaches 0.375rem into it, and an action at least
+   2.25rem wide reaches at most 0.25rem, so a short label such as "OK" does
+   not lose the edge of its area to the close button. Both areas end at the
+   toast's outer edge, so neither reaches the next toast. In a titled
+   progress toast the action sits on the summary line below the bar, where
+   the close button's area ends. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-toast__action,
   .k2b-ui .k2b-toast__close {

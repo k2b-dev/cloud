@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import type { SearchItem, SearchStreamLine } from "../api/search/schemas";
 
 // Whether rows that arrive later move the ones already shown depends on real layout, so this runs in a browser
@@ -113,7 +114,7 @@ beforeAll(async () => {
       return new Response(body, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
     },
   });
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

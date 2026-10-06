@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Which width a browser gives a glyph before its font has loaded is a question of
 // layout, which happy-dom does not model, so a real engine loads the shipped preset.
@@ -22,7 +23,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>${preset}<
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

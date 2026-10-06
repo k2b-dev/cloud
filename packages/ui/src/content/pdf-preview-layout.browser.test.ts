@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Whether the loading placeholder and the shown document fill the same box
 // depends on real flex layout, so the shipped browser build renders here.
@@ -69,7 +70,7 @@ const viewports = {
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

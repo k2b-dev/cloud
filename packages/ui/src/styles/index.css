@@ -9270,6 +9270,26 @@
     font-size: max(1rem, 16px);
     line-height: 1.125rem;
   }
+
+  /* WebKit lays out a single-line field's text at the font's own line height
+     when that is taller than the field's, so a font with tall metrics would
+     grow these fields by a pixel or two at 16px. A fixed height holds them;
+     a larger min-height, such as a phone shell's 44px, still wins. */
+  .k2b-ui input.k2b-input {
+    height: 2rem;
+  }
+
+  .k2b-ui .k2b-combobox__input > input {
+    height: 2.125rem;
+  }
+
+  .k2b-ui .k2b-pin-input__digit {
+    height: 2.25rem;
+  }
+
+  .k2b-ui .k2b-date-time__control input {
+    height: 2rem;
+  }
 }
 
 /* Plain controls show their value as text. The trigger keeps no box of its
@@ -9483,6 +9503,11 @@
   .k2b-ui .k2b-number-input__sizer[data-editing="true"]::after,
   .k2b-ui .k2b-number-input__sizer > .k2b-input {
     font-size: max(1rem, 16px);
+  }
+
+  /* The fixed touch height of a field input, at the plain row's size. */
+  .k2b-ui .k2b-number-input[data-appearance="plain"] .k2b-number-input__control {
+    height: 1.25rem;
   }
 }
 

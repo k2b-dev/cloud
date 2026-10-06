@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../../../../../ui/test/browser";
 
 // Rewrapping depends on real text layout, so the note editor's arrangement runs
-// in Chromium: a wrapping CodeMirror grows inside a scroll port beside a sidebar.
+// in a real browser: a wrapping CodeMirror grows inside a scroll port beside a sidebar.
 const entry = resolve(import.meta.dir, "reading-position.fixture.ts");
 const fixture = `
 import { EditorState } from "@codemirror/state";
@@ -83,7 +84,7 @@ type Run = { scrolled: number; before: number; steps: number[][]; selection: num
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../../lib/book-renderer";
 
 // Book view links the app's stylesheet before Cloud's global one, so which
@@ -18,7 +19,7 @@ beforeAll(async () => {
     }),
   );
   css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

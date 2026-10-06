@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Fields with a description subgrid their rows. Only a real layout engine
 // shows whether a field keeps its control inside when its parent is not a grid,
@@ -47,7 +48,7 @@ const viewports = {
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

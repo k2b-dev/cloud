@@ -3,14 +3,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceWormhole } from "@/contracts";
+import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
-// layout questions, so the route renders on the server and then runs its real island bundle in Chromium,
+// layout questions, so the route renders on the server and then runs its real island bundle in a real browser,
 // as the workspace page does. The island bundle resolves Solid from its root, so the scratch root sits
 // inside this package's dependencies.
 const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
@@ -236,7 +237,7 @@ beforeAll(async () => {
         : new Response("Not found", { status: 404 });
     },
   });
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 120_000);
 
 afterAll(async () => {
@@ -325,12 +326,14 @@ const columnTitles = (page: Page) =>
     .evaluateAll((titles) => titles.map((title) => title.firstChild?.textContent ?? ""));
 /** What the drag-and-drop live regions last told screen readers. */
 const dragAnnouncements = (page: Page) => page.locator('body > [role="status"][aria-live="polite"]').allTextContents();
+/** The toast rail; the live region repeats each toast's text for screen readers. */
+const notifications = (page: Page) => page.getByRole("region", { name: "Notifications" });
 const cardsIn = (page: Page, key: string) =>
   page
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
     .evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.itemId));
 
-describe("Spaces Kanban board in Chromium", () => {
+describe("Spaces Kanban board in a browser", () => {
   for (const [name, view] of [
     ["phone", phone],
     ["desktop", desktop],
@@ -679,7 +682,7 @@ describe("Spaces Kanban board in Chromium", () => {
       await page.mouse.up();
       await moved;
       expect(moves).toEqual([{ columnId: "Col002", beforeItemId: "Item04", completed: false }]);
-      await page.getByText("Moved to In progress. It shows under Blocked until its blockers are done.").waitFor();
+      await notifications(page).getByText("Moved to In progress. It shows under Blocked until its blockers are done.").waitFor();
       expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
       expect(await page.locator('article:has([data-item-id="Item08"]) [data-spaces-kanban-card-status]').getAttribute("title")).toBe(
         "Status: In progress",
@@ -713,7 +716,7 @@ describe("Spaces Kanban board in Chromium", () => {
       expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
       await reopened;
       expect(moves.at(-1)).toMatchObject({ columnId: "Col002", completed: false });
-      await page.getByText("Moved to In progress. It shows under Overdue until it is done.").waitFor();
+      await notifications(page).getByText("Moved to In progress. It shows under Overdue until it is done.").waitFor();
       expect(await cardsIn(page, "virtual:overdue")).toEqual(["Item09"]);
       expect(await cardsIn(page, "column:Col004")).not.toContain("Item09");
     } finally {
@@ -998,32 +1001,38 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
     }
   }, 60_000);
 
-  test("phone: a swipe that starts on a column title scrolls the board and never reorders it", async () => {
-    const page = await open(phone, { locale: "en", buckets: withAutomaticColumns() });
-    try {
-      columnOrders.splice(0);
-      const board = page.locator('[role="region"]');
-      await board.evaluate((element) => {
-        element.scrollLeft = 100;
-      });
-      const title = (await page.locator('[data-spaces-kanban-column="virtual:blocked"] h3').boundingBox())!;
-      const y = title.y + title.height / 2;
-      let x = Math.min(title.x + title.width - 8, 380);
-      // A plain swipe through the browser's touch pipeline, no hold: one finger moving left in small steps.
-      const cdp = await page.context().newCDPSession(page);
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
-      for (let step = 0; step < 15; step++) {
-        x -= 24;
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] });
-        await page.waitForTimeout(16);
+  // A swipe through the browser's touch pipeline needs Chromium's input protocol: Playwright drives WebKit's touch
+  // input only as a whole tap.
+  test.skipIf(browserName === "webkit")(
+    "phone: a swipe that starts on a column title scrolls the board and never reorders it",
+    async () => {
+      const page = await open(phone, { locale: "en", buckets: withAutomaticColumns() });
+      try {
+        columnOrders.splice(0);
+        const board = page.locator('[role="region"]');
+        await board.evaluate((element) => {
+          element.scrollLeft = 100;
+        });
+        const title = (await page.locator('[data-spaces-kanban-column="virtual:blocked"] h3').boundingBox())!;
+        const y = title.y + title.height / 2;
+        let x = Math.min(title.x + title.width - 8, 380);
+        // A plain swipe through the browser's touch pipeline, no hold: one finger moving left in small steps.
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+        for (let step = 0; step < 15; step++) {
+          x -= 24;
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] });
+          await page.waitForTimeout(16);
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await page.waitForTimeout(300);
+        expect(columnOrders).toEqual([]);
+        expect(await columnTitles(page)).toEqual(["To do", "Blocked", "In progress", "Review", "Overdue", "Done"]);
+        expect(await board.evaluate((element) => element.scrollLeft)).toBeGreaterThan(100);
+      } finally {
+        await page.context().close();
       }
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await page.waitForTimeout(300);
-      expect(columnOrders).toEqual([]);
-      expect(await columnTitles(page)).toEqual(["To do", "Blocked", "In progress", "Review", "Overdue", "Done"]);
-      expect(await board.evaluate((element) => element.scrollLeft)).toBeGreaterThan(100);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
+    },
+    30_000,
+  );
 });

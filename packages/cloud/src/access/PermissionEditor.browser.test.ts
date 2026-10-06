@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { launchBrowser } from "../../../ui/test/browser";
 import type { AccessEntry } from "../contracts/shared";
 
 // Whether a long name and its kind label share one line depends on the real layout engine.
@@ -53,7 +54,7 @@ beforeAll(async () => {
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
   css = await build.outputs[0]!.text();
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

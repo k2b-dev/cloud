@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { type Browser, type BrowserContextOptions, chromium, type Page } from "playwright";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
+import { launchBrowser } from "../../../../ui/test/browser";
 import type { FolderDisplay } from "../../contracts";
 import type { MailAdminFolderView } from "../../service/folders";
 import type { FolderSettingsHarnessOptions } from "./MailFolderSettings.browser-harness";
@@ -139,7 +140,7 @@ const server = Bun.serve({
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

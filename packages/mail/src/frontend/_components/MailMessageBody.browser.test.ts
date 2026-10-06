@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chromium, type Frame, type Page } from "playwright";
+import type { Frame, Page } from "playwright";
+import { launchBrowser } from "../../../../ui/test/browser";
 import type {} from "./MailMessageBody.browser-harness";
 
 // A 1x1 PNG; natural width 1 proves the frame decoded delivered image bytes.
@@ -72,7 +73,7 @@ afterAll(() => server.stop(true));
 type OpenedMessage = { page: Page; frame: Frame; errors: string[] };
 
 const withOpenedMessage = async (allowedByRule: boolean, run: (message: OpenedMessage) => Promise<void>): Promise<void> => {
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     const errors: string[] = [];

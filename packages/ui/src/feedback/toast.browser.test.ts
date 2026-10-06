@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // The rail moves into the top layer again for every new toast. Only a real engine resets scroll offsets and drops
 // focus when nodes move, which is what a custom slot with a list and a focused control must survive.
@@ -26,7 +27,7 @@ const script = await build.outputs[0]!.text();
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
