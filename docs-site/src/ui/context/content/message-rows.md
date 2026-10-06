@@ -213,20 +213,20 @@ The bar shows whenever `reactions` is set, also to an empty list, and keeps
 its height while chips come and go. While it is empty, "Add reaction" shows
 only while the message is hovered or focused, like the actions. Only a
 message whose `reactions` changes from unset to a list grows, by one line.
-Decide per message where that line is reserved:
 
-- Pass `reactions` to every own message. The bar shares the line of the send
-  state, so it costs a few pixels.
-- Pass it to every message that has or had a reaction, and keep passing an
-  empty list after the last one is removed, so removing never moves anything.
-- Leave it out on others' messages without reactions. A reserved, empty line
-  under every message would pull each group apart.
+Reserve the bar on exactly these messages:
 
-The first reaction on another person's message then adds one line. Inside
-`VirtualFeed`, the reader keeps their place: at the end, the end stays in
-view; scrolled up, the item at the top stays, and only the rows below the
-reacted message move, once. Where nothing may ever move, such as a feed of
-announcements, pass `reactions` to every message.
+- Every own message: pass `reactions`, also as an empty list. The bar shares
+  the line of the send state, so it costs a few pixels.
+- Every other message that has or had a reaction: keep passing an empty list
+  after the last one is removed, so removing a reaction never moves anything.
+
+Leave `reactions` out on other people's messages that never had a reaction. A
+reserved, empty line under every message would pull each group apart. The
+first reaction on another person's message therefore adds one line, once;
+later reactions and removals keep the height. Inside `VirtualFeed`, the reader
+keeps their place: at the end, the end stays in view; scrolled up, the item at
+the top stays, and only the rows below the reacted message move.
 
 ### Threads
 

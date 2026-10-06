@@ -171,7 +171,8 @@ export type MessageRowProps = {
   card?: JSX.Element;
   /**
    * Reactions in a bar of fixed height. The bar shows whenever this is set, even to an empty list, so chips that come
-   * and go never change the row. Only setting it where it was unset adds a line; see the docs for where to reserve it.
+   * and go never change the row. Only setting it where it was unset adds a line, so pass it on own messages and on
+   * messages that have or had reactions, and leave it out on others' messages that never had one.
    */
   reactions?: readonly MessageRowReaction[];
   /** Called with a reaction's `key` when the reader presses its chip. Without it, the chips are not controls. */
