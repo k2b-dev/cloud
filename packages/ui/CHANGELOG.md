@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.15.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.14.0...npm-ui-v0.15.0) (2026-10-06)
+
+
+### Features
+
+* **browser:** attach files from Cloud apps through one source chooser ([#672](https://github.com/k2b-dev/cloud/issues/672)) ([be21047](https://github.com/k2b-dev/cloud/commit/be21047cabbe011445242a62636fac25fcb3b33f))
+* **ui:** add a virtualized message list that keeps the reading position ([#668](https://github.com/k2b-dev/cloud/issues/668)) ([67b39a4](https://github.com/k2b-dev/cloud/commit/67b39a4b85f8f218984b71ba328e1da8ca499666))
+* **ui:** add message rows for conversations with many people ([#676](https://github.com/k2b-dev/cloud/issues/676)) ([0598121](https://github.com/k2b-dev/cloud/commit/059812142bfb38e60ac10aa981cf69a0b949304b))
+* **ui:** keep the QR camera running and say why it cannot start ([#675](https://github.com/k2b-dev/cloud/issues/675)) ([8861ae7](https://github.com/k2b-dev/cloud/commit/8861ae7a562b70898b05fead34f530630fbd78b2))
+* **ui:** send Samsung Internet to Chrome to install apps on Android ([#674](https://github.com/k2b-dev/cloud/issues/674)) ([c23e072](https://github.com/k2b-dev/cloud/commit/c23e07260d64160845c01b5d5a7f79586d083dc2))
+* **ui:** show quotes, reactions, threads and rich content in message rows ([#680](https://github.com/k2b-dev/cloud/issues/680)) ([626a12c](https://github.com/k2b-dev/cloud/commit/626a12c6ff9abce21707fa305a6735e752678ccf))
+
+
+### Bug Fixes
+
+* **ui:** keep VirtualFeed's place through flings, resizes and keyboard scrolling ([#678](https://github.com/k2b-dev/cloud/issues/678)) ([147a2e0](https://github.com/k2b-dev/cloud/commit/147a2e011c95e859fe883de5cf6bf53449e612cf))
+
 ## [0.14.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.13.0...npm-ui-v0.14.0) (2026-10-06)
 
 
