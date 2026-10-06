@@ -164,6 +164,8 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
   const inbox: Entry[] = [];
   let draining = false;
   let room: (() => void) | null = null;
+  /** Sequence of the latest access update the follower read, already while it waits in the inbox or is checked. */
+  let lastAccess = 0;
 
   const cursorAt = (seq: number) => input.topic().cursorAt(seq);
   const frame = {
@@ -450,6 +452,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
       return { ...base, key: null, data: undefined, resync: false, access: false, bytes: 64 };
     }
     const { k, d, r, a } = parsed.data;
+    if (a === true) lastAccess = event.sequence;
     const data = d === undefined ? undefined : JSON.stringify(d);
     return { ...base, key: k, data, resync: r === true, access: a === true, bytes: (data?.length ?? 0) + k.length + 64 };
   };
@@ -679,6 +682,7 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     const scope = channel.scope.safeParse(request.scope);
     if (!scope.success) return violation(conn, "invalid_scope");
     await whenStarted();
+    const accessBefore = lastAccess;
     const keys = await channel.keys(scope.data, conn.viewer);
     const readable = keys === null ? [] : await readableKeys(request.channel, followed(request.channel, keys), conn.viewer);
     // Not found and not readable look the same.
@@ -692,13 +696,13 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     // the replay covers everything up to it, live delivery everything after it.
     const position = Math.max(head, ring.at(-1)?.seq ?? 0);
     const oldest = ring[0]?.seq ?? position + 1;
-    // A collection cannot tell which keys it had before: an access update of a key it follows now,
-    // missed while it was away, may have added that key.
-    const missedAccess =
-      channel.collection === true &&
-      after !== null &&
-      ring.some((entry) => entry.access && entry.seq > after && entry.seq <= position && readable.includes(entry.key as string));
-    const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated || missedAccess);
+    // A collection cannot tell which keys it had at its cursor: any access update it missed may have
+    // added one of its keys now or removed one it had then, and only `resync` drops a removed one.
+    const missedAccess = channel.collection === true && after !== null && lastAccess > after;
+    // An access update read while `keys()` and `authorize` answered may postdate their answers,
+    // which must not release a replay of what followed it.
+    const accessMeanwhile = lastAccess !== accessBefore;
+    const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated || missedAccess || accessMeanwhile);
     const sub: Subscription = {
       id: request.id,
       conn,
