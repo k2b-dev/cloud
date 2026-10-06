@@ -257,9 +257,17 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
                       return true;
                     }}
                     onStop={() => setScanning(false)}
-                    onError={() => {
+                    onError={(reason) => {
                       setScanning(false);
-                      setError(t().cameraFailed);
+                      const messages = t();
+                      setError(
+                        {
+                          denied: messages.cameraDenied,
+                          "no-camera": messages.cameraMissing,
+                          "in-use": messages.cameraInUse,
+                          unavailable: messages.cameraFailed,
+                        }[reason],
+                      );
                     }}
                   />
                 </Show>

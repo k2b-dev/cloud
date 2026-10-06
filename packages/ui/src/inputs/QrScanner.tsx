@@ -3,30 +3,61 @@ import type QrScannerEngine from "qr-scanner";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 
-export type QrScannerError = "denied" | "unavailable";
+/**
+ * Why the camera could not start, as far as the browser tells: `"denied"` when camera access is off, `"no-camera"`
+ * when the device has no camera, `"in-use"` when another app holds it, and `"unavailable"` for anything else.
+ */
+export type QrScannerError = "denied" | "no-camera" | "in-use" | "unavailable";
 
 export type QrScannerProps = {
   /** Decoded text is untrusted. Return `true` to accept it and stop the camera, `false` to reject it and keep scanning. */
   onResult: (text: string) => boolean;
   /** The page was hidden or left; unmount the scanner. */
   onStop: () => void;
-  /** The camera could not start: access was denied, or there is no usable camera. Offer another way in. */
+  /** The camera could not start; the scanner has stopped. Offer another way in. A frame that cannot be decoded never ends here. */
   onError: (reason: QrScannerError) => void;
   /** What to point the camera at. Defaults to a generic QR code hint. */
   instructions?: string;
   class?: string;
 };
 
+const sizes: MediaTrackConstraints[] = [{ width: { min: 1024 } }, { width: { min: 768 } }, {}];
+/** The rear camera at a resolution that keeps small codes readable, then any camera: the order qr-scanner tries. */
+const cameraRequests: MediaTrackConstraints[] = [...sizes.map((size) => ({ ...size, facingMode: { exact: "environment" } })), ...sizes];
+
+const errorName = (error: unknown): string => (typeof error === "object" && error !== null && "name" in error ? String(error.name) : "");
+
+const cameraFailure = (name: string): QrScannerError => {
+  if (name === "NotAllowedError" || name === "SecurityError") return "denied";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "no-camera";
+  if (name === "NotReadableError") return "in-use";
+  return "unavailable";
+};
+
 /**
- * qr-scanner turns every getUserMedia failure into the string "Camera not found.", so only the Permissions API can
- * tell a refusal apart. Safari and Chrome expose the camera permission; elsewhere a refusal counts as unavailable.
+ * Opens the camera here rather than in qr-scanner, which turns every failure into "Camera not found.". Only a request
+ * no camera can meet earns another try: every other answer stays the same for a looser request, and asking again could
+ * show the permission prompt again.
  */
-const cameraDenied = async (): Promise<boolean> => {
-  try {
-    return (await navigator.permissions.query({ name: "camera" as PermissionName })).state === "denied";
-  } catch {
-    return false;
+const openCamera = async (): Promise<{ stream: MediaStream; mirrored: boolean } | { error: QrScannerError }> => {
+  if (!navigator.mediaDevices) return { error: "unavailable" };
+  let error: QrScannerError = "no-camera";
+  for (const video of cameraRequests) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      const facing = stream.getVideoTracks()[0]?.getSettings().facingMode;
+      // Like qr-scanner, mirror a front camera, and a camera of unknown facing that the rear request did not find.
+      return { stream, mirrored: facing ? facing === "user" : !video.facingMode };
+    } catch (failure) {
+      error = cameraFailure(errorName(failure));
+      if (error !== "no-camera") return { error };
+    }
   }
+  return { error };
+};
+
+const stopStream = (stream: MediaStream) => {
+  for (const track of stream.getTracks()) track.stop();
 };
 
 /**
@@ -46,24 +77,22 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
   let video!: HTMLVideoElement;
   let scanner: QrScannerEngine | undefined;
   let closed = false;
-  /** The host has unmounted the scanner; it no longer hears about failures that finish later. */
-  let unmounted = false;
   let cleanupMotion: (() => void) | undefined;
   const destroy = () => {
     closed = true;
     cleanupMotion?.();
     resetRejected.cancel();
     resetFeedback.cancel();
-    // pause(true) stops existing tracks immediately; destroy also handles a still-pending permission request.
+    // pause(true) stops the camera stream immediately.
     void scanner?.pause(true);
     scanner?.destroy();
     scanner = undefined;
   };
-  const fail = async () => {
+  // Once closed, the host has unmounted the scanner or heard why it stopped; later failures stay silent.
+  const fail = (reason: QrScannerError) => {
     if (closed) return;
     destroy();
-    const denied = await cameraDenied();
-    if (!unmounted) props.onError(denied ? "denied" : "unavailable");
+    props.onError(reason);
   };
   onMount(() => {
     const hidden = () => {
@@ -73,7 +102,6 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     document.addEventListener("visibilitychange", hidden);
     window.addEventListener("pagehide", leaving);
     onCleanup(() => {
-      unmounted = true;
       destroy();
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("pagehide", leaving);
@@ -98,12 +126,17 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
             resetFeedback.debouncedFn();
           },
           {
-            preferredCamera: "environment",
             highlightScanRegion: true,
-            // Empty frames are expected. Never log decoded content or frame data.
+            // A frame that cannot be decoded never ends the session: the camera runs, and the next frame may read.
+            // An engine error other than an empty frame, which the native BarcodeDetector reports as "Scanner error:
+            // No QR code found", means the detector cannot read on this device. Fall back to the bundled worker for
+            // the page through the flag qr-scanner 1.4.2 sets itself for "not implemented" and "service unavailable";
+            // it swaps engines after this frame. Worker errors carry the same prefix; the flag changes nothing there.
+            // Never log decoded content or frame data.
             onDecodeError: (error) => {
-              if (closed || error === Engine.NO_QR_CODE_FOUND) return;
-              void fail();
+              if (typeof error === "string" && error.startsWith("Scanner error: ") && !error.endsWith(Engine.NO_QR_CODE_FOUND)) {
+                Reflect.set(Engine, "_disableBarcodeDetector", true);
+              }
             },
           },
         );
@@ -117,10 +150,16 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
         applyMotion();
         motion.addEventListener("change", applyMotion);
         cleanupMotion = () => motion.removeEventListener("change", applyMotion);
+        const camera = await openCamera();
+        if ("error" in camera) return fail(camera.error);
+        if (closed) return stopStream(camera.stream);
+        // qr-scanner plays a stream that is already set instead of opening its own.
+        video.srcObject = camera.stream;
+        video.style.transform = camera.mirrored ? "scaleX(-1)" : "";
         await scanner.start();
         if (!closed) setStarting(false);
       } catch {
-        await fail();
+        fail("unavailable");
       }
     })();
   });

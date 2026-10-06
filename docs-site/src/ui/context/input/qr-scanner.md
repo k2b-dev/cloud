@@ -7,15 +7,23 @@ the frame red for a rejected one. Camera images stay on the device.
 ## Import
 
 ```tsx
-import { QrScanner } from "@k2b/ui";
+import { QrScanner, type QrScannerError } from "@k2b/ui";
 ```
 
 ## Use QrScanner
 
 Mount the scanner when the person chooses to scan, and unmount it to stop the
-camera. Always offer another way in, such as pasting a link:
+camera. Always offer another way in, such as pasting a link, and say why the
+camera could not start. The messages come from the application's catalog:
 
 ```tsx
+const cameraMessages: Record<QrScannerError, string> = {
+  denied: "Camera access is off. Allow it in the settings, or paste the link instead.",
+  "no-camera": "No camera was found. Paste the link instead.",
+  "in-use": "Another app is using the camera. Close it and try again, or paste the link instead.",
+  unavailable: "The camera could not start. Paste the link instead.",
+};
+
 <Show when={scanning()} fallback={<Button onClick={() => setScanning(true)}>Scan code</Button>}>
   <QrScanner
     instructions="Point the camera at the pairing code."
@@ -29,7 +37,7 @@ camera. Always offer another way in, such as pasting a link:
     onStop={() => setScanning(false)}
     onError={(reason) => {
       setScanning(false);
-      showPasteField(reason === "denied" ? "Camera access is off." : "The camera could not start.");
+      showPasteField(cameraMessages[reason]);
     }}
   />
 </Show>
@@ -40,16 +48,20 @@ camera. Always offer another way in, such as pasting a link:
   rejected code is reported again only after a second without any code.
 - `onStop()` asks the host to unmount the scanner when the page is hidden or
   left.
-- `onError(reason)` reports that the camera could not start or failed:
-  `"denied"` when the browser reports the camera permission as denied through
-  the Permissions API (Safari and Chrome do), `"unavailable"` otherwise. A
-  browser that does not report it, or still reports "prompt" after a refusal,
-  gives `"unavailable"`, so word the fallback to fit both reasons. The scanner
-  has already stopped, and it reports nothing after it unmounts.
+- `onError(reason)` reports that the camera could not start, with the reason
+  the browser gives: `"denied"` when camera access is off, `"no-camera"` when
+  no camera was found, `"in-use"` when another app holds the camera, and
+  `"unavailable"` for anything else, such as a page without a secure context.
+  Show a message for each reason next to the other way in. The scanner has
+  already stopped, and it reports nothing after it unmounts.
+- A frame that cannot be decoded never ends the session or reaches `onError`:
+  the camera keeps running until a code is accepted or the host unmounts it.
 - `instructions` replaces the generic hint shown while the camera runs.
 
 Each mount owns one camera session. Unmounting stops the camera at once, even
-while the browser still asks for permission.
+while the browser still asks for permission. The scanner asks for the rear
+camera first and takes any camera only when no rear camera fits; it does not
+ask again after a refusal, so the permission prompt appears at most once.
 
 ## Accessibility
 
@@ -62,7 +74,11 @@ to continue: keep a text field or a link next to it, and move focus there after
 
 The scanner needs the browser, a secure context, and a camera. The scanning
 engine ([qr-scanner](https://github.com/nimiq/qr-scanner)) loads only when a
-scanner mounts. Decoded content and camera frames are never logged.
+scanner mounts. It uses the browser's own barcode detector where one exists,
+such as Chrome on Android, and a bundled decoder elsewhere, such as Safari. When
+the browser's detector fails instead of reading, the scanner switches to the
+bundled decoder for the page and keeps scanning. Decoded content and camera
+frames are never logged.
 
 ## Example
 

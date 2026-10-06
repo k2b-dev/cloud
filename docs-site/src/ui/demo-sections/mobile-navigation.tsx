@@ -256,7 +256,14 @@ export function QrScannerDemo() {
             onStop={() => setScanning(false)}
             onError={(reason) => {
               setScanning(false);
-              setProblem(reason === "denied" ? "Camera access was denied." : "No camera is available.");
+              setProblem(
+                {
+                  denied: "Camera access is off.",
+                  "no-camera": "No camera was found.",
+                  "in-use": "Another app is using the camera.",
+                  unavailable: "The camera could not start.",
+                }[reason],
+              );
             }}
           />
           <Button variant="secondary" onClick={() => setScanning(false)}>
