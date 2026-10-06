@@ -615,7 +615,7 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
 function MemoryToolView(props: { block: ToolBlock }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
-  const presentation = () => memoryToolPresentation(props.block.args, props.block.result);
+  const presentation = () => memoryToolPresentation(props.block.args, props.block.result, locale());
   return (
     <Show when={props.block.status !== "running"} fallback={<Chat.Activity label={t().usingMemory} icon="ti ti-brain" tone="ai" busy />}>
       <Show
@@ -646,9 +646,10 @@ function MemoryToolView(props: { block: ToolBlock }) {
 
 function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const status = () => props.block.status;
   const fetchError = () =>
-    props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result) : undefined;
+    props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result, locale()) : undefined;
   return (
     <>
       <Switch

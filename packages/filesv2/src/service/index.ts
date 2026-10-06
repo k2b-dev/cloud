@@ -881,6 +881,14 @@ export function createFilesService(
       }
       return output;
     },
+    /**
+     * Name and kind of every base the actor may address, for labels such as approval reviews. Unlike `bases`, this
+     * never asks storage and never provisions a base; access is still decided where the base is used.
+     */
+    async baseNames(actor: RequestActor): Promise<{ id: string; name: string; kind: BaseKind }[]> {
+      const state = await context(actor);
+      return state.candidates.map((item) => ({ id: `${item.area}:${item.kind}:${item.identity_id}`, name: item.name, kind: item.kind }));
+    },
     async list(actor: RequestActor, input: { baseId: string; path?: string } & BrowseInput): Promise<DirectoryResult> {
       const current = await authorized(actor, input.baseId, input.path ?? "", true);
       const page = await browsePage(input, JSON.stringify([current.inspection.summary.locationKey, current.target]), (options) =>

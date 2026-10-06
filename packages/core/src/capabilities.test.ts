@@ -207,8 +207,8 @@ describe("Core AI capabilities", () => {
       ok: true,
       data: {
         details: expect.arrayContaining([
-          { label: "Before", value: "admin" },
-          { label: "After", value: "read" },
+          { label: "Before", value: "Manage" },
+          { label: "After", value: "View" },
         ]),
       },
     });
@@ -415,7 +415,7 @@ describe("Core AI capabilities", () => {
     expect(listOccurrences).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
-      data: { summary: "Read active scheduled task in “Release planning”." },
+      data: { summary: "Read a scheduled task in “Release planning” (Active)." },
     });
   });
 
@@ -879,4 +879,88 @@ test("task reference metadata uses the request locale with English fallback", as
     expect(result.data.refs?.[0]?.preview).toStartWith(prefix);
     expect(result.data.refs?.[0]?.preview).toContain("Europe/Berlin");
   }
+});
+
+test("Skill, task and chat reviews and summaries use the reader's language", async () => {
+  const german: CapabilityExecutionContext = { ...context, locale: "de-DE" };
+  spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+  spyOn(aiChatTasks, "validateGrants").mockResolvedValue([]);
+  spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
+
+  expect(
+    await aiCapabilities.actions["ai.task.create"].review!(
+      {
+        chatId: chat.shortId,
+        prompt: scheduledTask.prompt,
+        grants: [],
+        schedule: { kind: "once", localAt: "2099-01-05T09:30" },
+        timezone: "Europe/Berlin",
+      },
+      german,
+    ),
+  ).toMatchObject({
+    ok: true,
+    data: {
+      message: `Geplante Aufgabe in ${chat.title} (${chat.shortId}) erstellen.`,
+      details: [
+        { label: "Chat", value: `${chat.title} (${chat.shortId})` },
+        { label: "Zeitplan", value: "5. Jan. 2099, 09:30 (Europe/Berlin)" },
+        { label: "Auftrag", value: scheduledTask.prompt },
+        { label: "Das erlaubst du dieser Aufgabe" },
+      ],
+    },
+  });
+  expect(await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, german)).toMatchObject({
+    ok: true,
+    data: {
+      message: "Geplante Aufgabe tSk234 pausieren.",
+      details: [
+        { label: "Aufgabe", value: scheduledTask.prompt },
+        { label: "Zeitplan", value: "Wiederkehrend: 0 9 * * 1 (Europe/Berlin)" },
+      ],
+    },
+  });
+  expect(await aiCapabilities.actions["ai.chat.message"].review!({ chatId: chat.shortId, text: "Bitte prüfen." }, german)).toMatchObject({
+    ok: true,
+    data: {
+      message: `Diese Nachricht an ${chat.title} (${chat.shortId}) senden.`,
+      details: [{ label: "Zielchat" }, { label: "Nachricht", value: "Bitte prüfen." }],
+      links: [{ title: "Zielchat öffnen" }],
+    },
+  });
+
+  const created = { name: skill.name, description: skill.description, instructions: skill.instructions };
+  expect(await aiCapabilities.actions["ai.skill.create"].review!(created, german)).toMatchObject({
+    ok: true,
+    data: {
+      message: "Skill „weekly-status“ erstellen.",
+      details: [{ label: "Name" }, { label: "Beschreibung" }, { label: "Anweisungen" }],
+    },
+  });
+  spyOn(aiSkills, "create").mockResolvedValue(skill);
+  expect(await aiCapabilities.actions["ai.skill.create"].run(created, { ...german, idempotencyKey: "skill" })).toMatchObject({
+    ok: true,
+    data: { summary: "Skill „weekly-status“ erstellt." },
+  });
+  spyOn(aiConversations, "listConversations").mockResolvedValue([chat]);
+  expect(await aiCapabilities.queries["ai.chats.search"].run({ query: "", archived: false, limit: 5 }, german)).toMatchObject({
+    ok: true,
+    data: {
+      data: [
+        {
+          metadata: [
+            { label: "Status", value: "Bereit" },
+            { label: "Aktualisiert", value: chat.updatedAt },
+          ],
+        },
+      ],
+    },
+  });
+  // Locales without a catalog read the base language instead of an empty card.
+  expect(
+    await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, { ...context, locale: "fr" }),
+  ).toMatchObject({
+    ok: true,
+    data: { message: "Pause scheduled task tSk234.", details: [{ label: "Task" }, { label: "Schedule" }] },
+  });
 });

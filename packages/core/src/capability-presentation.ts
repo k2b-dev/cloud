@@ -6,16 +6,16 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
     de: {
       types: {
         "ai.chat": {
-          title: "AI-Gespräch",
-          description: "Eine private AI-Konversation, die dem aktuellen Benutzer gehört.",
+          title: "KI-Chat",
+          description: "Ein privater KI-Chat, der dir gehört.",
         },
         "ai.skill": {
-          title: "Assistant Skill",
-          description: "Ein berechtigungsverwalteter wiederverwendbarer Assistant-Workflow.",
+          title: "Skill",
+          description: "Ein wiederverwendbarer Ablauf für den Assistant mit eigenen Zugriffsrechten.",
         },
         "ai.task": {
-          title: "Geplante AI-Aufgabe",
-          description: "Eine einmalige oder wiederkehrende Aufforderung, die an eine eigene AI-Konversation angehängt ist.",
+          title: "Geplante KI-Aufgabe",
+          description: "Ein einmaliger oder wiederkehrender Auftrag in einem deiner KI-Chats.",
         },
       },
       queries: {
@@ -46,7 +46,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           input: { skillId: "ID des Skills, dessen Zugriffsrechte gelesen werden." },
         },
         "ai.chat.read": {
-          title: "Ein AI-Gespräch lesen",
+          title: "KI-Chat lesen",
           description:
             "Lesen Sie sichtbaren Text von einem core.ai.chat ref, der von ai.chats.search, ai.tasks.list oder einem Core Action zurückgegeben wird. Verwenden Sie ai.chat.search für die Textsuche im bekannten Chat und ai.chat.resources für referenced Cloud-Ressourcen.",
           input: {
@@ -56,7 +56,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.chat.resources": {
-          title: "Die in einer AI-Konversation verwendeten Ressourcen auflisten",
+          title: "In einem KI-Chat verwendete Ressourcen auflisten",
           description:
             "Listen Sie die Cloud-Ressource refs auf oder suchen Sie sie, die in einem bekannten core.ai.chat beobachtet wurde. Holen Sie sich die Chat-ID von ai.chats.search, ai.chat.read oder einem core.ai.task ref. zurückgegebene refs können direkt an die jeweiligen App-Reader weitergegeben werden.",
           input: {
@@ -67,7 +67,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.chat.search": {
-          title: "Nachrichten in einer AI-Konversation suchen",
+          title: "Nachrichten in einem KI-Chat durchsuchen",
           description:
             "Durchsuchen Sie sichtbaren Text in einem bekannten core.ai.chat ref, einschließlich komprimiertem Verlauf. Holen Sie sich die Chat-ID von ai.chats.search, ai.chat.read oder einem core.ai.task ref. Verwenden Sie ai.chat.read, um ohne Suchbegriff zu suchen.",
           input: {
@@ -78,7 +78,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.chats.resources": {
-          title: "Suchressourcen, die in AI-Konversationen verwendet werden",
+          title: "In KI-Chats verwendete Ressourcen suchen",
           description:
             "Direkter Cross-Chat-Eintrag zum Auffinden von Cloud-Ressourcen, die zuvor in aktiven AI-Konversationen verwendet wurden. Zurückgegebene refs können an die jeweiligen App-Reader weitergegeben werden; Verwenden Sie ai.chat.resources, wenn ein Chat bereits bekannt ist.",
           input: {
@@ -88,7 +88,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.chats.search": {
-          title: "AI-Gespräche durchsuchen",
+          title: "KI-Chats durchsuchen",
           description:
             "Normaler Eintrag zum Suchen der AI-Konversationen des aktuellen Benutzers nach Text oder nach der genauen Cloud-Ressource refs. Verwenden Sie das zurückgegebene core.ai.chat refs mit ai.chat.read, ai.chat.search, ai.chat.resources, Aufgabenerstellung oder ai.chat.message.",
           input: {
@@ -101,7 +101,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.read": {
-          title: "Einen Assistant Skill lesen",
+          title: "Skill lesen",
           description:
             "Lesen Sie einen core.ai.skill ref, der von der Liste Assistant Skills oder einen Skill Action zurückgegeben wird, einschließlich seiner aktuellen Revision und reference-Metadaten.",
           input: {
@@ -109,7 +109,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.reference.read": {
-          title: "Eine Assistant Skill reference lesen",
+          title: "Skill-Referenz lesen",
           description:
             "Lesen Sie eine genaue Markdown reference, die von Read Assistant Skill zurückgegeben wird, während Sie den aktuellen Skill-Zugriff erneut überprüfen.",
           input: {
@@ -118,7 +118,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skills.list": {
-          title: "Liste Assistant Skills",
+          title: "Skills auflisten",
           description:
             "Normaler Eintrag für Skill-Arbeit. Listen Sie Skills auf, die der aktuelle Akteur lesen und core.ai.skill refs zum Lesen oder Überprüfen zurückgeben kann. Management Actions.",
           input: {
@@ -129,7 +129,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.task.read": {
-          title: "Eine geplante AI-Aufgabe lesen",
+          title: "Geplante KI-Aufgabe lesen",
           description:
             "Lesen Sie einen von ai.tasks.list zurückgegebenen core.ai.task ref oder einen Task Action, einschließlich seines übergeordneten core.ai.chat ref und der letzten Ausführungen.",
           input: {
@@ -137,7 +137,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.tasks.list": {
-          title: "Geplante AI-Aufgaben auflisten",
+          title: "Geplante KI-Aufgaben auflisten",
           description:
             "Normaler Eintrag für geplante Aufgaben. Listen Sie die Aufgaben des aktuellen Benutzers auf, optional für einen core.ai.chat ref oder einen Status; Verwenden Sie das zurückgegebene core.ai.task refs mit ai.task.read oder der Aufgabe Actions.",
           input: {
@@ -162,7 +162,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.chat.message": {
-          title: "Senden Sie eine Nachricht an eine weitere AI-Konversation",
+          title: "Nachricht an einen anderen KI-Chat senden",
           description:
             "Stellen Sie eine zuordenbare Nachricht für eine andere AI-Konversation in die Warteschlange, nachdem Sie das genaue Ziel und den Text überprüft haben.",
           input: {
@@ -171,7 +171,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.create": {
-          title: "Einen Assistant Skill erstellen",
+          title: "Skill erstellen",
           description: "Erstellen Sie einen überprüften wiederverwendbaren Skill, der dem aktuellen Akteur gehört.",
           input: {
             name: "Kleingeschriebener Skill-Name mit Wörtern, die durch einzelne Bindestriche getrennt sind.",
@@ -180,14 +180,14 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.delete": {
-          title: "Einen Assistant Skill löschen",
+          title: "Skill löschen",
           description: "Löschen Sie einen verwalteten Skill, alle references und alle Zugriffsgewährungen nach der Überprüfung dauerhaft.",
           input: {
             skillId: "Lesbare sechs Zeichen Skill ID.",
           },
         },
         "ai.skill.enabled.set": {
-          title: "Persönlichen Assistant Skill-Status festlegen",
+          title: "Skill für dich aktivieren oder deaktivieren",
           description:
             "Aktivieren oder deaktivieren Sie nach der Überprüfung einen lesbaren Skill nur für den aktuellen Benutzer. Der Cloud-Zugriff bleibt unverändert.",
           input: {
@@ -196,7 +196,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.reference.remove": {
-          title: "Einen Assistant Skill reference entfernen",
+          title: "Skill-Referenz entfernen",
           description: "Entfernen Sie nach der Überprüfung genau eine Markdown reference aus einem beschreibbaren Skill.",
           input: {
             skillId: "Lesbare sechs Zeichen Skill ID.",
@@ -205,7 +205,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.reference.set": {
-          title: "Stellen Sie eine Assistant Skill reference ein",
+          title: "Skill-Referenz speichern",
           description:
             "Fügen Sie genau eine Markdown reference zu einem beschreibbaren Skill hinzu oder ersetzen Sie sie. Verwenden Sie Set Assistant Skill references für zwei oder mehr Dateien.",
           input: {
@@ -216,7 +216,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.references.set": {
-          title: "Set Assistant Skill references",
+          title: "Skill-Referenzen speichern",
           description:
             "Fügen Sie mehrere Markdown references atomar zu einem beschreibbaren Skill hinzu oder ersetzen Sie sie, nachdem Sie jede vollständige begrenzte Datei überprüft haben.",
           input: {
@@ -229,7 +229,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.skill.update": {
-          title: "Einen Assistant Skill aktualisieren",
+          title: "Skill ändern",
           description:
             "Aktualisieren Sie ein oder mehrere Hauptfelder eines beschreibbaren Skill, nachdem Sie den genauen geänderten Inhalt überprüft haben.",
           input: {
@@ -241,7 +241,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.task.create": {
-          title: "Eine geplante AI-Aufgabe erstellen",
+          title: "Geplante KI-Aufgabe erstellen",
           description:
             "Erstellen Sie eine autonome Aufgabe in einer eigenen AI-Konversation. Ermitteln Sie vorher die benötigten Capabilities und lassen Sie deren Berechtigungsumfang prüfen. Code Mode läuft mit bestätigten Capability-, HTTP- und Datenbankfreigaben im Hintergrund. Immer bestätigungspflichtige Capabilities und interaktive Dialoge sind dort nicht verfügbar. Lösen Sie relative Zeitangaben vor dem Aufruf in localAt auf.",
           input: {
@@ -258,35 +258,35 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "ai.task.delete": {
-          title: "Eine geplante AI-Aufgabe löschen",
+          title: "Geplante KI-Aufgabe löschen",
           description: "Löschen Sie eine Aufgabe und ihren gesamten Ereignisverlauf nach der Überprüfung.",
           input: {
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
           },
         },
         "ai.task.pause": {
-          title: "Eine geplante AI-Aufgabe pausieren",
+          title: "Geplante KI-Aufgabe pausieren",
           description: "Pausieren Sie eine eigene geplante Aufgabe nach der Überprüfung.",
           input: {
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
           },
         },
         "ai.task.resume": {
-          title: "Eine geplante AI-Aufgabe fortsetzen",
+          title: "Geplante KI-Aufgabe fortsetzen",
           description: "Nehmen Sie nach der Überprüfung eine eigene geplante Aufgabe wieder auf.",
           input: {
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
           },
         },
         "ai.task.run": {
-          title: "Jetzt eine geplante AI-Aufgabe ausführen",
+          title: "Geplante KI-Aufgabe jetzt ausführen",
           description: "Stellen Sie ein manuelles Ereignis in die Warteschlange, ohne den zukünftigen Zeitplan zu ändern.",
           input: {
             taskId: "Lesbare geplante Aufgabe mit sechs Zeichen ID.",
           },
         },
         "ai.task.update": {
-          title: "Eine geplante AI-Aufgabe aktualisieren",
+          title: "Geplante KI-Aufgabe ändern",
           description:
             "Aktualisieren Sie Aufforderung, zukünftigen Zeitplan oder Capability-Berechtigungen einer eigenen Aufgabe nach Prüfung des genauen Ersatzes. Lesen Sie bei fehlenden Rechten zuerst Aufgabe und fehlgeschlagene Ausführung. Lassen Sie erweiterte Rechte ausdrücklich prüfen und berücksichtigen Sie bereits ausgeführte Änderungen vor einem erneuten Start.",
           input: {

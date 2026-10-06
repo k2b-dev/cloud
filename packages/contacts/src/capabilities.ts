@@ -131,7 +131,7 @@ const mapContactSummary = (contact: Contact) => ({
   updatedAt: contact.updatedAt,
 });
 
-const mapContactResourceView = (contact: Contact): CloudResourceView => {
+const mapContactResourceView = (contact: Contact, t: ContactCapabilityMessages): CloudResourceView => {
   const primary = contact.emails[0]?.email ?? contact.phones[0]?.phone;
   return {
     ref: { type: "contacts.contact", id: contact.id },
@@ -140,8 +140,8 @@ const mapContactResourceView = (contact: Contact): CloudResourceView => {
     icon: "ti ti-address-book",
     priority: 7,
     metadata: [
-      { label: "Type", value: "Contact" },
-      { label: "Book", value: contact.bookId },
+      { label: t.type, value: t.contact },
+      { label: t.addressBook, value: contact.bookId },
     ],
     links: [{ rel: "open", href: contactHref(contact) }],
   };
@@ -583,7 +583,8 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
     },
   });
   const contacts = await projectContacts(page.items);
-  const data = contacts.map(mapContactResourceView);
+  const { t } = contactCapabilityMessages.resolve([context.locale]);
+  const data = contacts.map((contact) => mapContactResourceView(contact, t));
   return ok({ data });
 };
 
@@ -666,7 +667,11 @@ const runContactList = async (input: z.infer<typeof ContactListInputSchema>, con
     },
   });
   const contacts = await projectContacts(page.items);
-  return pageResult(page, contacts.map(mapContactResourceView));
+  const { t } = contactCapabilityMessages.resolve([context.locale]);
+  return pageResult(
+    page,
+    contacts.map((contact) => mapContactResourceView(contact, t)),
+  );
 };
 
 const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, context: CapabilityExecutionContext) => {

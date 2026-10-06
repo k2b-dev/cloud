@@ -19,10 +19,10 @@ import { runCodeAi } from "./ai-service";
 import { createArtifactServiceRoutes } from "./api";
 import { backgroundCodeRouteAllowed } from "./background-code-policy";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
+import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
 import { DatabaseRequest } from "./database-contracts";
 import { httpService } from "./http-service";
-import type { CodeApproval } from "./runtime/capabilities";
 
 export const AgentHostRequest = z
   .object({
@@ -259,7 +259,7 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
           const { turnId, callId } = session.lastCall;
           const id = z.uuid().parse(approval.id);
           await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message)
-      VALUES(${turnId}::uuid,${callId},${id}::uuid,${approvalMessage(approval)}) ON CONFLICT DO NOTHING`;
+      VALUES(${turnId}::uuid,${callId},${id}::uuid,${codeApprovalMessage(approval, context.locale)}) ON CONFLICT DO NOTHING`;
           const approved = await new Promise<boolean>((resolve) => session.decisions.set(id, resolve));
           session.decisions.delete(id);
           return { approved };
@@ -279,11 +279,6 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
     () => {},
   );
   return session;
-}
-
-function approvalMessage(approval: CodeApproval) {
-  // Trusted runtime review; no secret values are contained in this object.
-  return `Code execution requests approval:\n${JSON.stringify(approval)}`;
 }
 
 export const agentHost = {

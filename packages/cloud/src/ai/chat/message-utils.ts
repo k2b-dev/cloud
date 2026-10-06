@@ -8,6 +8,7 @@ import { type AiResourceMarker, parseAiResourceMarker } from "../resource-marker
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import { AI_IMAGE_MEDIA_TYPES, isAiImageMediaType } from "../types";
+import { aiChatMessages } from "./messages";
 
 type AssistantToolResultMessage = Extract<Message, { role: "tool_result" }>;
 
@@ -417,7 +418,7 @@ export const capabilityErrorDescription = (result: unknown): string => {
 };
 
 /** Compact user-facing copy for fetch_file failures; the full response remains in the disclosure and audit trail. */
-export const fetchFileErrorPresentation = (result: unknown): FetchFileErrorPresentation => {
+export const fetchFileErrorPresentation = (result: unknown, locale = "en"): FetchFileErrorPresentation => {
   const message =
     typeof result === "string"
       ? result.trim()
@@ -428,25 +429,24 @@ export const fetchFileErrorPresentation = (result: unknown): FetchFileErrorPrese
   if (separator > 0) {
     return { label: message.slice(0, separator), description: message.slice(separator + 3) };
   }
-  return {
-    label: "File download failed",
-    description: message || "The linked file could not be imported into this chat.",
-  };
+  const t = aiChatMessages(locale);
+  return { label: t.fileDownloadFailed, description: message || t.fileNotImported };
 };
 
 /** End-user copy for memory updates; full tool input/result remains available in persisted audit data. */
-export const memoryToolPresentation = (args: unknown, result: unknown): MemoryToolPresentation | null => {
+export const memoryToolPresentation = (args: unknown, result: unknown, locale = "en"): MemoryToolPresentation | null => {
   if (!isRecord(args) || !["list", "search", "add", "update", "delete"].includes(String(args.action))) return null;
   if (!isRecord(result) || typeof result.ok !== "boolean" || typeof result.message !== "string") return null;
+  const t = aiChatMessages(locale);
 
-  if (!result.ok) return { label: "Memory not updated", description: result.message, failed: true };
+  if (!result.ok) return { label: t.memoryNotUpdated, description: result.message, failed: true };
   if (args.action === "add")
-    return { label: "Remembered", description: typeof args.content === "string" ? args.content.trim() : result.message, failed: false };
+    return { label: t.remembered, description: typeof args.content === "string" ? args.content.trim() : result.message, failed: false };
   if (args.action === "update")
-    return { label: "Updated memory", description: result.message.replace(/^Updated memory:\s*/, ""), failed: false };
+    return { label: t.memoryUpdated, description: result.message.replace(/^Updated memory:\s*/, ""), failed: false };
   if (args.action === "delete")
-    return { label: "Forgot memory", description: result.message.replace(/^Forgot memory:\s*/, ""), failed: false };
-  return { label: args.action === "search" ? "Searched memories" : "Listed memories", description: result.message, failed: false };
+    return { label: t.memoryForgotten, description: result.message.replace(/^Forgot memory:\s*/, ""), failed: false };
+  return { label: args.action === "search" ? t.memoriesSearched : t.memoriesListed, description: result.message, failed: false };
 };
 
 export const toolResultSummary = (message: AssistantToolResultMessage | null | undefined): string => {

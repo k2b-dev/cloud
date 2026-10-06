@@ -95,3 +95,84 @@ test("code approvals present the capability in the reader's language", async () 
   signal.abort();
   expect(await pending).toBe("Run stopped");
 });
+
+test("an approval from managed code reads as the app's localized review, never as raw JSON", async () => {
+  const { codeApprovalMessage } = await import("./code-approval-message");
+  const { AiChatActionsProvider, AiTurnBlockView } = await import("@k2b/cloud/ai/ui");
+  const request = {
+    status: "approval",
+    id: "00000000-0000-4000-8000-000000000004",
+    name: "mail.draft.create",
+    input: { subject: "Angebot" },
+    appId: "mail",
+    appName: "E-Mail",
+    appIcon: "ti ti-mail",
+    localId: "draft.create",
+    kind: "action",
+    schemaHash: "test",
+    approval: null,
+    title: "Mail-Entwurf erstellen",
+    review: {
+      message: "Die E-Mail wird als Entwurf gespeichert und nicht gesendet.",
+      details: [
+        { label: "Betreff", value: "Angebot" },
+        { label: "Inhalt", value: "Hallo\nanbei das Angebot.", display: "block" },
+      ],
+    },
+    allowAlways: false,
+    scope: null,
+  } satisfies CapabilityApproval;
+  const message = codeApprovalMessage(request, "de");
+  expect(message).toBe(
+    "E-Mail: Mail-Entwurf erstellen\nDie E-Mail wird als Entwurf gespeichert und nicht gesendet.\nBetreff: Angebot\nInhalt:\nHallo\nanbei das Angebot.",
+  );
+  // Without a review, the person still sees each input field.
+  expect(codeApprovalMessage({ ...request, review: null }, "de")).toBe("E-Mail: Mail-Entwurf erstellen\nsubject: Angebot");
+  const http = codeApprovalMessage(
+    {
+      type: "http",
+      name: "http.fetch:https://api.example.test",
+      id: "00000000-0000-4000-8000-000000000005",
+      url: "https://api.example.test/items",
+      method: "POST",
+      headers: { authorization: { secret: "API_TOKEN", prefix: "Bearer " } },
+      bodyBytes: 13,
+      bodyPreview: '{"name":"x"}',
+      bodyTruncated: false,
+    },
+    "de",
+  );
+  expect(http.split("\n")[0]).toBe("Externer HTTP-Aufruf: POST https://api.example.test/items");
+  expect(http).toContain("authorization: Bearer [Secret „API_TOKEN“]");
+  expect(http).toContain('Inhalt (13 B): {"name":"x"}');
+
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(AiChatActionsProvider, {
+          actions: { onApproval: () => undefined },
+          get children() {
+            return createComponent(AiTurnBlockView, {
+              active: true,
+              turnId: "turn",
+              block: {
+                id: "code",
+                kind: "tool",
+                callId: "code",
+                name: "code_run",
+                args: { code: "await mail.draft.create({ subject: 'Angebot' })" },
+                status: "awaiting_approval",
+                approval: { message, allowAlways: false },
+              },
+            });
+          },
+        });
+      },
+    }),
+  );
+  expect(html).toContain("Die E-Mail wird als Entwurf gespeichert und nicht gesendet.");
+  expect(html).toMatch(/<strong[^>]*>Betreff: <\/strong>(<!--[^>]*-->)*Angebot/);
+  expect(html).not.toContain("Code execution requests approval");
+  expect(html).not.toContain("&quot;status&quot;");
+});

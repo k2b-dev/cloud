@@ -38,6 +38,10 @@ const text = (value: unknown): string => (typeof value === "string" ? value : ""
 const number = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 const records = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
 const basename = (path: string): string => path.slice(path.lastIndexOf("/") + 1) || path;
+const useMessages = () => {
+  const locale = useLocale();
+  return () => aiChatMessages(locale());
+};
 
 function DetailSurface(props: { children: JSX.Element }) {
   return (
@@ -101,11 +105,12 @@ function SearchToolsView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const tools = () => records(result().tools);
-  const query = () => text(args().query) || "Tools";
+  const t = useMessages();
+  const query = () => text(args().query) || t().tools;
   return (
-    <CompletedActivity block={props.block} label={`Search tools: ${query()}`} description={`${tools().length} found`}>
+    <CompletedActivity block={props.block} label={t().searchTools({ query: query() })} description={t().found({ count: tools().length })}>
       <ResultList>
-        <Show when={tools().length > 0} fallback={<EmptyRow>No tools found.</EmptyRow>}>
+        <Show when={tools().length > 0} fallback={<EmptyRow>{t().noTools}</EmptyRow>}>
           <For each={tools()}>
             {(tool) => (
               <ResultRow
@@ -128,10 +133,11 @@ function ListAppsView(props: { block: ToolBlock }) {
     const value = result().apps;
     return isRecord(value) ? Object.entries(value) : [];
   };
+  const t = useMessages();
   return (
-    <CompletedActivity block={props.block} label="List apps" description={`${apps().length} available`}>
+    <CompletedActivity block={props.block} label={t().listApps} description={t().available({ count: apps().length })}>
       <ResultList>
-        <Show when={apps().length > 0} fallback={<EmptyRow>No capability apps available.</EmptyRow>}>
+        <Show when={apps().length > 0} fallback={<EmptyRow>{t().noApps}</EmptyRow>}>
           <For each={apps()}>{([appId, description]) => <ResultRow icon="ti-apps" title={appId} description={text(description)} />}</For>
         </Show>
       </ResultList>
@@ -145,13 +151,14 @@ function LoadToolsView(props: { block: ToolBlock }) {
     const value = result().titles;
     return isRecord(value) ? value : {};
   };
+  const t = useMessages();
   const groups = () =>
     (
       [
-        ["Loaded", result().loaded],
-        ["Already loaded", result().alreadyLoaded],
-        ["Missing", result().missing],
-        ["Evicted", result().evicted],
+        [t().toolsLoaded, result().loaded],
+        [t().toolsAlreadyLoaded, result().alreadyLoaded],
+        [t().toolsMissing, result().missing],
+        [t().toolsEvicted, result().evicted],
       ] as const
     ).flatMap(([label, value]) =>
       Array.isArray(value) && value.length > 0 ? [{ label, names: value.filter((name): name is string => typeof name === "string") }] : [],
@@ -161,7 +168,7 @@ function LoadToolsView(props: { block: ToolBlock }) {
     return Array.isArray(value) ? value.length : 0;
   };
   return (
-    <CompletedActivity block={props.block} label="Load tools" description={`${loadedCount()} loaded`}>
+    <CompletedActivity block={props.block} label={t().loadTools} description={t().loadedCount({ count: loadedCount() })}>
       <Show when={groups().length > 0}>
         <ResultList>
           <For each={groups()}>
@@ -179,8 +186,9 @@ function LoadToolsView(props: { block: ToolBlock }) {
 
 function LoadSkillView(props: { block: ToolBlock }) {
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
+  const t = useMessages();
   return (
-    <CompletedActivity block={props.block} label={`Loaded skill ${text(result().name)}`}>
+    <CompletedActivity block={props.block} label={t().loadedSkill({ name: text(result().name) })}>
       <DetailSurface>
         <p class="whitespace-pre-wrap px-2 py-1.5 leading-5 text-secondary">{text(result().description)}</p>
       </DetailSurface>
@@ -192,11 +200,16 @@ function SearchHelpView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const documents = () => records(result().documents);
-  const query = () => text(args().query) || "Help";
+  const t = useMessages();
+  const query = () => text(args().query) || t().help;
   return (
-    <CompletedActivity block={props.block} label={`Search help: ${query()}`} description={`${documents().length} found`}>
+    <CompletedActivity
+      block={props.block}
+      label={t().searchHelp({ query: query() })}
+      description={t().found({ count: documents().length })}
+    >
       <ResultList>
-        <Show when={documents().length > 0} fallback={<EmptyRow>No Help articles found.</EmptyRow>}>
+        <Show when={documents().length > 0} fallback={<EmptyRow>{t().noHelp}</EmptyRow>}>
           <For each={documents()}>
             {(document) => (
               <ResultRow
@@ -219,11 +232,12 @@ function ReadHelpView(props: { block: ToolBlock }) {
     const value = result().document;
     return isRecord(value) ? value : null;
   };
+  const t = useMessages();
   return (
     <CompletedActivity
       block={props.block}
-      label={document() ? `Read help: ${text(document()!.title)}` : "Read help"}
-      description={document() ? text(document()!.appName) || text(document()!.appId) : "Article not found"}
+      label={document() ? t().readHelpArticle({ title: text(document()!.title) }) : t().readHelp}
+      description={document() ? text(document()!.appName) || text(document()!.appId) : t().articleNotFound}
     />
   );
 }
@@ -233,14 +247,15 @@ function SearchProjectView(props: { block: ToolBlock }) {
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const items = () => records(result().items);
   const query = () => text(args().query);
+  const t = useMessages();
   return (
     <CompletedActivity
       block={props.block}
-      label={query() ? `Search Project: ${query()}` : "List Project sources"}
-      description={`${items().length} found${result().truncated === true ? "+" : ""}`}
+      label={query() ? t().searchProject({ query: query() }) : t().listProjectSources}
+      description={t().found({ count: items().length, more: result().truncated === true })}
     >
       <ResultList>
-        <Show when={items().length > 0} fallback={<EmptyRow>No Project sources found.</EmptyRow>}>
+        <Show when={items().length > 0} fallback={<EmptyRow>{t().noProjectSources}</EmptyRow>}>
           <For each={items()}>
             {(item) => {
               const kind = text(item.kind);
@@ -270,21 +285,23 @@ function SearchProjectView(props: { block: ToolBlock }) {
 
 function ReadProjectKnowledgeView(props: { block: ToolBlock }) {
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
-  return <CompletedActivity block={props.block} label={`Read Project knowledge: ${text(result().title) || "Entry"}`} />;
+  const t = useMessages();
+  return <CompletedActivity block={props.block} label={t().readProjectKnowledge({ title: text(result().title) || t().projectEntry })} />;
 }
 
 function ListFilesView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const files = () => records(result().files);
+  const t = useMessages();
   return (
     <CompletedActivity
       block={props.block}
-      label={`List files: ${text(args().path) || "/"}`}
-      description={`${files().length} found${result().truncated === true ? "+" : ""}`}
+      label={t().listFiles({ path: text(args().path) || "/" })}
+      description={t().found({ count: files().length, more: result().truncated === true })}
     >
       <ResultList>
-        <Show when={files().length > 0} fallback={<EmptyRow>No files found.</EmptyRow>}>
+        <Show when={files().length > 0} fallback={<EmptyRow>{t().noFiles}</EmptyRow>}>
           <For each={files()}>
             {(file) => {
               const path = text(file.path);
@@ -309,10 +326,11 @@ function FileOperationView(props: { block: ToolBlock; verb: string; resultPath?:
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const path = () => props.resultPath || text(result().path) || text(args().path);
   const size = () => number(result().size);
+  const t = useMessages();
   return (
     <CompletedActivity
       block={props.block}
-      label={`${props.verb}: ${basename(path()) || "File"}`}
+      label={`${props.verb}: ${basename(path()) || t().file}`}
       description={[path(), size() > 0 ? formatAiFileSize(size()) : ""].filter(Boolean).join(" · ")}
     />
   );
@@ -334,11 +352,12 @@ function ReadFileView(props: { block: ToolBlock }) {
     const t = aiChatMessages(locale());
     return end > start ? t.byteRange({ start: start.toLocaleString(locale()), end: end.toLocaleString(locale()) }) : t.read;
   };
+  const t = () => aiChatMessages(locale());
   return (
     <CompletedActivity
       block={props.block}
-      label={`Read file: ${basename(path())}`}
-      description={`${range()}${result().eof === true ? " · complete" : " · more available"}`}
+      label={t().readFile({ name: basename(path()) })}
+      description={`${range()} · ${result().eof === true ? t().fileComplete : t().fileMoreAvailable}`}
     />
   );
 }
@@ -346,15 +365,17 @@ function ReadFileView(props: { block: ToolBlock }) {
 function CalculateView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
-  return <CompletedActivity block={props.block} label={text(args().expression) || "Calculate"} description={text(result().result)} />;
+  const t = useMessages();
+  return <CompletedActivity block={props.block} label={text(args().expression) || t().calculate} description={text(result().result)} />;
 }
 
 function ViewImageView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const path = () => text(result().path) || text(args().path);
+  const t = useMessages();
   return (
-    <CompletedActivity block={props.block} label={`Inspect image: ${basename(path())}`} defaultOpen>
+    <CompletedActivity block={props.block} label={t().inspectImage({ name: basename(path()) })} defaultOpen>
       <DetailSurface>
         <p class="whitespace-pre-wrap px-2 py-1.5 leading-5 text-secondary">{text(result().description)}</p>
       </DetailSurface>
@@ -382,13 +403,19 @@ function CloudResourceView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const summary = () => text(result().summary);
+  const t = useMessages();
   return (
     <CompletedActivity
       block={props.block}
-      label={`Read resource: ${text(args().type)}:${text(args().id)}`}
+      label={t().readResource({ ref: `${text(args().type)}:${text(args().id)}` })}
       description={summary() || undefined}
     />
   );
+}
+
+function WriteFileView(props: { block: ToolBlock }) {
+  const t = useMessages();
+  return <FileOperationView block={props.block} verb={t().wroteFile} />;
 }
 
 export function SpecializedBuiltinToolBlock(props: { block: ToolBlock }) {
@@ -414,7 +441,7 @@ export function SpecializedBuiltinToolBlock(props: { block: ToolBlock }) {
     case "read_file":
       return <ReadFileView block={props.block} />;
     case "write_file":
-      return <FileOperationView block={props.block} verb="Wrote file" />;
+      return <WriteFileView block={props.block} />;
     case "calculate":
       return <CalculateView block={props.block} />;
     case "view_image":

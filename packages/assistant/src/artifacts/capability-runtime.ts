@@ -37,6 +37,8 @@ const Prepared = z.object({
   review: CapabilityActionReviewSchema.nullable(),
   allowAlways: z.boolean(),
   scope: z.string().nullable(),
+  /** Locale the person reviewed in; revalidation reviews in it again so a language switch is not a changed consequence. */
+  locale: z.string().optional(),
 });
 type Request = z.infer<typeof RuntimeCapabilityRequest>;
 type Row = { id: string; request: unknown; prepared: unknown; status: string; result: unknown };
@@ -126,6 +128,7 @@ export const runtimeCapabilities = {
       review,
       allowAlways: !untrusted && scope !== null,
       scope,
+      locale: caller.locale ?? undefined,
       ...(untrusted ? { resource: { id: resource.id, title: resource.title } } : {}),
     });
     await sql.begin(async (db) => {
@@ -193,7 +196,7 @@ export const runtimeCapabilities = {
       if (target.action?.review) {
         const response = await reviewCapabilityAction(
           { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
-          caller,
+          { ...caller, locale: prepared.locale ?? caller.locale },
         );
         if (!response.ok) throw new Error(response.error.message);
         currentReview = CapabilityActionReviewSchema.parse(response.data);

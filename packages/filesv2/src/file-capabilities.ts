@@ -14,6 +14,7 @@ import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, isServiceError, ok, text } from "@k2b/stdlib";
 import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
+import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
 import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry } from "./contracts";
 import { entryRef } from "./data/references";
@@ -52,27 +53,28 @@ const readActor = (c: CapabilityExecutionContext) => {
   if (c.actor.kind !== "user") throw err.forbidden("Files require a signed-in user.");
   return c.actor;
 };
-async function domain<T>(run: () => Promise<T>): Promise<T> {
+/** Storage failures keep their stable Files code and carry the message Files shows, in the caller's locale. */
+async function domain<T>(c: { locale: string }, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (e) {
-    if (e instanceof FilesError) throw { code: e.code, message: e.code, status: e.status };
+    if (e instanceof FilesError) throw { code: e.code, message: errorMessage(e.code, c.locale), status: e.status };
     if (e instanceof FilegateError) {
       const code = filegateErrorCode(e);
       const status = code === "forbidden" ? 403 : code === "not_found" ? 404 : code === "unavailable" ? 503 : 409;
-      throw { code, message: code, status };
+      throw { code, message: errorMessage(code, c.locale), status };
     }
     throw e;
   }
 }
 /** Files reports a taken name as these 409 codes; provider.save answers all of them with the contract's one code. */
 const NAME_TAKEN = new Set(["path_conflict", "not_file", "write_conflict"]);
-async function saveDomain<T>(run: () => Promise<T>): Promise<T> {
+async function saveDomain<T>(c: { locale: string }, run: () => Promise<T>): Promise<T> {
   try {
-    return await domain(run);
+    return await domain(c, run);
   } catch (e) {
     if (isServiceError(e) && e.status === 409 && NAME_TAKEN.has(e.code))
-      throw { code: FILE_PROVIDER_NAME_CONFLICT, message: "A file or folder with this name already exists", status: 409 };
+      throw { code: FILE_PROVIDER_NAME_CONFLICT, message: filesCapabilityMessages(c.locale).nameTaken, status: 409 };
     throw e;
   }
 }
@@ -160,19 +162,19 @@ const uploadStream = <T>(receipt: (baseId: string, entry: FileEntry) => Promise<
   direction: "write" as const,
   maxBytes: CONTENT_STREAM_LIMIT,
   write: async (s: CapabilityStream, body: ReadableStream<Uint8Array>, c: CapabilityExecutionContext) =>
-    errors(async () => {
+    errors(c, async () => {
       const ref = uploadRef.parse(JSON.parse(s.id));
       const saved = await filesService.capabilityUpload(readActor(c), ref, body, c.signal);
       return receipt(ref.baseId, saved.entry);
     }),
   status: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-    errors(async () => {
+    errors(c, async () => {
       const ref = uploadRef.parse(JSON.parse(s.id));
       const status = await filesService.capabilityUploadStatus(readActor(c), ref);
       return status.state === "completed" ? { state: "completed" as const, result: await receipt(ref.baseId, status.entry) } : status;
     }),
   abort: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-    domain(() => filesService.abortUpload(readActor(c), uploadRef.parse(JSON.parse(s.id)))),
+    domain(c, () => filesService.abortUpload(readActor(c), uploadRef.parse(JSON.parse(s.id)))),
 });
 const sourceRef = z.object({ id: z.string().max(512), revision: z.string().max(512) }).strict();
 const uuidKey = (key: string) => {
@@ -208,7 +210,7 @@ export const fileQueries = {
     }),
     openWorld: false,
     run: async (input: { after?: string }, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         const available = (await filesService.bases(readActor(c))).items
           .sort((a, b) => (a.id < b.id ? -1 : 1))
           .filter((i) => !input.after || i.id > input.after);
@@ -223,7 +225,7 @@ export const fileQueries = {
     data: z.object({ baseId: Base, path: Path, items: z.array(Item), next: z.string().nullable() }),
     openWorld: false,
     run: async (input: z.infer<typeof BrowseQuerySchema> & { baseId: string }, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         const page = await filesService.list(readActor(c), input);
         return ok({
           data: {
@@ -242,7 +244,7 @@ export const fileQueries = {
     data: z.object({ baseId: Base, path: Path, items: z.array(Item), next: z.string().nullable() }),
     openWorld: false,
     run: async (input: z.infer<typeof BrowseQuerySchema> & { baseId: string; q: string }, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         const page = await filesService.search(readActor(c), { ...input, scope: "tree" });
         return ok({
           data: {
@@ -275,7 +277,7 @@ export const fileQueries = {
     }),
     openWorld: false,
     run: async (input: { baseId: string; after?: string }, c: CapabilityExecutionContext) =>
-      domain(async () => ok({ data: await filesService.trash(readActor(c), input) })),
+      domain(c, async () => ok({ data: await filesService.trash(readActor(c), input) })),
   },
   "content.read": {
     title: "Read file content",
@@ -287,16 +289,16 @@ export const fileQueries = {
       direction: "read" as const,
       maxBytes: CONTENT_STREAM_LIMIT,
       read: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-        domain(async () => {
+        domain(c, async () => {
           const source = sourceRef.parse(JSON.parse(s.id));
           return filesService.capabilityDownload(readActor(c), source, c.signal);
         }),
     },
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         const file = await filesService.entryById(readActor(c), input.id);
-        if (file.entry.directory) return fail(err.badInput("Choose a file, not a folder"));
-        if (file.entry.size > CONTENT_STREAM_LIMIT) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
+        if (file.entry.directory) return fail(err.badInput(filesCapabilityMessages(c.locale).chooseFile));
+        if (file.entry.size > CONTENT_STREAM_LIMIT) return fail(err.badInput(filesCapabilityMessages(c.locale).tooLarge));
         return ok({
           ...(await result(file.base.id, file.entry)),
           stream: {
@@ -324,7 +326,7 @@ export const fileQueries = {
     }),
     openWorld: false,
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         return ok({ data: await filesService.downloadById(readActor(c), input.id) });
       }),
   },
@@ -336,7 +338,7 @@ export const fileQueries = {
     data: FileProviderListDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof FileProviderListInputSchema>, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         if (input.parent === undefined) return ok({ data: await providerRoot(c, input) });
         // A Filegate read may join folders and files on one page; half the limit keeps that page within it.
         const page = await filesService.folder(readActor(c), {
@@ -356,34 +358,38 @@ export const fileQueries = {
   },
 };
 
-const successfulEntry = <T>(value: { results: ({ ok: true; entry: T } | { ok: false; error: string })[] }) => {
+const successfulEntry = <T>(c: { locale: string }, value: { results: ({ ok: true; entry: T } | { ok: false; error: string })[] }) => {
   const first = value.results[0];
-  if (!first?.ok) throw err.conflict(first?.error ?? "File operation failed");
+  if (!first?.ok) throw { code: "CONFLICT", message: errorMessage(first?.error ?? "operation_unresolved", c.locale), status: 409 };
   return first.entry;
 };
 type Review = { message: string; details: { label: string; value: string }[] };
-/** Review copy in the caller's locale: storage bases by the name Files shows, paths as people read them. */
+/** A review message holds at most 1,000 characters; names come from model input of up to 4,096. */
+const REVIEW_NAME_CHARS = 200;
+/**
+ * Review copy in the caller's locale: storage bases by the name Files shows, paths as people read them. Base names
+ * come from the actor's identities, so a review never inspects or provisions storage.
+ */
 const reviewText = async (c: CapabilityExecutionContext) => {
-  const locale = c.locale ?? "en";
-  const t = filesCapabilityMessages(locale);
-  const browser = browserMessages.resolve([locale]).t;
-  const bases = (await filesService.bases(readActor(c))).items;
+  const t = filesCapabilityMessages(c.locale);
+  const browser = browserMessages.resolve([c.locale]).t;
+  const bases = await filesService.baseNames(readActor(c));
   const base = (id: string) => {
     const found = bases.find((candidate) => candidate.id === id);
-    return found ? baseLabel(found, browser, locale) : id;
+    return found ? baseLabel(found, browser, c.locale) : id;
   };
   return {
     t,
-    name: (path: string) => path.split("/").at(-1) || path,
+    name: (path: string) => text.truncate(path.split("/").at(-1) || path, REVIEW_NAME_CHARS, "middle"),
     path: (path: string) => path || t.topLevel,
-    size: (bytes: number) => text.pprintBytes(bytes, { locale }),
+    size: (bytes: number) => text.pprintBytes(bytes, { locale: c.locale }),
     base,
   };
 };
 function action<S extends z.ZodType>(
   title: string,
   input: S,
-  review: (input: z.output<S>, copy: Awaited<ReturnType<typeof reviewText>>) => Review,
+  review: (input: z.output<S>, copy: Awaited<ReturnType<typeof reviewText>>, c: CapabilityExecutionContext) => Review | Promise<Review>,
   run: (input: z.output<S>, c: CapabilityExecutionContext) => Promise<CapabilityResult<z.infer<typeof Result>>>,
 ): CapabilityActionDefinition<S, typeof Result> {
   return {
@@ -394,8 +400,8 @@ function action<S extends z.ZodType>(
     openWorld: false,
     destructive: false,
     idempotency: "required",
-    review: async (value, c) => domain(async () => ok(review(value, await reviewText(c)))),
-    run: async (value, c) => domain(async () => ok(await run(value, c))),
+    review: async (value, c) => domain(c, async () => ok(await review(value, await reviewText(c), c))),
+    run: async (value, c) => domain(c, async () => ok(await run(value, c))),
   };
 }
 export const fileActions = {
@@ -409,7 +415,7 @@ export const fileActions = {
     destructive: false,
     idempotency: "required" as const,
     review: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         await filesService.list(readActor(c), { baseId: input.baseId, path: input.path.split("/").slice(0, -1).join("/") });
         const r = await reviewText(c);
         const name = r.name(input.path);
@@ -423,8 +429,9 @@ export const fileActions = {
         });
       }),
     run: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
-      domain(async () => {
-        if (input.onConflict === "overwrite" && !input.expectedRevision) return fail(err.badInput("Replacing requires expectedRevision"));
+      domain(c, async () => {
+        if (input.onConflict === "overwrite" && !input.expectedRevision)
+          return fail(err.badInput(filesCapabilityMessages(c.locale).replaceNeedsRevision));
         const session = await filesService.upload(readActor(c), {
           ...input,
           idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c).user.id, c.idempotencyKey!])),
@@ -453,7 +460,7 @@ export const fileActions = {
     destructive: false,
     idempotency: "required" as const,
     review: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
-      domain(async () => {
+      domain(c, async () => {
         const folder = await filesService.folderLocation(readActor(c), input.parent);
         const r = await reviewText(c);
         return ok({
@@ -466,8 +473,8 @@ export const fileActions = {
         });
       }),
     run: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
-      saveDomain(async () => {
-        if (input.size > CONTENT_STREAM_LIMIT) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
+      saveDomain(c, async () => {
+        if (input.size > CONTENT_STREAM_LIMIT) return fail(err.badInput(filesCapabilityMessages(c.locale).tooLarge));
         const actor = readActor(c);
         const folder = await filesService.folderLocation(actor, input.parent);
         const session = await filesService.upload(actor, {
@@ -502,20 +509,26 @@ export const fileActions = {
       ],
     }),
     async (input, c) => {
-      successfulEntry(await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
-      return { data: { baseId: input.baseId }, summary: filesCapabilityMessages(c.locale ?? "en").movedToTrash };
+      successfulEntry(c, await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
+      return { data: { baseId: input.baseId }, summary: filesCapabilityMessages(c.locale).movedToTrash };
     },
   ),
   "trash.restore": action(
     "Restore entry from trash",
     z.object({ baseId: Base, id: z.string().max(5500).describe("ID returned by trash.list."), path: Path.optional() }).strict(),
-    (input, r) => ({
-      message: r.t.restoreEntry,
-      details: [
-        { label: r.t.storage, value: r.base(input.baseId) },
-        { label: r.t.restoreTo, value: input.path === undefined ? r.t.originalPlace : r.path(input.path) },
-      ],
-    }),
+    async (input, r, c) => {
+      const entry = await filesService.trashEntry(readActor(c), input);
+      const destination = input.path ?? entry.original;
+      // Without a known origin the restore itself would fail; say so before anyone approves it.
+      if (destination === null) throw new FilesError("restore_destination_required", 400);
+      return {
+        message: r.t.restoreEntry({ name: r.name(entry.name) }),
+        details: [
+          { label: r.t.storage, value: r.base(input.baseId) },
+          { label: r.t.restoreTo, value: r.path(destination) },
+        ],
+      };
+    },
     async (input, c) => {
       const saved = await filesService.restoreTrash(readActor(c), input);
       return result(input.baseId, saved.entry);
@@ -540,7 +553,7 @@ export const fileActions = {
     "Rename entry",
     Target.extend({ name: z.string().min(1).max(255).describe("New name without directory separators.") }).strict(),
     (input, r) => ({
-      message: r.t.renameEntry({ name: r.name(input.path), newName: input.name }),
+      message: r.t.renameEntry({ name: r.name(input.path), newName: r.name(input.name) }),
       details: [
         { label: r.t.storage, value: r.base(input.baseId) },
         { label: r.t.path, value: r.path(input.path) },
@@ -566,7 +579,7 @@ export const fileActions = {
     async (input, c) =>
       result(
         input.baseId,
-        successfulEntry(await filesService.move(readActor(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
+        successfulEntry(c, await filesService.move(readActor(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
       ),
   ),
   "entry.copy": action(
@@ -585,6 +598,7 @@ export const fileActions = {
       result(
         input.targetBaseId,
         successfulEntry(
+          c,
           await filesService.copy(readActor(c), {
             baseId: input.baseId,
             paths: [input.path],

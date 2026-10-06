@@ -9,6 +9,7 @@ import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { apiError } from "./api/api-error";
+import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
 import { filesCapabilityPresentation } from "./capability-presentation";
 import { entryRef } from "./data/references";
@@ -79,9 +80,10 @@ export const filesCapabilities = defineCapabilities({
           if (!(error instanceof FilesError || error instanceof FilegateError)) throw error;
           // Storage failures answer as in the Files API, never with Filegate's own status or message.
           const { code, status } = apiError(error);
-          if (status === 404) return fail(err.notFound("File entry"));
-          if (status === 403) return fail(err.forbidden(code));
-          throw { code, message: code, status };
+          const message = errorMessage(code, context.locale);
+          if (status === 404) return fail({ ...err.notFound("File entry"), message });
+          if (status === 403) return fail(err.forbidden(message));
+          throw { code, message, status };
         }
       },
     },

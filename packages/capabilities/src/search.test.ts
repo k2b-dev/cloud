@@ -55,3 +55,16 @@ test("failed catalog loads are retryable and cursor loops fail closed", async ()
   await expect(loop("en")).rejects.toThrow("cursor did not advance");
   expect(reads).toBe(2);
 });
+
+test("catalog search metadata reads in the requested language", async () => {
+  const load = createSearchCatalogLoader(async () => ({
+    ok: true,
+    data: { protocolVersion: 2, apps: [app("catalog")], page: { hasMore: false } },
+  }));
+  const [, operation] = await load("de-DE");
+  expect(operation?.metadata).toEqual([
+    { label: "App", value: "catalog" },
+    { label: "ID", value: expect.stringMatching(/^catalog\./) },
+    { label: "Typ", value: "Query" },
+  ]);
+});

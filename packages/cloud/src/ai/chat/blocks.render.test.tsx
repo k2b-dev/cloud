@@ -210,6 +210,21 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain(">Response</p>");
     expect(html).not.toContain("k2b-content-structured-data");
     expect(hasOpenDetails(html)).toBe(false);
+
+    const german = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiTurnBlockView, {
+            block: { ...completed, result: { tools: [] }, args: {} },
+            turnId: "turn-1",
+          });
+        },
+      }),
+    );
+    expect(german).toContain("Werkzeuge suchen: Werkzeuge");
+    expect(german).toContain("0 gefunden");
+    expect(german).toContain("Keine Werkzeuge gefunden.");
   });
 
   test("renders a loaded Skill with only its name and description", () => {

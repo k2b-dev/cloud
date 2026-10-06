@@ -189,6 +189,16 @@ describe("memory tool presentation", () => {
     });
   });
 
+  test("labels each change in the reader's language", () => {
+    expect(
+      memoryToolPresentation({ action: "add", content: "Ein Fakt" }, { ok: true, message: "Remembered: Ein Fakt" }, "de-DE"),
+    ).toMatchObject({ label: "Gemerkt", description: "Ein Fakt" });
+    expect(fetchFileErrorPresentation({}, "de")).toEqual({
+      label: "Datei konnte nicht geladen werden",
+      description: "Die verlinkte Datei konnte nicht in diesen Chat übernommen werden.",
+    });
+  });
+
   test("keeps failed updates visible", () => {
     expect(memoryToolPresentation({ action: "add", content: "A fact" }, { ok: false, message: "Memory is full." })).toEqual({
       label: "Memory not updated",
