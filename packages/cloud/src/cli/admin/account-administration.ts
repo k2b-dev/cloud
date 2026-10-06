@@ -24,7 +24,7 @@ export const accountAdministrationCommands = [
         throw new Error(
           cliText(ctx, {
             en: "Account administration changes require --yes.",
-            de: "Änderungen an der Account-Verwaltung erfordern --yes.",
+            de: "Änderungen an der Account-Administration erfordern --yes.",
           }),
         );
       const input = await readCliInput(flags.config, { required: true, label: "Account administration configuration" });
@@ -39,7 +39,7 @@ export const accountAdministrationCommands = [
         }),
       );
       if (!printStructured(ctx, { saved: true }))
-        ctx.print(cliText(ctx, { en: "Account administration saved.", de: "Account-Verwaltung gespeichert." }));
+        ctx.print(cliText(ctx, { en: "Account administration saved.", de: "Account-Administration gespeichert." }));
     },
   }),
 ];

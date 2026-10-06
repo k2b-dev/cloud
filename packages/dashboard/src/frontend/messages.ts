@@ -76,7 +76,7 @@ export const dashboardMessages = i18n.define({
       focusWidgets: "Widgets im Fokus",
       overviewWidgets: "Übersichts-Widgets",
       contextWidgets: "Kontext-Widgets",
-      adminDescription: "Plattformverwaltung, App-Einstellungen, Protokolle und Gateway-Steuerung.",
+      adminDescription: "Plattformadministration, App-Einstellungen, Protokolle und Gateway-Steuerung.",
       saveSettingsFailed: "Die Dashboard-Einstellungen konnten nicht gespeichert werden.",
       addShortcut: "Verknüpfung hinzufügen",
       editDashboard: "Dashboard bearbeiten",

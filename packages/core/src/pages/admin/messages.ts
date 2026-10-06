@@ -141,7 +141,7 @@ export const adminMessages = i18n.define({
       registeredServices: ({ count }) =>
         i18n.plural(count, "de", { one: `${count} registrierter Dienst`, other: `${count} registrierte Dienste` }),
       appAdminAreas: ({ count }) =>
-        i18n.plural(count, "de", { one: `${count} App-Verwaltungsbereich`, other: `${count} App-Verwaltungsbereiche` }),
+        i18n.plural(count, "de", { one: `${count} App-Administrationsbereich`, other: `${count} App-Administrationsbereiche` }),
       startHere: "Schnelleinstieg",
       chooseTask: "Wähle die Aufgabe aus, die du erledigen möchtest.",
       operations: "Betrieb",
@@ -159,7 +159,7 @@ export const adminMessages = i18n.define({
       peopleAndAccessDescription: "Verwalte Konten, Rollen, Gruppen und deren Lebenszyklus.",
       platformConfiguration: "Plattformkonfiguration",
       platformConfigurationDescription: "Instanzweite Einstellungen nach Verwaltungsaufgabe.",
-      appAdministration: "App-Verwaltung",
+      appAdministration: "App-Administration",
       appAdministrationDescription: "Einstellungen und Wartung einzelner Apps.",
       generalSettings: "Allgemeine Einstellungen",
       generalSettingsDescription: "Branding, Sprache, Startseite und Verhalten der Instanz.",

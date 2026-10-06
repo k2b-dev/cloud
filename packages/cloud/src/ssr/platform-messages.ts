@@ -72,7 +72,7 @@ export const platformMessages = i18n.define({
       clearSearch: "Clear search",
     },
     de: {
-      admin: "Verwaltung",
+      admin: "Administration",
       platformAdministration: "Plattform verwalten.",
       start: "Start",
       overview: "Übersicht",
@@ -82,7 +82,7 @@ export const platformMessages = i18n.define({
       appCredentials: "App-Zugänge",
       ai: "KI",
       settings: "Einstellungen",
-      appAdmin: "App-Verwaltung",
+      appAdmin: "App-Administration",
       userManagement: "Accounts & Anmeldung",
       accountSignIn: "Anmeldung",
       accountRegistration: "Registrierung & Anfragen",
