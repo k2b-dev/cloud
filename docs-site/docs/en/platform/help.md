@@ -179,7 +179,11 @@ reader's language), Notebooks, and Markdown PDF exports. See
 
 Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
 email. Each link then renders as an ordinary anchor around its text instead of
-the bracketed Cloud link label.
+the bracketed Cloud link label. Email drops the screen-reader styling, so an
+untitled callout shows its type name there as text. HTML that Cloud renders
+without one reader's locale, such as notification batches, announcements, and
+messages written in Mail, names untitled callouts in English; give those
+callouts a title in the readers' language.
 
 The Help renderer also:
 

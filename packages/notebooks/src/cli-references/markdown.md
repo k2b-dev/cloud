@@ -95,7 +95,7 @@ Export the notebook first. Deleting it cannot be undone.
 :::
 ```
 
-The types are `note`, `info`, `success`, `warning`, and `danger`. The opening line holds `:::`, the type, and an optional plain-text title, such as `:::danger Before deleting`; the title is the visible heading. Without a title, a callout shows its type through color only, so start the text with a bold label when readers need one. Close it with `:::` on its own line, indented no more than the opening line. Callouts follow the same rules in every Cloud app that renders Markdown, such as Spaces descriptions and comments.
+The types are `note`, `info`, `success`, `warning`, and `danger`. The opening line holds `:::`, the type, and an optional plain-text title, such as `:::danger Before deleting`; the title is the visible heading. Without a title, a callout shows its type through color only, so start the text with a bold label when readers need one. Close it with `:::` on its own line, indented no more than the opening line; without that line, Book marks the callout as an invalid block and shows the rest of the note as source. Callouts follow the same rules in every Cloud app that renders Markdown, such as Spaces descriptions and comments, where an unclosed callout stays plain text.
 
 Book renders full Markdown inside a callout, but the editor preview shows only bold, italic, inline code, and line breaks. Keep callouts to short text and put lists or tables after them.
 

@@ -330,7 +330,7 @@ markdown "Operating notes" span 12 {
 }
 ```
 
-The title is optional. Content must be enclosed in triple double quotes.
+The title is optional. Content must be enclosed in triple double quotes. The content may hold info blocks, such as `:::warning` on its own line, the text, and `:::` to close; they render as calm notices with the same rules as in Notebooks and Spaces.
 
 ## Compile, save, and inspect
 

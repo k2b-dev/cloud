@@ -5,10 +5,29 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # Deprecations and migrations
+
+## Info blocks follow one grammar
+
+Markdown info blocks (`:::note`, `:::info`, `:::success`, `:::warning`, and
+`:::danger`) follow one grammar in `MarkdownView`, the shared
+`markdown.render()` helpers, Help, Notebooks, and PDF exports. Stored content
+that relied on the older rules of one renderer can look different:
+
+| Before | Now |
+| --- | --- |
+| The shared renderer drew a block inside a list item | Blocks work at the top level only; inside a list, a quote, or another block the text stays as written |
+| A line that starts with `:::`, such as `:::trailing`, closed a block in the shared renderer | Only a line that holds just `:::` closes a block |
+| The shared renderer read only bold, emphasis, and inline code in the body | The body is ordinary Markdown, including lists, links, and code |
+| A block right after a paragraph line stayed paragraph text in the shared renderer | It starts a block, as in Notebooks |
+| Notebooks showed `:::warning Before deleting` and `:::Warning` as plain text | Both render: the title is the visible heading, and the type takes any letter case |
+
+Move a block out of a list, or end it with a bare `:::` line, to keep it
+rendering. See [Markdown content](/en/ui/content/markdown#info-blocks) for the
+exact rules.
 
 ## Assistant live updates use the shared live layer
 

@@ -8,7 +8,7 @@ import { helpApiMessages } from "./help-messages";
 export type HelpRouteDependencies = {
   help?: HelpReaderFactory;
   authenticate?: MiddlewareHandler<AuthContext>;
-  renderMarkdown?: (markdown: string) => string;
+  renderMarkdown?: (markdown: string, locale: string) => string;
 };
 
 export const createHelpRoutes = (dependencies: HelpRouteDependencies = {}) => {
@@ -34,7 +34,7 @@ export const createHelpRoutes = (dependencies: HelpRouteDependencies = {}) => {
         id: document.documentId,
         title: document.title,
         markdown: document.markdown,
-        html: (dependencies.renderMarkdown ?? renderHelpMarkdown)(document.markdown),
+        html: (dependencies.renderMarkdown ?? renderHelpMarkdown)(document.markdown, document.locale),
       };
       return c.json(payload);
     });

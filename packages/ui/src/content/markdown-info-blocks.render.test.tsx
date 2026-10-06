@@ -11,10 +11,10 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const { Lexer, Marked } = await import("marked");
 const { LocaleProvider } = await import("../intl/locale");
 const { default: MarkdownView, renderSafeMarkdown } = await import("./MarkdownView");
-const { renderMarkdownInfoBlock, scanMarkdownInfoBlock } = await import("./markdown-info-blocks");
-const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-parity.css")).text();
+const { markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } = await import("./markdown-info-blocks");
 
 const view = (markdown: string, locale?: string) =>
   renderToString(() =>
@@ -106,8 +106,109 @@ describe("MarkdownView info blocks", () => {
     expect(scanMarkdownInfoBlock(":::note\nBody\n  :::")).toMatchObject({ closed: false, length: ":::note\nBody\n  :::".length });
   });
 
-  test("the body's outer margins collapse inside the card", () => {
-    expect(contentCss).toMatch(/\.k2b-content-markdown \.k2b-notice-card__body > :first-child \{\s*margin-block-start: 0;/);
-    expect(contentCss).toMatch(/\.k2b-content-markdown \.k2b-notice-card__body > :last-child \{\s*margin-block-end: 0;/);
+  test("the type takes any letter case and renders lowercase", () => {
+    expect(renderSafeMarkdown(":::WARNING\nBody\n:::")).toBe(renderMarkdownInfoBlock({ type: "warning", bodyHtml: "<p>Body</p>\n" }));
+    expect(scanMarkdownInfoBlock(":::Note Title\nBody\n:::")).toMatchObject({ type: "note", title: "Title", closed: true });
+  });
+
+  test("a line of inline HTML continues the body's paragraph and cannot hide the closing line", () => {
+    expect(renderSafeMarkdown(":::note\nLine one\n<br>\n:::\n\nafter")).toBe(
+      `${renderMarkdownInfoBlock({ type: "note", bodyHtml: "<p>Line one\n&lt;br&gt;</p>\n" })}<p>after</p>\n`,
+    );
+    // Block HTML still keeps its lines, as it would anywhere else.
+    expect(scanMarkdownInfoBlock(":::note\n<div>\n:::\n</div>\n\n:::")).toMatchObject({ body: "<div>\n:::\n</div>\n", closed: true });
+  });
+
+  test("code in a list item cannot close an indented block, but a line that leaves the item can", () => {
+    expect(scanMarkdownInfoBlock("  :::note\n- item\n\n  ```\n  :::\n  ```\n  :::\nafter")).toMatchObject({
+      body: "- item\n\n  ```\n  :::\n  ```",
+      closed: true,
+    });
+    expect(scanMarkdownInfoBlock(":::note\n- item\n  ```\n  code\n:::\nafter")).toMatchObject({
+      body: "- item\n  ```\n  code",
+      closed: true,
+    });
+  });
+
+  test("the scanner accepts any line endings and counts the source as given", () => {
+    const source = ":::note\r\n~~~\r\n:::\r\n~~~\r\n:::\r\nAfter";
+    const block = scanMarkdownInfoBlock(source);
+
+    expect(block).toMatchObject({ body: "~~~\n:::\n~~~", closed: true });
+    expect(source.slice(block?.length)).toBe("After");
+  });
+
+  test("a document without a closed block renders as if blocks did not exist", () => {
+    const plain = new Marked();
+    const blocks = new Marked(markdownInfoBlocks());
+    for (const source of [
+      ":::note\ntext\n".repeat(20),
+      "  :::note\n- a\n".repeat(5),
+      "> quote\n   :::\n===\n:::info\n<br>\n| - | - |\n===\n:::",
+      "Title\n:::note\n---",
+    ]) {
+      expect(blocks.parse(source), source).toBe(plain.parse(source) as string);
+    }
+  });
+
+  test("paragraphs end only at blocks that close, and a setext underline cannot swallow one", () => {
+    const [extension] = markdownInfoBlocks().extensions ?? [];
+    if (!extension || !("start" in extension) || !extension.start) throw new Error("the extension has a start function");
+    const start = extension.start;
+    let splits = 0;
+    const counting = new Marked({
+      ...markdownInfoBlocks(),
+      extensions: [
+        {
+          ...extension,
+          start(source) {
+            const index = start.call(this, source);
+            if (typeof index === "number") splits++;
+            return index;
+          },
+        },
+      ],
+    });
+
+    counting.parse(":::note\ntext\n".repeat(50));
+    expect(splits).toBe(0);
+    const html = counting.parse("x\n:::note\nb\n:::\n".repeat(50)) as string;
+    expect(splits).toBe(50);
+    expect(html.match(/<aside /g)?.length).toBe(50);
+    expect(renderSafeMarkdown("Intro\n:::note\nBody\n:::\n---")).toBe(
+      `<p>Intro</p>\n${renderMarkdownInfoBlock({ type: "note", bodyHtml: "<p>Body</p>\n" })}<hr>\n`,
+    );
+  });
+
+  test("documents with many openers render in linear time", () => {
+    // Each of these took tens of seconds while every opener rescanned the rest of the document.
+    for (const source of [":::note\ntext\n".repeat(1600), "x\n:::note\nb\n:::\n".repeat(1500), "  :::note\n- a\n".repeat(1600)]) {
+      const started = performance.now();
+      renderSafeMarkdown(source);
+      expect(performance.now() - started).toBeLessThan(2_000);
+    }
+  });
+
+  test("scanning keeps no state between documents", () => {
+    // The tokenizer's lexer queues inline work for every list item; a shared one would grow forever.
+    const inline = Lexer.prototype.inline;
+    const lexers = new Set<InstanceType<typeof Lexer>>();
+    Lexer.prototype.inline = function (this: InstanceType<typeof Lexer>, ...args: Parameters<typeof inline>) {
+      lexers.add(this);
+      return inline.apply(this, args);
+    };
+    try {
+      for (let index = 0; index < 100; index++) scanMarkdownInfoBlock(":::note\n- a list item\n> a quote\n:::");
+    } finally {
+      Lexer.prototype.inline = inline;
+    }
+    expect(lexers.size).toBe(100);
+    expect(Math.max(...[...lexers].map((lexer) => lexer.inlineQueue.length))).toBeLessThanOrEqual(2);
+  });
+
+  test("locales that share a UI catalog share one extension", () => {
+    expect(markdownInfoBlocks({ locale: "de-x-private" })).toBe(markdownInfoBlocks({ locale: "de" }));
+    expect(markdownInfoBlocks({ locale: "en-x-000001" })).toBe(markdownInfoBlocks({ locale: "en" }));
+    expect(markdownInfoBlocks({ locale: "de" })).not.toBe(markdownInfoBlocks({ locale: "en" }));
   });
 });

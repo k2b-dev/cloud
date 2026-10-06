@@ -8,7 +8,7 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { dispatchWorkspaceEvent } from "../../[id]/_components/sidebar/workspace-events";
 import type { BlockPreviewResult } from "./query-blocks";
 
-// The notebook parsers share @k2b/ui's info-block grammar; its browser build needs the DOM globals before it loads.
+// The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
 const { extractNotebookDirectiveRanges } = await import("../../../lib/query-blocks");
 loading.cleanup();

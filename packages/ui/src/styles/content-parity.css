@@ -1766,15 +1766,6 @@
   margin-block: 1.1428571em;
 }
 
-/* An info block's body is ordinary Markdown; its outer margins would read as empty rows. */
-.k2b-ui .k2b-content-markdown .k2b-notice-card__body > :first-child {
-  margin-block-start: 0;
-}
-
-.k2b-ui .k2b-content-markdown .k2b-notice-card__body > :last-child {
-  margin-block-end: 0;
-}
-
 .k2b-ui :where(.k2b-content-markdown[data-heading-scale="compact"]) :where(p) {
   margin-block: 0.5em;
 }

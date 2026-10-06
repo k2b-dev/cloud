@@ -20,6 +20,9 @@ describe("Markdown info blocks", () => {
     expect(renderMarkdownSync(":::warning\nBody\n:::")).toContain('<span class="k2b-sr-only">Warning: </span>');
     expect(renderMarkdownSync(":::warning\nBody\n:::", { locale: "de" })).toContain('<span class="k2b-sr-only">Warnung: </span>');
     expect(renderHelpMarkdown(":::danger\nBody\n:::", "de")).toContain('<span class="k2b-sr-only">Gefahr: </span>');
+    // Any tag a request may send resolves to the catalog that serves it.
+    expect(renderMarkdownSync(":::warning\nBody\n:::", { locale: "de-x-000001" })).toContain('<span class="k2b-sr-only">Warnung: </span>');
+    expect(renderMarkdownSync(":::warning\nBody\n:::", { locale: "fr-x-000001" })).toContain('<span class="k2b-sr-only">Warning: </span>');
   });
 
   test("an explicit title is the visible heading and names the block on its own", () => {
