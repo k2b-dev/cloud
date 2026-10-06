@@ -5,7 +5,7 @@ section: Reference
 order: 1276
 description: Display account categories, manage Linux identities and remove a person's mobile app phones through supported APIs.
 tags: [accounts, api, linux]
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Account administration API
@@ -167,7 +167,7 @@ name requirements and CLI examples.
 ## Remove phones from the mobile app
 
 > **Preview:** the mobile app is not released yet. This contract may still
-> change in a minor release.
+> change until it is, without counting as a breaking change.
 
 Administrators list and remove another account's phones in the mobile app
 through the Accounts API. Both routes require the `admin` role. An
@@ -187,6 +187,9 @@ the phone's app sessions in the same transaction, so every application's
 validator rejects them at once; the app then shows that the phone was signed
 out. Cloud audits the removal as `auth.pwa.device.revoke` with the
 administrator as actor and no notification is sent.
+
+`cld accounts users app-devices list` and `remove` call these routes and
+print the response with `--json`.
 
 Both routes call `pwaDevices.listUserDevices(admin, userId)` and
 `pwaDevices.revokeUserDevice(admin, userId, deviceId)` from

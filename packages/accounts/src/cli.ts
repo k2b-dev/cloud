@@ -196,6 +196,12 @@ type ServiceAccountsResponse = {
   pagination: Pagination;
 };
 
+type UserAppDevicesResponse = {
+  devices: Array<{ id: string; name: string; platform: "ios" | "android" | "other"; createdAt: string; lastUsedAt: string }>;
+};
+
+type AppDeviceRemovalResponse = { revoked: boolean };
+
 type UserDevicesResponse = {
   devices: Array<{ id: string; name: string; createdAt: string; lastUsedAt: string | null; assisted: boolean }>;
 };
@@ -561,6 +567,7 @@ export default defineCliCommands({
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
     "users avatar": "Download, replace, or remove account avatars",
+    "users app-devices": "List and remove phones paired with the mobile app (preview)",
     "users devices": "List and revoke paired sign-in devices",
     "users linux": "Inspect Linux identities and assign missing attributes",
   },
@@ -922,6 +929,59 @@ export default defineCliCommands({
         const user = await resolveUserRef(ctx, args.user);
         const result = await apiJson<MessageResponse>(ctx, "DELETE", `/users/${encode(user.id)}/devices/${encode(args.device)}`);
         printMessage(ctx, result, "Device revoked.");
+      },
+    }),
+    command("users app-devices list", {
+      summary: "List the phones a user paired with the mobile app",
+      description: "Shows active phones only, with platform, pairing time and last use.",
+      args: { user: arg.required({ valueLabel: "user" }) },
+      async run({ ctx, args }) {
+        const user = await resolveUserRef(ctx, args.user);
+        const response = await apiGet<UserAppDevicesResponse>(ctx, `/users/${encode(user.id)}/app-devices`);
+        printJsonOrTable(
+          ctx,
+          response,
+          response.devices.map((device) => ({
+            name: device.name,
+            platform: device.platform,
+            pairedAt: device.createdAt,
+            lastUsedAt: device.lastUsedAt,
+            id: device.id,
+          })),
+          [{ key: "name" }, { key: "platform" }, { key: "pairedAt" }, { key: "lastUsedAt" }, { key: "id" }],
+        );
+      },
+    }),
+    command("users app-devices remove", {
+      summary: "Remove a phone from the mobile app and end its app sessions at once",
+      description: "Web sessions and sign-in devices stay as they are. Removing an already removed phone succeeds with revoked: false.",
+      args: {
+        user: arg.required({ valueLabel: "user" }),
+        device: arg.required({ valueLabel: "device-id" }),
+      },
+      flags: { yes: confirmFlag("Confirm removing this phone from the mobile app") },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes)
+          throw new Error(cliText(ctx, { en: "Refusing to remove a phone without --yes.", de: "Telefon wird ohne --yes nicht entfernt." }));
+        if (!isUuid(args.device))
+          throw new Error(
+            cliText(ctx, {
+              en: "Pass the device ID shown by users app-devices list.",
+              de: "Gib die Geräte-ID aus users app-devices list an.",
+            }),
+          );
+        const user = await resolveUserRef(ctx, args.user);
+        const result = await apiJson<AppDeviceRemovalResponse>(
+          ctx,
+          "DELETE",
+          `/users/${encode(user.id)}/app-devices/${encode(args.device)}`,
+        );
+        if (printStructured(ctx, result)) return;
+        ctx.print(
+          result.revoked
+            ? cliText(ctx, { en: "Phone removed.", de: "Telefon entfernt." })
+            : cliText(ctx, { en: "The phone was already removed.", de: "Das Telefon war bereits entfernt." }),
+        );
       },
     }),
     command("users delete", {

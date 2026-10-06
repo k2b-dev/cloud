@@ -41,6 +41,17 @@ cld accounts users devices revoke ada.lovelace <device-id> --yes
 
 The list shows active devices only. Revocation stops the device from approving sign-ins, leaves existing sessions signed in, and succeeds again for an already revoked device. The user is notified once, when Cloud can reach them. Any account-wide sign-out also revokes all of the user's devices, for example a provider change, demotion to a guest, FreeIPA synchronization, or a FreeIPA password reset from the sign-in page. `users reset-password` does not sign the user out and leaves their devices active; revoke a lost device explicitly. See [What revocation ends](/en/docs/operations/app-approval#what-revocation-ends).
 
+## Phones in the mobile app
+
+The mobile app is a preview and not released yet. Administrators can list the phones a user paired with it and remove a lost one:
+
+```bash
+cld accounts users app-devices list ada.lovelace --json
+cld accounts users app-devices remove ada.lovelace <device-id> --yes
+```
+
+The list shows active phones only, with platform, pairing time and last use. Removal ends the phone's app sessions at once; web sessions and sign-in devices stay as they are. Removing an already removed phone succeeds again with `revoked: false`. Both commands need the administrator role. See [Remove an app device for someone](/en/docs/accounts/devices#remove-an-app-device-for-someone).
+
 ## Linux identities
 
 These commands require an administrator. Global configuration and paginated
@@ -93,6 +104,7 @@ Run `cld accounts <command> --help` for flags and argument order.
 | Users | `users list`, `users get`, `users create`, `users update`, `users set-admin`, `users set-profile`, `users set-provider`, `users demote-to-guest`, `users set-expiry`, `users reset-password`, `users login-token`, `users send-login-link`, `users delete` |
 | User avatars | `users avatar get`, `users avatar set`, `users avatar remove` |
 | Sign-in devices | `users devices list`, `users devices revoke` |
+| Phones in the mobile app | `users app-devices list`, `users app-devices remove` |
 | Linux identities | `users linux get`, `users linux prepare`, `users linux update` |
 | Groups | `groups list`, `groups get`, `groups create`, `groups update`, `groups make-posix`, `groups delete` |
 | Group members | `groups members list`, `groups members add`, `groups members remove` |
