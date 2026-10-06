@@ -233,6 +233,63 @@ describe("accounts CLI", () => {
     expect(revoke.lines).toEqual(["Device revoked."]);
   });
 
+  test("lists and removes a user's phones in the mobile app through the accounts API", async () => {
+    const device = {
+      id: "p1",
+      name: "iPhone",
+      platform: "ios",
+      createdAt: "2026-10-01T08:00:00.000Z",
+      lastUsedAt: "2026-10-05T00:00:00.000Z",
+      current: false,
+    };
+    const list = createContext(["users", "app-devices", "list", "alice"], {}, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ devices: [device] }),
+    ]);
+    await accountsCli.run(list.ctx);
+    expect(list.calls.map((call) => call.path)).toEqual([
+      "/api/accounts/users?page=1&per_page=100&search=alice",
+      "/api/accounts/users/u1/app-devices",
+    ]);
+    expect(list.tables[0]).toEqual([
+      { name: "iPhone", platform: "ios", pairedAt: "2026-10-01T08:00:00.000Z", lastUsedAt: "2026-10-05T00:00:00.000Z", id: "p1" },
+    ]);
+
+    // JSON output is the full API response, not the table projection.
+    const json = createContext(["users", "app-devices", "list", "alice"], {}, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ devices: [device] }),
+    ]);
+    json.ctx.options.output = "json";
+    await accountsCli.run(json.ctx);
+    expect(JSON.parse(json.lines[0]!)).toEqual({ devices: [device] });
+
+    const deviceId = "44444444-4444-4444-8444-444444444444";
+    const unconfirmed = createContext(["users", "app-devices", "remove", "alice", deviceId], {}, []);
+    await expect(accountsCli.run(unconfirmed.ctx)).rejects.toThrow("without --yes");
+    expect(unconfirmed.calls).toHaveLength(0);
+    const byName = createContext(["users", "app-devices", "remove", "alice", "iPhone"], { yes: true }, []);
+    await expect(accountsCli.run(byName.ctx)).rejects.toThrow("device ID");
+    expect(byName.calls).toHaveLength(0);
+
+    const remove = createContext(["users", "app-devices", "remove", "alice", deviceId], { yes: true }, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ revoked: true }),
+    ]);
+    await accountsCli.run(remove.ctx);
+    expect(remove.calls[1]?.path).toBe(`/api/accounts/users/u1/app-devices/${deviceId}`);
+    expect(remove.calls[1]?.init?.method).toBe("DELETE");
+    expect(remove.lines).toEqual(["Phone removed."]);
+
+    const again = createContext(["users", "app-devices", "remove", "alice", deviceId], { yes: true }, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ revoked: false }),
+    ]);
+    again.ctx.options.output = "json";
+    await accountsCli.run(again.ctx);
+    expect(JSON.parse(again.lines[0]!)).toEqual({ revoked: false });
+  });
+
   test("guards destructive user mutations before resolving refs", async () => {
     const { ctx, calls } = createContext(["users", "set-admin", "alice"], { enabled: true }, []);
 

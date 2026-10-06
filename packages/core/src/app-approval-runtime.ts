@@ -22,8 +22,8 @@ export const appApprovalRuntime = {
       cron: "* * * * *",
       timezone: "UTC",
       misfire: "latest",
-      meta: { appId: "core", family: "app-approval", label: "Mobile app pairing expiry and phones of expired accounts" },
-      process: async ({ signal }) => pwaDevices.maintain(signal),
+      meta: { appId: "core", family: "app-approval", label: "Mobile app pairing expiry, new-phone notices and phones of expired accounts" },
+      process: async ({ signal }) => pwaDevices.maintain(sender.sendAppDevicePaired, signal),
     });
     worker = await scheduler().process({ concurrency: 1 });
   },
