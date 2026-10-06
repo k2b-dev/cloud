@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.24.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.23.0...npm-cloud-v0.24.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai:** deliver Assistant live updates over the shared live layer ([#652](https://github.com/k2b-dev/cloud/issues/652))
+
+### Features
+
+* **accounts:** tell people when a phone is paired with their account ([#658](https://github.com/k2b-dev/cloud/issues/658)) ([bbe3f6a](https://github.com/k2b-dev/cloud/commit/bbe3f6ab01bb24c31b14bc218be0c6a7189739cc))
+* **ai:** deliver Assistant live updates over the shared live layer ([#652](https://github.com/k2b-dev/cloud/issues/652)) ([662c62f](https://github.com/k2b-dev/cloud/commit/662c62fb10b29ee53b1570534beeb85ec756d52c))
+* **cloud:** add the file-provider contract and Files provider operations ([#664](https://github.com/k2b-dev/cloud/issues/664)) ([0e22339](https://github.com/k2b-dev/cloud/commit/0e223391e948beaafd6835adaabde7ffcec3dad6))
+* **cloud:** read capability manifests from newer Cloud releases ([#662](https://github.com/k2b-dev/cloud/issues/662)) ([c34ae94](https://github.com/k2b-dev/cloud/commit/c34ae942dfb7dd299f4f13b96c8aa0fd127c2966))
+* **files:** keep file references stable across rename and move ([#654](https://github.com/k2b-dev/cloud/issues/654)) ([133ae2a](https://github.com/k2b-dev/cloud/commit/133ae2a9f24dabcabd64d49bf933ad01aa9ebc22))
+* **pwa:** switch app tabs at the first touch ([#640](https://github.com/k2b-dev/cloud/issues/640)) ([74cad11](https://github.com/k2b-dev/cloud/commit/74cad11ad1accdc9267c90e5fdc7c7695547f802))
+* **search:** show fast results at once and say which apps are still searching ([#642](https://github.com/k2b-dev/cloud/issues/642)) ([2997ac7](https://github.com/k2b-dev/cloud/commit/2997ac7d07fa3fe99ed698b7380bd3287b27a8ce))
+* **ui:** render info blocks in every Markdown view ([#655](https://github.com/k2b-dev/cloud/issues/655)) ([d1382ed](https://github.com/k2b-dev/cloud/commit/d1382ed0d25ad8ef149e484dbcb401429b6f09fd))
+
+
+### Bug Fixes
+
+* **cloud:** compute and compare table dates as dates ([#643](https://github.com/k2b-dev/cloud/issues/643)) ([f708d28](https://github.com/k2b-dev/cloud/commit/f708d28b7f557de8f3a00a9a55d29bd709d566b5))
+* **cloud:** show a formula error for impossible table dates ([#650](https://github.com/k2b-dev/cloud/issues/650)) ([148fa1c](https://github.com/k2b-dev/cloud/commit/148fa1c91125105ea184c0b2522fffd468b4667e))
+* **live:** resync returning subscriptions after access changes they missed ([#666](https://github.com/k2b-dev/cloud/issues/666)) ([7850a18](https://github.com/k2b-dev/cloud/commit/7850a183a1a374bde9e8a48b66b4bbe1a3aa6316))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.13.0 to 0.14.0
+
 ## [0.23.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.22.0...npm-cloud-v0.23.0) (2026-10-05)
 
 
