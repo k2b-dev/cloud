@@ -21,27 +21,31 @@
 .k2b-ui .auth-login-identifier .k2b-input-shell__icon {
   display: none;
 }
-/* Sign-in's secondary actions share one row where the form column has room
-   for all three (about 23rem in German). In a narrower column (a phone, the
+/* Sign-in's secondary actions come in one order in the source and on
+   screen, so keyboard focus and screen readers meet them as they are shown in
+   every browser: the passkey, a way to sign in, first, then the two ways to
+   get help. Where the form column has room for all three (about 23rem in
+   German) they share one row, the passkey on the left and support and the
+   admin token together on the right. In a narrower column (a phone, the
    two-column card on a small tablet) they would wrap unevenly, so there they
    form a grid: the passkey on a full row, support and the admin token as two
-   equal halves. The rows are 2.25rem tall and keep the distance @k2b/ui's
-   touch hit areas need to reach 2.75rem.
-   The passkey sits between the other two in the source, which is its place
-   in the wide row. `reading-flow` lets focus and screen readers follow the
-   rows instead; browsers without it keep the source order. */
+   equal halves below it. The rows are 2.25rem tall and keep the distance
+   @k2b/ui's touch hit areas need to reach 2.75rem. */
 .auth-login-column {
   container: auth-login-column / inline-size;
+}
+.auth-secondary-actions .auth-passkey {
+  margin-inline-end: auto;
 }
 @container auth-login-column (max-width: 25rem) {
   .auth-secondary-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.625rem 0.5rem;
-    reading-flow: grid-rows;
   }
   .auth-secondary-actions .auth-passkey {
-    grid-area: 1 / 1 / auto / -1;
+    grid-column: 1 / -1;
+    margin-inline-end: 0;
   }
   .k2b-ui .auth-secondary-actions .k2b-button[data-size] {
     width: 100%;

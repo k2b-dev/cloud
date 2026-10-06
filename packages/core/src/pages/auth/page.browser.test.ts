@@ -308,9 +308,9 @@ describe("sign-in page in a browser", () => {
       for (const width of [390, 320]) {
         const context = `${locale} ${width}`;
         const { actions } = await measure({ ...phone, width }, forms.password, { locale });
-        const [support, passkey, admin] = actions;
+        const [passkey, support, admin] = actions;
         expect(actions.map((action) => action.name)).toEqual(
-          locale === "en" ? ["Contact support", "Use passkey", "Admin token"] : ["Support kontaktieren", "Mit Passkey", "Admin-Token"],
+          locale === "en" ? ["Use passkey", "Contact support", "Admin token"] : ["Mit Passkey", "Support kontaktieren", "Admin-Token"],
         );
         // The passkey takes the first row; support and the admin token share the second as equal halves.
         expect([passkey!.left, passkey!.right], context).toEqual([16, width - 16]);
@@ -327,8 +327,8 @@ describe("sign-in page in a browser", () => {
     // The two-column card of a small tablet has a narrow form column and the same even grid as a phone.
     const tablet = await measure({ width: 768, height: 1024, touch: true }, forms.password, { locale: "de" });
     expect([tablet.surface.border, tablet.surface.radius, tablet.aside]).toEqual(["1px", "16px", "flex"]);
-    expect(tablet.actions[0]!.top).toBe(tablet.actions[2]!.top);
-    expect(tablet.actions[1]!.bottom).toBeLessThan(tablet.actions[0]!.top);
+    expect(tablet.actions[1]!.top).toBe(tablet.actions[2]!.top);
+    expect(tablet.actions[0]!.bottom).toBeLessThan(tablet.actions[1]!.top);
 
     for (const view of [desktop, { width: 1024, height: 768, touch: true }]) {
       const context = `${view.width}`;
@@ -341,11 +341,13 @@ describe("sign-in page in a browser", () => {
       });
       expect(page.aside, context).toBe("flex");
       expect(page.scrollWidth, context).toBeLessThanOrEqual(view.width);
-      const [support, passkey, admin] = page.actions;
+      // The passkey starts the row; support and the admin token close it together.
+      const [passkey, support, admin] = page.actions;
       expect(new Set(page.actions.map((action) => action.height)).size, context).toBe(1);
-      expect(support!.right, context).toBeLessThan(passkey!.left);
-      expect(passkey!.right, context).toBeLessThan(admin!.left);
-      expect(Math.abs(support!.top - admin!.top), context).toBeLessThan(1);
+      expect([passkey!.left, admin!.right], context).toEqual([page.fields[0]!.left, page.fields[0]!.right]);
+      expect(passkey!.right, context).toBeLessThan(support!.left - 8);
+      expect(admin!.left - support!.right, context).toBe(8);
+      expect([support!.top, admin!.top], context).toEqual([passkey!.top, passkey!.top]);
     }
     expect((await measure(desktop, forms.password)).fields.map((field) => field.width)).toEqual([448, 448]);
   }, 60_000);
@@ -420,14 +422,12 @@ describe("sign-in page in a browser", () => {
     }
   }, 120_000);
 
-  test("moves focus through the action grid row by row", async () => {
-    // Known accessibility gap: the phone rows rely on `reading-flow`, which WebKit does not support yet, so
-    // keyboard and VoiceOver focus in Safari keep the source order across the rows (see `src/styles/app.css`).
-    // This expectation fails once WebKit follows the rows.
-    expect(await tabOrder(phone, forms.password, 3)).toEqual(
-      browserName === "webkit" ? ["Contact support", "Use passkey", "Admin token"] : ["Use passkey", "Contact support", "Admin token"],
-    );
-    expect(await tabOrder(desktop, forms.password, 3)).toEqual(["Contact support", "Use passkey", "Admin token"]);
+  test("moves focus through the secondary actions in the order they are shown", async () => {
+    // The source order is the visual order in every layout, so every engine, Safari included, focuses the
+    // phone grid row by row and the wide row from left to right.
+    for (const view of [phone, { ...phone, width: 320 }, desktop]) {
+      expect(await tabOrder(view, forms.password, 3), `${view.width}`).toEqual(["Use passkey", "Contact support", "Admin token"]);
+    }
   }, 30_000);
 
   // Only Chromium's input protocol can change the browser's default font size, which rem breakpoints follow.
