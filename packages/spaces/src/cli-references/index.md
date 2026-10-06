@@ -99,7 +99,15 @@ cld spaces create "Hiring" --description "Open roles"
 
 ## Write Markdown
 
-Descriptions, comments, progress notes, and completion results are Markdown: headings, emphasis, strikethrough, lists, task lists, tables, links, images, inline code, and code blocks. Task list boxes are display-only; use `checklist` for steps that people tick off. Raw HTML is shown as text. Info blocks (`:::note`), math, and diagrams do not render and stay text or a code block; `> [!NOTE]` is an ordinary quote.
+Descriptions, comments, progress notes, and completion results are Markdown: headings, emphasis, strikethrough, lists, task lists, tables, links, images, inline code, code blocks, and info blocks. Task list boxes are display-only; use `checklist` for steps that people tick off. Raw HTML is shown as text. Math and diagrams do not render and stay text or a code block; `> [!NOTE]` is an ordinary quote.
+
+```markdown
+:::warning Before the release
+Run the migration on a **copy** first.
+:::
+```
+
+Info blocks look the same as in Notebooks and Help. The types are `note`, `info`, `success`, `warning`, and `danger`. The opening line holds `:::`, the type, and an optional plain-text title; close the block with `:::` on its own line. The body is ordinary Markdown. Write info blocks at the top level, not inside lists, quotes, or code.
 
 ## Track implementation work and handoffs
 

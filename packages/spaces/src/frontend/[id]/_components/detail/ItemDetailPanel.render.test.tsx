@@ -546,6 +546,33 @@ describe("Spaces item detail panel", () => {
   });
 });
 
+test("renders info blocks in descriptions, comments, and progress notes like every Markdown view", () => {
+  const html = renderPanel(
+    {
+      item: { ...task, description: ":::warning Before the release\nCheck the **migration**.\n:::" },
+      initialCommentsPage: {
+        items: [{ ...comment, content: ":::success\nApproved.\n:::" }],
+        page: 1,
+        perPage: 50,
+        total: 1,
+        hasNext: false,
+      },
+      work: {
+        claim: null,
+        progress: { content: ":::info\nTests are running.\n:::", actor: { kind: "user", id: userId }, at: now },
+        result: null,
+      },
+    },
+    "de",
+  );
+  expect(html).toContain(
+    '<aside class="k2b-notice-card" data-tone="warning" role="note"><p class="k2b-notice-card__title">Before the release</p><div class="k2b-notice-card__body"><p>Check the <strong>migration</strong>.</p>',
+  );
+  expect(html).toContain('<aside class="k2b-notice-card" data-tone="success" role="note"><span class="k2b-sr-only">Erfolg: </span>');
+  expect(html).toContain('<aside class="k2b-notice-card" data-tone="info" role="note"><span class="k2b-sr-only">Info: </span>');
+  expect(html).not.toContain(":::");
+});
+
 test("renders work progress and preserved completion evidence in German", () => {
   const html = renderPanel(
     {

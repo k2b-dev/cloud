@@ -12,7 +12,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "content-styles.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { FileView, MarkdownView, PdfPreview } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { FileView, MarkdownView, PdfPreview, renderSafeMarkdown } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const code = Array.from({ length: 3 }, (_, index) => "const value" + index + " = " + index + ";").join("\\n");
 const file = (id, previewLines) => {
@@ -135,6 +135,14 @@ render(
     }),
   plainSheet,
 );
+// An info block in MarkdownView, and its HTML in a host with its own prose margins, like the assistant chat.
+const notice = app.appendChild(document.createElement("section"));
+notice.id = "notice";
+render(() => createComponent(MarkdownView, { markdown: ":::warning\\n## Check\\nRun the **migration** first.\\n:::", headingScale: "compact" }), notice);
+const noticeHost = app.appendChild(document.createElement("div"));
+noticeHost.id = "notice-host";
+noticeHost.className = "notice-host";
+noticeHost.innerHTML = renderSafeMarkdown(":::warning\\nRun the **migration** first.\\n:::");
 const standalone = app.appendChild(document.createElement("section"));
 standalone.id = "standalone-pdf";
 render(() => createComponent(PdfPreview, { title: "Report", request: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) }), standalone);
@@ -149,7 +157,7 @@ beforeAll(async () => {
   browser = await launchBrowser();
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style><style>#plain-sheet .stretched{flex:1 1 auto;min-height:0}</style></head>` +
+    `<!doctype html><html><head><style>${css}</style><style>#plain-sheet .stretched{flex:1 1 auto;min-height:0}.notice-host :where(p){margin-block:14px}</style></head>` +
       `<body class="k2b-ui"><button id="before">Before</button><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span><span id="text" style="color:var(--k2b-text)"></span>` +
       `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
       `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
@@ -162,6 +170,7 @@ beforeAll(async () => {
   await page.locator("#plain-excerpt .k2b-content-file-view__truncated button").waitFor();
   await page.locator("#plain-json .k2b-content-structured-data").waitFor();
   await page.locator("#plain-sheet thead").waitFor();
+  await page.locator("#notice .k2b-notice-card").waitFor();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -193,6 +202,19 @@ describe("@k2b/ui content previews apply their own styles", () => {
       return { code: preview.querySelector(".k2b-content-code-display")!.getBoundingClientRect().height, frame: preview.clientHeight };
     });
     expect(code).toBe(frame);
+  });
+
+  test("an info block's body adds no space inside the card, whatever prose margins the host sets", async () => {
+    const margins = await page.evaluate(() =>
+      [...document.querySelectorAll("#notice .k2b-notice-card__body, #notice-host .k2b-notice-card__body")].map((body) => [
+        getComputedStyle(body.firstElementChild!).marginTop,
+        getComputedStyle(body.lastElementChild!).marginBottom,
+      ]),
+    );
+    expect(margins).toEqual([
+      ["0px", "0px"],
+      ["0px", "0px"],
+    ]);
   });
 
   test("MarkdownView underlines links and sets code as text on a fill without a frame", async () => {

@@ -3,6 +3,7 @@ import { type ComponentProps, createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../_components/ssr-test-plugin";
 
+const { LocaleProvider } = await import("@k2b/ui");
 const { CustomAppPage } = await import("./page");
 const timestamp = "2026-09-17T12:00:00.000Z";
 
@@ -179,6 +180,20 @@ test("an older displayed document never conceals running work or recovery", () =
     expect(html).toContain("/record-document.pdf");
     expect(html).toContain(status === "running" ? "Creation requested" : status === "attention" ? 'role="alert"' : "<button");
   }
+});
+
+test("a Markdown block names untitled info blocks in the page language", () => {
+  const input = fixture();
+  input.page.rows[0]!.columns[0]!.blocks = [{ id: "intro", type: "markdown", markdown: ":::warning\nErst sichern.\n:::" }];
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CustomAppPage, input);
+      },
+    }),
+  );
+  expect(html).toContain('<span class="k2b-sr-only">Warnung: </span>');
 });
 
 test("a chart block keeps its subtitle above a fixed-height chart and shows its axis labels", () => {

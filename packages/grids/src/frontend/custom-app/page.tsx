@@ -1,7 +1,7 @@
 import type { AuthContext, getDateConfig } from "@k2b/cloud/server";
 import { markdown } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
-import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
+import { MarkdownView, Placeholder, StatCell, StatGrid, useLocale } from "@k2b/ui";
 import {
   type BlockResult,
   type ChartBlock,
@@ -230,6 +230,7 @@ export const CustomAppPage = (props: {
   pagePath?: string;
 }) => {
   const messages = useCustomAppRuntimeMessages();
+  const locale = useLocale();
   const relativeDateBase = typeof props.markdownContext["time.now"] === "string" ? props.markdownContext["time.now"] : undefined;
   const formActionIds = new Set(
     props.page.rows.flatMap((row) =>
@@ -297,7 +298,7 @@ export const CustomAppPage = (props: {
         renderBlock={(block) =>
           block.type === "markdown" ? (
             <MarkdownView
-              trustedHtml={markdown.render(renderCustomAppMarkdown(block.markdown, props.markdownContext))}
+              trustedHtml={markdown.render(renderCustomAppMarkdown(block.markdown, props.markdownContext), { locale: locale() })}
               headingScale="large"
             />
           ) : block.type === "records" || block.type === "referenced_records" ? (

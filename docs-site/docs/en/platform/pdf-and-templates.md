@@ -91,7 +91,9 @@ as the note or file name, for PDF viewers to show.
 
 ### Render your own Markdown dialect
 
-`renderMarkdownToPdf()` knows plain GitHub-flavored Markdown only. When the
+`renderMarkdownToPdf()` knows GitHub-flavored Markdown and the shared
+[info blocks](/en/ui/content/markdown#info-blocks) (`:::note`, `:::warning`,
+and the other types), which print as a light-tinted notice. When the
 application's documents use their own blocks, render them with the
 application's renderer and wrap the resulting HTML with
 `buildPresetPdfHtml()`:
@@ -113,7 +115,9 @@ It applies the same presets and `customCss` rules as `renderMarkdownToPdf()`.
 renderer. `css` styles the application's own elements. It comes after the
 preset and before `customCss`, so a person's custom CSS can still override it.
 With `customCss` but no `templateId`, `css` still applies while the preset is
-left out.
+left out. The print styles for info blocks come with every document, before
+`css`, so an application renderer that emits info blocks through
+`renderMarkdownInfoBlock()` from `@k2b/ui` prints them like Markdown PDFs.
 
 The result renders offline like any other HTML: the offline policy replaces
 the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and

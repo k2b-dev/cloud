@@ -92,8 +92,10 @@ component, such as a server-side Markdown extension or an editor node view.
 It exposes the same markup classes so those renderers produce the same calm
 notice: a root with `data-tone`, an optional title, and a body. Normal Solid
 code should render `NoticeCard` instead of assembling its internal markup.
-Markdown callouts (`:::note`, `:::info`, `:::success`, `:::warning`,
-`:::danger`) use exactly this contract everywhere they render.
+Markdown info blocks (`:::note`, `:::info`, `:::success`, `:::warning`,
+`:::danger`) use exactly this contract everywhere they render; see
+[Markdown content](/en/ui/content/markdown#info-blocks) for their syntax and
+the renderer helpers.
 
 ## Accessibility
 

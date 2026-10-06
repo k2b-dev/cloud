@@ -1,4 +1,6 @@
-import { marked, Renderer, type Tokens } from "marked";
+import { Marked, Renderer, type Tokens } from "marked";
+import { useLocale } from "../intl/locale";
+import { markdownInfoBlocks } from "./markdown-info-blocks";
 
 type CommonProps = MarkdownRenderOptions & {
   /** Optional additional CSS classes */
@@ -34,6 +36,8 @@ export type MarkdownRenderOptions = {
   /** Optional protocol allowlist, including trailing colons. Relative URLs resolve as HTTPS. */
   linkProtocols?: readonly string[];
   linkTarget?: "_blank";
+  /** Locale for the screen-reader names of untitled info blocks. `MarkdownView` passes the inherited render locale. */
+  locale?: string;
 };
 
 const escapeHtml = (value: string): string =>
@@ -127,7 +131,7 @@ const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
 };
 
 export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOptions = {}): string =>
-  marked.parse(markdown, {
+  new Marked(markdownInfoBlocks({ locale: options.locale })).parse(markdown, {
     async: false,
     renderer: createSafeRenderer(options),
   }) as string;
@@ -136,8 +140,10 @@ export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOpti
  * Markdown View Component (SSR)
  *
  * Renders untrusted Markdown safely by default. Raw HTML and unsafe link
- * protocols are escaped. Already-rendered HTML requires the deliberately named
- * `trustedHtml` boundary; the caller owns sanitization in that mode.
+ * protocols are escaped. Info blocks (`:::note`, `:::info`, `:::success`,
+ * `:::warning`, `:::danger`) render as the calm `NoticeCard`. Already-rendered
+ * HTML requires the deliberately named `trustedHtml` boundary; the caller owns
+ * sanitization in that mode.
  *
  * @example
  * ```tsx
@@ -152,6 +158,7 @@ export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOpti
  * ```
  */
 export default function MarkdownView(props: MarkdownViewProps) {
+  const locale = useLocale();
   const html = () =>
     props.markdown !== undefined
       ? renderSafeMarkdown(props.markdown, {
@@ -159,6 +166,7 @@ export default function MarkdownView(props: MarkdownViewProps) {
           allowImages: props.allowImages,
           linkProtocols: props.linkProtocols,
           linkTarget: props.linkTarget,
+          locale: locale(),
         })
       : props.trustedHtml;
   return (

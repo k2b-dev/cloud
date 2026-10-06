@@ -35,9 +35,17 @@ describe("editor notice blocks", () => {
     const card = editor.root.querySelector(".k2b-notice-card");
     expect(card?.getAttribute("data-tone")).toBe("warning");
     expect(card?.getAttribute("role")).toBe("note");
-    expect(card?.querySelector(".sr-only")?.textContent).toBe("Warnung: ");
+    expect(card?.querySelector(".k2b-sr-only")?.textContent).toBe("Warnung: ");
     expect(card?.querySelector(".k2b-notice-card__body")?.innerHTML).toBe("Back up <strong>first</strong>.");
     expect(card?.querySelector(".k2b-notice-card__icon, .k2b-notice-card__title, i")).toBeNull();
+  });
+
+  test("a titled notice shows its title like in the book view", async () => {
+    using editor = await mount(0, "Intro\n\n:::warning Before deleting\nBack up **first**.\n:::\n\nOutro");
+    const card = editor.root.querySelector(".k2b-notice-card");
+    expect(card?.querySelector(".k2b-notice-card__title")?.textContent).toBe("Before deleting");
+    expect(card?.querySelector(".k2b-sr-only")).toBeNull();
+    expect(editor.view.contentDOM.textContent).not.toContain(":::warning");
   });
 
   // An earlier block, empty or not, must end at its own `:::` instead of the notice's.

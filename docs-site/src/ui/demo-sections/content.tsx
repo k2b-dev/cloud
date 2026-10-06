@@ -688,6 +688,7 @@ const MarkdownDemo = (props: { html: string }) => {
       "| Item | Note | Amount |\n| --- | --- | ---: |\n| Subtotal | Two dinners and one dessert, shared by both guests | 123.00 |\n| Tip | | 12.30 |",
       "| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |",
       "> Prices include VAT.",
+      ":::info Before you share\nCheck that every guest is on the **receipt**.\n:::",
       "```ts\nconst total = subtotal + tip;\n```",
     ].join("\n\n"),
   );

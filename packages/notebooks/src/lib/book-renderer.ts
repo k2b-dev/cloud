@@ -1,5 +1,5 @@
 import { dates, highlight, text } from "@k2b/stdlib";
-import { NOTICE_CARD_CLASSES, type NoticeTone } from "@k2b/ui";
+import { renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
 import katex from "katex";
 import { Marked, Renderer } from "marked";
 import sanitizeHtml from "sanitize-html";
@@ -9,7 +9,6 @@ import { bookRendererMessages } from "./book-renderer-messages";
 import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
 import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
-import { closesNotice } from "./markdown-fences";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
 
@@ -32,8 +31,6 @@ export type NotebookBookInput = {
 };
 
 const escape = highlight.escape;
-const NOTICE_TONES = { note: "neutral", info: "info", success: "success", warning: "warning", danger: "danger" } as const;
-type NoticeKind = keyof typeof NOTICE_TONES;
 
 /** Reject scheme smuggling, protocol-relative URLs and browser-normalized backslashes. */
 const safeUrl = (raw: string, image = false): string | null => {
@@ -385,8 +382,9 @@ export const renderNotebookBook = (
         );
       continue;
     }
-    const opener = /^ {0,3}:::(query|toc|data|note|info|success|warning|danger)[ \t]*$/.exec(line);
-    if (!opener) {
+    const notice = /^ {0,3}:::/.test(line) ? scanMarkdownInfoBlock(markdown.slice(lineOffsets[index])) : null;
+    const opener = notice ? null : /^ {0,3}:::(query|toc|data)[ \t]*$/.exec(line);
+    if (!notice && !opener) {
       // Source positions are optional for nested Markdown, but never guessed.
       // Canonical heading IDs still cover every heading in the rendered TOC.
       const heading = /^ {0,3}#{1,6}\s+/.test(line)
@@ -401,16 +399,12 @@ export const renderNotebookBook = (
       prepared.push(line);
       continue;
     }
-    const kind = opener[1]!;
+    const kind = notice ? "notice" : (opener?.[1] ?? "");
     const start = index;
     const remaining = markdown.slice(lineOffsets[start]);
-    const extent = notebookDirectiveLength(remaining) ?? remaining.length;
+    const extent = notice ? notice.length : (notebookDirectiveLength(remaining) ?? remaining.length);
     const blockLines = remaining.slice(0, extent).replace(/\n$/, "").split("\n");
-    const closed =
-      blockLines.length > 1 &&
-      (kind === "query" || kind === "toc" || kind === "data"
-        ? /^ {0,3}:::[ \t]*$/.test(blockLines.at(-1)!)
-        : closesNotice(blockLines.at(-1)!, line));
+    const closed = notice ? notice.closed : blockLines.length > 1 && /^ {0,3}:::[ \t]*$/.test(blockLines.at(-1)!);
     index = closed ? start + blockLines.length - 1 : lines.length;
     const body = blockLines.slice(1, closed ? -1 : undefined).join("\n");
     prepared.push(
@@ -434,8 +428,7 @@ export const renderNotebookBook = (
           const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">@${escape(name)}</div>` : "";
           return `<div class="md-data-block">${title}${data.entries.length ? `<dl class="md-data-grid">${data.entries.map((entry) => `<div class="md-data-row"><dt class="md-data-key">${escape(text.humanize(entry.key))}</dt><dd class="md-data-value">${valueHtml(entry.value)}</dd></div>`).join("")}</dl>` : `<p class="notebook-book-empty">${escape(t.emptyData)}</p>`}</div>`;
         }
-        const noticeKind = kind as NoticeKind;
-        const tone: NoticeTone = NOTICE_TONES[noticeKind];
+        if (!notice) return "";
         // The body starts on the line after its opener; its own headings keep their source line.
         const bodyTokens = marked.lexer(body);
         let bodyLine = start + 2;
@@ -443,8 +436,8 @@ export const renderNotebookBook = (
           if (token.type === "heading") headingSource.set(token, bodyLine);
           bodyLine += token.raw.split("\n").length - 1;
         }
-        // Notices are the calm NoticeCard: tone tint, neutral text; the type name remains for screen readers.
-        return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parser(bodyTokens)}</div></aside>`;
+        // Notices are the shared info block: the calm NoticeCard with an optional title.
+        return renderMarkdownInfoBlock({ type: notice.type, title: notice.title, bodyHtml: marked.parser(bodyTokens), locale });
       }),
       "",
     );

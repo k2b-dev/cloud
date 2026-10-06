@@ -100,7 +100,7 @@ Notizbücher zeigen einige getippte Zeichenfolgen als ein Zeichen an, wenn du ei
 
 ## Hinweisblöcke {icon="message-circle"}
 
-Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Statusangaben, die beim Überfliegen einer Notiz sichtbar sein sollen. Schreibe `:::note`, `:::info`, `:::success`, `:::warning` oder `:::danger` in eine eigene Zeile, darunter den Text und zum Schluss `:::`. Ein Hinweisblock ist ein ruhiger Kasten: eine helle Tönung je nach Art, normaler Text und keine Überschrift und kein Symbol. Editor, Buchansicht und PDF-Export zeigen denselben Kasten. Brauchen Lesende eine Bezeichnung, beginne den Text damit, zum Beispiel mit `Risiko:`.
+Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Statusangaben, die beim Überfliegen einer Notiz sichtbar sein sollen. Schreibe `:::note`, `:::info`, `:::success`, `:::warning` oder `:::danger` in eine eigene Zeile, darunter den Text und zum Schluss `:::`. Ein Hinweisblock ist ein ruhiger Kasten: eine helle Tönung je nach Art, normaler Text und kein Symbol. Für eine Überschrift schreibe sie hinter die Art, zum Beispiel `:::warning Offenes Risiko`. Editor, Buchansicht und PDF-Export zeigen denselben Kasten, ebenso Beschreibungen und Kommentare in Spaces und die Hilfe.
 
 **Gut lesbare Kästen**
 
@@ -115,8 +115,8 @@ Dieser Kasten hebt wichtigen Kontext hervor.
 Entscheidung: Die erste Version bleibt klein.
 :::
 
-:::warning
-Risiko: Die endgültigen Preise stehen noch aus.
+:::warning Offenes Risiko
+Die endgültigen Preise stehen noch aus.
 :::
 ```
 

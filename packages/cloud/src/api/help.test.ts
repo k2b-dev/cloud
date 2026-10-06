@@ -35,6 +35,23 @@ describe("Help API", () => {
     expect(await read("en")).toMatchObject({ locale: "en", title: "Start" });
     expect((await routes.request("/help/v1/inventory/documents/missing")).status).toBe(404);
   });
+  test("names untitled callouts in the document's language", async () => {
+    const callouts = fixtureHelpReader(async () => [
+      {
+        appId: "inventory",
+        appName: "Inventory",
+        manifestHash: "current",
+        baseLocale: "en",
+        documents: [{ id: "start", title: "Start", order: 10, markdown: ":::warning\nBack up first.\n:::" }],
+        documentsByLocale: { de: [{ id: "start", title: "Starten", order: 10, markdown: ":::warning\nErst sichern.\n:::" }] },
+      },
+    ]);
+    const routes = createHelpRoutes({ help: callouts, authenticate });
+    const read = async (locale: string) =>
+      (await routes.request("/help/v1/inventory/documents/start", { headers: { "x-cloud-locale": locale } })).json();
+    expect((await read("de-AT")).html).toContain('<span class="k2b-sr-only">Warnung: </span>');
+    expect((await read("en")).html).toContain('<span class="k2b-sr-only">Warning: </span>');
+  });
   test("rejects entry before reading and propagates outages", async () => {
     const routes = createHelpRoutes({ help, authenticate: async (c) => c.json({ error: "unauthorized" }, 401) });
     expect((await routes.request("/help/v1/inventory/search?q=test")).status).toBe(401);

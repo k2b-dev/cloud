@@ -263,6 +263,16 @@
 }
 .k2b-ui .k2b-notice-card__description { margin: 0; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; }
+/* A Markdown info block's body sits directly in the card and holds flow
+   content. Whatever prose spacing the host applies, its outer margins would
+   read as empty rows inside the card. `[data-tone]` lifts these rules above
+   prose rules of the same weight, such as compact Markdown headings. */
+.k2b-ui .k2b-notice-card[data-tone] > .k2b-notice-card__body > :first-child {
+  margin-block-start: 0;
+}
+.k2b-ui .k2b-notice-card[data-tone] > .k2b-notice-card__body > :last-child {
+  margin-block-end: 0;
+}
 .k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0.25rem; }
 .k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.75rem; }
 .k2b-ui .k2b-notice-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
