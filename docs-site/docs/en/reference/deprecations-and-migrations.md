@@ -92,12 +92,12 @@ refs. Nothing needs to be migrated:
   `cld plugins update filesv2`. An older plugin reads `n:…` as an area named
   `n` and rejects it.
 
-If you roll Files back to an earlier release, refs stored before this update
-keep working, and nothing is rewritten. An earlier Files cannot read the
-stable `n:…` refs that this release handed out: Spaces links, Grids resource
-fields, Assistant App data, copied references, and `cld filesv2` file IDs
-created after the update answer `not_found` until Files runs this release or a
-later one again.
+If you roll Files back to an earlier release, nothing is rewritten. Refs
+stored before this update keep working, and so do path refs handed out after
+it. An earlier Files cannot read stable `n:…` refs: wherever one is stored, in
+a Spaces link, a Grids resource field, Assistant App data, a copied reference,
+or a `cld filesv2` file ID, it answers `not_found` until Files runs this
+release or a later one again.
 
 See [Refer to files and folders](/en/apps/filesv2#refer-to-files-and-folders).
 
