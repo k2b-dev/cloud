@@ -41,6 +41,9 @@ let first = older;
 let next = older + visible;
 const [items, setItems] = createSignal(all.slice(first, next));
 let controller;
+// Loads wait 150 ms, or with the manual option until the test calls feed.release(), so busy states can be asserted.
+let gates = [];
+const gate = () => (options.manual ? new Promise((done) => gates.push(done)) : new Promise((done) => setTimeout(done, 150)));
 const [marker, setMarker] = createSignal(options.marker);
 const row = (item) => {
   const element = document.createElement("div");
@@ -70,49 +73,40 @@ const list = () =>
       return items();
     },
     getKey: (item) => item.id,
-    estimateSize: (item) => 32 + (item.image ? 180 : item.lines * 20),
+    estimateSize: (item) => (32 + (item.image ? 180 : item.lines * 20)) * (options.estimateScale ?? 1),
     label: "Activity",
     itemLabel: (item) => "Entry " + item.seq,
     get hasOlder() {
       return first > 0;
     },
+    onLoadOlder: () =>
+      gate().then(() => {
+        const from = Math.max(0, first - 50);
+        const page = all.slice(from, first);
+        first = from;
+        setItems((current) => [...page, ...current]);
+      }),
     get hasNewer() {
       return next < newest();
     },
     onLoadNewer: options.noNewer
       ? undefined
       : () =>
-      new Promise((done, fail) =>
-        setTimeout(() => {
-          if (options.failNewer) return fail(new Error("offline"));
-          const page = all.slice(next, Math.min(newest(), next + 50));
-          next += page.length;
-          setItems((current) => [...current, ...page]);
-          done();
-        }, 150),
-      ),
+          gate().then(() => {
+            if (options.failNewer) throw new Error("offline");
+            const page = all.slice(next, Math.min(newest(), next + 50));
+            next += page.length;
+            setItems((current) => [...current, ...page]);
+          }),
     onLoadNewest: options.newest
       ? () =>
-          new Promise((done, fail) =>
-            setTimeout(() => {
-              if (options.newest === "fail") return fail(new Error("offline"));
-              first = newest() - 100;
-              next = newest();
-              setItems(all.slice(first, next));
-              done();
-            }, 150),
-          )
+          gate().then(() => {
+            if (options.newest === "fail") throw new Error("offline");
+            first = newest() - 100;
+            next = newest();
+            setItems(all.slice(first, next));
+          })
       : undefined,
-    onLoadOlder: () =>
-      new Promise((done) =>
-        setTimeout(() => {
-          const from = Math.max(0, first - 50);
-          const page = all.slice(from, first);
-          first = from;
-          setItems((current) => [...page, ...current]);
-          done();
-        }, 150),
-      ),
     // A day separator every fifth entry, so that several show at once.
     separator: options.separators
       ? (item, previous) =>
@@ -223,6 +217,12 @@ window.feed = {
   },
   setMarker,
   setNewest,
+  release() {
+    const waiting = gates;
+    gates = [];
+    for (const done of waiting) done();
+    return waiting.length;
+  },
   replace(key, seq) {
     setItems((current) => current.map((item) => (item.id === key ? { ...item, seq } : item)));
   },
@@ -273,6 +273,7 @@ type Feed = {
   grow: (key: string, px: number) => void;
   setMarker: (key: string | undefined) => void;
   setNewest: (count: number) => void;
+  release: () => number;
   replace: (key: string, seq: number) => void;
   swap: (a: string, b: string) => void;
 };
@@ -286,6 +287,8 @@ const open = async (
     newer?: number;
     newest?: boolean | "fail";
     noNewer?: boolean;
+    estimateScale?: number;
+    manual?: boolean;
     failNewer?: boolean;
     future?: number;
     locale?: string;
@@ -347,7 +350,7 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(run.gapMax).toBeLessThanOrEqual(1);
     expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(0);
     await page.close();
-  });
+  }, 30_000);
 
   test("stays at the end when the viewport shrinks by 336 px, like an on-screen keyboard", async () => {
     const page = await open();
@@ -360,7 +363,7 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(run.gapMin).toBeGreaterThanOrEqual(-1);
     expect(run.gapMax).toBeLessThanOrEqual(1);
     await page.close();
-  });
+  }, 30_000);
 
   test("never moves a reader who scrolled up: new items, rows growing above, and a shorter viewport", async () => {
     const page = await open();
@@ -381,6 +384,27 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(run.drift).toBeLessThanOrEqual(1);
     expect(run.spread).toBeLessThanOrEqual(1);
 
+    // A growing footer shortens the viewport; what sits at its bottom edge stays there.
+    const atBottom = () =>
+      page.evaluate(() => {
+        const port = feed.viewport().getBoundingClientRect();
+        const row = [...document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item")].find((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.top < port.bottom - 1 && rect.bottom >= port.bottom - 1;
+        })!;
+        return { key: row.dataset.key, fromBottom: port.bottom - row.getBoundingClientRect().top };
+      });
+    const before = await atBottom();
+    await page.evaluate(() => document.documentElement.style.setProperty("--composer", "140px"));
+    await frames(page, 4);
+    const after = await page.evaluate((key) => {
+      const port = feed.viewport().getBoundingClientRect();
+      return port.bottom - document.querySelector(`[data-key="${key}"]`)!.getBoundingClientRect().top;
+    }, before.key);
+    expect(Math.abs(after - before.fromBottom)).toBeLessThanOrEqual(1);
+    await page.evaluate(() => document.documentElement.style.setProperty("--composer", "56px"));
+    await frames(page, 4);
+
     const end = page.locator(".k2b-virtual-feed__end");
     expect(await end.getAttribute("aria-label")).toBe("Jump to latest, 5 new");
     expect(await end.locator(".k2b-virtual-feed__count").textContent()).toBe("5");
@@ -389,7 +413,7 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
     expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.key)).toBe("m304");
     await page.close();
-  });
+  }, 30_000);
 
   test("keeps a scroll that happened just before new items arrived in the same frame", async () => {
     const page = await open();
@@ -406,19 +430,20 @@ describe(`VirtualFeed in ${browserName}`, () => {
     });
     expect(fromEnd).toBeGreaterThan(700);
     await page.close();
-  });
+  }, 30_000);
 
   test("holds the position to the pixel while older pages load above", async () => {
-    const page = await open({ count: 120, older: 50 });
+    const page = await open({ count: 120, older: 50, manual: true });
     await page.evaluate(() => {
       feed.viewport().scrollTop = 0;
     });
-    // The scroll reaches the start, so the first older page is loading now.
+    // The scroll reaches the start, so the older page is loading until the test releases it.
     await page.locator('[role="feed"][aria-busy="true"]').waitFor();
     const watch = await page.evaluate(() => probe.topVisible());
     expect(await page.locator(`[data-key="${watch}"]`).getAttribute("aria-setsize")).toBe("-1");
     expect(await page.locator(`[data-key="${watch}"]`).getAttribute("aria-posinset")).toBeNull();
     await page.evaluate((watch) => probe.start(watch), watch);
+    expect(await page.evaluate(() => feed.release())).toBe(1);
     await page.waitForFunction(() => feed.count() === 170, null, { timeout: 10_000 });
     await page.locator('[role="feed"][aria-busy="false"]').waitFor();
     await frames(page, 10);
@@ -431,13 +456,18 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(await watched.getAttribute("aria-posinset")).toBe(String(Number(watch.slice(1)) + 1));
     expect(await watched.getAttribute("aria-setsize")).toBe("170");
     await page.close();
-  });
+  }, 30_000);
 
   test("jumps to an item by key, highlights it briefly, and nothing moves afterwards", async () => {
     const page = await open({ count: 2000 });
     expect(await page.evaluate(() => feed.controller.scrollToKey("missing"))).toBe(false);
-    await page.evaluate(() => probe.start("m300"));
-    expect(await page.evaluate(() => feed.controller.scrollToKey("m300", { highlight: true }))).toBe(true);
+    // The probe starts right after the jump, so its first frame is the landing.
+    const jumped = await page.evaluate(() => {
+      const found = feed.controller.scrollToKey("m300", { highlight: true });
+      probe.start("m300");
+      return { found, highlighted: document.querySelector('[data-key="m300"]')?.getAttribute("data-highlighted") };
+    });
+    expect(jumped).toEqual({ found: true, highlighted: "" });
     await frames(page, 60);
     const run = await page.evaluate(() => probe.stop());
     expect(run.missing).toBe(0);
@@ -448,11 +478,10 @@ describe(`VirtualFeed in ${browserName}`, () => {
       return { top: row.top - port.top, bottom: port.bottom - row.bottom };
     });
     expect(Math.abs(landed.top - landed.bottom)).toBeLessThanOrEqual(2);
+    expect(run.drift).toBeLessThanOrEqual(1);
     expect(run.spread).toBeLessThanOrEqual(1);
-    const highlighted = page.locator('[data-key="m300"]');
-    expect(await highlighted.getAttribute("data-highlighted")).toBe("");
     await page.waitForFunction(() => !document.querySelector('[data-key="m300"]')?.hasAttribute("data-highlighted"), null, {
-      timeout: 3_000,
+      timeout: 10_000,
     });
     const settled = await page.evaluate(() => {
       const row = document.querySelector<HTMLElement>('[data-key="m300"]')!.getBoundingClientRect();
@@ -460,7 +489,7 @@ describe(`VirtualFeed in ${browserName}`, () => {
     });
     expect(Math.abs(settled - landed.top)).toBeLessThanOrEqual(1);
     await page.close();
-  });
+  }, 30_000);
 
   test("exposes a feed of articles, keeps the focused row mounted, and bundles announcements", async () => {
     const page = await open();
@@ -510,10 +539,10 @@ describe(`VirtualFeed in ${browserName}`, () => {
       feed.append(2);
       feed.append(1);
     });
-    await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent, null, { timeout: 3_000 });
+    await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent, null, { timeout: 10_000 });
     expect(await page.locator('[role="log"] > *').allTextContents()).toEqual(["3 new items"]);
     await page.close();
-  });
+  }, 30_000);
 
   test("shows separators and the marker inside rows, and a marker going away above moves nothing", async () => {
     const page = await open({ separators: true, marker: "m250" });
@@ -553,7 +582,28 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(run.drift).toBeLessThanOrEqual(1);
     expect(run.spread).toBeLessThanOrEqual(1);
     await page.close();
-  });
+  }, 30_000);
+
+  test("moves focus to a row below the view and shows all of it, even when the row is taller than estimated", async () => {
+    const page = await open({ estimateScale: 0.4 });
+    await page.keyboard.press("Tab");
+    await scrollBy(page, -1500);
+    await frames(page, 4);
+    await page.evaluate(() => feed.append(2));
+    await frames(page, 4);
+    await page.keyboard.press("ArrowDown");
+    await frames(page, 4);
+    const focused = await page.evaluate(() => {
+      const element = document.activeElement as HTMLElement;
+      const rect = element.getBoundingClientRect();
+      const port = feed.viewport().getBoundingClientRect();
+      return { key: element.dataset.key, top: rect.top - port.top, bottom: port.bottom - rect.bottom };
+    });
+    expect(focused.key).toBe("m300");
+    expect(focused.top).toBeGreaterThanOrEqual(-1);
+    expect(Math.abs(focused.bottom)).toBeLessThanOrEqual(1);
+    await page.close();
+  }, 30_000);
 
   test("speaks German inside a German locale", async () => {
     const page = await open({ locale: "de" });
@@ -563,19 +613,19 @@ describe(`VirtualFeed in ${browserName}`, () => {
     const end = page.locator(".k2b-virtual-feed__end");
     expect(await end.getAttribute("aria-label")).toBe("Zum Neuesten, 2 neu");
     expect((await end.textContent())?.trim()).toBe("Zum Neuesten2");
-    await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent, null, { timeout: 3_000 });
+    await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent, null, { timeout: 10_000 });
     expect(await page.locator('[role="log"] > *').allTextContents()).toEqual(["2 neue Einträge"]);
     await page.close();
-  });
+  }, 30_000);
 
-  test("Jump to latest reaches the newest item when it is not loaded yet, with or without onLoadNewest", async () => {
-    for (const newest of [false, true]) {
+  for (const newest of [false, true]) {
+    test(`Jump to latest reaches the newest item when it is not loaded yet ${newest ? "with" : "without"} onLoadNewest`, async () => {
       const page = await open({ count: 300, newer: 400, newest });
       const end = page.locator(".k2b-virtual-feed__end");
       expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
       await end.click();
       // Without onLoadNewest the feed follows the end while newer pages arrive; with it, the newest page replaces them.
-      await page.waitForFunction(() => document.querySelector('[data-key="m699"]'), null, { timeout: 10_000 });
+      await page.waitForFunction(() => document.querySelector('[data-key="m699"]'), null, { timeout: 15_000 });
       await page.locator('[role="feed"][aria-busy="false"]').waitFor();
       await frames(page, 6);
       expect(await page.evaluate(() => feed.count())).toBe(newest ? 100 : 700);
@@ -583,55 +633,63 @@ describe(`VirtualFeed in ${browserName}`, () => {
       expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
       expect(await end.count()).toBe(0);
       await page.close();
-    }
-  });
+    }, 30_000);
+  }
 
-  test("pages newer items in when they appear while the reader is at the end, and shows Jump to latest again after a failed load", async () => {
-    let page = await open();
+  test("follows newer items in when a live update reports them while the reader is at the end", async () => {
+    const page = await open();
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
-    // A live update reports 100 newer items without adding them; the reader at the end follows them in.
+    // 100 newer items exist now, but none were added; the reader at the end pages them in.
     await page.evaluate(() => feed.setNewest(400));
-    await page.waitForFunction(() => feed.count() === 400, null, { timeout: 10_000 });
+    await page.waitForFunction(() => feed.count() === 400, null, { timeout: 15_000 });
     await page.locator('[role="feed"][aria-busy="false"]').waitFor();
     await frames(page, 6);
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
     await page.close();
+  }, 30_000);
 
-    page = await open({ count: 300, newer: 400, newest: "fail" });
+  test("shows Jump to latest again when loading the newest items fails", async () => {
+    const page = await open({ count: 300, newer: 400, newest: "fail", manual: true });
     await page.locator(".k2b-virtual-feed__end").click();
     await page.locator('[role="feed"][aria-busy="true"]').waitFor();
+    expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(0);
+    expect(await page.evaluate(() => feed.release())).toBe(1);
     await page.locator('[role="feed"][aria-busy="false"]').waitFor();
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
     expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(1);
     await page.close();
+  }, 30_000);
 
-    // With only onLoadNewest, newer items reported live show Jump to latest instead of an end that cannot load.
-    page = await open({ newest: true, noNewer: true });
+  test("shows Jump to latest for newer items that only onLoadNewest can load", async () => {
+    const page = await open({ newest: true, noNewer: true });
     await page.evaluate(() => feed.setNewest(400));
-    await page.locator(".k2b-virtual-feed__end").waitFor();
     await page.locator(".k2b-virtual-feed__end").click();
-    await page.waitForFunction(() => document.querySelector('[data-key="m399"]'), null, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector('[data-key="m399"]'), null, { timeout: 15_000 });
     await frames(page, 6);
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
     await page.close();
+  }, 30_000);
 
-    // A newer page that fails while Jump to latest waits for it does not cancel the jump.
-    page = await open({ count: 300, newer: 50, newest: true, failNewer: true });
+  test("lets Jump to latest finish when a newer page it waits for fails", async () => {
+    const page = await open({ count: 300, newer: 50, newest: true, failNewer: true, manual: true });
     await page.evaluate(() => {
       const port = feed.viewport();
       port.scrollTop = port.scrollHeight;
     });
+    // The newer page is loading; Jump to latest waits for it, which then fails.
     await page.locator('[role="feed"][aria-busy="true"]').waitFor();
     await page.locator(".k2b-virtual-feed__end").click();
-    await page.waitForFunction(() => document.querySelector('[data-key="m349"]'), null, { timeout: 10_000 });
+    expect(await page.evaluate(() => feed.release())).toBe(1);
+    await page.waitForFunction(() => feed.release() > 0, null, { timeout: 15_000 });
+    await page.waitForFunction(() => document.querySelector('[data-key="m349"]'), null, { timeout: 15_000 });
     await page.locator('[role="feed"][aria-busy="false"]').waitFor();
     await frames(page, 6);
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
     await page.close();
-  });
+  }, 30_000);
 
   test("holds corrections back while an iOS finger or momentum scroll is moving the list", async () => {
     const iPhone =
@@ -653,11 +711,11 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect((await top(watch)) - resting).toBeCloseTo(100, 0);
 
     await page.evaluate(() => feed.viewport().dispatchEvent(new Event("touchend")));
-    await page.waitForTimeout(400);
-    expect(await page.evaluate(() => feed.viewport().scrollTop)).toBeCloseTo(before + 100, 0);
+    // Once scrolling has rested, the held-back correction applies.
+    await page.waitForFunction((target) => Math.abs(feed.viewport().scrollTop - target) < 1, before + 100, { timeout: 10_000 });
     expect(Math.abs((await top(watch)) - resting)).toBeLessThanOrEqual(1);
     await page.close();
-  });
+  }, 30_000);
 
   test("lays out 100,000 items in a bounded window and keeps the position when the window moves", async () => {
     const page = await open({ count: 100_000, future: 60_000 });

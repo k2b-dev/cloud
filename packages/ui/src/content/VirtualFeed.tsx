@@ -371,11 +371,15 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     if (focused?.contains(document.activeElement)) viewport.focus({ preventScroll: true });
   };
 
-  /** Drops items from one side of the window, never those around the reading position, until it fits again. */
+  /**
+   * Drops items from one side of the window, never those around the reading position, until it fits again. Returns
+   * whether it dropped any.
+   */
   const trimWindow = (side: "start" | "end") => {
     recompute();
     let excess = total() - MAX_WINDOW;
-    if (excess <= 0) return;
+    if (excess <= 0) return false;
+    const [from, to] = [lo, hi];
     const height = viewport.clientHeight;
     const top = stick ? total() - height : offsetOf(anchor.index) - anchor.delta;
     // While following the end the anchor is not maintained; only the visible end counts.
@@ -385,6 +389,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     else while (excess > 0 && hi - 1 > last) excess -= sizes[--hi]!;
     dirtyFrom = 0;
     dropFocus();
+    return lo !== from || hi !== to;
   };
 
   const loadNewest = () => {
@@ -430,6 +435,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     if (hi <= lo || restoring) return;
     const top = viewport.scrollTop;
     const height = viewport.clientHeight;
+    // Rows measured taller than estimated can grow the window past the cap without any edge moving.
+    if (total() > MAX_WINDOW && trimWindow(top + height / 2 > total() / 2 ? "start" : "end")) {
+      restore(true);
+      return;
+    }
     const margin = Math.max(2_000, 3 * height);
     if (top < margin) {
       if (lo > 0) {
@@ -618,6 +628,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     } else if (start + size > top + height) {
       setStick(false);
       anchor = { index, delta: Math.max(0, height - size) };
+      restore(true);
+      // The row was measured while mounting; align its real bottom before this frame paints.
+      if (anchor.index === index) anchor = { index, delta: Math.max(0, height - sizes[index]!) };
     }
     restore(true);
     rows.get(keys[index]!)?.node.focus({ preventScroll: true });
