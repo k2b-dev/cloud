@@ -76,6 +76,12 @@ export const assistantCapabilities = defineCapabilities({
     baseLocale: "en",
     translations: {
       de: {
+        types: {
+          app: { title: "Studio-App", description: "Eine zugängliche, wiederverwendbare Studio-App." },
+          project: { title: "Projekt", description: "Ein zugängliches Assistant-Projekt mit gemeinsamem Kontext und Chats." },
+          chat: { title: "Chat", description: "Eine Unterhaltung mit dem Assistenten, die dir gehört." },
+          message: { title: "Chat-Nachricht", description: "Eine Nachricht in einem zugänglichen Assistant-Chat." },
+        },
         queries: {
           "app.search": {
             title: "Studio-Apps durchsuchen",

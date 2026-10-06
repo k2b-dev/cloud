@@ -603,6 +603,15 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(previewText).toContain("Review recipient");
     expect(previewText).toContain(reader.user.id);
     expect(preview).toMatchObject({ ok: true, data: { data: { message: expect.stringContaining("Reviewed sharing") } } });
+    const german = await artifactCodeHandlers.code_access_change(input, { ...context, locale: "de", review: true });
+    if (!german.ok) throw new Error("expected a German review");
+    expect(String((german.data.data as { message: string }).message).split("\n")).toEqual([
+      `Zugriff auf App „Reviewed sharing“ (${resource.id}) ändern.`,
+      expect.stringMatching(/^Empfänger: .+ — \{/),
+      "Vorher: Kein Zugriff",
+      "Nachher: Benutzen",
+      "Der Zugriff auf Skills bleibt unverändert.",
+    ]);
     expect(await artifacts.access(resource.id, owner)).toEqual(grants);
     const results = await Promise.all([
       artifactCodeHandlers.code_access_change(input, context),
@@ -967,6 +976,17 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await expect(runtimeCapabilities.resolve(changed.id, { approved: true }, owner, caller)).rejects.toMatchObject({ code: "CONFLICT" });
       expect(execute).not.toHaveBeenCalled();
       await runtimeCapabilities.resolve(changed.id, { approved: false }, owner, caller);
+      // Approving after a language switch is the same consequence: the review is repeated in the reviewed locale.
+      const switched = request();
+      await runtimeCapabilities.prepare(switched, owner, { ...caller, locale: "de" });
+      review.mockImplementationOnce(async (_invocation, reviewer) =>
+        reviewer.locale === "de"
+          ? { ok: true, data: { message: "Write item?", approvalScope: "items:one" } }
+          : { ok: true, data: { message: "Translated consequence", approvalScope: "items:one" } },
+      );
+      expect(await runtimeCapabilities.resolve(switched.id, { approved: true }, owner, caller)).toMatchObject({ status: "completed" });
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockClear();
       const approved = request();
       await runtimeCapabilities.prepare(approved, owner, caller);
       await runtimeCapabilities.resolve(approved.id, { approved: true, remember: "always" }, owner, caller);

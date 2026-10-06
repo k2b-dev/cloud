@@ -245,10 +245,18 @@ describe("contacts capabilities", () => {
         priority: 7,
         metadata: [
           { label: "Type", value: "Contact" },
-          { label: "Book", value: publicBookId },
+          { label: "Address book", value: publicBookId },
         ],
         links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
       },
+    ]);
+    const german = await contactsCapabilities.queries["contact.list"].run(
+      { bookId: publicBookId, sort: "name", email: "all", phone: "all", favoritesOnly: false, limit: 25 },
+      { ...context, locale: "de" },
+    );
+    expect(german.ok && german.data.data[0]?.metadata).toEqual([
+      { label: "Typ", value: "Kontakt" },
+      { label: "Adressbuch", value: publicBookId },
     ]);
   });
 

@@ -4,6 +4,7 @@ export const contactCapabilityMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      type: "Type",
       addressBook: "Address book",
       contact: "Contact",
       destination: "Destination",
@@ -49,6 +50,7 @@ export const contactCapabilityMessages = i18n.define({
       bankAccounts: "Bank accounts",
     },
     de: {
+      type: "Typ",
       addressBook: "Adressbuch",
       contact: "Kontakt",
       destination: "Ziel",

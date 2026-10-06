@@ -27,6 +27,15 @@ const mergedTranslation = (catalog: AppPresentationCatalog, requestedLocale: str
   }, {});
 };
 
+/** Resolve only an app's display name and description, for consumers that carry no other app metadata. */
+export const resolveAppIdentityPresentation = (
+  app: { name: string; description: string; presentation?: AppPresentationCatalog },
+  requestedLocale: string,
+): { name: string; description: string } => {
+  const translation = app.presentation ? mergedTranslation(app.presentation, requestedLocale) : {};
+  return { name: translation.name ?? app.name, description: translation.description ?? app.description };
+};
+
 /** Resolve only human presentation; stable app identity, routes, icons, and authorization stay untouched. */
 export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocale: string): T => {
   if (!app.presentation) return app;
@@ -34,8 +43,7 @@ export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocal
   if (Object.keys(translation).length === 0) return app;
   return {
     ...app,
-    name: translation.name ?? app.name,
-    description: translation.description ?? app.description,
+    ...resolveAppIdentityPresentation(app, requestedLocale),
     adminNav: app.adminNav?.map((group) => ({
       ...group,
       label: (group.id && translation.adminGroups?.[group.id]) || group.label,

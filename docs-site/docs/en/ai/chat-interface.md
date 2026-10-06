@@ -282,8 +282,10 @@ Provide an active tool block in `awaiting_approval` state with the server-review
 message, details, and `allowAlways` value. Route `onApproval` back to the
 permission-aware server operation. This renderer does not authorize execution:
 the server must correlate the request to its user and resource, enforce current
-permissions, and reject changed or already-resolved requests. Use this shared
-view in a chat or app dialog rather than inventing another approval interaction.
+permissions, and reject changed or already-resolved requests. Repeat the review
+in the locale the person reviewed in when you compare it: switching the language
+before approving does not change the consequence. Use this shared view in a chat
+or app dialog rather than inventing another approval interaction.
 
 Assistant messages may expose helpful and needs-improvement actions. Positive
 feedback saves immediately. Negative feedback collects one or more stable

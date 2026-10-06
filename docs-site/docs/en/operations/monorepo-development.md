@@ -372,8 +372,9 @@ bun run test
 ```
 
 `bun run check` runs the repository rules under `scripts/checks/` (dependencies,
-import boundaries, package cycles, service API contracts, localization, CSS
-architecture, the application set, formatting) and every package typecheck.
+import boundaries, package cycles, service API contracts, localization,
+capability presentation, CSS architecture, the application set, formatting)
+and every package typecheck.
 A new rule is one module under `scripts/checks/`.
 
 Typecheck runs on TypeScript 7, which has no stable compiler API before 7.1.

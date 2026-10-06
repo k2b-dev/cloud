@@ -11,6 +11,7 @@ import {
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
+import { errorMessage } from "./api/messages";
 import type { DirectoryResult, FileEntry } from "./contracts";
 import { entryRefId } from "./resource-ref";
 
@@ -30,6 +31,8 @@ let failure = false;
 let serviceFailure: Error | null = null;
 let items: FileEntry[] = [];
 let calls = 0;
+let basesCalls = 0;
+let trashOriginal: string | null = "Berichte/report.csv";
 const uploadKeys: string[] = [];
 const uploadInputs: unknown[] = [];
 const folderCalls: unknown[] = [];
@@ -73,10 +76,18 @@ const lease = { url: "https://storage.example.test/direct/opaque-token", method:
 mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
-    bases: async () => ({
-      items: baseItems ?? Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })),
-      issues: baseIssues,
-    }),
+    bases: async () => {
+      basesCalls++;
+      return {
+        items: baseItems ?? Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })),
+        issues: baseIssues,
+      };
+    },
+    baseNames: async () => baseItems ?? [base],
+    trashEntry: async (_actor: unknown, input: { id: string }) => {
+      if (serviceFailure) throw serviceFailure;
+      return { id: input.id, original: trashOriginal, name: "report.csv", directory: false, deletedAt: null, state: "trashed" };
+    },
     capabilityUpload: async (_actor: unknown, input: { baseId: string }, body: ReadableStream<Uint8Array>) => {
       await body.cancel();
       if (serviceFailure) throw serviceFailure;
@@ -120,6 +131,9 @@ mock.module("./service", () => ({
     },
     list: page,
     search: page,
+    remove: async (_actor: unknown, input: { paths: string[] }) => ({
+      results: input.paths.map((path) => ({ ok: true, entry: entry(path) })),
+    }),
   },
 }));
 const { filesCapabilities } = await import("./capabilities");
@@ -158,6 +172,8 @@ afterEach(() => {
   serviceFailure = null;
   items = [];
   calls = 0;
+  basesCalls = 0;
+  trashOriginal = "Berichte/report.csv";
   ids.clear();
   downloads.length = 0;
   downloadFailure = null;
@@ -382,7 +398,7 @@ for (const [status, upstreamCode, code, expectedStatus] of [
     downloadFailure = new FilegateError(status, upstreamCode, "private upstream message");
     await expect(filesCapabilities.queries["content.download"].run({ id: "ref" }, context)).rejects.toEqual({
       code,
-      message: code,
+      message: errorMessage(code, "en"),
       status: expectedStatus,
     });
   });
@@ -397,7 +413,7 @@ for (const [status, upstreamCode, code, expectedStatus] of [
   test(`shared file capability boundary sanitizes ${upstreamCode} for reads and actions`, async () => {
     ids.set("ref", { baseId: base.id, path: "report.pdf" });
     serviceFailure = new FilegateError(status, upstreamCode, "private upstream message");
-    const expected = { code, message: code, status: expectedStatus };
+    const expected = { code, message: errorMessage(code, "en"), status: expectedStatus };
     const list = filesCapabilities.queries["entry.list"];
     const search = filesCapabilities.queries["entry.search-in-base"];
     await expect(list.run(list.input.parse({ baseId: base.id }), context)).rejects.toEqual(expected);
@@ -411,11 +427,14 @@ for (const [status, upstreamCode, code, expectedStatus] of [
 }
 
 for (const [failure, expected] of [
-  [new FilegateError(403, "permission_denied", "private"), { code: "FORBIDDEN", message: "forbidden", status: 403 }],
-  [new FilegateError(404, "missing", "private"), { code: "NOT_FOUND", message: "File entry not found", status: 404 }],
-  [new FilegateError(409, "execution_mismatch", "private"), { code: "identity_changed", message: "identity_changed", status: 409 }],
-  [new FilegateError(502, "upstream_failure", "private"), { code: "unavailable", message: "unavailable", status: 503 }],
-  [new MockFilesError("unavailable", 503), { code: "unavailable", message: "unavailable", status: 503 }],
+  [new FilegateError(403, "permission_denied", "private"), { code: "FORBIDDEN", message: errorMessage("forbidden", "en"), status: 403 }],
+  [new FilegateError(404, "missing", "private"), { code: "NOT_FOUND", message: errorMessage("not_found", "en"), status: 404 }],
+  [
+    new FilegateError(409, "execution_mismatch", "private"),
+    { code: "identity_changed", message: errorMessage("identity_changed", "en"), status: 409 },
+  ],
+  [new FilegateError(502, "upstream_failure", "private"), { code: "unavailable", message: errorMessage("unavailable", "en"), status: 503 }],
+  [new MockFilesError("unavailable", 503), { code: "unavailable", message: errorMessage("unavailable", "en"), status: 503 }],
 ] as const) {
   test(`entry reader answers ${failure.name} ${failure.code} without upstream details`, async () => {
     ids.set("ref", { baseId: base.id, path: "report.pdf" });
@@ -635,5 +654,93 @@ describe("Files as a file provider", () => {
     const read = await filesCapabilities.queries["content.read"].run({ id: "deep-id" }, context);
     if (!read.ok) throw new Error("expected read");
     expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }]);
+  });
+});
+
+test("approval reviews name the file, its storage, and the change in the reader's language", async () => {
+  baseItems = [{ ...base, id: "home" }];
+  const rename = filesCapabilities.actions["entry.rename"].review!;
+  const german = await rename({ baseId: "home", path: "Berichte/report.csv", name: "q3.csv" }, { ...context, locale: "de-DE" });
+  expect(german).toEqual({
+    ok: true,
+    data: {
+      message: "„report.csv“ in „q3.csv“ umbenennen.",
+      details: [
+        { label: "Ablage", value: "Meine Dateien" },
+        { label: "Pfad", value: "Berichte/report.csv" },
+        { label: "Neuer Name", value: "q3.csv" },
+      ],
+    },
+  });
+  const created = await filesCapabilities.actions["content.create"].review!(
+    { baseId: "home", path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "error" },
+    context,
+  );
+  expect(created).toEqual({
+    ok: true,
+    data: {
+      message: "Create the file “test.csv”.",
+      details: [
+        { label: "Storage", value: "My files" },
+        { label: "Path", value: "test.csv" },
+        { label: "Size", value: "2 KiB" },
+      ],
+    },
+  });
+  const trashed = await filesCapabilities.actions["entry.trash"].run({ baseId: "home", path: "test.csv" }, { ...context, locale: "de" });
+  expect(trashed.ok && trashed.data.summary).toBe("In den Papierkorb verschoben");
+});
+
+test("reviews stay within the review bounds and never scan storage bases", async () => {
+  baseItems = [{ ...base, id: "home" }];
+  const rename = filesCapabilities.actions["entry.rename"].review!;
+  const long = "a".repeat(4000);
+  const reviewed = await rename({ baseId: "home", path: long, name: "b".repeat(255) }, context);
+  if (!reviewed.ok) throw new Error("expected a review");
+  expect(reviewed.data.message.length).toBeLessThanOrEqual(1000);
+  expect(reviewed.data.message).toContain("…");
+  expect(reviewed.data.details).toContainEqual({ label: "Path", value: long });
+  expect(basesCalls).toBe(0);
+});
+
+test("a restore review names the entry and where it returns to", async () => {
+  baseItems = [{ ...base, id: "home" }];
+  const restore = filesCapabilities.actions["trash.restore"].review!;
+  expect(await restore({ baseId: "home", id: "row" }, { ...context, locale: "de" })).toEqual({
+    ok: true,
+    data: {
+      message: "„report.csv“ aus dem Papierkorb wiederherstellen.",
+      details: [
+        { label: "Ablage", value: "Meine Dateien" },
+        { label: "Wiederherstellen nach", value: "Berichte/report.csv" },
+      ],
+    },
+  });
+  // An entry without a known origin cannot be restored without a target; the review says so instead of guessing.
+  trashOriginal = null;
+  await expect(restore({ baseId: "home", id: "fs:x" }, { ...context, locale: "de" })).rejects.toEqual({
+    code: "restore_destination_required",
+    message: errorMessage("restore_destination_required", "de"),
+    status: 400,
+  });
+});
+
+test("storage failures keep their code and carry the Files message in the caller's language", async () => {
+  ids.set("docs-id", { baseId: "base", path: "Docs" });
+  const german = { ...context, locale: "de", idempotencyKey: "save-key" };
+  serviceFailure = new MockFilesError("path_conflict", 409);
+  await expect(
+    filesCapabilities.actions["provider.save"].run({ parent: "docs-id", name: "a.pdf", mediaType: "application/pdf", size: 4 }, german),
+  ).rejects.toEqual({
+    code: FILE_PROVIDER_NAME_CONFLICT,
+    message: "Eine Datei oder ein Ordner mit diesem Namen ist bereits vorhanden.",
+    status: 409,
+  });
+  const list = filesCapabilities.queries["entry.list"];
+  serviceFailure = new FilegateError(403, "permission_denied", "private upstream message");
+  await expect(list.run(list.input.parse({ baseId: base.id }), german)).rejects.toEqual({
+    code: "forbidden",
+    message: "Du hast keine Leseberechtigung für diesen Pfad.",
+    status: 403,
   });
 });

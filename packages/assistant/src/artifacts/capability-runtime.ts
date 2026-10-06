@@ -37,6 +37,8 @@ const Prepared = z.object({
   review: CapabilityActionReviewSchema.nullable(),
   allowAlways: z.boolean(),
   scope: z.string().nullable(),
+  /** Locale the person reviewed in; revalidation reviews in it again so a language switch is not a changed consequence. */
+  locale: z.string().optional(),
 });
 type Request = z.infer<typeof RuntimeCapabilityRequest>;
 type Row = { id: string; request: unknown; prepared: unknown; status: string; result: unknown };
@@ -69,7 +71,15 @@ async function operation(name: string, locale?: string | null) {
   const query = catalog.data.manifest.queries.find((item) => item.localId === localId);
   const action = catalog.data.manifest.actions.find((item) => item.localId === localId);
   if (Boolean(query) === Boolean(action)) throw new ArtifactError("INVALID_INPUT");
-  return { appId, localId, operation: (query ?? action)!, action, kind: query ? ("query" as const) : ("action" as const) };
+  return {
+    appId,
+    appName: catalog.data.appName,
+    appIcon: catalog.data.appIcon,
+    localId,
+    operation: (query ?? action)!,
+    action,
+    kind: query ? ("query" as const) : ("action" as const),
+  };
 }
 
 export const runtimeCapabilities = {
@@ -118,6 +128,7 @@ export const runtimeCapabilities = {
       review,
       allowAlways: !untrusted && scope !== null,
       scope,
+      locale: caller.locale ?? undefined,
       ...(untrusted ? { resource: { id: resource.id, title: resource.title } } : {}),
     });
     await sql.begin(async (db) => {
@@ -143,7 +154,15 @@ export const runtimeCapabilities = {
       (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope }));
     if (!untrusted && (!target.action || target.action.approval === "none" || remembered))
       return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
-    return { status: "approval" as const, id: request.id, name: request.name, input: request.input, ...prepared };
+    return {
+      status: "approval" as const,
+      id: request.id,
+      name: request.name,
+      input: request.input,
+      appName: target.appName,
+      appIcon: target.appIcon,
+      ...prepared,
+    };
   },
   async resolve(id: string, decision: { approved: boolean; remember?: "always" }, identity: ArtifactIdentity, caller: CapabilityCaller) {
     z.uuid().parse(id);
@@ -177,7 +196,7 @@ export const runtimeCapabilities = {
       if (target.action?.review) {
         const response = await reviewCapabilityAction(
           { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
-          caller,
+          { ...caller, locale: prepared.locale ?? caller.locale },
         );
         if (!response.ok) throw new Error(response.error.message);
         currentReview = CapabilityActionReviewSchema.parse(response.data);

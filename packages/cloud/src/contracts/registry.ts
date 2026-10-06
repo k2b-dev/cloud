@@ -38,6 +38,8 @@ export type CapabilityRegistryEntry = {
   endpoint: string;
   manifest: CapabilityManifest;
   presentation?: CapabilityPresentationCatalog;
+  /** The app's own name and description overlays, so capability consumers can present the app in the reader's locale. */
+  appPresentation?: AppPresentationCatalog;
 };
 
 export type AppRegistryHelpSummary = { manifestHash: string; pageBase: string; baseLocale: string };

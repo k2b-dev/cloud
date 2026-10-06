@@ -278,9 +278,24 @@ data remain unchanged. Catalog requests resolve exact locale, ancestor, and
 base fallback (`de-CH` → `de` → `en`) and return final localized strings, so
 consumers never import another application's message keys.
 
+People see this presentation in the Assistant's tool rows, approval cards,
+and remembered approvals; in Studio app approvals; in search; and in the
+capability catalog. Each surface resolves it for the reader's request locale,
+together with the localized app name from the app's own `presentation`. An
+entry without a translation shows its base text, so a missing locale never
+hides a capability. Translate at least the title and description of every
+Type, Query, Action, Command, and search tag.
+
+The model always receives the base presentation, and so do the tools the
+[MCP server](/en/docs/platform/mcp) lists. Tool names, titles, descriptions,
+and schema field descriptions are prompt text for a model: they stay
+identical for every reader, while the model still answers in the reader's
+language.
+
 Action reviews and provider-authored summaries or errors are runtime output,
 not registry metadata. Resolve those inside the handler from
-`context.locale`; preserve their stable codes and structured values.
+`context.locale`, including every review `message` and detail `label`;
+preserve their stable codes and structured values.
 
 ## Understand Types, Queries, and Actions
 
@@ -664,7 +679,8 @@ The shape is intentionally fixed. Reviews have no app-defined schema, title,
 icon, severity, arbitrary JSON, HTML, refs, pagination, or executable
 controls. `display` is only a layout hint, and `format` selects date formatting
 or block Markdown; neither changes the value's trust. Clients derive
-the title and app presentation from the live manifest and registry, and derive
+the title and app presentation from the live manifest and registry in the
+reader's locale, and derive
 warning treatment from `openWorld` and `destructive`. Treat every review value
 as untrusted content; render plain text escaped and
 Markdown through the shared safe renderer and keep semantic links as links rather than

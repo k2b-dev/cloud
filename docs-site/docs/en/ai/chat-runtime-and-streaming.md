@@ -490,6 +490,12 @@ The interactive Studio preview remains browser-owned. Opening an app, selecting
 local files, entering secrets and answering approval prompts still need a user
 client.
 
+When code in that host calls a capability Action or sends an external HTTP
+request, the chat approval names the app and Action, repeats the owning app's
+review in the reader's language, and lists each reviewed value as its own row.
+An Action without a review lists its input fields. The approval never shows the
+raw request object, and secret references appear only by name.
+
 Code Mode source and runtime tools do not require confirmation. Source Actions
 retain permission checks and idempotency. Browser execution claims resolve a
 public short turn ID to the authorized active turn's UUID before persistence.

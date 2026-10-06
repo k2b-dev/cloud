@@ -92,7 +92,7 @@ function ApprovalPreferences() {
               >
                 <SettingsCollection.Item.Actions>
                   <IconButton
-                    label={`Revoke approval for ${approval.title}`}
+                    label={copy().revokeApprovalFor({ title: approval.title })}
                     title={text("Revoke approval")}
                     size="sm"
                     loading={revokingId() === approval.id}

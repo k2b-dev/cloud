@@ -395,6 +395,29 @@ describe("recoverable trash lifecycle", () => {
     const listed = await f.service.trash(actor, { baseId: base.id });
     expect(listed.entries[0]).toMatchObject({ state: "pending", error: "operation_unresolved" });
   });
+  test("a single entry for review follows the listing's disclosure rules and changes nothing", async () => {
+    const f = fixture();
+    const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    const row = [...f.rows.values()][0]!;
+    const calls = f.calls.length;
+    await expect(f.service.trashEntry(actor, { baseId: base.id, id: removed.entries[0]!.id })).resolves.toMatchObject({
+      name: "report.txt",
+      original: "report.txt",
+    });
+    f.nodes.set("home/alice/trash/manual.txt", node("home/alice/trash/manual.txt"));
+    const manual = `fs:${Buffer.from("trash/manual.txt").toString("base64url")}`;
+    await expect(f.service.trashEntry(actor, { baseId: base.id, id: manual })).resolves.toMatchObject({
+      name: "manual.txt",
+      original: null,
+    });
+    f.denied.add(`home/alice/${row.trashed}`);
+    await expect(f.service.trashEntry(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "permission_denied" });
+    row.server_url = "http://other-filegate:4000";
+    await expect(f.service.trashEntry(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "not_found" });
+    await expect(f.service.trashEntry(actor, { baseId: base.id, id: crypto.randomUUID() })).rejects.toMatchObject({ code: "not_found" });
+    expect(f.calls).toHaveLength(calls);
+    expect(row.state).toBe("trashed");
+  });
   test("filesystem-only pages have a cursor and never repeat registered UUID trash targets", async () => {
     const f = fixture();
     await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });

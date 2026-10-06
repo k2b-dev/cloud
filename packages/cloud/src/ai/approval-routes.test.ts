@@ -89,6 +89,55 @@ describe("AI approval preference routes", () => {
     });
   });
 
+  test("titles remembered approvals in the request locale", async () => {
+    const localized = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        presentation: {
+          baseLocale: "en",
+          translations: { de: { actions: { rename: { title: "Element umbenennen", description: "Benennt ein Element um." } } } },
+        },
+        types: { item: { title: "Item", description: "A test item." } },
+        actions: {
+          rename: {
+            title: "Rename item",
+            description: "Renames one item.",
+            input: z.object({ id: z.string().describe("Item id.") }).strict(),
+            data: z.object({ id: z.string() }).strict(),
+            destructive: false,
+            openWorld: false,
+            idempotency: "required",
+            approval: "rememberable",
+            review: async () => ({ ok: true, data: { message: "Rename the item.", approvalScope: "demo" } }),
+            run: async ({ id }) => ok({ data: { id } }),
+          },
+        },
+      }),
+    );
+    const routes = createAiApprovalPreferenceRoutes({
+      limit: pass,
+      authenticate,
+      listPreferences: async () => [preference],
+      listCapabilities: async () => [
+        {
+          ...capabilityApp,
+          manifest: localized.manifest,
+          presentation: localized.presentation,
+          appPresentation: { baseLocale: "en", translations: { de: { name: "Beispiel" } } },
+        },
+      ],
+    });
+    const list = async (language: string) =>
+      (
+        (await (await routes.request("/", { headers: { "accept-language": language } })).json()) as {
+          approvals: Array<{ title: string; app: { name: string } | null }>;
+        }
+      ).approvals[0];
+    expect(await list("de-DE,de;q=0.9")).toMatchObject({ title: "Element umbenennen", app: { name: "Beispiel" } });
+    expect(await list("en")).toMatchObject({ title: "Rename item", app: { name: "Demo" } });
+  });
+
   test("keeps preferences manageable while the capability registry is unavailable", async () => {
     const routes = createAiApprovalPreferenceRoutes({
       limit: pass,

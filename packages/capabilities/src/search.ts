@@ -1,10 +1,12 @@
 import { type CapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import type { CloudResourceView, UniversalSearchInput } from "@k2b/cloud/contracts";
 import { cache } from "@k2b/stdlib";
+import { capabilityUiMessages } from "./frontend/messages";
 import { capabilityHref } from "./routes";
 
-export const capabilitySearchViews = (apps: readonly CapabilityCatalogApp[]): CloudResourceView[] =>
-  apps.flatMap((app) => [
+export const capabilitySearchViews = (apps: readonly CapabilityCatalogApp[], locale: string): CloudResourceView[] => {
+  const t = capabilityUiMessages.resolve([locale]).t;
+  return apps.flatMap((app) => [
     {
       ref: { type: "capabilities.app", id: app.appId },
       title: app.appName,
@@ -24,13 +26,14 @@ export const capabilitySearchViews = (apps: readonly CapabilityCatalogApp[]): Cl
           metadata: [
             { label: "App", value: app.appName },
             { label: "ID", value: `${app.appId}.${operation.localId}` },
-            { label: "Type", value: kind === "query" ? "Query" : "Action" },
+            { label: t.type, value: kind === "query" ? t.query : t.action },
           ],
           links: [{ rel: "open", href: capabilityHref({ appId: app.appId, kind, capabilityId: operation.localId }) }],
         }),
       ),
     ),
   ]);
+};
 
 // Only public catalog presentation is shared, never execution permissions or user data.
 // Two locale keys and a short TTL keep discovery bounded and current while typing.
@@ -50,7 +53,7 @@ export const createSearchCatalogLoader = (readCatalog: typeof listCapabilityCata
         if (!cursor || seen.has(cursor)) throw new Error("Capability catalog cursor did not advance");
         seen.add(cursor);
       } while (cursor);
-      return capabilitySearchViews(apps);
+      return capabilitySearchViews(apps, locale);
     },
   });
   return async (locale: string): Promise<CloudResourceView[]> =>

@@ -44,6 +44,7 @@ import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
+import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { taskGrantReview } from "./task-grant-presentation";
 
@@ -182,8 +183,13 @@ const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
   createdAt: task.createdAt,
   updatedAt: task.updatedAt,
 });
-const taskScheduleLabel = (task: AiChatTask): string =>
-  task.schedule.kind === "once" ? `${task.schedule.runAt} (${task.timezone})` : `${task.schedule.cron} (${task.timezone})`;
+/** A schedule as people read it: a one-time run in the task's own timezone, a recurring one by its exact cron. */
+const scheduleLabel = (schedule: AiChatTask["schedule"], timezone: string, locale: string): string => {
+  const { t, locale: resolved } = coreCapabilityMessages(locale);
+  return schedule.kind === "once"
+    ? `${dates.formatDateTime(schedule.runAt, { locale: resolved, timeZone: timezone })} (${timezone})`
+    : `${t.recurring}: ${schedule.cron} (${timezone})`;
+};
 const referenceMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -234,12 +240,13 @@ const chatReference = (chat: AiConversation) => ({
   preview: chat.description,
   icon: "ti ti-message-chatbot",
 });
-const taskChatTitle = (task: AiChatTask): string => `“${task.chatTitle}”`;
-const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask): string => {
-  if (input.prompt !== undefined && input.schedule !== undefined)
-    return `Changed the instructions and schedule of a task in ${taskChatTitle(task)}.`;
-  if (input.prompt !== undefined) return `Changed the instructions of a task in ${taskChatTitle(task)}.`;
-  return `Changed the schedule of a task in ${taskChatTitle(task)}.`;
+const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask, locale: string): string => {
+  const { t } = coreCapabilityMessages(locale);
+  const chat = task.chatTitle;
+  if (input.prompt !== undefined && input.schedule !== undefined) return t.taskInstructionsAndScheduleChanged({ chat });
+  if (input.prompt !== undefined) return t.taskInstructionsChanged({ chat });
+  if (input.schedule !== undefined) return t.taskScheduleChanged({ chat });
+  return t.taskGrantsChanged({ chat });
 };
 const invalidTaskState = (task: AiChatTask, action: "pause" | "resume" | "run"): string | null => {
   if (action === "pause")
@@ -565,18 +572,21 @@ const chatSummary = (chat: AiConversation) => ({
   updatedAt: chat.updatedAt,
 });
 
-const toResourceView = (chat: AiConversation): CloudResourceView => ({
-  ref: { type: "core.ai.chat", id: chat.shortId },
-  title: chat.title,
-  icon: "ti ti-message-chatbot",
-  ...(chat.description.trim() ? { preview: chat.description } : {}),
-  priority: chat.pinnedAt ? 8 : 6,
-  metadata: [
-    { label: "Status", value: chat.runStatus },
-    { label: "Updated", value: chat.updatedAt },
-  ],
-  links: [{ rel: "open", href: chatHref(chat.shortId) }],
-});
+const toResourceView = (chat: AiConversation, locale: string): CloudResourceView => {
+  const { t } = coreCapabilityMessages(locale);
+  return {
+    ref: { type: "core.ai.chat", id: chat.shortId },
+    title: chat.title,
+    icon: "ti ti-message-chatbot",
+    ...(chat.description.trim() ? { preview: chat.description } : {}),
+    priority: chat.pinnedAt ? 8 : 6,
+    metadata: [
+      { label: t.status, value: t[chat.runStatus] },
+      { label: t.updated, value: chat.updatedAt },
+    ],
+    links: [{ rel: "open", href: chatHref(chat.shortId) }],
+  };
+};
 
 const visibleMessage = (stored: AiStoredMessage) => {
   const message = stored.message;
@@ -752,7 +762,7 @@ export const aiCapabilities = defineCapabilities({
         if (!skill) return fail(err.notFound("Skill"));
         return ok({
           data: skillData(skill),
-          summary: `Read Assistant Skill “${skill.name}”.`,
+          summary: coreCapabilityMessages(context.locale).t.skillRead({ name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
         });
       },
@@ -769,7 +779,7 @@ export const aiCapabilities = defineCapabilities({
         if (!skill || !reference) return fail(err.notFound("Skill reference"));
         return ok({
           data: { skillId: skill.shortId, revision: skill.revision, path: reference.path, content: reference.content },
-          summary: `Read “${reference.path}” from Assistant Skill “${skill.name}”.`,
+          summary: coreCapabilityMessages(context.locale).t.referenceRead({ path: reference.path, name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
         });
       },
@@ -823,13 +833,14 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const detail = await aiChatTasks.getOccurrenceDetail({ userId: context.user.id, ...input });
         if (!detail) return fail(err.notFound("Task run"));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
           data: {
             task: taskData(detail.task),
             occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId),
             messages: detail.messages.map((message) => z.json().parse(message)),
           },
-          summary: detail.occurrence.resultText ?? detail.occurrence.error ?? `Task run ${detail.occurrence.state}.`,
+          summary: detail.occurrence.resultText ?? detail.occurrence.error ?? t.taskRunState({ state: t[detail.occurrence.state] }),
         });
       },
     },
@@ -858,7 +869,10 @@ export const aiCapabilities = defineCapabilities({
               completedAt: occurrence.completedAt,
             })),
           },
-          summary: `Read ${task.state} scheduled task in “${task.chatTitle}”.`,
+          summary: coreCapabilityMessages(context.locale).t.taskRead({
+            state: referenceMessages.resolve([context.locale]).t[task.state],
+            chat: task.chatTitle,
+          }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
@@ -880,7 +894,7 @@ export const aiCapabilities = defineCapabilities({
           archived: input.archived,
           limit: input.limit,
         });
-        return ok({ data: chats.map(toResourceView) });
+        return ok({ data: chats.map((chat) => toResourceView(chat, context.locale)) });
       },
     },
     "ai.chat.read": {
@@ -900,7 +914,7 @@ export const aiCapabilities = defineCapabilities({
         const oldestSeq = page.messages[0]?.seq;
         return ok({
           data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
-          summary: `Read AI conversation “${chat.title}”.`,
+          summary: coreCapabilityMessages(context.locale).t.chatRead({ title: chat.title }),
           refs: [chatReference(chat)],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.hasMore && oldestSeq !== undefined ? String(oldestSeq) : undefined),
@@ -1006,13 +1020,15 @@ export const aiCapabilities = defineCapabilities({
         const principal = previous?.principal ?? input.principal;
         if (!principal) return fail(err.badInput("Recipient is required."));
         const [recipient] = await resolveDisplayNames([{ principal }]);
+        const { t } = coreCapabilityMessages(context.locale);
+        const level = (permission: "read" | "write" | "admin") => t[permission];
         return ok({
-          message: `Change access to Skill “${skill.name}” (${input.skillId}).`,
+          message: t.skillAccessChange({ name: skill.name, id: input.skillId }),
           details: [
-            { label: "Recipient", value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
-            { label: "Before", value: previous?.permission ?? "No grant" },
-            { label: "After", value: input.permission ?? "Remove grant" },
-            { label: "Separate App access", value: "This changes only the Skill's access." },
+            { label: t.recipient, value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
+            { label: t.before, value: previous ? level(previous.permission) : t.noAccess },
+            { label: t.after, value: input.permission ? level(input.permission) : t.removeAccess },
+            { label: t.appAccess, value: t.appAccessUnchanged },
           ],
         });
       },
@@ -1060,12 +1076,13 @@ export const aiCapabilities = defineCapabilities({
       idempotency: "required",
       async review(input, context) {
         if (!context.accessSubject) return fail(err.forbidden("Creating Skills requires an authenticated actor"));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Create Assistant Skill “${input.name}”.`,
+          message: t.skillCreate({ name: input.name }),
           details: [
-            { label: "Name", value: input.name },
-            { label: "Description", value: input.description, display: "block" },
-            { label: "Instructions", value: input.instructions, display: "block" },
+            { label: t.name, value: input.name },
+            { label: t.description, value: input.description, display: "block" },
+            { label: t.skillInstructions, value: input.instructions, display: "block" },
           ],
         });
       },
@@ -1075,7 +1092,7 @@ export const aiCapabilities = defineCapabilities({
           const skill = await aiSkills.create({ subject: context.accessSubject, ...input });
           return ok({
             data: skillData(skill),
-            summary: `Created Assistant Skill “${skill.name}”.`,
+            summary: coreCapabilityMessages(context.locale).t.skillCreated({ name: skill.name }),
             refs: [{ type: "core.ai.skill", id: skill.shortId }],
           });
         } catch (error) {
@@ -1097,12 +1114,15 @@ export const aiCapabilities = defineCapabilities({
         const skill = await readableSkill(input.skillId, context, "write");
         if (!skill) return fail(err.notFound("Skill"));
         if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Update Assistant Skill “${skill.name}”.`,
+          message: t.skillUpdate({ name: skill.name }),
           details: [
-            ...(input.name !== undefined ? [{ label: "Name", value: input.name }] : []),
-            ...(input.description !== undefined ? [{ label: "Description", value: input.description, display: "block" as const }] : []),
-            ...(input.instructions !== undefined ? [{ label: "Instructions", value: input.instructions, display: "block" as const }] : []),
+            ...(input.name !== undefined ? [{ label: t.name, value: input.name }] : []),
+            ...(input.description !== undefined ? [{ label: t.description, value: input.description, display: "block" as const }] : []),
+            ...(input.instructions !== undefined
+              ? [{ label: t.skillInstructions, value: input.instructions, display: "block" as const }]
+              : []),
           ],
         });
       },
@@ -1121,7 +1141,7 @@ export const aiCapabilities = defineCapabilities({
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
             data: skillData(updated),
-            summary: `Updated Assistant Skill “${updated.name}”.`,
+            summary: coreCapabilityMessages(context.locale).t.skillUpdated({ name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId }],
           });
         } catch (error) {
@@ -1145,11 +1165,12 @@ export const aiCapabilities = defineCapabilities({
         const skill = await readableSkill(input.skillId, context, "write");
         if (!skill) return fail(err.notFound("Skill"));
         if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Set “${input.path}” on Assistant Skill “${skill.name}”.`,
+          message: t.referenceSet({ path: input.path, name: skill.name }),
           details: [
-            { label: "Reference", value: input.path },
-            { label: "Content", value: input.content, display: "block" },
+            { label: t.reference, value: input.path },
+            { label: t.content, value: input.content, display: "block" },
           ],
           approvalScope: "skills",
         });
@@ -1162,7 +1183,7 @@ export const aiCapabilities = defineCapabilities({
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
             data: skillData(updated),
-            summary: `Set “${input.path}” on Assistant Skill “${updated.name}”.`,
+            summary: coreCapabilityMessages(context.locale).t.referenceSaved({ path: input.path, name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId }],
           });
         } catch (error) {
@@ -1187,7 +1208,7 @@ export const aiCapabilities = defineCapabilities({
         if (!skill) return fail(err.notFound("Skill"));
         if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
         return ok({
-          message: `Set ${input.references.length} references on Assistant Skill “${skill.name}” in one revision.`,
+          message: coreCapabilityMessages(context.locale).t.referencesSet({ count: input.references.length, name: skill.name }),
           details: input.references.map((reference: z.infer<typeof SkillReferencesSetInputSchema>["references"][number]) => ({
             label: reference.path,
             value: reference.content,
@@ -1204,7 +1225,7 @@ export const aiCapabilities = defineCapabilities({
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
             data: skillData(updated),
-            summary: `Set ${input.references.length} references on Assistant Skill “${updated.name}”.`,
+            summary: coreCapabilityMessages(context.locale).t.referencesSaved({ count: input.references.length, name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId }],
           });
         } catch (error) {
@@ -1226,9 +1247,10 @@ export const aiCapabilities = defineCapabilities({
         const skill = await readableSkill(input.skillId, context, "write");
         if (!skill?.references.some((reference) => reference.path === input.path)) return fail(err.notFound("Skill reference"));
         if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Remove “${input.path}” from Assistant Skill “${skill.name}”.`,
-          details: [{ label: "Reference", value: input.path }],
+          message: t.referenceRemove({ path: input.path, name: skill.name }),
+          details: [{ label: t.reference, value: input.path }],
         });
       },
       async run(input, context) {
@@ -1239,7 +1261,7 @@ export const aiCapabilities = defineCapabilities({
           if (!updated) return fail(err.notFound("Skill reference"));
           return ok({
             data: skillData(updated),
-            summary: `Removed “${input.path}” from Assistant Skill “${updated.name}”.`,
+            summary: coreCapabilityMessages(context.locale).t.referenceRemoved({ path: input.path, name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId }],
           });
         } catch (error) {
@@ -1261,9 +1283,11 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("Personal Skill state requires a user-backed actor"));
         const skill = await readableSkill(input.skillId, context);
         if (!skill) return fail(err.notFound("Skill"));
+        const { t } = coreCapabilityMessages(context.locale);
+        const target = { name: skill.name, person: context.user.displayName };
         return ok({
-          message: `${input.enabled ? "Enable" : "Disable"} Assistant Skill “${skill.name}” for ${context.user.displayName}.`,
-          details: [{ label: "Personal state", value: input.enabled ? "Enabled" : "Disabled" }],
+          message: input.enabled ? t.skillEnable(target) : t.skillDisable(target),
+          details: [{ label: t.personalState, value: input.enabled ? t.enabled : t.disabled }],
         });
       },
       async run(input, context) {
@@ -1274,7 +1298,9 @@ export const aiCapabilities = defineCapabilities({
         if (enabled === null) return fail(err.notFound("Skill"));
         return ok({
           data: { skillId: skill.shortId, name: skill.name, enabled },
-          summary: `${enabled ? "Enabled" : "Disabled"} Assistant Skill “${skill.name}” for the current user.`,
+          summary: enabled
+            ? coreCapabilityMessages(context.locale).t.skillEnabled({ name: skill.name })
+            : coreCapabilityMessages(context.locale).t.skillDisabled({ name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
         });
       },
@@ -1290,11 +1316,12 @@ export const aiCapabilities = defineCapabilities({
       async review(input, context) {
         const skill = await readableSkill(input.skillId, context, "admin");
         if (!skill) return fail(err.notFound("Skill"));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Delete Assistant Skill “${skill.name}”.`,
+          message: t.skillDelete({ name: skill.name }),
           details: [
-            { label: "Description", value: skill.description, display: "block" },
-            { label: "References", value: String(skill.referenceCount) },
+            { label: t.description, value: skill.description, display: "block" },
+            { label: t.references, value: String(skill.referenceCount) },
           ],
         });
       },
@@ -1306,7 +1333,7 @@ export const aiCapabilities = defineCapabilities({
         return audit.recordResultAfterSideEffect({
           ...actionAudit(context, "ai.skill.delete", "ai_skill", skill.id),
           result: deleted
-            ? ok({ data: { deleted: true as const }, summary: `Deleted Assistant Skill “${skill.name}”.` })
+            ? ok({ data: { deleted: true as const }, summary: coreCapabilityMessages(context.locale).t.skillDeleted({ name: skill.name }) })
             : fail(err.notFound("Skill")),
         });
       },
@@ -1329,13 +1356,13 @@ export const aiCapabilities = defineCapabilities({
         try {
           await aiChatTasks.validateGrants(input.grants);
           const normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
-          const schedule = normalized.schedule.kind === "once" ? normalized.schedule.runAt : normalized.schedule.cron;
+          const { t } = coreCapabilityMessages(context.locale);
           return ok({
-            message: `Create a scheduled task in ${chat.title} (${chat.shortId}).`,
+            message: t.taskCreate({ chat: `${chat.title} (${chat.shortId})` }),
             details: [
-              { label: "Chat", value: `${chat.title} (${chat.shortId})` },
-              { label: "Schedule", value: `${schedule} (${normalized.timezone})` },
-              { label: "Prompt", value: input.prompt, display: "block" },
+              { label: t.chat, value: `${chat.title} (${chat.shortId})` },
+              { label: t.schedule, value: scheduleLabel(normalized.schedule, normalized.timezone, context.locale) },
+              { label: t.instructions, value: input.prompt, display: "block" },
               await taskGrantReview(input.grants, context.locale),
             ],
           });
@@ -1357,7 +1384,7 @@ export const aiCapabilities = defineCapabilities({
           if (replay)
             return ok({
               data: taskData(replay),
-              summary: `Scheduled a task in ${taskChatTitle(replay)}.`,
+              summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: replay.chatTitle }),
               refs: [taskReference(replay, context.locale), taskChatReference(replay, context.locale)],
             });
         } catch (error) {
@@ -1390,7 +1417,7 @@ export const aiCapabilities = defineCapabilities({
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
           data: taskData(task),
-          summary: `Scheduled a task in ${taskChatTitle(task)}.`,
+          summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
         });
       },
@@ -1413,16 +1440,16 @@ export const aiCapabilities = defineCapabilities({
         try {
           if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
           const normalized = input.schedule ? await normalizeChatTaskSchedule(input.schedule, input.timezone) : null;
-          const nextSchedule = normalized?.schedule ?? task.schedule;
+          const { t } = coreCapabilityMessages(context.locale);
           return ok({
-            message: `Update scheduled task ${task.shortId}.`,
+            message: t.taskUpdate({ id: task.shortId }),
             details: [
-              { label: "Chat", value: `${task.chatTitle} (${task.chatId})` },
+              { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
               {
-                label: "Schedule",
-                value: taskScheduleLabel({ ...task, schedule: nextSchedule, timezone: normalized?.timezone ?? task.timezone }),
+                label: t.schedule,
+                value: scheduleLabel(normalized?.schedule ?? task.schedule, normalized?.timezone ?? task.timezone, context.locale),
               },
-              { label: "Prompt", value: input.prompt ?? task.prompt, display: "block" },
+              { label: t.instructions, value: input.prompt ?? task.prompt, display: "block" },
               await taskGrantReview(input.grants ?? task.grants, context.locale),
             ],
           });
@@ -1452,7 +1479,7 @@ export const aiCapabilities = defineCapabilities({
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
           data: taskData(task),
-          summary: taskUpdateSummary(input, task),
+          summary: taskUpdateSummary(input, task, context.locale),
           refs: [taskReference(task, context.locale)],
         });
       },
@@ -1472,11 +1499,12 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(task, "pause");
         if (stateError) return fail(err.conflict(stateError));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Pause scheduled task ${task.shortId}.`,
+          message: t.taskPause({ id: task.shortId }),
           details: [
-            { label: "Task", value: task.prompt, display: "block" },
-            { label: "Schedule", value: taskScheduleLabel(task) },
+            { label: t.task, value: task.prompt, display: "block" },
+            { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
           ],
           approvalScope: `task:${task.shortId}`,
         });
@@ -1496,7 +1524,7 @@ export const aiCapabilities = defineCapabilities({
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
           data: taskData(task),
-          summary: `Paused the scheduled task in ${taskChatTitle(task)}.`,
+          summary: coreCapabilityMessages(context.locale).t.taskPaused({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale)],
         });
       },
@@ -1517,11 +1545,12 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(task, "resume");
         if (stateError) return fail(err.conflict(stateError));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Resume scheduled task ${task.shortId}.`,
+          message: t.taskResume({ id: task.shortId }),
           details: [
-            { label: "Task", value: task.prompt, display: "block" },
-            { label: "Schedule", value: taskScheduleLabel(task) },
+            { label: t.task, value: task.prompt, display: "block" },
+            { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
           ],
         });
       },
@@ -1542,7 +1571,7 @@ export const aiCapabilities = defineCapabilities({
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
           data: taskData(task),
-          summary: `Resumed the scheduled task in ${taskChatTitle(task)}.`,
+          summary: coreCapabilityMessages(context.locale).t.taskResumed({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale)],
         });
       },
@@ -1561,11 +1590,12 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Task"));
         const stateError = invalidTaskState(task, "run");
         if (stateError) return fail(err.conflict(stateError));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Run scheduled task ${task.shortId} now.`,
+          message: t.taskRun({ id: task.shortId }),
           details: [
-            { label: "Chat", value: `${task.chatTitle} (${task.chatId})` },
-            { label: "Prompt", value: task.prompt, display: "block" },
+            { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+            { label: t.instructions, value: task.prompt, display: "block" },
           ],
         });
       },
@@ -1589,7 +1619,7 @@ export const aiCapabilities = defineCapabilities({
         void aiChatTaskRuntime.recover().catch(() => undefined);
         return ok({
           data: { id: occurrence.shortId, state: occurrence.state },
-          summary: `Queued a run of the scheduled task in ${taskChatTitle(task)}.`,
+          summary: coreCapabilityMessages(context.locale).t.taskQueued({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale)],
         });
       },
@@ -1606,12 +1636,13 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
         if (!task) return fail(err.notFound("Task"));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Delete scheduled task ${task.shortId} and its run history.`,
+          message: t.taskDelete({ id: task.shortId }),
           details: [
-            { label: "Chat", value: `${task.chatTitle} (${task.chatId})` },
-            { label: "Prompt", value: task.prompt, display: "block" },
-            { label: "Schedule", value: taskScheduleLabel(task) },
+            { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+            { label: t.instructions, value: task.prompt, display: "block" },
+            { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
           ],
         });
       },
@@ -1625,7 +1656,10 @@ export const aiCapabilities = defineCapabilities({
         return audit.recordResultAfterSideEffect({
           ...actionAudit(context, "ai.task.delete", "ai_chat_task", task.id),
           result: deleted
-            ? ok({ data: { deleted: true as const }, summary: `Deleted the scheduled task in ${taskChatTitle(task)}.` })
+            ? ok({
+                data: { deleted: true as const },
+                summary: coreCapabilityMessages(context.locale).t.taskDeleted({ chat: task.chatTitle }),
+              })
             : fail(err.notFound("Task")),
         });
       },
@@ -1642,13 +1676,14 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
         const target = await ownedChat(input.chatId, context.user.id);
         if (!target) return fail(err.notFound("Chat"));
+        const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: `Send this message to ${target.title} (${target.shortId}).`,
+          message: t.chatMessage({ chat: `${target.title} (${target.shortId})` }),
           details: [
-            { label: "Target chat", value: `${target.title} (${target.shortId})` },
-            { label: "Message", value: input.text, display: "block" },
+            { label: t.targetChat, value: `${target.title} (${target.shortId})` },
+            { label: t.message, value: input.text, display: "block" },
           ],
-          links: [{ rel: "open", href: chatHref(target.shortId), title: "Open target chat" }],
+          links: [{ rel: "open", href: chatHref(target.shortId), title: t.openTargetChat }],
         });
       },
       async run(input, context) {
@@ -1683,8 +1718,8 @@ export const aiCapabilities = defineCapabilities({
           data: { id: created.message.shortId, status, targetChatId: created.message.targetChatId },
           summary:
             status === "delivered"
-              ? `Sent a message to “${created.message.targetTitle}”.`
-              : `Queued a message for “${created.message.targetTitle}”.`,
+              ? coreCapabilityMessages(context.locale).t.chatMessageSent({ title: created.message.targetTitle })
+              : coreCapabilityMessages(context.locale).t.chatMessageQueued({ title: created.message.targetTitle }),
           refs: [
             {
               type: "core.ai.chat",

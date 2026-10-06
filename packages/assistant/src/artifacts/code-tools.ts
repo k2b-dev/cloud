@@ -1,7 +1,7 @@
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOOLS, createAiConversationArtifact } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
-import { fail, ok } from "@k2b/stdlib";
+import { fail, ok, text } from "@k2b/stdlib";
 import { z } from "zod";
 import { ArtifactCompileError, sourceActions } from "./actions";
 import { readBinaryResponse } from "./binary";
@@ -9,11 +9,17 @@ import { LIMITS } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { studioFiles } from "./file-transfer";
 import { artifactMessages } from "./messages";
+import { reviewMessages } from "./review-messages";
 import type { ArtifactIdentity } from "./service";
 import { ArtifactError, artifacts, user } from "./service";
 import { sourceDiagnostics, sourceManifest } from "./source";
 
 export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean; capabilityToken?: string };
+/** Review copy in the reader's language; `app` names the App the way every review refers to it. */
+const review = (context: CodeToolContext, app?: { title: string; id: string }) => {
+  const t = reviewMessages.resolve([context.locale]).t;
+  return { t, app: app ? t.appRef(app) : "", size: (bytes: number) => text.pprintBytes(bytes, { locale: context.locale }) };
+};
 const links = (id: string) => ({
   refs: [{ type: "assistant.artifact", id }],
   links: [{ rel: "open" as const, href: `/app/assistant?workspace=${encodeURIComponent(JSON.stringify(["app", id]))}` }],
@@ -80,9 +86,18 @@ export const artifactCodeHandlers = {
       if (context.review) {
         const target = await studioFiles.destination(input.destination, input.expectedVersion, context);
         const source = await studioFiles.readReference(input.source, context);
+        const { t, size } = review(context);
+        const place = (scope: "chat" | "project" | "app", title: string, id: string) => t.place({ scope: t[scope], title, id });
         return {
           data: {
-            message: `Copy ${input.source.path} (${source.bytes.byteLength} bytes) from ${input.source.scope} “${source.title}” (${source.reference.id}) to ${target.scope} “${target.title}” (${target.id}) at ${input.destination.path}. ${input.expectedVersion === null ? "Create a new file." : "Replace the reviewed destination file."} Files in Apps and Projects can be read by other authorized users. No other files are transferred.`,
+            message: [
+              t.copyFile({ path: input.source.path }),
+              `${t.source}: ${place(input.source.scope, source.title, source.reference.id)} · ${input.source.path}`,
+              `${t.target}: ${place(target.scope, target.title, target.id)} · ${input.destination.path}`,
+              `${t.size}: ${size(source.bytes.byteLength)}`,
+              input.expectedVersion === null ? t.createFile : t.replaceFile,
+              t.sharedFiles,
+            ].join("\n"),
           },
         };
       }
@@ -113,12 +128,18 @@ export const artifactCodeHandlers = {
     result<unknown>(context, async () => {
       const state = await artifacts.managementState(input.id, context);
       if (state.managementRevision !== input.expectedManagementRevision) throw new ArtifactError("CONFLICT");
-      if (context.review)
+      if (context.review) {
+        const { t, app } = review(context, { title: state.title, id: input.id });
         return {
           data: {
-            message: `Permanently delete App “${state.title}” (${input.id}), all source history, publications, grants, ${state.files} shared files, ${state.kv} JSON keys and its database (connected: ${state.databaseConnected}). Database physical deletion is queued. This cannot be undone.`,
+            message: [
+              t.deleteApp({ app }),
+              `${t.deletedWithApp}: ${t.deletedParts({ files: state.files, keys: state.kv })}`,
+              `${t.database}: ${state.databaseConnected ? t.connectedDatabase : t.noDatabase}`,
+            ].join("\n"),
           },
         };
+      }
       return { data: await artifacts.remove(input.id, context, input.expectedManagementRevision) };
     }),
   code_database_read: ({ id }, context) =>
@@ -142,11 +163,8 @@ export const artifactCodeHandlers = {
         throw new ArtifactError("CONFLICT");
       if (context.review) {
         const resource = await artifacts.get(input.id, context);
-        return {
-          data: {
-            message: `Permanently clear all rows in App “${resource.title}” (${input.id}). Tables and schema stay intact. Source, publications, files and JSON storage are preserved. A failure may leave some tables cleared.`,
-          },
-        };
+        const { t, app } = review(context, { title: resource.title, id: input.id });
+        return { data: { message: [t.clearDatabase({ app }), t.databasePreserved, t.clearPartial].join("\n") } };
       }
       return {
         data: await artifactDatabase.clear(input.id, input.expectedGeneration, input.expectedDataRevision, context, context.signal),
@@ -159,11 +177,8 @@ export const artifactCodeHandlers = {
         throw new ArtifactError("CONFLICT");
       if (context.review) {
         const resource = await artifacts.get(input.id, context);
-        return {
-          data: {
-            message: `Permanently discard the entire database of App “${resource.title}” (${input.id}), including all tables and data. Source, publications, files and JSON storage are preserved. Physical deletion is queued; the next connection starts empty.`,
-          },
-        };
+        const { t, app } = review(context, { title: resource.title, id: input.id });
+        return { data: { message: [t.resetDatabase({ app }), t.databasePreserved].join("\n") } };
       }
       const data = await artifactDatabase.reset(input.id, input.expectedGeneration, context, input.expectedDataRevision);
       return { data: { ...data, databaseCleanupQueued: input.expectedGeneration !== null } };
@@ -186,12 +201,20 @@ export const artifactCodeHandlers = {
     result<unknown>(context, async () => {
       const state = await artifacts.storageState(input.id, context);
       if (state.storageRevision !== input.expectedStorageRevision) throw new ArtifactError("CONFLICT");
-      if (context.review)
+      if (context.review) {
+        const { t, app, size } = review(context, { title: state.title, id: input.id });
+        const area = t.areaInSentence({ area: input.area });
+        const current = state.areas.map((entry) => t.storageEntry({ area: t[entry.area], items: entry.items, size: size(entry.bytes) }));
         return {
           data: {
-            message: `Permanently delete ${input.key ? JSON.stringify(input.key) : "all entries"} from ${input.area} storage of App “${state.title}” (${input.id}).\nCurrent storage: ${JSON.stringify(state.areas)}\nSource, publications and database are preserved.`,
+            message: [
+              input.key ? t.deleteKey({ key: input.key, area, app }) : t.clearArea({ area, app }),
+              `${t.currentStorage}: ${current.join(", ") || t.emptyStorage}`,
+              t.storagePreserved,
+            ].join("\n"),
           },
         };
+      }
       const data =
         input.key && input.area !== "all"
           ? await artifacts.storage(input.id, { operation: "delete", area: input.area, key: input.key }, context, true, undefined, {
@@ -228,9 +251,19 @@ export const artifactCodeHandlers = {
       if (context.review) {
         const resource = await artifacts.get(input.id, context);
         const [recipient] = await resolveDisplayNames([{ principal }]);
+        const { t, app } = review(context, { title: resource.title, id: input.id });
+        const levels = artifactMessages.resolve([context.locale]).t;
+        const level = (permission: string) => (permission === "admin" ? levels.manage : levels.use);
         return {
           data: {
-            message: `Change access to App “${resource.title}” (${input.id}).\nRecipient: ${recipient!.displayName} — ${JSON.stringify(principal)}\nBefore: ${previous?.permission ?? "No grant"}\nAfter: ${input.permission ?? "Remove grant"}\nThis does not change access to any Skill.${principal.type === "public" ? " Public access runs only the published App without database, server files/KV, secrets or protected Cloud actions. Public Manage is forbidden." : ""}`,
+            message: [
+              t.changeAccess({ app }),
+              `${t.recipient}: ${recipient!.displayName} — ${JSON.stringify(principal)}`,
+              `${t.before}: ${previous ? level(previous.permission) : t.noAccess}`,
+              `${t.after}: ${input.permission ? level(input.permission) : t.removeAccess}`,
+              t.skillsUnchanged,
+              ...(principal.type === "public" ? [t.publicAccess] : []),
+            ].join("\n"),
           },
         };
       }
@@ -245,12 +278,10 @@ export const artifactCodeHandlers = {
     result<unknown>(context, async () => {
       const state = await artifacts.managementState(id, context);
       if (state.publishedVersion !== expectedPublishedVersion) throw new ArtifactError("CONFLICT");
-      if (context.review)
-        return {
-          data: {
-            message: `Withdraw App “${state.title}” (${id}), publication ${expectedPublishedVersion}. Users with Use access can no longer start its GUI or actions. Source, history and data remain.`,
-          },
-        };
+      if (context.review) {
+        const { t, app } = review(context, { title: state.title, id });
+        return { data: { message: [t.unpublish({ app, version: expectedPublishedVersion }), t.unpublishEffect].join("\n") } };
+      }
       return { data: await artifacts.unpublish(id, context, expectedPublishedVersion) };
     }),
   code_actions: ({ id, draft }, context) =>
@@ -357,17 +388,20 @@ export const artifactCodeHandlers = {
         }
         resolved.push({ path: file.path, content });
       }
-      if (context.review)
+      if (context.review) {
+        const { t, app } = review(context, { title: current.title, id });
         return {
           data: {
-            message: `Import the reviewed files into source of App “${current.title}” (${id}): ${files
-              .filter((file) => "fromFile" in file)
-              .map((file) => JSON.stringify(file))
-              .join(
-                ", ",
-              )}. Existing source paths in this batch are replaced. Imported data becomes App source and may be shared or published with it.`,
+            message: [
+              t.importFiles({ app }),
+              ...files.flatMap((file) =>
+                "fromFile" in file ? [`${file.path}: ${t[file.fromFile.scope]} ${file.fromFile.id} · ${file.fromFile.path}`] : [],
+              ),
+              t.importEffect,
+            ].join("\n"),
           },
         };
+      }
       const saved = await artifacts.writeFiles(id, { files: resolved, expectedRevision, entry }, context);
       return {
         data: {

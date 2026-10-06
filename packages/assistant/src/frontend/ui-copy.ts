@@ -530,6 +530,7 @@ const copy = i18n.define({
       removeFromSkill: ({ name }: { name: string }) => `Remove "${name}" from this Skill?`,
       openExternalLink: ({ title, host }: { title: string; host: string }) => `Open “${title}” from ${host} in a new tab?`,
       approvalAgain: ({ title }: { title: string }) => `${title} will ask for approval again`,
+      revokeApprovalFor: ({ title }: { title: string }) => `Revoke approval for ${title}`,
       chatsCount: ({ count }: { count: number }) => `${count} ${count === 1 ? "chat" : "chats"}`,
       referenceAction: ({ name, readOnly }: { name: string; readOnly: boolean }) => `${readOnly ? "View" : "Edit"} reference ${name}`,
       referenceCount: ({ count }: { count: number }) => `${count} reference${count === 1 ? "" : "s"}`,
@@ -556,6 +557,7 @@ const copy = i18n.define({
       removeFromSkill: ({ name }: { name: string }) => `„${name}“ aus diesem Skill entfernen?`,
       openExternalLink: ({ title, host }: { title: string; host: string }) => `„${title}“ von ${host} in einem neuen Tab öffnen?`,
       approvalAgain: ({ title }: { title: string }) => `Für ${title} wird wieder eine Freigabe angefordert`,
+      revokeApprovalFor: ({ title }: { title: string }) => `Freigabe für ${title} widerrufen`,
       chatsCount: ({ count }: { count: number }) => `${count} ${count === 1 ? "Chat" : "Chats"}`,
       referenceAction: ({ name, readOnly }: { name: string; readOnly: boolean }) =>
         `Referenz ${name} ${readOnly ? "anzeigen" : "bearbeiten"}`,

@@ -80,33 +80,34 @@ function ThinkingBlockView(props: { text: string; streaming?: boolean }) {
 
 function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind: "compaction" }> }) {
   const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const status = () => props.block.status;
   const description = () => {
-    if (status() === "completed") return "Context compacted";
-    if (status() === "skipped") return "No-op";
-    if (status() === "failed") return "Compaction failed";
-    return "Compacting context";
+    if (status() === "completed") return t().compacted;
+    if (status() === "skipped") return t().compactionSkipped;
+    if (status() === "failed") return t().compactionFailed;
+    return t().compacting;
   };
 
   return (
-    <Show when={status() !== "running"} fallback={<Chat.Activity label="Compacting context" icon="ti ti-brain" tone="ai" busy />}>
+    <Show when={status() !== "running"} fallback={<Chat.Activity label={t().compacting} icon="ti ti-brain" tone="ai" busy />}>
       <Chat.Activity
-        label="Show compaction"
+        label={t().showCompaction}
         description={description()}
         icon="ti ti-brain"
         tone={status() === "failed" ? "danger" : "ai"}
         bodyInset={false}
       >
         <div class="w-full min-w-0 rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
-          <Show when={props.block.result} fallback={<p>Older chat context was summarized into compact conversation memory.</p>}>
+          <Show when={props.block.result} fallback={<p>{t().compactionSummary}</p>}>
             {(compactResult) => (
               <dl class="grid grid-cols-2 gap-2">
                 <div class="rounded-md bg-white/65 px-2 py-1 dark:bg-white/5">
-                  <dt class="uppercase tracking-wide text-dimmed">Before</dt>
+                  <dt class="uppercase tracking-wide text-dimmed">{t().before}</dt>
                   <dd class="font-medium text-primary">{compactResult().entriesBefore.toLocaleString(locale())}</dd>
                 </div>
                 <div class="rounded-md bg-white/65 px-2 py-1 dark:bg-white/5">
-                  <dt class="uppercase tracking-wide text-dimmed">After</dt>
+                  <dt class="uppercase tracking-wide text-dimmed">{t().after}</dt>
                   <dd class="font-medium text-primary">{compactResult().entriesAfter.toLocaleString(locale())}</dd>
                 </div>
               </dl>
@@ -158,11 +159,13 @@ function ToolResultDisclosure(props: {
   errorLabel?: string;
   errorDescription?: string;
 }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   return (
     <AiToolActivity
       blockId={props.blockId}
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
-      label={props.isError ? (props.errorLabel ?? `${props.labelOnError ?? props.name} failed`) : props.name}
+      label={props.isError ? (props.errorLabel ?? t().toolFailed({ title: props.labelOnError ?? props.name })) : props.name}
       description={props.isError ? props.errorDescription : undefined}
       tone={props.isError ? "danger" : "neutral"}
       accent={props.accent}
@@ -171,9 +174,9 @@ function ToolResultDisclosure(props: {
     >
       <div class="flex w-full min-w-0 flex-col gap-2">
         <Show when={props.args !== undefined}>
-          <ToolDetail title="Input" toolName={props.toolName} value={props.args} />
+          <ToolDetail title={t().input} toolName={props.toolName} value={props.args} />
         </Show>
-        <ToolDetail title="Response" toolName={props.toolName} value={props.result} />
+        <ToolDetail title={t().response} toolName={props.toolName} value={props.result} />
       </div>
     </AiToolActivity>
   );
@@ -181,6 +184,8 @@ function ToolResultDisclosure(props: {
 
 function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const pending = () => props.block.status === "awaiting_approval";
   const actionDisabled = () => actions.actionDisabled?.() ?? false;
@@ -197,14 +202,17 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
     if (!actionDisabled() && !approval.loading()) void approval.mutate(input);
   };
   const title = () => props.block.presentation?.title ?? displayToolName(props.block.name);
-  const ownerName = () => props.block.presentation?.appName ?? "Assistant";
+  const ownerName = () => props.block.presentation?.appName ?? t().assistant;
   const description = () => {
     const reviewMessage = props.block.approval?.review?.message.trim();
     if (reviewMessage) return reviewMessage;
     const message = props.block.approval?.message?.trim();
     if (!message) return null;
-    const duplicateTitle = props.block.presentation ? `${props.block.presentation.appName}: ${props.block.presentation.title}\n` : "";
-    const withoutDuplicateTitle = message.startsWith(duplicateTitle) ? message.slice(duplicateTitle.length).trim() : message;
+    const duplicateTitle = props.block.presentation ? `${props.block.presentation.appName}: ${props.block.presentation.title}` : "";
+    const withoutDuplicateTitle =
+      duplicateTitle && (message === duplicateTitle || message.startsWith(`${duplicateTitle}\n`))
+        ? message.slice(duplicateTitle.length).trim()
+        : message;
     if (/^Review the validated arguments below before running this action\.$/i.test(withoutDuplicateTitle)) return null;
     return withoutDuplicateTitle || null;
   };
@@ -223,11 +231,11 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
   const reviewLinks = () => props.block.approval?.review?.links ?? [];
   const reviewLinkTitle = (rel: "open" | "edit" | "status" | "preview" | "download") =>
     ({
-      open: `Open in ${ownerName()}`,
-      edit: `Edit in ${ownerName()}`,
-      status: `View status in ${ownerName()}`,
-      preview: "Preview",
-      download: "Download",
+      open: t().openIn({ app: ownerName() }),
+      edit: t().editIn({ app: ownerName() }),
+      status: t().statusIn({ app: ownerName() }),
+      preview: t().preview,
+      download: t().download,
     })[rel];
   const detailData = () => (isStructuredDataValue(props.block.args) ? props.block.args : undefined);
   const appAccent = () => props.block.presentation?.appAccent;
@@ -237,7 +245,7 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
       <section
         class={`w-full overflow-hidden rounded-xl border border-[var(--k2b-border)] bg-[var(--k2b-surface)] text-sm text-primary ${appAccent() ? "app-accent-scope" : ""}`}
         style={{ "--app-accent": appAccent() }}
-        aria-label={`Approval required: ${title()}`}
+        aria-label={t().approvalRequired({ title: title() })}
       >
         <div class="p-4">
           <div class="flex min-w-0 items-center gap-3">
@@ -257,7 +265,7 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
               <h3 class="truncate text-sm font-semibold leading-5 text-primary">
                 {ownerName()} · {title()}
               </h3>
-              <p class="text-xs text-dimmed">Action</p>
+              <p class="text-xs text-dimmed">{t().action}</p>
             </div>
           </div>
           <Show when={reviewLines().length > 0}>
@@ -300,7 +308,7 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
                           class="max-h-72 overflow-auto whitespace-pre-wrap break-words pr-2 font-sans text-xs leading-5 text-secondary"
                           role="region"
                           tabIndex={0}
-                          aria-label={`${detail.label} content`}
+                          aria-label={t().contentOf({ label: detail.label })}
                         >
                           <ReviewDetailValue detail={detail} />
                         </pre>
@@ -321,7 +329,7 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
           data-ai-approval-footer
         >
           <Show when={reviewLinks().length > 0}>
-            <nav class="flex flex-wrap gap-1" aria-label={`${title()} links`}>
+            <nav class="flex flex-wrap gap-1" aria-label={t().linksFor({ title: title() })}>
               <For each={reviewLinks()}>
                 {(link) => (
                   <ButtonLink href={link.href} target="_blank" rel="noopener noreferrer" size="xs" variant="ghost">
@@ -332,24 +340,24 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
             </nav>
           </Show>
           <Show when={approval.error()}>
-            <p class="text-xs text-red-700 dark:text-red-300">Could not submit. Try again.</p>
+            <p class="text-xs text-red-700 dark:text-red-300">{t().approvalFailed}</p>
           </Show>
           <div class="ml-auto shrink-0">
             <Show
               when={pending()}
               fallback={
                 <span class="text-xs font-medium text-secondary">
-                  {title()} · {props.block.status === "rejected" ? "Rejected" : "Approved"}
+                  {title()} · {props.block.status === "rejected" ? t().rejected : t().approved}
                 </span>
               }
             >
-              <Show when={actions.onApproval} fallback={<span class="text-xs font-medium text-secondary">Approval unavailable</span>}>
+              <Show when={actions.onApproval} fallback={<span class="text-xs font-medium text-secondary">{t().approvalUnavailable}</span>}>
                 <Show
                   when={!actionDisabled()}
                   fallback={
                     <span class="inline-flex items-center gap-1 text-xs font-medium text-secondary">
                       <i class="ti ti-player-stop" aria-hidden="true" />
-                      Stopping response
+                      {t().stoppingResponse}
                     </span>
                   }
                 >
@@ -358,30 +366,30 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
                     fallback={
                       <span class="inline-flex items-center gap-1 text-xs font-medium text-secondary">
                         <i class={`ti ${submitted() ? "ti-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
-                        {submitted() ? "Submitted" : "Submitting"}
+                        {submitted() ? t().submitted : t().submitting}
                       </span>
                     }
                   >
                     <div class="flex flex-wrap justify-end gap-1">
                       <Button size="xs" variant="ghost" onClick={() => submit({ approved: false })}>
-                        Reject
+                        {t().reject}
                       </Button>
                       <SplitButton
                         size="xs"
                         variant="ai"
                         onClick={() => submit({ approved: true })}
-                        menuLabel={`More options for ${title()}`}
+                        menuLabel={t().moreOptions({ title: title() })}
                         menuPosition="bottom-right"
                         items={[
                           {
-                            label: detailsOpen() ? "Hide details" : "Details",
+                            label: detailsOpen() ? t().hideDetails : t().details,
                             icon: detailsOpen() ? "ti ti-eye-off" : "ti ti-eye",
                             action: () => setDetailsOpen((open) => !open),
                           },
                           ...(props.block.approval?.allowAlways
                             ? [
                                 {
-                                  label: "Always approve",
+                                  label: t().alwaysApprove,
                                   icon: "ti ti-shield-check",
                                   action: () => submit({ approved: true, remember: "always" }),
                                 },
@@ -400,7 +408,7 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
         </footer>
       </section>
       <Show when={detailsOpen()}>
-        <div id={detailsId} class="mt-2 w-full" role="region" aria-label={`${title()} details`}>
+        <div id={detailsId} class="mt-2 w-full" role="region" aria-label={t().detailsFor({ title: title() })}>
           <Show
             when={detailData()}
             fallback={
@@ -418,6 +426,8 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
 }
 
 function CapabilityToolView(props: { block: ToolBlock }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const presentation = () => props.block.presentation!;
   const label = () => presentation().title;
   const result = () => (isRecord(props.block.result) ? props.block.result : null);
@@ -453,8 +463,8 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           fallback={
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
-              label={`${label()} failed`}
-              description={capabilityErrorDescription(props.block.result)}
+              label={t().toolFailed({ title: label() })}
+              description={capabilityErrorDescription(props.block.result) || t().actionNotCompleted}
               tone="danger"
               accent={presentation().appAccent}
             />
@@ -496,10 +506,10 @@ function CapabilityToolView(props: { block: ToolBlock }) {
                           {typeof link.title === "string"
                             ? link.title
                             : link.rel === "edit"
-                              ? "Edit"
+                              ? t().edit
                               : link.rel === "download"
-                                ? "Download"
-                                : "Open"}
+                                ? t().download
+                                : t().open}
                         </ButtonLink>
                       )}
                     </For>
@@ -515,12 +525,13 @@ function CapabilityToolView(props: { block: ToolBlock }) {
 }
 
 function RejectedToolView(props: { block: ToolBlock }) {
+  const locale = useLocale();
   const presentation = () => props.block.presentation;
   const title = () => presentation()?.title ?? displayToolName(props.block.name);
   return (
     <Chat.Activity
       icon={aiToolIcon(props.block.name, presentation()?.appIcon)}
-      label={`${title()} was rejected`}
+      label={aiChatMessages(locale()).toolRejected({ title: title() })}
       accent={presentation()?.appAccent}
     />
   );
@@ -528,6 +539,7 @@ function RejectedToolView(props: { block: ToolBlock }) {
 
 function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const submit = actions.onFrontendToolResult;
   const submittedResult = () =>
@@ -538,7 +550,7 @@ function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: bool
         <CloudSurveyBlock
           args={props.block.args}
           disabled={!submit || actions.actionDisabled?.()}
-          disabledLabel={actions.actionDisabled?.() ? "Stopping response." : undefined}
+          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
           onSubmit={submit ? (result) => submit(request(), result) : undefined}
         />
       </Match>
@@ -556,6 +568,8 @@ function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: bool
 
 function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const submit = actions.onFrontendToolResult;
   const completedResult = () =>
@@ -570,7 +584,7 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
       fallback={
         <ToolResultDisclosure
           blockId={props.block.id}
-          name="text editor"
+          name={t().textEditor}
           toolName={props.block.name}
           args={props.block.args}
           result={props.block.result}
@@ -579,13 +593,13 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
       }
     >
       <Match when={props.block.status === "running"}>
-        <Chat.Activity label="Preparing text editor" icon="ti ti-edit" tone="ai" busy />
+        <Chat.Activity label={t().preparingTextEditor} icon="ti ti-edit" tone="ai" busy />
       </Match>
       <Match when={props.block.status === "awaiting_client"}>
         <CloudTextEditorBlock
           args={props.block.args}
           disabled={!submit || actions.actionDisabled?.()}
-          disabledLabel={actions.actionDisabled?.() ? "Stopping response." : undefined}
+          disabledLabel={actions.actionDisabled?.() ? t().stoppingResponse : undefined}
           onSubmit={submit ? (result) => submit(request(), result) : undefined}
         />
       </Match>
@@ -599,15 +613,17 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
 }
 
 function MemoryToolView(props: { block: ToolBlock }) {
-  const presentation = () => memoryToolPresentation(props.block.args, props.block.result);
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const presentation = () => memoryToolPresentation(props.block.args, props.block.result, locale());
   return (
-    <Show when={props.block.status !== "running"} fallback={<Chat.Activity label="Using memory" icon="ti ti-brain" tone="ai" busy />}>
+    <Show when={props.block.status !== "running"} fallback={<Chat.Activity label={t().usingMemory} icon="ti ti-brain" tone="ai" busy />}>
       <Show
         when={presentation()}
         fallback={
           <ToolResultDisclosure
             blockId={props.block.id}
-            name="Memory"
+            name={t().memory}
             toolName={props.block.name}
             args={props.block.args}
             result={props.block.result}
@@ -630,9 +646,10 @@ function MemoryToolView(props: { block: ToolBlock }) {
 
 function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const status = () => props.block.status;
   const fetchError = () =>
-    props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result) : undefined;
+    props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result, locale()) : undefined;
   return (
     <>
       <Switch
@@ -716,7 +733,7 @@ export function AiTurnBlockView(props: { block: AiTurnBlock; turnId: string; str
         {(block) => <ThinkingBlockView text={block().text} streaming={props.streaming} />}
       </Match>
       <Match when={props.block.kind === "steer_applied"}>
-        <Chat.Activity label="Conversation steered" icon="ti ti-route" tone="ai" />
+        <Chat.Activity label={aiChatMessages(locale()).conversationSteered} icon="ti ti-route" tone="ai" />
       </Match>
       <Match when={props.block.kind === "tool" && props.block}>
         {(block) => <ToolBlockView turnId={props.turnId} block={block()} active={props.active} />}
@@ -728,7 +745,7 @@ export function AiTurnBlockView(props: { block: AiTurnBlock; turnId: string; str
 
 function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   const locale = useLocale();
-  const de = () => locale().startsWith("de");
+  const t = () => aiChatMessages(locale());
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   const detail = () => [args().path, args().name, args().query].find((value) => typeof value === "string");
   const waiting = () => props.block.status === "awaiting_client";
@@ -739,7 +756,7 @@ function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
       description={[
         props.block.status === "running" ? (props.block.progress ?? "") : "",
         typeof detail() === "string" ? String(detail()) : "",
-        waiting() ? (de() ? "Wartet" : "Waiting") : isFailedTool(props.block) ? (de() ? "Fehlgeschlagen" : "Failed") : "",
+        waiting() ? t().waiting : isFailedTool(props.block) ? t().failed : "",
       ]
         .filter(Boolean)
         .join(" · ")}
@@ -752,10 +769,10 @@ function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
           tabIndex={0}
           role="region"
-          aria-label={de() ? "Werkzeug-Eingabe und Ausgabe" : "Tool input and output"}
+          aria-label={t().toolInputOutput}
         >
-          <ToolDetail title={de() ? "Eingabe" : "Input"} toolName={props.block.name} value={props.block.args} />
-          <ToolDetail title={de() ? "Ausgabe" : "Output"} toolName={props.block.name} value={props.block.result} />
+          <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
+          <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
         </div>
       )}
     />
@@ -764,6 +781,7 @@ function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
 
 function ToolGroupView(props: { blocks: ToolBlock[]; active: boolean }) {
   const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const last = () => props.blocks.at(-1)!;
   const waiting = () => last().status === "awaiting_client";
   const multiple = () => props.blocks.length > 1;
@@ -782,9 +800,7 @@ function ToolGroupView(props: { blocks: ToolBlock[]; active: boolean }) {
       }
       description={
         waiting()
-          ? locale().startsWith("de")
-            ? "Wartet"
-            : "Waiting"
+          ? t().waiting
           : last().status === "running"
             ? last().progress
             : !multiple() && typeof detail() === "string"
@@ -802,10 +818,10 @@ function ToolGroupView(props: { blocks: ToolBlock[]; active: boolean }) {
               class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
               tabIndex={0}
               role="region"
-              aria-label={locale().startsWith("de") ? "Werkzeug-Eingabe und Ausgabe" : "Tool input and output"}
+              aria-label={t().toolInputOutput}
             >
-              <ToolDetail title={locale().startsWith("de") ? "Eingabe" : "Input"} toolName={last().name} value={last().args} />
-              <ToolDetail title={locale().startsWith("de") ? "Ausgabe" : "Output"} toolName={last().name} value={last().result} />
+              <ToolDetail title={t().input} toolName={last().name} value={last().args} />
+              <ToolDetail title={t().output} toolName={last().name} value={last().result} />
             </div>
           }
         >

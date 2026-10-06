@@ -126,7 +126,7 @@ export default function StructuredDataPreview(props: StructuredDataPreviewProps)
       <div class="k2b-content-structured-data__footer">
         <Show when={hasData()}>
           <button type="button" class="k2b-content-structured-data__action" onClick={() => setMode(showRaw() ? "formatted" : "raw")}>
-            {showRaw() ? "View formatted" : "View raw"}
+            {showRaw() ? messages().viewFormatted : messages().viewRaw}
           </button>
         </Show>
       </div>

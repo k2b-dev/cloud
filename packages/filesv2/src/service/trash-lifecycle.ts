@@ -264,6 +264,38 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
       }
       return { base: current.base, entries, next: page.next ? encode({ phase: "filesystem", after: page.next }) : null };
     },
+    /**
+     * One recoverable entry, for an approval review that must name what it restores. It applies the listing's
+     * disclosure rules and only reads: nothing is reconciled or recorded.
+     */
+    async trashEntry(actor: RequestActor, input: { baseId: string; id: string }): Promise<TrashEntry> {
+      const current = await authorize(actor, input.baseId, "", "read");
+      const listed = input.id.startsWith("fs:") ? filesystemPath(input.id) : null;
+      const row = listed ? await store.at(current.bindingId, listed) : await store.get(input.id, current.bindingId);
+      const foreign = row && (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl));
+      if (foreign || row?.state === "restored" || row?.state === "gone") throw new FilesError("not_found", 404);
+      const trashed = row?.trashed ?? listed;
+      if (!trashed) throw new FilesError("not_found", 404);
+      const path = joinPath(current.basePath, trashed);
+      const node = await stat(current.root, path);
+      if (!node) {
+        // As in the listing, an unresolved move stays visible to readers of its original parent.
+        const original = row?.restore_path ?? row?.original;
+        if (!row || !original) throw new FilesError("not_found", 404);
+        await authorize(actor, input.baseId, original.split("/").slice(0, -1).join("/"), "read");
+        return recordEntry(row);
+      }
+      await current.check(path, node.directory ? 5 : 4);
+      if (row) return recordEntry(row);
+      return {
+        id: input.id,
+        original: null,
+        name: trashed.split("/").at(-1)!,
+        directory: node.directory,
+        deletedAt: null,
+        state: "trashed",
+      };
+    },
     async restoreTrash(actor: RequestActor, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
       const located = await authorize(actor, input.baseId, "", "read");
       return locked(located.rootName, async () => {

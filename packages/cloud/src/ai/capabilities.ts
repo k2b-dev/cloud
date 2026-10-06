@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
+import { resolveCapabilityOperationTitle } from "../_internal/capabilities";
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import {
   type CapabilityActionManifest,
@@ -13,6 +14,7 @@ import {
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
 import { createHelpReader, type HelpReaderFactory } from "../services/help";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { recordRejectedAiCapability } from "./capability-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
@@ -44,6 +46,12 @@ export type AiCapabilityAppCatalogItem = {
 export type AiCapabilityCatalogEntry = AiCapabilityCatalogItem & {
   app: CapabilityRegistryEntry;
   operation: CapabilityQueryManifest | CapabilityActionManifest;
+  /**
+   * What people see in tool rows and approvals, in the locale the catalog was built for. The model keeps
+   * the base `title`, `description`, and schemas: they are prompt text, and stable prompts do not change
+   * with the reader's language.
+   */
+  display: { appName: string; title: string };
 };
 
 export type AiToolKind = "builtin" | AiCapabilityKind;
@@ -109,8 +117,11 @@ export const buildAiCapabilityAppCatalog = (apps: readonly CapabilityRegistryEnt
     });
 };
 
-/** Build one deterministic, immutable view of the current live registry. */
-export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[]): AiCapabilityCatalogEntry[] => {
+/**
+ * Build one deterministic, immutable view of the current live registry. `locale` selects the human
+ * presentation in `display`; model-facing fields always stay in the app's base presentation.
+ */
+export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale?: string): AiCapabilityCatalogEntry[] => {
   const entries = [...apps]
     .sort(
       (left, right) =>
@@ -119,12 +130,18 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[]): AiCap
         left.appName.localeCompare(right.appName) ||
         left.endpoint.localeCompare(right.endpoint),
     )
-    .flatMap((app) => [
-      ...app.manifest.actions.map((operation) => ({ app, operation, kind: "action" as const })),
-      ...app.manifest.queries.map((operation) => ({ app, operation, kind: "query" as const })),
-    ])
+    .flatMap((app) => {
+      const appName = locale
+        ? resolveAppIdentityPresentation({ name: app.appName, description: app.appDescription, presentation: app.appPresentation }, locale)
+            .name
+        : app.appName;
+      return [
+        ...app.manifest.actions.map((operation) => ({ app, appName, operation, kind: "action" as const })),
+        ...app.manifest.queries.map((operation) => ({ app, appName, operation, kind: "query" as const })),
+      ];
+    })
     .map(
-      ({ app, operation, kind }): AiCapabilityCatalogEntry => ({
+      ({ app, appName, operation, kind }): AiCapabilityCatalogEntry => ({
         name: aiCapabilityId(app.appId, operation.localId),
         providerName: aiCapabilityToolName(app.appId, kind, operation.localId),
         appId: app.appId,
@@ -135,6 +152,12 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[]): AiCap
         description: operation.description,
         app,
         operation,
+        display: {
+          appName,
+          title: locale
+            ? resolveCapabilityOperationTitle(operation, kind === "action" ? "actions" : "queries", app.presentation, locale)
+            : operation.title,
+        },
       }),
     )
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -566,8 +589,7 @@ export const createLoadedAiCapabilityTools = (input: {
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
           if (review && context.callId) input.onReview?.(context.callId, review);
-          const message =
-            review?.message ?? `${entry.appName}: ${entry.title}\nReview the validated arguments below before running this Action.`;
+          const message = review?.message ?? `${entry.display.appName}: ${entry.display.title}`;
           if (!(await context.requestApproval(message))) {
             if (input.actor.kind === "user") {
               await recordRejectedAiCapability({ entry, actor: input.actor, args }).catch(() => undefined);
@@ -667,7 +689,7 @@ export const createAiToolResolver =
       });
     }
     const allowed = input.allowedTools == null ? null : new Set(input.allowedTools);
-    const capabilityCatalog = buildAiCapabilityCatalog(registry).filter((entry) => !allowed || allowed.has(entry.name));
+    const capabilityCatalog = buildAiCapabilityCatalog(registry, input.locale).filter((entry) => !allowed || allowed.has(entry.name));
     const helpTools = input.help ? createAiHelpTools(input.help, input.locale) : [];
     const resourceTool =
       input.execute && (capabilityCatalog.length > 0 || input.staticTools.some((tool) => tool.def.name === "code_read"))
@@ -719,10 +741,10 @@ export const createAiToolResolver =
       presentations.set(entry.providerName, {
         kind: "capability",
         appId: entry.appId,
-        appName: entry.appName,
+        appName: entry.display.appName,
         appIcon: entry.app.appIcon,
         appAccent: entry.app.appAccent,
-        title: entry.title,
+        title: entry.display.title,
         capabilityKind: entry.kind,
       });
       // Rememberable scopes are resolved by the owning app for each concrete

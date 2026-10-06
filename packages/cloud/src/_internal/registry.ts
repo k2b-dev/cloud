@@ -276,6 +276,7 @@ export const resolveLiveCapabilityRegistryEntry = (
       endpoint,
       manifest,
       presentation,
+      ...(app.presentation ? { appPresentation: app.presentation } : {}),
     };
   } catch {
     return null;
