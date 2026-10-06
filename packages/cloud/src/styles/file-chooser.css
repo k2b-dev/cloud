@@ -132,7 +132,7 @@
 }
 
 .cloud-file-chooser__download-state[data-state="error"] {
-  color: var(--k2b-danger-600, var(--k2b-text));
+  color: var(--k2b-danger-text);
 }
 
 /* One line that gives way to the buttons: a longer status never wraps the footer and moves the body. */
@@ -141,19 +141,18 @@
   min-width: 0;
   overflow: hidden;
   font-size: 0.8125rem;
+  line-height: 1.25rem;
   color: var(--k2b-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Phones have no room beside the buttons; the count is on the Add button and the status stays for screen readers. */
+/* Phones have no room beside the buttons: the status takes its own line above them. The line stays when it is
+   empty, so the footer keeps one height in every view. */
 @media (max-width: 39.999rem) {
   .cloud-file-chooser__status {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+    flex-basis: 100%;
+    min-height: 1.25rem;
   }
 }
 

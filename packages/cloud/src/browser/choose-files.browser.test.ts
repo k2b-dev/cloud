@@ -65,20 +65,23 @@ const readQuery: CapabilityQueryDefinition = {
   stream: { direction: "read", maxBytes: 1024, read: async () => new Response("") },
   run,
 };
-const drive = {
-  appId: "drive",
-  appName: "Drive",
-  appIcon: "ti ti-cloud",
+const providerApp = (appId: string, appName: string, appIcon: string) => ({
+  appId,
+  appName,
+  appIcon,
   appDescription: "Files",
   manifest: compileCapabilityManifest(
-    "drive",
+    appId,
     defineCapabilities({
       protocolVersion: 2,
       queries: { "folder.list": listQuery, "file.read": readQuery },
       fileProvider: { list: "folder.list", read: "file.read" },
     }),
   ),
-};
+});
+const drive = providerApp("drive", "Drive", "ti ti-cloud");
+// IDs only have to be unique within one provider: Vault also has a file "notes".
+const vault = providerApp("vault", "Vault", "ti ti-lock");
 const notes = {
   appId: "notes",
   appName: "Notes",
@@ -98,17 +101,23 @@ const file = (id: string, name: string, content: string, extra: Partial<FileProv
     updatedAt: "2026-10-01T10:00:00Z",
     ...extra,
   }) as FileProviderEntry;
-const contents: Record<string, string> = { notes: "meeting notes", todo: "buy milk", plan: "plan b" };
-const tree: Record<string, FileProviderEntry[]> = {
-  "": [folder("home", "Home"), folder("team", "Team"), folder("broken", "Broken")],
-  home: [
-    folder("reports", "Reports"),
-    file("notes", "notes.txt", contents.notes!, { tags: [{ label: "Draft", tone: "warning" }] }),
-    file("todo", "todo.txt", contents.todo!),
-    file("plan", "plan.txt", contents.plan!),
-    file("huge", "huge.zip", "", { size: 5000, mediaType: "application/zip" }),
-  ],
-  reports: [],
+const contents: Record<string, Record<string, string>> = {
+  drive: { notes: "meeting notes", todo: "buy milk", plan: "plan b" },
+  vault: { notes: "vault notes" },
+};
+const trees: Record<string, Record<string, FileProviderEntry[]>> = {
+  drive: {
+    "": [folder("home", "Home"), folder("team", "Team"), folder("broken", "Broken")],
+    home: [
+      folder("reports", "Reports"),
+      file("notes", "notes.txt", contents.drive!.notes!, { tags: [{ label: "Draft", tone: "warning" }] }),
+      file("todo", "todo.txt", contents.drive!.todo!),
+      file("plan", "plan.txt", contents.drive!.plan!),
+      file("huge", "huge.zip", "", { size: 5000, mediaType: "application/zip" }),
+    ],
+    reports: [],
+  },
+  vault: { "": [file("notes", "notes.txt", contents.vault!.notes!)] },
 };
 
 let catalogApps: unknown[] = [];
@@ -116,6 +125,8 @@ let catalogRequests = 0;
 let catalogGate: Promise<void> | undefined;
 let brokenAnswers = 0;
 let readGate: Promise<void> | undefined;
+/** The one stream the gate holds, as `app:id`; without it the gate holds every read. */
+let gatedRead: string | undefined;
 let openReads = 0;
 let peakReads = 0;
 const queries: Record<string, unknown>[] = [];
@@ -128,21 +139,22 @@ const answer = async (request: Request): Promise<Response> => {
     await catalogGate;
     return json({ protocolVersion: 2, apps: catalogApps, page: { hasMore: false } });
   }
-  if (url.pathname === "/api/capabilities/v1/queries/drive/folder.list") {
+  const [, app = "", operation] = /^\/api\/capabilities\/v1\/queries\/(\w+)\/([\w.]+)$/.exec(url.pathname) ?? [];
+  if (operation === "folder.list") {
     const { input } = (await request.json()) as { input: { parent?: string; query?: string } };
     queries.push(input);
     if (input.parent === "team") return json({ code: "FORBIDDEN", message: "No access" }, 403);
     if (input.parent === "broken" && brokenAnswers++ === 0) return json({ code: "APP_UNAVAILABLE", message: "Down" }, 503);
-    const items = (tree[input.parent ?? ""] ?? []).filter((entry) => !input.query || entry.name.includes(input.query));
+    const items = (trees[app]?.[input.parent ?? ""] ?? []).filter((entry) => !input.query || entry.name.includes(input.query));
     return json({ data: { writable: false, items, next: null } });
   }
-  if (url.pathname === "/api/capabilities/v1/queries/drive/file.read") {
+  if (operation === "file.read") {
     const { input } = (await request.json()) as { input: { id: string } };
-    const content = contents[input.id] ?? "";
+    const content = contents[app]?.[input.id] ?? "";
     return json({
       data: {},
       stream: {
-        id: input.id,
+        id: `${app}:${input.id}`,
         direction: "read",
         mediaType: "text/plain",
         size: content.length,
@@ -151,11 +163,13 @@ const answer = async (request: Request): Promise<Response> => {
     });
   }
   if (url.pathname === "/api/capabilities/v1/streams/read") {
+    const stream = request.headers.get("x-cloud-stream-id") ?? "";
+    const [app = "", id = ""] = stream.split(":");
     openReads++;
     peakReads = Math.max(peakReads, openReads);
-    await readGate;
+    if (!gatedRead || gatedRead === stream) await readGate;
     openReads--;
-    return new Response(contents[request.headers.get("x-cloud-stream-id") ?? ""] ?? "");
+    return new Response(contents[app]?.[id] ?? "");
   }
   return new Response(null, { status: 404 });
 };
@@ -229,7 +243,18 @@ const focusedRow = (page: Page) =>
 const attach = async (page: Page) => {
   await page.locator("#attach").click();
   await page.locator("dialog[open]").waitFor();
+  // The chooser moves focus to its first row once it opened; a key pressed before that would reach the page.
+  await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
 };
+const status = (page: Page) => page.locator(".cloud-file-chooser__status").textContent();
+/** Where the footer buttons are; selecting and adding must not move them. */
+const footer = (page: Page) =>
+  page.locator(".cloud-file-chooser__actions button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const rect = button.getBoundingClientRect();
+      return [button.textContent, Math.round(rect.left), Math.round(rect.top), Math.round(rect.width)];
+    }),
+  );
 
 describe("choosing files in a browser", () => {
   test("without providers, Attach opens the device's file dialog directly", async () => {
@@ -244,6 +269,23 @@ describe("choosing files in a browser", () => {
       await chooser.setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("local") });
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
       expect(await chosen(page)).toEqual([[{ name: "local.txt", type: "text/plain", size: 5, text: "local" }]]);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("without providers, an abort while the device's dialog is open resolves nothing and drops a later pick", async () => {
+    catalogApps = [notes];
+    const { page, close } = await open(desktop);
+    try {
+      const picker = page.waitForEvent("filechooser");
+      await page.locator("#attach").click();
+      const chooser = await picker;
+      await page.evaluate(() => (window as unknown as { abortChoosing: () => void }).abortChoosing());
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      await chooser.setFiles({ name: "late.txt", mimeType: "text/plain", buffer: Buffer.from("late") });
+      await page.waitForTimeout(100);
+      expect(await chosen(page)).toEqual([[]]);
     } finally {
       await close();
     }
@@ -272,6 +314,50 @@ describe("choosing files in a browser", () => {
       }
     }
   }, 60_000);
+
+  test("sources keep no selection, so one Escape closes the chooser after This device or the arrow keys", async () => {
+    catalogApps = [drive];
+    const { page, close } = await open(desktop);
+    try {
+      await attach(page);
+      const picker = page.waitForEvent("filechooser");
+      await row(page, "This device").click();
+      await picker;
+      expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(0);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      expect(await page.locator("dialog[open]").count()).toBe(0);
+
+      await attach(page);
+      await page.keyboard.press("ArrowDown");
+      expect(await focusedRow(page)).toContain("Drive");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 2);
+      expect(await chosen(page)).toEqual([[], []]);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("a double-click on a source opens it once, even when its folder answers between the two clicks", async () => {
+    catalogApps = [drive];
+    const { page, close } = await open(desktop);
+    try {
+      await attach(page);
+      const box = (await row(page, "Drive").boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down({ clickCount: 1 });
+      await page.mouse.up({ clickCount: 1 });
+      await row(page, "Team").waitFor();
+      // The second click of the same double-click lands on "Team", which now sits where "Drive" was.
+      await page.mouse.down({ clickCount: 2 });
+      await page.mouse.up({ clickCount: 2 });
+      await page.waitForTimeout(150);
+      expect(await rowNames(page)).toEqual(["Home", "Team", "Broken"]);
+    } finally {
+      await close();
+    }
+  }, 30_000);
 
   test("providers that answer after the click join below This device without moving it or taking focus", async () => {
     catalogApps = [drive];
@@ -314,6 +400,7 @@ describe("choosing files in a browser", () => {
         expect(await huge.getAttribute("aria-disabled")).toBe("true");
         expect(await huge.textContent()).toContain("Too large, up to 100 B");
         expect(await rows(page).nth(1).textContent()).toContain("Draft");
+        const buttons = await footer(page);
 
         // Arrows move focus only; Space and a tap toggle.
         await page.keyboard.press("ArrowDown");
@@ -323,15 +410,25 @@ describe("choosing files in a browser", () => {
         await rows(page).nth(3).click();
         expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(3);
         expect(await dialogBox(page)).toEqual(sources);
+        expect(await footer(page)).toEqual(buttons);
+
+        // The file that does not fit is a focus stop, so its reason is read out, but Space and Enter do nothing.
+        await page.keyboard.press("End");
+        expect(await focusedRow(page)).toContain("huge.zip");
+        await page.keyboard.press("Space");
+        await page.keyboard.press("Enter");
+        expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(3);
+        expect(await page.locator(".cloud-file-chooser__downloads").count()).toBe(0);
 
         let release!: () => void;
         readGate = new Promise((resolve) => {
           release = resolve;
         });
         peakReads = 0;
-        await page.getByRole("button", { name: "Add 3 files" }).click();
+        await page.getByRole("button", { name: "Add", exact: true }).click();
         await page.locator(".cloud-file-chooser__downloads").waitFor();
         expect(await dialogBox(page)).toEqual(sources);
+        expect(await footer(page)).toEqual(buttons);
         for (let attempt = 0; openReads < 2 && attempt < 100; attempt++) await Bun.sleep(10);
         await Bun.sleep(100);
         expect(peakReads).toBe(2);
@@ -352,6 +449,66 @@ describe("choosing files in a browser", () => {
       }
     }
   }, 90_000);
+
+  test("Cancel stops a transfer and forgets it, so another provider's file with the same ID comes from that provider", async () => {
+    catalogApps = [drive, vault];
+    let release = () => {};
+    readGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    gatedRead = "drive:todo";
+    const { page, close } = await open(desktop);
+    try {
+      await attach(page);
+      await row(page, "Drive").click();
+      await row(page, "Home").click();
+      await row(page, "notes.txt").click();
+      await row(page, "todo.txt").click();
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.locator(".cloud-file-chooser__status").getByText("1 of 2 ready").waitFor();
+      await page.getByRole("button", { name: "Cancel" }).click();
+      await row(page, "notes.txt").waitFor();
+      expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(2);
+
+      await page.getByRole("button", { name: "Sources" }).click();
+      await row(page, "Vault").click();
+      await row(page, "notes.txt").click();
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "text/plain", size: 11, text: "vault notes" }]]);
+    } finally {
+      release();
+      readGate = undefined;
+      gatedRead = undefined;
+      await close();
+    }
+  }, 30_000);
+
+  test("maxBytes bounds the whole choice: files that fit alone cannot be added together above it", async () => {
+    catalogApps = [drive];
+    for (const view of [desktop, phone]) {
+      const { page, close } = await open(view, "?max=20");
+      try {
+        await attach(page);
+        await row(page, "Drive").click();
+        await row(page, "Home").click();
+        const add = page.getByRole("button", { name: "Add", exact: true });
+        await row(page, "notes.txt").click();
+        await row(page, "todo.txt").click();
+        expect(await status(page)).toBe("Too large together, up to 20 B");
+        expect(await page.locator(".cloud-file-chooser__status").isVisible()).toBe(true);
+        expect(await add.isDisabled()).toBe(true);
+        await row(page, "todo.txt").click();
+        await row(page, "plan.txt").click();
+        expect(await status(page)).toBe("2 files selected");
+        await add.click();
+        await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+        expect((await chosen(page))[0]).toMatchObject([{ name: "notes.txt" }, { name: "plan.txt" }]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
 
   test("explains empty, filtered, forbidden, unavailable, and offline folders in one unmoving frame", async () => {
     catalogApps = [drive];

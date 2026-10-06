@@ -6,14 +6,16 @@ export type CollectionSelection = ReturnType<typeof createCollectionSelection>;
 /**
  * One selection and focus model shared by alternate presentations of a collection.
  *
- * `ids` is the selectable collection in display order. `multiple: false` keeps at most one ID selected: a click,
- * toggle, or arrow key selects only that item, and ranges and select-all do nothing.
+ * `ids` is the collection in display order. `isDisabled` marks items that stay in focus order, so the keyboard and
+ * screen readers still reach them, but can never be selected. `multiple: false` keeps at most one ID selected: a
+ * click, toggle, or arrow key selects only that item, and ranges and select-all do nothing.
  *
  * `checklist: true` suits choosing on touch screens: a plain click or tap toggles one item, and arrow keys only move
  * focus. Space still toggles; Shift-click still selects a range.
  */
 export function createCollectionSelection(options: {
   ids: () => readonly string[];
+  isDisabled?: (id: string) => boolean;
   initial?: readonly string[];
   onChange?: (ids: readonly string[]) => void;
   multiple?: boolean;
@@ -25,9 +27,10 @@ export function createCollectionSelection(options: {
   const [focused, setFocused] = createSignal<string | null>(options.initial?.[0] ?? null);
   let anchor: string | null = options.initial?.[0] ?? null;
   const elements = new Map<string, HTMLElement>();
+  const disabled = (id: string) => options.isDisabled?.(id) ?? false;
   const replace = (ids: readonly string[]) => {
     const allowed = new Set(options.ids());
-    const next = new Set(ids.filter((id) => allowed.has(id)).slice(multiple ? 0 : -1));
+    const next = new Set(ids.filter((id) => allowed.has(id) && !disabled(id)).slice(multiple ? 0 : -1));
     if (next.size === selected().size && [...next].every((id) => selected().has(id))) return;
     setSelected(next);
     options.onChange?.([...next]);
@@ -39,6 +42,7 @@ export function createCollectionSelection(options: {
     if (anchor && !ids.includes(anchor)) anchor = null;
   });
   const toggle = (id: string) => {
+    if (disabled(id)) return;
     const next = new Set(multiple ? selected() : []);
     selected().has(id) ? next.delete(id) : next.add(id);
     batch(() => {
@@ -57,7 +61,8 @@ export function createCollectionSelection(options: {
         const to = ids.indexOf(id);
         const range = ids.slice(Math.min(from, to), Math.max(from, to) + 1);
         replace(modifiers.ctrlKey || modifiers.metaKey ? [...selected(), ...range] : range);
-      } else if (checklist || (multiple && (modifiers.ctrlKey || modifiers.metaKey))) toggle(id);
+      } else if (disabled(id)) return;
+      else if (checklist || (multiple && (modifiers.ctrlKey || modifiers.metaKey))) toggle(id);
       else {
         anchor = id;
         replace([id]);
@@ -108,6 +113,7 @@ export function createCollectionSelection(options: {
     multiple,
     selected,
     focused,
+    isDisabled: disabled,
     select,
     toggle,
     replace,

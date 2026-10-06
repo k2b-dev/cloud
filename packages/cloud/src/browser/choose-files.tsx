@@ -29,13 +29,19 @@ export const createFileChoosing = (
   };
 
   const chooseFiles = (options: ChooseFilesOptions = {}): Promise<File[]> => {
-    if (options.signal?.aborted) return Promise.resolve([]);
+    const { signal } = options;
+    if (signal?.aborted) return Promise.resolve([]);
     if (known?.length === 0) {
       // Synchronous on purpose: the native dialog needs the caller's user activation.
       const picked = options.multiple
         ? showFileDialog({ accept: options.accept, multiple: true })
         : showFileDialog({ accept: options.accept }).then((file) => [file]);
-      return picked.catch(() => []);
+      // The page cannot close a native dialog; an abort resolves `[]` at once and a later pick is dropped.
+      return new Promise((resolve) => {
+        const abort = () => resolve([]);
+        signal?.addEventListener("abort", abort, { once: true });
+        picked.then(resolve, () => resolve([])).finally(() => signal?.removeEventListener("abort", abort));
+      });
     }
     const [list, setList] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
     const load = () => {

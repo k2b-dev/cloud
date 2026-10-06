@@ -56,15 +56,20 @@ files this way.
   [file chooser](/en/ui/cloud/file-chooser) for the presentation.
 - **`accept`** (`<input accept>` syntax) and **`maxBytes`** limit what can be
   chosen. Provider files that do not match are shown disabled with the reason.
-  The limit is the smaller of `maxBytes` and the provider's read limit; Files
-  reads up to 50 MiB. Files from the device are not checked here, so keep
-  your own checks.
+  `maxBytes` is the most you take from providers in one choice: each file and
+  all chosen files together stay within it. A single file is also limited by
+  the provider's read limit; Files reads up to 50 MiB. Pass your real budget,
+  for example the attachment limit of a draft. Files from the device are not
+  checked here, so keep your own checks.
 - **`multiple`** allows several files; it defaults to `false`. **`signal`**
-  closes the chooser.
+  closes the chooser, or stops waiting for the device's dialog, and resolves
+  `[]`.
 - **Reads** run through the provider's read stream, at most two at a time,
-  with progress per file. **Stop** cancels them. A body that differs from the
-  announced size fails instead of arriving cut off. The chosen files stay in
-  browser memory until your upload has read them, at most `maxBytes` each.
+  with progress per file. **Cancel** stops them. Each read checks the file's
+  current size and type again before any byte moves, and a body that differs
+  from the announced size fails instead of arriving cut off. The chosen files
+  stay in browser memory until your upload has read them, at most `maxBytes`
+  together. Without `maxBytes`, only the provider's limit per file applies.
 - **Access:** every folder page and every read is an ordinary capability
   call as the signed-in person; the provider authorizes each one, and Cloud
   records it like any other call. Showing a provider is not a grant.

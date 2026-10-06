@@ -306,13 +306,17 @@ fills as tiles. Use it for choosing among files that have no thumbnail, for
 example in a picker dialog. Keep `DataTable` for lists that need columns,
 sorting, or row structure.
 
-`isDisabled(row)` marks an item that cannot be opened or selected, for example a
-file a picker cannot accept. The item gets `aria-disabled` and muted text, and
-clicks do nothing. Leave disabled IDs out of the selection's `ids`, so arrow keys
-skip them, and say why in `renderMeta`.
+A click that replaces the rows, for example by opening a folder, does not
+turn a double-click into a second action: the rest of the gesture is ignored by
+the item that moved under the pointer.
 
-Two options of `createCollectionSelection` serve pickers:
+Three options of `createCollectionSelection` serve pickers:
 
+- `isDisabled(id)` marks an item that cannot be selected or opened, for
+  example a file a picker cannot accept. It stays in `ids` and in focus order,
+  so arrow keys and screen readers still reach it. `FileGrid` gives it
+  `aria-disabled` and muted text, and clicks, Space, and Enter do nothing;
+  ranges and select-all leave it out. Say why in `renderMeta`.
 - `multiple: false` keeps at most one item selected. A click or arrow key
   selects only that item; ranges and Ctrl/Cmd-A do nothing. The grid reports
   `aria-multiselectable="false"`.

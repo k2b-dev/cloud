@@ -200,6 +200,14 @@ describe("reading a provider file", () => {
     expect(calls).toHaveLength(1);
   });
 
+  test("refuses a read whose media type no longer matches accept before transferring it", async () => {
+    const { calls, fetch } = reader(new TextEncoder().encode("hello"), 5, "text/plain");
+    const listed = file("photo", 5, { name: "photo.png", mediaType: "image/png" });
+    const read = readProviderFile(provider, listed, { locale: "en", fetch, maxBytes: 10, accept: "image/*" });
+    await expect(read).rejects.toMatchObject({ code: "UNSUPPORTED_MEDIA_TYPE", status: 415 });
+    expect(calls).toHaveLength(1);
+  });
+
   test("rejects a body that is longer or shorter than announced", async () => {
     const longer = reader(new Uint8Array(8), 5);
     await expect(readProviderFile(provider, file("a", 5), { locale: "en", fetch: longer.fetch, maxBytes: 10 })).rejects.toBeInstanceOf(

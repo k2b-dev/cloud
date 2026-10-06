@@ -9,11 +9,6 @@ export type FileGridProps<T> = {
   size?: "sm" | "md" | "lg";
   /** `list` shows one compact row per item: preview, name, and meta beside each other. Defaults to `grid`. */
   layout?: "grid" | "list";
-  /**
-   * Items that cannot be opened or selected, for example a file the host cannot accept. Leave their IDs out of the
-   * selection's `ids` and explain why in `renderMeta`.
-   */
-  isDisabled?: (row: T) => boolean;
   renderPreview: (row: T) => JSX.Element;
   renderLabel: (row: T) => JSX.Element;
   renderMeta?: (row: T) => JSX.Element;
@@ -26,9 +21,20 @@ export type FileGridProps<T> = {
   class?: string;
 };
 
-/** File presentation only; the host owns data, menus, leases and permissions. */
+/**
+ * File presentation only; the host owns data, menus, leases and permissions. Items the selection marks with
+ * `isDisabled` stay reachable by keyboard but cannot be selected or opened; say why in `renderMeta`.
+ */
 export function FileGrid<T>(props: FileGridProps<T>) {
   let grid: HTMLDivElement | undefined;
+  // Both clicks of a double-click belong to the item that took the first one. When that click replaced the rows,
+  // for example by opening a folder, the item now under the pointer ignores the rest of the gesture.
+  let pressed: EventTarget | null | undefined;
+  const ownsClick = (event: MouseEvent) => {
+    if (event.detail > 1 && pressed !== event.currentTarget) pressed = null;
+    else pressed = event.currentTarget;
+    return pressed !== null;
+  };
   const columns = () => (grid ? Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").length) : 1);
   const nested = (event: Event) =>
     event.target instanceof Element &&
@@ -46,7 +52,7 @@ export function FileGrid<T>(props: FileGridProps<T>) {
       <For each={props.rows}>
         {(row) => {
           const id = () => props.getRowId(row);
-          const disabled = () => props.isDisabled?.(row) ?? false;
+          const disabled = () => props.selection.isDisabled(id());
           return (
             <div role="row" class="k2b-file-grid__row">
               <div
@@ -59,13 +65,13 @@ export function FileGrid<T>(props: FileGridProps<T>) {
                 tabIndex={props.selection.focused() === id() ? 0 : -1}
                 onFocus={() => props.selection.markFocused(id())}
                 onClick={(event) => {
-                  if (!nested(event) && !disabled()) {
+                  if (!nested(event) && ownsClick(event) && !disabled()) {
                     props.selection.select(id(), event);
                     props.onRowClick?.(row);
                   }
                 }}
                 onDblClick={(event) => {
-                  if (!nested(event) && !disabled()) props.onOpen(row);
+                  if (!nested(event) && pressed !== null && !disabled()) props.onOpen(row);
                 }}
                 onContextMenu={() => props.onContextMenu?.(row)}
                 onKeyDown={(event) => {
@@ -73,7 +79,7 @@ export function FileGrid<T>(props: FileGridProps<T>) {
                   if (props.selection.keyDown(event, id(), columns())) return;
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    props.onOpen(row);
+                    if (!disabled()) props.onOpen(row);
                   }
                 }}
               >

@@ -149,13 +149,20 @@ const streamFailure = async (response: Response): Promise<FileProviderError> => 
 };
 
 /**
- * Reads one file through the provider's read stream into a `File`. It stops at `maxBytes`, rejects a body that
- * differs from the announced size, and reports received bytes. Aborting the signal cancels the transfer.
+ * Reads one file through the provider's read stream into a `File`. Before any byte moves it checks the read's own
+ * size and media type against `maxBytes` and `accept` again, since the file may have changed since it was listed.
+ * It rejects a body that differs from the announced size and reports received bytes. Aborting the signal cancels
+ * the transfer.
  */
 export const readProviderFile = async (
   provider: FileProviderSource,
   entry: Extract<FileProviderEntry, { kind: "file" }>,
-  caller: FileProviderCaller & { maxBytes: number; signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void },
+  caller: FileProviderCaller & {
+    maxBytes: number;
+    accept?: string;
+    signal?: AbortSignal;
+    onProgress?: (loaded: number, total: number) => void;
+  },
 ): Promise<File> => {
   const result = await invokeCapabilityWithDataSchema(
     { appId: provider.appId, capabilityId: provider.read, kind: "query", input: { id: entry.id }, signal: caller.signal },
@@ -165,7 +172,9 @@ export const readProviderFile = async (
   if (!result.ok) throw failure(result.error);
   const stream = result.data.stream;
   if (stream?.direction !== "read") throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned no read stream", 502);
-  if (stream.size > caller.maxBytes) throw new FileProviderError("FILE_TOO_LARGE", "The file is larger than allowed", 413);
+  const problem = entryProblem({ ...entry, size: stream.size, mediaType: stream.mediaType }, caller.accept, caller.maxBytes);
+  if (problem === "size") throw new FileProviderError("FILE_TOO_LARGE", "The file is larger than allowed", 413);
+  if (problem === "type") throw new FileProviderError("UNSUPPORTED_MEDIA_TYPE", "The file type is not accepted", 415);
   let response: Response;
   try {
     response = await transferCapabilityStream(stream, "read", { ...options(caller), signal: caller.signal });

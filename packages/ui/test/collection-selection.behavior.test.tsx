@@ -118,11 +118,11 @@ test("signed native previews support anonymous CORS and report a failure without
   expect(reads).toBe(0);
 });
 
-test("a single checklist toggles with a click, moves focus with arrows, skips disabled items, and leaves Escape to the host", async () => {
+test("a single checklist toggles with a click, moves focus with arrows, keeps disabled items reachable, and leaves Escape to the host", async () => {
   const dom = createDomTestHarness();
   delegateEvents(["click", "dblclick", "keydown"], dom.document);
   const rows = ["a", "b", "c"];
-  const disabled = new Set(["b"]);
+  const isDisabled = (id: string) => id === "b";
   let single!: ReturnType<typeof createCollectionSelection>;
   let many!: ReturnType<typeof createCollectionSelection>;
   const opened: string[] = [];
@@ -133,16 +133,14 @@ test("a single checklist toggles with a click, moves focus with arrows, skips di
       selection={selection}
       label={label}
       layout="list"
-      isDisabled={(row) => disabled.has(row)}
       renderPreview={() => null}
       renderLabel={(row) => row}
       onOpen={(row) => opened.push(row)}
     />
   );
   const dispose = render(() => {
-    const ids = () => rows.filter((row) => !disabled.has(row));
-    single = createCollectionSelection({ ids, multiple: false, checklist: true });
-    many = createCollectionSelection({ ids, checklist: true });
+    single = createCollectionSelection({ ids: () => rows, isDisabled, multiple: false, checklist: true });
+    many = createCollectionSelection({ ids: () => rows, isDisabled, checklist: true });
     return (
       <>
         {grid(single, "Single")}
@@ -159,30 +157,43 @@ test("a single checklist toggles with a click, moves focus with arrows, skips di
   expect(singleGrid!.getAttribute("aria-multiselectable")).toBe("false");
   expect(manyGrid!.getAttribute("aria-multiselectable")).toBe("true");
   const cells = (grid: HTMLElement) => Array.from(grid.querySelectorAll<HTMLElement>('[role="gridcell"]'));
+  const key = (cell: HTMLElement, init: KeyboardEventInit) => cell.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init }));
 
-  // A disabled item is marked, cannot be selected or opened, and is not a focus stop.
+  // A disabled item is marked and cannot be selected or opened by click, double-click, Space, or Enter.
   const blocked = cells(singleGrid!)[1]!;
   expect(blocked.getAttribute("aria-disabled")).toBe("true");
+  cells(singleGrid!)[0]!.click();
   blocked.click();
   blocked.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  expect(single.selected().size).toBe(0);
+  key(blocked, { key: " " });
+  key(blocked, { key: "Enter" });
+  expect([...single.selected()]).toEqual(["a"]);
   expect(opened).toEqual([]);
 
-  // One item at most: a click toggles it, another click replaces it, and Ctrl-A selects nothing more.
-  cells(singleGrid!)[0]!.click();
+  // One item at most: another click replaces it, Ctrl-A selects nothing more, and a second click clears it.
   cells(singleGrid!)[2]!.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }));
   expect([...single.selected()]).toEqual(["c"]);
-  cells(singleGrid!)[2]!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "a", ctrlKey: true }));
+  key(cells(singleGrid!)[2]!, { key: "a", ctrlKey: true });
   expect([...single.selected()]).toEqual(["c"]);
   cells(singleGrid!)[2]!.click();
   expect(single.selected().size).toBe(0);
 
-  // A checklist adds with plain clicks; arrows only move focus, past the disabled item; Space toggles.
+  // A checklist adds with plain clicks. Arrows only move focus and stop on the disabled item, so the keyboard and
+  // screen readers reach its reason; Space toggles; select-all and ranges leave the disabled item out.
   cells(manyGrid!)[0]!.click();
-  cells(manyGrid!)[0]!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+  key(cells(manyGrid!)[0]!, { key: "ArrowDown" });
+  expect(dom.document.activeElement).toBe(cells(manyGrid!)[1]!);
+  key(cells(manyGrid!)[1]!, { key: "ArrowDown" });
   expect(dom.document.activeElement).toBe(cells(manyGrid!)[2]!);
   expect([...many.selected()]).toEqual(["a"]);
-  cells(manyGrid!)[2]!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: " " }));
+  key(cells(manyGrid!)[2]!, { key: " " });
+  expect([...many.selected()]).toEqual(["a", "c"]);
+  many.clear();
+  key(cells(manyGrid!)[2]!, { key: "a", ctrlKey: true });
+  expect([...many.selected()]).toEqual(["a", "c"]);
+  many.clear();
+  cells(manyGrid!)[0]!.click();
+  cells(manyGrid!)[2]!.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
   expect([...many.selected()]).toEqual(["a", "c"]);
 
   // Escape clears a selection first; with nothing selected it is left to the host, for example a dialog.
@@ -194,4 +205,50 @@ test("a single checklist toggles with a click, moves focus with arrows, skips di
   const second = escape();
   cells(manyGrid!)[2]!.dispatchEvent(second);
   expect(second.defaultPrevented).toBe(false);
+});
+
+test("a double-click whose first click replaced the rows does not act on the row that moved under the pointer", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click", "dblclick"], dom.document);
+  const [folder, setFolder] = createSignal("root");
+  const listing: Record<string, string[]> = { root: ["docs", "photos"], docs: ["drafts", "notes.txt"] };
+  const opened: string[] = [];
+  const dispose = render(() => {
+    const selection = createCollectionSelection({ ids: () => listing[folder()] ?? [] });
+    const open = (row: string) => {
+      opened.push(row);
+      if (listing[row]) setFolder(row);
+    };
+    return (
+      <FileGrid
+        rows={listing[folder()] ?? []}
+        getRowId={(row) => row}
+        selection={selection}
+        label="Files"
+        layout="list"
+        renderPreview={() => null}
+        renderLabel={(row) => row}
+        onRowClick={open}
+        onOpen={open}
+      />
+    );
+  }, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  const first = () => dom.root.querySelector<HTMLElement>('[role="gridcell"]')!;
+  const press = (detail: number) => first().dispatchEvent(new MouseEvent("click", { bubbles: true, detail }));
+
+  // The first click opens "docs"; the second click and the double-click land on "drafts", which took neither.
+  press(1);
+  expect(folder()).toBe("docs");
+  press(2);
+  first().dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+  expect(opened).toEqual(["docs"]);
+  expect(folder()).toBe("docs");
+
+  // The next gesture on that row works as usual.
+  press(1);
+  expect(opened).toEqual(["docs", "drafts"]);
 });

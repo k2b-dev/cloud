@@ -37,9 +37,12 @@ export type ChooseFilesOptions = {
   accept?: string;
   /** Allow choosing several files. Defaults to `false`. */
   multiple?: boolean;
-  /** Largest file the consumer takes from a provider; the provider's own read limit applies as well. */
+  /**
+   * The most bytes the consumer takes from providers in one choice: no single file and no selection together goes
+   * above it, so it also bounds what the browser holds. The provider's own read limit applies to each file as well.
+   */
   maxBytes?: number;
-  /** Closes the chooser and resolves `[]` when aborted. */
+  /** Closes the chooser, or stops waiting for the device's dialog, and resolves `[]` when aborted. */
   signal?: AbortSignal;
 };
 
@@ -49,7 +52,15 @@ type FileEntry = Extract<FileProviderEntry, { kind: "file" }>;
 type Crumb = { id?: string; name: string };
 type Location = { provider: FileProviderSource; trail: readonly Crumb[] } | null;
 type SourceRow = { id: string; name: string; icon: string; provider?: FileProviderSource };
-type Download = { entry: FileEntry; loaded: number; total: number; state: "waiting" | "loading" | "done" | "error"; file?: File };
+type Download = {
+  entry: FileEntry;
+  loaded: number;
+  total: number;
+  state: "waiting" | "loading" | "done" | "error";
+  file?: File;
+  /** Why a read was refused: the file changed after it was listed and no longer fits. */
+  reason?: EntryProblem;
+};
 
 /** Empty pages may still continue; the chooser follows at most this many of them before it shows "Load more". */
 const EMPTY_PAGES_FOLLOWED = 5;
@@ -99,8 +110,9 @@ export function FileChooser(props: {
     transfer?.abort();
   });
 
-  const limit = () =>
-    Math.min(props.options.maxBytes ?? Number.POSITIVE_INFINITY, location()?.provider.maxBytes ?? Number.POSITIVE_INFINITY);
+  const budget = props.options.maxBytes ?? Number.POSITIVE_INFINITY;
+  /** The largest single file: the consumer's budget or the provider's read limit, whichever is smaller. */
+  const limit = () => Math.min(budget, location()?.provider.maxBytes ?? Number.POSITIVE_INFINITY);
   const problem = (entry: FileProviderEntry): EntryProblem | undefined => entryProblem(entry, props.options.accept, limit());
 
   // Rows keep their identity, so providers that arrive later do not re-create the row that has focus.
@@ -117,12 +129,20 @@ export function FileChooser(props: {
     const needle = filter().trim().toLocaleLowerCase();
     return needle ? rows.filter((row) => row.name.toLocaleLowerCase().includes(needle)) : rows;
   });
-  const sourceSelection = createCollectionSelection({ ids: () => sources().map((row) => row.id), multiple: false });
-  const selectable = createMemo(() => items().filter((entry) => !problem(entry)));
-  const selection = createCollectionSelection({ ids: () => selectable().map((entry) => entry.id), multiple, checklist: true });
+  // Sources open on activation and keep no selection, so Escape always closes the chooser from here.
+  const sourceSelection = createCollectionSelection({ ids: () => sources().map((row) => row.id), multiple: false, checklist: true });
+  // Files that do not fit stay in focus order, so the keyboard and screen readers reach the reason, but cannot be chosen.
+  const blocked = createMemo(() => new Set(items().flatMap((entry) => (problem(entry) ? [entry.id] : []))));
+  const selection = createCollectionSelection({
+    ids: () => items().map((entry) => entry.id),
+    isDisabled: (id) => blocked().has(id),
+    multiple,
+    checklist: true,
+  });
   const chosen = createMemo(() =>
-    selectable().filter((entry): entry is FileEntry => entry.kind === "file" && selection.selected().has(entry.id)),
+    items().filter((entry): entry is FileEntry => entry.kind === "file" && selection.selected().has(entry.id)),
   );
+  const overBudget = () => chosen().reduce((sum, entry) => sum + entry.size, 0) > budget;
 
   const folderName = () => location()?.trail.at(-1)?.name ?? t().sources;
 
@@ -177,7 +197,7 @@ export function FileChooser(props: {
     queueMicrotask(() => {
       const active = document.activeElement;
       if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
-      const first = location() ? selectable()[0]?.id : sources()[0]?.id;
+      const first = location() ? items()[0]?.id : sources()[0]?.id;
       if (first) (location() ? selection : sourceSelection).focus(first);
     });
   };
@@ -220,6 +240,7 @@ export function FileChooser(props: {
   };
 
   const openSource = (row: SourceRow) => {
+    sourceSelection.clear();
     // A click or key press on the row is the user activation the native picker needs.
     if (!row.provider) deviceInput?.click();
     else openProvider(row.provider);
@@ -227,16 +248,18 @@ export function FileChooser(props: {
 
   const add = async () => {
     const files = chosen();
-    if (files.length === 0 || (downloading() && !failed())) return;
+    if (files.length === 0 || overBudget() || (downloading() && !failed())) return;
     const current = location();
     if (!current) return;
     transfer?.abort();
     const pending = new AbortController();
     transfer = pending;
+    // Only a retry of this transfer finds earlier downloads: Cancel clears them, and the location cannot change
+    // while a transfer is shown, so a finished file never stands in for another provider's file with the same ID.
     const previous = new Map(downloads.filter((item) => item.state === "done").map((item) => [item.entry.id, item]));
     setDownloads(files.map((entry) => previous.get(entry.id) ?? { entry, loaded: 0, total: entry.size, state: "waiting" }));
     setDownloading(true);
-    queueMicrotask(() => root?.querySelector<HTMLButtonElement>("[data-file-chooser-stop]")?.focus());
+    queueMicrotask(() => root?.querySelector<HTMLButtonElement>("[data-file-chooser-cancel]")?.focus());
     await eachLimited(
       downloads.map((_, index) => index),
       FILE_PROVIDER_PARALLEL_READS,
@@ -247,12 +270,15 @@ export function FileChooser(props: {
           const file = await readProviderFile(current.provider, downloads[index]!.entry, {
             ...props.caller(),
             maxBytes: limit(),
+            accept: props.options.accept,
             signal: pending.signal,
             onProgress: (loaded, total) => setDownloads(index, { loaded, total }),
           });
-          setDownloads(index, { state: "done", file });
-        } catch {
-          if (!pending.signal.aborted) setDownloads(index, { state: "error" });
+          if (!pending.signal.aborted) setDownloads(index, { state: "done", file });
+        } catch (cause) {
+          const code = cause instanceof FileProviderError ? cause.code : "";
+          const reason = code === "FILE_TOO_LARGE" ? "size" : code === "UNSUPPORTED_MEDIA_TYPE" ? "type" : undefined;
+          if (!pending.signal.aborted) setDownloads(index, { state: "error", reason });
         }
       },
     );
@@ -261,14 +287,19 @@ export function FileChooser(props: {
   };
   const stop = () => {
     transfer?.abort();
-    setDownloading(false);
+    batch(() => {
+      setDownloading(false);
+      setDownloads([]);
+    });
     queueMicrotask(() => {
       const first = chosen()[0]?.id;
       if (first) selection.focus(first);
     });
   };
-  const failed = () => downloads.some((item) => item.state === "error");
+  const failures = () => downloads.filter((item) => item.state === "error").length;
+  const failed = () => failures() > 0;
   const ready = () => downloads.filter((item) => item.state === "done").length;
+  const progress = () => t().downloading({ done: ready(), total: downloads.length, failed: failures() });
 
   const errorView = createMemo(() => {
     const value = error();
@@ -366,7 +397,7 @@ export function FileChooser(props: {
           />
           <Switch>
             <Match when={downloading()}>
-              <ul class="cloud-file-chooser__downloads" aria-label={t().downloading({ done: ready(), total: downloads.length })}>
+              <ul class="cloud-file-chooser__downloads" aria-label={progress()}>
                 <For each={downloads}>
                   {(item) => (
                     <li>
@@ -377,6 +408,10 @@ export function FileChooser(props: {
                         <span class="cloud-file-chooser__download-state" data-state={item.state}>
                           <Switch fallback={<Format.Percent value={item.total ? item.loaded / item.total : 0} clamp />}>
                             <Match when={item.state === "waiting"}>{t().waiting}</Match>
+                            <Match when={item.state === "error" && item.reason === "size"}>
+                              {t().tooLarge({ limit: text.pprintBytes(limit(), { locale: locale() }) })}
+                            </Match>
+                            <Match when={item.state === "error" && item.reason === "type"}>{t().wrongType}</Match>
                             <Match when={item.state === "error"}>{t().readFailed}</Match>
                           </Switch>
                         </span>
@@ -473,7 +508,6 @@ export function FileChooser(props: {
                 selection={selection}
                 label={t().entries({ folder: folderName() })}
                 layout="list"
-                isDisabled={(entry) => Boolean(problem(entry))}
                 renderPreview={(entry) => (
                   <i
                     class={`${selection.selected().has(entry.id) && entry.kind === "file" ? "ti ti-circle-check" : entryIcon(entry)} cloud-file-chooser__icon`}
@@ -536,38 +570,26 @@ export function FileChooser(props: {
         </PanelDialog.Body>
         <PanelDialog.Footer>
           <span class="cloud-file-chooser__status" role="status">
-            <Show
-              when={downloading()}
-              fallback={
-                <Show when={location()}>
-                  {chosen().length > 0 ? t().selected({ count: chosen().length }) : t().selectHint({ multiple })}
-                </Show>
-              }
-            >
-              {t().downloading({ done: ready(), total: downloads.length })}
-            </Show>
+            <Switch>
+              <Match when={downloading()}>{progress()}</Match>
+              <Match when={!location()}>{null}</Match>
+              <Match when={overBudget()}>{t().tooLargeTogether({ limit: text.pprintBytes(budget, { locale: locale() }) })}</Match>
+              <Match when={chosen().length > 0}>{t().selected({ count: chosen().length })}</Match>
+              <Match when={true}>{t().selectHint({ multiple })}</Match>
+            </Switch>
           </span>
+          {/* Labels never change, so the buttons keep their place. Cancel stops a transfer first; Add tries failed files again. */}
           <div class="cloud-file-chooser__actions">
-            <Show
-              when={downloading()}
-              fallback={
-                <Button variant="ghost" onClick={() => props.close([])}>
-                  {t().cancel}
-                </Button>
-              }
-            >
-              <Button variant="ghost" data-file-chooser-stop onClick={stop}>
-                {t().stop}
-              </Button>
-            </Show>
+            <Button variant="ghost" data-file-chooser-cancel onClick={() => (downloading() ? stop() : props.close([]))}>
+              {t().cancel}
+            </Button>
             <Show when={location()}>
               <Button
                 variant="primary"
-                disabled={chosen().length === 0 || (downloading() && !failed())}
-                loading={downloading() && !failed()}
+                disabled={chosen().length === 0 || overBudget() || (downloading() && !failed())}
                 onClick={() => void add()}
               >
-                {failed() ? t().retryFailed : t().add({ count: chosen().length })}
+                {t().add}
               </Button>
             </Show>
           </div>
