@@ -414,12 +414,12 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         setLoading(false);
         if (disposed) return;
         if (direction === "newest") newest = undefined;
-        // A failed or empty load toward the end shows "Jump to latest" again instead of following an end that never came.
-        if (direction !== "older" && list === before && stick && props.hasNewer) setStick(false);
         if (newest === "waiting") {
           if (!loadingOlder() && !loadingNewer()) loadNewest();
           return;
         }
+        // A failed or empty load toward the end shows "Jump to latest" again instead of following an end that never came.
+        if (direction !== "older" && list === before && stick && props.hasNewer) setStick(false);
         // Keep loading while the reader still sits at the edge and the last page arrived.
         if (list !== before) checkEdges();
       });
@@ -568,7 +568,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
    * it, following the end keeps `onLoadNewer` paging until the newest item arrives or the reader scrolls away.
    */
   const scrollToEnd = () => {
-    setStick(true);
+    setStick(!props.hasNewer || Boolean(props.onLoadNewer || props.onLoadNewest));
     if (props.hasNewer && props.onLoadNewest) loadNewest();
     if (hi < list.length) windowAround(list.length - 1);
     restore(true);
@@ -721,6 +721,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       () => {
         if (hi <= lo) return;
         if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
+        // Only newer pages can be followed; with just `onLoadNewest`, "Jump to latest" has to show.
+        else if (stick && props.hasNewer && !props.onLoadNewer) setStick(false);
         checkEdges();
       },
       { defer: true },

@@ -79,9 +79,12 @@ const list = () =>
     get hasNewer() {
       return next < newest();
     },
-    onLoadNewer: () =>
-      new Promise((done) =>
+    onLoadNewer: options.noNewer
+      ? undefined
+      : () =>
+      new Promise((done, fail) =>
         setTimeout(() => {
+          if (options.failNewer) return fail(new Error("offline"));
           const page = all.slice(next, Math.min(newest(), next + 50));
           next += page.length;
           setItems((current) => [...current, ...page]);
@@ -282,6 +285,8 @@ const open = async (
     older?: number;
     newer?: number;
     newest?: boolean | "fail";
+    noNewer?: boolean;
+    failNewer?: boolean;
     future?: number;
     locale?: string;
     separators?: boolean;
@@ -599,6 +604,32 @@ describe(`VirtualFeed in ${browserName}`, () => {
     await page.locator('[role="feed"][aria-busy="false"]').waitFor();
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
     expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(1);
+    await page.close();
+
+    // With only onLoadNewest, newer items reported live show Jump to latest instead of an end that cannot load.
+    page = await open({ newest: true, noNewer: true });
+    await page.evaluate(() => feed.setNewest(400));
+    await page.locator(".k2b-virtual-feed__end").waitFor();
+    await page.locator(".k2b-virtual-feed__end").click();
+    await page.waitForFunction(() => document.querySelector('[data-key="m399"]'), null, { timeout: 10_000 });
+    await frames(page, 6);
+    expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
+    expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
+    await page.close();
+
+    // A newer page that fails while Jump to latest waits for it does not cancel the jump.
+    page = await open({ count: 300, newer: 50, newest: true, failNewer: true });
+    await page.evaluate(() => {
+      const port = feed.viewport();
+      port.scrollTop = port.scrollHeight;
+    });
+    await page.locator('[role="feed"][aria-busy="true"]').waitFor();
+    await page.locator(".k2b-virtual-feed__end").click();
+    await page.waitForFunction(() => document.querySelector('[data-key="m349"]'), null, { timeout: 10_000 });
+    await page.locator('[role="feed"][aria-busy="false"]').waitFor();
+    await frames(page, 6);
+    expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
+    expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
     await page.close();
   });
 
