@@ -43,6 +43,24 @@ describe("Mail public notifications", () => {
     });
   });
 
+  test("tells the sender once that a message waits for sign-in, and once that it went back to the drafts", async () => {
+    const waiting = { mailboxId: "Box001", mailboxName: "Support", subject: "Offer", scheduled: true, notice: "waiting" as const };
+    expect(NOTIFICATIONS.sendWaitingForLogin.data.safeParse({ ...waiting, mailboxId: crypto.randomUUID() }).success).toBeFalse();
+    expect(await NOTIFICATIONS.sendWaitingForLogin.render(waiting, { locale: "en" })).toEqual({
+      title: "A message is waiting to be sent",
+      body: "Support needs to be signed in again. Mail sends “Offer” as soon as the account is reconnected.",
+      targetHref: "/app/mail/Box001?scheduled=1",
+    });
+    expect(await NOTIFICATIONS.sendWaitingForLogin.render({ ...waiting, scheduled: false }, { locale: "en" })).toMatchObject({
+      targetHref: "/app/mail/Box001",
+    });
+    expect(await NOTIFICATIONS.sendWaitingForLogin.render({ ...waiting, subject: "", notice: "returned" }, { locale: "de" })).toEqual({
+      title: "Eine Nachricht konnte nicht gesendet werden",
+      body: "Support wurde nicht rechtzeitig wieder verbunden. „(kein Betreff)“ liegt wieder in deinen Entwürfen.",
+      targetHref: "/app/mail/Box001?view=send_problems",
+    });
+  });
+
   test("keeps workflow notification links on the public mailbox ID", async () => {
     const data = { mailboxId: "Box001", title: "Done", body: "The workflow finished." };
     expect(NOTIFICATIONS.workflowNotice.data.safeParse(data).success).toBeTrue();

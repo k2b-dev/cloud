@@ -130,6 +130,10 @@ describe("mail message presentation", () => {
     };
 
     expect(messageDeliveryPresentation(delivery)).toMatchObject({ label: "Trying again · 2/5", tone: "warning" });
+    // Waiting for the mailbox's next login is no retry and counts no attempt.
+    const waiting = { ...delivery, lastErrorCode: "MAILBOX_AUTH_REQUIRED" };
+    expect(messageDeliveryPresentation(waiting)).toMatchObject({ label: "Waiting for sign-in", tone: "warning" });
+    expect(messageDeliveryControlLabel(waiting, true, "de")).toBe("Wartet auf Anmeldung");
     expect(
       messageDeliveryPresentation({
         ...delivery,
