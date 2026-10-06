@@ -102,6 +102,40 @@ describe("file-provider contract", () => {
     expect(manifestHash).toBe(capabilityHash(base));
   });
 
+  test("a definition without a provider compiles to the hash of the previous release", () => {
+    const notes = defineCapabilities({
+      protocolVersion: 2,
+      types: { note: { title: "Note", description: "One note.", icon: "ti ti-note", reader: "note.read" } },
+      queries: {
+        "note.read": {
+          title: "Read note",
+          description: "Read one note.",
+          input: z.object({ id: z.string().min(1).max(200).describe("Note ID.") }).strict(),
+          data: z.object({ id: z.string(), title: z.string() }).strict(),
+          openWorld: false,
+          stream: readStream,
+          run,
+        },
+      },
+      actions: {
+        "note.create": {
+          title: "Create note",
+          description: "Create one note.",
+          input: z.object({ title: z.string().min(1).max(200).describe("Note title.") }).strict(),
+          data: z.object({ id: z.string() }).strict(),
+          destructive: false,
+          openWorld: false,
+          idempotency: "required",
+          run,
+        },
+      },
+    });
+    const manifest = compileCapabilityManifest("notes", notes);
+    // Recorded by compiling this definition with cloud-v0.29.0. A changed hash makes earlier Cores reject every app.
+    expect(manifest.manifestHash).toBe("1aa4b6ae51cb52d80a9b80ad4a80edd306b06ed5f8e1daf5ccd84da862deb4ac");
+    expect(Object.keys(manifest)).toEqual(["protocolVersion", "appId", "manifestHash", "types", "queries", "actions", "commands"]);
+  });
+
   test("the checker compares the stream direction the contract names", () => {
     const manifest = compileCapabilityManifest("drive", provider());
     const listOperation = operation(manifest, "folder.list");
