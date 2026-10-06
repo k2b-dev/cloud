@@ -951,7 +951,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE TABLE IF NOT EXISTS ai.user_prefs (
       user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
       memory_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      memory_learning_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      memory_learning_enabled BOOLEAN,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
@@ -960,7 +960,15 @@ export const migrateCloudAi = async (): Promise<void> => {
   // memory blob. Deliberately discard it instead of migrating ambiguous lines.
   await sql`ALTER TABLE ai.user_prefs DROP COLUMN IF EXISTS memory`.simple();
   await sql`ALTER TABLE ai.user_prefs DROP COLUMN IF EXISTS instructions`.simple();
-  await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS memory_learning_enabled BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+  await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS memory_learning_enabled BOOLEAN`.simple();
+  // NULL means the user never chose, so the default (on) applies. Earlier
+  // releases stored FALSE for every new row, and an explicit "off" looks the
+  // same, so existing FALSE rows stay as they are rather than being switched on.
+  await sql`
+    ALTER TABLE ai.user_prefs
+      ALTER COLUMN memory_learning_enabled DROP NOT NULL,
+      ALTER COLUMN memory_learning_enabled DROP DEFAULT
+  `.simple();
 
   // Last model the user actually ran a turn with — preselected for new chats.
   await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS last_model_id TEXT NOT NULL DEFAULT ''`.simple();

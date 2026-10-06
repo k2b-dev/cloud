@@ -10,6 +10,47 @@ updated: 2026-10-06
 
 # Deprecations and migrations
 
+## Assistant learns from private chats by default
+
+Learning personalization from private chats is now on for everyone who has not
+chosen. Earlier releases kept it off until a person turned it on. A person's
+own choice always wins: Cloud stores a choice only when they save the **Learn
+personalization from private chats** switch in **Assistant settings >
+Personalization** or run `cld assistant personalization configure --learning`,
+and they can turn learning off at any time with immediate effect. Saving
+**Use personalization** alone no longer records a learning choice. Nothing else
+changes: learning needs AI and a usable background model, reads only private chats,
+and stays within the monthly budget described in
+[Personalization](/en/docs/ai/files-projects-and-personalization#use-personalization-for-durable-user-context).
+
+Earlier releases stored "off" for every person who ran an Assistant turn, so a
+stored "off" can be an explicit choice or just the old default. Cloud cannot
+tell them apart and keeps all of them off. Only people without a stored choice,
+in practice those who have not used Assistant yet, follow the new default. To
+see how many people keep a stored "off", run:
+
+```sql
+SELECT count(*) FROM ai.user_prefs WHERE memory_learning_enabled = FALSE;
+```
+
+Learning is private-data processing, so tell people before it starts, for
+example in your release announcement: it is on unless they turn it off, it
+saves facts, preferences, and repeated workflows only from their own private
+chats, and they can review or delete every entry under **Saved
+personalization**. If you then decide that the stored "off" values should
+follow the new default, run this statement once. It leaves out everyone who
+had learning on and later turned it off, because that "off" was certainly
+their own choice:
+
+```sql
+UPDATE ai.user_prefs SET memory_learning_enabled = NULL WHERE memory_learning_enabled = FALSE AND NOT EXISTS (SELECT 1 FROM ai.memory_learning_runs run WHERE run.user_id = ai.user_prefs.user_id);
+```
+
+A stored "off" from an earlier release can still be a deliberate choice, so
+the statement can switch learning on for people who turned it off on purpose.
+There is no installation-wide setting for the default; learning stops only
+while AI is disabled or no background model is available.
+
 ## Resources keep at least one manager
 
 Grids Bases, Pulse Bases, and Venues now refuse a grant change that would

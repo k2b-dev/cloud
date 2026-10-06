@@ -238,7 +238,12 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   const saveSettings = async () => {
     setBusyId("settings");
     try {
-      await assistantApi.updatePrefs({ memoryEnabled: memoryEnabled(), memoryLearningEnabled: learningEnabled() });
+      // Send only what changed: saving one switch must not record a choice for the other.
+      const saved = savedPreferences();
+      await assistantApi.updatePrefs({
+        ...(memoryEnabled() !== saved.memoryEnabled ? { memoryEnabled: memoryEnabled() } : {}),
+        ...(learningEnabled() !== saved.learningEnabled ? { memoryLearningEnabled: learningEnabled() } : {}),
+      });
       setSavedPreferences({ memoryEnabled: memoryEnabled(), learningEnabled: learningEnabled() });
       toast.success(text("Personalization settings saved"));
     } catch (error) {
@@ -342,7 +347,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           <Switch
             label={text("Learn personalization from private chats")}
             description={text(
-              "After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults.",
+              "On by default. After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults; review or delete them under Saved personalization.",
             )}
             value={learningEnabled}
             onValueChange={setLearningEnabled}

@@ -129,8 +129,6 @@ const germanText: Record<string, string> = {
   "Add the supporting information Assistant may need for this workflow.":
     "Ergänze Informationen, die der Assistent für diesen Ablauf benötigen kann.",
   Added: "Hinzugefügt",
-  "After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults.":
-    "Nach einer Anfrage in einem privaten Chat kann der Assistent dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern.",
   "All chats": "Alle Chats",
   Approvals: "Freigaben",
   "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
@@ -251,6 +249,8 @@ const germanText: Record<string, string> = {
   "No personalization changed": "Keine Personalisierung geändert",
   "No personalization yet": "Noch keine Personalisierung",
   "No remembered approvals. Actions will ask before they run.": "Keine gespeicherten Freigaben. Vor der Ausführung wird nachgefragt.",
+  "On by default. After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults; review or delete them under Saved personalization.":
+    "Standardmäßig an. Nach einer Anfrage in einem privaten Chat kann der Assistent dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   "Only Project instructions are treated as instructions; files, knowledge, and references remain data.":
     "Nur Projektanweisungen gelten als Anweisungen; Dateien, Wissen und Referenzen bleiben Daten.",
   "Open in new tab": "In neuem Tab öffnen",
