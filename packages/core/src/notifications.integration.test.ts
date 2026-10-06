@@ -79,4 +79,49 @@ suite("Core notice for a newly paired phone", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+
+  test("fails while no delivery could be prepared, so that maintenance tries the phone again", async () => {
+    const definition = app.notifications.appDevicePaired;
+    const suffix = crypto.randomUUID();
+    // An email address but no browser endpoint: only the email delivery could have gone out.
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, given_name, sn, mail)
+      VALUES (${`phone-notice-${suffix}`}, 'local', 'user', 'Phone Notice', 'Phone', 'Notice', ${`phone-notice-${suffix}@example.test`})
+      RETURNING id
+    `;
+    const userId = user!.id;
+    const sender = createCoreNotificationSender({
+      ...app.notifications,
+      appDevicePaired: {
+        ...definition,
+        email: async () => {
+          throw new Error("Settings unavailable");
+        },
+      },
+    });
+    const notice = {
+      deviceId: crypto.randomUUID(),
+      userId,
+      name: "Android",
+      platform: "android" as const,
+      pairedAt: new Date().toISOString(),
+      locale: "en",
+    };
+    try {
+      await expect(sender.sendAppDevicePaired(notice)).rejects.toThrow("could not be prepared");
+      const deliveries = await sql<{ channel: string; status: string; error_code: string | null }[]>`
+        SELECT d.channel, d.status, d.error_code FROM notifications.deliveries d
+        JOIN notifications.events e ON e.id = d.event_id
+        WHERE e.definition_id = ${definition.id} AND e.recipient_user_id = ${userId}::uuid
+        ORDER BY d.route_priority
+      `;
+      expect(deliveries).toEqual([
+        { channel: "email", status: "failed", error_code: "preparation_failed" },
+        { channel: "browser", status: "suppressed", error_code: "no_endpoint" },
+      ]);
+    } finally {
+      await sql`DELETE FROM notifications.events WHERE recipient_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
 });

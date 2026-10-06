@@ -140,14 +140,15 @@ asked, choose **Confirm it's you**, and the dialog opens again after sign-in.
 To remove a phone, choose **Remove** in its row. The app on that phone is
 signed out at once.
 
-Within about a minute of pairing, Cloud sends you a **New phone paired**
-notice with the phone's name, platform and pairing time, and a link to this
-page. If you did not pair that phone, remove it there and contact your
-administrator. The notice goes by email, or as a browser notification when
-your account has no email address; choose how it reaches you under
-**My account → Notifications** (**Phones paired with the mobile app**).
-You get it once per pairing, not when the app later renews its sign-in. The
-notice never contains the pairing link or code.
+When a phone is paired, Cloud sends you a **New phone paired** notice with
+the phone's name, platform and pairing time, and a link to this page. If you
+did not pair that phone, remove it there and contact your administrator. The
+notice goes by email, or as a browser notification when your account has no
+email address; choose how it reaches you under **My account → Notifications**
+(**Phones paired with the mobile app**).
+You get it once per pairing, also for a phone that was removed right away, but
+not when the app later renews its sign-in. The notice never contains the
+pairing link or code.
 
 ## Remove an app device for someone
 

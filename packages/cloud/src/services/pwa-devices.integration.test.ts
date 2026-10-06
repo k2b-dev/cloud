@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { defineApp, notification } from "..";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import meRoutes from "../api/me";
 import { createPwaRoutes } from "../api/pwa";
@@ -15,6 +17,8 @@ import { resolveInvocationAuthority } from "./identity/invocation-actor";
 import { invocationAuthorityFromRequest } from "./identity/invocation-authority";
 import { revokeIdentitySigningKey } from "./identity/key-ring";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
+import { notifications } from "./notifications";
+import { registerNotificationDefinitions } from "./notifications/catalog";
 import { toPgUuidArray } from "./postgres";
 import { type PwaDevicePairedNotice, pwaDevices } from "./pwa-devices";
 import { session } from "./session";
@@ -26,10 +30,48 @@ import * as settings from "./settings";
 const suite = suiteFor("database", "nats", "valkey");
 const ORIGIN = "https://cloud.example.test";
 
+/** A stand-in for Core's "new phone paired" notice: a personal preference, email first, like the real one. */
+const noticeApp = defineApp({
+  id: "pwa-notice-test",
+  name: "Phone notice test",
+  icon: "ti ti-device-mobile",
+  description: "Fixture for the new-phone notice.",
+  baseUrl: "http://pwa-notice-test:3000",
+  routes: ["/pwa-notice-test"],
+  notifications: {
+    paired: notification({
+      recipient: "user",
+      label: "Paired phones",
+      description: "A phone was paired.",
+      delivery: { recommended: ["email", "browser"] },
+      data: z.object({ name: z.string() }),
+      render: ({ name }) => ({ title: `New phone ${name}` }),
+    }),
+  },
+});
+const sendNotice = (notice: PwaDevicePairedNotice) =>
+  notifications.send(noticeApp.notifications.paired, {
+    recipient: { userId: notice.userId },
+    data: { name: notice.name },
+    idempotencyKey: notice.deviceId,
+  });
+
 let shell = true;
+/** Notices the completion requests sent; `deliver` becomes a real send where a test needs one. */
+let sent: PwaDevicePairedNotice[] = [];
+let deliver: (notice: PwaDevicePairedNotice) => Promise<unknown> = async () => {};
 const routes = new Hono<AuthContext>()
   .route(PWA_API_PATH, createPwaRoutes({ shellAvailable: () => shell }))
-  .route(PWA_AUTH_PATH, createPwaPhoneRoutes({ shellAvailable: () => shell }))
+  .route(
+    PWA_AUTH_PATH,
+    createPwaPhoneRoutes({
+      shellAvailable: () => shell,
+      notify: async (notice) => {
+        sent.push(notice);
+        return deliver(notice);
+      },
+    }),
+  )
   .route("/api/me", meRoutes)
   .route(APP_APPROVAL_PATH, createAppApprovalRoutes())
   // Another application's validator: the ordinary auth middleware of any app.
@@ -113,12 +155,14 @@ const confirm = (owner: Person, id: string, code: string) =>
   call(owner.web, "POST", `${PWA_API_PATH}/pairings/${id}/confirm`, { body: { code } });
 const renew = (phone: Jar) => call(phone, "POST", `${PWA_AUTH_PATH}/session/renew`);
 const probe = (phone: Jar) => call(phone, "GET", "/pwa/probe", { origin: null, headers: { "sec-fetch-mode": "navigate" } });
-/** Runs maintenance until no phone of this person waits for its notice; returns their notices. */
+/** Runs maintenance until no phone of this person waits for its notice; returns the notices it sent them. */
 const announce = async (userId: string) => {
   const notices: PwaDevicePairedNotice[] = [];
   for (let run = 0; run < 10; run++) {
     await pwaDevices.maintain(async (notice) => {
-      if (notice.userId === userId) notices.push(notice);
+      if (notice.userId !== userId) return;
+      notices.push(notice);
+      await deliver(notice);
     });
     const waiting = await sql`SELECT 1 FROM auth.pwa_devices WHERE user_id = ${userId}::uuid AND notified_at IS NULL`;
     if (!waiting.length) break;
@@ -145,9 +189,12 @@ suite("mobile app pairing and app sessions", () => {
     await settings.set("app.url", ORIGIN);
     await settings.set("security.rate_limit_per_second", 10000);
     invalidateIdentityRuntimeConfig();
+    await registerNotificationDefinitions(noticeApp.meta.id, noticeApp.notifications);
   });
   beforeEach(async () => {
     shell = true;
+    sent = [];
+    deliver = async () => {};
     for (const category of ["guest", "login", "freeipa"]) await settings.remove(`user.category.${category}.enabled`);
   });
   afterAll(async () => {
@@ -374,7 +421,7 @@ suite("mobile app pairing and app sessions", () => {
     expect(replaced?.revocation_reason).toBe("replaced");
   });
 
-  test("a new phone is announced once, without secrets; renewal and a repeated completion announce nothing", async () => {
+  test("a new phone is announced once, before it receives its credentials; renewal and a repeated completion announce nothing", async () => {
     const owner = await person();
     const started = await startPairing(owner);
     const phone = new Jar();
@@ -384,10 +431,11 @@ suite("mobile app pairing and app sessions", () => {
     const completed = await call(phone, "POST", `${PWA_AUTH_PATH}/pairings/complete`, { headers: { "x-cloud-locale": "de" } });
     expect(completed.status).toBe(200);
     const deviceId = phone.get("pwa_device")!.split(".")[0]!;
-    const [device] = await sql<{ created_at: Date }[]>`SELECT created_at FROM auth.pwa_devices WHERE id = ${deviceId}::uuid`;
+    const [device] = await sql<{ created_at: Date; notified_at: Date | null }[]>`
+      SELECT created_at, notified_at FROM auth.pwa_devices WHERE id = ${deviceId}::uuid`;
 
-    const notices = await announce(owner.id);
-    expect(notices).toEqual([
+    // The completion request itself sent it: the phone had no app session yet to interfere with.
+    expect(sent).toEqual([
       {
         deviceId,
         userId: owner.id,
@@ -397,28 +445,63 @@ suite("mobile app pairing and app sessions", () => {
         locale: "de",
       },
     ]);
-    const sent = JSON.stringify(notices);
+    expect(device!.notified_at).not.toBeNull();
+    const notice = JSON.stringify(sent);
     for (const value of [started.secret, code, pairingCookie, phone.get("pwa_device")!, phone.get("pwa_session")!])
-      expect(sent).not.toContain(value);
+      expect(notice).not.toContain(value);
     expect(await announce(owner.id)).toEqual([]);
 
     // Renewal rotates the key and a lost completion answer recovers the phone: neither is a new phone.
     phone.cookies.delete("pwa_session");
     expect(await json(await renew(phone))).toEqual({ renewed: true });
     expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
+    expect(sent).toHaveLength(1);
     expect(await announce(owner.id)).toEqual([]);
 
     // Pairing again in the same app adds a new phone, which is announced.
     const again = await pair(owner, phone);
-    expect((await announce(owner.id)).map((notice) => notice.deviceId)).toEqual([again.deviceId]);
+    expect(sent.map((item) => item.deviceId)).toEqual([deviceId, again.deviceId]);
+  });
 
-    // A phone removed before its notice went out needs none.
-    const removed = await pair(owner);
-    expect((await call(owner.web, "DELETE", `${PWA_API_PATH}/devices/${removed.deviceId}`)).status).toBe(204);
+  test("a paired phone cannot keep its owner from hearing about it", async () => {
+    const owner = await person();
+    deliver = sendNotice;
+    const { phone } = await pair(owner);
+
+    // Each would have hidden or disguised a notice that waited for maintenance.
+    const preference = `/api/me/notifications/preferences/${noticeApp.notifications.paired.id}`;
+    expect((await call(phone, "PUT", preference, { body: { channels: [] } })).status).toBe(200);
+    expect((await call(phone, "PATCH", `${PWA_AUTH_PATH}/session`, { body: { name: "Ada's iPhone" } })).status).toBe(204);
+    expect((await call(phone, "DELETE", `${PWA_AUTH_PATH}/session`)).status).toBe(204);
     expect(await announce(owner.id)).toEqual([]);
-    const [marked] = await sql<{ notified_at: Date | null }[]>`
-      SELECT notified_at FROM auth.pwa_devices WHERE id = ${removed.deviceId}::uuid`;
-    expect(marked?.notified_at).not.toBeNull();
+
+    const events = await sql<{ id: string; title: string }[]>`
+      SELECT id, title FROM notifications.events
+      WHERE definition_id = ${noticeApp.notifications.paired.id} AND recipient_user_id = ${owner.id}::uuid`;
+    expect(events.map((event) => event.title)).toEqual(["New phone iPhone"]);
+    // Routed by the preference that applied before the phone could change it: the person has
+    // neither an email address nor a browser endpoint, and has not turned the notice off.
+    const deliveries = await sql<{ channel: string; error_code: string | null }[]>`
+      SELECT channel, error_code FROM notifications.deliveries WHERE event_id = ${events[0]!.id}::uuid ORDER BY route_priority`;
+    expect(deliveries).toEqual([
+      { channel: "email", error_code: "no_endpoint" },
+      { channel: "browser", error_code: "no_endpoint" },
+    ]);
+  });
+
+  test("a notice that failed during completion is retried by maintenance, also for a phone removed since", async () => {
+    const owner = await person();
+    deliver = async () => {
+      throw new Error("Notification store unavailable");
+    };
+    const { phone, deviceId } = await pair(owner);
+    const [pending] = await sql<{ notified_at: Date | null }[]>`SELECT notified_at FROM auth.pwa_devices WHERE id = ${deviceId}::uuid`;
+    expect(pending?.notified_at).toBeNull();
+    expect((await call(phone, "DELETE", `${PWA_AUTH_PATH}/session`)).status).toBe(204);
+
+    deliver = async () => {};
+    expect((await announce(owner.id)).map((notice) => notice.deviceId)).toEqual([deviceId]);
+    expect(await announce(owner.id)).toEqual([]);
   });
 
   test("an app of another account and Chrome signed in as someone else are refused", async () => {

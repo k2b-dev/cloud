@@ -3,7 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { env } from "../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES, PWA_LIMITS, PWA_SCOPE, PwaClaimSchema, type PwaLaunchState, PwaRenameSchema } from "../contracts/pwa";
 import { type AuthContext, auth, getLocale, rateLimit, v } from "../server";
-import { type PwaCredentials, PwaError, pwaDevices } from "../services/pwa-devices";
+import { type PwaCredentials, type PwaDeviceNotifier, PwaError, pwaDevices } from "../services/pwa-devices";
 import { defaultShellAvailable, handlePwaError, type PwaRouteOptions, pwaErrorResponse, pwaInvalidRequest, pwaTransport } from "./pwa";
 
 const PAIRING_COOKIE_PATH = `${PWA_AUTH_PATH}/pairings`;
@@ -58,12 +58,17 @@ export const launchTarget = (to: string | undefined): string => {
 
 const stateUrl = (state: PwaLaunchState) => `${PWA_SCOPE}?pwa=${state}`;
 
+export type PwaPhoneRouteOptions = PwaRouteOptions & {
+  /** Sends the "new phone paired" notice; completion awaits it before the phone gets its credentials. */
+  notify: PwaDeviceNotifier;
+};
+
 /**
  * Phone side of the mobile app (preview), mounted by Core at `/pwa/_auth` before its page
  * catch-all. The device key and the completion secret use cookie paths below `/pwa/_auth`,
  * which only Core serves; other applications see only the 24-hour app session.
  */
-export const createPwaPhoneRoutes = (options: PwaRouteOptions = {}) => {
+export const createPwaPhoneRoutes = (options: PwaPhoneRouteOptions) => {
   const service = options.service ?? pwaDevices;
   const shellAvailable = options.shellAvailable ?? defaultShellAvailable;
   const limit = rateLimit({ keyBy: "ip" });
@@ -103,6 +108,7 @@ export const createPwaPhoneRoutes = (options: PwaRouteOptions = {}) => {
           appSession: await appSession(c),
           webUserId: web?.user.id ?? null,
           locale: getLocale(c),
+          notify: options.notify,
         });
         if (result.state === "waiting") return c.json(result, 202);
         if (result.credentials) setAppCredentials(c, result.credentials);

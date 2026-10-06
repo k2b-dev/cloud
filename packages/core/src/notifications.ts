@@ -246,13 +246,20 @@ export const createCoreNotificationSender = (definitions: CoreNotificationDescri
       idempotencyKey: `device-enrollment:${deviceId}`,
       locale: await configuredLocale(),
     }),
-  sendAppDevicePaired: async ({ deviceId, userId, name, platform, pairedAt, locale }) =>
-    notifications.send(definitions.appDevicePaired, {
+  sendAppDevicePaired: async ({ deviceId, userId, name, platform, pairedAt, locale }) => {
+    const result = await notifications.send(definitions.appDevicePaired, {
       recipient: { userId },
       data: { name, platform, pairedAt },
       idempotencyKey: `pwa-device-paired:${deviceId}`,
       locale: await configuredLocale(locale ?? undefined),
-    }),
+    });
+    // Nothing went out because preparing a delivery failed: the phone stays pending, and the next
+    // send with this key prepares again. A notice the person turned off, or one without a
+    // destination, is done.
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("The new-phone notice could not be prepared");
+    return result;
+  },
   sendMagicLink: async ({ email, token, magicLink, locale }) =>
     notifications.send(definitions.magicLink, {
       recipient: { email },

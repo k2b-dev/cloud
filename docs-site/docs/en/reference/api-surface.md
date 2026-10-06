@@ -256,6 +256,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 | `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the mobile app lists on Start | — |
 | `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and phone contracts of the mobile app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
 | `pwaDevices`, `PwaError` and their types from `@k2b/cloud/services` | Preview, platform-owned | Pairing, app sessions and phone administration | [Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app) |
+| `sessionKind` on `AuthContext`, `auth.isAppSession`, `auth.rejectAppSession` and `isAppSessionActor` from `@k2b/cloud/server` | Preview | Recognize the mobile app's session and refuse it where an action would outlive the phone | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
 
 ## Platform-owned and limited surfaces
 

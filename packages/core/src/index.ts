@@ -46,7 +46,7 @@ const router = new Hono<AuthContext>()
   .route("/api/_internal/identity/v1", identityOAuthIssuanceRoutes)
   .route("/api", coreApi)
   // The mobile app's phone-side identity endpoints; only Core receives the device key.
-  .route("/pwa/_auth", createPwaPhoneRoutes())
+  .route("/pwa/_auth", createPwaPhoneRoutes({ notify: notificationSender.sendAppDevicePaired }))
   .route("/", pages);
 
 const result = await app.start({
