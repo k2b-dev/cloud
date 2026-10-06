@@ -39,10 +39,13 @@ const unsafe = [
   "[docs](https://example.com/docs) and [mail](mailto:team@example.com)",
 ].join("\\n\\n");
 const code = "Here is the call:\\n\\n\`\`\`ts\\nconst response = await fetch('/api/meter-readings?from=2026-10-01&to=2026-10-31&include=history,corrections,annotations');\\n\`\`\`";
-const [statuses, setStatuses] = createSignal({ m6: "pending", m7: "sent", m8: "failed" });
-const [receipt, setReceipt] = createSignal();
+const [statuses, setStatuses] = createSignal({ m6: "pending", m7: "sent", m8: "failed", m14: "sent" });
+const [receipts, setReceipts] = createSignal({});
+const setReceipt = (text, id = "m7") => setReceipts((current) => ({ ...current, [id]: text }));
 const [reactions, setReactions] = createSignal({});
 const [threads, setThreads] = createSignal({});
+const [texts, setTexts] = createSignal({});
+const [progress, setProgress] = createSignal({});
 window.retried = 0;
 window.stopped = 0;
 window.toggled = [];
@@ -101,12 +104,12 @@ const rich = [
       { kind: "image", src: media("six", 900, 1600), alt: "Tall six", width: 900, height: 1600, open: true },
     ],
   },
-  { id: "m14", author: "me", own: true, text: "Forwarding the release note.", minute: 40, forwarded: true, reactions: [], status: "sent" },
+  { id: "m14", author: "me", own: true, text: "Forwarding the release note.", minute: 40, forwarded: true, reactions: [] },
   { id: "m15", author: "bot", text: "", minute: 41, progress: "Writing", badge: true },
   { id: "m16", author: "tobias", text: "", minute: 42, deleted: true, thread: { count: 1, participants: ["nora"], lastReply: "11:02" } },
 ];
 const messages = (options.messages ?? (options.rich ? rich : basic)).map((message) => ({ ...message, at: start + message.minute * 60_000 }));
-// Items change either in place, through the status signal above, or as new objects, as most applications update them.
+// Items change either in place, through the signals above, or as new objects, which mounts a new row.
 const [items, setItems] = createSignal(messages);
 const replace = (id, patch) => setItems((list) => list.map((message) => (message.id === id ? { ...message, ...patch } : message)));
 const entryOf = (message) => message && { author: message.author ?? "system", at: message.at, system: message.system };
@@ -129,7 +132,9 @@ const feed = () =>
         ? createComponent(MessageSystemRow, { icon: "ti ti-user-plus", time: time(message), children: message.text })
         : createComponent(MessageRow, {
             author: people[message.author],
-            text: message.text,
+            get text() {
+              return texts()[message.id] ?? message.text;
+            },
             time: time(message),
             dateTime: new Date(message.at),
             own: message.own,
@@ -139,7 +144,7 @@ const feed = () =>
               return message.own ? (message.status ?? statuses()[message.id]) : undefined;
             },
             get receipt() {
-              return message.id === "m7" ? receipt() : undefined;
+              return receipts()[message.id];
             },
             onRetry: () => window.retried++,
             actions,
@@ -153,7 +158,17 @@ const feed = () =>
             get reactions() {
               return reactions()[message.id] ?? message.reactions;
             },
-            onToggleReaction: (key) => window.toggled.push(message.id + " " + key),
+            // As an application would: a new list of new objects for the message, changed in place.
+            onToggleReaction: options.readOnly ? undefined : (key) => {
+              window.toggled.push(message.id + " " + key);
+              const current = reactions()[message.id] ?? message.reactions ?? [];
+              setReactions({
+                ...reactions(),
+                [message.id]: current.map((reaction) =>
+                  reaction.key === key ? { ...reaction, own: !reaction.own, count: reaction.count + (reaction.own ? -1 : 1) } : { ...reaction },
+                ),
+              });
+            },
             onAddReaction: (anchor) => (window.addedFrom = anchor.getAttribute("aria-label")),
             get thread() {
               const thread = threads()[message.id] ?? message.thread;
@@ -165,14 +180,17 @@ const feed = () =>
                 }
               );
             },
-            progress: message.progress ? { status: message.progress, onStop: () => window.stopped++ } : undefined,
+            get progress() {
+              const status = message.id in progress() ? progress()[message.id] : message.progress;
+              return status ? { status, onStop: () => window.stopped++ } : undefined;
+            },
           }),
   });
 render(
   () => createComponent(LocaleProvider, { locale: options.locale ?? "en", get children() { return feed(); } }),
   document.getElementById("app"),
 );
-window.fixture = { setStatuses, setReceipt, replace, setReactions, setThreads };
+window.fixture = { setStatuses, setReceipt, replace, setReactions, setThreads, setTexts, setProgress };
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -193,15 +211,33 @@ afterAll(async () => {
 });
 
 type Theme = "light" | "dark";
-type Message = { id: string; author: string; text: string; minute: number; own?: boolean; status?: string; reactions?: Reaction[] };
+type Message = {
+  id: string;
+  author: string;
+  text: string;
+  minute: number;
+  own?: boolean;
+  status?: string;
+  reactions?: Reaction[];
+  progress?: string;
+  edited?: boolean;
+  attachments?: object[];
+  thread?: Thread;
+  quote?: { author: string; text: string };
+};
 type Reaction = { key: string; emoji: string; count: number; own?: boolean; label?: string };
 type Thread = { count: number; participants: string[]; lastReply?: string };
 type Fixture = {
   setStatuses: (next: Record<string, string>) => void;
-  setReceipt: (text?: string) => void;
+  /** Sets the read receipt of an own message, by default m7. */
+  setReceipt: (text?: string, id?: string) => void;
   replace: (id: string, patch: Partial<Message>) => void;
   setReactions: (next: Record<string, Reaction[]>) => void;
   setThreads: (next: Record<string, Thread>) => void;
+  /** Changes texts in place, as a message streams in. */
+  setTexts: (next: Record<string, string>) => void;
+  /** Changes the progress status in place; an empty status ends it. */
+  setProgress: (next: Record<string, string | undefined>) => void;
 };
 type Recorded = { stopped: number; toggled: string[]; quoted: number; opened: string[]; addedFrom?: string; threadOpened?: string };
 const recorded = (page: Page) =>
@@ -230,6 +266,8 @@ const open = async (
     messages?: Message[];
     /** Shows the messages with quotes, reactions, threads, and attachments instead of the basic ones. */
     rich?: boolean;
+    /** Shows reactions without `onToggleReaction`. */
+    readOnly?: boolean;
     /** Holds every image response until the returned page's `releaseMedia()` runs. */
     holdMedia?: boolean;
   } = {},
@@ -277,8 +315,8 @@ const open = async (
     );
   });
   await page.evaluate(
-    ([locale, messages, rich]) => {
-      (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale, messages, rich };
+    ([locale, messages, rich, readOnly]) => {
+      (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale, messages, rich, readOnly };
       // Record every row's height from the frame it mounts in; a later change would move the rows below it.
       const heights = new Map<string, number[]>();
       (window as unknown as { heights: typeof heights }).heights = heights;
@@ -295,7 +333,7 @@ const open = async (
           for (const node of record.addedNodes) if (node instanceof HTMLElement && node.dataset.key) observer.observe(node);
       }).observe(document.getElementById("app")!, { childList: true, subtree: true });
     },
-    [options.locale ?? "en", options.messages, options.rich] as const,
+    [options.locale ?? "en", options.messages, options.rich, options.readOnly] as const,
   );
   await page.addScriptTag({ content: script });
   await page.locator(`[data-key="${options.messages?.at(-1)?.id ?? (options.rich ? "m16" : "m10")}"] .k2b-message-row`).waitFor();
@@ -516,10 +554,11 @@ describe(`MessageRow in ${browserName}`, () => {
       const heights = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
       expect(Object.keys(heights).sort()).toEqual(["m1", "m10", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"]);
       for (const [key, sizes] of Object.entries(heights)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+      // A long receipt ends in an ellipsis within its one line.
       expect(
         await rowOf(page, "m7")
           .locator(".k2b-message-row__receipt")
-          .evaluate((text) => text.scrollWidth > text.clientWidth),
+          .evaluate((text) => text.scrollHeight > text.clientHeight),
       ).toBe(true);
 
       await rowOf(page, "m6").getByRole("button", { name: "Retry" }).click();
@@ -782,7 +821,230 @@ describe(`MessageRow in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("the thread bar and the read line keep a fixed height whatever they show", async () => {
+  test("a reaction chip keeps its element and focus while it toggles and others come and go", async () => {
+    const page = await open({ rich: true });
+    try {
+      const chip = rowOf(page, "m11").getByRole("button", { name: /^👍/ });
+      await chip.focus();
+      await chip.evaluate((element) => {
+        (element as HTMLElement).dataset.probe = "";
+      });
+      const focused = () =>
+        page.evaluate(() => {
+          const active = document.activeElement as HTMLElement;
+          return {
+            same: active.dataset.probe === "",
+            pressed: active.getAttribute("aria-pressed"),
+            label: active.getAttribute("aria-label"),
+          };
+        });
+
+      // The fixture answers each press with a new list of new objects, as an application would.
+      await page.keyboard.press("Enter");
+      expect(await focused()).toEqual({ same: true, pressed: "true", label: "👍 5 reactions: Tobias, Mara, Robin, Minutes" });
+      await page.keyboard.press("Space");
+      expect(await focused()).toEqual({ same: true, pressed: "false", label: "👍 4 reactions: Tobias, Mara, Robin, Minutes" });
+      await page.evaluate(() =>
+        fixture.setReactions({
+          m11: [
+            { key: "👍", emoji: "👍", count: 4, label: "Tobias, Mara, Robin, Minutes" },
+            { key: "🎉", emoji: "🎉", count: 1, label: "Nora" },
+          ],
+        }),
+      );
+      expect(await focused()).toMatchObject({ same: true, pressed: "false" });
+      expect(await rowOf(page, "m11").locator(".k2b-message-row__reaction").count()).toBe(2);
+      expect((await recorded(page)).toggled).toEqual(["m11 👍", "m11 👍"]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("Stop keeps focus while the message streams in place", async () => {
+    const page = await open({ rich: true });
+    try {
+      const stop = rowOf(page, "m15").getByRole("button", { name: "Stop" });
+      await stop.focus();
+      await stop.evaluate((element) => {
+        (element as HTMLElement).dataset.probe = "";
+      });
+      const words = "Here is what changed since this morning: the meter reading API is live with a limit of 60 requests".split(" ");
+      for (let count = 1; count <= words.length; count++) {
+        await page.evaluate((text) => fixture.setTexts({ m15: text }), words.slice(0, count).join(" "));
+        if (count === 5) await page.evaluate(() => fixture.setProgress({ m15: "Searching the files" }));
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+        expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.probe), `after ${count} words`).toBe("");
+      }
+      expect(await rowOf(page, "m15").locator(".k2b-message-row__text").innerText()).toEndWith("60 requests");
+      expect(await rowOf(page, "m15").locator(".k2b-message-row__bubble").getAttribute("aria-busy")).toBe("true");
+
+      await page.keyboard.press("Enter");
+      expect((await recorded(page)).stopped).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  for (const locale of ["en", "de"] as const)
+    test(`the send state, progress, and their buttons stay whole beside many reactions on a narrow phone (${locale})`, async () => {
+      const many = Array.from("😀😃😄😁😆😅🤣😂🙂🙃😉😊", (emoji, index) => ({ key: emoji, emoji, count: index + 1 }));
+      const page = await open({
+        width: 320,
+        locale,
+        messages: [
+          { id: "n1", author: "me", own: true, text: "This one failed.", minute: 1, status: "failed", reactions: many },
+          { id: "n2", author: "me", own: true, text: "Pending.", minute: 2, status: "pending", reactions: many },
+          { id: "n3", author: "me", own: true, text: "Read.", minute: 3, status: "sent", reactions: many.slice(0, 6) },
+          { id: "n4", author: "bot", text: "", minute: 4, progress: "Searching the files in the archive", reactions: many },
+        ],
+      });
+      try {
+        await page.evaluate(() => fixture.setReceipt("Read by Nora Brandt, Tobias Kern and Mara Feldmann", "n3"));
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        const layout = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (item) => {
+            const row = item.querySelector(".k2b-message-row")!.getBoundingClientRect();
+            const line = item.querySelector(".k2b-message-row__line")!;
+            const list = item.querySelector<HTMLElement>(".k2b-message-row__reaction-list")!;
+            const add = item.querySelector(".k2b-message-row__react")!.getBoundingClientRect();
+            const text = line.querySelector(".k2b-message-row__receipt, .k2b-message-row__line-text");
+            return {
+              key: item.dataset.key,
+              // Every part of the line lies inside the row, after "Add reaction", and words other than the receipt or
+              // progress are whole.
+              inside: Array.from(line.children).every((child) => {
+                const box = child.getBoundingClientRect();
+                return box.left >= add.right && box.right <= row.right;
+              }),
+              whole: Array.from(
+                line.querySelectorAll("span:not(.k2b-message-row__receipt, .k2b-message-row__line-text, .k2b-sr-only)"),
+              ).every((span) => span.scrollWidth <= span.clientWidth),
+              text: text ? Math.round(text.getBoundingClientRect().width) : undefined,
+              chips: Math.round(list.getBoundingClientRect().width),
+              fade: list.getAttribute("data-scroll-fade"),
+            };
+          }),
+        );
+        for (const row of layout) {
+          expect(row.inside, row.key).toBe(true);
+          expect(row.whole, row.key).toBe(true);
+          // Beside a receipt or progress, the chips keep room for at least one, and a fade says that more follow. A
+          // message that is not sent yet has no one's reactions, so there the chips may give way entirely.
+          if (row.text === undefined) continue;
+          expect(row.chips, row.key).toBeGreaterThanOrEqual(36);
+          expect(row.fade, row.key).toBe("bottom");
+          // The receipt and the progress keep at least a word.
+          expect(row.text, row.key).toBeGreaterThanOrEqual(24);
+        }
+        await rowOf(page, "n1")
+          .getByRole("button", { name: locale === "de" ? "Erneut senden" : "Retry" })
+          .click();
+        await rowOf(page, "n4")
+          .getByRole("button", { name: locale === "de" ? "Stoppen" : "Stop" })
+          .click();
+        expect(await page.evaluate(() => retried)).toBe(1);
+        expect((await recorded(page)).stopped).toBe(1);
+        await page.screenshot({ path: `/tmp/k2b-ui-message-rows-${browserName}-narrow-footer-${locale}.png` });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+  test("read-only reactions say which are the reader's own, and their list scrolls from the keyboard", async () => {
+    const many = Array.from("😀😃😄😁😆😅🤣😂🙂🙃😉😊", (emoji, index) => ({ key: emoji, emoji, count: index + 1 }));
+    const page = await open({
+      width: 390,
+      readOnly: true,
+      messages: [
+        {
+          id: "r1",
+          author: "nora",
+          text: "Lunch?",
+          minute: 1,
+          reactions: [{ key: "☕", emoji: "☕", count: 1, own: true, label: "Robin" }, ...many],
+        },
+      ],
+    });
+    try {
+      const reactions = rowOf(page, "r1").getByRole("group", { name: "Reactions" });
+      expect(await reactions.getByRole("img", { name: "☕ your reaction: Robin" }).count()).toBe(1);
+      expect(await reactions.getByRole("img", { name: "😀 1 reaction" }).count()).toBe(1);
+      expect(await rowOf(page, "r1").locator("button.k2b-message-row__reaction").count()).toBe(0);
+
+      const list = rowOf(page, "r1").locator(".k2b-message-row__reaction-list");
+      await rowOf(page, "r1").focus();
+      await page.keyboard.press("Tab");
+      expect(await list.evaluate((element) => element === document.activeElement)).toBe(true);
+      // Arrow keys scroll the focused list; WebKit animates each step.
+      expect(await list.getAttribute("data-scroll-fade")).toBe("bottom");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.waitForFunction(() => document.querySelector(".k2b-message-row__reaction-list")!.scrollLeft >= 24);
+      await page.waitForFunction(
+        () => document.querySelector(".k2b-message-row__reaction-list")!.getAttribute("data-scroll-fade") === "both",
+      );
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("on a touch screen the quote, thread bar, and reaction chips take taps in a 44 px area without taking others'", async () => {
+    const page = await open({
+      width: 390,
+      touch: true,
+      messages: [
+        {
+          id: "t1",
+          author: "nora",
+          text: "The plan:",
+          minute: 1,
+          attachments: [{ kind: "file", name: "Plan.pdf", alt: "Plan.pdf", open: true }],
+          thread: { count: 2, participants: ["tobias"], lastReply: "10:42" },
+        },
+        { id: "t2", author: "tobias", text: "Looks good.", minute: 3, reactions: [{ key: "👍", emoji: "👍", count: 2 }] },
+        { id: "t3", author: "tobias", text: "Which one?", minute: 4, quote: { author: "Nora Brandt", text: "The plan:" } },
+        { id: "t4", author: "me", own: true, text: "Sending this one failed.", minute: 5, status: "failed" },
+      ],
+    });
+    try {
+      const box = async (key: string, selector: string) => (await rowOf(page, key).locator(selector).first().boundingBox())!;
+      const tap = (x: number, y: number) => page.touchscreen.tap(x, y);
+      const reach = (height: number) => (44 - height) / 2;
+
+      const thread = await box("t1", ".k2b-message-row__thread");
+      const center = thread.x + Math.min(thread.width, 120) / 2;
+      await tap(center, thread.y - reach(thread.height) + 1);
+      expect((await recorded(page)).threadOpened).toBe("t1");
+      await page.evaluate(() => delete (window as { threadOpened?: string }).threadOpened);
+      await tap(center, thread.y + thread.height + reach(thread.height) - 1);
+      expect((await recorded(page)).threadOpened).toBe("t1");
+      await page.evaluate(() => delete (window as { threadOpened?: string }).threadOpened);
+      // The file chip above keeps its last pixel row.
+      const file = await box("t1", ".k2b-message-row__file");
+      await tap(file.x + 20, file.y + file.height - 1);
+      expect(await recorded(page)).toMatchObject({ opened: ["Plan.pdf"], threadOpened: undefined });
+
+      const chip = await box("t2", ".k2b-message-row__reaction");
+      await tap(chip.x + chip.width / 2, chip.y - reach(chip.height) + 1);
+      await tap(chip.x + chip.width / 2, chip.y + chip.height + reach(chip.height) - 1);
+      expect((await recorded(page)).toggled).toEqual(["t2 👍", "t2 👍"]);
+
+      // A quote that opens a continuation reaches up without taking the reactions of the row before.
+      const quote = await box("t3", ".k2b-message-row__quote");
+      await tap(quote.x + 40, quote.y - reach(quote.height) + 1);
+      await tap(quote.x + 40, quote.y + quote.height + reach(quote.height) - 1);
+      expect((await recorded(page)).quoted).toBe(2);
+      expect((await recorded(page)).toggled).toHaveLength(2);
+
+      const retry = await box("t4", ".k2b-message-row__line .k2b-button");
+      await tap(retry.x + retry.width / 2, retry.y + retry.height + reach(retry.height) - 1);
+      expect(await page.evaluate(() => retried)).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("the thread bar, the read line, and the footer keep a fixed height whatever they show", async () => {
     const page = await open({ width: 320, locale: "de", rich: true });
     try {
       const heights = (selector: string) =>
@@ -790,8 +1052,10 @@ describe(`MessageRow in ${browserName}`, () => {
           (selector) => Array.from(document.querySelectorAll(selector), (element) => element.getBoundingClientRect().height),
           selector,
         );
+      const settle = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       expect(await heights(".k2b-message-row__thread")).toEqual([28, 28]);
       expect(new Set(await heights(".k2b-message-row__line"))).toEqual(new Set([20]));
+      const footers = await heights(".k2b-message-row__footer");
       expect((await rowOf(page, "m15").locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ")).toBe("Writing Stoppen");
 
       await page.evaluate(() =>
@@ -800,11 +1064,32 @@ describe(`MessageRow in ${browserName}`, () => {
           m16: { count: 2, participants: [], lastReply: undefined },
         }),
       );
-      await page.evaluate(() => fixture.setStatuses({ m6: "failed", m7: "sent", m8: "pending" }));
-      await page.waitForTimeout(300);
+      // The own message with its reserved reactions goes through every send state and gets read; the agent changes its step.
+      for (const step of [
+        { statuses: { m14: "pending" }, progress: { m15: "Durchsucht die Dateien im Archiv der Abteilung" } },
+        { statuses: { m14: "failed" } },
+        { statuses: { m14: "sent" }, receipt: "Gelesen von Nora Brandt, Tobias Kern und Mara Feldmann" },
+      ]) {
+        await page.evaluate((step) => {
+          fixture.setStatuses(step.statuses);
+          if (step.progress) fixture.setProgress(step.progress);
+          if (step.receipt) fixture.setReceipt(step.receipt, "m14");
+        }, step);
+        await settle();
+        expect(await heights(".k2b-message-row__thread"), JSON.stringify(step)).toEqual([28, 28]);
+        expect(new Set(await heights(".k2b-message-row__line")), JSON.stringify(step)).toEqual(new Set([20]));
+        expect(await heights(".k2b-message-row__footer"), JSON.stringify(step)).toEqual(footers);
+        expect(
+          await rowOf(page, "m14")
+            .locator(".k2b-message-row__line")
+            .evaluate((line) => line.getBoundingClientRect().right <= line.closest(".k2b-message-row")!.getBoundingClientRect().right),
+        ).toBe(true);
+        if (step.statuses.m14 === "failed")
+          expect((await rowOf(page, "m14").locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ")).toBe(
+            "Nicht gesendet Erneut senden",
+          );
+      }
 
-      expect(await heights(".k2b-message-row__thread")).toEqual([28, 28]);
-      expect(new Set(await heights(".k2b-message-row__line"))).toEqual(new Set([20]));
       const thread = rowOf(page, "m11").locator(".k2b-message-row__thread");
       expect(await thread.locator(".k2b-avatar").count()).toBe(3);
       expect(

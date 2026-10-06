@@ -245,6 +245,8 @@ describe("MessageRow rich content", () => {
         add: "Add reaction",
         one: "👍 1 reaction: Nora",
         many: "☕ 3 reactions",
+        ownOne: "👍 your reaction: Nora",
+        ownMany: "☕ 3 reactions, including yours",
         replies: "3 replies",
         reply: "1 reply",
         last: "Last reply 10:42",
@@ -264,6 +266,8 @@ describe("MessageRow rich content", () => {
         add: "Reaktion hinzufügen",
         one: "👍 1 Reaktion: Nora",
         many: "☕ 3 Reaktionen",
+        ownOne: "👍 deine Reaktion: Nora",
+        ownMany: "☕ 3 Reaktionen, einschließlich deiner",
         replies: "3 Antworten",
         reply: "1 Antwort",
         last: "Letzte Antwort 10:42",
@@ -287,6 +291,20 @@ describe("MessageRow rich content", () => {
       );
       expect(row({ quote: { author: "Tobias Kern", text: "The API is done.", onSelect: () => {} } }, locale)).toMatch(
         /<button type="button" class="k2b-message-row__quote">/,
+      );
+      // A collapsed message hides the end of its text, so the marker sits beside "Show more" instead.
+      const collapsed = row({ text: long, edited: true }, locale);
+      expect(collapsed).not.toMatch(/<p>[^<]*<span class="k2b-message-row__edited">/);
+      expect(collapsed).toMatch(
+        new RegExp(`class="k2b-message-row__more-line">.*</button><span class="k2b-message-row__edited">${words.edited}</span></div>`),
+      );
+      // Without a bubble, the marker takes the bubble's place.
+      const pictures = row({ text: "", edited: true, attachments: [image] }, locale);
+      expect(pictures).not.toContain("k2b-message-row__bubble");
+      expect(pictures).toMatch(
+        new RegExp(
+          `<div class="k2b-message-row__marker"><i class="ti ti-pencil" aria-hidden="true"></i><span class="k2b-message-row__edited">${words.edited}</span></div><div class="k2b-message-row__media"`,
+        ),
       );
     });
 
@@ -330,10 +348,30 @@ describe("MessageRow rich content", () => {
       expect(html).toContain(`aria-pressed="true" aria-label="${words.one}" title="Nora" data-own=""`);
       expect(html).toContain(`aria-pressed="false" aria-label="${words.many}"`);
       expect(html).toMatch(new RegExp(`<button[^>]*aria-label="${words.add}"`));
-      // Read-only reactions are not controls, and a reserved bar stays even while it is empty.
-      const readOnly = row({ reactions: [{ key: "👍", emoji: "👍", count: 1, label: "Nora" }] }, locale);
+      // Pressed says which are the reader's own; the label stays the same.
+      expect(html).not.toContain(words.ownOne);
+      // Chips that do not fit scroll sideways behind a fade.
+      const list = (markup: string) => markup.match(/<div[^>]*k2b-message-row__reaction-list[^>]*>/)?.[0] ?? "";
+      expect(list(html)).toContain('data-scroll-fade-axis="horizontal"');
+      expect(list(html)).toContain('data-scroll-fade-mode="both"');
+      expect(list(html)).not.toContain("tabindex");
+      // Read-only reactions are not controls; their label says which are the reader's own, and their list is a tab stop
+      // so a keyboard can scroll it. A reserved bar stays even while it is empty.
+      const readOnly = row(
+        {
+          reactions: [
+            { key: "👍", emoji: "👍", count: 1, label: "Nora" },
+            { key: "🎉", emoji: "🎉", count: 1, own: true, label: "Nora" },
+            { key: "☕", emoji: "☕", count: 3, own: true },
+          ],
+        },
+        locale,
+      );
       expect(readOnly).toContain(`<span class="k2b-message-row__reaction" role="img" aria-label="${words.one}"`);
+      expect(readOnly).toContain(`aria-label="${words.ownOne.replace("👍", "🎉")}"`);
+      expect(readOnly).toContain(`aria-label="${words.ownMany}"`);
       expect(readOnly).not.toContain("aria-pressed");
+      expect(list(readOnly)).toContain('tabindex="0"');
       expect(row({ reactions: [], onAddReaction: () => {} }, locale)).toMatch(/class="k2b-message-row__reactions"[^>]*data-empty=""/);
       expect(row({}, locale)).not.toContain("k2b-message-row__reactions");
     });
@@ -364,8 +402,11 @@ describe("MessageRow rich content", () => {
       expect(line(person)).toBe(line(agent));
       expect(textOf(line(person))).toEndWith(`Writing ${words.stop}`);
       expect(person).toContain('class="k2b-message-row__writing"><span class="k2b-chat-progress-dots" aria-hidden="true">');
+      // The bubble is busy while the message is written, also before its first word.
       const streaming = row({ text: "Half a sen", progress: { status: "Writing" } }, locale);
-      expect(streaming).toMatch(/class="k2b-content-markdown k2b-message-row__text"[^>]*aria-busy="true"/);
+      expect(streaming).toMatch(/class="k2b-message-row__bubble"[^>]*aria-busy="true"/);
+      expect(person).toMatch(/class="k2b-message-row__bubble"[^>]*aria-busy="true"/);
+      expect(row({ text: "Done" }, locale)).not.toContain("aria-busy");
       expect(textOf(line(streaming))).toEndWith("Writing");
     });
 
@@ -437,11 +478,22 @@ describe("MessageRow rich content", () => {
     expect(html).toContain('href="/files/photo.heic"');
     expect(html).toContain('<i class="ti ti-photo">');
     expect(html).not.toMatch(/javascript:|data:text/);
-    // A picture may be inline image data; a link may not.
+    // A picture may be inline image data or a file still uploading; a link may be neither, because a blob: URL would
+    // run an uploaded HTML file in the page's origin.
     const inline = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
     expect(row({ attachments: [{ ...image, src: inline, href: inline }] })).toMatch(
       /<span class="k2b-message-row__media-item"[^>]*><img src="data:image\/svg\+xml,/,
     );
+    const uploading = "blob:https://cloud.example/0b7c6a1e-3f7d-4a3e-9d1c-2f8e6b9a7c55";
+    const optimistic = row({
+      attachments: [
+        { ...image, src: uploading, href: uploading },
+        { ...pdf, href: uploading },
+      ],
+    });
+    expect(optimistic).toContain(`<img src="${uploading}"`);
+    expect(optimistic).not.toContain(`href="${uploading}"`);
+    expect(optimistic).toMatch(/<span class="k2b-message-row__file"/);
     // A message of attachments alone has no empty bubble.
     expect(row({ text: " ", attachments: [pdf] })).not.toContain("k2b-message-row__bubble");
   });
@@ -550,6 +602,33 @@ describe("MessageRow styles", () => {
         ).keys(),
       ].sort(),
     ).toEqual(["opacity", "pointer-events"]);
+  });
+
+  test("keeps the line's words and buttons whole beside reactions", () => {
+    // The line may shrink only down to its own content, and in it only the receipt or progress text gives way.
+    expect(declarations(".k2b-ui .k2b-message-row__footer > .k2b-message-row__line").get("min-width")).toEqual(["auto"]);
+    const text = declarations(".k2b-ui .k2b-message-row__receipt");
+    expect(text.get("-webkit-line-clamp")).toEqual(["1"]);
+    expect(text.get("white-space")).toEqual(["normal"]);
+    expect(declarations(".k2b-ui .k2b-message-row__reactions:has(> .k2b-message-row__react)").get("min-width")).toEqual(["2rem"]);
+  });
+
+  test("gives compact controls the shared touch area without taking layout on fine pointers", () => {
+    const coarse = "@media (any-pointer: coarse)";
+    const area = rules.find(
+      (rule) => rule.context === coarse && rule.selector.endsWith("::after") && rule.selector.includes("button.k2b-message-row__quote"),
+    );
+    expect(area?.selector).toContain(".k2b-message-row__thread");
+    expect(cssDeclarations(area!.body).get("inset")).toEqual(["min(0px, calc((100% - 2.75rem) / 2))"]);
+    const list = declarations(".k2b-ui .k2b-message-row__reaction-list", coarse);
+    expect(list.get("padding-block")).toEqual(["0.5625rem"]);
+    expect(list.get("margin-block")).toEqual(["-0.5625rem"]);
+    // Every rule that adds room for those areas applies to touch screens only.
+    for (const rule of rules.filter(
+      (candidate) =>
+        /margin|padding-bottom/.test(candidate.body) && /k2b-message-row__(?:thread|footer|quote)|:has/.test(candidate.selector),
+    ))
+      if (rule.selector.includes("k2b-message-row")) expect(rule.context, rule.selector).toBe(coarse);
   });
 
   test("gives every avatar tint a rule", () => {

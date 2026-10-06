@@ -49,6 +49,7 @@ import {
   ZoomPanViewport,
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
 import { ChartDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
@@ -558,17 +559,20 @@ const agentReply =
   "Here is what changed since this morning: the meter reading API is live with a limit of 60 requests per minute, the sign-in test plan is in the wiki, and the tile colors are still open.";
 
 const MessageRowsDemo = () => {
-  const [entries, setEntries] = createSignal(chatInitial());
+  // A store changes a message in place, so its row updates without mounting again and keeps focus on its controls.
+  const [entries, setEntries] = createStore(chatInitial());
   let next = CHAT_TOTAL;
   let chatFeed: VirtualFeedController | undefined;
-  let writing: ReturnType<typeof setInterval> | undefined;
-  onCleanup(() => clearInterval(writing));
-  const change = (id: string, patch: Partial<ChatEntry>) =>
-    setEntries((current) => current.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
+  /** Stops each agent reply that is still being written. */
+  const writing = new Map<string, () => void>();
+  onCleanup(() => {
+    for (const stop of writing.values()) stop();
+  });
+  const change = (id: string, patch: Partial<ChatEntry>) => setEntries((entry) => entry.id === id, patch);
   const update = (id: string, status: MessageRowStatus) => change(id, { status });
   const append = (entry: Omit<ChatEntry, "id" | "at">) => {
     const id = `msg-${next++}`;
-    setEntries((current) => [...current, { ...entry, id, at: current.at(-1)!.at + 60_000 }]);
+    setEntries(entries.length, { ...entry, id, at: entries[entries.length - 1]!.at + 60_000 });
     return id;
   };
   const send = (fails: boolean) => {
@@ -581,32 +585,33 @@ const MessageRowsDemo = () => {
   };
   const receive = () => append({ author: "nora", text: "See you at eleven." });
   const react = (entry: ChatEntry, emoji: string, by: string) => {
-    const reactions = (entry.reactions ?? []).map((reaction) => ({ ...reaction }));
+    const reactions = (entry.reactions ?? []).map((reaction) => ({ emoji: reaction.emoji, by: [...reaction.by] }));
     const reaction = reactions.find((candidate) => candidate.emoji === emoji);
     if (!reaction) reactions.push({ emoji, by: [by] });
     else reaction.by = reaction.by.includes(by) ? reaction.by.filter((person) => person !== by) : [...reaction.by, by];
     // An emptied list stays a list, so the bar stays reserved and nothing moves when the last reaction goes.
     change(entry.id, { reactions: reactions.filter((candidate) => candidate.by.length > 0) });
   };
+  // Each reply streams into its own message in place, and its Stop ends that reply only.
   const askAgent = () => {
-    clearInterval(writing);
     const id = append({ author: "minutes", text: "", progress: "Writing" });
     const words = agentReply.split(" ");
     let count = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
     const stop = () => {
-      clearInterval(writing);
+      clearInterval(timer);
+      writing.delete(id);
       change(id, { progress: undefined });
     };
-    writing = setInterval(() => {
+    writing.set(id, stop);
+    timer = setInterval(() => {
       count++;
       change(id, { text: words.slice(0, count).join(" ") });
       if (count >= words.length) stop();
     }, 160);
-    return stop;
   };
-  let stopAgent: (() => void) | undefined;
   const readBy = (entry: ChatEntry) =>
-    entry.id === entries().findLast((other) => other.status === "sent")?.id ? "Read by Nora and Tobias" : undefined;
+    entry.id === entries.findLast((other) => other.status === "sent")?.id ? "Read by Nora and Tobias" : undefined;
   return (
     <DemoCard
       id="message-rows"
@@ -616,7 +621,8 @@ const MessageRowsDemo = () => {
         { kind: "component", name: "VirtualFeed", from: "@k2b/ui" },
       ]}
       description="600 messages in a VirtualFeed with groups, a system row, code, a collapsed summary, unsafe Markdown shown as text, quotes, reactions, threads, attachments, previews, a deleted message, and an agent that writes with a Stop button. Toggle a reaction, send one that fails and retry it, or ask the agent."
-      code={`<VirtualFeed items={messages()} getKey={(message) => message.id} estimateSize={() => 60} label="Project chat"
+      code={`// messages is a store: a changed message updates its row in place, so focus stays on Stop or a reaction.
+<VirtualFeed items={messages.slice()} getKey={(message) => message.id} estimateSize={() => 60} label="Project chat"
   itemLabel={(message) => (message.system ? undefined : \`\${name(message)}, \${clock(message.at)}\`)}>
   {(message, index) =>
     message.system ? (
@@ -627,7 +633,7 @@ const MessageRowsDemo = () => {
         text={message.text}
         time={clock(message.at)}
         own={message.author === "me"}
-        groupStart={startsMessageGroup(entry(message), entry(messages()[index() - 1]))}
+        groupStart={startsMessageGroup(entry(message), entry(messages[index() - 1]))}
         status={message.status}
         receipt={readBy(message)}
         onRetry={() => resend(message)}
@@ -657,16 +663,17 @@ const MessageRowsDemo = () => {
           <Button size="sm" variant="subtle" onClick={receive}>
             Receive a message
           </Button>
-          <Button size="sm" variant="subtle" onClick={() => react(entries().at(-1)!, "🎉", "nora")}>
+          <Button size="sm" variant="subtle" onClick={() => react(entries[entries.length - 1]!, "🎉", "nora")}>
             Nora reacts to the last message
           </Button>
-          <Button size="sm" variant="subtle" onClick={() => (stopAgent = askAgent())}>
+          <Button size="sm" variant="subtle" onClick={askAgent}>
             Ask the agent
           </Button>
         </Toolbar>
         <div style={{ display: "flex", height: "32rem" }}>
           <VirtualFeed
-            items={entries()}
+            // A new list only when messages come or go; a changed message updates its mounted row.
+            items={entries.slice()}
             getKey={(entry) => entry.id}
             estimateSize={(entry) => (entry.system ? 36 : entry.attachments ? 260 : 60)}
             label="Project chat"
@@ -687,7 +694,7 @@ const MessageRowsDemo = () => {
                   dateTime={new Date(entry.at)}
                   own={entry.author === "me"}
                   groupStart={(() => {
-                    const previous = entries()[index() - 1];
+                    const previous = entries[index() - 1];
                     return (
                       startsMessageGroup(chatGroupEntry(entry)!, chatGroupEntry(previous)) || !previous || !sameDay(entry.at, previous.at)
                     );
@@ -701,7 +708,7 @@ const MessageRowsDemo = () => {
                   }}
                   quote={(() => {
                     const quoted = entry.quote
-                      ? entries().findLast((other) => other.text === entry.quote && other.id !== entry.id)
+                      ? entries.findLast((other) => other.text === entry.quote && other.id !== entry.id)
                       : undefined;
                     return (
                       quoted && {
@@ -751,7 +758,7 @@ const MessageRowsDemo = () => {
                       onOpen: () => void toast(`Open the thread of ${chatPeople[entry.author]!.name}`),
                     }
                   }
-                  progress={entry.progress ? { status: entry.progress, onStop: () => stopAgent?.() } : undefined}
+                  progress={entry.progress ? { status: entry.progress, onStop: () => writing.get(entry.id)?.() } : undefined}
                   actions={[
                     {
                       id: "reply",

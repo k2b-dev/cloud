@@ -1,11 +1,12 @@
 import { fileIcons } from "@k2b/stdlib";
 import type { Token, Tokens } from "marked";
-import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { type Accessor, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { copyText } from "../actions/CopyButton";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
+import { ScrollArea } from "../layout/ScrollArea";
 import { Avatar } from "../surfaces/Avatar";
 import { createSafeMarked, createSafeRenderer, escapeHtml } from "./MarkdownView";
 
@@ -24,8 +25,13 @@ const FADE_LINES = 2;
 const COPIED_MS = 2_000;
 /** Links in messages may only use these schemes; other links show as their text. */
 const LINK_PROTOCOLS = ["https:", "http:", "mailto:"] as const;
-/** Attachments open and load only from these schemes or from a relative URL; `blob:` covers a file still uploading. */
-const ATTACHMENT_PROTOCOLS = new Set(["https:", "http:", "blob:"]);
+/** Attachments open and load only from these schemes or from a relative URL. */
+const ATTACHMENT_PROTOCOLS = new Set(["https:", "http:"]);
+/**
+ * A picture may also show a file that is still uploading. A `blob:` URL runs in the page's origin when it is opened,
+ * so links never use one.
+ */
+const PICTURE_PROTOCOLS = new Set([...ATTACHMENT_PROTOCOLS, "blob:"]);
 /** A grid shows this many images or videos; the last one tells how many more there are. */
 const MEDIA_SHOWN = 4;
 /** A single image keeps its own aspect ratio within these bounds; beyond them it is cropped to fit. */
@@ -87,13 +93,13 @@ export type MessageRowThread = {
 type MessageRowAttachmentTarget = {
   /** Opens the attachment, for example in a lightbox. Takes precedence over `href`. */
   onOpen?: () => void;
-  /** Opens the attachment in a new tab. Absolute `https` or `http`, `blob`, or relative. */
+  /** Opens the attachment in a new tab. Absolute `https` or `http`, or relative. */
   href?: string;
 };
 
 export type MessageRowMedia = MessageRowAttachmentTarget & {
   kind: "image" | "video";
-  /** The image, or the poster frame of a video. */
+  /** The image, or the poster frame of a video. Absolute `https` or `http`, relative, `blob`, or `data:image/`. */
   src: string;
   /** Describes the image or video for people who cannot see it. */
   alt: string;
@@ -279,13 +285,13 @@ const dateTimeOf = (value: string | Date | undefined): string | undefined => {
 
 /**
  * An attachment URL the row may load or open: absolute with an allowed scheme, or relative to the page. A picture may
- * also be a `data:image/` URL, which an image element shows without running anything.
+ * also be a `blob:` URL or a `data:image/` URL, which an image element shows without running anything.
  */
 const attachmentUrl = (url: string | undefined, picture = false): string | undefined => {
   if (!url) return undefined;
   if (picture && /^data:image\//i.test(url)) return url;
   try {
-    return ATTACHMENT_PROTOCOLS.has(new URL(url, "https://relative.invalid/").protocol) ? url : undefined;
+    return (picture ? PICTURE_PROTOCOLS : ATTACHMENT_PROTOCOLS).has(new URL(url, "https://relative.invalid/").protocol) ? url : undefined;
   } catch {
     return undefined;
   }
@@ -364,7 +370,7 @@ function AttachmentTarget(
 
 /**
  * Renders the safe Markdown of `MarkdownView` with line breaks kept, absolute links only, and a copy control above
- * every code block, and counts the fewest lines it takes.
+ * every code block, and counts the fewest lines it takes. An edited message that does not collapse ends with the marker.
  */
 const renderMessage = (text: string, locale: string, messages: UiMessages, edited: boolean): { html: string; lines: number } => {
   const renderer = createSafeRenderer({ allowImages: false, linkProtocols: LINK_PROTOCOLS, linkTarget: "_blank", locale });
@@ -386,14 +392,13 @@ const renderMessage = (text: string, locale: string, messages: UiMessages, edite
   const marked = createSafeMarked(locale).setOptions({ breaks: true, renderer });
   const tokens = marked.lexer(text);
   const html = marked.parser(tokens);
-  if (!edited) return { html, lines: renderedLines(tokens) };
+  const lines = renderedLines(tokens);
+  // A collapsed message would hide the end of its text, so its marker sits next to "Show more" instead.
+  if (!edited || lines > COLLAPSE_LINES) return { html, lines };
   // The marker ends the last paragraph, so it takes no line of its own there.
   const marker = `<span class="k2b-message-row__edited">${escapeHtml(messages.messageEdited)}</span>`;
   const end = html.trimEnd();
-  return {
-    html: end.endsWith("</p>") ? `${end.slice(0, -4)} ${marker}</p>` : `${html}<p>${marker}</p>`,
-    lines: renderedLines(tokens),
-  };
+  return { html: end.endsWith("</p>") ? `${end.slice(0, -4)} ${marker}</p>` : `${html}<p>${marker}</p>`, lines };
 };
 
 /**
@@ -412,6 +417,9 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   const groupStart = () => props.groupStart ?? true;
   const hasLine = () => props.progress !== undefined || props.status !== undefined || props.receipt !== undefined;
   const reactions = () => (props.deleted ? undefined : props.reactions);
+  // Chips follow their keys, so a chip keeps its element, and focus, when the caller passes new objects for it.
+  const reactionKeys = createMemo(() => reactions()?.map((reaction) => reaction.key) ?? []);
+  const reactionByKey = createMemo(() => new Map(reactions()?.map((reaction) => [reaction.key, reaction])));
   const hasFooter = () => hasLine() || reactions() !== undefined;
   const writing = () => props.progress !== undefined && !props.deleted && props.text.trim() === "";
   const hasBubble = () => props.deleted || writing() || props.text.trim() !== "";
@@ -484,6 +492,44 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     ]
       .filter(Boolean)
       .join(", ");
+
+  /** A toggle button, or with no `onToggleReaction` a labelled image that also says whether the reader reacted. */
+  const reactionChip = (key: string, reaction: Accessor<MessageRowReaction>) => {
+    const label = (own: boolean) =>
+      messages().messageReaction({ emoji: reaction().emoji, count: reaction().count, names: reaction().label, own });
+    return (
+      <Show
+        when={props.onToggleReaction}
+        fallback={
+          <span
+            class="k2b-message-row__reaction"
+            role="img"
+            aria-label={label(Boolean(reaction().own))}
+            title={reaction().label}
+            data-own={reaction().own ? "" : undefined}
+          >
+            <span aria-hidden="true">{reaction().emoji}</span>
+            <span aria-hidden="true">{reaction().count}</span>
+          </span>
+        }
+      >
+        {(toggle) => (
+          <button
+            type="button"
+            class="k2b-message-row__reaction"
+            aria-pressed={reaction().own ? "true" : "false"}
+            aria-label={label(false)}
+            title={reaction().label}
+            data-own={reaction().own ? "" : undefined}
+            onClick={() => toggle()(key)}
+          >
+            <span aria-hidden="true">{reaction().emoji}</span>
+            <span aria-hidden="true">{reaction().count}</span>
+          </button>
+        )}
+      </Show>
+    );
+  };
 
   const mediaItem = (item: MessageRowMedia, index: () => number) => {
     const more = () => (index() === shownMedia().length - 1 ? hiddenMedia() : 0);
@@ -580,7 +626,11 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
           )}
         </Show>
         <Show when={hasBubble()}>
-          <div class="k2b-message-row__bubble" data-deleted={props.deleted ? "" : undefined}>
+          <div
+            class="k2b-message-row__bubble"
+            data-deleted={props.deleted ? "" : undefined}
+            aria-busy={props.progress && !props.deleted ? "true" : undefined}
+          >
             <Show
               when={!props.deleted}
               fallback={
@@ -609,25 +659,36 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                   class="k2b-content-markdown k2b-message-row__text"
                   data-heading-scale="compact"
                   data-collapsed={collapsed() ? "" : undefined}
-                  aria-busy={props.progress ? "true" : undefined}
                   onClick={copyCode}
                   onFocusIn={revealFocus}
                   innerHTML={rendered().html}
                 />
                 <Show when={collapsible()}>
-                  <Button
-                    variant="text"
-                    size="xs"
-                    class="k2b-message-row__more"
-                    aria-expanded={expanded() ? "true" : "false"}
-                    aria-controls={textId}
-                    onClick={() => setExpanded((value) => !value)}
-                  >
-                    {expanded() ? messages().messageShowLess : messages().messageShowMore}
-                  </Button>
+                  <div class="k2b-message-row__more-line">
+                    <Button
+                      variant="text"
+                      size="xs"
+                      class="k2b-message-row__more"
+                      aria-expanded={expanded() ? "true" : "false"}
+                      aria-controls={textId}
+                      onClick={() => setExpanded((value) => !value)}
+                    >
+                      {expanded() ? messages().messageShowLess : messages().messageShowMore}
+                    </Button>
+                    <Show when={props.edited}>
+                      <span class="k2b-message-row__edited">{messages().messageEdited}</span>
+                    </Show>
+                  </div>
                 </Show>
               </Show>
             </Show>
+          </div>
+        </Show>
+        {/* Without a bubble to end, the edit marker takes the bubble's place. */}
+        <Show when={content() && props.edited && !hasBubble()}>
+          <div class="k2b-message-row__marker">
+            <i class="ti ti-pencil" aria-hidden="true" />
+            <span class="k2b-message-row__edited">{messages().messageEdited}</span>
           </div>
         </Show>
         <Show when={media().length > 0}>
@@ -698,46 +759,17 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                   data-empty={list().length === 0 ? "" : undefined}
                 >
                   <Show when={list().length > 0}>
-                    <div class="k2b-message-row__reaction-list">
-                      <For each={list()}>
-                        {(reaction) => {
-                          const label = () =>
-                            messages().messageReaction({ emoji: reaction.emoji, count: reaction.count, names: reaction.label });
-                          return (
-                            <Show
-                              when={props.onToggleReaction}
-                              fallback={
-                                <span
-                                  class="k2b-message-row__reaction"
-                                  role="img"
-                                  aria-label={label()}
-                                  title={reaction.label}
-                                  data-own={reaction.own ? "" : undefined}
-                                >
-                                  <span aria-hidden="true">{reaction.emoji}</span>
-                                  <span aria-hidden="true">{reaction.count}</span>
-                                </span>
-                              }
-                            >
-                              {(toggle) => (
-                                <button
-                                  type="button"
-                                  class="k2b-message-row__reaction"
-                                  aria-pressed={reaction.own ? "true" : "false"}
-                                  aria-label={label()}
-                                  title={reaction.label}
-                                  data-own={reaction.own ? "" : undefined}
-                                  onClick={() => toggle()(reaction.key)}
-                                >
-                                  <span aria-hidden="true">{reaction.emoji}</span>
-                                  <span aria-hidden="true">{reaction.count}</span>
-                                </button>
-                              )}
-                            </Show>
-                          );
-                        }}
+                    {/* Chips that do not fit scroll sideways behind a fade. Read-only chips are no tab stops, so the list
+                        is one: a keyboard can scroll it. */}
+                    <ScrollArea
+                      orientation="horizontal"
+                      class="k2b-message-row__reaction-list"
+                      tabindex={props.onToggleReaction ? undefined : 0}
+                    >
+                      <For each={reactionKeys()}>
+                        {(key) => <Show when={reactionByKey().get(key)}>{(reaction) => reactionChip(key, reaction)}</Show>}
                       </For>
-                    </div>
+                    </ScrollArea>
                   </Show>
                   <Show when={props.onAddReaction}>
                     {(add) => (

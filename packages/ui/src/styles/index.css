@@ -7349,8 +7349,14 @@
   line-height: 1.25rem;
 }
 
-.k2b-ui .k2b-button.k2b-message-row__more {
+/* "Show more", and "edited" beside it, because the end of a collapsed message's text is hidden. */
+.k2b-ui .k2b-message-row__more-line {
+  display: flex;
+  height: 1.25rem;
+  align-items: center;
+  gap: 0.5rem;
   margin-top: 0.125rem;
+  line-height: 1.25rem;
 }
 
 /* A code block is one fill with a quiet bar for its language and copy; long lines scroll inside it. */
@@ -7455,11 +7461,19 @@
   margin-inline-start: 0.25rem;
 }
 
+/* The receipt and the progress text end in an ellipsis. They wrap into a clamp of one line rather than staying on one,
+   so they are the only part of the line that gives up width, down to their longest word: the icon, the send state,
+   and "Retry" or "Stop" keep theirs. */
 .k2b-ui .k2b-message-row__receipt,
 .k2b-ui .k2b-message-row__line-text {
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 /* The actions overlay the top of the row while it is hovered or focused; showing them only changes paint. */
@@ -7762,12 +7776,15 @@
   gap: 0.5rem;
 }
 
+/* When the footer is too narrow, the reactions and the line shrink in proportion; the line never below its icon,
+   words, and buttons. */
 .k2b-ui .k2b-message-row__footer > .k2b-message-row__line {
+  min-width: auto;
   flex: 0 1 auto;
 }
 
-/* Reactions take one line of fixed height: chips never wrap, the list scrolls sideways, and "Add reaction" stays at its
-   end. While a reserved bar is empty, the button shows only like the actions do. */
+/* Reactions take one line of fixed height: chips never wrap, the list scrolls sideways behind a fade, and "Add
+   reaction" stays at its end. While a reserved bar is empty, the button shows only like the actions do. */
 .k2b-ui .k2b-message-row__reactions {
   display: flex;
   max-width: 100%;
@@ -7778,7 +7795,13 @@
   gap: 0.25rem;
 }
 
+/* Squeezed by a long send state, the chips give up their room first; "Add reaction" keeps its own. */
+.k2b-ui .k2b-message-row__reactions:has(> .k2b-message-row__react) {
+  min-width: 2rem;
+}
+
 .k2b-ui .k2b-message-row__reaction-list {
+  --scroll-fade-size: 1.5rem;
   display: flex;
   min-width: 0;
   gap: 0.25rem;
@@ -7903,21 +7926,67 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
+/* Touch targets: on a coarse pointer the row's compact controls take taps in the shared 2.75rem area, as buttons do.
+   Controls are positioned, so a later one paints over an earlier one's area, and an area never reaches back over the
+   control above it: the thread bar and the footer keep 0.625rem below media, files, and previews, a quote that opens a
+   continuation keeps it below the row before, and a row that ends in them keeps it below. Reaction chips scroll in a
+   clipping list, so the list reaches into that room above and below without taking layout. */
 @media (any-pointer: coarse) {
-  .k2b-ui .k2b-message-row__copy::after {
+  .k2b-ui :is(.k2b-message-row__copy, button.k2b-message-row__quote, .k2b-message-row__thread, .k2b-message-row__file) {
+    position: relative;
+  }
+
+  .k2b-ui :is(.k2b-message-row__copy, button.k2b-message-row__quote, .k2b-message-row__thread)::after {
     position: absolute;
     content: "";
     inset: min(0px, calc((100% - 2.75rem) / 2));
   }
+
+  .k2b-ui
+    :is(.k2b-message-row__media, .k2b-message-row__files, .k2b-message-row__slot)
+    + :is(.k2b-message-row__thread, .k2b-message-row__footer),
+  .k2b-ui .k2b-message-row__thread + .k2b-message-row__footer {
+    margin-top: 0.375rem;
+  }
+
+  .k2b-ui .k2b-sr-only + button.k2b-message-row__quote {
+    margin-top: 0.625rem;
+  }
+
+  .k2b-ui .k2b-message-row:has(> .k2b-message-row__body > :is(.k2b-message-row__thread, .k2b-message-row__footer):last-child) {
+    padding-bottom: 0.625rem;
+  }
+
+  .k2b-ui .k2b-message-row__reaction-list {
+    position: relative;
+    margin-block: -0.5625rem;
+    padding-block: 0.5625rem;
+  }
+
+  .k2b-ui button.k2b-message-row__reaction {
+    position: relative;
+  }
+
+  .k2b-ui button.k2b-message-row__reaction::after {
+    position: absolute;
+    content: "";
+    inset: -0.5625rem 0;
+  }
 }
 
-/* Fills disappear in forced colours; an outline keeps the bubble and the toolbar apart without changing their size. */
+/* Fills disappear in forced colours; an outline keeps the bubble and the toolbar apart without changing their size, and
+   the reader's own reactions get a thicker one. */
 @media (forced-colors: active) {
   .k2b-ui .k2b-message-row__bubble,
   .k2b-ui .k2b-message-row__actions,
   .k2b-ui .k2b-message-row__file,
   .k2b-ui .k2b-message-row__reaction {
     outline: 1px solid CanvasText;
+  }
+
+  .k2b-ui .k2b-message-row__reaction[data-own] {
+    outline: 2px solid Highlight;
+    outline-offset: -1px;
   }
 }
 

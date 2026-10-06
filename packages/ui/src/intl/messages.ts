@@ -182,8 +182,8 @@ const uiMessages = i18n.define({
       messageVideo: "Video",
       messageMoreAttachments: ({ count }: { count: number }) => `${count} more`,
       messageReactions: "Reactions",
-      messageReaction: ({ emoji, count, names }: { emoji: string; count: number; names?: string }) =>
-        `${emoji} ${count} ${count === 1 ? "reaction" : "reactions"}${names ? `: ${names}` : ""}`,
+      messageReaction: ({ emoji, count, names, own }: { emoji: string; count: number; names?: string; own?: boolean }) =>
+        `${emoji} ${own && count === 1 ? "your reaction" : `${count} ${count === 1 ? "reaction" : "reactions"}${own ? ", including yours" : ""}`}${names ? `: ${names}` : ""}`,
       messageAddReaction: "Add reaction",
       messageReplies: ({ count }: { count: number }) => (count === 1 ? "1 reply" : `${count} replies`),
       messageLastReply: ({ time }: { time: string }) => `Last reply ${time}`,
@@ -636,8 +636,8 @@ const uiMessages = i18n.define({
       messageVideo: "Video",
       messageMoreAttachments: ({ count }) => `${count} weitere`,
       messageReactions: "Reaktionen",
-      messageReaction: ({ emoji, count, names }) =>
-        `${emoji} ${count} ${count === 1 ? "Reaktion" : "Reaktionen"}${names ? `: ${names}` : ""}`,
+      messageReaction: ({ emoji, count, names, own }) =>
+        `${emoji} ${own && count === 1 ? "deine Reaktion" : `${count} ${count === 1 ? "Reaktion" : "Reaktionen"}${own ? ", einschließlich deiner" : ""}`}${names ? `: ${names}` : ""}`,
       messageAddReaction: "Reaktion hinzufügen",
       messageReplies: ({ count }) => (count === 1 ? "1 Antwort" : `${count} Antworten`),
       messageLastReply: ({ time }) => `Letzte Antwort ${time}`,
