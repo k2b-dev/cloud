@@ -259,6 +259,118 @@ window.feed = {
     });
   },
 };
+
+// The reader's scroll input, kept apart from the feed's own writes to scrollTop, which window.writes logs.
+const port = viewport();
+const nativeTop = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+let byPerson = false;
+window.writes = [];
+Object.defineProperty(port, "scrollTop", {
+  configurable: true,
+  get() {
+    return nativeTop.get.call(this);
+  },
+  set(value) {
+    const from = nativeTop.get.call(this);
+    nativeTop.set.call(this, value);
+    const to = nativeTop.get.call(this);
+    if (!byPerson && Math.abs(to - from) >= 0.5) window.writes.push([Math.round(from), Math.round(to)]);
+  },
+});
+// Both engines fire scrollend after every scroll, also a scripted one; held, it waits as during momentum.
+let holding = false;
+addEventListener("scrollend", (event) => holding && event.target === port && event.isTrusted && event.stopImmediatePropagation(), true);
+const touch = (type, target, y) => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  const point = { identifier: 1, target, clientX: 200, clientY: y };
+  Object.defineProperty(event, "changedTouches", { value: [point] });
+  Object.defineProperty(event, "touches", { value: type === "touchend" || type === "touchcancel" ? [] : [point] });
+  target.dispatchEvent(event);
+};
+const nextFrame = () => new Promise((done) => requestAnimationFrame(done));
+const rowAt = (y) => {
+  const box = port.getBoundingClientRect();
+  return document.elementFromPoint(box.left + 40, box.top + y)?.closest(".k2b-virtual-feed__item");
+};
+const actions = {
+  keyboard: (px) => document.documentElement.style.setProperty("--composer", px + "px"),
+  append: (count) => window.feed.append(count),
+  // The row right above the visible ones gets late content.
+  growAbove: (px) => window.feed.grow("m" + (Number(rowAt(1).dataset.key.slice(1)) - 1), px),
+  // A scrollend that is not the end of this scroll, such as the late one of an earlier write.
+  scrollend: () => port.dispatchEvent(new Event("scrollend")),
+  send: () => {
+    window.feed.append(1);
+    controller.scrollToEnd();
+  },
+  release: () => touch("touchend", port, 400),
+  probe: () => window.probe.start(undefined, true),
+};
+window.person = {
+  to(top) {
+    byPerson = true;
+    port.scrollTop = top;
+    byPerson = false;
+  },
+  by(dy) {
+    window.person.to(nativeTop.get.call(port) + dy);
+  },
+  touch(type, target = port, y = 400) {
+    touch(type, target, y);
+  },
+  hold() {
+    holding = true;
+  },
+  /** The scroller's own end of the scroll. */
+  end() {
+    holding = false;
+    port.dispatchEvent(new Event("scrollend"));
+  },
+  act(name, ...args) {
+    actions[name](...args);
+  },
+  /** Key of the row at this height of the visible area. */
+  keyAt: (y) => rowAt(y)?.dataset.key,
+  /** How far the content of a row starts above the bottom edge of the visible area. */
+  fromBottom(key) {
+    const content = document.querySelector('[data-key="' + key + '"] .row');
+    return content ? port.getBoundingClientRect().bottom - content.getBoundingClientRect().top : NaN;
+  },
+  /** A finger drag in frames of dy px, released without momentum. */
+  async drag(steps, target = port) {
+    touch("touchstart", target, 400);
+    for (const dy of steps) {
+      touch("touchmove", target, 400 - dy);
+      window.person.by(dy);
+      await nextFrame();
+    }
+    touch("touchend", target, 400);
+  },
+  /**
+   * Momentum: one step per frame in a page-side loop, so harness latency cannot end it early. A step's actions run in
+   * the same task as its move. toEnd glides along a decelerating curve to the end the list has when it starts. Records
+   * the distance of a watched row from the bottom edge before every step, and the feed's writes until the last step.
+   */
+  async glide({ steps = [], toEnd = 0, actions: planned = {}, pause = {}, watch }) {
+    const start = nativeTop.get.call(port);
+    const target = port.scrollHeight - port.clientHeight;
+    const moves = toEnd ? Array.from({ length: toEnd }, (_, i) => start + (target - start) * (1 - (1 - (i + 1) / toEnd) ** 2)) : steps;
+    window.writes = [];
+    const track = [];
+    for (let i = 0; i < moves.length; i++) {
+      track.push(watch ? window.person.fromBottom(watch) : 0);
+      const before = nativeTop.get.call(port);
+      if (toEnd) window.person.to(moves[i]);
+      else window.person.by(moves[i]);
+      track.push(nativeTop.get.call(port) - before);
+      for (const [name, ...args] of planned[i + 1] ?? []) actions[name](...args);
+      if (pause[i + 1]) await new Promise((done) => setTimeout(done, pause[i + 1]));
+      await nextFrame();
+    }
+    track.push(watch ? window.person.fromBottom(watch) : 0);
+    return { writes: window.writes, track };
+  },
+};
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -304,8 +416,28 @@ type Feed = {
   replace: (key: string, seq: number) => void;
   swap: (a: string, b: string) => void;
 };
+type Person = {
+  to: (top: number) => void;
+  by: (dy: number) => void;
+  touch: (type: "touchstart" | "touchmove" | "touchend" | "touchcancel", target?: Element, y?: number) => void;
+  hold: () => void;
+  end: () => void;
+  act: (name: "keyboard" | "append" | "growAbove" | "scrollend" | "send" | "release" | "probe", ...args: number[]) => void;
+  keyAt: (y: number) => string;
+  fromBottom: (key: string) => number;
+  drag: (steps: number[], target?: Element) => Promise<void>;
+  glide: (options: {
+    steps?: number[];
+    toEnd?: number;
+    actions?: Record<number, Array<[string, ...number[]]>>;
+    pause?: Record<number, number>;
+    watch?: string;
+  }) => Promise<{ writes: number[][]; track: number[] }>;
+};
 declare const probe: Probe;
 declare const feed: Feed;
+declare const person: Person;
+declare const writes: number[][];
 declare const errors: string[];
 
 const open = async (
@@ -979,10 +1111,8 @@ describe(`VirtualFeed in ${browserName}`, () => {
     await close(page);
   }, 30_000);
 
-  test("holds corrections back while an iOS finger or momentum scroll is moving the list", async () => {
-    const iPhone =
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
-    const page = await open({}, { userAgent: iPhone });
+  test("moves rows instead of the scroll position while a finger is on the feed, and writes it once the finger lifts", async () => {
+    const page = await open();
     await scrollBy(page, -3000);
     await frames(page, 6);
     const watch = await page.evaluate(() => probe.topVisible());
@@ -991,20 +1121,20 @@ describe(`VirtualFeed in ${browserName}`, () => {
     const top = (key: string) => page.evaluate((key) => document.querySelector(`[data-key="${key}"]`)!.getBoundingClientRect().top, key);
     const resting = await top(watch);
 
-    await page.evaluate(() => feed.viewport().dispatchEvent(new Event("touchstart")));
+    await page.evaluate(() => person.touch("touchstart"));
     await page.evaluate((key) => feed.grow(key, 100), above);
     await frames(page, 4);
-    // Writing scrollTop now would stop iOS momentum, so the list lets the content move instead.
+    // Writing scrollTop now would fight the finger or its momentum, so the rows move and the content stays.
     expect(await page.evaluate(() => feed.viewport().scrollTop)).toBe(before);
-    expect((await top(watch)) - resting).toBeCloseTo(100, 0);
-    // An item arriving below needs no correction, so it does not apply the held-back one either.
+    expect(Math.abs((await top(watch)) - resting)).toBeLessThanOrEqual(1);
     await page.evaluate(() => feed.append(1));
     await frames(page, 4);
     expect(await page.evaluate(() => feed.viewport().scrollTop)).toBe(before);
 
-    await page.evaluate(() => feed.viewport().dispatchEvent(new Event("touchend")));
-    // Once scrolling has rested, the held-back correction applies.
-    await page.waitForFunction((target) => Math.abs(feed.viewport().scrollTop - target) < 1, before + 100, { timeout: 10_000 });
+    // The finger lifts without having scrolled: the held-back correction is written, and nothing moves.
+    await page.evaluate(() => person.touch("touchend"));
+    await frames(page, 2);
+    expect(Math.abs((await page.evaluate(() => feed.viewport().scrollTop)) - before - 100)).toBeLessThanOrEqual(1);
     expect(Math.abs((await top(watch)) - resting)).toBeLessThanOrEqual(1);
     await close(page);
   }, 30_000);
@@ -1059,4 +1189,468 @@ describe(`VirtualFeed in ${browserName}`, () => {
     expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
     await close(page);
   }, 60_000);
+});
+
+// The scenarios that refuted earlier anchoring rules in the chat composer spike, ported to the feed: scroll input in
+// the order engines deliver it, size changes landing in the same frame as the reader's scroll, momentum that keeps
+// running after the finger lifts, and scrollend events that are not the end. A keyboard is the composer growing by
+// 391 px; the suggestion row above it takes 44 px more. Momentum is simulated in one page-side frame loop; its
+// scrollend is held back until the test ends it, as during momentum.
+const KEYBOARD = 56 + 391;
+const SUGGESTIONS = KEYBOARD + 44;
+const isAtEnd = (page: Page) => page.evaluate(() => feed.controller.isAtEnd());
+const endGap = (page: Page) => page.evaluate(() => probe.gap());
+const fromBottom = (page: Page, key: string) => page.evaluate((key) => person.fromBottom(key), key);
+/** Worst frame in which the watched row moved by more or less than the reader's own step. */
+const unexplained = (track: number[]) => {
+  let worst = 0;
+  for (let index = 0; index + 2 < track.length; index += 2)
+    worst = Math.max(worst, Math.abs(track[index + 2]! - track[index]! - track[index + 1]!));
+  return worst;
+};
+/** Steps of a decelerating momentum tail, px per frame. */
+const decelerate = (frames: number, speed: number) =>
+  Array.from({ length: frames }, (_, index) => Math.round(speed * (1 - (index + 1) / frames)) + 1);
+/** A finger drag that ends without momentum, then the time its scrollend needs. */
+const dragBy = async (page: Page, px: number) => {
+  await page.evaluate((px) => person.drag(Array.from({ length: Math.abs(px) / 100 }, () => Math.sign(px) * 100)), px);
+  await page.waitForTimeout(300);
+};
+const inView = (page: Page, key: string) =>
+  page.evaluate((key) => {
+    const row = document.querySelector(`[data-key="${key}"]`)!.getBoundingClientRect();
+    const port = feed.viewport().getBoundingClientRect();
+    return row.top >= port.top - 1 && row.bottom <= port.bottom + 1;
+  }, key);
+/** The nearest row above the visible ones that fits into the view with the keyboard open. */
+const rowAbove = (page: Page) =>
+  page.evaluate(() => {
+    let index = Number(person.keyAt(1).slice(1)) - 1;
+    while (document.querySelector<HTMLElement>(`[data-key="m${index}"]`)!.offsetHeight > 300) index--;
+    return `m${index}`;
+  });
+
+describe(`VirtualFeed keeps the reader's place under real scroll event orders in ${browserName}`, () => {
+  test("A: stays at the end in every frame while the keyboard opens in 20 steps", async () => {
+    const page = await open();
+    await page.evaluate(() => probe.start(undefined, true));
+    for (let step = 1; step <= 20; step++) {
+      await page.evaluate((px) => person.act("keyboard", px), Math.round(56 + (391 * step) / 20));
+      await frames(page, 1);
+    }
+    await frames(page, 4);
+    const run = await page.evaluate(() => probe.stop());
+    expect(run.gapMin).toBeGreaterThanOrEqual(-1);
+    expect(run.gapMax).toBeLessThanOrEqual(1);
+    expect(await isAtEnd(page)).toBe(true);
+    await close(page);
+  }, 30_000);
+
+  for (const pause of [0, 200]) {
+    test(`B: a fling to the end that the keyboard interrupts ends at the end and writes nothing while it runs${pause ? `, with a ${pause} ms pause in its events` : ""}`, async () => {
+      const page = await open();
+      await dragBy(page, -800);
+      expect(await isAtEnd(page)).toBe(false);
+      await page.evaluate(() => {
+        person.hold();
+        return person.drag([50, 50]);
+      });
+      // The tail glides to the end the list had at the release; the keyboard opens on its tenth frame.
+      const tail = await page.evaluate(
+        ([keyboard, pause]) => person.glide({ toEnd: 30, actions: { 10: [["keyboard", keyboard]] }, pause: pause ? { 10: pause } : {} }),
+        [KEYBOARD, pause] as const,
+      );
+      expect(tail.writes).toEqual([]);
+      await page.evaluate(() => person.end());
+      await frames(page, 6);
+      expect(await isAtEnd(page)).toBe(true);
+      expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+      await page.evaluate(() => feed.append(1));
+      await frames(page, 4);
+      expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+      await close(page);
+    }, 30_000);
+  }
+
+  test("X1: a fling to older items that the keyboard interrupts moves only by the reader's steps and does not jump when it ends", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    await page.evaluate(() => {
+      person.hold();
+      return person.drag([-50, -50]);
+    });
+    const tail = await page.evaluate(
+      ([watch, steps, keyboard]) => person.glide({ steps, watch, actions: { 6: [["keyboard", keyboard]] } }),
+      [watch, decelerate(20, 30).map((step) => -step), KEYBOARD] as const,
+    );
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    expect(await isAtEnd(page)).toBe(false);
+    await close(page);
+  }, 30_000);
+
+  test("X6: the suggestion row appearing during a drag moves nothing the reader did not move, also when the drag ends", async () => {
+    const page = await open();
+    await page.evaluate((px) => person.act("keyboard", px), KEYBOARD);
+    await frames(page, 4);
+    await dragBy(page, -300);
+    const watch = await page.evaluate(() => person.keyAt(150));
+    const tail = await page.evaluate(
+      ([watch, suggestions]) => {
+        person.hold();
+        person.touch("touchstart");
+        return person.glide({
+          steps: [-80, 0, -40, -5, -5, -5, -5, -5],
+          watch,
+          actions: { 2: [["keyboard", suggestions]], 3: [["release"]] },
+        });
+      },
+      [watch, SUGGESTIONS] as const,
+    );
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  for (const opened of [false, true]) {
+    test(`${opened ? "F2: with the keyboard open, the suggestion row" : "F: the keyboard"} in the same frame as a scroll step at the end keeps the feed at the end`, async () => {
+      const page = await open();
+      if (opened) {
+        await page.evaluate((px) => person.act("keyboard", px), KEYBOARD);
+        await frames(page, 4);
+      }
+      // The reader's scroll tail sits one pixel from the end, which still counts as the end.
+      await page.evaluate(async () => {
+        person.hold();
+        person.by(-40);
+        await new Promise(requestAnimationFrame);
+        person.by(39);
+      });
+      await frames(page, 2);
+      expect(await isAtEnd(page)).toBe(true);
+      await page.evaluate(() => probe.start(undefined, true));
+      // Reading scrollTop lays out the new size before the scroll event of the step runs.
+      await page.evaluate(
+        (px) => {
+          person.act("keyboard", px);
+          person.by(1);
+        },
+        opened ? SUGGESTIONS : KEYBOARD,
+      );
+      await frames(page, 6);
+      await page.evaluate(() => person.end());
+      await frames(page, 6);
+      const run = await page.evaluate(() => probe.stop());
+      expect(run.gapMin).toBeGreaterThanOrEqual(-1);
+      expect(run.gapMax).toBeLessThanOrEqual(1);
+      expect(await isAtEnd(page)).toBe(true);
+      await page.evaluate(() => feed.append(1));
+      await frames(page, 4);
+      expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+      await close(page);
+    }, 30_000);
+  }
+
+  for (const [when, at, keyboard] of [
+    ["before the keyboard opens", 5, true],
+    ["after the keyboard opened", 15, true],
+    ["without a keyboard", 15, false],
+  ] as const) {
+    test(`Y1: an item that arrives during a fling to the end ${when} still ends at the end, showing it`, async () => {
+      const page = await open();
+      await dragBy(page, -800);
+      await page.evaluate(() => {
+        person.hold();
+        return person.drag([50, 50]);
+      });
+      const tail = await page.evaluate(
+        ([at, keyboard]) => {
+          const actions: Record<number, Array<[string, number]>> = { [at]: [["append", 1]] };
+          if (keyboard) actions[10] = [["keyboard", keyboard]];
+          return person.glide({ toEnd: 30, actions });
+        },
+        [at, keyboard ? KEYBOARD : 0] as const,
+      );
+      expect(tail.writes).toEqual([]);
+      await page.evaluate(() => person.end());
+      await frames(page, 6);
+      expect(await isAtEnd(page)).toBe(true);
+      expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+      expect(await page.locator('[data-key="m300"]').count()).toBe(1);
+      await close(page);
+    }, 30_000);
+  }
+
+  test("Y2: the late scrollend of the feed's own write does not end a later fling", async () => {
+    const page = await open();
+    // Following the end, the feed writes for a new item; the scrollend of that write arrives in the next fling.
+    await page.evaluate(() => {
+      person.hold();
+      feed.append(1);
+    });
+    await frames(page, 2);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    const tail = await page.evaluate(
+      async ([watch, steps]) => {
+        await person.drag([-60, -60, -60]);
+        return person.glide({ steps, watch, actions: { 3: [["scrollend"]], 8: [["growAbove", 100]] } });
+      },
+      [watch, decelerate(20, 40).map((step) => -step)] as const,
+    );
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  for (const tall of [true, false]) {
+    test(`Y4: focus that moves to a ${tall ? "row taller than the view" : "row"} while the keyboard closes shows it`, async () => {
+      const page = await open();
+      await page.evaluate((px) => person.act("keyboard", px), KEYBOARD);
+      await frames(page, 4);
+      const key = await rowAbove(page);
+      if (tall) {
+        await page.evaluate((key) => feed.grow(key, 900), key);
+        await frames(page, 4);
+      }
+      await page.evaluate((key) => {
+        document.querySelector<HTMLElement>(`[data-key="${key}"]`)!.focus();
+        person.act("keyboard", 56);
+      }, key);
+      await frames(page, 6);
+      const shown = await page.evaluate((key) => {
+        const row = document.querySelector(`[data-key="${key}"]`)!.getBoundingClientRect();
+        const port = feed.viewport().getBoundingClientRect();
+        return {
+          focused: (document.activeElement as HTMLElement).dataset.key,
+          overlap: Math.min(row.bottom, port.bottom) - Math.max(row.top, port.top),
+        };
+      }, key);
+      expect(shown.focused).toBe(key);
+      expect(shown.overlap).toBeGreaterThan(40);
+      if (!tall) expect(await inView(page, key)).toBe(true);
+      await close(page);
+    }, 30_000);
+  }
+
+  for (const order of ["in the same task", "a frame later"]) {
+    test(`shows a row that gets focus while the keyboard closes ${order}`, async () => {
+      const page = await open();
+      await page.evaluate((px) => person.act("keyboard", px), KEYBOARD);
+      await frames(page, 4);
+      const key = await rowAbove(page);
+      await page.evaluate(
+        async ([key, later]) => {
+          document.querySelector<HTMLElement>(`[data-key="${key}"]`)!.focus();
+          if (later) await new Promise(requestAnimationFrame);
+          person.act("keyboard", 56);
+        },
+        [key, order !== "in the same task"] as const,
+      );
+      await frames(page, 6);
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.key)).toBe(key);
+      expect(await inView(page, key)).toBe(true);
+      await close(page);
+    }, 30_000);
+  }
+
+  for (const up of [40, 200]) {
+    test(`a size change that clamps the position does not count as the reader ${up} px from the end`, async () => {
+      const page = await open();
+      await page.evaluate(() => person.act("keyboard", 144));
+      await frames(page, 4);
+      await page.evaluate((up) => person.by(-up), up);
+      await page.waitForTimeout(300);
+      expect(await isAtEnd(page)).toBe(false);
+      const watch = await page.evaluate(() => person.keyAt(300));
+      const before = await fromBottom(page, watch);
+      // The composer shrinks by 88 px, and reading the layout in the same task lets the engine clamp right away.
+      await page.evaluate(() => {
+        person.act("keyboard", 56);
+        void document.body.offsetHeight;
+      });
+      await frames(page, 6);
+      expect(await isAtEnd(page)).toBe(false);
+      expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+      await page.evaluate(() => feed.append(1));
+      await frames(page, 4);
+      expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+      await close(page);
+    }, 30_000);
+  }
+
+  test("follows the wheel and the keyboard: each scroll stays where it went, and End returns to the end", async () => {
+    const page = await open();
+    const top = () => page.evaluate(() => feed.viewport().scrollTop);
+    const start = await top();
+    await page.mouse.move(360, 400);
+    await page.mouse.wheel(0, -300);
+    await page.waitForTimeout(400);
+    const wheeled = await top();
+    expect(wheeled).toBeLessThan(start - 100);
+    await page.waitForTimeout(400);
+    expect(await top()).toBe(wheeled);
+    await page.evaluate(() => feed.viewport().focus());
+    const tops: number[] = [];
+    for (const key of ["PageUp", "PageUp", "PageDown", "ArrowUp", "ArrowUp", "ArrowUp"]) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(400);
+      const moved = await top();
+      await page.waitForTimeout(400);
+      expect(await top()).toBe(moved);
+      tops.push(moved);
+    }
+    expect(tops[0]).toBeLessThan(wheeled - 100);
+    expect(tops[1]).toBeLessThan(tops[0]! - 100);
+    expect(tops[2]).toBeGreaterThan(tops[1]!);
+    expect(tops[3]).toBeLessThan(tops[2]!);
+    expect(tops[5]).toBeLessThan(tops[4]!);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => feed.append(2));
+    await frames(page, 4);
+    expect(await fromBottom(page, watch)).toBe(before);
+    await page.keyboard.press("End");
+    await page.waitForTimeout(400);
+    expect(await isAtEnd(page)).toBe(true);
+    expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  for (const how of ["focus", "scrollIntoView"] as const) {
+    test(`follows ${how} to a row above the view and keeps it in view through new items and the suggestion row`, async () => {
+      const page = await open();
+      await page.evaluate((px) => person.act("keyboard", px), KEYBOARD);
+      await frames(page, 4);
+      await dragBy(page, -1500);
+      const key = await rowAbove(page);
+      await page.evaluate(
+        ([key, how]) => {
+          const row = document.querySelector<HTMLElement>(`[data-key="${key}"]`)!;
+          if (how === "focus") row.focus();
+          else row.scrollIntoView({ block: "center" });
+        },
+        [key, how] as const,
+      );
+      await page.waitForTimeout(300);
+      expect(await inView(page, key)).toBe(true);
+      await page.evaluate(() => feed.append(2));
+      await frames(page, 4);
+      expect(await inView(page, key)).toBe(true);
+      await page.evaluate((px) => person.act("keyboard", px), SUGGESTIONS);
+      await frames(page, 4);
+      expect(await inView(page, key)).toBe(true);
+      expect(await isAtEnd(page)).toBe(false);
+      await close(page);
+    }, 30_000);
+  }
+
+  test("rows that grow above the view during a drag and its momentum never move what the reader sees", async () => {
+    const page = await open();
+    await dragBy(page, -1500);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    const tail = await page.evaluate(
+      ([watch, steps]) => {
+        person.hold();
+        person.touch("touchstart");
+        return person.glide({ steps, watch, actions: { 3: [["growAbove", 100]], 5: [["release"]], 9: [["growAbove", 60]] } });
+      },
+      [watch, decelerate(16, 20).map((step) => -step)] as const,
+    );
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  test("ends a drag whose touched row left the document, so later changes are corrected at once again", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    const key = await page.evaluate(() => person.keyAt(300));
+    // Touch events keep going to the row where the touch began, also after the feed removed it.
+    await page.evaluate(async (key) => {
+      const row = document.querySelector(`[data-key="${key}"]`)!;
+      await person.drag(
+        Array.from({ length: 30 }, () => -100),
+        row,
+      );
+    }, key);
+    expect(await page.locator(`[data-key="${key}"]`).count()).toBe(0);
+    await page.waitForTimeout(300);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    await page.evaluate((watch) => {
+      writes.length = 0;
+      probe.start(watch);
+      person.act("growAbove", 100);
+    }, watch);
+    await frames(page, 6);
+    const run = await page.evaluate(() => probe.stop());
+    expect(run.drift).toBeLessThanOrEqual(1);
+    expect((await page.evaluate(() => writes)).length).toBeGreaterThan(0);
+    await close(page);
+  }, 30_000);
+
+  test("sending while the list still coasts to older items shows the sent item at the end", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    await page.evaluate(() => {
+      person.hold();
+      return person.drag([-50, -50]);
+    });
+    await page.evaluate(
+      (steps) => {
+        return person.glide({ steps, actions: { 4: [["send"], ["probe"]] } });
+      },
+      decelerate(20, 30).map((step) => -step),
+    );
+    await page.evaluate(() => person.end());
+    await frames(page, 6);
+    const run = await page.evaluate(() => probe.stop());
+    // A step made in a frame callback reaches the feed with the next frame's scroll event, so each one shows for a
+    // frame before the feed puts it back; it never adds up to coasting away from the end.
+    expect(run.gapMin).toBeGreaterThanOrEqual(-32);
+    expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+    expect(run.gapMax).toBeLessThanOrEqual(1);
+    expect(await isAtEnd(page)).toBe(true);
+    expect(await page.locator('[data-key="m300"]').count()).toBe(1);
+    await close(page);
+  }, 30_000);
+
+  test("a slow momentum tail with long pauses between its scroll events writes nothing until the scroller ends it", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    const tail = await page.evaluate(async (watch) => {
+      person.hold();
+      await person.drag([-40, -40]);
+      return person.glide({
+        steps: [-6, -3, -2, -1, -1, -1],
+        watch,
+        actions: { 2: [["growAbove", 100]] },
+        pause: { 1: 250, 2: 250, 3: 250, 4: 250, 5: 250 },
+      });
+    }, watch);
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
 });

@@ -19,8 +19,10 @@ const END_TOLERANCE = 2;
 const MEASURE_PASSES = 4;
 const ANNOUNCE_MS = 1_000;
 const HIGHLIGHT_MS = 1_600;
-/** Without a scroll event for this long after the finger lifts, iOS momentum scrolling has ended. */
-const SETTLE_MS = 150;
+/** In engines without `scrollend`, the reader's scroll has ended after this long without moving. */
+const QUIET_MS = 300;
+/** The longest wait for the `scrollend` of the reader's scroll after it last moved. */
+const END_WAIT_MS = 1_000;
 
 export type VirtualFeedScrollOptions = {
   /** Where the item lands in the visible area. Defaults to `"center"`. */
@@ -30,9 +32,15 @@ export type VirtualFeedScrollOptions = {
 };
 
 export type VirtualFeedController = {
-  /** Scrolls to a loaded item. Returns false when no loaded item has this key, so the caller can load around it first. */
+  /**
+   * Scrolls to a loaded item, also when the reader's scroll still coasts. Returns false when no loaded item has this
+   * key, so the caller can load around it first.
+   */
   scrollToKey: (key: string, options?: VirtualFeedScrollOptions) => boolean;
-  /** Follows the end again. When newer items exist but are not loaded, it asks `onLoadNewest` for them first. */
+  /**
+   * Follows the end again, also when the reader's scroll still coasts. When newer items exist but are not loaded, it
+   * asks `onLoadNewest` for them first.
+   */
   scrollToEnd: () => void;
   /** Whether the reader is at the end and new items keep the feed there. */
   isAtEnd: () => boolean;
@@ -113,10 +121,6 @@ const leadOf = (node: HTMLElement) => {
   return height;
 };
 
-const isIos = () =>
-  typeof navigator !== "undefined" &&
-  (/iP(?:hone|ad|od)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
-
 /**
  * A virtualized feed of items with variable heights that grows at both ends and keeps the reading position: it stays
  * at the end while the reader is there, and otherwise keeps the item in view where it is, whatever loads, grows, or
@@ -142,14 +146,29 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let anchor = { index: 0, delta: 0 };
   /** Key of the last item while no newer items existed; items appended after it are new. */
   let endKey: string | undefined;
-  /** The last scrollTop the feed wrote or saw; a scroll event that finds another value comes from the reader. */
+  /** The last scrollTop the feed wrote or accounted for; any other value comes from the reader. */
   let lastTop = 0;
+  /** The viewport height the reading position was last applied to. */
   let lastHeight = 0;
-  /** Correction held back during iOS touch and momentum scrolling: logical minus physical scrollTop. */
+  /**
+   * While the reader scrolls, the feed does not write scrollTop, which would fight a finger, momentum, or a scroll
+   * animation. It moves the rows by this much instead: the logical position minus the physical scrollTop.
+   */
   let deferred = 0;
-  let ios = false;
-  let touching = false;
-  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Touches that began in the feed and have not ended. */
+  const fingers = new Set<number>();
+  /** Where those touches began. Their touchend still goes there after the feed removed the row. */
+  const touched = new Set<EventTarget>();
+  /** The reader's scroll runs, from its first move until its scrollend, or a quiet time where the engine has none. */
+  let scrolling = false;
+  /** A jump by the application ended the reader's scroll; what is left of its momentum is put back. */
+  let overriding = false;
+  let lastMove = 0;
+  let endedAt = Number.NEGATIVE_INFINITY;
+  let endTimer: ReturnType<typeof setTimeout> | undefined;
+  let hasScrollEnd = false;
+  /** First item appended while the reader scrolls away from the end; reaching the end is judged before it. */
+  let appendedFrom = -1;
   let focusIndex = -1;
   let fresh: HTMLElement[] = [];
   let restoring = false;
@@ -212,33 +231,43 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const index = indexAt(top);
     return { index, delta: offsetOf(index) - top };
   };
+  const logicalTop = () => viewport.scrollTop + deferred;
   const setStick = (value: boolean) => {
     // The anchor is not maintained while following the end; leaving the end keeps what is visible now.
-    if (stick && !value && hi > lo) anchor = anchorAt(viewport.scrollTop + deferred);
+    if (stick && !value && hi > lo) anchor = anchorAt(logicalTop());
     stick = value;
     if (value) setUnseen(0);
     if (atEnd() === value) return;
     setAtEnd(value);
     props.onEndChange?.(value);
   };
-  const reachesEnd = (top: number) => hi === list.length && !props.hasNewer && total() - (top + viewport.clientHeight) <= END_TOLERANCE;
+  /**
+   * Whether `top` shows the end. It is judged in the geometry the position was last applied to: a viewport resize
+   * not yet handled, and items appended while the reader scrolls away from the end, do not count yet.
+   */
+  const reachesEnd = (top: number) =>
+    hi === list.length && !props.hasNewer && (appendedFrom >= 0 ? offsetOf(appendedFrom) : total()) - (top + lastHeight) <= END_TOLERANCE;
 
-  const deferring = () => ios && (touching || settleTimer !== undefined);
+  const deferring = () => fingers.size > 0 || scrolling;
   /** Scrolls to `target`, within what the layout can reach, and returns the position the reader gets. */
   const writeTop = (target: number, immediate: boolean) => {
     const next = Math.min(Math.max(0, total() - viewport.clientHeight), Math.max(0, target));
     if (!immediate && deferring()) {
-      deferred = next - viewport.scrollTop;
+      // The rows move instead; the scroll range stays the same, so the engine clamps nothing.
+      lastTop = viewport.scrollTop;
+      deferred = next - lastTop;
+      feed.style.height = `${total() - deferred}px`;
       return next;
     }
     deferred = 0;
+    feed.style.height = `${total()}px`;
     if (Math.abs(viewport.scrollTop - next) > 0.5) viewport.scrollTop = next;
     lastTop = viewport.scrollTop;
     return next;
   };
 
   const updateRange = () => {
-    const top = viewport.scrollTop;
+    const top = logicalTop();
     const height = viewport.clientHeight;
     const indices: number[] = [];
     if (hi > lo) {
@@ -296,7 +325,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
           aria-label={props.itemLabel?.(item)}
           aria-posinset={position(index())}
           aria-setsize={setSize()}
-          style={{ transform: `translateY(${(version(), offsetOf(index()))}px)` }}
+          style={{ transform: `translateY(${(version(), offsetOf(index()) - deferred)}px)` }}
         >
           <Show when={separator()}>
             {(content) => (
@@ -366,7 +395,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
 
   /**
    * Puts the reading position back after sizes, items, or the viewport changed: the end while following it, the
-   * anchor otherwise. `immediate` corrections, which follow structural changes, are never held back on iOS.
+   * anchor otherwise. While the reader scrolls, it moves the rows instead of the scroll position, except for
+   * `immediate` corrections, which follow structural changes and jumps.
    */
   const restore = (immediate = false) => {
     if (!viewport) return;
@@ -381,7 +411,6 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       for (let pass = 0; ; pass++) {
         restoreAgain = false;
         recompute();
-        feed.style.height = `${total()}px`;
         target = stick ? total() : offsetOf(anchor.index) - anchor.delta;
         top = writeTop(target, immediate);
         updateRange();
@@ -403,9 +432,87 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
 
   const captureAnchor = () => {
-    const top = viewport.scrollTop + deferred;
+    const top = logicalTop();
     anchor = anchorAt(top);
     setStick(reachesEnd(top));
+  };
+
+  /**
+   * Whether scrollTop moved since the feed last wrote or accounted for it. When a size change shortens the scroll
+   * range, the engine clamps the position onto the new end; that move is the size change, not the reader.
+   */
+  const readerMoved = () => {
+    const top = viewport.scrollTop;
+    if (Math.abs(top - lastTop) <= 0.5) return false;
+    const end = viewport.scrollHeight - viewport.clientHeight;
+    return !(lastTop > end + 1 && Math.abs(top - end) <= 1);
+  };
+
+  /**
+   * Takes a scroll position the feed did not make as the reader's, whatever moved it: touch, momentum, wheel, keys,
+   * the scrollbar, focus, scrollIntoView, find in page, or assistive technology. Returns whether there was one.
+   */
+  const noteReader = () => {
+    if (!readerMoved()) return false;
+    lastMove = performance.now();
+    if (overriding) {
+      // Momentum left from before a jump of the application does not take the reader away again.
+      armEnd(QUIET_MS);
+      restore(true);
+      return false;
+    }
+    armEnd();
+    lastTop = viewport.scrollTop;
+    scrolling = true;
+    captureAnchor();
+    return true;
+  };
+
+  const armEnd = (ms = hasScrollEnd ? END_WAIT_MS : QUIET_MS) => {
+    clearTimeout(endTimer);
+    endTimer = setTimeout(() => {
+      endTimer = undefined;
+      // A finger holds the scroll until it lifts; a move without its scroll event yet continues it.
+      if (fingers.size > 0) return;
+      if (readerMoved()) noteReader();
+      else endScroll();
+    }, ms);
+  };
+
+  /** The reader's scroll ended: what it held back is written in one step that moves nothing the reader sees. */
+  const endScroll = () => {
+    clearTimeout(endTimer);
+    endTimer = undefined;
+    scrolling = false;
+    overriding = false;
+    appendedFrom = -1;
+    restore();
+  };
+
+  /**
+   * A jump of the application ends the reader's scroll in progress: the jump lands at once, and what is left of the
+   * momentum is put back until it has been still for a quiet time, or the reader touches, wheels, clicks, or presses
+   * a key. A scrollend does not end this: a momentum stopped by the engine can still deliver a step in flight.
+   */
+  const takeOver = () => {
+    appendedFrom = -1;
+    if (!scrolling || fingers.size > 0) return;
+    scrolling = false;
+    overriding = true;
+    lastMove = performance.now();
+    armEnd(QUIET_MS);
+    // A scroller that cannot scroll drops its momentum where the engine allows that. It scrolls again after a frame
+    // in which nothing was left to put back.
+    viewport.style.overflowY = "hidden";
+    let seen = Number.NaN;
+    const check = () => {
+      if (disposed) return;
+      if (overriding && lastMove !== seen) {
+        seen = lastMove;
+        requestAnimationFrame(check);
+      } else viewport.style.removeProperty("overflow-y");
+    };
+    requestAnimationFrame(check);
   };
 
   /** Lays out a window of about half the maximum around `center`. */
@@ -492,7 +599,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   /** Grows the window or asks for more items when the reader nears an edge. */
   const checkEdges = () => {
     if (hi <= lo || restoring) return;
-    const top = viewport.scrollTop;
+    const top = logicalTop();
     const height = viewport.clientHeight;
     // Rows measured taller than estimated can grow the window past the cap without any edge moving.
     if (total() > MAX_WINDOW && trimWindow(top + height / 2 > total() / 2 ? "start" : "end")) {
@@ -543,10 +650,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   /** Applies a new `items` array: appends follow the end, prepends and other changes keep the anchor by key. */
   const sync = (next: readonly T[]) => {
     // The reader may have scrolled in this frame before its scroll event ran; take that position first.
-    if (keys.length > 0 && Math.abs(viewport.scrollTop - lastTop) > 0.5) {
-      lastTop = viewport.scrollTop;
-      captureAnchor();
-    }
+    if (keys.length > 0) noteReader();
     const length = next.length;
     const nextKeys = next.map(props.getKey);
     const previous = keys.length;
@@ -557,6 +661,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const reset = () => {
       sizes = Float64Array.from(next, estimate);
       focusIndex = -1;
+      appendedFrom = -1;
       setStick(!props.hasNewer);
       anchor = { index: 0, delta: 0 };
       setUnseen(0);
@@ -578,6 +683,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       sizes = grown;
       if (hi === previous) hi = length;
       appended = true;
+      // Away from the end, the reader's scroll in progress still reaches the end it was heading for.
+      if (!stick && deferring() && appendedFrom < 0) appendedFrom = previous;
       // Only items after the newest one the feed has known are new; older pages toward the end are history.
       const known = endKey === undefined ? -1 : nextKeys.lastIndexOf(endKey);
       if (known >= 0) added = next.slice(Math.max(previous, known + 1));
@@ -589,6 +696,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       sizes = grown;
       anchor = { index: anchor.index + shift, delta: anchor.delta };
       if (focusIndex >= 0) focusIndex += shift;
+      if (appendedFrom >= 0) appendedFrom += shift;
       if (lo > 0) lo += shift;
       hi += shift;
     } else {
@@ -612,6 +720,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         };
         const wasAtStart = lo === 0;
         const wasAtEnd = hi === previous;
+        appendedFrom = -1;
         anchor = { index: survivor(anchor.index), delta: anchor.delta };
         focusIndex = focusKey === undefined ? -1 : (position.get(focusKey) ?? -1);
         lo = wasAtStart ? 0 : survivor(lo);
@@ -631,9 +740,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     recompute();
     const center = stick ? hi - 1 : anchor.index;
     const trimmed = total() > MAX_WINDOW && trimWindow(center - lo > hi - 1 - center ? "start" : "end");
-    // Items added below a reader who scrolled up need no correction, so one held back during iOS momentum stays so.
-    restore(!appended || stick || trimmed);
-    if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
+    // Appended items wait for the reader's scroll to end like other size changes; the rows show them meanwhile.
+    restore(!appended || trimmed);
+    if (!stick && reachesEnd(logicalTop())) setStick(true);
     if (added.length > 0) {
       if (!stick) setUnseen((value) => value + added.length);
       queueAnnouncement(added);
@@ -645,6 +754,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
    * it, following the end keeps `onLoadNewer` paging until the newest item arrives or the reader scrolls away.
    */
   const scrollToEnd = () => {
+    takeOver();
     setStick(!props.hasNewer || Boolean(props.onLoadNewer || props.onLoadNewest));
     if (props.hasNewer && props.onLoadNewest) loadNewest();
     if (hi < list.length) windowAround(list.length - 1);
@@ -654,6 +764,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const scrollToKey = (key: string, options: VirtualFeedScrollOptions = {}) => {
     const index = keys.indexOf(key);
     if (index < 0) return false;
+    takeOver();
     if (index < lo || index >= hi) windowAround(index);
     recompute();
     const delta = () => (options.align === "start" ? 0 : Math.max(0, (viewport.clientHeight - sizes[index]!) / 2));
@@ -665,7 +776,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       anchor = { index, delta: delta() };
       restore(true);
     }
-    if (reachesEnd(viewport.scrollTop)) setStick(true);
+    if (reachesEnd(logicalTop())) setStick(true);
     if (options.highlight) {
       clearTimeout(highlightTimer);
       setHighlighted(key);
@@ -683,7 +794,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     if (outside) windowAround(index);
     recompute();
     focusIndex = index;
-    const top = viewport.scrollTop;
+    const top = logicalTop();
     const height = viewport.clientHeight;
     const start = offsetOf(index);
     const size = sizes[index]!;
@@ -720,26 +831,25 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   };
 
   const onScroll = () => {
-    const top = viewport.scrollTop;
     // The feed checked its edges when it wrote scrollTop. Its own scroll event arrives a frame later, and checking again
     // then would retry a load that failed in between.
-    const reader = Math.abs(top - lastTop) > 0.5;
-    if (reader) {
-      lastTop = top;
-      captureAnchor();
-    }
-    if (ios && !touching && settleTimer !== undefined) settle();
+    const reader = noteReader();
     updateRange();
     if (reader) checkEdges();
   };
 
-  /** Applies the correction held back during iOS momentum once scrolling has come to rest. */
-  const settle = () => {
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(() => {
-      settleTimer = undefined;
-      if (!touching && deferred !== 0) restore();
-    }, SETTLE_MS);
+  const onScrollEnd = () => {
+    endedAt = performance.now();
+    if (fingers.size > 0 || !scrolling) return;
+    const seen = lastMove;
+    // A scrollend ends the scroll only when the feed then stands still. Engines also fire one for each write that
+    // moved the feed, and iOS sends it back from the UI process late enough to land in the momentum of a later scroll.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (disposed || fingers.size > 0 || !scrolling || lastMove !== seen || readerMoved()) return;
+        endScroll();
+      }),
+    );
   };
 
   const controller: VirtualFeedController = {
@@ -757,7 +867,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       () => {
         if (!props.hasNewer) endKey = keys[keys.length - 1];
         if (hi <= lo) return;
-        if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
+        if (!stick && reachesEnd(logicalTop())) setStick(true);
         // Only newer pages can be followed; with just `onLoadNewest`, "Jump to latest" has to show.
         else if (stick && props.hasNewer && !props.onLoadNewer) setStick(false);
         checkEdges();
@@ -767,11 +877,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   );
 
   onMount(() => {
-    ios = isIos();
+    hasScrollEnd = "onscrollend" in window;
     lastHeight = viewport.clientHeight;
     const observer = new ResizeObserver((entries) => {
       observing = true;
       try {
+        // A scroll of the reader in this frame counts first, in the geometry from before these changes.
+        noteReader();
         fresh = [];
         let resized = false;
         const measured: Array<readonly [HTMLElement, number]> = [];
@@ -787,7 +899,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
             measured.push([row, entry.borderBoxSize?.[0]?.blockSize ?? row.getBoundingClientRect().height]);
           }
         }
-        if (measure(measured) || resized) restore(resized);
+        if (measure(measured) || resized) restore();
       } finally {
         observing = false;
       }
@@ -807,24 +919,51 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       });
     };
     unobserveRow = (row) => observer.unobserve(row);
-    const touchStart = () => {
-      touching = true;
+    const release = () => {
+      for (const target of touched) {
+        target.removeEventListener("touchend", touchEnd);
+        target.removeEventListener("touchcancel", touchEnd);
+      }
+      touched.clear();
     };
-    const touchEnd = () => {
-      touching = false;
-      if (ios) settle();
+    const touchStart = (event: TouchEvent) => {
+      // A touch whose end the feed missed has left the screen by now.
+      const down = new Set(Array.from(event.touches, (touch) => touch.identifier));
+      for (const id of fingers) if (!down.has(id)) fingers.delete(id);
+      for (const touch of Array.from(event.changedTouches)) fingers.add(touch.identifier);
+      overriding = false;
+      // Touch events stay with the element the touch began on, also when the feed removes its row meanwhile.
+      const target = event.target;
+      if (target && !touched.has(target)) {
+        touched.add(target);
+        target.addEventListener("touchend", touchEnd, { passive: true });
+        target.addEventListener("touchcancel", touchEnd, { passive: true });
+      }
+    };
+    function touchEnd(event: Event) {
+      for (const touch of Array.from((event as TouchEvent).changedTouches)) fingers.delete(touch.identifier);
+      if (fingers.size > 0) return;
+      release();
+      // A scroll that already ended under the finger has no momentum left.
+      if (!scrolling || endedAt >= lastMove) endScroll();
+      else armEnd();
+    }
+    // Input of the reader ends a takeover by the application at once.
+    const act = () => {
+      overriding = false;
     };
     viewport.addEventListener("touchstart", touchStart, { passive: true });
-    viewport.addEventListener("touchend", touchEnd, { passive: true });
-    viewport.addEventListener("touchcancel", touchEnd, { passive: true });
+    viewport.addEventListener("scrollend", onScrollEnd);
+    for (const type of ["wheel", "keydown", "pointerdown"]) viewport.addEventListener(type, act, { passive: true });
     onCleanup(() => {
       disposed = true;
       observer.disconnect();
       cancelAnimationFrame(laterFrame);
       viewport.removeEventListener("touchstart", touchStart);
-      viewport.removeEventListener("touchend", touchEnd);
-      viewport.removeEventListener("touchcancel", touchEnd);
-      clearTimeout(settleTimer);
+      viewport.removeEventListener("scrollend", onScrollEnd);
+      for (const type of ["wheel", "keydown", "pointerdown"]) viewport.removeEventListener(type, act);
+      release();
+      clearTimeout(endTimer);
       clearTimeout(announceTimer);
       clearTimeout(highlightTimer);
       for (const row of rows.values()) row.dispose();
