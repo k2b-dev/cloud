@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createDialogCore } from "../src/feedback/dialog-core";
 import { createDomTestHarness } from "./dom";
 
@@ -220,6 +220,71 @@ test("default dialog focus prefers an input over the preceding close button", as
   core.close();
   await result;
   dom.cleanup();
+});
+
+describe("initial focus in a held first frame", () => {
+  /** Holds every animation frame until `release`, like a browser that delays a page's first frame. */
+  const holdFrames = () => {
+    const frames: FrameRequestCallback[] = [];
+    const raf = spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
+    return {
+      release: () => {
+        for (const frame of frames.splice(0)) frame(0);
+      },
+      restore: () => raf.mockRestore(),
+    };
+  };
+  const pinDialog = (dom: ReturnType<typeof createDomTestHarness>) => {
+    const close = dom.document.createElement("button");
+    const first = dom.document.createElement("input");
+    const second = dom.document.createElement("input");
+    const content = dom.document.createElement("div");
+    content.append(close, first, second, dom.document.createElement("input"));
+    return { close, first, second, content };
+  };
+
+  test("replaces the focus that opening left, also the native dialog's own pick", async () => {
+    const dom = createDomTestHarness();
+    const core = createDialogCore();
+    const frames = holdFrames();
+    const { close, first, content } = pinDialog(dom);
+    // A browser's showModal focuses the first focusable element, here the close button; happy-dom's moves no focus.
+    const native = spyOn(dom.window.HTMLDialogElement.prototype, "showModal").mockImplementation(() => {
+      dom.document.querySelector("dialog")?.setAttribute("open", "");
+      close.focus();
+    });
+    try {
+      const result = core.open(() => content);
+      expect(dom.document.activeElement).toBe(close);
+      frames.release();
+      expect(dom.document.activeElement).toBe(first);
+      core.close();
+      await result;
+    } finally {
+      native.mockRestore();
+      frames.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("keeps focus that moved before that frame", async () => {
+    const dom = createDomTestHarness();
+    const core = createDialogCore();
+    const frames = holdFrames();
+    const { second, content } = pinDialog(dom);
+    try {
+      const result = core.open(() => content);
+      // A typed digit moves focus to the next one before the frame arrives.
+      second.focus();
+      frames.release();
+      expect(dom.document.activeElement).toBe(second);
+      core.close();
+      await result;
+    } finally {
+      frames.restore();
+      dom.cleanup();
+    }
+  });
 });
 
 test("modeless transitions preserve content, focus, stacking, position and Escape", async () => {

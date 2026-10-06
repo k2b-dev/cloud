@@ -474,8 +474,13 @@ export const createDialogCore = (): DialogCore => {
         }
         options.signal?.addEventListener("abort", abort, { once: true });
         if (options.signal?.aborted) abort();
+        // Where opening left focus, the native dialog's own pick included. Focus that the content or a person moved
+        // before the next frame stays: a browser can hold that frame back while keys already arrive.
+        const opened = document.activeElement;
         schedule(() => {
-          if (state.stack[state.stack.length - 1] === entry) resolveInitialFocusTarget(entry, dialog)?.focus();
+          if (state.stack[state.stack.length - 1] !== entry) return;
+          if (document.activeElement !== opened && !focusUnclaimed(dialog)) return;
+          resolveInitialFocusTarget(entry, dialog)?.focus();
         });
       } catch (error) {
         entry.resolve = undefined;

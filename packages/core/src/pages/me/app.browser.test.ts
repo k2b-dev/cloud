@@ -278,6 +278,7 @@ describe("the pairing dialog in a browser", () => {
           release = resolve;
         });
         let confirmations = 0;
+        const codes: string[] = [];
         const context = await browser.newContext({
           viewport: { width: view.width, height: view.height },
           deviceScaleFactor: 1,
@@ -322,6 +323,7 @@ describe("the pairing dialog in a browser", () => {
           if (post && pathname === `${api}/${PAIRING}/confirm`) {
             // Three wrong codes: the third cancels the pairing.
             confirmations += 1;
+            codes.push(route.request().postDataJSON().code);
             return confirmations < 3
               ? route.fulfill({
                   status: 409,
@@ -342,11 +344,18 @@ describe("the pairing dialog in a browser", () => {
               return { height: dialog.getBoundingClientRect().height, overflow: body.scrollHeight - body.clientHeight };
             });
           };
-          // Keys go to the focused element. Playwright sees the code step before the dialog's first frame, where the
-          // dialog puts focus in the code, so each code waits for that focus.
+          // Keys go to the focused element. The dialog places its initial focus in the next frame after it opens, and
+          // Playwright can type before that frame, which WebKit may hold back after the reload. So each code waits for
+          // the next frame, starts at the first digit, and arrives whole.
           const enter = async (code: string) => {
-            await tab.waitForFunction(() => document.activeElement?.matches(".k2b-pin-input__digit") ?? false);
+            await tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+            expect(await tab.evaluate(() => document.activeElement === document.querySelector(".k2b-pin-input__digit"))).toBe(true);
             await tab.keyboard.type(code);
+            expect(
+              await tab
+                .locator(".k2b-pin-input__digit")
+                .evaluateAll((digits: HTMLInputElement[]) => digits.map((digit) => digit.value).join("")),
+            ).toBe(code);
             await tab.keyboard.press("Enter");
           };
           await tab.goto(`${origin}/me/app`);
@@ -366,6 +375,8 @@ describe("the pairing dialog in a browser", () => {
             .waitFor();
           await enter("333333");
           await measure("too many wrong codes", t.pwaTooManyTries);
+          // Each Enter sent its whole code once.
+          expect(codes).toEqual(["111111", "222222", "333333"]);
           results.push({
             width: view.width,
             touch: view.touch,
