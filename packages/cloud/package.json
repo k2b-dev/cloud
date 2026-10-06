@@ -39,6 +39,7 @@
     "./browser/search": "./src/browser/search.ts",
     "./browser/testing": "./src/browser/testing.ts",
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
+    "./browser/files": "./src/browser/files.tsx",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
     "./capabilities/store": "./src/capabilities/executions.ts",

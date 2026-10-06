@@ -275,6 +275,12 @@ const cloudPages: UiCatalogPage[] = [
     icon: "ti ti-cloud-search",
     summary: "Choose a permission-filtered Cloud resource through Universal Search and keep its stable reference.",
   },
+  {
+    slug: "file-chooser",
+    title: "Cloud file chooser",
+    icon: "ti ti-paperclip",
+    summary: "Add files from this device or from any Cloud app that offers files, as ordinary File objects.",
+  },
 ];
 
 const entry = (

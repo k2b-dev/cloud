@@ -1,29 +1,77 @@
 ---
-title: Offer files to other applications
+title: Offer and choose files across applications
 navTitle: File providers
 section: Platform services
 order: 558
-description: Implement the file-provider contract so other Cloud applications can browse, open, and save files in your application.
-tags: [capabilities, files, contracts, streams]
+description: Let people add files from any Cloud application with one chooser, and implement the file-provider contract so your application can offer its files.
+tags: [capabilities, files, contracts, streams, upload]
 updated: 2026-10-06
 ---
 
-# Offer files to other applications
+# Offer and choose files across applications
 
 A file provider lets other applications work with the files your application
 stores. A consumer browses your folders, opens a file, and, if you allow it,
 saves a new file into a folder. Any application that publishes a compatible
 declaration becomes a provider, with the same contract and no special
-treatment.
+treatment. Files is one.
 
-Files implements the provider operations listed below. It declares itself as
-a provider in a later release, together with a shared file chooser. Until
-then, no built-in application declares `fileProvider`.
+Most applications only consume: their upload action calls `chooseFiles()` and
+people add files from this device or from any provider. Implement the contract
+when your application stores files that people want to use elsewhere.
 
 The contract is a set of schemas exported from `@k2b/cloud/contracts`, built
 from ordinary [capabilities](/en/docs/platform/capabilities) and
 [binary streams](/en/docs/platform/capabilities#binary-streams). Your
 application keeps its own identifiers, permissions, storage, and routes.
+
+## Add files from providers
+
+Call `chooseFiles()` from `@k2b/cloud/browser/files` in the click or key
+handler of your upload action, and pass the result to the upload path you
+already have:
+
+```ts
+import { chooseFiles } from "@k2b/cloud/browser/files";
+
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+
+const attach = async () => {
+  const files = await chooseFiles({ multiple: true, maxBytes: MAX_ATTACHMENT_BYTES });
+  if (files.length > 0) await uploadAttachments(files);
+};
+```
+
+It resolves ordinary `File` objects with name, type, size, and modification
+time, or `[]` when the person cancels. Your limits, progress display,
+permission checks, and scans keep working on them unchanged. Mail attaches
+files this way.
+
+- **No providers:** it opens the device's file dialog directly, as an
+  `<input type="file">` would. That dialog needs the user activation of the
+  click, so do not `await` anything before calling it.
+- **With providers:** it opens one chooser. **This device** comes first, then
+  every provider. Inside a provider, people browse folders page by page,
+  filter by name, and choose files. See the
+  [file chooser](/en/ui/cloud/file-chooser) for the presentation.
+- **`accept`** (`<input accept>` syntax) and **`maxBytes`** limit what can be
+  chosen. Provider files that do not match are shown disabled with the reason.
+  The limit is the smaller of `maxBytes` and the provider's read limit; Files
+  reads up to 50 MiB. Files from the device are not checked here, so keep
+  your own checks.
+- **`multiple`** allows several files; it defaults to `false`. **`signal`**
+  closes the chooser.
+- **Reads** run through the provider's read stream, at most two at a time,
+  with progress per file. **Stop** cancels them. A body that differs from the
+  announced size fails instead of arriving cut off. The chosen files stay in
+  browser memory until your upload has read them, at most `maxBytes` each.
+- **Access:** every folder page and every read is an ordinary capability
+  call as the signed-in person; the provider authorizes each one, and Cloud
+  records it like any other call. Showing a provider is not a grant.
+
+A chosen file is a copy. `chooseFiles()` does not return where it came from,
+and later changes in the provider do not reach your copy. Keep one upload
+action: do not add a second "From Cloud" button next to it.
 
 ## Functions
 
@@ -201,13 +249,23 @@ no separate registration, route, or setting. The declaration names the local
 IDs to call; invoke them through the ordinary capability client and stream
 transfer.
 
+`chooseFiles()` does this for you. It reads every catalog page once per page
+load, while the browser is idle, and keeps the applications whose `list` and
+`read` pass `fileProviderIssues`. If the list is not known yet when someone
+clicks, the chooser opens at once and providers join below **This device** as
+they arrive. A failed catalog read shows **Try again** instead of an empty
+list.
+
 ## Roll out a provider
 
 `fileProvider` is optional. A manifest without it keeps its earlier shape and
 hash, so nothing changes for applications that do not offer files.
 
-Before any application declares `fileProvider`, update every reader of the
-capability catalog to a release that
+Files declares `fileProvider`. Update Core before Files, and update every
+other reader of the capability catalog once.
+
+Before your own application declares `fileProvider`, update every reader of
+the capability catalog to a release that
 [reads manifests from newer releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases):
 
 - Core;
@@ -217,7 +275,7 @@ capability catalog to a release that
 - the `capabilities` plugin of each `cld` profile, with
   `cld plugins update capabilities`.
 
-A reader of an earlier release cannot read a manifest that carries
+A reader of cloud-v0.29.0 or earlier cannot read a manifest that carries
 `fileProvider`. Core drops the application from its catalog, and the other
 readers fail on the whole catalog page, so every application disappears for
 them, not only the provider. See

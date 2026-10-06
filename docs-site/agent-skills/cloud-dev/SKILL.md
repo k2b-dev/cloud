@@ -80,8 +80,8 @@ alternative:
 - `@k2b/stdlib` for portable TypeScript and browser utilities, and
   `@k2b/stdlib/solid` for owner-local queries, mutations, and interaction
   primitives;
-- `@k2b/ssr` together with `@k2b/cloud/ssr` for SSR, islands, and
-  navigation;
+- `@k2b/ssr` with `@k2b/cloud/ssr` for SSR, islands, and navigation;
+- `chooseFiles()` from `@k2b/cloud/browser/files` for upload actions;
 - `@k2b/sync` for jobs, queues, schedulers, topics, mutexes, and bounded
   distributed coordination, `@k2b/sync/retry` for local retries, and
   `@k2b/cloud/server` for rate limits;

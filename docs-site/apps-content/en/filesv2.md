@@ -649,11 +649,15 @@ extension is unknown. Files never inspects the content for it.
 
 ## Offer files to other apps
 
-Files implements the operations of the shared
-[file-provider contract](/en/docs/platform/file-providers), so other apps can
-browse, open, and save files in it. Files declares itself as a provider in a
-later release, together with a shared file chooser. Until then, apps call
-these capabilities by their IDs like any other Files capability.
+Files is a [file provider](/en/docs/platform/file-providers): other apps can
+browse, open, and save files in it. When you add files in another app, for
+example attachments in Mail, the file chooser lists **Files** next to
+**This device**, and you choose files from your storage without downloading
+them first. The chooser shows only what you can read, and a file arrives in
+the other app as a copy; changing it there does not change it in Files.
+
+Files declares `fileProvider: { list: "provider.list", read: "content.read",
+save: "provider.save" }` in its capability manifest:
 
 - `provider.list` shows a person's usable storage bases as the root, under the
   names Files shows, such as **My files**. While storage cannot be reached,
