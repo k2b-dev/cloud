@@ -92,6 +92,13 @@ refs. Nothing needs to be migrated:
   `cld plugins update filesv2`. An older plugin reads `n:…` as an area named
   `n` and rejects it.
 
+If you roll Files back to an earlier release, refs stored before this update
+keep working, and nothing is rewritten. An earlier Files cannot read the
+stable `n:…` refs that this release handed out: Spaces links, Grids resource
+fields, Assistant App data, copied references, and `cld filesv2` file IDs
+created after the update answer `not_found` until Files runs this release or a
+later one again.
+
 See [Refer to files and folders](/en/apps/filesv2#refer-to-files-and-folders).
 
 ## Assistant live updates use the shared live layer
