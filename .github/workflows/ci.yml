@@ -1,8 +1,9 @@
 name: CI
 
 # One workflow gates every change. `gate` is the only required status check:
-# it fails when any needed job failed or was cancelled, and treats path-skipped
-# jobs as success.
+# it needs every other job and passes only when each one succeeded or, for a
+# path-filtered job, was skipped by its own `if:`. Any other result, such as
+# failure, cancelled, timed_out, or abandoned during an Actions outage, fails it.
 
 # No job installs from the runner's apt mirror: its outages hang apt-get
 # without output until the job times out. Chromium's system libraries come
@@ -531,8 +532,17 @@ jobs:
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
+          # The path-filtered jobs, whose `if:` reads the `changes` outputs.
+          # Only they may be skipped; every other job must succeed (`ci-gate` check).
+          MAY_SKIP: grids ui docs packed bundles images
         run: |
           set -euo pipefail
+          jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          failed=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key] | join(", ")')
-          [[ -z "$failed" ]] || { echo "Failed jobs: $failed" >&2; exit 1; }
+          failed=$(echo "$RESULTS" | jq -r --arg maySkip "$MAY_SKIP" '
+            ($maySkip | split(" ")) as $maySkip
+            | [to_entries[]
+                | select(.value.result != "success" and (.value.result != "skipped" or (.key | IN($maySkip[]) | not)))
+                | "\(.key) (\(.value.result))"]
+            | join(", ")')
+          [[ -z "$failed" ]] || { echo "Jobs that did not pass: $failed" >&2; exit 1; }

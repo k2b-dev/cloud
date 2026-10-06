@@ -23,7 +23,7 @@ bun run test
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
 service API contracts, localization, CSS architecture, formatting, the
-application set, and every package typecheck. A package typecheck covers its
+application set, the CI gate's job list, and every package typecheck. A package typecheck covers its
 `scripts/` as well as `src/`, so a package's build, smoke, and verification
 scripts break the gate when they drift from the code they drive. The only
 exceptions are scripts a package excludes by name in its `tsconfig.json` and
@@ -312,6 +312,20 @@ stable-reference suite starts a private Filegate this way. The integration job
 pulls such images first, with retries, because `docker run` does not retry a
 failed pull. When you add a suite like this or change its image, add the image
 to that pull step in `.github/workflows/ci.yml`.
+
+`gate` is the only required status check. It needs every other job in
+`ci.yml` and passes only when each one reports `success`, or `skipped` for a
+path-filtered job listed in its `MAY_SKIP` variable. Any other result fails it
+and names the job: `failure`, `cancelled`, `timed_out`, a job skipped behind a
+failed `setup`, and `abandoned` from a GitHub Actions outage. A path-filtered
+job skipped because `changes` did not succeed fails through the result of
+`changes`. The gate fails as well when it receives no job results.
+
+The `ci-gate` check keeps `needs` and `MAY_SKIP` in line with the jobs. A job
+may have an `if:` only as a path filter: it needs `changes`, and its condition
+reads `needs.changes.outputs`. `scripts/checks/ci-gate.test.ts` runs the gate
+step from `ci.yml` against these results. Like the runner, it needs `jq` on
+`PATH`.
 
 The gate also builds the production bundle of every application whose package
 changed, and of every application when `packages/cloud`, `packages/ui`, or
