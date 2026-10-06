@@ -1327,8 +1327,12 @@
   opacity: 1;
 }
 
+/* A block of its own: as an inline box, WebKit would set the item's line box
+   on the field's text baseline and make the item a fraction of a pixel taller
+   than a row. */
 .k2b-ui .k2b-content-file-tree__rename {
   @apply h-6 w-full rounded-md px-1.5 text-xs;
+  display: block;
   box-sizing: border-box;
   border: 1px solid var(--k2b-border);
   color: var(--k2b-text);
