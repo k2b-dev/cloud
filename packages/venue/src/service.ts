@@ -3,6 +3,7 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   err,
   fail,
   getEffectivePermission,
@@ -12,13 +13,13 @@ import {
   type Principal,
   type Result,
   resolveDisplayNames,
-  updateAccess,
 } from "@k2b/cloud/server";
 import {
   coreSettings,
   isStandaloneServiceAccountKind,
   isUniqueViolation,
   logger,
+  type ServiceAccountKind,
   serviceAccounts,
   toPgUuidArray,
 } from "@k2b/cloud/services";
@@ -379,8 +380,9 @@ const icsDate = (date: Date): string =>
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}/, "");
 
-const listAccess = async (venueId: string): Promise<AccessEntry[]> => {
-  const rows = await sql<
+/** The venue's grants without display names; pass the transaction that locked the venue to read them for a change. */
+const readAccessEntries = async (venueId: string, db: SqlClient = sql): Promise<AccessEntry[]> => {
+  const rows = await db<
     {
       access_id: string;
       user_id: string | null;
@@ -389,32 +391,36 @@ const listAccess = async (venueId: string): Promise<AccessEntry[]> => {
       authenticated_only: boolean;
       permission: PermissionLevel;
       created_at: Date;
+      service_account_kind: ServiceAccountKind | null;
     }[]
   >`
-    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
+    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at,
+           sa.kind AS service_account_kind
     FROM venue.venue_access va
     JOIN auth.access a ON a.id = va.access_id
+    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
     WHERE va.venue_id = ${venueId}::uuid
     ORDER BY a.created_at
   `;
 
-  return resolveDisplayNames(
-    rows.map((row) => ({
-      id: row.access_id,
-      principal: row.user_id
-        ? { type: "user", userId: row.user_id }
-        : row.group_id
-          ? { type: "group", groupId: row.group_id }
-          : row.service_account_id
-            ? { type: "service_account", serviceAccountId: row.service_account_id }
-            : row.authenticated_only
-              ? { type: "authenticated" }
-              : { type: "public" },
-      permission: row.permission,
-      createdAt: row.created_at.toISOString(),
-    })),
-  );
+  return rows.map((row) => ({
+    id: row.access_id,
+    principal: row.user_id
+      ? { type: "user", userId: row.user_id }
+      : row.group_id
+        ? { type: "group", groupId: row.group_id }
+        : row.service_account_id
+          ? { type: "service_account", serviceAccountId: row.service_account_id }
+          : row.authenticated_only
+            ? { type: "authenticated" }
+            : { type: "public" },
+    permission: row.permission,
+    createdAt: row.created_at.toISOString(),
+    serviceAccountKind: row.service_account_kind ?? undefined,
+  }));
 };
+
+const listAccess = async (venueId: string): Promise<AccessEntry[]> => resolveDisplayNames(await readAccessEntries(venueId));
 
 const createOwnerAccessInTx = async (tx: SqlClient, userId: string): Promise<Result<{ id: string }>> => {
   const [user] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
@@ -441,6 +447,18 @@ const mayReadAcrossVenues = async (subject: VenueAccessSubject): Promise<boolean
   return Boolean(account && isStandaloneServiceAccountKind(account.kind));
 };
 
+/**
+ * What the venue's grants give the subject, capped by a service account's scopes. Pass the
+ * transaction that locked the venue to read the grants it is about to change.
+ */
+const grantedPermission = async (venueId: string, subject: VenueAccessSubject, db: SqlClient = sql): Promise<PermissionLevel> => {
+  const entries = await readAccessEntries(venueId, db);
+  const permission = await getEffectivePermission({ accessIds: entries.map((entry) => entry.id), subject: subject.subject }, db);
+  return subject.subject.type === "service_account"
+    ? minPermission(permission, permissionFromVenueScopes(subject.serviceAccountScopes))
+    : permission;
+};
+
 /** Service accounts are capped by their credential scopes; a bound account only ever reaches its own venue. */
 const getPermission = async (venueId: string, subjectInput: UserLike | VenueAccessSubject): Promise<PermissionLevel> => {
   const subject = toAccessSubject(subjectInput);
@@ -448,15 +466,7 @@ const getPermission = async (venueId: string, subjectInput: UserLike | VenueAcce
     const boundVenueId = subject.serviceAccountResourceId;
     if (boundVenueId ? boundVenueId !== venueId : !(await mayReadAcrossVenues(subject))) return "none";
   }
-
-  const entries = await listAccess(venueId);
-  const permission = await getEffectivePermission({
-    accessIds: entries.map((entry) => entry.id),
-    subject: subject.subject,
-  });
-  return subject.subject.type === "service_account"
-    ? minPermission(permission, permissionFromVenueScopes(subject.serviceAccountScopes))
-    : permission;
+  return grantedPermission(venueId, subject);
 };
 
 const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<Venue[]> => {
@@ -832,25 +842,56 @@ const grantAccess = async (venueId: string, principal: Principal, permission: Pe
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };
 
-const changeAccess = async (venueId: string, accessId: string, permission: PermissionLevel): Promise<Result<AccessEntry>> => {
-  const entries = await listAccess(venueId);
-  if (!entries.some((entry) => entry.id === accessId)) return fail(err.notFound("Access entry"));
-  const updated = await updateAccess({ id: accessId, permission });
+/**
+ * Change or remove one grant under the venue row lock, so concurrent changes see
+ * each other: the actor must still manage the venue, and none of the changes
+ * leaves it without a manager. The caller has resolved the venue for the actor,
+ * as the routes do; under the lock only the grants can have changed since.
+ */
+const writeAccess = (
+  venueId: string,
+  accessId: string,
+  permission: PermissionLevel | null,
+  actor: UserLike | VenueAccessSubject,
+  locale?: string,
+): Promise<Result<void>> =>
+  sql.begin(async (tx): Promise<Result<void>> => {
+    await tx`SELECT id FROM venue.venues WHERE id = ${venueId}::uuid FOR UPDATE`;
+    if (!hasPermission(await grantedPermission(venueId, toAccessSubject(actor), tx), "admin")) {
+      return fail(err.forbidden("You do not have access to this venue"));
+    }
+    const before = await readAccessEntries(venueId, tx);
+    if (!before.some((entry) => entry.id === accessId)) return fail(err.notFound("Access entry"));
+    const after =
+      permission === null
+        ? before.filter((entry) => entry.id !== accessId)
+        : before.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry));
+    // Venue's editor calls the admin level “Admin”; the message uses the same word.
+    const guarded = ensureManagerRemains({ before, after, locale, level: venueMessages.resolve(locale ? [locale] : []).t.admin });
+    if (!guarded.ok) return fail(guarded.error);
+    const changed =
+      permission === null
+        ? await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`
+        : await tx`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${accessId}::uuid`;
+    return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
+  });
+
+const changeAccess = async (
+  venueId: string,
+  accessId: string,
+  permission: PermissionLevel,
+  actor: UserLike | VenueAccessSubject,
+  locale?: string,
+): Promise<Result<AccessEntry>> => {
+  const updated = await writeAccess(venueId, accessId, permission, actor, locale);
   if (!updated.ok) return updated;
   const next = await listAccess(venueId);
   const entry = next.find((candidate) => candidate.id === accessId);
   return entry ? ok(entry) : fail(err.internal("Failed to retrieve access entry"));
 };
 
-const revokeAccess = async (venueId: string, accessId: string): Promise<Result<void>> => {
-  const entries = await listAccess(venueId);
-  const target = entries.find((entry) => entry.id === accessId);
-  if (!target) return fail(err.notFound("Access entry"));
-  const remainingAdmins = entries.filter((entry) => entry.id !== accessId && entry.permission === "admin").length;
-  if (target.permission === "admin" && remainingAdmins === 0) return fail(err.badInput("A venue needs at least one admin"));
-  await deleteAccess({ id: accessId });
-  return ok();
-};
+const revokeAccess = (venueId: string, accessId: string, actor: UserLike | VenueAccessSubject, locale?: string): Promise<Result<void>> =>
+  writeAccess(venueId, accessId, null, actor, locale);
 
 const listOpeningRules = async (venueId: string): Promise<OpeningRule[]> => {
   const rows = await sql<DbOpeningRule[]>`

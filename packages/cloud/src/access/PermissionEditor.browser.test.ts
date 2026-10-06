@@ -29,13 +29,13 @@ const entries = (
   ] satisfies Omit<AccessEntry, "id" | "permission" | "createdAt">[]
 ).map((entry, index): AccessEntry => ({ id: `access-${index}`, permission: "read", createdAt: "2026-09-30T00:00:00.000Z", ...entry }));
 
-const render = (locale: string) =>
+const render = (locale: string, initialEntries: AccessEntry[] = entries) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
         return createComponent(PermissionEditor, {
-          initialEntries: entries,
+          initialEntries,
           allowPublic: true,
           allowServiceAccounts: true,
           grantAccess: async () => {
@@ -60,13 +60,18 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const measure = async (width: number, locale: string) => {
+const open = async (width: number, locale: string, initialEntries?: AccessEntry[]) => {
   const tab = await browser.newPage({ viewport: { width, height: 800 } });
+  await tab.setContent(
+    `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+      `<body class="k2b-ui"><div style="padding:16px">${render(locale, initialEntries)}</div></body></html>`,
+  );
+  return tab;
+};
+
+const measure = async (width: number, locale: string) => {
+  const tab = await open(width, locale);
   try {
-    await tab.setContent(
-      `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-        `<body class="k2b-ui"><div style="padding:16px">${render(locale)}</div></body></html>`,
-    );
     return await tab.evaluate(() =>
       Array.from(document.querySelectorAll(".group\\/access-row")).map((row) => {
         const texts = Array.from(row.children[1]!.children) as HTMLElement[];
@@ -100,6 +105,42 @@ describe("PermissionEditor rows in a browser", () => {
   test("show every name and label in full when there is room", async () => {
     for (const row of await measure(1024, "de")) {
       for (const part of row.parts) expect(part).toMatchObject({ whole: true });
+    }
+  });
+});
+
+describe("PermissionEditor last manager in a browser", () => {
+  const manager = (id: string, displayName: string): AccessEntry => ({
+    id,
+    principal: { type: "user", userId: id },
+    permission: "admin",
+    createdAt: "2026-10-06T00:00:00.000Z",
+    displayName,
+  });
+  const firstRow = async (width: number, initialEntries: AccessEntry[]) => {
+    const tab = await open(width, "de", initialEntries);
+    try {
+      return await tab.evaluate(() => {
+        const row = document.querySelector(".group\\/access-row")!;
+        const rect = (element: Element | null) => {
+          const box = element!.getBoundingClientRect();
+          return { x: box.x, y: box.y, width: box.width, height: box.height };
+        };
+        const remove = row.querySelector<HTMLButtonElement>("button[aria-label$='entfernen']");
+        return { row: rect(row), level: rect(row.querySelector("[aria-haspopup=menu]")), remove: rect(remove), disabled: remove!.disabled };
+      });
+    } finally {
+      await tab.close();
+    }
+  };
+
+  test("locks the only manager's row without moving anything", async () => {
+    for (const width of [320, 1024]) {
+      const locked = await firstRow(width, [manager("qdt", "Quentin Dorn")]);
+      const free = await firstRow(width, [manager("qdt", "Quentin Dorn"), manager("lym", "Lya Meyer")]);
+      expect(locked.disabled).toBe(true);
+      expect(free.disabled).toBe(false);
+      expect({ ...locked, disabled: undefined }).toEqual({ ...free, disabled: undefined });
     }
   });
 });

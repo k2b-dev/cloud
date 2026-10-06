@@ -110,7 +110,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         >
           {(currentEntries) => (
             <PermissionEditor
-              initialEntries={currentEntries.filter((entry) => entry.principal.type !== "service_account")}
+              initialEntries={currentEntries}
               canEdit={!coverageBlocked()}
               grantAccess={async (principal, permission) => {
                 return grant({ bookId: props.bookId, principal, permission });

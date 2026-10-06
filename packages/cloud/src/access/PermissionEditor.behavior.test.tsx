@@ -215,3 +215,89 @@ describe("PermissionEditor service accounts", () => {
     }
   });
 });
+
+const grant = (id: string, principal: Principal, permission: AccessEntry["permission"], displayName?: string): AccessEntry => ({
+  id,
+  principal,
+  permission,
+  createdAt: "2026-10-06T00:00:00.000Z",
+  ...(displayName ? { displayName } : {}),
+});
+
+describe("PermissionEditor last manager", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  test("keeps the only manager's row from being lowered or removed until another manager exists", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    dom.document.documentElement.lang = "de";
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["click"]);
+    const updates: { accessId: string; permission: string }[] = [];
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[
+            grant("qdt", { type: "user", userId: "user-qdt" }, "admin", "Quentin Dorn"),
+            grant("lym", { type: "user", userId: "user-lym" }, "read", "Lya Meyer"),
+            // A resource-bound key never stands in for the last person who can manage.
+            {
+              ...grant("key", { type: "service_account", serviceAccountId: "key" }, "admin", "Import key"),
+              serviceAccountKind: "resource_bound",
+            },
+            // The server's English audience name gives way to the localized label.
+            grant("all", { type: "authenticated" }, "read", "All users (incl. guests)"),
+          ]}
+          allowServiceAccounts
+          grantAccess={async () => {
+            throw new Error("Not used by this test.");
+          }}
+          updateAccess={async (accessId, permission) => {
+            updates.push({ accessId, permission });
+          }}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    const rowOf = (name: string) =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name))!;
+    const removeButton = (name: string) => rowOf(name).querySelector<HTMLButtonElement>(`button[aria-label="${name} entfernen"]`)!;
+    // The level menu of each row stays in the document as a closed popover.
+    const levelsOf = (name: string) => Array.from(rowOf(name).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"));
+    try {
+      expect(rowOf("Alle Benutzer einschließlich Gäste")).toBeDefined();
+      expect(dom.root.textContent).not.toContain("All users (incl. guests)");
+
+      expect(removeButton("Quentin Dorn").disabled).toBe(true);
+      expect(removeButton("Quentin Dorn").getAttribute("aria-description")).toStartWith(
+        "Der letzte Eintrag mit Zugriff „Verwalten“ kann nicht herabgestuft oder entfernt werden.",
+      );
+      expect(removeButton("Lya Meyer").disabled).toBe(false);
+      expect(removeButton("Lya Meyer").hasAttribute("aria-description")).toBe(false);
+      expect(removeButton("Import key").disabled).toBe(false);
+      const locked = levelsOf("Quentin Dorn");
+      expect(locked.map((item) => [item.textContent?.startsWith("Verwalten") ?? false, item.disabled])).toEqual([
+        [false, true],
+        [false, true],
+        [true, false],
+      ]);
+      expect(locked[0]!.textContent).toContain("Möglich, sobald eine weitere Person oder Gruppe Zugriff „Verwalten“ hat");
+
+      // Once a second person can manage, both rows can change again.
+      const levels = levelsOf("Lya Meyer");
+      expect(levels.every((item) => !item.disabled)).toBe(true);
+      levels.find((item) => item.textContent?.startsWith("Verwalten"))!.click();
+      await waitFor(() => !removeButton("Quentin Dorn").disabled, "the unlocked manager row");
+      expect(removeButton("Quentin Dorn").hasAttribute("aria-description")).toBe(false);
+      expect(updates).toEqual([{ accessId: "lym", permission: "admin" }]);
+      expect(removeButton("Lya Meyer").disabled).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+});

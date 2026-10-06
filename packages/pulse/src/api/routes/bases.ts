@@ -1,5 +1,5 @@
 import { AccessEntrySchema } from "@k2b/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, respondMessage, v } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond, respondMessage, v } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -147,6 +147,7 @@ const routes = new Hono<AuthContext>()
           baseId: baseId.value,
           accessId: accessId.value,
           user: requestAccessScope(c),
+          locale: getLocale(c),
           ...c.req.valid("json"),
         }),
         "Access updated",
@@ -160,7 +161,12 @@ const routes = new Hono<AuthContext>()
     if (!accessId.ok) return respond(c, accessId.result);
     return respondMessage(
       c,
-      pulseService.base.access.revoke({ baseId: baseId.value, accessId: accessId.value, user: requestAccessScope(c) }),
+      pulseService.base.access.revoke({
+        baseId: baseId.value,
+        accessId: accessId.value,
+        user: requestAccessScope(c),
+        locale: getLocale(c),
+      }),
       "Access revoked",
     );
   });

@@ -140,6 +140,7 @@ const grantDescription = (config: AccessRouteConfig) =>
       400: jsonResponse(ErrorResponseSchema, "Invalid permission"),
       403: jsonResponse(ErrorResponseSchema, "Forbidden"),
       404: jsonResponse(ErrorResponseSchema, `${config.label} not found`),
+      409: jsonResponse(ErrorResponseSchema, "A denial would leave the base without a manager"),
     },
   });
 

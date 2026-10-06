@@ -47,11 +47,11 @@ and durable data.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
   process alone does not prove route readiness.
 - Cloud authenticates and resolves access subjects. The application checks
-  concrete resource permissions in every service path. Use `actor` for
-  identity and audit context and `accessSubject` for grants; UI visibility is
-  not authorization. Only a `resource_bound` service account carries `appId`,
-  `resourceType`, and `resourceId`; `standalone` and `agent` accounts are
-  ordinary principals with their own grants, capped by their scopes.
+  resource permissions in every service path: `actor` for identity and audit,
+  `accessSubject` for grants; UI visibility is not authorization. Grant
+  changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
+  service account carries `appId`, `resourceType`, and `resourceId`;
+  `standalone` and `agent` accounts hold their own grants, capped by scopes.
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.

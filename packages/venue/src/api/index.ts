@@ -482,13 +482,18 @@ const venueRoutes = new Hono<AuthContext>()
     const param = c.req.valid("param");
     const venue = await adminVenue(c, param.id);
     if (!venue.ok) return respond(c, venue);
-    return respond(c, () => venueService.access.update(venue.data.id, param.accessId, c.req.valid("json").permission));
+    const subject = getVenueAccessSubject(c);
+    if (!subject.ok) return respond(c, subject);
+    const { permission } = c.req.valid("json");
+    return respond(c, () => venueService.access.update(venue.data.id, param.accessId, permission, subject.data, getLocale(c)));
   })
   .delete("/:id/access/:accessId", v("param", AccessParamSchema), async (c) => {
     const param = c.req.valid("param");
     const venue = await adminVenue(c, param.id);
     if (!venue.ok) return respond(c, venue);
-    return respond(c, () => venueService.access.revoke(venue.data.id, param.accessId));
+    const subject = getVenueAccessSubject(c);
+    if (!subject.ok) return respond(c, subject);
+    return respond(c, () => venueService.access.revoke(venue.data.id, param.accessId, subject.data, getLocale(c)));
   })
   .get(
     "/:id/api-keys",

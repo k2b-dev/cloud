@@ -1,5 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQLQuery, sql } from "bun";
+import { type ManagerCandidate, removesLastManager } from "../../access/managers";
+import { accessMessages } from "../../access/messages";
 import { recursiveGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
@@ -238,6 +240,31 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
   return ok();
 };
 
+/**
+ * Refuse a grant change that would leave a resource without a manager.
+ *
+ * Pass the resource's entries before and after the change, read in the
+ * transaction that writes it after locking the resource, so concurrent changes
+ * see each other. A manager is an `admin` entry for a user, a group, all
+ * signed-in users, or a standalone or agent service account; service-account
+ * entries need their `serviceAccountKind`. Only a change from at least one
+ * manager to none fails, with status 409 and code `LAST_MANAGER`. An app whose
+ * own precedence lets another entry shadow `admin` drops the shadowed entries
+ * from both lists first. An app whose permission editor names `admin`
+ * differently passes that localized name as `level`, so the message uses the
+ * word the person sees; it defaults to the editor's “Manage”.
+ */
+export const ensureManagerRemains = (params: {
+  before: readonly ManagerCandidate[];
+  after: readonly ManagerCandidate[];
+  locale?: string | null;
+  level?: string;
+}): Result<void> => {
+  if (!removesLastManager(params.before, params.after)) return ok();
+  const { t } = accessMessages.resolve(params.locale ? [params.locale] : []);
+  return fail({ code: "LAST_MANAGER", message: t.lastManager({ level: params.level ?? t.manage }), status: 409 });
+};
+
 /** Resolve direct and nested group memberships from the authoritative database mirror. */
 export const getEffectiveGroups = async (params: { userId: string | null }, db: AccessDb = sql): Promise<EffectiveGroup[]> => {
   if (!params.userId) return [];
@@ -337,17 +364,23 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * - Direct and nested user group memberships resolved from the database
  * - Authenticated access for every authenticated subject
  * - Public access for every subject, including anonymous callers
+ *
+ * Pass the transaction that locked the resource as `db` to authorize a change
+ * against the grants it writes.
  */
-export const getEffectivePermission = async (params: {
-  accessIds: string[];
-  subject?: AccessSubject | null;
-  /** @deprecated Pass subject instead. */
-  userId?: string | null;
-  /** @deprecated Membership is resolved from userId and this value is intentionally ignored. */
-  userGroups?: string[];
-  /** @deprecated Pass subject instead. */
-  serviceAccountId?: string | null;
-}): Promise<PermissionLevel> => {
+export const getEffectivePermission = async (
+  params: {
+    accessIds: string[];
+    subject?: AccessSubject | null;
+    /** @deprecated Pass subject instead. */
+    userId?: string | null;
+    /** @deprecated Membership is resolved from userId and this value is intentionally ignored. */
+    userGroups?: string[];
+    /** @deprecated Pass subject instead. */
+    serviceAccountId?: string | null;
+  },
+  db: AccessDb = sql,
+): Promise<PermissionLevel> => {
   const accessIds = params.accessIds ?? [];
   const subject =
     "subject" in params
@@ -376,7 +409,7 @@ export const getEffectivePermission = async (params: {
         },
       });
 
-  const rows = await sql<{ permission: PermissionLevel }[]>`
+  const rows = await db<{ permission: PermissionLevel }[]>`
     SELECT a.permission
     FROM auth.access a
     WHERE a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])

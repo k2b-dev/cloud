@@ -10,6 +10,36 @@ updated: 2026-10-06
 
 # Deprecations and migrations
 
+## Resources keep at least one manager
+
+Grids Bases, Pulse Bases, and Venues now refuse a grant change that would
+leave them without a manager. They answer `409` with code `LAST_MANAGER`;
+Venue used to answer a removal of its last admin with `400`. Grids also refuses
+a **None** grant for the same person, group, or account as the last manager.
+The administration routes follow the same rule; an administrator recovers a
+resource by granting a new manager first. Pulse and Venue now also check under
+the same lock that the person who makes the change still manages the resource.
+
+Contact books, Spaces, mailboxes, notebooks, Assistant projects and skills, and
+Studio artifacts keep their own older checks for now. They also refuse to
+remove the last admin, but they count every `admin` entry, including API keys
+bound to the resource, and answer with their own status and message, not
+`LAST_MANAGER`.
+
+`PermissionEditor` locks the row of the only manager in every application,
+including third-party applications on this release. Add the server check with
+`ensureManagerRemains()` as described in
+[Keep at least one manager](/en/docs/identity/authorization#keep-at-least-one-manager).
+The editor counts only the entries it shows. If your editor hides every
+service-account entry, as the API-key guide used to recommend, hide only the
+resource-bound ones; otherwise a person who manages next to an agent is locked.
+The access settings of contact books, Spaces, notebooks, and Venues now show
+every grant except the resource's own API keys, which stay in the API key list.
+
+Grids access lists now name people by their display name and show their photo.
+The `displayName` of a person's entry in the Grids API and CLI is their
+display name instead of their login name; match principals by ID, not by name.
+
 ## Info blocks follow one grammar
 
 Markdown info blocks (`:::note`, `:::info`, `:::success`, `:::warning`, and

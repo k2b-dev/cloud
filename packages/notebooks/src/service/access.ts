@@ -35,6 +35,7 @@ type DbNotebookAccess = {
   created_at: Date;
   user_display_name: string | null;
   user_uid: string | null;
+  user_avatar_hash: string | null;
   group_name: string | null;
   service_account_name: string | null;
   service_account_kind: ServiceAccountKind | null;
@@ -108,6 +109,7 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
     displayName,
+    ...(principal.type === "user" ? { avatarHash: row.user_avatar_hash } : {}),
     serviceAccountKind: row.service_account_kind ?? undefined,
   };
 };
@@ -184,6 +186,7 @@ export const listNotebookAccessPage = async (config: {
             a.created_at,
             u.display_name AS user_display_name,
             u.uid AS user_uid,
+            u.avatar_hash AS user_avatar_hash,
             g.name AS group_name,
             sa.name AS service_account_name,
             sa.kind AS service_account_kind
@@ -209,6 +212,7 @@ export const listNotebookAccessPage = async (config: {
             a.created_at,
             u.display_name AS user_display_name,
             u.uid AS user_uid,
+            u.avatar_hash AS user_avatar_hash,
             g.name AS group_name,
             sa.name AS service_account_name,
             sa.kind AS service_account_kind

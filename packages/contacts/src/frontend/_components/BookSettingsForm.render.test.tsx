@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AccessEntry } from "@k2b/cloud/contracts";
 import { renderToString } from "solid-js/web";
 import type { ContactBook, ContactTag } from "../../service";
 import "./ssr-test-plugin";
@@ -107,5 +108,57 @@ describe("Contact book settings", () => {
 
     expect(html).toContain("k2b-app-workspace__sidebar-icon-action");
     expect(html).not.toContain("k2b-spotlight-button");
+  });
+});
+
+describe("Contact book settings: Access", () => {
+  const manager = (
+    id: string,
+    principal: AccessEntry["principal"],
+    displayName: string,
+    extra: Partial<AccessEntry> = {},
+  ): AccessEntry => ({
+    id,
+    principal,
+    permission: "admin",
+    displayName,
+    createdAt: "2026-08-10T10:00:00.000Z",
+    ...extra,
+  });
+  const person = manager("access-person", { type: "user", userId: "user-1" }, "Ada Lovelace");
+  const agent = manager("access-agent", { type: "service_account", serviceAccountId: "agent-1" }, "CRM sync agent", {
+    serviceAccountKind: "agent",
+  });
+  const apiKey = manager("access-key", { type: "service_account", serviceAccountId: "key-1" }, "Suppliers API keys", {
+    serviceAccountKind: "resource_bound",
+  });
+  const renderAccess = (accessEntries: AccessEntry[]) =>
+    renderToString(() => (
+      <BookSettingsForm
+        context={() => ({ book, accessEntries, apiKeys: [], tags: [] })}
+        initialTab="access"
+        onClose={() => undefined}
+        onDeleted={() => undefined}
+        onWorkspaceChange={() => undefined}
+        onReconcile={async () => undefined}
+      />
+    ));
+  // The editor marks the only manager's remove button with the reason it cannot be removed.
+  const lockedRows = (html: string) => html.match(/aria-description=/g)?.length ?? 0;
+
+  test("shows an agent that manages the book, so a person managing next to it is not locked", () => {
+    const html = renderAccess([person, agent, apiKey]);
+
+    expect(html).toContain("Ada Lovelace");
+    expect(html).toContain("CRM sync agent");
+    expect(html).toContain("(Agent)");
+    expect(lockedRows(html)).toBe(0);
+  });
+
+  test("keeps API keys in their own section and does not count them as managers", () => {
+    const html = renderAccess([person, apiKey]);
+
+    expect(html).not.toContain("Suppliers API keys");
+    expect(lockedRows(html)).toBe(1);
   });
 });
