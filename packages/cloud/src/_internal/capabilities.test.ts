@@ -691,6 +691,12 @@ describe("capability v1 compilation", () => {
     );
   });
 
+  test("keeps the producer strict about declarations its release does not define", () => {
+    // An app written against a newer release can still type-check here; the compiler must not drop the field silently.
+    const newer = { ...example(), fileProvider: { list: "get", read: "get" } };
+    expect(() => compileCapabilities("example", newer)).toThrow('Capability definitions contain unsupported field "fileProvider"');
+  });
+
   test("revalidates untrusted manifests and their integrity hashes", () => {
     const manifest = compileCapabilities("example", example()).manifest;
     expect(parseCapabilityManifest(structuredClone(manifest), "example")).toEqual(manifest);

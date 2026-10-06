@@ -188,7 +188,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const manifest = parseCapabilityManifest(record.manifest, app.id);
-    const presentation = compileCapabilityPresentation(manifest, record.presentation);
+    const presentation = compileCapabilityPresentation(manifest, record.presentation, "reader");
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;
     }

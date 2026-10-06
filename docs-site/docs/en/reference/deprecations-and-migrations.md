@@ -10,6 +10,24 @@ updated: 2026-10-06
 
 # Deprecations and migrations
 
+## Capability readers ignore fields from newer releases
+
+Capability manifests and catalog pages are now read tolerantly: a reader
+ignores top-level fields that a newer Cloud release added and leaves out only
+the entries it cannot read completely. Readers of earlier releases fail on a
+whole catalog page, or skip the application, as soon as its manifest carries
+one new field. See
+[Read manifests from other Cloud releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases).
+
+- Update `@k2b/cloud` once in your own applications that read the catalog with
+  `listCapabilityCatalog()`, `getCapabilityCatalogApp()`, or
+  `CapabilityCatalogSchema`. Later manifest fields then no longer break them.
+- Update the `capabilities` CLI plugin of each `cld` profile with
+  `cld plugins update capabilities`.
+- `app.start()` now rejects capability definitions with a top-level field its
+  release does not define, instead of ignoring it. Remove such a field or
+  update `@k2b/cloud` to the release that defines it.
+
 ## Files references survive rename and move
 
 On roots where Filegate 7 reports stable file IDs (`index: true` and

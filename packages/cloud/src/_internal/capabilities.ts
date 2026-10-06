@@ -35,6 +35,14 @@ import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared
 type JsonSchema = Record<string, unknown>;
 const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
 
+/**
+ * The producer side of the shared manifest shape: an app registers exactly the fields and entries its
+ * release defines. Readers use `CapabilityManifestSchema`, which ignores what a newer release added.
+ */
+const StrictCapabilityManifestSchema = CapabilityManifestSchema.out.strict();
+
+const CAPABILITY_DEFINITION_FIELDS = new Set(["protocolVersion", "presentation", "types", "queries", "actions", "commands"]);
+
 export type CompiledCapabilityQuery = {
   definition: CapabilityQueryDefinition;
   manifest: CapabilityQueryManifest;
@@ -194,6 +202,7 @@ const compileOperationPresentation = (
   value: unknown,
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
   label: string,
+  strict = true,
 ): CapabilityOperationPresentationTranslation => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const translation = value as Record<string, unknown>;
@@ -201,7 +210,7 @@ const compileOperationPresentation = (
     "path" in operation ? ["title", "description", "input"] : ["title", "description", "input", "data", "searchTags"],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
-  if (extra) throw new Error(`${label} contains unsupported field "${extra}"`);
+  if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
   if (translation.title !== undefined) {
     if (typeof translation.title !== "string") throw new Error(`${label}.title must be text`);
     assertText(translation.title, `${label}.title`, 120);
@@ -225,7 +234,7 @@ const compileOperationPresentation = (
         }
         const copy = presentation as Record<string, unknown>;
         const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
-        if (extraField) throw new Error(`${label}.searchTags.${tag} contains unsupported field "${extraField}"`);
+        if (strict && extraField) throw new Error(`${label}.searchTags.${tag} contains unsupported field "${extraField}"`);
         if (copy.title !== undefined) {
           if (typeof copy.title !== "string") throw new Error(`${label}.searchTags.${tag}.title must be text`);
           assertText(copy.title, `${label}.searchTags.${tag}.title`, 120);
@@ -252,11 +261,21 @@ const compileOperationPresentation = (
   };
 };
 
-export const compileCapabilityPresentation = (manifest: CapabilityManifest, value: unknown): CapabilityPresentationCatalog | undefined => {
+/**
+ * Compiles human presentation for one manifest. A producer must declare exactly what its release
+ * supports. A reader of a registered manifest ignores fields from a newer release and skips the
+ * entry translations it cannot apply, such as those of left-out entries; presentation never grants access.
+ */
+export const compileCapabilityPresentation = (
+  manifest: CapabilityManifest,
+  value: unknown,
+  mode: "producer" | "reader" = "producer",
+): CapabilityPresentationCatalog | undefined => {
+  const strict = mode === "producer";
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capability presentation must be an object");
   const catalog = value as Record<string, unknown>;
-  if (Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "translations")) {
+  if (strict && Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "translations")) {
     throw new Error("Capability presentation contains unsupported fields");
   }
   const baseLocale = typeof catalog.baseLocale === "string" ? canonicalLocale(catalog.baseLocale) : undefined;
@@ -279,7 +298,7 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
     }
     const raw = rawTranslation as Record<string, unknown>;
     const extra = Object.keys(raw).find((key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands");
-    if (extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
+    if (strict && extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
     const compileGroup = <T>(
       group: unknown,
       definitions: ReadonlyMap<string, T>,
@@ -289,10 +308,18 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
       if (group === undefined) return undefined;
       if (!group || typeof group !== "object" || Array.isArray(group)) throw new Error(`${kind} translations must be an object`);
       return Object.fromEntries(
-        Object.entries(group as Record<string, unknown>).map(([localId, entry]) => {
+        Object.entries(group as Record<string, unknown>).flatMap(([localId, entry]) => {
           const definition = definitions.get(localId);
-          if (!definition) throw new Error(`${kind} translation references unknown localId "${localId}"`);
-          return [localId, compile(entry, definition, `${kind} ${localId}`)];
+          if (!definition) {
+            if (strict) throw new Error(`${kind} translation references unknown localId "${localId}"`);
+            return [];
+          }
+          try {
+            return [[localId, compile(entry, definition, `${kind} ${localId}`)]];
+          } catch (error) {
+            if (strict) throw error;
+            return [];
+          }
         }),
       ) as Readonly<Record<string, never>>;
     };
@@ -300,7 +327,7 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
       const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
-      if (extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
+      if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
         assertText(copy.title, `${label}.title`, 120);
@@ -314,9 +341,11 @@ export const compileCapabilityPresentation = (manifest: CapabilityManifest, valu
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
       };
     });
-    const translatedQueries = compileGroup(raw.queries, queries, "Query", compileOperationPresentation);
-    const translatedActions = compileGroup(raw.actions, actions, "Action", compileOperationPresentation);
-    const translatedCommands = compileGroup(raw.commands, commands, "Command", compileOperationPresentation);
+    const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) =>
+      compileOperationPresentation(entry, operation, label, strict);
+    const translatedQueries = compileGroup(raw.queries, queries, "Query", operationPresentation);
+    const translatedActions = compileGroup(raw.actions, actions, "Action", operationPresentation);
+    const translatedCommands = compileGroup(raw.commands, commands, "Command", operationPresentation);
     translations[canonical] = {
       ...(translatedTypes ? { types: translatedTypes } : {}),
       ...(translatedQueries ? { queries: translatedQueries } : {}),
@@ -445,6 +474,8 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   if (definitions.protocolVersion !== CAPABILITY_PROTOCOL_VERSION) {
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
+  const unsupportedField = Object.keys(definitions).find((field) => !CAPABILITY_DEFINITION_FIELDS.has(field));
+  if (unsupportedField) throw new Error(`Capability definitions contain unsupported field "${unsupportedField}"`);
 
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {
@@ -603,7 +634,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     actions: [...actions.values()].map((entry) => entry.manifest),
     commands,
   };
-  const manifest = CapabilityManifestSchema.parse({
+  const manifest = StrictCapabilityManifestSchema.parse({
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
@@ -725,7 +756,14 @@ export const resolveCapabilityManifestPresentation = (
   return current;
 };
 
-/** Validates an untrusted live manifest and recomputes every integrity hash. */
+/**
+ * Validates an untrusted live manifest and recomputes every integrity hash.
+ *
+ * A manifest from a newer release reads like every other reader reads it (`CapabilityManifestSchema`).
+ * The manifest hash is checked against what the app sent, including everything ignored here, and
+ * stays the manifest's identity: the app's registry summary still matches, so the app is not treated
+ * as changed and a manifest without newer fields keeps its hash.
+ */
 export const parseCapabilityManifest = (value: unknown, expectedAppId: string): CapabilityManifest => {
   const manifest = CapabilityManifestSchema.parse(value);
   if (manifest.appId !== expectedAppId) throw new Error(`manifest appId must be ${expectedAppId}`);
@@ -786,9 +824,9 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
     if (!reader) throw new Error(`Resource type ${type.localId} reader ${type.reader} must name an existing Query`);
     assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
-
-  const { manifestHash: _manifestHash, ...manifestBase } = manifest;
-  if (manifest.manifestHash !== capabilityHash(manifestBase)) throw new Error("manifestHash does not match the manifest");
+  // The schema accepted `value`, so it is an object; hash all of it, not only what this release read.
+  const { manifestHash: _sentHash, ...sent } = value as Record<string, unknown>;
+  if (manifest.manifestHash !== capabilityHash(sent)) throw new Error("manifestHash does not match the manifest");
   return manifest;
 };
 
