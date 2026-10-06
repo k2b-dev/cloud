@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.25.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.24.0...npm-cloud-v0.25.0) (2026-10-06)
+
+
+### Features
+
+* **access:** keep at least one manager and show people by name in Grids access ([#677](https://github.com/k2b-dev/cloud/issues/677)) ([6a4aa5c](https://github.com/k2b-dev/cloud/commit/6a4aa5ca207341363af43438269e6bdd04f37b76))
+* **browser:** attach files from Cloud apps through one source chooser ([#672](https://github.com/k2b-dev/cloud/issues/672)) ([be21047](https://github.com/k2b-dev/cloud/commit/be21047cabbe011445242a62636fac25fcb3b33f))
+
+
+### Bug Fixes
+
+* **i18n:** name the admin area Administration in German ([#670](https://github.com/k2b-dev/cloud/issues/670)) ([31d3f56](https://github.com/k2b-dev/cloud/commit/31d3f569b3a8928250a1476e3d3e060ab81c67a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.14.0 to 0.15.0
+
 ## [0.24.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.23.0...npm-cloud-v0.24.0) (2026-10-06)
 
 
