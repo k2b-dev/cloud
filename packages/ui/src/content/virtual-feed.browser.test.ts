@@ -1624,6 +1624,52 @@ describe(`VirtualFeed keeps the reader's place under real scroll event orders in
     await close(page);
   }, 30_000);
 
+  test("a finger that lifts before the scroll event of its last step keeps that step", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    const before = await fromBottom(page, watch);
+    // A short flick: the engine moved scrollTop, and touchend arrives before the scroll event of that move.
+    await page.evaluate(() => {
+      writes.length = 0;
+      person.touch("touchstart");
+      person.by(-60);
+      person.touch("touchend");
+    });
+    await frames(page, 8);
+    expect(await page.evaluate(() => writes)).toEqual([]);
+    expect(Math.abs((await fromBottom(page, watch)) - before + 60)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  test("wheel, key, or touch input that ends a takeover lets the feed scroll again at once", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    await page.evaluate(() => {
+      person.hold();
+      return person.drag([-50, -50]);
+    });
+    const styles = await page.evaluate(() => {
+      const port = feed.viewport();
+      const seen: string[] = [];
+      for (const input of ["wheel", "keydown", "touchstart"]) {
+        person.act("send");
+        seen.push(port.style.overflowY);
+        if (input === "touchstart") person.touch("touchstart");
+        else port.dispatchEvent(new Event(input, { bubbles: true }));
+        seen.push(port.style.overflowY);
+        if (input === "touchstart") person.touch("touchend");
+        // The next takeover needs a scroll of the reader in progress.
+        person.by(-20);
+        port.dispatchEvent(new Event("scroll"));
+      }
+      return seen;
+    });
+    expect(styles).toEqual(["hidden", "", "hidden", "", "hidden", ""]);
+    await page.evaluate(() => person.end());
+    await close(page);
+  }, 30_000);
+
   test("ends a drag whose touched row left the document, so later changes are corrected at once again", async () => {
     const page = await open();
     await dragBy(page, -800);

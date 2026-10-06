@@ -966,12 +966,17 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       }
       touched.clear();
     };
+    // Input of the reader ends a takeover by the application at once, and lets the feed scroll for that input.
+    const act = () => {
+      overriding = false;
+      viewport.style.removeProperty("overflow-y");
+    };
     const touchStart = (event: TouchEvent) => {
       // A touch whose end the feed missed has left the screen by now.
       const down = new Set(Array.from(event.touches, (touch) => touch.identifier));
       for (const id of fingers) if (!down.has(id)) fingers.delete(id);
       for (const touch of Array.from(event.changedTouches)) fingers.add(touch.identifier);
-      overriding = false;
+      act();
       // Touch events stay with the element the touch began on, also when the feed removes its row meanwhile.
       const target = event.target;
       if (target && !touched.has(target)) {
@@ -984,15 +989,12 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       for (const touch of Array.from((event as TouchEvent).changedTouches)) fingers.delete(touch.identifier);
       if (fingers.size > 0) return;
       release();
-      if (!scrolling) return endScroll();
+      // The last step of a short flick can have moved scrollTop before its scroll event; it counts before anything ends.
+      if (!scrolling && !noteReader()) return endScroll();
       armEnd();
       // A scroll that ended under the finger ends now, unless the release starts a momentum.
       if (endedAt >= lastMove) confirmEnd();
     }
-    // Input of the reader ends a takeover by the application at once.
-    const act = () => {
-      overriding = false;
-    };
     viewport.addEventListener("touchstart", touchStart, { passive: true });
     viewport.addEventListener("scrollend", onScrollEnd);
     for (const type of ["wheel", "keydown", "pointerdown"]) viewport.addEventListener(type, act, { passive: true });
