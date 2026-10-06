@@ -34,8 +34,18 @@ exact rules.
 Capability manifests can now declare an optional `fileProvider`; see
 [File providers](/en/docs/platform/file-providers). A manifest without it keeps
 its earlier shape and hash, so nothing changes for applications that do not
-offer files. Files implements the provider operations in this release but does
-not declare itself as a provider yet.
+offer files.
+
+Files declares itself as a provider, and apps add files from it through the
+shared file chooser, starting with attachments in Mail. Update Core before
+Files: a Core of cloud-v0.29.0 or earlier drops Files from its catalog once
+Files declares `fileProvider`. Catalog readers of cloud-v0.29.0 or earlier
+fail on the whole catalog page that carries the Files entry until they are
+updated once: third-party applications on an earlier `@k2b/cloud`, whose global
+search and `listCapabilityCatalog()` read the catalog, and a `capabilities`
+plugin of a `cld` profile that was not updated
+(`cld plugins update capabilities`). Built-in applications of the same release
+are already tolerant.
 
 Before one of your own applications declares `fileProvider`, update Core,
 your other applications on `@k2b/cloud`, and the `capabilities` plugin of each

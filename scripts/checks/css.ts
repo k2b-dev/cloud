@@ -19,6 +19,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "effects.css",
   "input.css",
   "resource-search.css",
+  "file-chooser.css",
 ];
 
 const withoutCssComments = (source: string): string => source.replace(/\/\*[\s\S]*?\*\//g, "");

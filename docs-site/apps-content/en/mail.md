@@ -27,7 +27,10 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
 - See meaningful status, assignment, tag, summary, and workflow changes quietly
   in the conversation at the time they happened.
 - Continue the newest unfinished conversation draft directly from the reader.
-- Compose and schedule messages through verified sender identities.
+- Compose and schedule messages through verified sender identities. The
+  paperclip attaches files from this device or, when Cloud apps offer files,
+  from one of them, such as Files. Attachments from an app arrive as copies
+  and follow the same upload limits as files from the device.
 - Review detected mailing lists and safely request unsubscribe or clean up existing messages when permitted.
 - Use incoming automations, automatic replies, or reviewed workflows for
   recurring mailbox work.

@@ -29,11 +29,12 @@ The package owns presentation and reusable interaction behavior. Applications co
 
 ## Cloud components
 
-Four integrations remain product-specific because their behavior depends on authenticated Cloud APIs or platform concepts:
+Five integrations remain product-specific because their behavior depends on authenticated Cloud APIs or platform concepts:
 
 - **Cloud assistant chat** — Cloud Assistant messages, tools, sessions, and attachments;
 - **Permissions and API keys** — identity, principal search, resource permissions, and scoped credentials;
 - **Cloud dashboard widgets** — Cloud endpoint adapters feeding portable widget presentation;
-- **Cloud resource picker** — permission-filtered selection of stable Cloud resource references through Universal Search.
+- **Cloud resource picker** — permission-filtered selection of stable Cloud resource references through Universal Search;
+- **Cloud file chooser** — files from this device or from Cloud apps that offer files, returned as ordinary `File` objects.
 
 They live in their own **Cloud components** section, keeping the portable package boundary explicit.

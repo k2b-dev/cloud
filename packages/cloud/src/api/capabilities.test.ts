@@ -993,3 +993,106 @@ test("ordinary invocation seals a stream offer and the transfer route accepts on
   );
   expect(await response.text()).toBe("abc");
 });
+
+test("the browser file chooser browses and reads a provider through Core's routes and sealed streams", async () => {
+  const { invokeCompiledCapability } = await import("../_internal/capabilities");
+  const { invokeCapabilityStream } = await import("../_internal/capability-streams");
+  const contract = await import("../contracts/file-provider");
+  const { listProviderFolder, loadFileProviders, readProviderFile } = await import("../browser/file-providers");
+  const bytes = "quarterly numbers";
+  const listed = { kind: "file" as const, id: "report", name: "report.txt", size: bytes.length, mediaType: "text/plain" };
+  const provider = compileCapabilities(
+    "drive",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        "folder.list": {
+          title: "List",
+          description: "List one folder.",
+          input: contract.FileProviderListInputSchema,
+          data: contract.FileProviderListDataSchema,
+          openWorld: false,
+          run: async () => ok({ data: { writable: false, items: [listed], next: null } }),
+        },
+        "file.read": {
+          title: "Read",
+          description: "Read one file.",
+          input: contract.FileProviderReadInputSchema,
+          data: contract.FileProviderReadDataSchema,
+          openWorld: false,
+          stream: { direction: "read", maxBytes: 64, read: async () => new Response(bytes) },
+          run: async ({ id }) =>
+            ok({
+              data: {},
+              stream: {
+                id: `private:${id}`,
+                direction: "read",
+                mediaType: "text/plain",
+                size: bytes.length,
+                expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              },
+            }),
+        },
+      },
+      fileProvider: { list: "folder.list", read: "file.read" },
+    }),
+  );
+  const app: CapabilityRegistryEntry = { ...entry("drive"), appName: "Drive", manifest: provider.manifest };
+  const context = {
+    actor: resourceAuthority.actor,
+    accessSubject: resourceAuthority.accessSubject,
+    user: null,
+    requestId: "file-chooser-wire",
+    locale: "en",
+    origin: "http" as const,
+    signal: new AbortController().signal,
+  };
+  const upstream: string[] = [];
+  const routes = createCapabilityRoutes({
+    listApps: async () => [summary(app)],
+    getCapability: async (appId) => (appId === app.appId ? app : null),
+    authenticate,
+    // The provider side, as the framework mounts it in the provider app.
+    fetch: async (url, init) => {
+      const request = new Request(url, init);
+      const path = new URL(request.url).pathname.split("/").map(decodeURIComponent);
+      upstream.push(path.slice(path.indexOf("v1") + 1).join("/"));
+      if (path.includes("streams")) {
+        return invokeCapabilityStream({ compiled: provider, kind: "queries", localId: path.at(-2)!, verb: path.at(-1)!, request, context });
+      }
+      const { input } = (await request.json()) as { input: unknown };
+      const result = await invokeCompiledCapability({
+        compiled: provider,
+        kind: "query",
+        localId: path.at(-1)!,
+        input,
+        expectedSchemaHash: request.headers.get("x-cloud-capability-schema-hash"),
+        context,
+      });
+      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+    },
+  });
+  // The browser module's own requests, unchanged, against Core's routes.
+  const streamIds: string[] = [];
+  const caller = {
+    locale: "en",
+    fetch: async (url: string | URL | Request, init?: RequestInit) => {
+      const streamId = new Headers(init?.headers).get("x-cloud-stream-id");
+      if (streamId) streamIds.push(streamId);
+      return routes.request(String(url).replace(/^\/api/, ""), init);
+    },
+  };
+
+  const [source] = await loadFileProviders(caller);
+  expect(source).toMatchObject({ appId: "drive", list: "folder.list", read: "file.read", maxBytes: 64 });
+  const page = await listProviderFolder(source!, {}, caller);
+  expect(page).toEqual({ items: [listed], next: null });
+  const file = await readProviderFile(source!, listed, { ...caller, maxBytes: 64, accept: "text/*" });
+  expect(await file.text()).toBe(bytes);
+  expect(file.type).toStartWith("text/plain");
+  // The browser only ever holds Core's sealed stream ID; Core opens it and lets the read through to the provider.
+  expect(streamIds).toHaveLength(1);
+  expect(streamIds[0]).not.toContain("private:report");
+  expect(upstream).toEqual(["queries/folder.list", "queries/file.read", "streams/queries/file.read/read"]);
+  await expect(readProviderFile(source!, listed, { ...caller, maxBytes: 4 })).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+});

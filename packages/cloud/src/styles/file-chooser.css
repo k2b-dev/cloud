@@ -1,0 +1,169 @@
+/* The shared file chooser (@k2b/cloud/browser/files). It opens in the workspace
+   frame, which takes the whole screen on phones. On wider screens it keeps one
+   fixed, smaller size, so moving between sources, folders, and states never
+   resizes or moves the frame. Unlayered, like the shared frame rules. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-dialog.k2b-panel-dialog-frame.cloud-file-chooser-dialog {
+    width: min(var(--k2b-dialog-available-width), 44rem);
+    height: min(40rem, 86dvh, var(--k2b-dialog-available-height));
+  }
+}
+
+.cloud-file-chooser {
+  display: contents;
+}
+
+/* Path and filter sit between header and body with the panel's own inset and
+   keep one height in every view. */
+.cloud-file-chooser__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0 var(--k2b-panel-dialog-inset) 0.75rem;
+}
+
+.cloud-file-chooser__crumbs {
+  display: flex;
+  flex: 1 1 18rem;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+/* One line: a deep path scrolls sideways instead of wrapping and pushing the list down. */
+.cloud-file-chooser__crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.cloud-file-chooser__crumbs li {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--k2b-text-muted);
+}
+
+.cloud-file-chooser__filter {
+  flex: 1 1 14rem;
+  max-width: 100%;
+}
+
+@media (min-width: 40rem) {
+  .cloud-file-chooser__filter {
+    flex: 0 0 14rem;
+  }
+}
+
+.cloud-file-chooser__icon {
+  font-size: 1.375rem;
+  color: var(--k2b-text-secondary);
+}
+
+.cloud-file-chooser__icon[data-selected="true"] {
+  color: var(--k2b-action);
+}
+
+.cloud-file-chooser__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.cloud-file-chooser__tag {
+  flex: none;
+}
+
+.cloud-file-chooser__state {
+  min-height: 100%;
+}
+
+.cloud-file-chooser__more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.cloud-file-chooser__more:empty {
+  display: none;
+}
+
+.cloud-file-chooser__downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+}
+
+.cloud-file-chooser__download-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.cloud-file-chooser__download-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-file-chooser__download-state {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--k2b-text-secondary);
+}
+
+.cloud-file-chooser__download-state[data-state="error"] {
+  color: var(--k2b-danger-text);
+}
+
+/* One line that gives way to the buttons: a longer status never wraps the footer and moves the body. */
+.cloud-file-chooser__status {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--k2b-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Phones have no room beside the buttons: the status takes its own line above them. The line stays when it is
+   empty, so the footer keeps one height in every view. */
+@media (max-width: 39.999rem) {
+  .cloud-file-chooser__status {
+    flex-basis: 100%;
+    min-height: 1.25rem;
+  }
+}
+
+/* Rows keep their own padding; pulling the list out by it lines icons up with the title and path. */
+.cloud-file-chooser .k2b-file-grid {
+  margin-inline: -0.75rem;
+}
+
+.cloud-file-chooser__actions {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
+  margin-left: auto;
+}

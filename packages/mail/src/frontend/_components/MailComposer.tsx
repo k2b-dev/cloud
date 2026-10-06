@@ -1,4 +1,5 @@
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { dropzone, mutation as mutations, query, timed } from "@k2b/stdlib/solid";
@@ -24,19 +25,20 @@ import {
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../commands";
-import type {
-  ComposePreview,
-  ComposeSafetyApproval,
-  ComposeSafetyReview,
-  DraftEditableContent,
-  DraftEditableContentInput,
-  DraftIntent,
-  DraftRecoveryCopy,
-  MailCommand,
-  MailDraft,
-  MailDraftSeed,
-  MailPriority,
-  SenderIdentity,
+import {
+  type ComposePreview,
+  type ComposeSafetyApproval,
+  type ComposeSafetyReview,
+  type DraftEditableContent,
+  type DraftEditableContentInput,
+  type DraftIntent,
+  type DraftRecoveryCopy,
+  MAX_DRAFT_ATTACHMENT_BYTES,
+  type MailCommand,
+  type MailDraft,
+  type MailDraftSeed,
+  type MailPriority,
+  type SenderIdentity,
 } from "../../contracts";
 import { readApiError } from "./api-response";
 import MailComposerAttachments from "./MailComposerAttachments";
@@ -108,7 +110,6 @@ export default function MailComposer(props: {
         requestReadReceipt: props.initialDraft.requestReadReceipt,
       }
     : props.initialSeed!.content;
-  let attachmentInput: HTMLInputElement | undefined;
   let initialEditorFocusApplied = false;
   const verifiedIdentities = () => props.identities.filter((identity) => identity.status === "verified");
   const preferences = readMailUserPreferences(props.mailboxId);
@@ -327,6 +328,11 @@ export default function MailComposer(props: {
   const uploads = attachments.uploads;
   /** Uploads this page is streaming; one an earlier session left unfinished only blocks sending. */
   const uploadsInProgress = () => uploads().some((upload) => upload.file !== null);
+  /** From this device or from a Cloud app; either way the files take the same upload path, limits, and progress. */
+  const chooseAttachments = async () => {
+    const files = await chooseFiles({ multiple: true, maxBytes: MAX_DRAFT_ATTACHMENT_BYTES });
+    if (files.length > 0 && editable() && !disposed) void attachments.addFiles(files);
+  };
   const attachmentDropzone = dropzone.create({
     onDrop: (files) => {
       if (!editable() || files.length === 0) return;
@@ -696,7 +702,7 @@ export default function MailComposer(props: {
     composerTransition.release(reservation);
     if (attachAfterDeliveryReview && !disposed) {
       attachAfterDeliveryReview = false;
-      attachmentInput?.click();
+      void chooseAttachments();
     }
   };
 
@@ -1363,23 +1369,11 @@ export default function MailComposer(props: {
             type="button"
             label={t().attachFiles}
             disabled={!editable()}
-            onClick={() => attachmentInput?.click()}
+            onClick={() => void chooseAttachments()}
           >
             <i class="ti ti-paperclip" aria-hidden="true" />
           </IconButton>
         </Tooltip.Anchor>
-        <input
-          ref={attachmentInput}
-          type="file"
-          class="hidden"
-          multiple
-          disabled={!editable()}
-          onChange={(event) => {
-            const files = Array.from(event.currentTarget.files ?? []);
-            event.currentTarget.value = "";
-            void attachments.addFiles(files);
-          }}
-        />
         <span class="flex-1" />
         <Tooltip.Anchor content={t().discardDraft}>
           <IconButton

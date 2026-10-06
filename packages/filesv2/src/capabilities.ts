@@ -156,4 +156,5 @@ export const filesCapabilities = defineCapabilities({
       },
     },
   },
+  fileProvider: { list: "provider.list", read: "content.read", save: "provider.save" },
 });
