@@ -414,6 +414,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         setLoading(false);
         if (disposed) return;
         if (direction === "newest") newest = undefined;
+        // A failed or empty load toward the end shows "Jump to latest" again instead of following an end that never came.
+        if (direction !== "older" && list === before && stick && props.hasNewer) setStick(false);
         if (newest === "waiting") {
           if (!loadingOlder() && !loadingNewer()) loadNewest();
           return;
@@ -712,6 +714,18 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   });
 
   createEffect(on(() => props.items, sync, { defer: true }));
+  // More items can appear at an edge without new items, for example when a live update reports newer ones.
+  createEffect(
+    on(
+      [() => props.hasOlder, () => props.hasNewer],
+      () => {
+        if (hi <= lo) return;
+        if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
+        checkEdges();
+      },
+      { defer: true },
+    ),
+  );
 
   const shownCount = () => props.newCount ?? unseen();
 

@@ -36,7 +36,7 @@ const make = (seq) => {
 };
 const newer = options.newer ?? 0;
 const all = Array.from({ length: older + visible + newer + (options.future ?? 1000) }, (_, seq) => make(seq));
-const newest = older + visible + newer;
+const [newest, setNewest] = createSignal(older + visible + newer);
 let first = older;
 let next = older + visible;
 const [items, setItems] = createSignal(all.slice(first, next));
@@ -77,12 +77,12 @@ const list = () =>
       return first > 0;
     },
     get hasNewer() {
-      return next < newest;
+      return next < newest();
     },
     onLoadNewer: () =>
       new Promise((done) =>
         setTimeout(() => {
-          const page = all.slice(next, Math.min(newest, next + 50));
+          const page = all.slice(next, Math.min(newest(), next + 50));
           next += page.length;
           setItems((current) => [...current, ...page]);
           done();
@@ -90,10 +90,11 @@ const list = () =>
       ),
     onLoadNewest: options.newest
       ? () =>
-          new Promise((done) =>
+          new Promise((done, fail) =>
             setTimeout(() => {
-              first = newest - 100;
-              next = newest;
+              if (options.newest === "fail") return fail(new Error("offline"));
+              first = newest() - 100;
+              next = newest();
               setItems(all.slice(first, next));
               done();
             }, 150),
@@ -218,6 +219,7 @@ window.feed = {
     all.find((item) => item.id === key).grow[1](px);
   },
   setMarker,
+  setNewest,
   replace(key, seq) {
     setItems((current) => current.map((item) => (item.id === key ? { ...item, seq } : item)));
   },
@@ -267,6 +269,7 @@ type Feed = {
   append: (count: number) => void;
   grow: (key: string, px: number) => void;
   setMarker: (key: string | undefined) => void;
+  setNewest: (count: number) => void;
   replace: (key: string, seq: number) => void;
   swap: (a: string, b: string) => void;
 };
@@ -278,7 +281,7 @@ const open = async (
     count?: number;
     older?: number;
     newer?: number;
-    newest?: boolean;
+    newest?: boolean | "fail";
     future?: number;
     locale?: string;
     separators?: boolean;
@@ -576,6 +579,27 @@ describe(`VirtualFeed in ${browserName}`, () => {
       expect(await end.count()).toBe(0);
       await page.close();
     }
+  });
+
+  test("pages newer items in when they appear while the reader is at the end, and shows Jump to latest again after a failed load", async () => {
+    let page = await open();
+    expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
+    // A live update reports 100 newer items without adding them; the reader at the end follows them in.
+    await page.evaluate(() => feed.setNewest(400));
+    await page.waitForFunction(() => feed.count() === 400, null, { timeout: 10_000 });
+    await page.locator('[role="feed"][aria-busy="false"]').waitFor();
+    await frames(page, 6);
+    expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
+    expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
+    await page.close();
+
+    page = await open({ count: 300, newer: 400, newest: "fail" });
+    await page.locator(".k2b-virtual-feed__end").click();
+    await page.locator('[role="feed"][aria-busy="true"]').waitFor();
+    await page.locator('[role="feed"][aria-busy="false"]').waitFor();
+    expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
+    expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(1);
+    await page.close();
   });
 
   test("holds corrections back while an iOS finger or momentum scroll is moving the list", async () => {

@@ -43,9 +43,11 @@ within the visible area.
 Set `hasOlder` and `onLoadOlder` to load older items when the reader nears the
 start, and `hasNewer` and `onLoadNewer` for the end. Prepend or append the page
 to `items`; the visible item stays exactly where it was. The feed calls each
-callback once until its promise settles and marks itself busy meanwhile.
-Handle errors inside the callback; a rejected promise only ends the busy
-state.
+callback once until its promise settles and marks itself busy meanwhile. It
+also loads when `hasOlder` or `hasNewer` turns on while the reader is at that
+edge, so a reader at the end follows newer items reported by a live update.
+Handle errors inside the callback; a rejected promise ends the busy state,
+and when a load toward the end brought nothing, "Jump to latest" shows again.
 
 When the newest items are not loaded, for example after jumping to an old
 item, pass `onLoadNewest`. "Jump to latest" then calls it once running loads
