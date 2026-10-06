@@ -5,7 +5,7 @@ section: Identity and access
 order: 350
 description: Create API keys for one application resource without bypassing resource authorization.
 tags: [identity, service-accounts, api-keys]
-updated: 2026-09-26
+updated: 2026-10-06
 ---
 
 # Resource API keys
