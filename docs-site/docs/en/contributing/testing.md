@@ -23,7 +23,7 @@ bun run test
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
 service API contracts, localization, CSS architecture, formatting, the
-application set, and every package typecheck. A package typecheck covers its
+application set, the CI gate's job list, and every package typecheck. A package typecheck covers its
 `scripts/` as well as `src/`, so a package's build, smoke, and verification
 scripts break the gate when they drift from the code they drive. The only
 exceptions are scripts a package excludes by name in its `tsconfig.json` and
@@ -305,6 +305,16 @@ suites against PostgreSQL 17, NATS JetStream, Valkey, and Gotenberg, the Grids
 certification, and an image boot smoke when `packages/cloud` or the
 `Dockerfile` changed.
 Run the same commands locally before opening a pull request.
+
+`gate` is the only required status check. It needs every other job in
+`ci.yml` and passes only when each one reports `success`, or `skipped` for a
+path-filtered job listed in its `MAY_SKIP` variable. Any other result fails it
+and names the job: `failure`, `cancelled`, `timed_out`, a job skipped behind a
+failed `setup`, and `abandoned` from a GitHub Actions outage. A path-filtered
+job skipped because `changes` did not succeed fails through the result of
+`changes`. The `ci-gate` check keeps `needs` and `MAY_SKIP` in line with the
+jobs and their `if:` conditions, and `scripts/checks/ci-gate.test.ts` runs the
+gate step against these results.
 
 The gate also builds the production bundle of every application whose package
 changed, and of every application when `packages/cloud`, `packages/ui`, or
