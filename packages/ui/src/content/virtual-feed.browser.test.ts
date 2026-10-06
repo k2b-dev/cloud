@@ -1594,6 +1594,36 @@ describe(`VirtualFeed keeps the reader's place under real scroll event orders in
     await close(page);
   }, 30_000);
 
+  test("a row above the view that grows in the frame of the step that reveals it does not move the rows the reader saw", async () => {
+    const page = await open();
+    await dragBy(page, -1500);
+    // The row at the top starts 20 px above the view, so the row above it ends there, whatever the fonts make of the
+    // rows' heights.
+    const align = await page.evaluate(() => {
+      const row = document.querySelector(`[data-key="${person.keyAt(1)}"]`)!.getBoundingClientRect();
+      return row.top - feed.viewport().getBoundingClientRect().top + 20;
+    });
+    await page.evaluate((dy) => person.drag([dy]), align);
+    await page.waitForTimeout(300);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    // The row above grows; the next step, in the same frame, reveals its last 20 px.
+    const tail = await page.evaluate((watch) => {
+      person.hold();
+      person.touch("touchstart");
+      return person.glide({ steps: [0, -40, -40, -40], watch, actions: { 1: [["growAbove", 100]] } });
+    }, watch);
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => {
+      person.touch("touchend");
+      person.end();
+    });
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
   test("ends a drag whose touched row left the document, so later changes are corrected at once again", async () => {
     const page = await open();
     await dragBy(page, -800);

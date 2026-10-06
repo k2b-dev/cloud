@@ -446,10 +446,19 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     checkEdges();
   };
 
-  const captureAnchor = () => {
+  /**
+   * Keeps the reader's new position, reached from `from`. A row that the move reveals at the top can change size in the
+   * same frame, before the feed measured it, and the reader never saw it. So the row at the top of `from` keeps its
+   * place while it is still in view, and the rows the reader saw move by the reader's step alone.
+   */
+  const captureAnchor = (from: number) => {
     const top = logicalTop();
-    anchor = anchorAt(top);
     setStick(reachesEnd(top));
+    const seen = indexAt(from);
+    anchor =
+      offsetOf(seen + 1) > top && offsetOf(seen) < top + viewport.clientHeight
+        ? { index: seen, delta: offsetOf(seen) - top }
+        : anchorAt(top);
   };
 
   /**
@@ -477,9 +486,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       return false;
     }
     armEnd();
+    const from = lastTop + deferred;
     lastTop = viewport.scrollTop;
     scrolling = true;
-    captureAnchor();
+    captureAnchor(from);
     return true;
   };
 

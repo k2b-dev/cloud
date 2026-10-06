@@ -117,7 +117,9 @@ the scroll area.
 The feed follows the end while the reader is there. Otherwise it keeps the
 item at the top of the view where it is. When the view gets shorter or taller,
 for example when an on-screen keyboard opens, the item at its bottom edge
-stays in place.
+stays in place. A scroll step that reveals an item above in the same frame
+as that item changes size moves the items the reader saw by the step alone:
+the item that was at the top before the step keeps its place.
 
 ### What counts as the reader
 
