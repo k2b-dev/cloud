@@ -811,8 +811,8 @@ come from a newer Cloud release than the code that reads it. Every reader in
   scoped to a left-out Type is left out, and a Type whose reader was left out
   has no reader.
 - A `fileProvider` with a field the reader does not know is left out as a
-  whole. Whether its operations exist and match the contract is checked by
-  `fileProviderIssues`; see
+  whole, and Core logs it with the left-out entries. Whether its operations
+  exist and match the contract is checked by `fileProviderIssues`; see
   [File providers](/en/docs/platform/file-providers#understand-compatibility).
 - Core ignores presentation fields it does not know and skips translations of
   left-out entries; the remaining translations still apply.

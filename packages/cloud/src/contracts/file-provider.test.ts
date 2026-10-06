@@ -207,7 +207,11 @@ describe("file providers in Core", () => {
     capabilities: { protocolVersion: 2, manifestHash },
   });
   let errors: ReturnType<typeof spyOn> | undefined;
-  afterEach(() => errors?.mockRestore());
+  let warnings: ReturnType<typeof spyOn> | undefined;
+  afterEach(() => {
+    errors?.mockRestore();
+    warnings?.mockRestore();
+  });
 
   test("a manifest compiled by the previous release is read with an identical hash", () => {
     const manifest = previousFilesManifest as CapabilityManifest;
@@ -222,6 +226,7 @@ describe("file providers in Core", () => {
 
   test("an invalid declaration is ignored and logged once while the other capabilities stay available", () => {
     errors = spyOn(console, "error").mockImplementation(() => undefined);
+    warnings = spyOn(console, "warn").mockImplementation(() => undefined);
     const valid = compileCapabilityManifest("drive", provider());
     // An app built against a different contract: its manifest hash is intact, its provider is not.
     const invalid = structuredClone(valid);
@@ -238,6 +243,8 @@ describe("file providers in Core", () => {
     resolve();
     expect(errors).toHaveBeenCalledTimes(1);
     expect(String(errors.mock.calls[0]?.[0])).toContain("Ignored a file provider");
+    // This release read the declaration; only the contract check rejected it, so it is not reported as left out.
+    expect(warnings).not.toHaveBeenCalled();
 
     expect(
       resolveLiveCapabilityRegistryEntry("capabilities/drive", { appId: "drive", manifest: valid }, liveApp(valid.manifestHash))?.manifest

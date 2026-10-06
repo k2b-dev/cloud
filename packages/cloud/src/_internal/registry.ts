@@ -181,6 +181,8 @@ const checkedLeftOutEntries = new Map<string, string>();
 /**
  * Logs the entries of a registered manifest that this release left out, typically because the app runs a
  * newer Cloud release. Core answers those operations as not found, so the operator needs their names.
+ * A left-out file provider is named too, because the app then quietly stops offering files. `manifest` is
+ * the manifest as read, before the file-provider contract check, which logs its own rejections.
  */
 const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void => {
   if (checkedLeftOutEntries.get(manifest.appId) === manifest.manifestHash) return;
@@ -195,6 +197,7 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
       return typeof localId === "string" && !kept.has(localId) ? [`${group}/${localId}`] : [];
     });
   });
+  if (groups.fileProvider !== undefined && !manifest.fileProvider) leftOut.push("fileProvider");
   if (leftOut.length === 0) return;
   console.warn(
     JSON.stringify({
@@ -257,12 +260,13 @@ export const resolveLiveCapabilityRegistryEntry = (
   const endpoint = capabilityEndpoint(app.baseUrl);
   if (!endpoint) return null;
   try {
-    const manifest = withValidFileProvider(parseCapabilityManifest(record.manifest, app.id));
+    const read = parseCapabilityManifest(record.manifest, app.id);
+    const manifest = withValidFileProvider(read);
     const presentation = compileCapabilityPresentation(manifest, record.presentation, "reader");
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;
     }
-    reportLeftOutEntries(record.manifest, manifest);
+    reportLeftOutEntries(record.manifest, read);
     return {
       appId: app.id,
       appName: app.name,
