@@ -647,8 +647,11 @@ extension is unknown. Files never inspects the content for it.
 
 ## Offer files to other apps
 
-Files is a [file provider](/en/docs/platform/file-providers): other apps can
-browse, open, and save files in it through the shared contract.
+Files implements the operations of the shared
+[file-provider contract](/en/docs/platform/file-providers), so other apps can
+browse, open, and save files in it. Files declares itself as a provider in a
+later release, together with a shared file chooser. Until then, apps call
+these capabilities by their IDs like any other Files capability.
 
 - `provider.list` shows a person's usable storage bases as the root, under the
   names Files shows, such as **My files**. While storage cannot be reached,

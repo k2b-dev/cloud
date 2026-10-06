@@ -532,8 +532,9 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
  * - An entry with a field or value from a newer release is left out rather than stripped: its unknown
  *   part may change how the entry runs or who may use it, so guessing could widen access.
  * - Entries that depend on an entry that is not there follow it: a Query scoped to a missing type is
- *   left out, a type whose reader is missing keeps no reader, and a file provider is left out when it
- *   has a field from a newer release or names an operation that is not there.
+ *   left out, and a type whose reader is missing keeps no reader.
+ * - A file provider with a field from a newer release is left out. Whether its operations are still
+ *   there and match the contract is `fileProviderIssues`' job, which Core and consumers run.
  *
  * Every other entry stays available.
  */
@@ -550,16 +551,9 @@ const readableManifest = (value: unknown): unknown => {
   const queryIds = new Set(readableQueries.map((query) => query.localId));
   const { fileProvider: sentProvider, ...rest } = sent;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
-  const fileProvider =
-    provider.success &&
-    queryIds.has(provider.data.list) &&
-    queryIds.has(provider.data.read) &&
-    (provider.data.save === undefined || actions.some((action) => action.localId === provider.data.save))
-      ? provider.data
-      : undefined;
   return {
     ...rest,
-    ...(fileProvider ? { fileProvider } : {}),
+    ...(provider.success ? { fileProvider: provider.data } : {}),
     types: types.map((type) => {
       if (!type.reader || queryIds.has(type.reader)) return type;
       const { reader: _missing, ...withoutReader } = type;

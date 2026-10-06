@@ -810,6 +810,10 @@ come from a newer Cloud release than the code that reads it. Every reader in
 - Entries that depend on a left-out entry follow it. A Universal Search Query
   scoped to a left-out Type is left out, and a Type whose reader was left out
   has no reader.
+- A `fileProvider` with a field the reader does not know is left out as a
+  whole. Whether its operations exist and match the contract is checked by
+  `fileProviderIssues`; see
+  [File providers](/en/docs/platform/file-providers#understand-compatibility).
 - Core ignores presentation fields it does not know and skips translations of
   left-out entries; the remaining translations still apply.
 - A manifest with a different `protocolVersion` is not read at all. Core also

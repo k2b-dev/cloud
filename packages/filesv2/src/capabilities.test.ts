@@ -432,10 +432,11 @@ describe("Files as a file provider", () => {
     filesCapabilities.queries["provider.list"].run(FileProviderListInputSchema.parse(input), caller);
   const modified = "2026-09-19T08:30:00.123456789Z";
 
-  test("Files declares a provider that matches the shared contract", async () => {
+  test("the provider operations match the shared contract", async () => {
     const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
-    const manifest = compileCapabilityManifest("filesv2", filesCapabilities);
-    expect(manifest.fileProvider).toEqual({ list: "provider.list", read: "content.read", save: "provider.save" });
+    // Files declares itself together with the chooser; the operations already have to fit.
+    const fileProvider = { list: "provider.list", read: "content.read", save: "provider.save" };
+    const manifest = compileCapabilityManifest("filesv2", { ...filesCapabilities, fileProvider });
     expect(fileProviderIssues(manifest)).toEqual([]);
   });
 

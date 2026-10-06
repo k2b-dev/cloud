@@ -44,6 +44,13 @@ test("an entry with a newer field or value is left out, never weakened, and its 
   expect(resolveCapabilityResourceReader(manifest, { type: "library.author", id: "a1" })).toBeNull();
 });
 
+test("a file provider is read as sent and left out as a whole when it has a newer field", () => {
+  const future = futureLibrary().manifest;
+  const fileProvider = { list: "book.search", read: "book.read" };
+  expect(CapabilityManifestSchema.parse({ ...future, fileProvider }).fileProvider).toEqual(fileProvider);
+  expect(CapabilityManifestSchema.parse({ ...future, fileProvider: { ...fileProvider, save: 1 } })).not.toHaveProperty("fileProvider");
+});
+
 test("tolerance stops at the protocol version and at invalid known fields", () => {
   const future = futureLibrary().manifest;
   expect(CapabilityManifestSchema.safeParse({ ...future, protocolVersion: 3 }).success).toBeFalse();

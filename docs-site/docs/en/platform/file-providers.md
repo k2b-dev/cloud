@@ -12,9 +12,13 @@ updated: 2026-10-06
 
 A file provider lets other applications work with the files your application
 stores. A consumer browses your folders, opens a file, and, if you allow it,
-saves a new file into a folder. Files is the built-in provider. Any application
-that publishes a compatible declaration becomes a provider too, with the same
-contract and no special treatment.
+saves a new file into a folder. Any application that publishes a compatible
+declaration becomes a provider, with the same contract and no special
+treatment.
+
+Files implements the provider operations listed below. It declares itself as
+a provider in a later release, together with a shared file chooser. Until
+then, no built-in application declares `fileProvider`.
 
 The contract is a set of schemas exported from `@k2b/cloud/contracts`, built
 from ordinary [capabilities](/en/docs/platform/capabilities) and
@@ -200,8 +204,10 @@ transfer.
 ## Roll out a provider
 
 `fileProvider` is optional. A manifest without it keeps its earlier shape and
-hash, so older Core releases keep accepting applications that do not offer
-files. A Core release from before file providers rejects a manifest that
-declares one, and the application's capabilities then disappear from its
-catalog. Update Core before an application starts offering files; see
-[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#files-offers-its-files-to-other-applications).
+hash, so nothing changes for applications that do not offer files.
+
+Update Core before an application starts offering files. Core of an earlier
+release ignores the declaration; Core from before Cloud
+[read manifests from newer releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases)
+drops the application from its capability catalog. See
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#applications-can-offer-files-to-other-applications).
