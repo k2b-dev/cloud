@@ -3,10 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceWormhole } from "@/contracts";
+import { launchBrowser } from "../../../../../../ui/test/browser";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -236,7 +237,7 @@ beforeAll(async () => {
         : new Response("Not found", { status: 404 });
     },
   });
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 120_000);
 
 afterAll(async () => {

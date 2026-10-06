@@ -2,9 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { launchBrowser } from "../../../../../../ui/test/browser";
 
 // What a reader sees on the first paint of Book view depends on the shipped
 // cascade of Cloud, @k2b/ui and the app's own stylesheet, so a real engine
@@ -113,7 +114,7 @@ beforeAll(async () => {
     }),
   );
   css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

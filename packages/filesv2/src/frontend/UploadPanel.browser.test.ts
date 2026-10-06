@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { type Browser, type BrowserContextOptions, chromium, type Page } from "playwright";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 
 // Row heights, the toast rail's corner, scrolling and touch hit areas need a real layout engine.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -56,7 +57,7 @@ const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, de
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

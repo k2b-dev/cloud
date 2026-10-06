@@ -13,8 +13,9 @@ import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
+import { launchBrowser } from "../../../../ui/test/browser";
 import { accountMessages } from "./messages";
 
 // `/me/app` must read like the other account tabs: one frame, flat sections, one type scale, no overflow on a phone.
@@ -144,7 +145,7 @@ beforeAll(async () => {
   css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../../../../ui/test/browser";
 
-// Scrolling depends on real layout, so this runs the note editor's arrangement in Chromium.
+// Scrolling depends on real layout, so this runs the note editor's arrangement in a real browser.
 type Cursor = { clearBelow: number; clearAbove: number; bottomFade: number; topFade: number; scrollTop: number; maxScrollTop: number };
 type Harness = {
   cursor: () => Cursor;
@@ -38,7 +39,7 @@ beforeAll(async () => {
       );
     },
   });
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 
 afterAll(async () => {

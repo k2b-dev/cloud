@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../../packages/ui/test/browser";
 
 // Safari colors the status bar of an installed web app from the page: it hit-tests a point just below
 // the top edge and takes the first fixed or sticky layer there. For a layer that covers the whole
@@ -69,7 +70,7 @@ beforeAll(async () => {
   });
   if (!bundle.success) throw new AggregateError(bundle.logs, "Could not bundle the bottom sheet fixture.");
   sheet = await bundle.outputs[0]!.text();
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 120_000);
 
 afterAll(async () => {

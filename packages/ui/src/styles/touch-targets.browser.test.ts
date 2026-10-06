@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { launchBrowser } from "../../test/browser";
 
 // Which control a tap reaches depends on layout and paint order, which
 // happy-dom does not model, so a real engine renders the shipped stylesheet.
@@ -41,7 +42,7 @@ const phone = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isM
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

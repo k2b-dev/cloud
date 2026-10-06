@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Scrolling, touch-action, the toast rail's place, and the room a persistent toast takes are layout results, which
 // happy-dom does not model, so a real engine runs the built package at phone size.
@@ -84,7 +85,7 @@ const script = await build.outputs[0]!.text();
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

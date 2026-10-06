@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { launchBrowser } from "../../test/browser";
 
 // iOS Safari zooms the page when a focused field's text is smaller than 16 px.
 // Font size and the boxes around a field are layout results, which happy-dom
@@ -33,7 +34,7 @@ const phone = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isM
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

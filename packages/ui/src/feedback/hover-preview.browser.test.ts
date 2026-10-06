@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, type BrowserContextOptions, chromium, type Page } from "playwright";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Pointer types, the top layer, layout, and the engine's timers decide when
 // and where the card opens, none of which happy-dom models, so a real engine
@@ -72,7 +73,7 @@ const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } 
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

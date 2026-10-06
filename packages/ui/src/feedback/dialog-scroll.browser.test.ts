@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Which box scrolls is decided by layout, which happy-dom does not model, so a
 // real engine runs the shipped browser build and stylesheet.
@@ -141,7 +142,7 @@ const variants = [...Object.keys(footers), "custom dialog", "full custom dialog"
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // Which rule wins is decided by the built stylesheet: the build rewrites some
 // selectors, so a real engine computes styles from the shipped files.
@@ -145,7 +146,7 @@ const script = await build.outputs[0]!.text();
 let browser: Browser;
 let page: Page;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>#plain-sheet .stretched{flex:1 1 auto;min-height:0}</style></head>` +

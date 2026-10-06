@@ -8,7 +8,8 @@ import * as services from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../../../ui/test/browser";
 
 // Whether the sign-in card is a frame or flat is decided by the cascade
 // between Tailwind utilities, @k2b/ui and Cloud styles at a viewport width,
@@ -69,7 +70,7 @@ beforeAll(async () => {
     "/public/core/app.css": appCss!,
     "/public/global.css": globalCss!,
   };
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
