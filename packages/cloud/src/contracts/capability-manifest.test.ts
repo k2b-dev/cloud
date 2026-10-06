@@ -7,7 +7,7 @@ const catalogPage = (manifest: unknown) => ({
   protocolVersion: 2,
   generatedAt: "2027-01-01T00:00:00Z",
   apps: [{ appId: "library", appName: "Library", appIcon: "ti ti-books", appDescription: "Books", appAccent: "#0f766e", manifest }],
-  page: { hasMore: false },
+  page: { hasMore: true, nextCursor: "c2", total: 40 },
 });
 
 test("a manifest without newer fields reads unchanged", () => {
@@ -18,6 +18,7 @@ test("a catalog page from a newer release keeps every entry this release can rea
   const future = futureLibrary().manifest;
   const page = CapabilityCatalogSchema.parse(catalogPage(future));
   expect(page).not.toHaveProperty("generatedAt");
+  expect(page.page).toEqual({ hasMore: true, nextCursor: "c2" });
   expect(page.apps[0]).not.toHaveProperty("appAccent");
 
   const manifest = page.apps[0]!.manifest;

@@ -4,7 +4,11 @@ import { z } from "zod";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_MAX_RESULT_BYTES,
+  type CapabilityActionManifest,
+  type CapabilityDefinitions,
+  type CapabilityManifest,
   CapabilityPageSchema,
+  type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
   cloudResourceRefAppId,
   defineCapabilities,
@@ -692,9 +696,74 @@ describe("capability v1 compilation", () => {
   });
 
   test("keeps the producer strict about declarations its release does not define", () => {
-    // An app written against a newer release can still type-check here; the compiler must not drop the field silently.
-    const newer = { ...example(), fileProvider: { list: "get", read: "get" } };
-    expect(() => compileCapabilities("example", newer)).toThrow('Capability definitions contain unsupported field "fileProvider"');
+    // `defineCapabilities` infers its argument, so a declaration written for a newer release still
+    // type-checks here. The compiler must reject a field it does not define instead of dropping it.
+    const base = example();
+    const search = {
+      title: "Search items",
+      description: "Finds items.",
+      input: UniversalSearchInputSchema,
+      data: UniversalSearchDataSchema,
+      openWorld: false,
+      universalSearch: { tags: [{ tag: "item", title: "Items", description: "Search items." }] },
+      run: async () => ok({ data: [] }),
+    };
+    const open = {
+      title: "Open item",
+      description: "Opens one item.",
+      input: z.object({ id: z.string().max(100).describe("Stable item id.") }).strict(),
+      path: "/app/example",
+    };
+    const rejects = (definitions: CapabilityDefinitions, message: string) =>
+      expect(() => compileCapabilities("example", definitions)).toThrow(message);
+
+    expect(() =>
+      compileCapabilities("example", defineCapabilities({ ...base, queries: { ...base.queries, search }, commands: { open } })),
+    ).not.toThrow();
+    rejects(
+      defineCapabilities({ ...base, fileProvider: { list: "get", read: "get" } }),
+      'Capability declaration contains unsupported field "fileProvider"',
+    );
+    rejects(
+      defineCapabilities({ ...base, types: { item: { ...base.types.item, scope: "owner" } } }),
+      'Resource type item contains unsupported field "scope"',
+    );
+    rejects(
+      defineCapabilities({ ...base, queries: { get: { ...base.queries.get, delivery: "events" } } }),
+      'Query get contains unsupported field "delivery"',
+    );
+    rejects(
+      defineCapabilities({ ...base, actions: { rename: { ...base.actions.rename, requireStepUp: true } } }),
+      'Action rename contains unsupported field "requireStepUp"',
+    );
+    rejects(
+      defineCapabilities({ ...base, commands: { open: { ...open, requiresRoles: ["admin"] } } }),
+      'Command open contains unsupported field "requiresRoles"',
+    );
+    rejects(
+      defineCapabilities({
+        ...base,
+        queries: { ...base.queries, search: { ...search, universalSearch: { ...search.universalSearch, ranking: "recent" } } },
+      }),
+      'Query search universalSearch contains unsupported field "ranking"',
+    );
+    const hiddenTag = { tag: "item", title: "Items", description: "Search items.", hidden: true };
+    rejects(
+      defineCapabilities({ ...base, queries: { ...base.queries, search: { ...search, universalSearch: { tags: [hiddenTag] } } } }),
+      'Query search search tag item contains unsupported field "hidden"',
+    );
+    rejects(
+      defineCapabilities({
+        ...base,
+        queries: {
+          get: {
+            ...base.queries.get,
+            stream: { direction: "read", maxBytes: 1024, read: async () => new Response("item"), maxConcurrent: 1 },
+          },
+        },
+      }),
+      'Query get stream contains unsupported field "maxConcurrent"',
+    );
   });
 
   test("revalidates untrusted manifests and their integrity hashes", () => {
@@ -704,26 +773,73 @@ describe("capability v1 compilation", () => {
 
     const tampered = structuredClone(manifest);
     tampered.queries[0]!.dataSchema = { type: "string" };
-    expect(() => parseCapabilityManifest(tampered, "example")).toThrow("schemaHash does not match");
-
-    const writeQuery = structuredClone(manifest);
-    writeQuery.queries[0]!.stream = { direction: "write", maxBytes: 1024 };
-    expect(() => parseCapabilityManifest(writeQuery, "example")).toThrow("write streams require an idempotent Action");
-
-    const nonIdempotentWrite = structuredClone(manifest);
-    nonIdempotentWrite.actions[0]!.stream = { direction: "write", maxBytes: 1024 };
-    nonIdempotentWrite.actions[0]!.idempotency = "none";
-    expect(() => parseCapabilityManifest(nonIdempotentWrite, "example")).toThrow("write streams require an idempotent Action");
+    expect(() => parseCapabilityManifest(tampered, "example")).toThrow("manifestHash does not match the manifest");
 
     const collision = structuredClone(manifest);
     collision.queries[0]!.localId = collision.types[0]!.localId;
-    expect(() => parseCapabilityManifest(collision, "example")).toThrow("declared more than once");
+    const { manifestHash: _manifestHash, ...collisionBase } = collision;
+    expect(() => parseCapabilityManifest({ ...collisionBase, manifestHash: capabilityHash(collisionBase) }, "example")).toThrow(
+      "declared more than once",
+    );
+  });
 
-    const missingReader = structuredClone(manifest);
-    missingReader.types[0]!.reader = "missing";
-    const { manifestHash: _manifestHash, ...manifestBase } = missingReader;
-    missingReader.manifestHash = capabilityHash(manifestBase);
-    expect(() => parseCapabilityManifest(missingReader, "example")).toThrow("must name an existing Query");
+  test("leaves out only the entries this release cannot use", () => {
+    const manifest = compileCapabilities("example", example()).manifest;
+    const read = (change: (copy: CapabilityManifest) => void): CapabilityManifest => {
+      const copy = structuredClone(manifest);
+      change(copy);
+      const { manifestHash: _previous, ...base } = copy;
+      return parseCapabilityManifest({ ...base, manifestHash: capabilityHash(base) }, "example");
+    };
+    const schemaHash = (operation: CapabilityQueryManifest | CapabilityActionManifest) =>
+      capabilityHash({
+        inputSchema: operation.inputSchema,
+        dataSchema: operation.dataSchema,
+        ...(operation.stream ? { stream: operation.stream } : {}),
+      });
+
+    // A JSON Schema keyword this release cannot read: the Query goes, and so does the Type reader naming it.
+    const unreadable = read((copy) => {
+      const query = copy.queries[0]!;
+      query.inputSchema = {
+        ...query.inputSchema,
+        properties: { id: { type: "string", description: "Stable item id.", not: { const: "x" } } },
+      };
+      query.schemaHash = schemaHash(query);
+    });
+    expect(unreadable.queries).toEqual([]);
+    expect(unreadable.types).toEqual([{ localId: "item", title: "Item", description: "One test item." }]);
+    expect(unreadable.actions).toEqual(manifest.actions);
+
+    // A schema hash this release does not reproduce.
+    expect(
+      read((copy) => {
+        copy.queries[0]!.dataSchema = { type: "string" };
+      }).queries,
+    ).toEqual([]);
+
+    // A write stream this release would run without idempotency.
+    const writeQuery = read((copy) => {
+      const query = copy.queries[0]!;
+      query.stream = { direction: "write", maxBytes: 1024 };
+      query.schemaHash = schemaHash(query);
+    });
+    expect(writeQuery.queries).toEqual([]);
+    const nonIdempotentWrite = read((copy) => {
+      const action = copy.actions[0]!;
+      action.stream = { direction: "write", maxBytes: 1024 };
+      action.idempotency = "none";
+      action.schemaHash = schemaHash(action);
+    });
+    expect(nonIdempotentWrite.actions).toEqual([]);
+    expect(nonIdempotentWrite.queries).toEqual(manifest.queries);
+
+    // A reader that names no Query: the Type stays without a reader.
+    expect(
+      read((copy) => {
+        copy.types[0]!.reader = "missing";
+      }).types[0],
+    ).not.toHaveProperty("reader");
   });
 
   test("allows additive same-id evolution and reports breaking changes", () => {

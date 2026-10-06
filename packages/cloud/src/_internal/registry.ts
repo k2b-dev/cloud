@@ -174,13 +174,47 @@ const capabilityEndpoint = (baseUrl: string): string | null => {
 const appAccent = (value: string | undefined): AppAppearanceColor | undefined =>
   /^#[0-9a-f]{6}$/i.test(value ?? "") ? (value as AppAppearanceColor) : undefined;
 
+/** Last manifest per app whose left-out entries were checked, so each registered manifest logs once. */
+const checkedLeftOutEntries = new Map<string, string>();
+
+/**
+ * Logs the entries of a registered manifest that this release left out, typically because the app runs a
+ * newer Cloud release. Core answers those operations as not found, so the operator needs their names.
+ */
+const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void => {
+  if (checkedLeftOutEntries.get(manifest.appId) === manifest.manifestHash) return;
+  checkedLeftOutEntries.set(manifest.appId, manifest.manifestHash);
+  const kept = new Set([...manifest.types, ...manifest.queries, ...manifest.actions, ...manifest.commands].map((entry) => entry.localId));
+  const groups = sent as Record<string, unknown>;
+  const leftOut = (["types", "queries", "actions", "commands"] as const).flatMap((group) => {
+    const entries = groups[group];
+    if (!Array.isArray(entries)) return [];
+    return entries.flatMap((entry: unknown) => {
+      const localId = entry && typeof entry === "object" ? (entry as { localId?: unknown }).localId : undefined;
+      return typeof localId === "string" && !kept.has(localId) ? [`${group}/${localId}`] : [];
+    });
+  });
+  if (leftOut.length === 0) return;
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      source: "capability-registry",
+      message: "Left out capability entries this Cloud release cannot read",
+      appId: manifest.appId,
+      manifestHash: manifest.manifestHash,
+      leftOutCount: leftOut.length,
+      leftOut: leftOut.slice(0, 20),
+    }),
+  );
+};
+
+/** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
   value: unknown,
   app: AppRegistryEntry | undefined,
 ): CapabilityRegistryEntry | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (Object.keys(value).some((field) => field !== "appId" && field !== "manifest" && field !== "presentation")) return null;
   const record = value as Partial<CapabilityRegistryRecord>;
   if (!app || typeof record.appId !== "string" || key !== `capabilities/${record.appId}` || record.appId !== app.id) return null;
   if (!app.capabilities) return null;
@@ -192,6 +226,7 @@ export const resolveLiveCapabilityRegistryEntry = (
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;
     }
+    reportLeftOutEntries(record.manifest, manifest);
     return {
       appId: app.id,
       appName: app.name,

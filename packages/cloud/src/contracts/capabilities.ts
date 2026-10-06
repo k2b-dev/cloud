@@ -506,20 +506,14 @@ export const CapabilityAppIdSchema = z
 
 const MAX_MANIFEST_ENTRIES = 200;
 
-/** Splits sent entries into those this release reads completely and the local ids of the rest. */
-const readEntries = <T extends z.ZodType>(values: unknown, entry: T): { kept: z.output<T>[]; leftOut: Set<string> } | null => {
+/** Keeps the sent entries this release reads completely. */
+const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
   // Not a bounded list: leave the value to the manifest schema, which rejects it.
   if (!Array.isArray(values) || values.length > MAX_MANIFEST_ENTRIES) return null;
-  const kept: z.output<T>[] = [];
-  const leftOut = new Set<string>();
-  for (const value of values) {
+  return values.flatMap((value) => {
     const parsed = entry.safeParse(value);
-    if (parsed.success) kept.push(parsed.data);
-    else if (value && typeof value === "object" && typeof (value as { localId?: unknown }).localId === "string") {
-      leftOut.add((value as { localId: string }).localId);
-    }
-  }
-  return { kept, leftOut };
+    return parsed.success ? [parsed.data] : [];
+  });
 };
 
 /**
@@ -529,8 +523,8 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): { kept: z.
  *   level; anything that restricts an existing entry belongs inside that entry.
  * - An entry with a field or value from a newer release is left out rather than stripped: its unknown
  *   part may change how the entry runs or who may use it, so guessing could widen access.
- * - Entries that depend on a left-out entry follow it: a Query scoped to a left-out type is left out,
- *   and a type whose reader was left out keeps no reader.
+ * - Entries that depend on an entry that is not there follow it: a Query scoped to a missing type is
+ *   left out, and a type whose reader is missing keeps no reader.
  *
  * Every other entry stays available.
  */
@@ -541,23 +535,20 @@ const readableManifest = (value: unknown): unknown => {
   const queries = readEntries(sent.queries, CapabilityQueryManifestSchema);
   const actions = readEntries(sent.actions, CapabilityActionManifestSchema);
   const commands = readEntries(sent.commands, CapabilityCommandManifestSchema);
-  const readableQueries = queries?.kept.filter((query) => {
-    if (!query.universalSearch?.scopeTypes?.some((type) => types?.leftOut.has(type))) return true;
-    queries.leftOut.add(query.localId);
-    return false;
-  });
+  if (!types || !queries || !actions || !commands) return value;
+  const typeIds = new Set(types.map((type) => type.localId));
+  const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
+  const queryIds = new Set(readableQueries.map((query) => query.localId));
   return {
     ...sent,
-    types: types
-      ? types.kept.map((type) => {
-          if (!type.reader || !queries?.leftOut.has(type.reader)) return type;
-          const { reader: _leftOut, ...withoutReader } = type;
-          return withoutReader;
-        })
-      : sent.types,
-    queries: readableQueries ?? sent.queries,
-    actions: actions?.kept ?? sent.actions,
-    commands: commands?.kept ?? sent.commands,
+    types: types.map((type) => {
+      if (!type.reader || queryIds.has(type.reader)) return type;
+      const { reader: _missing, ...withoutReader } = type;
+      return withoutReader;
+    }),
+    queries: readableQueries,
+    actions,
+    commands,
   };
 };
 
@@ -595,7 +586,7 @@ export const resolveCapabilityResourceReader = (manifest: CapabilityManifest, re
   return manifest.queries.find((candidate) => candidate.localId === type.reader) ?? null;
 };
 
-/** Like the manifest, catalog entries and pages ignore fields that a newer Cloud release added. */
+/** Like the manifest, catalog entries, pages, and their pagination ignore fields that a newer Cloud release added. */
 export const CapabilityCatalogAppSchema = z.object({
   appId: CapabilityAppIdSchema,
   appName: z.string().min(1).max(200),
@@ -607,7 +598,7 @@ export const CapabilityCatalogAppSchema = z.object({
 export const CapabilityCatalogSchema = z.object({
   protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
   apps: z.array(CapabilityCatalogAppSchema).max(25),
-  page: CapabilityPageSchema,
+  page: z.discriminatedUnion("hasMore", [CapabilityPageSchema.options[0].strip(), CapabilityPageSchema.options[1].strip()]),
 });
 
 export type CapabilityCatalog = z.infer<typeof CapabilityCatalogSchema>;

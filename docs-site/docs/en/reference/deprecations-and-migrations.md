@@ -24,9 +24,14 @@ one new field. See
   `CapabilityCatalogSchema`. Later manifest fields then no longer break them.
 - Update the `capabilities` CLI plugin of each `cld` profile with
   `cld plugins update capabilities`.
-- `app.start()` now rejects capability definitions with a top-level field its
-  release does not define, instead of ignoring it. Remove such a field or
-  update `@k2b/cloud` to the release that defines it.
+- `app.start()` now rejects a capability declaration field its release does
+  not define, at every level, instead of ignoring it: in the declaration, a
+  Type, Query, Action, or Command, Universal Search, a search tag, or a stream.
+  Remove such a field or update `@k2b/cloud` to the release that defines it.
+- `CapabilityManifestSchema` is now a Zod pipe instead of an object schema. It
+  no longer has `.shape`, `.extend()`, `.pick()`, or `.strict()`, and
+  `z.input<typeof CapabilityManifestSchema>` is `unknown`. Parse with it and
+  use the `CapabilityManifest` type for the result.
 
 ## Files references survive rename and move
 

@@ -691,6 +691,10 @@ fail the Action rather than applying a different effect.
 Cloud validates the declaration at startup:
 
 - `protocolVersion` is currently `2`;
+- the declaration and every Type, Query, Action, Command, Universal Search
+  block, search tag, and stream in it use only fields that your `@k2b/cloud`
+  release defines, so a field from a newer release fails startup instead of
+  being ignored;
 - local IDs start with a lower-case letter and may contain `.`, `_`, or `-`;
 - one local ID may occur only once across Types, Queries, Actions, and Commands;
 - inputs are closed `z.object(...).strict()` schemas;
@@ -791,22 +795,28 @@ come from a newer Cloud release than the code that reads it. Every reader in
 `capabilities` CLI plugin.
 
 - Readers ignore top-level fields they do not know: in the manifest, in each
-  catalog app, and in the catalog page. The app's other capabilities stay
-  available.
+  catalog app, and in the catalog page and its `page` object. The app's other
+  capabilities stay available.
 - A Type, Query, Action, or Command with a field or value the reader does not
   know is left out, not stripped. The unknown part may change how the entry
   runs or who may use it, so reading the rest could widen access. Core returns
   404 for an operation it left out.
+- Core also leaves out a Query, Action, or Command it cannot use as described,
+  for example because it cannot read its JSON Schema. It logs the left-out
+  entries once per registered manifest with the app ID and their local IDs.
 - Entries that depend on a left-out entry follow it. A Universal Search Query
   scoped to a left-out Type is left out, and a Type whose reader was left out
   has no reader.
 - Core ignores presentation fields it does not know and skips translations of
   left-out entries; the remaining translations still apply.
-- A manifest with a different `protocolVersion` is not read at all.
+- A manifest with a different `protocolVersion` is not read at all. Core also
+  rejects the whole manifest when its app ID, unique local IDs, or
+  `manifestHash` do not check out.
 
-Producers stay strict. `app.start()` and `compileCapabilityManifest()` reject a
-declaration their release does not define, so an application never registers a
-field it believes is in effect while its `@k2b/cloud` ignores it.
+Producers stay strict. `app.start()` and `compileCapabilityManifest()` reject
+every declaration field their release does not define, at every level, so an
+application never registers a field it believes is in effect while its
+`@k2b/cloud` ignores it.
 
 Because older readers ignore them, new top-level manifest fields may only add
 something, such as a provider declaration. A change that restricts how an

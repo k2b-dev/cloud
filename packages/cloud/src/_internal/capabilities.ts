@@ -10,6 +10,7 @@ import {
   type CapabilityActionManifest,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
+  type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
   type CapabilityDefinitions,
@@ -26,6 +27,10 @@ import {
   type CapabilityPresentationTranslation,
   type CapabilityQueryDefinition,
   type CapabilityQueryManifest,
+  type CapabilityResourceTypeDefinition,
+  type CapabilitySearchTagDefinition,
+  type CapabilityStreamDefinition,
+  type CapabilityUniversalSearchDefinition,
   capabilityResultSchema,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
@@ -41,7 +46,74 @@ const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
  */
 const StrictCapabilityManifestSchema = CapabilityManifestSchema.out.strict();
 
-const CAPABILITY_DEFINITION_FIELDS = new Set(["protocolVersion", "presentation", "types", "queries", "actions", "commands"]);
+/**
+ * Every declaration field this release defines, per kind. The compiler rejects any other field instead
+ * of dropping it: a declaration written for a newer release may restrict how an entry runs. Each list
+ * is typed as the complete key set, so a new declaration field does not compile until it is listed.
+ */
+type DefinedFields<T> = Readonly<Record<keyof T, true>>;
+const DECLARATION_FIELDS = {
+  protocolVersion: true,
+  presentation: true,
+  types: true,
+  queries: true,
+  actions: true,
+  commands: true,
+} satisfies DefinedFields<CapabilityDefinitions>;
+const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
+const QUERY_FIELDS = {
+  title: true,
+  description: true,
+  input: true,
+  data: true,
+  openWorld: true,
+  stream: true,
+  universalSearch: true,
+  run: true,
+} satisfies DefinedFields<CapabilityQueryDefinition>;
+const ACTION_FIELDS = {
+  title: true,
+  description: true,
+  input: true,
+  data: true,
+  destructive: true,
+  openWorld: true,
+  stream: true,
+  idempotency: true,
+  approval: true,
+  review: true,
+  run: true,
+} satisfies DefinedFields<CapabilityActionDefinition>;
+const COMMAND_FIELDS = {
+  title: true,
+  description: true,
+  icon: true,
+  keywords: true,
+  input: true,
+  path: true,
+} satisfies DefinedFields<CapabilityCommandDefinition>;
+const UNIVERSAL_SEARCH_FIELDS = { tags: true, scopeTypes: true } satisfies DefinedFields<CapabilityUniversalSearchDefinition>;
+const SEARCH_TAG_FIELDS = {
+  tag: true,
+  title: true,
+  description: true,
+  aliases: true,
+} satisfies DefinedFields<CapabilitySearchTagDefinition>;
+const READ_STREAM_FIELDS = { direction: true, maxBytes: true, read: true } satisfies DefinedFields<
+  Extract<CapabilityStreamDefinition, { direction: "read" }>
+>;
+const WRITE_STREAM_FIELDS = { direction: true, maxBytes: true, write: true, status: true, abort: true } satisfies DefinedFields<
+  Extract<CapabilityStreamDefinition, { direction: "write" }>
+>;
+
+const assertDefinedFields = (definition: object, fields: object, label: string): void => {
+  const field = Object.keys(definition).find((key) => !Object.hasOwn(fields, key));
+  if (field) throw new Error(`${label} contains unsupported field "${field}"`);
+};
+
+const assertDefinedStreamFields = (stream: CapabilityStreamDefinition | undefined, label: string): void => {
+  if (stream) assertDefinedFields(stream, stream.direction === "write" ? WRITE_STREAM_FIELDS : READ_STREAM_FIELDS, `${label} stream`);
+};
 
 export type CompiledCapabilityQuery = {
   definition: CapabilityQueryDefinition;
@@ -220,12 +292,14 @@ const compileOperationPresentation = (
     assertText(translation.description, `${label}.description`, 1000);
   }
   let searchTags: CapabilityOperationPresentationTranslation["searchTags"];
-  if (translation.searchTags !== undefined) {
-    if (!("universalSearch" in operation) || !operation.universalSearch) throw new Error(`${label}.searchTags requires Universal Search`);
+  const universalSearch = "universalSearch" in operation ? operation.universalSearch : undefined;
+  // A reader skips search-tag copy for an operation without Universal Search instead of losing its other copy.
+  if (translation.searchTags !== undefined && (strict || universalSearch)) {
+    if (!universalSearch) throw new Error(`${label}.searchTags requires Universal Search`);
     if (!translation.searchTags || typeof translation.searchTags !== "object" || Array.isArray(translation.searchTags)) {
       throw new Error(`${label}.searchTags must be an object`);
     }
-    const tags = new Map(operation.universalSearch.tags.map((tag) => [tag.tag, tag]));
+    const tags = new Map(universalSearch.tags.map((tag) => [tag.tag, tag]));
     searchTags = Object.fromEntries(
       Object.entries(translation.searchTags as Record<string, unknown>).map(([tag, presentation]) => {
         if (!tags.has(tag)) throw new Error(`${label}.searchTags references unknown stable tag "${tag}"`);
@@ -423,8 +497,10 @@ const assertLocalId = (localId: string, label: string): void => {
 
 const normalizeSearchTags = (definition: CapabilityQueryDefinition, label: string) => {
   if (!definition.universalSearch) return undefined;
+  assertDefinedFields(definition.universalSearch, UNIVERSAL_SEARCH_FIELDS, `${label} universalSearch`);
   const seen = new Set<string>();
   const tags = definition.universalSearch.tags.map((tag) => {
+    assertDefinedFields(tag, SEARCH_TAG_FIELDS, `${label} search tag ${tag.tag}`);
     assertText(tag.tag, `${label} search tag`, 64);
     assertText(tag.title, `${label} search tag title`, 120);
     assertText(tag.description, `${label} search tag description`, 500);
@@ -474,8 +550,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   if (definitions.protocolVersion !== CAPABILITY_PROTOCOL_VERSION) {
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
-  const unsupportedField = Object.keys(definitions).find((field) => !CAPABILITY_DEFINITION_FIELDS.has(field));
-  if (unsupportedField) throw new Error(`Capability definitions contain unsupported field "${unsupportedField}"`);
+  assertDefinedFields(definitions, DECLARATION_FIELDS, "Capability declaration");
 
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {
@@ -488,6 +563,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([localId, definition]) => {
       registerLocalId(localId, "Resource type");
+      assertDefinedFields(definition, TYPE_FIELDS, `Resource type ${localId}`);
       assertText(definition.title, `Resource type ${localId} title`, 120);
       assertText(definition.description, `Resource type ${localId} description`, 500);
       return {
@@ -504,6 +580,8 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   for (const [localId, definition] of Object.entries(definitions.queries ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
     registerLocalId(localId, "Query");
     const label = `Query ${localId}`;
+    assertDefinedFields(definition, QUERY_FIELDS, label);
+    assertDefinedStreamFields(definition.stream, label);
     if (
       definition.stream &&
       ((definition.stream.direction === "write" && !("idempotency" in definition)) || definition.stream.maxBytes <= 0)
@@ -552,6 +630,8 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   for (const [localId, definition] of Object.entries(definitions.actions ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
     registerLocalId(localId, "Action");
     const label = `Action ${localId}`;
+    assertDefinedFields(definition, ACTION_FIELDS, label);
+    assertDefinedStreamFields(definition.stream, label);
     // Declaration rule, documented in docs/platform/capabilities.md:
     // destructive means irreversible or externally visible. An irreversible or
     // open-world effect must always be reviewable and safely repeatable, and
@@ -613,6 +693,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([localId, definition]) => {
       registerLocalId(localId, "Command");
+      assertDefinedFields(definition, COMMAND_FIELDS, `Command ${localId}`);
       const inputSchema = projectSchema(definition.input, `Command ${localId} input`, "input");
       assertClosedObjectInput(inputSchema, `Command ${localId} input`);
       return CapabilityCommandManifestSchema.parse({
@@ -756,78 +837,95 @@ export const resolveCapabilityManifestPresentation = (
   return current;
 };
 
+const passes = (check: () => void): boolean => {
+  try {
+    check();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Checks what the manifest schema cannot: that this release can call the operation as described. */
+const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityActionManifest): void => {
+  try {
+    z.fromJSONSchema(structuredClone(operation.inputSchema));
+    z.fromJSONSchema(structuredClone(operation.dataSchema));
+  } catch (error) {
+    throw new Error(
+      `Operation ${operation.localId} contains unsupported JSON Schema: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  assertClosedObjectInput(operation.inputSchema, `Operation ${operation.localId} input`);
+  if (operation.stream?.direction === "write" && (!("idempotency" in operation) || operation.idempotency !== "required")) {
+    throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
+  }
+  const expectedSchemaHash = capabilityHash({
+    inputSchema: operation.inputSchema,
+    dataSchema: operation.dataSchema,
+    ...(operation.stream ? { stream: operation.stream } : {}),
+  });
+  if (operation.schemaHash !== expectedSchemaHash) throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
+  if ("universalSearch" in operation && operation.universalSearch) {
+    const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
+    const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
+    if (
+      capabilityHash(operation.inputSchema) !== capabilityHash(expectedInput) ||
+      capabilityHash(operation.dataSchema) !== capabilityHash(expectedData)
+    ) {
+      throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
+    }
+  }
+};
+
+const assertUsableCommand = (command: CapabilityCommandManifest): void => {
+  z.fromJSONSchema(structuredClone(command.inputSchema));
+  assertClosedObjectInput(command.inputSchema, `Command ${command.localId} input`);
+};
+
 /**
  * Validates an untrusted live manifest and recomputes every integrity hash.
  *
- * A manifest from a newer release reads like every other reader reads it (`CapabilityManifestSchema`).
- * The manifest hash is checked against what the app sent, including everything ignored here, and
- * stays the manifest's identity: the app's registry summary still matches, so the app is not treated
- * as changed and a manifest without newer fields keeps its hash.
+ * The manifest as a whole must be intact: the app id, unique local IDs, and the manifest hash. That
+ * hash is checked against what the app sent, including everything ignored here, and stays the
+ * manifest's identity: the app's registry summary still matches, so the app is not treated as changed
+ * and a manifest without newer fields keeps its hash.
+ *
+ * Entries read like every reader reads them (`CapabilityManifestSchema`). An operation or Command this
+ * release cannot use as described, for example because it cannot read its JSON Schema, is left out the
+ * same way, together with what depends on it, and a Type whose reader Query does not take a single `id`
+ * keeps no reader. The app's other entries stay available.
  */
 export const parseCapabilityManifest = (value: unknown, expectedAppId: string): CapabilityManifest => {
-  const manifest = CapabilityManifestSchema.parse(value);
-  if (manifest.appId !== expectedAppId) throw new Error(`manifest appId must be ${expectedAppId}`);
-
+  const sent = CapabilityManifestSchema.parse(value);
+  if (sent.appId !== expectedAppId) throw new Error(`manifest appId must be ${expectedAppId}`);
   const localIds = new Set<string>();
-  const registerLocalId = (localId: string, kind: string): void => {
+  for (const { localId } of [...sent.types, ...sent.queries, ...sent.actions, ...sent.commands]) {
     if (localIds.has(localId)) throw new Error(`localId ${localId} is declared more than once across Types, Queries, and Actions`);
     localIds.add(localId);
-    assertLocalId(localId, kind);
-  };
-  for (const type of manifest.types) registerLocalId(type.localId, "Resource type");
-  for (const operation of [...manifest.queries, ...manifest.actions]) {
-    registerLocalId(operation.localId, "Operation");
-    const inputSchema = structuredClone(operation.inputSchema);
-    const dataSchema = structuredClone(operation.dataSchema);
-    try {
-      z.fromJSONSchema(inputSchema);
-      z.fromJSONSchema(dataSchema);
-    } catch (error) {
-      throw new Error(
-        `Operation ${operation.localId} contains unsupported JSON Schema: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    assertClosedObjectInput(inputSchema, `Operation ${operation.localId} input`);
-    if (operation.stream?.direction === "write" && (!("idempotency" in operation) || operation.idempotency !== "required")) {
-      throw new Error(`Operation ${operation.localId} write streams require an idempotent Action`);
-    }
-    const expectedSchemaHash = capabilityHash({
-      inputSchema: operation.inputSchema,
-      dataSchema: operation.dataSchema,
-      ...(operation.stream ? { stream: operation.stream } : {}),
-    });
-    if (operation.schemaHash !== expectedSchemaHash)
-      throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
-    if ("universalSearch" in operation && operation.universalSearch) {
-      for (const type of operation.universalSearch.scopeTypes ?? []) {
-        if (!manifest.types.some((entry) => entry.localId === type)) throw new Error(`Unknown search scope type ${type}`);
-      }
-      const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
-      const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
-      if (
-        capabilityHash(operation.inputSchema) !== capabilityHash(expectedInput) ||
-        capabilityHash(operation.dataSchema) !== capabilityHash(expectedData)
-      ) {
-        throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
-      }
-    }
-  }
-  for (const command of manifest.commands) {
-    registerLocalId(command.localId, "Command");
-    z.fromJSONSchema(structuredClone(command.inputSchema));
-    assertClosedObjectInput(command.inputSchema, `Command ${command.localId} input`);
-  }
-  const queries = new Map(manifest.queries.map((query) => [query.localId, query]));
-  for (const type of manifest.types) {
-    if (!type.reader) continue;
-    const reader = queries.get(type.reader);
-    if (!reader) throw new Error(`Resource type ${type.localId} reader ${type.reader} must name an existing Query`);
-    assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader ${type.reader} input`);
   }
   // The schema accepted `value`, so it is an object; hash all of it, not only what this release read.
-  const { manifestHash: _sentHash, ...sent } = value as Record<string, unknown>;
-  if (manifest.manifestHash !== capabilityHash(sent)) throw new Error("manifestHash does not match the manifest");
-  return manifest;
+  const { manifestHash: _sentHash, ...sentBase } = value as Record<string, unknown>;
+  if (sent.manifestHash !== capabilityHash(sentBase)) throw new Error("manifestHash does not match the manifest");
+
+  // Reading the usable entries again leaves out what depends on an entry left out here.
+  const manifest = CapabilityManifestSchema.parse({
+    ...sent,
+    queries: sent.queries.filter((query) => passes(() => assertUsableOperation(query))),
+    actions: sent.actions.filter((action) => passes(() => assertUsableOperation(action))),
+    commands: sent.commands.filter((command) => passes(() => assertUsableCommand(command))),
+  });
+  const queries = new Map(manifest.queries.map((query) => [query.localId, query]));
+  return {
+    ...manifest,
+    types: manifest.types.map((type) => {
+      const reader = type.reader === undefined ? undefined : queries.get(type.reader);
+      if (!reader || passes(() => assertCanonicalReaderInput(reader.inputSchema, `Resource type ${type.localId} reader input`)))
+        return type;
+      const { reader: _unusable, ...withoutReader } = type;
+      return withoutReader;
+    }),
+  };
 };
 
 const schemaSemantics = (value: unknown): unknown => {

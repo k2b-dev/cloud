@@ -89,6 +89,8 @@ export const futureLibrary = () => {
         types: { book: { title: "Buch" } },
         queries: { "author.read": { title: "Autor lesen" }, "book.read": { title: "Buch lesen", hint: "Neu" } },
         actions: { "book.archive": { title: "Buch archivieren" } },
+        // Search tags for a Command, which this release does not support.
+        commands: { "book.open": { title: "Buch öffnen", searchTags: { book: { title: "Bücher" } } } },
         events: { "book.changed": { title: "Buch geändert" } },
       },
     },
