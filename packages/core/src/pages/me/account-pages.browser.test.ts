@@ -313,7 +313,8 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
             (actions) => actions.getBoundingClientRect().right - panel.getBoundingClientRect().right,
           ),
         ),
-        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        // The screen's width: Chromium's phone emulation widens `innerWidth` to wide content, as a page zoomed out.
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
     });
   } finally {
