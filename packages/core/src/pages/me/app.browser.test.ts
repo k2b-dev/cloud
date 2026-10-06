@@ -342,6 +342,13 @@ describe("the pairing dialog in a browser", () => {
               return { height: dialog.getBoundingClientRect().height, overflow: body.scrollHeight - body.clientHeight };
             });
           };
+          // Keys go to the focused element. Playwright sees the code step before the dialog's first frame, where the
+          // dialog puts focus in the code, so each code waits for that focus.
+          const enter = async (code: string) => {
+            await tab.waitForFunction(() => document.activeElement?.matches(".k2b-pin-input__digit") ?? false);
+            await tab.keyboard.type(code);
+            await tab.keyboard.press("Enter");
+          };
           await tab.goto(`${origin}/me/app`);
           await tab.getByRole("button", { name: t.pwaPair }).click();
           await measure("starting", t.pwaPreparing);
@@ -350,17 +357,14 @@ describe("the pairing dialog in a browser", () => {
           // The tab keeps the pairing; a reload resumes it and reads at once, and the phone has claimed it meanwhile.
           await tab.reload();
           await measure("code", t.pwaClaimed({ name: "Jonas' iPhone 15 Pro" }));
-          await tab.keyboard.type("111111");
-          await tab.keyboard.press("Enter");
+          await enter("111111");
           await measure("wrong code", t.pwaWrongCode({ count: 2 }));
-          await tab.keyboard.type("222222");
-          await tab.keyboard.press("Enter");
+          await enter("222222");
           await tab
             .locator("dialog")
             .getByText(t.pwaWrongCode({ count: 1 }))
             .waitFor();
-          await tab.keyboard.type("333333");
-          await tab.keyboard.press("Enter");
+          await enter("333333");
           await measure("too many wrong codes", t.pwaTooManyTries);
           results.push({
             width: view.width,
