@@ -161,17 +161,32 @@ describe("Grids base keeps a manager", () => {
 
     const groupBase = await insertBase();
     const staff = await insertGroup("Staff", [qdt.id]);
-    const interns = await insertGroup("Interns", [qdt.id]);
     await grant(groupBase, { type: "group", groupId: staff }, "admin");
     expectLastManager(
-      await grantAccess({
-        resourceType: "base",
-        resourceId: groupBase,
-        principal: { type: "group", groupId: interns },
-        permission: "none",
-      }),
+      await grantAccess({ resourceType: "base", resourceId: groupBase, principal: { type: "group", groupId: staff }, permission: "none" }),
     );
     expect(await listBaseAccess(groupBase)).toHaveLength(1);
+  });
+
+  postgresTest("a deny for another group neither counts against a group manager nor switches the guard off", async () => {
+    const baseId = await insertBase();
+    const alice = await insertUser("Alice Brandt");
+    const bob = await insertUser("Bob Weiss");
+    const staff = await insertGroup("Staff", [alice.id]);
+    const interns = await insertGroup("Interns", [bob.id]);
+    const staffAccess = await grant(baseId, { type: "group", groupId: staff }, "admin");
+
+    const internsDeny = await grantAccess({
+      resourceType: "base",
+      resourceId: baseId,
+      principal: { type: "group", groupId: interns },
+      permission: "none",
+      authorization: as(alice.id),
+    });
+    expect(internsDeny.ok).toBe(true);
+    expectLastManager(await updateAccessLevel(staffAccess, "read", alice.id, as(alice.id)));
+    expectLastManager(await revokeAccess(staffAccess, null));
+    expect(await permissionOf(staffAccess)).toBe("admin");
   });
 
   postgresTest("a resource-bound key does not count as a manager, an agent does", async () => {

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import type { PermissionLevel, Principal } from "@k2b/cloud/server";
 import { sql } from "bun";
+import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
@@ -50,6 +51,12 @@ const bind = async (baseId: string, principal: Principal, permission: Permission
   return row!.id;
 };
 
+/** Holds the base row and the grants the changes write. */
+const holdBase = (baseId: string) => async (holder: typeof sql) => {
+  await holder`SELECT id FROM pulse.bases WHERE id = ${baseId}::uuid FOR UPDATE`;
+  await holder`SELECT access_id FROM pulse.base_access ba JOIN auth.access a ON a.id = ba.access_id WHERE ba.base_id = ${baseId}::uuid FOR UPDATE OF a`;
+};
+
 const expectLastManager = (result: { ok: boolean; error?: { code: string; status: number } }) => {
   expect(result.ok).toBe(false);
   expect(result.error).toMatchObject({ code: "LAST_MANAGER", status: 409 });
@@ -91,9 +98,9 @@ suite("Pulse base keeps a manager", () => {
     const qdtAccess = await bind(baseId, { type: "user", userId: qdt }, "admin");
     const lymAccess = await bind(baseId, { type: "user", userId: lym }, "admin");
 
-    const results = await Promise.all([
-      updateBaseAccess({ baseId, accessId: qdtAccess, user: { id: qdt }, permission: "read" }),
-      revokeBaseAccess({ baseId, accessId: lymAccess, user: { id: lym } }),
+    const results = await inLockOrder(holdBase(baseId), [
+      () => updateBaseAccess({ baseId, accessId: qdtAccess, user: { id: qdt }, permission: "read" }),
+      () => revokeBaseAccess({ baseId, accessId: lymAccess, user: { id: lym } }),
     ]);
     expect(results.filter((result) => result.ok)).toHaveLength(1);
     expectLastManager(results.find((result) => !result.ok)!);
@@ -102,5 +109,22 @@ suite("Pulse base keeps a manager", () => {
       WHERE ba.base_id = ${baseId}::uuid AND a.permission = 'admin'
     `;
     expect(row!.admins).toBe(1);
+  });
+
+  test("a manager lowered while their own change waits for the base no longer passes", async () => {
+    const baseId = await insertBase();
+    const [qdt, lym, kim] = [await insertUser(), await insertUser(), await insertUser()];
+    await bind(baseId, { type: "user", userId: qdt }, "admin");
+    const lymAccess = await bind(baseId, { type: "user", userId: lym }, "admin");
+    const kimAccess = await bind(baseId, { type: "user", userId: kim }, "admin");
+
+    const [lowered, stale] = await inLockOrder(holdBase(baseId), [
+      () => updateBaseAccess({ baseId, accessId: lymAccess, user: { id: qdt }, permission: "read" }),
+      () => updateBaseAccess({ baseId, accessId: kimAccess, user: { id: lym }, permission: "read" }),
+    ]);
+    expect(lowered!.ok).toBe(true);
+    expect(stale).toMatchObject({ ok: false, error: { status: 403 } });
+    const [row] = await sql<{ permission: PermissionLevel }[]>`SELECT permission FROM auth.access WHERE id = ${kimAccess}::uuid`;
+    expect(row!.permission).toBe("admin");
   });
 });

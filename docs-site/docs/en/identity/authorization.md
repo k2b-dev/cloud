@@ -385,13 +385,17 @@ key or their user without passing the resource's rules.
 
 Check every change of an existing grant with `ensureManagerRemains()` from
 `@k2b/cloud/server`, on administration routes too. Lock the resource row, then
-read its entries in the same transaction, with `serviceAccountKind` for service
-accounts:
+authorize the actor and read the entries in the same transaction, with
+`serviceAccountKind` for service accounts. `getEffectivePermission()` takes the
+transaction as its second argument:
 
 ```ts
 const result = await sql.begin(async (tx): Promise<Result<void>> => {
   await tx`SELECT id FROM items.items WHERE id = ${itemId}::uuid FOR UPDATE`;
   const before = await listItemAccess(itemId, tx);
+  const accessIds = before.map((entry) => entry.id);
+  const actorPermission = await getEffectivePermission({ accessIds, subject: c.get("accessSubject") }, tx);
+  if (!hasPermission(actorPermission, "admin")) return fail(err.forbidden("Access denied"));
   const after = before.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry));
   const guarded = ensureManagerRemains({ before, after, locale: getLocale(c) });
   if (!guarded.ok) return guarded;
@@ -400,10 +404,13 @@ const result = await sql.begin(async (tx): Promise<Result<void>> => {
 });
 ```
 
-The lock makes concurrent changes see each other, so two managers who lower
-each other at the same moment cannot both succeed. Only a change from at least
+The lock makes concurrent changes see each other: two managers who lower each
+other at the same moment cannot both succeed, and a manager who lost access
+while their change waited is refused. Only a change from at least
 one manager to none fails, with status `409`, code `LAST_MANAGER`, and a
-localized message. A resource that has no manager already stays repairable,
+localized message. The message calls the level “Manage”, as the permission
+editor does; if your editor names `admin` differently, pass your localized name
+as `level`. A resource that has no manager already stays repairable,
 because granting a manager is always allowed. To hand a resource over, or to
 recover it as an administrator, grant the new manager first and then change
 the old one.
@@ -412,7 +419,9 @@ If your application's precedence lets one entry shadow another, such as a
 `none` that overrides `admin` in the same tier, drop the shadowed entries from
 both lists before the check, and check a new `none` grant as well. Changes
 outside the grants are not checked: deleting an account, a group, or a service
-account, and changing group membership.
+account, and changing group membership. Some built-in applications still use
+their own older check; see
+[Resources keep at least one manager](/en/docs/reference/deprecations-and-migrations#resources-keep-at-least-one-manager).
 
 Call `resolveDisplayNames()` when adapter entries do not include names. It also
 accepts `{principal}` records for a proposed grant, preserves supplied fields,
@@ -457,7 +466,8 @@ service; the editor does not authorize requests.
 When exactly one entry is a manager, as defined in
 [Keep at least one manager](#keep-at-least-one-manager), the editor keeps its
 row from changing: the lower levels are disabled with a short explanation, and
-the remove button is disabled with the same explanation as its hint. The row
+the remove button is disabled with the same explanation as its hint and its
+accessible description. The row
 keeps its size, so granting a second manager unlocks it without moving
 anything. The editor counts only the entries it shows; the service stays the
 authority, and its `LAST_MANAGER` message reaches the person as an error.

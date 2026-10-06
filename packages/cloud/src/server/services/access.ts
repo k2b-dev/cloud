@@ -250,16 +250,19 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
  * entries need their `serviceAccountKind`. Only a change from at least one
  * manager to none fails, with status 409 and code `LAST_MANAGER`. An app whose
  * own precedence lets another entry shadow `admin` drops the shadowed entries
- * from both lists first.
+ * from both lists first. An app whose permission editor names `admin`
+ * differently passes that localized name as `level`, so the message uses the
+ * word the person sees; it defaults to the editor's “Manage”.
  */
 export const ensureManagerRemains = (params: {
   before: readonly ManagerCandidate[];
   after: readonly ManagerCandidate[];
   locale?: string | null;
+  level?: string;
 }): Result<void> => {
   if (!removesLastManager(params.before, params.after)) return ok();
   const { t } = accessMessages.resolve(params.locale ? [params.locale] : []);
-  return fail({ code: "LAST_MANAGER", message: t.lastManager({ level: t.manage }), status: 409 });
+  return fail({ code: "LAST_MANAGER", message: t.lastManager({ level: params.level ?? t.manage }), status: 409 });
 };
 
 /** Resolve direct and nested group memberships from the authoritative database mirror. */
@@ -361,17 +364,23 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * - Direct and nested user group memberships resolved from the database
  * - Authenticated access for every authenticated subject
  * - Public access for every subject, including anonymous callers
+ *
+ * Pass the transaction that locked the resource as `db` to authorize a change
+ * against the grants it writes.
  */
-export const getEffectivePermission = async (params: {
-  accessIds: string[];
-  subject?: AccessSubject | null;
-  /** @deprecated Pass subject instead. */
-  userId?: string | null;
-  /** @deprecated Membership is resolved from userId and this value is intentionally ignored. */
-  userGroups?: string[];
-  /** @deprecated Pass subject instead. */
-  serviceAccountId?: string | null;
-}): Promise<PermissionLevel> => {
+export const getEffectivePermission = async (
+  params: {
+    accessIds: string[];
+    subject?: AccessSubject | null;
+    /** @deprecated Pass subject instead. */
+    userId?: string | null;
+    /** @deprecated Membership is resolved from userId and this value is intentionally ignored. */
+    userGroups?: string[];
+    /** @deprecated Pass subject instead. */
+    serviceAccountId?: string | null;
+  },
+  db: AccessDb = sql,
+): Promise<PermissionLevel> => {
   const accessIds = params.accessIds ?? [];
   const subject =
     "subject" in params
@@ -400,7 +409,7 @@ export const getEffectivePermission = async (params: {
         },
       });
 
-  const rows = await sql<{ permission: PermissionLevel }[]>`
+  const rows = await db<{ permission: PermissionLevel }[]>`
     SELECT a.permission
     FROM auth.access a
     WHERE a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])

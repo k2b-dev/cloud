@@ -138,7 +138,10 @@ type ManagerGuardEntry = {
   serviceAccountKind: ServiceAccountKind | null;
 };
 
-/** The principal tier a 'none' grant shadows. Without expanding membership, a group deny may hide every group. */
+/**
+ * The principal a 'none' grant shadows. The guard counts a group's grant regardless of its members,
+ * so a group deny shadows only that group's own grants, never another group that shares members.
+ */
 const denyScope = (principal: Principal): string | null => {
   switch (principal.type) {
     case "user":
@@ -146,7 +149,7 @@ const denyScope = (principal: Principal): string | null => {
     case "service_account":
       return `service_account:${principal.serviceAccountId}`;
     case "group":
-      return "group";
+      return `group:${principal.groupId}`;
     case "authenticated":
       return "authenticated";
     case "public":
@@ -154,7 +157,7 @@ const denyScope = (principal: Principal): string | null => {
   }
 };
 
-/** Drop the entries a deny in the same tier shadows, so only grants that still apply count as managers. */
+/** Drop the grants a deny for the same principal shadows, so only grants that still apply count as managers. */
 const unshadowedEntries = (entries: ManagerGuardEntry[]): ManagerGuardEntry[] => {
   const denied = new Set(entries.filter((entry) => entry.permission === "none").map((entry) => denyScope(entry.principal)));
   return entries.filter((entry) => !denied.has(denyScope(entry.principal)));
@@ -318,7 +321,7 @@ export const grantAccess = async (params: {
     await lockBaseAuthorization([binding.baseId], tx);
     const authorized = await authorizeMutation(binding, params.authorization, tx, params.locale);
     if (!authorized.ok) return fail(authorized.error);
-    // Only a deny can take Manage away; it shadows the allows in its tier.
+    // Only a deny can take Manage away; it shadows the same principal's allows.
     if (params.permission === "none") {
       const guarded = await ensureBaseManagerRemains(
         binding,

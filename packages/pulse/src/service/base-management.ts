@@ -247,14 +247,17 @@ export const grantBaseAccess = async (params: {
 
 /**
  * Change or remove one base grant under the base row lock, so concurrent changes
- * see each other and none of them leaves the base without a manager.
+ * see each other: the actor must still manage the base, and none of the changes
+ * leaves it without a manager.
  */
 const changeBaseAccess = (
-  params: { baseId: string; accessId: string; locale?: string },
+  params: { baseId: string; accessId: string; user: AccessScope; locale?: string },
   permission: Exclude<PermissionLevel, "none"> | null,
 ): Promise<Result<void>> =>
   sql.begin(async (tx): Promise<Result<void>> => {
     await tx`SELECT id FROM pulse.bases WHERE id = ${params.baseId}::uuid FOR UPDATE`;
+    const access = await requireBaseAccess(params.baseId, params.user, "admin", tx);
+    if (!access.ok) return fail(access.error);
     const rows = await tx<(AccessRow & { service_account_kind: ServiceAccountKind | null })[]>`
       SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at,
              sa.kind AS service_account_kind
@@ -278,28 +281,16 @@ const changeBaseAccess = (
     return changed.count === 0 ? fail(err.notFound("Access entry")) : ok();
   });
 
-export const updateBaseAccess = async (params: {
+export const updateBaseAccess = (params: {
   baseId: string;
   accessId: string;
   user: AccessScope;
   permission: Exclude<PermissionLevel, "none">;
   locale?: string;
-}): Promise<Result<void>> => {
-  const access = await requireBaseAccess(params.baseId, params.user, "admin");
-  if (!access.ok) return fail(access.error);
-  return changeBaseAccess(params, params.permission);
-};
+}): Promise<Result<void>> => changeBaseAccess(params, params.permission);
 
-export const revokeBaseAccess = async (params: {
-  baseId: string;
-  accessId: string;
-  user: AccessScope;
-  locale?: string;
-}): Promise<Result<void>> => {
-  const access = await requireBaseAccess(params.baseId, params.user, "admin");
-  if (!access.ok) return fail(access.error);
-  return changeBaseAccess(params, null);
-};
+export const revokeBaseAccess = (params: { baseId: string; accessId: string; user: AccessScope; locale?: string }): Promise<Result<void>> =>
+  changeBaseAccess(params, null);
 
 export const getBase = async (baseId: string, user: AccessScope): Promise<Result<PulseBase>> => {
   const access = await requireBaseAccess(baseId, user, "read");

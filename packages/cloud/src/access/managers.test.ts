@@ -58,6 +58,13 @@ describe("ensureManagerRemains", () => {
     }
   });
 
+  test("names the level with the word the application's editor shows", () => {
+    const result = ensureManagerRemains({ before: [person("qdt")], after: [], locale: "en", level: "Admin" });
+    expect(result.ok === false && result.error.message).toBe(
+      "The last entry with “Admin” access can't be lowered or removed. Give another person or group “Admin” access first.",
+    );
+  });
+
   test("allows a change that keeps a manager", () => {
     expect(ensureManagerRemains({ before: [person("qdt"), person("lym")], after: [person("lym")] }).ok).toBe(true);
   });

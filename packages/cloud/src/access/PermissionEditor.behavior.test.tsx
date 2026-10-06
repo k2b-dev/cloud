@@ -273,7 +273,11 @@ describe("PermissionEditor last manager", () => {
       expect(dom.root.textContent).not.toContain("All users (incl. guests)");
 
       expect(removeButton("Quentin Dorn").disabled).toBe(true);
+      expect(removeButton("Quentin Dorn").getAttribute("aria-description")).toStartWith(
+        "Der letzte Eintrag mit Zugriff „Verwalten“ kann nicht herabgestuft oder entfernt werden.",
+      );
       expect(removeButton("Lya Meyer").disabled).toBe(false);
+      expect(removeButton("Lya Meyer").hasAttribute("aria-description")).toBe(false);
       expect(removeButton("Import key").disabled).toBe(false);
       const locked = levelsOf("Quentin Dorn");
       expect(locked.map((item) => [item.textContent?.startsWith("Verwalten") ?? false, item.disabled])).toEqual([
@@ -288,6 +292,7 @@ describe("PermissionEditor last manager", () => {
       expect(levels.every((item) => !item.disabled)).toBe(true);
       levels.find((item) => item.textContent?.startsWith("Verwalten"))!.click();
       await waitFor(() => !removeButton("Quentin Dorn").disabled, "the unlocked manager row");
+      expect(removeButton("Quentin Dorn").hasAttribute("aria-description")).toBe(false);
       expect(updates).toEqual([{ accessId: "lym", permission: "admin" }]);
       expect(removeButton("Lya Meyer").disabled).toBe(false);
     } finally {

@@ -22,7 +22,9 @@ Basisfreigaben unterstützen Personen, Gruppen, Dienstkonten und alle angemeldet
 | **Verwalten** | Zusätzlich Schema und Konfiguration ändern, Zugriffe verwalten sowie Grids Apps erstellen, bearbeiten oder veröffentlichen. |
 | **Keine** | Den Zugriff auf die Basis ausdrücklich verweigern. |
 
-Eine Basis behält immer mindestens einen Eintrag mit **Verwalten**: für eine Person, eine Gruppe, alle angemeldeten Konten oder ein eigenständiges Dienstkonto oder einen Agenten. An die Basis gebundene API-Schlüssel zählen nicht. Grids lehnt es ab, den letzten Eintrag mit **Verwalten** herabzustufen oder zu entfernen, und lehnt eine Freigabe **Keine** ab, die ihn verdecken würde. Um eine Basis zu übergeben, gib der neuen Person zuerst **Verwalten**. Hat eine Basis trotzdem niemanden mehr, der sie verwaltet, etwa weil das Konto gelöscht wurde, gewährt ein Cloud-Administrator im Administrationsbereich neuen Zugriff.
+Eine Basis behält immer mindestens einen Eintrag mit **Verwalten**: für eine Person, eine Gruppe, alle angemeldeten Konten oder ein eigenständiges Dienstkonto oder einen Agenten. An die Basis gebundene API-Schlüssel zählen nicht. Grids lehnt es ab, den letzten Eintrag mit **Verwalten** herabzustufen oder zu entfernen, und lehnt eine Freigabe **Keine** für die Person, die Gruppe oder das Konto dieses Eintrags ab. Um eine Basis zu übergeben, gib der neuen Person zuerst **Verwalten**. Hat eine Basis trotzdem niemanden mehr, der sie verwaltet, etwa weil das Konto gelöscht wurde, gewährt ein Cloud-Administrator im Administrationsbereich neuen Zugriff.
+
+Grids zählt eine Gruppe mit **Verwalten**, ohne ihre Mitglieder zu prüfen. Für ein Mitglied entscheiden trotzdem zuerst seine eigene Freigabe oder **Keine** für eine andere seiner Gruppen. Gib bei einer Übergabe deshalb der Person selbst **Verwalten**.
 
 Der Basiszugriff kann nicht auf eine Tabelle, Ansicht, ein Formular, einen Workflow oder erstellende Personen begrenzt werden. Wenn eine Zielgruppe nur ausgewählte Daten oder Aktionen sehen darf, veröffentliche eine Grids App oder trenne die Daten in eine andere Basis.
 

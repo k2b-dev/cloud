@@ -381,6 +381,8 @@ function AccessEntryRow(props: {
             onClick={props.onRevoke}
             disabled={props.disabled || props.lastManager}
             aria-label={t().remove({ name: displayName() })}
+            // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
+            aria-description={props.lastManager ? removeLabel() : undefined}
             class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
           >
             <i class="ti ti-x text-sm" />

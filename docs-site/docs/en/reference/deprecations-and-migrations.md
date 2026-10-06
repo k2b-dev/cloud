@@ -13,12 +13,18 @@ updated: 2026-10-06
 ## Resources keep at least one manager
 
 Grids Bases, Pulse Bases, and Venues now refuse a grant change that would
-leave them without a manager, as Contacts, Spaces, Mail, Notebooks, and
-Assistant already did. The response is `409` with code `LAST_MANAGER`. Venue
-used to answer a removal of its last admin with `400`. Grids also refuses a
-**None** grant that would hide the last manager. The administration routes
-follow the same rule; an administrator recovers a resource by granting a new
-manager first.
+leave them without a manager. They answer `409` with code `LAST_MANAGER`;
+Venue used to answer a removal of its last admin with `400`. Grids also refuses
+a **None** grant for the same person, group, or account as the last manager.
+The administration routes follow the same rule; an administrator recovers a
+resource by granting a new manager first. Pulse and Venue now also check under
+the same lock that the person who makes the change still manages the resource.
+
+Contact books, Spaces, mailboxes, notebooks, Assistant projects and skills, and
+Studio artifacts keep their own older checks for now. They also refuse to
+remove the last admin, but they count every `admin` entry, including API keys
+bound to the resource, and answer with their own status and message, not
+`LAST_MANAGER`.
 
 `PermissionEditor` locks the row of the only manager in every application,
 including third-party applications on this release. Add the server check with
