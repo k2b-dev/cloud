@@ -25,12 +25,27 @@ const row = (props: Partial<Props> = {}, locale = "en") =>
       },
     }),
   );
-const textOf = (html: string) =>
-  html
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+/** The text a reader meets, with a space where an element starts or ends; comments such as hydration markers drop out. */
+const textOf = (html: string) => {
+  let text = "";
+  new HTMLRewriter()
+    .on("*", {
+      element(element) {
+        text += " ";
+        if (!element.canHaveContent) return;
+        element.onEndTag(() => {
+          text += " ";
+        });
+      },
+    })
+    .onDocument({
+      text(chunk) {
+        text += chunk.text;
+      },
+    })
+    .transform(html);
+  return text.replace(/\s+/g, " ").trim();
+};
 const long = Array.from({ length: 20 }, (_, index) => `Line ${index + 1}`).join("\n");
 
 describe("MessageRow", () => {
@@ -176,7 +191,7 @@ describe("MessageRow", () => {
       ].join("\n\n"),
     });
 
-    expect(html).not.toMatch(/<img |<script|<a [^>]*href="(?:javascript|data|ftp):/);
+    expect(html).not.toMatch(/<img |<script|<a [^>]*href="(?:javascript|data|ftp):/i);
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
     expect(html).toContain("&lt;script&gt;alert(2)&lt;/script&gt;");
     expect(textOf(html)).toContain("run data ftp javascript:alert(4)");
