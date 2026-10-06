@@ -159,6 +159,11 @@ const visibleRows = () => {
   }
   return out;
 };
+/** Empty space between the top edge of the visible area and the first loaded item. */
+const head = () => {
+  const first = document.querySelector('.k2b-virtual-feed__item[data-index="0"]');
+  return first ? Math.max(0, first.getBoundingClientRect().top - viewport().getBoundingClientRect().top) : 0;
+};
 const gap = () => {
   const rows = [...document.querySelectorAll(".k2b-virtual-feed__item")];
   const last = rows.reduce((a, b) => (Number(b.dataset.index) > Number(a.dataset.index) ? b : a));
@@ -174,6 +179,7 @@ new ResizeObserver(() => {
   record.frames++;
   if (record.watch) record.tops.push(contentTop(record.watch));
   if (record.gap) record.gaps.push(gap());
+  record.head = Math.max(record.head, head());
   const rows = visibleRows();
   const deltas = [];
   for (const [key, top] of rows) if (record.previous.has(key)) deltas.push(top - record.previous.get(key));
@@ -187,7 +193,7 @@ const loop = () => {
 window.probe = {
   // The positions at start are the base, so a shift in the same task as the change, before any frame, still counts.
   start(watch, withGap) {
-    record = { frames: 0, tops: watch ? [contentTop(watch)] : [], gaps: [], spread: 0, previous: visibleRows(), watch, gap: withGap };
+    record = { frames: 0, tops: watch ? [contentTop(watch)] : [], gaps: [], head: 0, spread: 0, previous: visibleRows(), watch, gap: withGap };
     cancelAnimationFrame(frame);
     loop();
   },
@@ -202,6 +208,7 @@ window.probe = {
       missing: r.tops.filter((top) => Number.isNaN(top)).length,
       gapMin: r.gaps.length ? Math.min(...r.gaps) : 0,
       gapMax: r.gaps.length ? Math.max(...r.gaps) : 0,
+      head: r.head,
       spread: r.spread,
       tops: r.tops,
     };
@@ -392,7 +399,16 @@ afterAll(async () => {
 
 type Probe = {
   start: (watch?: string, withGap?: boolean) => void;
-  stop: () => { frames: number; drift: number; missing: number; gapMin: number; gapMax: number; spread: number; tops: number[] };
+  stop: () => {
+    frames: number;
+    drift: number;
+    missing: number;
+    gapMin: number;
+    gapMax: number;
+    head: number;
+    spread: number;
+    tops: number[];
+  };
   gap: () => number;
   topVisible: () => string;
 };
@@ -1643,6 +1659,128 @@ describe(`VirtualFeed keeps the reader's place under real scroll event orders in
         watch,
         actions: { 2: [["growAbove", 100]] },
         pause: { 1: 250, 2: 250, 3: 250, 4: 250, 5: 250 },
+      });
+    }, watch);
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  for (const [rows, scale, older] of [
+    ["smaller", 1.2, 0],
+    ["taller", 0.8, 0],
+    ["smaller", 1.2, 500],
+  ] as const) {
+    test(`a fling to the start through rows ${rows} than estimated${older ? " that outruns the older page" : ""} shows no empty space above the first item, reaches it, and does not jump`, async () => {
+      const page = await open({ count: 120, older, manual: true, estimateScale: scale });
+      const start = await page.evaluate(async () => {
+        const port = feed.viewport();
+        person.hold();
+        await person.drag([-80, -80, -80]);
+        probe.start();
+        // Momentum toward the start that runs until the scroll range ends there.
+        for (let step = 0; step < 400 && port.scrollTop > 0; step++) {
+          person.by(-Math.max(8, Math.round(140 * (1 - step / 160))));
+          await new Promise(requestAnimationFrame);
+        }
+        await new Promise(requestAnimationFrame);
+        const first = document.querySelector('.k2b-virtual-feed__item[data-index="0"] .row');
+        return {
+          head: probe.stop().head,
+          top: port.scrollTop,
+          first: first ? first.getBoundingClientRect().top - port.getBoundingClientRect().top : Number.NaN,
+        };
+      });
+      expect(start.head).toBeLessThanOrEqual(1);
+      expect(start.top).toBe(0);
+      expect(Math.abs(start.first)).toBeLessThanOrEqual(1);
+      const watch = await page.evaluate(() => person.keyAt(300));
+      await page.evaluate((watch) => probe.start(watch), watch);
+      if (older) {
+        expect(await page.evaluate(() => feed.release())).toBe(1);
+        await frames(page, 6);
+      }
+      await page.evaluate(() => person.end());
+      // Longer than the longest wait for a scrollend, so the scroll has ended whichever way it ends.
+      await page.waitForTimeout(1_200);
+      expect((await page.evaluate(() => probe.stop())).drift).toBeLessThanOrEqual(1);
+      await close(page);
+    }, 30_000);
+  }
+
+  test("a reader who reached the end during a scroll and then moves up leaves the end, also after another item arrived", async () => {
+    const page = await open();
+    await dragBy(page, -800);
+    // A finger holds the scroll; an item arrives on the way to the end, and the scroll reaches the end it had before.
+    await page.evaluate(() => {
+      person.hold();
+      person.touch("touchstart");
+      return person.glide({ toEnd: 30, actions: { 5: [["append", 1]] } });
+    });
+    expect(await isAtEnd(page)).toBe(true);
+    await page.evaluate(() => feed.append(1));
+    await frames(page, 4);
+    expect(Math.abs(await endGap(page))).toBeLessThanOrEqual(1);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    await page.evaluate(() => person.by(-30));
+    await frames(page, 2);
+    expect(await isAtEnd(page)).toBe(false);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => {
+      person.touch("touchend");
+      person.end();
+    });
+    await frames(page, 8);
+    expect(await isAtEnd(page)).toBe(false);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  test("a late scrollend while the finger rests does not end the scroll when the finger lifts into momentum", async () => {
+    const page = await open();
+    await dragBy(page, -1500);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    // Two finger steps with a row growing above, a still frame with a scrollend that is not this scroll's end, then
+    // the finger lifts and the momentum runs.
+    const steps = [-60, -60, 0, ...decelerate(12, 30).map((step) => -step)];
+    const tail = await page.evaluate(
+      ([watch, steps]) => {
+        person.hold();
+        person.touch("touchstart");
+        return person.glide({ steps, watch, actions: { 1: [["growAbove", 100]], 3: [["scrollend"], ["release"]] } });
+      },
+      [watch, steps] as const,
+    );
+    expect(tail.writes).toEqual([]);
+    expect(unexplained(tail.track)).toBeLessThanOrEqual(1);
+    const before = await fromBottom(page, watch);
+    await page.evaluate(() => person.end());
+    await frames(page, 8);
+    expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
+    await close(page);
+  }, 30_000);
+
+  test("the late scrollend of the feed's own write in a pause of a slow momentum tail does not end the scroll", async () => {
+    const page = await open();
+    // Following the end, the feed writes for a new item; the scrollend of that write arrives late, in the tail.
+    await page.evaluate(() => {
+      person.hold();
+      feed.append(1);
+    });
+    await frames(page, 2);
+    const watch = await page.evaluate(() => person.keyAt(300));
+    const tail = await page.evaluate(async (watch) => {
+      await person.drag([-40, -40]);
+      // The tail stands still after its third step; the scrollend arrives in that pause.
+      return person.glide({
+        steps: [-6, -3, -2, 0, -1, -1, -1],
+        watch,
+        actions: { 2: [["growAbove", 100]], 4: [["scrollend"]] },
+        pause: { 1: 120, 2: 120, 3: 120, 4: 120, 5: 120, 6: 120 },
       });
     }, watch);
     expect(tail.writes).toEqual([]);

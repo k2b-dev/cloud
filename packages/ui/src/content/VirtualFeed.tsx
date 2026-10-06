@@ -21,7 +21,7 @@ const ANNOUNCE_MS = 1_000;
 const HIGHLIGHT_MS = 1_600;
 /** In engines without `scrollend`, the reader's scroll has ended after this long without moving. */
 const QUIET_MS = 300;
-/** The longest wait for the `scrollend` of the reader's scroll after it last moved. */
+/** The longest wait for the `scrollend` of the reader's scroll after it last moved, or of a write of the feed. */
 const END_WAIT_MS = 1_000;
 
 export type VirtualFeedScrollOptions = {
@@ -165,6 +165,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let overriding = false;
   let lastMove = 0;
   let endedAt = Number.NEGATIVE_INFINITY;
+  /**
+   * Until then, the next `scrollend` belongs to the feed's last write that moved the position. iOS delivers it late
+   * enough to land in a later scroll of the reader, also in a pause of a slow momentum tail.
+   */
+  let owedUntil = 0;
   let endTimer: ReturnType<typeof setTimeout> | undefined;
   let hasScrollEnd = false;
   /** First item appended while the reader scrolls away from the end; reaching the end is judged before it. */
@@ -249,10 +254,16 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     hi === list.length && !props.hasNewer && (appendedFrom >= 0 ? offsetOf(appendedFrom) : total()) - (top + lastHeight) <= END_TOLERANCE;
 
   const deferring = () => fingers.size > 0 || scrolling;
+  /**
+   * Whether the rows may stand in for the logical position `top` while the reader scrolls. Near the start they may
+   * not: rows moved down would show empty space above the first item, and rows moved up would put the first items
+   * out of the scroll range's reach. The margin is the overscan, so the write lands before the engine draws there.
+   */
+  const mayDefer = (top: number) => deferring() && Math.min(viewport.scrollTop, top) > OVERSCAN;
   /** Scrolls to `target`, within what the layout can reach, and returns the position the reader gets. */
   const writeTop = (target: number, immediate: boolean) => {
     const next = Math.min(Math.max(0, total() - viewport.clientHeight), Math.max(0, target));
-    if (!immediate && deferring()) {
+    if (!immediate && mayDefer(next)) {
       // The rows move instead; the scroll range stays the same, so the engine clamps nothing.
       lastTop = viewport.scrollTop;
       deferred = next - lastTop;
@@ -261,8 +272,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     }
     deferred = 0;
     feed.style.height = `${total()}px`;
-    if (Math.abs(viewport.scrollTop - next) > 0.5) viewport.scrollTop = next;
+    const from = viewport.scrollTop;
+    if (Math.abs(from - next) > 0.5) viewport.scrollTop = next;
     lastTop = viewport.scrollTop;
+    if (Math.abs(lastTop - from) > 0.5) owedUntil = performance.now() + END_WAIT_MS;
     return next;
   };
 
@@ -407,6 +420,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     restoring = true;
     let target = 0;
     let top = 0;
+    // Following the end shows the end of all items from now on, so later moves are judged against it.
+    if (stick) appendedFrom = -1;
     try {
       for (let pass = 0; ; pass++) {
         restoreAgain = false;
@@ -834,22 +849,37 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     // The feed checked its edges when it wrote scrollTop. Its own scroll event arrives a frame later, and checking again
     // then would retry a load that failed in between.
     const reader = noteReader();
-    updateRange();
-    if (reader) checkEdges();
+    // Near the start, the rows no longer stand in for a held-back correction; it is written now.
+    if (deferred !== 0 && !mayDefer(logicalTop())) restore(true);
+    else {
+      updateRange();
+      if (reader) checkEdges();
+    }
   };
 
-  const onScrollEnd = () => {
-    endedAt = performance.now();
-    if (fingers.size > 0 || !scrolling) return;
+  /**
+   * Ends the reader's scroll if the feed stands still for the next two frames. A `scrollend` not counted as a write's
+   * can still be the late one of an earlier write; movement after it means the scroll goes on.
+   */
+  const confirmEnd = () => {
     const seen = lastMove;
-    // A scrollend ends the scroll only when the feed then stands still. Engines also fire one for each write that
-    // moved the feed, and iOS sends it back from the UI process late enough to land in the momentum of a later scroll.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         if (disposed || fingers.size > 0 || !scrolling || lastMove !== seen || readerMoved()) return;
         endScroll();
       }),
     );
+  };
+
+  const onScrollEnd = () => {
+    // The scrollend of the feed's own write, not the end of the reader's scroll.
+    if (performance.now() < owedUntil) {
+      owedUntil = 0;
+      return;
+    }
+    endedAt = performance.now();
+    if (fingers.size > 0 || !scrolling) return;
+    confirmEnd();
   };
 
   const controller: VirtualFeedController = {
@@ -944,9 +974,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       for (const touch of Array.from((event as TouchEvent).changedTouches)) fingers.delete(touch.identifier);
       if (fingers.size > 0) return;
       release();
-      // A scroll that already ended under the finger has no momentum left.
-      if (!scrolling || endedAt >= lastMove) endScroll();
-      else armEnd();
+      if (!scrolling) return endScroll();
+      armEnd();
+      // A scroll that ended under the finger ends now, unless the release starts a momentum.
+      if (endedAt >= lastMove) confirmEnd();
     }
     // Input of the reader ends a takeover by the application at once.
     const act = () => {
