@@ -12,7 +12,10 @@ const WINDOW_STEP = 2_000_000;
 const OVERSCAN = 600;
 /** Distance from the end, in px, that still counts as being at the end. */
 const END_TOLERANCE = 2;
-/** Rows mounted during one correction reach the ResizeObserver a frame late; measure up to this many passes at once. */
+/**
+ * Rows mounted during one correction reach the ResizeObserver a frame late; measure up to this many passes at once.
+ * A last pass places the rows; the observer measures what that pass mounted.
+ */
 const MEASURE_PASSES = 4;
 const ANNOUNCE_MS = 1_000;
 const HIGHLIGHT_MS = 1_600;
@@ -42,13 +45,16 @@ export type VirtualFeedProps<T> = {
   getKey: (item: T) => string;
   /** Height in px before the item was measured. Close estimates mean fewer corrections while scrolling. */
   estimateSize: (item: T) => number;
-  /** Content of one item. `index` is its position in `items`. */
+  /** Content of one item, created once per item object as with Solid's `For`. `index` is its position in `items`. */
   children: (item: T, index: Accessor<number>) => JSX.Element;
   /** Accessible name of the feed. */
   label: string;
   /** Accessible name of one item, for example its author and time. */
   itemLabel?: (item: T) => string | undefined;
-  /** Label shown above an item, for example when the day changes. Return nothing for no separator. */
+  /**
+   * Label shown above an item, for example when the day changes. Return nothing for no separator. While `hasOlder` is
+   * set, the first loaded item has no known predecessor and gets none.
+   */
   separator?: (item: T, previous: T | undefined) => JSX.Element;
   /** Key of the first item the reader has not seen; a marker appears above it. */
   markerKey?: string | null;
@@ -70,9 +76,12 @@ export type VirtualFeedProps<T> = {
   totalCount?: number;
   /** One-based position of `items[0]` in the whole feed when known. */
   firstPosition?: number;
-  /** Count shown on "Jump to latest". Defaults to the items added while the reader was away from the end. */
+  /**
+   * Count shown on "Jump to latest". Defaults to the new items added while the reader was away from the end, which
+   * excludes pages of older history loaded toward the end.
+   */
   newCount?: number;
-  /** Text announced for items added at the end, bundled per second. Return nothing to stay silent. */
+  /** Text announced for new items added at the end, bundled per second. Return nothing to stay silent. */
   announce?: (added: readonly T[]) => string | undefined;
   /** Called when the reader reaches or leaves the end. */
   onEndChange?: (atEnd: boolean) => void;
@@ -83,12 +92,25 @@ export type VirtualFeedProps<T> = {
   class?: string;
 };
 
-/** One mounted row. Rows are created and removed but never moved, so focus, media, and frames inside them survive. */
-type Row<T> = { item: T; node: HTMLElement; index: number; setIndex: (index: number) => void; dispose: () => void };
+/**
+ * One mounted row. Rows are created and removed but never moved, so focus, media, and frames inside them survive.
+ * `lead` is the measured height of the separator and marker above the content.
+ */
+type Row<T> = { item: T; node: HTMLElement; index: number; lead?: number; setIndex: (index: number) => void; dispose: () => void };
 
 const runsMatch = (before: readonly string[], after: readonly string[], shift: number) => {
   for (let index = 0; index < before.length; index++) if (before[index] !== after[index + shift]) return false;
   return true;
+};
+
+/** Height of the separator and marker that a row shows above its content. */
+const leadOf = (node: HTMLElement) => {
+  let height = 0;
+  for (const child of node.children) {
+    if (!child.classList.contains("k2b-virtual-feed__separator") && !child.classList.contains("k2b-virtual-feed__marker")) break;
+    height += child.getBoundingClientRect().height;
+  }
+  return height;
 };
 
 const isIos = () =>
@@ -118,6 +140,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   // Reading position: follow the end, or keep one item (index) at a pixel distance (delta) below the visible top.
   let stick = true;
   let anchor = { index: 0, delta: 0 };
+  /** Key of the last item while no newer items existed; items appended after it are new. */
+  let endKey: string | undefined;
   /** The last scrollTop the feed wrote or saw; a scroll event that finds another value comes from the reader. */
   let lastTop = 0;
   let lastHeight = 0;
@@ -137,6 +161,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let newest: "waiting" | "loading" | undefined;
   let disposed = false;
   let observeRow: (row: HTMLElement) => void = () => {};
+  /** Set while the ResizeObserver callback runs. */
+  let observing = false;
   let unobserveRow: (row: HTMLElement) => void = () => {};
   const owner = getOwner();
   const rows = new Map<string, Row<T>>();
@@ -182,7 +208,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     return lo + Math.max(0, low);
   };
 
+  const anchorAt = (top: number) => {
+    const index = indexAt(top);
+    return { index, delta: offsetOf(index) - top };
+  };
   const setStick = (value: boolean) => {
+    // The anchor is not maintained while following the end; leaving the end keeps what is visible now.
+    if (stick && !value && hi > lo) anchor = anchorAt(viewport.scrollTop + deferred);
     stick = value;
     if (value) setUnseen(0);
     if (atEnd() === value) return;
@@ -192,15 +224,17 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const reachesEnd = (top: number) => hi === list.length && !props.hasNewer && total() - (top + viewport.clientHeight) <= END_TOLERANCE;
 
   const deferring = () => ios && (touching || settleTimer !== undefined);
+  /** Scrolls to `target`, within what the layout can reach, and returns the position the reader gets. */
   const writeTop = (target: number, immediate: boolean) => {
     const next = Math.min(Math.max(0, total() - viewport.clientHeight), Math.max(0, target));
     if (!immediate && deferring()) {
       deferred = next - viewport.scrollTop;
-      return;
+      return next;
     }
     deferred = 0;
     if (Math.abs(viewport.scrollTop - next) > 0.5) viewport.scrollTop = next;
     lastTop = viewport.scrollTop;
+    return next;
   };
 
   const updateRange = () => {
@@ -223,8 +257,15 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const measure = (measured: ReadonlyArray<readonly [HTMLElement, number]>) => {
     let changed = false;
     for (const [node, size] of measured) {
-      const index = rowOf.get(node)?.index ?? -1;
-      if (index >= lo && index < hi && Math.abs(sizes[index]! - size) > 0.1) {
+      const row = rowOf.get(node);
+      if (!row || row.index < lo || row.index >= hi) continue;
+      const index = row.index;
+      // The anchor keeps the content of its row in place: a separator or marker that appears or goes away above it
+      // moves the row's top instead.
+      const lead = leadOf(node);
+      if (!stick && index === anchor.index && row.lead !== undefined) anchor = { index, delta: anchor.delta + row.lead - lead };
+      row.lead = lead;
+      if (Math.abs(sizes[index]! - size) > 0.1) {
         sizes[index] = size;
         dirtyFrom = Math.min(dirtyFrom, index - lo);
         changed = true;
@@ -240,7 +281,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const createRow = (item: T, key: string, at: number): Row<T> =>
     createRoot((dispose) => {
       const [index, setIndex] = createSignal(at);
-      const separator = () => (listVersion(), props.separator?.(item, list[index() - 1]));
+      // While older items may come, the first loaded item's predecessor is unknown, so it gets no separator yet.
+      const separator = () => (listVersion(), index() === 0 && props.hasOlder ? undefined : props.separator?.(item, list[index() - 1]));
+      // Created once, as Solid's For does, so signals that the content reads while rendering never rebuild it.
+      const content = untrack(() => props.children(item, index));
       const node = (
         <div
           class="k2b-virtual-feed__item"
@@ -266,7 +310,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
               <span>{props.markerLabel ?? messages().feedNewMarker}</span>
             </div>
           </Show>
-          {props.children(item, index)}
+          {content}
         </div>
       ) as HTMLElement;
       const row: Row<T> = {
@@ -287,9 +331,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const wanted = new Map<string, number>();
     for (const index of indices) wanted.set(keys[index]!, index);
     const active = feed.contains(document.activeElement) ? (document.activeElement as HTMLElement) : undefined;
+    let focusedKey: string | undefined;
     for (const [key, row] of rows) {
       const index = wanted.get(key);
       if (index !== undefined && list[index] === row.item) continue;
+      if (active && row.node.contains(active)) focusedKey = key;
       unobserveRow(row.node);
       row.node.remove();
       row.dispose();
@@ -310,8 +356,12 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       if (row.node === cursor) cursor = cursor.nextSibling;
       else feed.insertBefore(row.node, cursor);
     }
-    // Only reordered items move a node, which blurs it; a removed or replaced item leaves focus in the feed.
-    if (active && document.activeElement !== active) (active.isConnected ? active : viewport).focus({ preventScroll: true });
+    // A reordered item moves its node, which blurs it, and a replaced item gets a new row: focus stays on the item.
+    // Only when the item is gone does it fall back to the scroll area.
+    if (active && document.activeElement !== active) {
+      const replaced = focusedKey === undefined ? undefined : rows.get(focusedKey)?.node;
+      (active.isConnected ? active : (replaced ?? viewport)).focus({ preventScroll: true });
+    }
   };
 
   /**
@@ -325,20 +375,27 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       return;
     }
     restoring = true;
+    let target = 0;
+    let top = 0;
     try {
-      for (let pass = 0; pass <= MEASURE_PASSES; pass++) {
+      for (let pass = 0; ; pass++) {
         restoreAgain = false;
         recompute();
         feed.style.height = `${total()}px`;
-        writeTop(stick ? total() : offsetOf(anchor.index) - anchor.delta, immediate);
+        target = stick ? total() : offsetOf(anchor.index) - anchor.delta;
+        top = writeTop(target, immediate);
         updateRange();
         setVersion((value) => value + 1);
+        if (pass === MEASURE_PASSES) break;
         // Rows mounted here reach the ResizeObserver only next frame (its loop limit), so measure them now.
         const mounted = fresh.filter((node) => node.isConnected);
         fresh = [];
         if (measure(mounted.map((node) => [node, node.getBoundingClientRect().height] as const))) restoreAgain = true;
         if (!restoreAgain) break;
       }
+      // A position the layout cannot reach, above its start or past its end, becomes the one the reader sees, so a
+      // page that loads there later keeps it instead of moving to it.
+      if (!stick && Math.abs(top - target) > 0.5) anchor = { index: anchor.index, delta: offsetOf(anchor.index) - top };
     } finally {
       restoring = false;
     }
@@ -347,8 +404,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
 
   const captureAnchor = () => {
     const top = viewport.scrollTop + deferred;
-    const index = indexAt(top);
-    anchor = { index, delta: offsetOf(index) - top };
+    anchor = anchorAt(top);
     setStick(reachesEnd(top));
   };
 
@@ -405,7 +461,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const setLoading = direction === "older" ? setLoadingOlder : setLoadingNewer;
     const callback = direction === "older" ? props.onLoadOlder : direction === "newer" ? props.onLoadNewer : props.onLoadNewest;
     if (!callback) return;
-    const before = list;
+    // A load succeeded when its edge moved; other changes to `items` meanwhile do not count.
+    const edge = () => (direction === "older" ? keys[0] : keys[keys.length - 1]);
+    const before = edge();
     setLoading(true);
     let result: unknown;
     try {
@@ -423,10 +481,11 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
           if (!loadingOlder() && !loadingNewer()) loadNewest();
           return;
         }
+        const arrived = edge() !== before;
         // A failed or empty load toward the end shows "Jump to latest" again instead of following an end that never came.
-        if (direction !== "older" && list === before && stick && props.hasNewer) setStick(false);
+        if (direction !== "older" && !arrived && stick && props.hasNewer) setStick(false);
         // Keep loading while the reader still sits at the edge and the last page arrived.
-        if (list !== before) checkEdges();
+        if (arrived) checkEdges();
       });
   };
 
@@ -493,13 +552,18 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     const previous = keys.length;
     const focusKey = focusIndex >= 0 ? keys[focusIndex] : undefined;
     let added: readonly T[] = [];
+    let appended = false;
     /** A new feed, or one that shares no item with the last: start at its end. */
     const reset = () => {
       sizes = Float64Array.from(next, estimate);
       focusIndex = -1;
-      anchor = { index: 0, delta: 0 };
       setStick(!props.hasNewer);
+      anchor = { index: 0, delta: 0 };
       setUnseen(0);
+      // Pending announcements describe the items that are gone.
+      clearTimeout(announceTimer);
+      announceTimer = undefined;
+      pendingAnnouncement = [];
       list = next;
       if (sizes.reduce((sum, size) => sum + size, 0) <= MAX_WINDOW) {
         lo = 0;
@@ -513,7 +577,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       for (let index = previous; index < length; index++) grown[index] = estimate(next[index]!);
       sizes = grown;
       if (hi === previous) hi = length;
-      added = next.slice(previous);
+      appended = true;
+      // Only items after the newest one the feed has known are new; older pages toward the end are history.
+      const known = endKey === undefined ? -1 : nextKeys.lastIndexOf(endKey);
+      if (known >= 0) added = next.slice(Math.max(previous, known + 1));
     } else if (length >= previous && runsMatch(keys, nextKeys, length - previous)) {
       const shift = length - previous;
       const grown = new Float64Array(length);
@@ -560,12 +627,12 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     dirtyFrom = 0;
     setCount(length);
     setListVersion((value) => value + 1);
+    if (!props.hasNewer) endKey = nextKeys[length - 1];
     recompute();
-    if (total() > MAX_WINDOW) {
-      const center = stick ? hi - 1 : anchor.index;
-      trimWindow(center - lo > hi - 1 - center ? "start" : "end");
-    }
-    restore(true);
+    const center = stick ? hi - 1 : anchor.index;
+    const trimmed = total() > MAX_WINDOW && trimWindow(center - lo > hi - 1 - center ? "start" : "end");
+    // Items added below a reader who scrolled up need no correction, so one held back during iOS momentum stays so.
+    restore(!appended || stick || trimmed);
     if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
     if (added.length > 0) {
       if (!stick) setUnseen((value) => value + added.length);
@@ -610,6 +677,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   const focusRow = (target: number) => {
     if (list.length === 0) return;
     const index = Math.min(list.length - 1, Math.max(0, target));
+    // An edge load during the restore may add items synchronously and shift indices; the key keeps the target.
+    const key = keys[index]!;
     const outside = index < lo || index >= hi;
     if (outside) windowAround(index);
     recompute();
@@ -630,10 +699,10 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       anchor = { index, delta: Math.max(0, height - size) };
       restore(true);
       // The row was measured while mounting; align its real bottom before this frame paints.
-      if (anchor.index === index) anchor = { index, delta: Math.max(0, height - sizes[index]!) };
+      if (anchor.index === focusIndex) anchor = { index: focusIndex, delta: Math.max(0, height - sizes[focusIndex]!) };
     }
     restore(true);
-    rows.get(keys[index]!)?.node.focus({ preventScroll: true });
+    rows.get(key)?.node.focus({ preventScroll: true });
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -676,29 +745,64 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     isAtEnd: () => stick,
   };
 
+  // Created before the first sync below, so items that an edge load adds synchronously during it are not lost.
+  createEffect(on(() => props.items, sync, { defer: true }));
+  // More items can appear at an edge without new items, for example when a live update reports newer ones.
+  createEffect(
+    on(
+      [() => props.hasOlder, () => props.hasNewer],
+      () => {
+        if (!props.hasNewer) endKey = keys[keys.length - 1];
+        if (hi <= lo) return;
+        if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
+        // Only newer pages can be followed; with just `onLoadNewest`, "Jump to latest" has to show.
+        else if (stick && props.hasNewer && !props.onLoadNewer) setStick(false);
+        checkEdges();
+      },
+      { defer: true },
+    ),
+  );
+
   onMount(() => {
     ios = isIos();
     lastHeight = viewport.clientHeight;
     const observer = new ResizeObserver((entries) => {
-      fresh = [];
-      let resized = false;
-      const measured: Array<readonly [HTMLElement, number]> = [];
-      for (const entry of entries) {
-        if (entry.target === viewport) {
-          // A shorter viewport (a growing footer or keyboard) keeps what is at its bottom in place.
-          const height = viewport.clientHeight;
-          if (!stick) anchor = { index: anchor.index, delta: anchor.delta + height - lastHeight };
-          lastHeight = height;
-          resized = true;
-        } else if (entry.target.isConnected) {
-          const row = entry.target as HTMLElement;
-          measured.push([row, entry.borderBoxSize?.[0]?.blockSize ?? row.getBoundingClientRect().height]);
+      observing = true;
+      try {
+        fresh = [];
+        let resized = false;
+        const measured: Array<readonly [HTMLElement, number]> = [];
+        for (const entry of entries) {
+          if (entry.target === viewport) {
+            // A shorter viewport (a growing footer or keyboard) keeps what is at its bottom in place.
+            const height = viewport.clientHeight;
+            if (!stick) anchor = { index: anchor.index, delta: anchor.delta + height - lastHeight };
+            lastHeight = height;
+            resized = true;
+          } else if (entry.target.isConnected) {
+            const row = entry.target as HTMLElement;
+            measured.push([row, entry.borderBoxSize?.[0]?.blockSize ?? row.getBoundingClientRect().height]);
+          }
         }
+        if (measure(measured) || resized) restore(resized);
+      } finally {
+        observing = false;
       }
-      if (measure(measured) || resized) restore(resized);
     });
     observer.observe(viewport);
-    observeRow = (row) => observer.observe(row);
+    // Rows observed inside the observer's own callback miss its first notification, which raises a window error.
+    // They were measured while mounting, so they are observed from the next frame on.
+    let later: HTMLElement[] = [];
+    let laterFrame = 0;
+    observeRow = (row) => {
+      if (!observing) return observer.observe(row);
+      later.push(row);
+      laterFrame ||= requestAnimationFrame(() => {
+        laterFrame = 0;
+        for (const node of later) if (node.isConnected) observer.observe(node);
+        later = [];
+      });
+    };
     unobserveRow = (row) => observer.unobserve(row);
     const touchStart = () => {
       touching = true;
@@ -713,6 +817,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     onCleanup(() => {
       disposed = true;
       observer.disconnect();
+      cancelAnimationFrame(laterFrame);
       viewport.removeEventListener("touchstart", touchStart);
       viewport.removeEventListener("touchend", touchEnd);
       viewport.removeEventListener("touchcancel", touchEnd);
@@ -725,22 +830,6 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     sync(props.items);
     props.controller?.(controller);
   });
-
-  createEffect(on(() => props.items, sync, { defer: true }));
-  // More items can appear at an edge without new items, for example when a live update reports newer ones.
-  createEffect(
-    on(
-      [() => props.hasOlder, () => props.hasNewer],
-      () => {
-        if (hi <= lo) return;
-        if (!stick && reachesEnd(viewport.scrollTop + deferred)) setStick(true);
-        // Only newer pages can be followed; with just `onLoadNewest`, "Jump to latest" has to show.
-        else if (stick && props.hasNewer && !props.onLoadNewer) setStick(false);
-        checkEdges();
-      },
-      { defer: true },
-    ),
-  );
 
   const shownCount = () => props.newCount ?? unseen();
 
