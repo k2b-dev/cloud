@@ -18,6 +18,7 @@ afterAll(() => {
 });
 
 const { createCodeApprovals } = await import("./CapabilityApproval");
+const { LocaleProvider } = await import("@k2b/ui");
 
 import type { CapabilityApproval } from "./runtime/capabilities";
 
@@ -30,6 +31,8 @@ test("pending code approval remains visible outside its originating chat and nam
     name: "contacts.list",
     input: {},
     appId: "contacts",
+    appName: "Contacts",
+    appIcon: "ti ti-address-book",
     localId: "list",
     kind: "query",
     schemaHash: "test",
@@ -50,4 +53,45 @@ test("pending code approval remains visible outside its originating chat and nam
   signal.abort();
   expect(await pending).toBe("Run stopped");
   expect(renderToString(() => createComponent(approvals.View, { conversationTitle: () => undefined }))).not.toContain("Shared app");
+});
+
+test("code approvals present the capability in the reader's language", async () => {
+  const approvals = createRoot(() => createCodeApprovals());
+  const signal = new AbortController();
+  const request = {
+    status: "approval",
+    id: "00000000-0000-4000-8000-000000000003",
+    name: "mail.draft.create",
+    input: { subject: "Angebot" },
+    appId: "mail",
+    appName: "Mail",
+    appIcon: "ti ti-mail",
+    localId: "draft.create",
+    kind: "action",
+    schemaHash: "test",
+    approval: "rememberable",
+    title: "Entwurf erstellen",
+    review: null,
+    allowAlways: true,
+    scope: "mailbox:1",
+  } satisfies CapabilityApproval;
+  const pending = approvals.ask(request, signal.signal).catch((error) => error.message);
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(approvals.View, { conversationTitle: () => undefined });
+      },
+    }),
+  );
+  expect(html).toContain("Mail · Entwurf erstellen");
+  expect(html).toContain("ti-mail");
+  expect(html).toContain("Aktion");
+  expect(html).toContain("Ablehnen");
+  expect(html).toContain("Immer freigeben");
+  expect(html).toContain('aria-label="Freigabe erforderlich: Entwurf erstellen"');
+  expect(html).not.toContain("Mail: Entwurf erstellen");
+  expect(html).not.toMatch(/>(Reject|Action|Always approve)</);
+  signal.abort();
+  expect(await pending).toBe("Run stopped");
 });

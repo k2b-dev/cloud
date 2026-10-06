@@ -120,6 +120,9 @@ mock.module("./service", () => ({
     },
     list: page,
     search: page,
+    remove: async (_actor: unknown, input: { paths: string[] }) => ({
+      results: input.paths.map((path) => ({ ok: true, entry: entry(path) })),
+    }),
   },
 }));
 const { filesCapabilities } = await import("./capabilities");
@@ -636,4 +639,38 @@ describe("Files as a file provider", () => {
     if (!read.ok) throw new Error("expected read");
     expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }]);
   });
+});
+
+test("approval reviews name the file, its storage, and the change in the reader's language", async () => {
+  baseItems = [{ ...base, id: "home" }];
+  const rename = filesCapabilities.actions["entry.rename"].review!;
+  const german = await rename({ baseId: "home", path: "Berichte/report.csv", name: "q3.csv" }, { ...context, locale: "de-DE" });
+  expect(german).toEqual({
+    ok: true,
+    data: {
+      message: "„report.csv“ in „q3.csv“ umbenennen.",
+      details: [
+        { label: "Ablage", value: "Meine Dateien" },
+        { label: "Pfad", value: "Berichte/report.csv" },
+        { label: "Neuer Name", value: "q3.csv" },
+      ],
+    },
+  });
+  const created = await filesCapabilities.actions["content.create"].review!(
+    { baseId: "home", path: "test.csv", size: 2048, mediaType: "text/csv", onConflict: "error" },
+    context,
+  );
+  expect(created).toEqual({
+    ok: true,
+    data: {
+      message: "Create the file “test.csv”.",
+      details: [
+        { label: "Storage", value: "My files" },
+        { label: "Path", value: "test.csv" },
+        { label: "Size", value: "2 KiB" },
+      ],
+    },
+  });
+  const trashed = await filesCapabilities.actions["entry.trash"].run({ baseId: "home", path: "test.csv" }, { ...context, locale: "de" });
+  expect(trashed.ok && trashed.data.summary).toBe("In den Papierkorb verschoben");
 });

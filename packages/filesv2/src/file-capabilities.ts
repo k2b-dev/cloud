@@ -11,9 +11,10 @@ import {
   FileProviderSaveInputSchema,
 } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
-import { err, fail, fileIcons, isServiceError, ok } from "@k2b/stdlib";
+import { err, fail, fileIcons, isServiceError, ok, text } from "@k2b/stdlib";
 import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
+import { filesCapabilityMessages } from "./capability-messages";
 import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
@@ -360,9 +361,29 @@ const successfulEntry = <T>(value: { results: ({ ok: true; entry: T } | { ok: fa
   if (!first?.ok) throw err.conflict(first?.error ?? "File operation failed");
   return first.entry;
 };
+type Review = { message: string; details: { label: string; value: string }[] };
+/** Review copy in the caller's locale: storage bases by the name Files shows, paths as people read them. */
+const reviewText = async (c: CapabilityExecutionContext) => {
+  const locale = c.locale ?? "en";
+  const t = filesCapabilityMessages(locale);
+  const browser = browserMessages.resolve([locale]).t;
+  const bases = (await filesService.bases(readActor(c))).items;
+  const base = (id: string) => {
+    const found = bases.find((candidate) => candidate.id === id);
+    return found ? baseLabel(found, browser, locale) : id;
+  };
+  return {
+    t,
+    name: (path: string) => path.split("/").at(-1) || path,
+    path: (path: string) => path || t.topLevel,
+    size: (bytes: number) => text.pprintBytes(bytes, { locale }),
+    base,
+  };
+};
 function action<S extends z.ZodType>(
   title: string,
   input: S,
+  review: (input: z.output<S>, copy: Awaited<ReturnType<typeof reviewText>>) => Review,
   run: (input: z.output<S>, c: CapabilityExecutionContext) => Promise<CapabilityResult<z.infer<typeof Result>>>,
 ): CapabilityActionDefinition<S, typeof Result> {
   return {
@@ -373,11 +394,7 @@ function action<S extends z.ZodType>(
     openWorld: false,
     destructive: false,
     idempotency: "required",
-    review: async (value, c) =>
-      domain(async () => {
-        readActor(c);
-        return ok({ message: `${title}: ${JSON.stringify(value)}`.slice(0, 1000) });
-      }),
+    review: async (value, c) => domain(async () => ok(review(value, await reviewText(c)))),
     run: async (value, c) => domain(async () => ok(await run(value, c))),
   };
 }
@@ -394,8 +411,15 @@ export const fileActions = {
     review: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(async () => {
         await filesService.list(readActor(c), { baseId: input.baseId, path: input.path.split("/").slice(0, -1).join("/") });
+        const r = await reviewText(c);
+        const name = r.name(input.path);
         return ok({
-          message: `${input.onConflict === "overwrite" ? "Replace" : "Create"} ${input.path} (${input.size} bytes) in ${input.baseId}.`,
+          message: input.onConflict === "overwrite" ? r.t.replaceFile({ name }) : r.t.createFile({ name }),
+          details: [
+            { label: r.t.storage, value: r.base(input.baseId) },
+            { label: r.t.path, value: r.path(input.path) },
+            { label: r.t.size, value: r.size(input.size) },
+          ],
         });
       }),
     run: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
@@ -431,7 +455,15 @@ export const fileActions = {
     review: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
       domain(async () => {
         const folder = await filesService.folderLocation(readActor(c), input.parent);
-        return ok({ message: `Create ${joinName(folder.path, input.name)} (${input.size} bytes) in ${folder.baseId}.` });
+        const r = await reviewText(c);
+        return ok({
+          message: r.t.saveFile({ name: input.name }),
+          details: [
+            { label: r.t.storage, value: r.base(folder.baseId) },
+            { label: r.t.path, value: r.path(joinName(folder.path, input.name)) },
+            { label: r.t.size, value: r.size(input.size) },
+          ],
+        });
       }),
     run: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
       saveDomain(async () => {
@@ -459,47 +491,107 @@ export const fileActions = {
       }),
     stream: uploadStream(savedFile, saveDomain),
   },
-  "entry.trash": action("Move entry to trash", Target, async (input, c) => {
-    successfulEntry(await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
-    return { data: { baseId: input.baseId }, summary: "Moved to trash" };
-  }),
+  "entry.trash": action(
+    "Move entry to trash",
+    Target,
+    (input, r) => ({
+      message: r.t.trashEntry({ name: r.name(input.path) }),
+      details: [
+        { label: r.t.storage, value: r.base(input.baseId) },
+        { label: r.t.path, value: r.path(input.path) },
+      ],
+    }),
+    async (input, c) => {
+      successfulEntry(await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
+      return { data: { baseId: input.baseId }, summary: filesCapabilityMessages(c.locale ?? "en").movedToTrash };
+    },
+  ),
   "trash.restore": action(
     "Restore entry from trash",
     z.object({ baseId: Base, id: z.string().max(5500).describe("ID returned by trash.list."), path: Path.optional() }).strict(),
+    (input, r) => ({
+      message: r.t.restoreEntry,
+      details: [
+        { label: r.t.storage, value: r.base(input.baseId) },
+        { label: r.t.restoreTo, value: input.path === undefined ? r.t.originalPlace : r.path(input.path) },
+      ],
+    }),
     async (input, c) => {
       const saved = await filesService.restoreTrash(readActor(c), input);
       return result(input.baseId, saved.entry);
     },
   ),
-  "folder.create": action("Create folder", Target, async (input, c) => {
-    const saved = await filesService.mkdir(readActor(c), input);
-    return result(input.baseId, saved.entry);
-  }),
+  "folder.create": action(
+    "Create folder",
+    Target,
+    (input, r) => ({
+      message: r.t.createFolder({ name: r.name(input.path) }),
+      details: [
+        { label: r.t.storage, value: r.base(input.baseId) },
+        { label: r.t.path, value: r.path(input.path) },
+      ],
+    }),
+    async (input, c) => {
+      const saved = await filesService.mkdir(readActor(c), input);
+      return result(input.baseId, saved.entry);
+    },
+  ),
   "entry.rename": action(
     "Rename entry",
     Target.extend({ name: z.string().min(1).max(255).describe("New name without directory separators.") }).strict(),
+    (input, r) => ({
+      message: r.t.renameEntry({ name: r.name(input.path), newName: input.name }),
+      details: [
+        { label: r.t.storage, value: r.base(input.baseId) },
+        { label: r.t.path, value: r.path(input.path) },
+        { label: r.t.newName, value: input.name },
+      ],
+    }),
     async (input, c) => {
       const saved = await filesService.rename(readActor(c), input);
       return result(input.baseId, saved.entry);
     },
   ),
-  "entry.move": action("Move entry", Target.extend({ folder: Path }).strict(), async (input, c) =>
-    result(
-      input.baseId,
-      successfulEntry(await filesService.move(readActor(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
-    ),
-  ),
-  "entry.copy": action("Copy entry", Target.extend({ targetBaseId: Base, folder: Path }).strict(), async (input, c) =>
-    result(
-      input.targetBaseId,
-      successfulEntry(
-        await filesService.copy(readActor(c), {
-          baseId: input.baseId,
-          paths: [input.path],
-          targetBaseId: input.targetBaseId,
-          folder: input.folder,
-        }),
+  "entry.move": action(
+    "Move entry",
+    Target.extend({ folder: Path }).strict(),
+    (input, r) => ({
+      message: r.t.moveEntry({ name: r.name(input.path) }),
+      details: [
+        { label: r.t.storage, value: r.base(input.baseId) },
+        { label: r.t.path, value: r.path(input.path) },
+        { label: r.t.targetFolder, value: r.path(input.folder) },
+      ],
+    }),
+    async (input, c) =>
+      result(
+        input.baseId,
+        successfulEntry(await filesService.move(readActor(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
       ),
-    ),
+  ),
+  "entry.copy": action(
+    "Copy entry",
+    Target.extend({ targetBaseId: Base, folder: Path }).strict(),
+    (input, r) => ({
+      message: r.t.copyEntry({ name: r.name(input.path) }),
+      details: [
+        { label: r.t.storage, value: r.base(input.baseId) },
+        { label: r.t.path, value: r.path(input.path) },
+        { label: r.t.targetStorage, value: r.base(input.targetBaseId) },
+        { label: r.t.targetFolder, value: r.path(input.folder) },
+      ],
+    }),
+    async (input, c) =>
+      result(
+        input.targetBaseId,
+        successfulEntry(
+          await filesService.copy(readActor(c), {
+            baseId: input.baseId,
+            paths: [input.path],
+            targetBaseId: input.targetBaseId,
+            folder: input.folder,
+          }),
+        ),
+      ),
   ),
 };

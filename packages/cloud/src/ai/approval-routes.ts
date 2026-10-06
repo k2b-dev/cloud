@@ -4,7 +4,7 @@ import { z } from "zod";
 import { listCapabilities } from "../_internal/registry";
 import { ErrorResponseSchema } from "../contracts";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth, expectUserBackedActor, jsonResponse, rateLimit, requiresAuth, v } from "../server";
+import { type AuthContext, auth, expectUserBackedActor, getLocale, jsonResponse, rateLimit, requiresAuth, v } from "../server";
 import { type AiToolApprovalPreference, listAiToolApprovalPreferences, revokeAiToolApprovalPreference } from "./approvals";
 import { buildAiCapabilityCatalog } from "./capabilities";
 
@@ -70,7 +70,7 @@ export const createAiApprovalPreferenceRoutes = (dependencies: AiApprovalRouteDe
       describeRoute({
         tags: ["AI"],
         summary: "List remembered AI approvals",
-        description: "Lists AI tool approvals remembered for the current user.",
+        description: "Lists AI tool approvals remembered for the current user, with titles in the request locale.",
         ...requiresAuth,
         responses: {
           200: jsonResponse(AiApprovalPreferenceListSchema, "Remembered approvals"),
@@ -84,16 +84,16 @@ export const createAiApprovalPreferenceRoutes = (dependencies: AiApprovalRouteDe
           listPreferences(user.id),
           registry().catch(() => [] as CapabilityRegistryEntry[]),
         ]);
-        const catalogByName = new Map(buildAiCapabilityCatalog(capabilities).map((entry) => [entry.name, entry]));
+        const catalogByName = new Map(buildAiCapabilityCatalog(capabilities, getLocale(c)).map((entry) => [entry.name, entry]));
         const approvals: AiApprovalPreferenceView[] = preferences.map((preference) => {
           const capability = catalogByName.get(preference.toolName);
           return {
             ...preference,
-            title: capability?.title ?? fallbackTitle(preference.toolName),
+            title: capability?.display.title ?? fallbackTitle(preference.toolName),
             app: capability
               ? {
                   id: capability.appId,
-                  name: capability.appName,
+                  name: capability.display.appName,
                   icon: capability.app.appIcon,
                   ...(capability.app.appAccent ? { accent: capability.app.appAccent } : {}),
                 }

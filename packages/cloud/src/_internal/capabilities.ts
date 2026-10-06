@@ -786,6 +786,18 @@ const presentationOverlays = (catalog: CapabilityPresentationCatalog, requestedL
     });
 };
 
+/** The display title of one Query or Action in the requested locale, without rebuilding the manifest. */
+export const resolveCapabilityOperationTitle = (
+  operation: Pick<CapabilityQueryManifest, "localId" | "title">,
+  group: "queries" | "actions",
+  catalog: CapabilityPresentationCatalog | undefined,
+  requestedLocale: string,
+): string =>
+  (catalog ? presentationOverlays(catalog, requestedLocale) : []).reduce(
+    (title, translation) => translation[group]?.[operation.localId]?.title ?? title,
+    operation.title,
+  );
+
 /** Resolve only human presentation; stable IDs, flags, tags, aliases, and data shapes stay untouched. */
 export const resolveCapabilityManifestPresentation = (
   manifest: CapabilityManifest,

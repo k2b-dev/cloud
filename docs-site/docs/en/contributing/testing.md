@@ -22,8 +22,9 @@ bun run test
 ```
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
-service API contracts, localization, CSS architecture, formatting, the
-application set, the CI gate's job list, and every package typecheck. A package typecheck covers its
+service API contracts, localization, capability presentation, CSS
+architecture, formatting, the application set, the CI gate's job list, and
+every package typecheck. A package typecheck covers its
 `scripts/` as well as `src/`, so a package's build, smoke, and verification
 scripts break the gate when they drift from the code they drive. The only
 exceptions are scripts a package excludes by name in its `tsconfig.json` and
@@ -37,6 +38,12 @@ labels, titles, descriptions, placeholders, and toast or prompt messages with
 two or more words. It reads every branch of a conditional, and in a template
 literal a substitution next to a word counts as a second word. Single words
 such as product names or protocol labels stay allowed.
+
+The capability presentation check compiles the capability declaration each
+built-in application passes to `app.start()` and requires a German title and
+description for every Type, Query, Action, Command, and Universal Search tag.
+The Assistant, approvals, search, and the capability catalog show these
+texts to German readers.
 
 For one package:
 

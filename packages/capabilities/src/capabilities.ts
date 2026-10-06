@@ -35,6 +35,13 @@ export const catalogCapabilities = defineCapabilities({
     baseLocale: "en",
     translations: {
       de: {
+        types: {
+          app: { title: "Capability-App", description: "Eine Anwendung im Capability-Inspector." },
+          operation: {
+            title: "Capability-Operation",
+            description: "Eine Query oder Action im Inspector; das Öffnen führt sie nicht aus.",
+          },
+        },
         queries: {
           search: {
             title: "Capability-Katalog durchsuchen",

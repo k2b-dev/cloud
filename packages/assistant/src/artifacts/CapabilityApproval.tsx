@@ -23,8 +23,16 @@ function Approval(props: { request: CapabilityApproval; respond: (value: Capabil
             name: props.request.name,
             args: props.request.input,
             status: "awaiting_approval",
+            presentation: {
+              kind: "capability",
+              appId: props.request.appId,
+              appName: props.request.appName,
+              appIcon: props.request.appIcon,
+              title: props.request.title,
+              capabilityKind: props.request.kind,
+            },
             approval: {
-              message: props.request.review?.message ?? props.request.title,
+              message: props.request.review?.message ?? `${props.request.appName}: ${props.request.title}`,
               review: props.request.review ?? undefined,
               allowAlways: props.request.allowAlways,
             },

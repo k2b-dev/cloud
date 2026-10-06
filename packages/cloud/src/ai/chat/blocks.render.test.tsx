@@ -756,6 +756,92 @@ describe("capability tool presentation", () => {
     expect(customHtml).not.toContain("book:default");
   });
 
+  test("shows capability rows and approval cards in the reader's language", () => {
+    const german = (status: Parameters<typeof block>[0]) => {
+      const value = block(status);
+      if (value.kind !== "tool" || !value.presentation) throw new Error("tool block missing");
+      value.name = "mail__action__draft_dot_create";
+      value.presentation = {
+        ...value.presentation,
+        appId: "mail",
+        appName: "E-Mail",
+        title: "Mail-Entwurf erstellen",
+        capabilityKind: "action",
+      };
+      if (value.approval) value.approval = { message: "E-Mail: Mail-Entwurf erstellen", allowAlways: true };
+      return value;
+    };
+    const render = (value: AiTurnBlock, locale: string) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(AiChatActionsProvider, {
+              actions: { onApproval: async () => undefined },
+              get children() {
+                return createComponent(AiTurnBlockView, { block: value, turnId: "turn-1" });
+              },
+            });
+          },
+        }),
+      );
+
+    const approval = render(german("awaiting_approval"), "de");
+    expect(approval).toContain(">E-Mail · Mail-Entwurf erstellen</h3>");
+    expect(approval).toContain('aria-label="Freigabe erforderlich: Mail-Entwurf erstellen"');
+    expect(approval).toContain(">Aktion</p>");
+    expect(approval).toContain(">Ablehnen</span>");
+    expect(approval).toContain('<span class="k2b-button__label">Mail-Entwurf erstellen</span>');
+    expect(approval).toContain("Weitere Optionen für Mail-Entwurf erstellen");
+    expect(approval).toContain("Immer freigeben");
+    expect(approval).not.toContain("E-Mail: Mail-Entwurf erstellen");
+    expect(approval).not.toMatch(/>(Action|Reject|Always approve)</);
+
+    const reviewed = german("awaiting_approval");
+    if (reviewed.kind !== "tool" || !reviewed.approval) throw new Error("approval block missing");
+    reviewed.approval.review = {
+      message: "Entwurf im Postfach Vertrieb speichern.",
+      details: [{ label: "Betreff", value: "Angebot" }],
+      links: [{ rel: "edit", href: "/app/mail/MbA123/drafts/DrG789" }],
+      approvalScope: "mailbox:1",
+    };
+    const reviewedHtml = render(reviewed, "de");
+    expect(reviewedHtml).toContain("Entwurf im Postfach Vertrieb speichern.");
+    expect(reviewedHtml).toContain('<dt class="font-semibold text-primary">Betreff</dt>');
+    expect(reviewedHtml).toContain(">In E-Mail bearbeiten</span></a>");
+    expect(reviewedHtml).toContain('aria-label="Links zu Mail-Entwurf erstellen"');
+
+    const decided = german("awaiting_approval");
+    if (decided.kind !== "tool") throw new Error("tool block missing");
+    decided.status = "completed";
+    const decidedHtml = render(decided, "de");
+    expect(decidedHtml).toContain(">Eingabe</p>");
+    expect(decidedHtml).toContain(">Antwort</p>");
+    expect(decidedHtml).toContain("Rohdaten anzeigen");
+
+    const running = render(german("running"), "de");
+    expect(running).toContain("Mail-Entwurf erstellen");
+    const failed = german("failed");
+    if (failed.kind !== "tool") throw new Error("tool block missing");
+    failed.result = {};
+    const failedHtml = render(failed, "de");
+    expect(failedHtml).toContain("Mail-Entwurf erstellen fehlgeschlagen");
+    expect(failedHtml).toContain("Die Aktion konnte nicht abgeschlossen werden.");
+
+    const rejected = german("awaiting_approval");
+    if (rejected.kind !== "tool") throw new Error("tool block missing");
+    rejected.status = "rejected";
+    rejected.approval = undefined;
+    expect(render(rejected, "de")).toContain("Mail-Entwurf erstellen abgelehnt");
+
+    // English readers keep the English chrome around whatever title the server presented.
+    const english = render(block("awaiting_approval"), "en");
+    expect(english).toContain(">Contacts · List contacts</h3>");
+    expect(english).toContain(">Action</p>");
+    expect(english).toContain(">Reject</span>");
+    expect(english).not.toContain("Ablehnen");
+  });
+
   test("renders a rejected approval as one compact result row", () => {
     const rejected = block("awaiting_approval");
     if (rejected.kind !== "tool") throw new Error("tool block missing");

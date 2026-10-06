@@ -401,16 +401,19 @@ const boundedErrorText = (value: string): string => {
   return compact.length > 500 ? `${compact.slice(0, 497)}...` : compact;
 };
 
-/** Canonical capability failure text for the compact chat row. Raw input and output remain in the audit trail. */
+/**
+ * Canonical capability failure text for the compact chat row, or "" when the result carries none and the row
+ * shows its localized fallback. Raw input and output remain in the audit trail.
+ */
 export const capabilityErrorDescription = (result: unknown): string => {
-  if (typeof result === "string") return boundedErrorText(result) || "The action could not be completed.";
+  if (typeof result === "string") return boundedErrorText(result);
   if (isRecord(result)) {
     const message = typeof result.message === "string" ? result.message : typeof result.error === "string" ? result.error : "";
     const code = typeof result.code === "string" ? result.code : "";
     const text = code && message && !message.startsWith(code) ? `${code}: ${message}` : message || code;
     if (text) return boundedErrorText(text);
   }
-  return "The action could not be completed.";
+  return "";
 };
 
 /** Compact user-facing copy for fetch_file failures; the full response remains in the disclosure and audit trail. */

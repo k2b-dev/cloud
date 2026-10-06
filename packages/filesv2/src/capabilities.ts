@@ -9,6 +9,8 @@ import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { apiError } from "./api/api-error";
+import { filesCapabilityMessages } from "./capability-messages";
+import { filesCapabilityPresentation } from "./capability-presentation";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
@@ -39,6 +41,7 @@ const entryHref = (baseId: string, path: string, directory: boolean) =>
 
 export const filesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  presentation: filesCapabilityPresentation,
   types: {
     entry: {
       title: "File or folder",
@@ -116,7 +119,7 @@ export const filesCapabilities = defineCapabilities({
               preview: `${page.base.name}${folder ? ` / ${folder}` : ""}`.slice(0, 2000),
               icon: `ti ${fileIcons.getFileIcon({ name: entry.name, type: entry.directory ? "directory" : "file" })}`,
               priority: entry.directory ? 5 : 6,
-              metadata: [{ label: context.locale?.startsWith("de") ? "Ablage" : "Storage", value: page.base.name }],
+              metadata: [{ label: filesCapabilityMessages(context.locale).storage, value: page.base.name }],
               links: [
                 {
                   rel: "open" as const,
@@ -148,9 +151,11 @@ export const filesCapabilities = defineCapabilities({
           entries.length > limit ||
           pages.some((page) => page.next);
         const summary = limited
-          ? context.locale?.startsWith("de")
-            ? `Unvollständige Ergebnisse: ${bases.length} Ablagen geprüft, ${omittedBases} weitere und ${unavailableBases} nicht verfügbare Ablagen. Weitere Treffer können vorhanden sein. In Dateien weitersuchen.`
-            : `Partial results: ${bases.length} storage bases searched, ${omittedBases} further and ${unavailableBases} unavailable bases. More entries may exist. Continue searching in Files.`
+          ? filesCapabilityMessages(context.locale).partialSearch({
+              searched: bases.length,
+              omitted: omittedBases,
+              unavailable: unavailableBases,
+            })
           : undefined;
         return ok({ data: bounded, ...(summary ? { summary } : {}) });
       },

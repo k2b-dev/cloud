@@ -954,6 +954,108 @@ describe("AI capability catalog", () => {
     expect(approvalScope).toBeUndefined();
   });
 
+  test("presents capabilities in the reader's language while the model keeps the base prompt text", async () => {
+    const compiled = compileCapabilities(
+      "mail",
+      defineCapabilities({
+        protocolVersion: 2,
+        presentation: {
+          baseLocale: "en",
+          translations: {
+            de: {
+              actions: {
+                "draft.create": {
+                  title: "Mail-Entwurf erstellen",
+                  description: "Erstellt einen bearbeitbaren Entwurf.",
+                  input: { subject: "Betreff des Entwurfs." },
+                },
+              },
+            },
+          },
+        },
+        actions: {
+          "draft.create": {
+            title: "Create draft",
+            description: "Create an editable mail draft.",
+            input: z.object({ subject: z.string().max(200).describe("Draft subject.") }).strict(),
+            data: z.object({ id: z.string() }).strict(),
+            destructive: false,
+            openWorld: false,
+            idempotency: "none",
+            run: async () => ok({ data: { id: "draft" } }),
+          },
+        },
+      }),
+    );
+    const mail: CapabilityRegistryEntry = {
+      ...capabilityApp("mail", "Mail"),
+      appName: "Mail",
+      manifest: compiled.manifest,
+      presentation: compiled.presentation,
+      appPresentation: { baseLocale: "en", translations: { de: { name: "E-Mail" } } },
+    };
+    // A third-party app without German presentation keeps its own words.
+    const thirdParty = capabilityApp("inventory", "Inventory");
+    const resolve = async (locale?: string) => {
+      const presentations = new Map<string, unknown>();
+      const approvals: string[] = [];
+      const tools = await createAiToolResolver({
+        conversationId: "conversation-1",
+        actor,
+        staticTools: [],
+        locale,
+        store: {
+          getLoadedTools: async () => ["mail.draft.create", "inventory.create"],
+          loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
+        },
+        listRegistry: async () => [mail, thirdParty],
+        execute: async () => ({ data: { id: "draft" } }),
+        onPrepared: (snapshot) => {
+          for (const [name, presentation] of snapshot.presentations) presentations.set(name, presentation);
+        },
+      })();
+      const draft = tools.find((tool) => tool.def.name === "mail__action__draft_dot_create");
+      if (!draft || draft.kind !== "server") throw new Error("draft tool missing");
+      await draft.execute(
+        { subject: "Offer" },
+        {
+          callId: "call-draft",
+          signal: AbortSignal.timeout(1_000),
+          requestApproval: async (message) => {
+            approvals.push(message);
+            return true;
+          },
+          requestClientTool: async <T>() => undefined as T,
+        },
+      );
+      return { tools, presentations, approvals };
+    };
+
+    const german = await resolve("de-DE");
+    expect(german.presentations.get("mail__action__draft_dot_create")).toMatchObject({
+      appName: "E-Mail",
+      title: "Mail-Entwurf erstellen",
+    });
+    expect(german.presentations.get("inventory__action__create")).toMatchObject({ appName: "Inventory", title: "Create item" });
+    expect(german.approvals).toEqual(["E-Mail: Mail-Entwurf erstellen"]);
+
+    const english = await resolve("en");
+    expect(english.presentations.get("mail__action__draft_dot_create")).toMatchObject({ appName: "Mail", title: "Create draft" });
+    expect(english.approvals).toEqual(["Mail: Create draft"]);
+    // Tool definitions are prompt text: identical for every reader, never translated.
+    const definitions = (tools: typeof german.tools) =>
+      tools.map((tool) => ({
+        name: tool.def.name,
+        description: tool.def.description,
+        input: JSON.stringify(z.toJSONSchema(tool.def.inputSchema)),
+      }));
+    expect(definitions(german.tools)).toEqual(definitions(english.tools));
+    const draftDefinition = definitions(german.tools).find((tool) => tool.name === "mail__action__draft_dot_create");
+    expect(draftDefinition?.description).toStartWith("Create draft. Create an editable mail draft.");
+    expect(draftDefinition?.input).toContain("Draft subject.");
+    expect(draftDefinition?.input).not.toContain("Betreff");
+  });
+
   test("keeps tool discovery available when the Help registry fails", async () => {
     const failures: unknown[] = [];
     const resolver = createAiToolResolver({

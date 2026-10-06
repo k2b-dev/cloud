@@ -23,6 +23,11 @@ export const accountsCapabilities = defineCapabilities({
     baseLocale: "en",
     translations: {
       de: {
+        types: {
+          user: { title: "Konto", description: "Ein Konto im bestehenden Core-Verzeichnis." },
+          group: { title: "Gruppe", description: "Eine Gruppe im bestehenden Core-Verzeichnis." },
+          "service-account": { title: "Dienstkonto", description: "Ein Dienstkonto im bestehenden Core-Verzeichnis." },
+        },
         queries: {
           search: {
             title: "Konten durchsuchen",

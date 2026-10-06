@@ -69,7 +69,15 @@ async function operation(name: string, locale?: string | null) {
   const query = catalog.data.manifest.queries.find((item) => item.localId === localId);
   const action = catalog.data.manifest.actions.find((item) => item.localId === localId);
   if (Boolean(query) === Boolean(action)) throw new ArtifactError("INVALID_INPUT");
-  return { appId, localId, operation: (query ?? action)!, action, kind: query ? ("query" as const) : ("action" as const) };
+  return {
+    appId,
+    appName: catalog.data.appName,
+    appIcon: catalog.data.appIcon,
+    localId,
+    operation: (query ?? action)!,
+    action,
+    kind: query ? ("query" as const) : ("action" as const),
+  };
 }
 
 export const runtimeCapabilities = {
@@ -143,7 +151,15 @@ export const runtimeCapabilities = {
       (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope }));
     if (!untrusted && (!target.action || target.action.approval === "none" || remembered))
       return runtimeCapabilities.resolve(request.id, { approved: true }, identity, caller);
-    return { status: "approval" as const, id: request.id, name: request.name, input: request.input, ...prepared };
+    return {
+      status: "approval" as const,
+      id: request.id,
+      name: request.name,
+      input: request.input,
+      appName: target.appName,
+      appIcon: target.appIcon,
+      ...prepared,
+    };
   },
   async resolve(id: string, decision: { approved: boolean; remember?: "always" }, identity: ArtifactIdentity, caller: CapabilityCaller) {
     z.uuid().parse(id);
