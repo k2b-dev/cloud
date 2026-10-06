@@ -392,7 +392,7 @@ Grids has no CSV import, in the CLI or in the web app. Convert the CSV into `rec
 3. Read the field public IDs with `cld grids records shape <base>:<table> --json` and write `columns.json`, which maps each CSV header to a field ID, or to `{ "field": "<field-id>", "format": "decimal-comma" }` or `"dd.mm.yyyy"` for a column the converter must rewrite. Columns missing from the map are skipped.
 4. Save the converter below as `csv-to-records.ts` and run it with Bun. It reads quoted cells, line breaks inside quotes, a byte order mark, and Windows line endings, leaves empty cells out, and writes `records-001.json`, `records-002.json`, and so on with up to 500 records each. It stops without writing a file when the file is not UTF-8, a quote is never closed, a row has more or fewer cells than the header, a mapped header occurs more than once, or a value does not match its format, such as `1.234,50 €`, `12.5` in a `decimal-comma` column, or `31.02.2026`; the message names the row, counting the header as row 1 as a spreadsheet does. Run it in an empty folder, so no file from an earlier run is imported. Pass `';'` or `$'\t'` as the third argument for semicolon- or tab-separated files.
 5. Import the files in order. The loop stops at the first failing file and exits 1. The files before it are imported: delete them, fix the failing file, and run the loop again. After a timeout or a lost connection, check with `records ls` whether the failing batch arrived first; importing it again creates duplicates.
-6. Check the result with `gql run`: `from table <table>; limit 10` prints the first ten records in import order as a table with the field names as headers. `records ls` prints only IDs and versions as text, and its JSON keys values by field ID.
+6. Check the result with `gql run`: `from table <table>; limit 10` prints the first ten records in import order as a table with the field names as headers. `records ls` prints no field values as text, only record IDs, versions, and update times, and its JSON keys values by field ID.
 
 ```json
 {
@@ -407,10 +407,11 @@ Grids has no CSV import, in the CLI or in the web app. Convert the CSV into `rec
 // csv-to-records.ts: bun csv-to-records.ts <data.csv> <columns.json> [delimiter]
 const [csvFile, columnsFile, delimiter = ","] = Bun.argv.slice(2);
 if (!csvFile || !columnsFile) throw new Error("Usage: bun csv-to-records.ts <data.csv> <columns.json> [delimiter]");
+const bytes = await Bun.file(csvFile).bytes();
 let text: string;
 try {
   // fatal: a byte that is not UTF-8 stops the run instead of becoming "�". The decoder drops a byte order mark.
-  text = new TextDecoder("utf-8", { fatal: true }).decode(await Bun.file(csvFile).bytes());
+  text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 } catch {
   throw new Error(`${csvFile} is not UTF-8. Convert it first: iconv -f WINDOWS-1252 -t UTF-8 ${csvFile} > data-utf8.csv`);
 }
@@ -423,7 +424,10 @@ const formats: Record<string, (value: string) => string | null> = {
     if (!match) return null;
     const [day = "", month = "", year = ""] = match.slice(1);
     const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-    return new Date(Date.UTC(+year, +month - 1, +day)).toISOString().startsWith(iso) ? iso : null;
+    // Unlike Date.UTC, setUTCFullYear keeps the years 0 to 99.
+    const date = new Date(0);
+    date.setUTCFullYear(+year, +month - 1, +day);
+    return date.toISOString().startsWith(iso) ? iso : null;
   },
 };
 type Column = string | { field: string; format: string };
@@ -463,7 +467,8 @@ const header = (first?.cells ?? []).map((name) => name.trim());
 for (const [name, column] of Object.entries(columns)) {
   const count = header.filter((column) => column === name).length;
   if (count !== 1) throw new Error(count ? `The CSV has the column "${name}" ${count} times.` : `The CSV has no column "${name}".`);
-  if (typeof column !== "string" && !formats[column.format]) throw new Error(`Column "${name}" has the unknown format "${column.format}".`);
+  if (typeof column !== "string" && !Object.hasOwn(formats, column.format))
+    throw new Error(`Column "${name}" has the unknown format "${column.format}".`);
 }
 for (const { number, cells } of data) {
   if (cells.length !== header.length)
@@ -472,7 +477,7 @@ for (const { number, cells } of data) {
 const items = data.map(({ number, cells }) =>
   Object.fromEntries(
     header.flatMap((name, i) => {
-      const column = columns[name];
+      const column = Object.hasOwn(columns, name) ? columns[name] : undefined;
       const value = cells[i]?.trim();
       if (!column || !value) return [];
       if (typeof column === "string") return [[column, value]];

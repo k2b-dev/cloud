@@ -90,7 +90,7 @@ cld spaces rm Item01 --yes
 cld spaces create "Hiring" --description "Open roles"
 ```
 
-- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the same field flags as `set`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most).
+- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most).
 - `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
 - Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.

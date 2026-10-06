@@ -556,6 +556,18 @@ describe("secondary resources", () => {
   });
 });
 
+test("add takes the field flags of set except --title and --clear-*, as the reference says", async () => {
+  const flags = async (command: string) =>
+    [...(await cld(["spaces", command, "--help"])).stdout.matchAll(/^ {2}(--[a-z-]+)/gm)].map((match) => match[1]);
+  const reference = await readFile(new URL("./cli-references/index.md", import.meta.url), "utf8");
+  expect(reference).toContain("`add` takes the field flags of `set` except `--title` and `--clear-*`");
+  const add = await flags("add");
+  expect(add).toContain("--from");
+  expect(add.filter((flag) => flag !== "--column")).toEqual(
+    (await flags("set")).filter((flag) => flag !== "--title" && !flag?.startsWith("--clear-")),
+  );
+});
+
 test("help is available in English and German with unchanged command names", async () => {
   const en = await cld(["spaces", "help"]);
   const de = await cld(["--locale", "de", "spaces", "help"]);

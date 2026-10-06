@@ -138,9 +138,18 @@ cld filesv2 ls --json | jq -r '.items[] | select(.status == "existing") | .id' |
 Each line is an address that `stat`, `get`, and the other commands accept, or a
 note that an area has more hits than one page holds. When the search of an area
 fails, the loop prints the error and goes on, so a missing hit does not prove
-that the file does not exist. `cld capabilities query filesv2 entry.search` is
-quicker for a signed-in person, but it searches at most ten areas, one page
-each.
+that the file does not exist.
+
+For a signed-in person, one call of the `capabilities` module is quicker, but it
+searches at most ten areas, one page each, and returns at most 100 hits:
+
+```bash
+cld capabilities query filesv2 entry.search --input '{"query":"report","tags":[],"limit":100}' --json
+```
+
+`query`, `tags`, and `limit` are required, `tags` even when it is empty. Each
+`data[].ref.id` is a file ID that the commands accept, and a `summary` says
+when areas or hits were left out.
 
 ## Transfer files
 
@@ -242,9 +251,11 @@ writing a file. Check that the output file exists before you upload it.
 Convert a CSV that is not UTF-8 with `iconv` first, as in `cld grids
 reference`, section "Import a CSV file".
 
-Without LibreOffice, Python writes the Office formats reliably with `openpyxl`
-(`.xlsx`) and `python-docx` (`.docx`). Install them into a virtual environment
-when the system Python has neither, then write the file with a short script:
+Without LibreOffice, Python writes `.xlsx` with `openpyxl` and `.docx` with
+`python-docx`; `.ods` and `.odt` need LibreOffice. Install the libraries into a
+virtual environment when the system Python has neither; on Debian and Ubuntu,
+`python3 -m venv` needs the `python3-venv` package. Then write the file with a
+short script:
 
 ```bash
 python3 -m venv .office && .office/bin/pip install openpyxl python-docx

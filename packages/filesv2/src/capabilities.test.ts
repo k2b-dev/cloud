@@ -138,6 +138,19 @@ test("capability explicitly describes truncated base and source-page coverage", 
   expect(calls).toBe(10);
 });
 
+test("the reference's search across areas passes the query input as written and returns file IDs", async () => {
+  const reference = await Bun.file(new URL("./cli-references/index.md", import.meta.url)).text();
+  const [, queryId, input] = reference.match(/cld capabilities query filesv2 (\S+) --input '([^']+)' --json/) ?? [];
+  expect(queryId).toBe("entry.search");
+  const query = filesCapabilities.queries["entry.search"];
+  items = [entry("Documents/report.pdf")];
+  const result = await query.run(query.input.parse(JSON.parse(input!)), context);
+  if (!result.ok) throw new Error("expected success");
+  const ref = result.data.data[0]!.ref;
+  expect(ref.type).toBe("filesv2.entry");
+  expect(ids.get(ref.id)).toEqual({ baseId: base.id, path: "Documents/report.pdf" });
+});
+
 test("failed capability reads are never presented as empty search results", async () => {
   failure = true;
   await expect(filesCapabilities.queries["entry.search"].run({ query: "file", tags: [], limit: 10 }, context)).rejects.toThrow(

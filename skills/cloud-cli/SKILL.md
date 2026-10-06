@@ -11,7 +11,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 
 ## Start
 
-1. Install the app modules first: `cld plugins install --all`, or `cld plugins install <module>` for the one the task needs. Until then `cld` has no app commands and the [Installed modules](#installed-modules) table below is empty. `cld plugins list` shows what the Cloud serves and what needs an update.
+1. Install the app modules first: `cld plugins install --all`, or `cld plugins install apps <module>` for the one the task needs, with `apps` for step 3. Until then `cld` has no app commands and the [Installed modules](#installed-modules) table below is empty. `cld plugins list` shows what the Cloud serves and what needs an update.
 2. If that reports no configured server or no sign-in, sign in with `cld login --server <Cloud URL>`, or with `--device` on a machine without a browser, such as a server reached over SSH, then install. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
 3. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
 4. Run `cld <app> reference`, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Help never runs a command, so `cld logout --help` or `cld profile set --help` is safe too. Every app module, built-in or third-party, is a `cld` plugin served by the Cloud; a missing one says `run cld plugins install <name>`.
@@ -37,7 +37,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | Change part of an existing note | `cld notebooks reference`, then `cld notebooks cat <note> --json` and `cld notebooks edit` |
 | Upload a local file, create folders, or replace a file in Files | `cld filesv2 reference`, then `cld filesv2 put <local> <area>:/<folder>/ --parents` |
 | Find a file when you do not know its area | `cld filesv2 reference`, section "Find a file in every area" |
-| Put a spreadsheet or document (`.ods`, `.xlsx`, `.odt`, `.docx`) with content into Files | Build it locally first with LibreOffice, or with Python when LibreOffice is missing; `cld filesv2 reference` shows both. Then `cld filesv2 put` |
+| Put a spreadsheet or document (`.ods`, `.xlsx`, `.odt`, `.docx`) with content into Files | Build it locally first with LibreOffice; without it, build `.xlsx` and `.docx` with Python. `cld filesv2 reference` shows both. Then `cld filesv2 put` |
 | Write or send mail | `cld mail reference compose.md` |
 | Read or change table records and fields | `cld grids reference` and `cld grids reference schema.md` |
 | Import a CSV file into a table, including Windows-1252 files, decimal commas, and `dd.mm.yyyy` dates | `cld grids reference`, section "Import a CSV file"; there is no CSV import command |
