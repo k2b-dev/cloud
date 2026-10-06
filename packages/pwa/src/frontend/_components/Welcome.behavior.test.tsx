@@ -386,14 +386,21 @@ else {
   test("a camera that cannot start sends the person to the paste field", async () => {
     const fetch = mockFetch(() => undefined);
     const page = mount({ standalone: true, state: "ended" });
-    Object.defineProperty(page.dom.window.navigator, "permissions", {
+    Object.defineProperty(page.dom.window.navigator, "mediaDevices", {
       configurable: true,
-      value: { query: async () => ({ state: "denied" }) },
+      value: {
+        getUserMedia: async () => {
+          throw new page.dom.window.DOMException("Permission denied", "NotAllowedError");
+        },
+      },
     });
     try {
       expect(text(page.dom)).toContain("This phone was signed out. Connect it again.");
       button(page.dom, "Scan code")!.click();
-      await waitFor(() => text(page.dom).includes("Camera not available. Paste the link instead."), "camera message");
+      await waitFor(
+        () => text(page.dom).includes("Camera access is off. Allow it in settings, or paste the link instead."),
+        "camera message",
+      );
       expect(page.dom.document.activeElement?.id).toBe("pwa-pairing-link");
       expect(page.dom.document.querySelector("dialog")).toBeNull();
     } finally {

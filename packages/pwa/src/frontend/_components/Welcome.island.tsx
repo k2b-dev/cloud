@@ -9,6 +9,7 @@ import {
   type InstallPrompt,
   PanelDialog,
   QrScanner,
+  type QrScannerError,
   TextInput,
   useLocale,
 } from "@k2b/ui";
@@ -29,7 +30,7 @@ export type WelcomeProps = {
 };
 
 type Waiting = { code: string; account: string };
-type ScanResult = { link: string } | { error: "denied" | "unavailable" };
+type ScanResult = { link: string } | { error: QrScannerError };
 
 const PASTE_FIELD = "pwa-pairing-link";
 
@@ -185,7 +186,15 @@ export default function Welcome(props: WelcomeProps) {
     );
     if (!result) return;
     if ("link" in result) return void claim(result.link);
-    setMessage(t().cameraUnavailable);
+    const messages = t();
+    setMessage(
+      {
+        denied: messages.cameraDenied,
+        "no-camera": messages.cameraMissing,
+        "in-use": messages.cameraInUse,
+        unavailable: messages.cameraUnavailable,
+      }[result.error],
+    );
     document.getElementById(PASTE_FIELD)?.focus();
   };
 

@@ -2,12 +2,13 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
-/** Stands in for the qr-scanner engine: tests decode text and fail the camera on demand. */
+/** Stands in for the qr-scanner engine: tests decode text and report frame errors on demand. */
 class FakeEngine {
   static readonly NO_QR_CODE_FOUND = "No QR code found";
+  static _disableBarcodeDetector = false;
   static last: FakeEngine | undefined;
   static start: () => Promise<void> = async () => {};
-  readonly options: { preferredCamera?: string; onDecodeError?: (error: Error | string) => void };
+  readonly options: { onDecodeError?: (error: Error | string) => void };
   paused: boolean[] = [];
   destroyed = false;
   constructor(
@@ -31,6 +32,19 @@ class FakeEngine {
 }
 mock.module("qr-scanner", () => ({ default: FakeEngine }));
 
+/** A camera stream whose track reports the facing and label a device gives and whether it was stopped. */
+const cameraStream = (facingMode?: string, label = "") => {
+  const track = {
+    label,
+    stopped: false,
+    stop() {
+      track.stopped = true;
+    },
+    getSettings: () => ({ facingMode }),
+  };
+  return Object.assign(new dom.window.MediaStream(), { track, getTracks: () => [track], getVideoTracks: () => [track] });
+};
+
 let dom: DomTestHarness;
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -38,20 +52,30 @@ afterEach(() => {
   dispose = undefined;
   FakeEngine.last = undefined;
   FakeEngine.start = async () => {};
+  FakeEngine._disableBarcodeDetector = false;
   dom.cleanup();
 });
 
 const settle = () => Bun.sleep(10);
 
-async function mount(options: { accept?: (text: string) => boolean; permission?: PermissionState | Promise<PermissionState> } = {}) {
+type Camera = (video: MediaTrackConstraints) => Promise<unknown>;
+
+async function mount(options: { accept?: (text: string) => boolean; camera?: Camera | null } = {}) {
   dom = createDomTestHarness();
   Object.defineProperty(globalThis, "matchMedia", { configurable: true, value: dom.window.matchMedia.bind(dom.window) });
-  Object.defineProperty(navigator, "permissions", {
+  const requests: MediaTrackConstraints[] = [];
+  const camera = options.camera === undefined ? async () => cameraStream("environment") : options.camera;
+  Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
-    value: { query: async () => ({ state: await (options.permission ?? "prompt") }) },
+    value: camera && {
+      getUserMedia: ({ video }: { video: MediaTrackConstraints }) => {
+        requests.push(video);
+        return camera(video);
+      },
+    },
   });
   const { QrScanner } = await import("../src/inputs/QrScanner");
-  const calls = { results: [] as string[], stops: 0, errors: [] as string[] };
+  const calls = { results: [] as string[], stops: 0, errors: [] as string[], requests };
   dispose = render(
     () => (
       <QrScanner
@@ -70,17 +94,72 @@ async function mount(options: { accept?: (text: string) => boolean; permission?:
   return calls;
 }
 
+const refuse =
+  (name: string): Camera =>
+  async () => {
+    throw new DOMException("The camera refused.", name);
+  };
 const status = () => document.querySelector('[role="status"]')?.textContent;
 const preview = () => document.querySelector<HTMLElement>(".k2b-qr-scanner__preview")!;
+const video = () => document.querySelector("video")!;
 
 describe("QrScanner", () => {
   test("starts the rear camera, then shows the instructions and the privacy note", async () => {
-    await mount();
-    expect(FakeEngine.last?.options.preferredCamera).toBe("environment");
-    expect(FakeEngine.last?.video).toBe(document.querySelector("video")!);
+    const calls = await mount();
+    expect(calls.requests).toEqual([{ width: { min: 1024 }, facingMode: { exact: "environment" } }]);
+    expect(FakeEngine.last?.video).toBe(video());
+    expect(video().srcObject).not.toBeNull();
+    expect(video().style.transform).toBe("");
     expect(status()).toBe("Point the camera at the pairing code.");
     expect(document.querySelector(".k2b-qr-scanner__note")?.textContent).toBe("Camera images stay on this device.");
   });
+
+  test("tries looser requests only while no camera fits, and mirrors a camera that is not the rear one", async () => {
+    const calls = await mount({
+      camera: async (request) => (request.facingMode ? refuse("OverconstrainedError")(request) : cameraStream()),
+    });
+    expect(calls.requests).toHaveLength(4);
+    expect(calls.requests.at(-1)).toEqual({ width: { min: 1024 } });
+    expect(calls.errors).toEqual([]);
+    expect(video().style.transform).toBe("scaleX(-1)");
+  });
+
+  for (const [label, rearFits, mirrored] of [
+    ["Front Camera", true, "scaleX(-1)"],
+    ["camera2 0, facing back", false, ""],
+  ] as const) {
+    test(`reads the facing from the label "${label}" when the camera's settings leave it out`, async () => {
+      await mount({
+        camera: async (request) =>
+          request.facingMode && !rearFits ? refuse("OverconstrainedError")(request) : cameraStream(undefined, label),
+      });
+      expect(video().style.transform).toBe(mirrored);
+    });
+  }
+
+  test("a camera that cannot start at the larger size starts at a looser one", async () => {
+    const calls = await mount({
+      camera: async (request) => (request.width ? refuse("NotReadableError")(request) : cameraStream("environment")),
+    });
+    expect(calls.requests).toEqual([
+      { width: { min: 1024 }, facingMode: { exact: "environment" } },
+      { width: { min: 768 }, facingMode: { exact: "environment" } },
+      { facingMode: { exact: "environment" } },
+    ]);
+    expect(calls.errors).toEqual([]);
+    expect(video().srcObject).not.toBeNull();
+  });
+
+  for (const [story, rear, other] of [
+    ["no rear camera fits, then the camera is busy", "OverconstrainedError", "NotReadableError"],
+    ["the camera is busy, then no camera fits", "NotReadableError", "OverconstrainedError"],
+  ] as const) {
+    test(`a camera that exists but fails outweighs a request no camera meets: ${story}`, async () => {
+      const calls = await mount({ camera: async (request) => refuse(request.facingMode ? rear : other)(request) });
+      expect(calls.errors).toEqual(["in-use"]);
+      expect(calls.requests).toHaveLength(6);
+    });
+  }
 
   test("an accepted result stops the camera at once", async () => {
     const calls = await mount({ accept: () => true });
@@ -113,56 +192,94 @@ describe("QrScanner", () => {
     expect(calls.stops).toBe(2);
   });
 
-  test("reports denied camera access", async () => {
-    FakeEngine.start = async () => {
-      throw "Camera not found.";
-    };
-    const calls = await mount({ permission: "denied" });
-    expect(calls.errors).toEqual(["denied"]);
-    expect(FakeEngine.last?.destroyed).toBe(true);
-  });
+  for (const [name, reason, requests] of [
+    ["NotAllowedError", "denied", 1],
+    ["SecurityError", "denied", 1],
+    ["NotReadableError", "in-use", 6],
+    ["AbortError", "unavailable", 6],
+    ["NotFoundError", "no-camera", 6],
+    ["OverconstrainedError", "no-camera", 6],
+  ] as const) {
+    test(`reports ${name} from the camera as ${reason}`, async () => {
+      const calls = await mount({ camera: refuse(name) });
+      expect(calls.errors).toEqual([reason]);
+      expect(calls.requests).toHaveLength(requests);
+      expect(FakeEngine.last?.destroyed).toBe(true);
+    });
+  }
 
-  test("reports a missing camera as unavailable", async () => {
-    FakeEngine.start = async () => {
-      throw "Camera not found.";
-    };
-    const calls = await mount();
+  test("reports a browser without camera access as unavailable", async () => {
+    const calls = await mount({ camera: null });
     expect(calls.errors).toEqual(["unavailable"]);
   });
 
-  test("does not report a failure that settles after the host unmounted the scanner", async () => {
+  test("reports a camera that opens but does not play as unavailable", async () => {
     FakeEngine.start = async () => {
-      throw "Camera not found.";
+      throw new DOMException("The play() request was interrupted.", "AbortError");
     };
-    let answer!: (state: PermissionState) => void;
-    const calls = await mount({ permission: new Promise<PermissionState>((resolve) => (answer = resolve)) });
+    const calls = await mount();
+    expect(calls.errors).toEqual(["unavailable"]);
     expect(FakeEngine.last?.destroyed).toBe(true);
+  });
+
+  test("a request that fails after the host unmounted the scanner is neither retried nor reported", async () => {
+    let refuseNow!: () => void;
+    const calls = await mount({
+      camera: () => new Promise((_, reject) => (refuseNow = () => reject(new DOMException("No rear camera.", "OverconstrainedError")))),
+    });
     dispose?.();
     dispose = undefined;
-    answer("denied");
+    refuseNow();
     await settle();
+    expect(calls.requests).toHaveLength(1);
     expect(calls.errors).toEqual([]);
   });
 
-  test("ignores empty frames but fails on an engine error", async () => {
+  test("a frame that cannot be decoded never stops the camera; a failing BarcodeDetector hands over to the worker", async () => {
     const calls = await mount();
-    FakeEngine.last!.options.onDecodeError?.(FakeEngine.NO_QR_CODE_FOUND);
-    expect(calls.errors).toEqual([]);
-    FakeEngine.last!.options.onDecodeError?.(new Error("worker crashed"));
+    const engine = FakeEngine.last!;
+    // Empty frames: the worker reports the bare constant, Chrome for Android's BarcodeDetector the prefixed one.
+    engine.options.onDecodeError?.(FakeEngine.NO_QR_CODE_FOUND);
+    engine.options.onDecodeError?.(`Scanner error: ${FakeEngine.NO_QR_CODE_FOUND}`);
+    expect(FakeEngine._disableBarcodeDetector).toBe(false);
+    engine.options.onDecodeError?.("Scanner error: Unsupported source.");
+    expect(FakeEngine._disableBarcodeDetector).toBe(true);
     await settle();
+    expect(calls.errors).toEqual([]);
+    expect(engine.destroyed).toBe(false);
+    expect(engine.paused).toEqual([]);
+  });
+
+  test("a scanning engine that cannot load stops the camera and reports unavailable", async () => {
+    const calls = await mount();
+    const engine = FakeEngine.last!;
+    // qr-scanner hands every frame the engine's own load error, such as a decoder chunk gone after a deploy.
+    engine.options.onDecodeError?.(new TypeError("Failed to fetch dynamically imported module"));
+    engine.options.onDecodeError?.(new TypeError("Failed to fetch dynamically imported module"));
     expect(calls.errors).toEqual(["unavailable"]);
+    expect(engine.paused).toEqual([true]);
+    expect(engine.destroyed).toBe(true);
   });
 
   test("unmounting releases the camera, even during a pending permission prompt", async () => {
-    let release!: () => void;
-    FakeEngine.start = () => new Promise<void>((resolve) => (release = resolve));
-    await mount();
+    let grant!: (stream: ReturnType<typeof cameraStream>) => void;
+    const calls = await mount({
+      camera: () =>
+        new Promise((resolve) => {
+          grant = resolve;
+        }),
+    });
     const engine = FakeEngine.last!;
     expect(status()).toBe("Starting camera…");
     dispose?.();
     dispose = undefined;
     expect(engine.paused).toEqual([true]);
     expect(engine.destroyed).toBe(true);
-    release();
+    // The stream the browser hands over after the prompt stops at once and never reaches the preview.
+    const stream = cameraStream("environment");
+    grant(stream);
+    await settle();
+    expect(stream.track.stopped).toBe(true);
+    expect(calls.errors).toEqual([]);
   });
 });

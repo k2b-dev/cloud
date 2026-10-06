@@ -41,7 +41,10 @@ export const authMessages = i18n.define({
       invalidQrTitle: "QR code cannot be used",
       cameraInstructions: "Point the camera at the pairing QR code in your Cloud.",
       stopCamera: "Stop camera",
-      cameraFailed: "The camera could not be opened. Allow camera access in your browser or paste the pairing link instead.",
+      cameraDenied: "Camera access is off. Allow it for Cloud Login in your browser or phone settings, or paste the pairing link instead.",
+      cameraMissing: "No camera was found on this device. Paste the pairing link instead.",
+      cameraInUse: "The camera is busy or could not start. Close other apps that use it and try again, or paste the pairing link instead.",
+      cameraFailed: "The camera could not be started. Try again, or paste the pairing link instead.",
       pairingInstructions: "Open your profile page in Cloud, then Security → Devices. Start pairing and copy the link.",
       pairingLink: "Pairing link",
       continuePairing: "Continue",
@@ -223,8 +226,12 @@ export const authMessages = i18n.define({
       invalidQrTitle: "QR-Code nicht verwendbar",
       cameraInstructions: "Richte die Kamera auf den Kopplungs-QR-Code in deiner Cloud.",
       stopCamera: "Kamera stoppen",
-      cameraFailed:
-        "Die Kamera konnte nicht geöffnet werden. Erlaube den Kamerazugriff im Browser oder füge stattdessen den Kopplungslink ein.",
+      cameraDenied:
+        "Der Kamerazugriff ist aus. Erlaube ihn für Cloud Login in den Browser- oder Telefoneinstellungen oder füge stattdessen den Kopplungslink ein.",
+      cameraMissing: "Auf diesem Gerät wurde keine Kamera gefunden. Füge stattdessen den Kopplungslink ein.",
+      cameraInUse:
+        "Die Kamera ist belegt oder ließ sich nicht starten. Schließe andere Apps, die sie nutzen, und versuche es erneut oder füge stattdessen den Kopplungslink ein.",
+      cameraFailed: "Die Kamera konnte nicht gestartet werden. Versuche es erneut oder füge stattdessen den Kopplungslink ein.",
       pairingInstructions:
         "Öffne deine eigene Profilseite in der Cloud, dann Sicherheit → Geräte. Starte eine Kopplung und kopiere den Link.",
       pairingLink: "Kopplungslink",
