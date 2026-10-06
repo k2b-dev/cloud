@@ -420,16 +420,15 @@ describe("sign-in page in a browser", () => {
     }
   }, 120_000);
 
-  // The rows rely on `reading-flow`, which WebKit does not support yet: Safari keeps the source order, as
-  // `src/styles/app.css` describes.
-  test.skipIf(browserName === "webkit")(
-    "moves focus through the action grid row by row",
-    async () => {
-      expect(await tabOrder(phone, forms.password, 3)).toEqual(["Use passkey", "Contact support", "Admin token"]);
-      expect(await tabOrder(desktop, forms.password, 3)).toEqual(["Contact support", "Use passkey", "Admin token"]);
-    },
-    30_000,
-  );
+  test("moves focus through the action grid row by row", async () => {
+    // Known accessibility gap: the phone rows rely on `reading-flow`, which WebKit does not support yet, so
+    // keyboard and VoiceOver focus in Safari keep the source order across the rows (see `src/styles/app.css`).
+    // This expectation fails once WebKit follows the rows.
+    expect(await tabOrder(phone, forms.password, 3)).toEqual(
+      browserName === "webkit" ? ["Contact support", "Use passkey", "Admin token"] : ["Use passkey", "Contact support", "Admin token"],
+    );
+    expect(await tabOrder(desktop, forms.password, 3)).toEqual(["Contact support", "Use passkey", "Admin token"]);
+  }, 30_000);
 
   // Only Chromium's input protocol can change the browser's default font size, which rem breakpoints follow.
   test.skipIf(browserName === "webkit")(

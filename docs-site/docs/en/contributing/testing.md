@@ -162,6 +162,9 @@ branch:
   `test.skipIf(browserName === "webkit")` and a comment that names the reason.
 - WebKit matches `forced-colors: active` under emulation but has no forced
   colours mode that repaints author colours.
+- WebKit does not support `reading-flow` yet, so focus keeps the source order
+  where Chromium follows the visual rows. Such a test expects WebKit's order
+  and names the gap, so it fails once WebKit follows the rows.
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page

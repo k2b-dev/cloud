@@ -261,9 +261,10 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(new Set(table.rowFills)).toEqual(new Set(["rgba(0, 0, 0, 0)"]));
     expect(table.rowLines).toEqual(["0px", "1px", "1px"]);
     expect(table.lineColor).toBe(tokens.border);
-    // Flush within WebKit's layout unit of 1/64 px.
-    expect(table.start).toBeCloseTo(0, 1);
-    expect(table.end).toBeCloseTo(0, 1);
+    expect(table.start).toBe(0);
+    // WebKit rounds the column widths to its layout unit of 1/64 px: here the last column ends 1/32 px past the
+    // table, which is as wide as the prose.
+    expect(Math.abs(table.end)).toBeLessThanOrEqual(browserName === "webkit" ? 1 / 32 : 0);
   });
 
   for (const host of ["article", "#inset"]) {
