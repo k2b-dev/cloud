@@ -206,8 +206,24 @@ transfer.
 `fileProvider` is optional. A manifest without it keeps its earlier shape and
 hash, so nothing changes for applications that do not offer files.
 
-Update Core before an application starts offering files. Core of an earlier
-release ignores the declaration; Core from before Cloud
-[read manifests from newer releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases)
-drops the application from its capability catalog. See
+Before any application declares `fileProvider`, update every reader of the
+capability catalog to a release that
+[reads manifests from newer releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases):
+
+- Core;
+- every other application built on `@k2b/cloud`, because its global search
+  reads the catalog for Commands, and so do `listCapabilityCatalog()` and
+  `getCapabilityCatalogApp()`;
+- the `capabilities` plugin of each `cld` profile, with
+  `cld plugins update capabilities`.
+
+A reader of an earlier release cannot read a manifest that carries
+`fileProvider`. Core drops the application from its catalog, and the other
+readers fail on the whole catalog page, so every application disappears for
+them, not only the provider. See
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#applications-can-offer-files-to-other-applications).
+
+Readers that know `fileProvider` are tolerant in turn: a declaration with a
+function they do not know is left out as a whole, and the application's other
+capabilities stay available. Core logs the declaration with the entries it
+left out.
