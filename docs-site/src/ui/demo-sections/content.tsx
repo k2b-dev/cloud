@@ -19,11 +19,13 @@ import {
   Format,
   InlineGuidance,
   Lightbox,
+  LinkCard,
   LocaleProvider,
   LogEntriesTable,
   MarkdownEditor,
   MarkdownView,
   MessageRow,
+  type MessageRowAttachment,
   type MessageRowStatus,
   MessageSystemRow,
   NoticeCard,
@@ -46,7 +48,8 @@ import {
   type VirtualFeedController,
   ZoomPanViewport,
 } from "@k2b/ui";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
 import { ChartDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
@@ -395,7 +398,25 @@ const VirtualFeedDemo = () => {
   );
 };
 
-type ChatEntry = { id: string; author: string; at: number; text: string; system?: boolean; status?: MessageRowStatus };
+type DemoReaction = { emoji: string; by: string[] };
+type ChatEntry = {
+  id: string;
+  author: string;
+  at: number;
+  text: string;
+  system?: boolean;
+  status?: MessageRowStatus;
+  quote?: string;
+  forwarded?: boolean;
+  edited?: boolean;
+  deleted?: boolean;
+  attachments?: MessageRowAttachment[];
+  /** Unset until a message by someone else gets its first reaction; an empty list keeps the bar reserved. */
+  reactions?: DemoReaction[];
+  thread?: { count: number; people: string[]; last: number };
+  preview?: "link" | "task";
+  progress?: string;
+};
 const chatPeople: Record<string, { name: string; icon?: string }> = {
   me: { name: "Robin Example" },
   nora: { name: "Nora Brandt" },
@@ -420,8 +441,13 @@ const chatLines: [string, string][] = [
   ],
   ["tobias", "<b>Raw HTML</b> and [this link](javascript:alert(1)) stay text."],
 ];
+const demoPicture = (fill: string, width: number, height: number) =>
+  `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${fill}"/><rect x="${width * 0.1}" y="${height * 0.12}" width="${width * 0.8}" height="${height * 0.2}" rx="${height * 0.04}" fill="#ffffff" opacity="0.7"/><rect x="${width * 0.1}" y="${height * 0.42}" width="${width * 0.37}" height="${height * 0.42}" rx="${height * 0.04}" fill="#ffffff" opacity="0.5"/><rect x="${width * 0.53}" y="${height * 0.42}" width="${width * 0.37}" height="${height * 0.42}" rx="${height * 0.04}" fill="#ffffff" opacity="0.5"/></svg>`,
+  )}`;
 const CHAT_TOTAL = 600;
 const chatStart = Date.UTC(2026, 9, 1, 8);
+const chatAt = (seq: number) => chatStart + seq * 4 * 60_000 - (seq % 2) * 3 * 60_000;
 const chatEntry = (seq: number): ChatEntry => {
   if (seq % 97 === 0) return { id: `msg-${seq}`, author: "nora", at: chatStart + seq * 4 * 60_000, text: "Nora added Lea", system: true };
   const [author, text] = chatLines[seq % chatLines.length]!;
@@ -429,37 +455,163 @@ const chatEntry = (seq: number): ChatEntry => {
   return {
     id: `msg-${seq}`,
     author,
-    at: chatStart + seq * 4 * 60_000 - (seq % 2) * 3 * 60_000,
+    at: chatAt(seq),
     text,
     status: author === "me" ? "sent" : undefined,
+    reactions: seq % 9 === 3 ? [{ emoji: "👍", by: ["nora", "tobias"] }] : undefined,
+    thread: seq % 13 === 7 ? { count: 2, people: ["lea", "nora"], last: chatAt(seq) + 20 * 60_000 } : undefined,
   };
 };
+// The newest messages show every part of a row once.
+const chatShowcase: Omit<ChatEntry, "id" | "at">[] = [
+  {
+    author: "lea",
+    text: "Here is the current draft with the new tile grid:",
+    attachments: [
+      {
+        kind: "image",
+        src: demoPicture("#93c5fd", 1200, 800),
+        alt: "Draft of the start page with a grid of six tiles",
+        width: 1200,
+        height: 800,
+      },
+    ],
+    reactions: [{ emoji: "😍", by: ["nora"] }],
+  },
+  { author: "lea", text: "The tile colors are not final yet.", edited: true },
+  {
+    author: "tobias",
+    text: "The API docs are in the wiki.",
+    preview: "link",
+    thread: { count: 3, people: ["nora", "lea", "me"], last: 0 },
+  },
+  {
+    author: "nora",
+    text: "I added the sign-in test cases.",
+    attachments: [
+      {
+        kind: "file",
+        name: "Testplan_Sign-in_v3.pdf",
+        detail: "PDF · 412 KB",
+        mediaType: "application/pdf",
+        href: "https://example.com/testplan.pdf",
+      },
+    ],
+  },
+  {
+    author: "nora",
+    text: "",
+    attachments: [
+      { kind: "image", src: demoPicture("#fcd34d", 900, 1600), alt: "Sign-in screen on a phone", width: 900, height: 1600 },
+      {
+        kind: "video",
+        src: demoPicture("#a7f3d0", 1920, 1080),
+        alt: "Screen recording of the sign-in flow",
+        width: 1920,
+        height: 1080,
+        duration: "0:42",
+      },
+      { kind: "image", src: demoPicture("#c4b5fd", 1000, 1000), alt: "Error message for a wrong code", width: 1000, height: 1000 },
+      { kind: "image", src: demoPicture("#fda4af", 1600, 900), alt: "Sign-in on a tablet", width: 1600, height: 900 },
+      { kind: "image", src: demoPicture("#93c5fd", 1600, 900), alt: "Sign-in on a desktop", width: 1600, height: 900 },
+    ],
+  },
+  { author: "me", text: "Forwarding the release checklist from the ops channel.", forwarded: true, status: "sent", preview: "task" },
+  { author: "tobias", text: "", deleted: true },
+  {
+    author: "nora",
+    text: "Super! Is there a limit per minute? Then I will add throttling to the form.",
+    quote: "Yes, **60 requests** per minute and account.",
+  },
+  {
+    author: "me",
+    text: "Thanks! See you at eleven in the call.",
+    status: "sent",
+    reactions: [
+      { emoji: "👍", by: ["nora", "tobias", "lea"] },
+      { emoji: "☕", by: ["me"] },
+    ],
+  },
+];
 const chatGroupEntry = (entry?: ChatEntry) => entry && { author: entry.author, at: entry.at, system: entry.system };
+const chatInitial = (): ChatEntry[] => {
+  const history = Array.from({ length: CHAT_TOTAL - chatShowcase.length }, (_, seq) => chatEntry(seq));
+  const last = history.at(-1)!.at;
+  return [
+    ...history,
+    ...chatShowcase.map((entry, index) => {
+      const at = last + (index + 1) * 2 * 60_000;
+      return { ...entry, id: `msg-${history.length + index}`, at, thread: entry.thread && { ...entry.thread, last: at + 15 * 60_000 } };
+    }),
+  ];
+};
+const quoteText = (markdown: string) => markdown.replace(/[*_`]/g, "");
+/** Own messages and messages that had reactions keep the bar; others' messages without reactions have none. */
+const chatReactions = (reactions?: DemoReaction[]) =>
+  reactions?.map((reaction) => ({
+    key: reaction.emoji,
+    emoji: reaction.emoji,
+    count: reaction.by.length,
+    own: reaction.by.includes("me"),
+    label: reaction.by.map((person) => chatPeople[person]!.name).join(", "),
+  }));
+const agentReply =
+  "Here is what changed since this morning: the meter reading API is live with a limit of 60 requests per minute, the sign-in test plan is in the wiki, and the tile colors are still open.";
 
 const MessageRowsDemo = () => {
-  const [entries, setEntries] = createSignal(Array.from({ length: CHAT_TOTAL }, (_, seq) => chatEntry(seq)));
+  // A store changes a message in place, so its row updates without mounting again and keeps focus on its controls.
+  const [entries, setEntries] = createStore(chatInitial());
   let next = CHAT_TOTAL;
-  const update = (id: string, status: MessageRowStatus) =>
-    setEntries((current) => current.map((entry) => (entry.id === id ? { ...entry, status } : entry)));
-  const send = (fails: boolean) => {
+  let chatFeed: VirtualFeedController | undefined;
+  /** Stops each agent reply that is still being written. */
+  const writing = new Map<string, () => void>();
+  onCleanup(() => {
+    for (const stop of writing.values()) stop();
+  });
+  const change = (id: string, patch: Partial<ChatEntry>) => setEntries((entry) => entry.id === id, patch);
+  const update = (id: string, status: MessageRowStatus) => change(id, { status });
+  const append = (entry: Omit<ChatEntry, "id" | "at">) => {
     const id = `msg-${next++}`;
-    const last = entries().at(-1)!;
-    setEntries((current) => [
-      ...current,
-      { id, author: "me", at: last.at + 60_000, text: fails ? "This one will not get through." : "On my way.", status: "pending" },
-    ]);
+    setEntries(entries.length, { ...entry, id, at: entries[entries.length - 1]!.at + 60_000 });
+    return id;
+  };
+  const send = (fails: boolean) => {
+    const id = append({ author: "me", text: fails ? "This one will not get through." : "On my way.", status: "pending" });
     setTimeout(() => {
       update(id, fails ? "failed" : "sent");
       // The application announces a failed send; the row may not even be mounted when it fails.
       if (fails) announce("Not sent");
     }, 900);
   };
-  const receive = () => {
-    const last = entries().at(-1)!;
-    setEntries((current) => [...current, { id: `msg-${next++}`, author: "nora", at: last.at + 60_000, text: "See you at eleven." }]);
+  const receive = () => append({ author: "nora", text: "See you at eleven." });
+  const react = (entry: ChatEntry, emoji: string, by: string) => {
+    const reactions = (entry.reactions ?? []).map((reaction) => ({ emoji: reaction.emoji, by: [...reaction.by] }));
+    const reaction = reactions.find((candidate) => candidate.emoji === emoji);
+    if (!reaction) reactions.push({ emoji, by: [by] });
+    else reaction.by = reaction.by.includes(by) ? reaction.by.filter((person) => person !== by) : [...reaction.by, by];
+    // An emptied list stays a list, so the bar stays reserved and nothing moves when the last reaction goes.
+    change(entry.id, { reactions: reactions.filter((candidate) => candidate.by.length > 0) });
+  };
+  // Each reply streams into its own message in place, and its Stop ends that reply only.
+  const askAgent = () => {
+    const id = append({ author: "minutes", text: "", progress: "Writing" });
+    const words = agentReply.split(" ");
+    let count = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const stop = () => {
+      clearInterval(timer);
+      writing.delete(id);
+      change(id, { progress: undefined });
+    };
+    writing.set(id, stop);
+    timer = setInterval(() => {
+      count++;
+      change(id, { text: words.slice(0, count).join(" ") });
+      if (count >= words.length) stop();
+    }, 160);
   };
   const readBy = (entry: ChatEntry) =>
-    entry.id === entries().findLast((other) => other.status === "sent")?.id ? "Read by Nora and Tobias" : undefined;
+    entry.id === entries.findLast((other) => other.status === "sent")?.id ? "Read by Nora and Tobias" : undefined;
   return (
     <DemoCard
       id="message-rows"
@@ -468,8 +620,9 @@ const MessageRowsDemo = () => {
         { kind: "component", name: "MessageSystemRow", from: "@k2b/ui" },
         { kind: "component", name: "VirtualFeed", from: "@k2b/ui" },
       ]}
-      description="600 messages in a VirtualFeed with groups, a system row, code, a collapsed summary, and unsafe Markdown shown as text. Hover or focus a message for its actions; send one that fails and retry it."
-      code={`<VirtualFeed items={messages()} getKey={(message) => message.id} estimateSize={() => 60} label="Project chat"
+      description="600 messages in a VirtualFeed with groups, a system row, code, a collapsed summary, unsafe Markdown shown as text, quotes, reactions, threads, attachments, previews, a deleted message, and an agent that writes with a Stop button. Toggle a reaction, send one that fails and retry it, or ask the agent."
+      code={`// messages is a store: a changed message updates its row in place, so focus stays on Stop or a reaction.
+<VirtualFeed items={messages.slice()} getKey={(message) => message.id} estimateSize={() => 60} label="Project chat"
   itemLabel={(message) => (message.system ? undefined : \`\${name(message)}, \${clock(message.at)}\`)}>
   {(message, index) =>
     message.system ? (
@@ -480,10 +633,19 @@ const MessageRowsDemo = () => {
         text={message.text}
         time={clock(message.at)}
         own={message.author === "me"}
-        groupStart={startsMessageGroup(entry(message), entry(messages()[index() - 1]))}
+        groupStart={startsMessageGroup(entry(message), entry(messages[index() - 1]))}
         status={message.status}
         receipt={readBy(message)}
         onRetry={() => resend(message)}
+        quote={message.quote && { author: name(message.quote), text: message.quote.text, onSelect: () => jumpTo(message.quote) }}
+        edited={message.edited}
+        attachments={message.attachments}
+        linkPreview={message.preview && <LinkCard {...message.preview} />}
+        reactions={message.author === "me" ? (message.reactions ?? []) : message.reactions}
+        onToggleReaction={(emoji) => toggleReaction(message, emoji)}
+        onAddReaction={(anchor) => openEmojiPicker(anchor, message)}
+        thread={message.thread && { ...message.thread, onOpen: () => openThread(message) }}
+        progress={message.writing ? { status: "Writing", onStop: () => stop(message) } : undefined}
         actions={[{ id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => reply(message) }]}
       />
     )
@@ -501,15 +663,23 @@ const MessageRowsDemo = () => {
           <Button size="sm" variant="subtle" onClick={receive}>
             Receive a message
           </Button>
+          <Button size="sm" variant="subtle" onClick={() => react(entries[entries.length - 1]!, "🎉", "nora")}>
+            Nora reacts to the last message
+          </Button>
+          <Button size="sm" variant="subtle" onClick={askAgent}>
+            Ask the agent
+          </Button>
         </Toolbar>
         <div style={{ display: "flex", height: "32rem" }}>
           <VirtualFeed
-            items={entries()}
+            // A new list only when messages come or go; a changed message updates its mounted row.
+            items={entries.slice()}
             getKey={(entry) => entry.id}
-            estimateSize={(entry) => (entry.system ? 36 : 60)}
+            estimateSize={(entry) => (entry.system ? 36 : entry.attachments ? 260 : 60)}
             label="Project chat"
             itemLabel={(entry) => (entry.system ? undefined : `${chatPeople[entry.author]!.name}, ${feedTime.format(entry.at)}`)}
             separator={(entry, previous) => (previous && sameDay(entry.at, previous.at) ? undefined : feedDay.format(entry.at))}
+            controller={(controller) => (chatFeed = controller)}
           >
             {(entry, index) =>
               entry.system ? (
@@ -524,7 +694,7 @@ const MessageRowsDemo = () => {
                   dateTime={new Date(entry.at)}
                   own={entry.author === "me"}
                   groupStart={(() => {
-                    const previous = entries()[index() - 1];
+                    const previous = entries[index() - 1];
                     return (
                       startsMessageGroup(chatGroupEntry(entry)!, chatGroupEntry(previous)) || !previous || !sameDay(entry.at, previous.at)
                     );
@@ -536,6 +706,59 @@ const MessageRowsDemo = () => {
                     update(entry.id, "pending");
                     setTimeout(() => update(entry.id, "sent"), 900);
                   }}
+                  quote={(() => {
+                    const quoted = entry.quote
+                      ? entries.findLast((other) => other.text === entry.quote && other.id !== entry.id)
+                      : undefined;
+                    return (
+                      quoted && {
+                        author: chatPeople[quoted.author]!.name,
+                        text: quoteText(quoted.text),
+                        onSelect: () => void chatFeed?.scrollToKey(quoted.id, { highlight: true }),
+                      }
+                    );
+                  })()}
+                  forwarded={entry.forwarded}
+                  edited={entry.edited}
+                  deleted={entry.deleted}
+                  attachments={entry.attachments?.map((attachment) =>
+                    attachment.kind === "file" ? attachment : { ...attachment, onOpen: () => void toast(`Open ${attachment.alt}`) },
+                  )}
+                  linkPreview={
+                    entry.preview === "link" ? (
+                      <LinkCard
+                        href="https://example.com/docs/meter-readings"
+                        icon="ti ti-link"
+                        title="Meter reading API, draft 2"
+                        description="Endpoints, fields, and error codes for the portal"
+                        meta="example.com"
+                      />
+                    ) : undefined
+                  }
+                  card={
+                    entry.preview === "task" ? (
+                      <LinkCard
+                        href="#message-rows"
+                        icon="ti ti-checkbox"
+                        title="Release checklist"
+                        description="Task · 7 of 9 done"
+                        meta="Friday"
+                      />
+                    ) : undefined
+                  }
+                  reactions={chatReactions(entry.author === "me" ? (entry.reactions ?? []) : entry.reactions)}
+                  onToggleReaction={(emoji) => react(entry, emoji, "me")}
+                  onAddReaction={() => react(entry, "🎉", "me")}
+                  thread={
+                    entry.thread && {
+                      count: entry.thread.count,
+                      participants: entry.thread.people.map((person) => chatPeople[person]!),
+                      lastReply: feedTime.format(entry.thread.last),
+                      lastReplyDateTime: new Date(entry.thread.last),
+                      onOpen: () => void toast(`Open the thread of ${chatPeople[entry.author]!.name}`),
+                    }
+                  }
+                  progress={entry.progress ? { status: entry.progress, onStop: () => writing.get(entry.id)?.() } : undefined}
                   actions={[
                     {
                       id: "reply",
@@ -543,7 +766,7 @@ const MessageRowsDemo = () => {
                       icon: "ti ti-arrow-back-up",
                       onSelect: () => void toast(`Reply to ${chatPeople[entry.author]!.name}`),
                     },
-                    { id: "react", label: "React", icon: "ti ti-mood-smile", onSelect: () => void toast("Reaction added") },
+                    { id: "react", label: "React", icon: "ti ti-mood-smile", onSelect: () => react(entry, "👍", "me") },
                   ]}
                 />
               )

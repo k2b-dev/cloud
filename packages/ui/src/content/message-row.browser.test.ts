@@ -39,10 +39,20 @@ const unsafe = [
   "[docs](https://example.com/docs) and [mail](mailto:team@example.com)",
 ].join("\\n\\n");
 const code = "Here is the call:\\n\\n\`\`\`ts\\nconst response = await fetch('/api/meter-readings?from=2026-10-01&to=2026-10-31&include=history,corrections,annotations');\\n\`\`\`";
-const [statuses, setStatuses] = createSignal({ m6: "pending", m7: "sent", m8: "failed" });
-const [receipt, setReceipt] = createSignal();
+const [statuses, setStatuses] = createSignal({ m6: "pending", m7: "sent", m8: "failed", m14: "sent" });
+const [receipts, setReceipts] = createSignal({});
+const setReceipt = (text, id = "m7") => setReceipts((current) => ({ ...current, [id]: text }));
+const [reactions, setReactions] = createSignal({});
+const [threads, setThreads] = createSignal({});
+const [texts, setTexts] = createSignal({});
+const [progress, setProgress] = createSignal({});
 window.retried = 0;
-const messages = (options.messages ?? [
+window.stopped = 0;
+window.toggled = [];
+window.quoted = 0;
+window.opened = [];
+const media = (name, width, height) => "http://k2b-ui.test/media/" + name + "-" + width + "x" + height + ".svg";
+const basic = [
   { id: "m1", system: true, text: "Nora added Tobias", minute: 0 },
   { id: "m2", author: "nora", text: "Ich habe die Testfälle für die Anmeldung ergänzt.", minute: 1 },
   { id: "m3", author: "nora", text: "Der **Testplan** liegt im Wiki.", minute: 2 },
@@ -53,8 +63,53 @@ const messages = (options.messages ?? [
   { id: "m8", author: "me", own: true, text: "Sending this one failed.", minute: 8 },
   { id: "m9", author: "mara", text: longText, minute: 20 },
   { id: "m10", author: "tobias", text: unsafe, minute: 21 },
-]).map((message) => ({ ...message, at: start + message.minute * 60_000 }));
-// Items change either in place, through the status signal above, or as new objects, as most applications update them.
+];
+// Quotes, reactions, threads, attachments, and the other states of rich content.
+const rich = [
+  {
+    id: "m11",
+    author: "nora",
+    text: "Yes, **60 requests** per minute and account.",
+    minute: 30,
+    edited: true,
+    quote: { author: "Tobias Kern", text: "The meter reading API is done. Is there a limit per minute? I would like to throttle the form before the release on Friday so nobody runs into errors." },
+    reactions: [
+      { key: "👍", emoji: "👍", count: 4, label: "Tobias, Mara, Robin, Minutes" },
+      { key: "☕", emoji: "☕", count: 1, own: true, label: "Robin" },
+    ],
+    thread: { count: 3, participants: ["tobias", "mara"], lastReply: "10:42" },
+  },
+  {
+    id: "m12",
+    author: "tobias",
+    text: "Here is the new tile grid:",
+    minute: 32,
+    attachments: [
+      { kind: "image", src: media("grid", 1200, 800), alt: "Tile grid with six coloured tiles", width: 1200, height: 800, open: true },
+      { kind: "file", name: "Testplan_Anmeldung_v3.pdf", detail: "PDF · 412 KB", mediaType: "application/pdf", href: "https://example.com/testplan.pdf" },
+    ],
+    reactions: [],
+  },
+  {
+    id: "m13",
+    author: "mara",
+    text: "",
+    minute: 34,
+    attachments: [
+      { kind: "image", src: media("one", 800, 1200), alt: "Portrait one", width: 800, height: 1200, open: true },
+      { kind: "video", src: media("two", 1920, 1080), alt: "Walkthrough of the form", width: 1920, height: 1080, duration: "0:42", open: true },
+      { kind: "image", src: media("three", 1000, 1000), alt: "Square three", width: 1000, height: 1000, open: true },
+      { kind: "image", src: media("four", 1600, 900), alt: "Wide four", width: 1600, height: 900, open: true },
+      { kind: "image", src: media("five", 900, 1600), alt: "Tall five", width: 900, height: 1600, open: true },
+      { kind: "image", src: media("six", 900, 1600), alt: "Tall six", width: 900, height: 1600, open: true },
+    ],
+  },
+  { id: "m14", author: "me", own: true, text: "Forwarding the release note.", minute: 40, forwarded: true, reactions: [] },
+  { id: "m15", author: "bot", text: "", minute: 41, progress: "Writing", badge: true },
+  { id: "m16", author: "tobias", text: "", minute: 42, deleted: true, thread: { count: 1, participants: ["nora"], lastReply: "11:02" } },
+];
+const messages = (options.messages ?? (options.rich ? rich : basic)).map((message) => ({ ...message, at: start + message.minute * 60_000 }));
+// Items change either in place, through the signals above, or as new objects, which mounts a new row.
 const [items, setItems] = createSignal(messages);
 const replace = (id, patch) => setItems((list) => list.map((message) => (message.id === id ? { ...message, ...patch } : message)));
 const entryOf = (message) => message && { author: message.author ?? "system", at: message.at, system: message.system };
@@ -77,7 +132,9 @@ const feed = () =>
         ? createComponent(MessageSystemRow, { icon: "ti ti-user-plus", time: time(message), children: message.text })
         : createComponent(MessageRow, {
             author: people[message.author],
-            text: message.text,
+            get text() {
+              return texts()[message.id] ?? message.text;
+            },
             time: time(message),
             dateTime: new Date(message.at),
             own: message.own,
@@ -87,17 +144,53 @@ const feed = () =>
               return message.own ? (message.status ?? statuses()[message.id]) : undefined;
             },
             get receipt() {
-              return message.id === "m7" ? receipt() : undefined;
+              return receipts()[message.id];
             },
             onRetry: () => window.retried++,
             actions,
+            quote: message.quote && { ...message.quote, onSelect: () => window.quoted++ },
+            edited: message.edited,
+            forwarded: message.forwarded,
+            deleted: message.deleted,
+            attachments: message.attachments?.map((attachment) =>
+              attachment.open ? { ...attachment, onOpen: () => window.opened.push(attachment.alt) } : attachment,
+            ),
+            get reactions() {
+              return reactions()[message.id] ?? message.reactions;
+            },
+            // As an application would: a new list of new objects for the message, changed in place.
+            onToggleReaction: options.readOnly ? undefined : (key) => {
+              window.toggled.push(message.id + " " + key);
+              const current = reactions()[message.id] ?? message.reactions ?? [];
+              setReactions({
+                ...reactions(),
+                [message.id]: current.map((reaction) =>
+                  reaction.key === key ? { ...reaction, own: !reaction.own, count: reaction.count + (reaction.own ? -1 : 1) } : { ...reaction },
+                ),
+              });
+            },
+            onAddReaction: (anchor) => (window.addedFrom = anchor.getAttribute("aria-label")),
+            get thread() {
+              const thread = threads()[message.id] ?? message.thread;
+              return (
+                thread && {
+                  ...thread,
+                  participants: thread.participants.map((person) => people[person]),
+                  onOpen: () => (window.threadOpened = message.id),
+                }
+              );
+            },
+            get progress() {
+              const status = message.id in progress() ? progress()[message.id] : message.progress;
+              return status ? { status, onStop: () => window.stopped++ } : undefined;
+            },
           }),
   });
 render(
   () => createComponent(LocaleProvider, { locale: options.locale ?? "en", get children() { return feed(); } }),
   document.getElementById("app"),
 );
-window.fixture = { setStatuses, setReceipt, replace };
+window.fixture = { setStatuses, setReceipt, replace, setReactions, setThreads, setTexts, setProgress };
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -118,20 +211,67 @@ afterAll(async () => {
 });
 
 type Theme = "light" | "dark";
-type Message = { id: string; author: string; text: string; minute: number; own?: boolean; status?: string };
+type Message = {
+  id: string;
+  author: string;
+  text: string;
+  minute: number;
+  own?: boolean;
+  status?: string;
+  reactions?: Reaction[];
+  progress?: string;
+  edited?: boolean;
+  attachments?: object[];
+  thread?: Thread;
+  quote?: { author: string; text: string };
+};
+type Reaction = { key: string; emoji: string; count: number; own?: boolean; label?: string };
+type Thread = { count: number; participants: string[]; lastReply?: string };
 type Fixture = {
   setStatuses: (next: Record<string, string>) => void;
-  setReceipt: (text?: string) => void;
+  /** Sets the read receipt of an own message, by default m7. */
+  setReceipt: (text?: string, id?: string) => void;
   replace: (id: string, patch: Partial<Message>) => void;
+  setReactions: (next: Record<string, Reaction[]>) => void;
+  setThreads: (next: Record<string, Thread>) => void;
+  /** Changes texts in place, as a message streams in. */
+  setTexts: (next: Record<string, string>) => void;
+  /** Changes the progress status in place; an empty status ends it. */
+  setProgress: (next: Record<string, string | undefined>) => void;
 };
+type Recorded = { stopped: number; toggled: string[]; quoted: number; opened: string[]; addedFrom?: string; threadOpened?: string };
+const recorded = (page: Page) =>
+  page.evaluate(() => {
+    const { stopped, toggled, quoted, opened, addedFrom, threadOpened } = window as unknown as Recorded;
+    return { stopped, toggled, quoted, opened, addedFrom, threadOpened };
+  });
 declare const fixture: Fixture;
 declare const retried: number;
 declare const hit: number | undefined;
 const replied = (page: Page) => page.evaluate(() => (window as unknown as { replied?: number }).replied ?? 0);
 
+/** Pixel size of a test image from its URL, such as `/media/grid-1200x800.svg`. */
+const mediaSize = (url: string) =>
+  url
+    .match(/-(\d+)x(\d+)\.svg$/)!
+    .slice(1)
+    .map(Number) as [number, number];
+
 const open = async (
-  options: { width?: number; theme?: Theme; locale?: "en" | "de"; touch?: boolean; messages?: Message[] } = {},
-): Promise<Page> => {
+  options: {
+    width?: number;
+    theme?: Theme;
+    locale?: "en" | "de";
+    touch?: boolean;
+    messages?: Message[];
+    /** Shows the messages with quotes, reactions, threads, and attachments instead of the basic ones. */
+    rich?: boolean;
+    /** Shows reactions without `onToggleReaction`. */
+    readOnly?: boolean;
+    /** Holds every image response until the returned page's `releaseMedia()` runs. */
+    holdMedia?: boolean;
+  } = {},
+): Promise<Page & { releaseMedia: () => void }> => {
   const width = options.width ?? 720;
   const page = await browser.newPage({
     viewport: { width, height: 1400 },
@@ -141,6 +281,20 @@ const open = async (
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
+  // Images are drawn at their stored size, so a wrong reservation would show as a changed area once they arrive.
+  let releaseMedia = () => {};
+  const held = new Promise<void>((done) => {
+    releaseMedia = done;
+  });
+  if (!options.holdMedia) releaseMedia();
+  await page.route(`${assets}media/**`, async (route) => {
+    const [width, height] = mediaSize(route.request().url());
+    await held;
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#93c5fd"/><circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 4}" fill="#1d4ed8"/></svg>`,
+    });
+  });
   await page.setContent(
     `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta name="viewport" content="width=device-width">` +
       `<style>${css}</style><style>${fonts}</style>` +
@@ -161,8 +315,8 @@ const open = async (
     );
   });
   await page.evaluate(
-    ([locale, messages]) => {
-      (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale, messages };
+    ([locale, messages, rich, readOnly]) => {
+      (window as unknown as { fixtureOptions: object }).fixtureOptions = { locale, messages, rich, readOnly };
       // Record every row's height from the frame it mounts in; a later change would move the rows below it.
       const heights = new Map<string, number[]>();
       (window as unknown as { heights: typeof heights }).heights = heights;
@@ -179,12 +333,12 @@ const open = async (
           for (const node of record.addedNodes) if (node instanceof HTMLElement && node.dataset.key) observer.observe(node);
       }).observe(document.getElementById("app")!, { childList: true, subtree: true });
     },
-    [options.locale ?? "en", options.messages] as const,
+    [options.locale ?? "en", options.messages, options.rich, options.readOnly] as const,
   );
   await page.addScriptTag({ content: script });
-  await page.locator(`[data-key="${options.messages?.at(-1)?.id ?? "m10"}"] .k2b-message-row`).waitFor();
+  await page.locator(`[data-key="${options.messages?.at(-1)?.id ?? (options.rich ? "m16" : "m10")}"] .k2b-message-row`).waitFor();
   if (!options.touch) await page.mouse.move(width - 1, 1399);
-  return page;
+  return Object.assign(page, { releaseMedia });
 };
 
 const rowOf = (page: Page, key: string) => page.locator(`[data-key="${key}"]`);
@@ -400,10 +554,11 @@ describe(`MessageRow in ${browserName}`, () => {
       const heights = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
       expect(Object.keys(heights).sort()).toEqual(["m1", "m10", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"]);
       for (const [key, sizes] of Object.entries(heights)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+      // A long receipt ends in an ellipsis within its one line.
       expect(
         await rowOf(page, "m7")
           .locator(".k2b-message-row__receipt")
-          .evaluate((text) => text.scrollWidth > text.clientWidth),
+          .evaluate((text) => text.scrollHeight > text.clientHeight),
       ).toBe(true);
 
       await rowOf(page, "m6").getByRole("button", { name: "Retry" }).click();
@@ -502,62 +657,566 @@ describe(`MessageRow in ${browserName}`, () => {
     }
   }, 30_000);
 
-  for (const width of [390, 720])
-    for (const theme of ["light", "dark"] as const)
-      for (const locale of ["en", "de"] as const)
-        test(`renders every state readably at ${width}px in ${theme}, ${locale}`, async () => {
-          const page = await open({ width, theme, locale });
-          try {
-            await page.evaluate(() => fixture.setReceipt("Read by Nora"));
-            const result = await page.evaluate(() => {
-              // A canvas resolves every color syntax, including the color() that color-mix() computes to.
-              const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
-              const luminance = (color: string) => {
-                context.clearRect(0, 0, 1, 1);
-                context.fillStyle = color;
-                context.fillRect(0, 0, 1, 1);
-                const [r, g, b] = Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3), (value) => {
-                  const channel = value / 255;
-                  return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-                });
-                return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-              };
-              const contrast = (a: string, b: string) => {
-                const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-                return (light! + 0.05) / (dark! + 0.05);
-              };
-              const surface = getComputedStyle(document.body).backgroundColor;
-              const pairs: Record<string, number> = {};
-              for (const row of document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item")) {
-                const key = row.dataset.key!;
-                const bubble = row.querySelector(".k2b-message-row__bubble");
-                if (bubble)
-                  pairs[`${key} text`] = contrast(
-                    getComputedStyle(row.querySelector(".k2b-message-row__text")!).color,
-                    getComputedStyle(bubble).backgroundColor,
-                  );
-                const avatar = row.querySelector<HTMLElement>("span.k2b-avatar");
-                if (avatar) pairs[`${key} avatar`] = contrast(getComputedStyle(avatar).color, getComputedStyle(avatar).backgroundColor);
-                for (const [name, selector] of [
-                  ["time", ".k2b-message-row__time"],
-                  ["line", ".k2b-message-row__line"],
-                  ["system", ".k2b-message-system-row"],
-                ] as const) {
-                  const element = row.querySelector(selector);
-                  if (element) pairs[`${key} ${name}`] = contrast(getComputedStyle(element).color, surface);
+  test("images and videos reserve their area from the stored size, so nothing moves while they load", async () => {
+    const page = await open({ rich: true, holdMedia: true });
+    try {
+      // The progress spinner turns; only what the images could move counts.
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const areas = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-message-row__media-item"), (item) => {
+            const box = item.getBoundingClientRect();
+            return { width: Math.round(box.width * 100) / 100, height: Math.round(box.height * 100) / 100 };
+          }),
+        );
+      const before = await boxes(page);
+      const reserved = await areas();
+      expect(
+        await page.evaluate(() =>
+          Array.from(document.images)
+            .filter((image) => image.closest(".k2b-message-row__media"))
+            .some((image) => image.complete && image.naturalWidth > 0),
+        ),
+      ).toBe(false);
+      // One image keeps its 3:2 shape, at most as tall as the media height; a grid shows four squares and the rest as "+2".
+      expect(reserved[0]!.width / reserved[0]!.height).toBeCloseTo(1.5, 2);
+      expect(reserved[0]!.height).toBeLessThanOrEqual(320);
+      for (const cell of reserved.slice(1)) expect(cell.width).toBeCloseTo(cell.height, 1);
+      expect(reserved).toHaveLength(5);
+      expect((await rowOf(page, "m13").locator(".k2b-message-row__media-more").innerText()).trim()).toBe("+2");
+
+      page.releaseMedia();
+      await page.waitForFunction(() =>
+        Array.from(document.images)
+          .filter((image) => image.closest(".k2b-message-row__media"))
+          .every((image) => image.complete && image.naturalWidth > 0),
+      );
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      expect(await areas()).toEqual(reserved);
+      expect(await boxes(page)).toEqual(before);
+      const heights = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
+      for (const [key, sizes] of Object.entries(heights)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+      await page.screenshot({ path: `/tmp/k2b-ui-message-rows-${browserName}-media.png` });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("attachments name themselves and open as the caller decides", async () => {
+    const page = await open({ rich: true });
+    try {
+      const grid = rowOf(page, "m13").getByRole("group", { name: "Attachments" });
+      await grid.getByRole("button", { name: "Walkthrough of the form, Video 0:42", exact: true }).click();
+      await grid.getByRole("button", { name: "Wide four, 2 more", exact: true }).click();
+      await rowOf(page, "m12").getByRole("button", { name: "Tile grid with six coloured tiles" }).click();
+      expect((await recorded(page)).opened).toEqual(["Walkthrough of the form", "Wide four", "Tile grid with six coloured tiles"]);
+
+      const file = rowOf(page, "m12").getByRole("link", { name: "Testplan_Anmeldung_v3.pdf PDF · 412 KB" });
+      expect(await file.evaluate((link: HTMLAnchorElement) => ({ href: link.href, target: link.target, rel: link.rel }))).toEqual({
+        href: "https://example.com/testplan.pdf",
+        target: "_blank",
+        rel: "noopener noreferrer",
+      });
+      expect(await file.locator("i").getAttribute("class")).toBe("ti ti-file-type-pdf");
+      // A message of images alone has no empty bubble.
+      expect(await rowOf(page, "m13").locator(".k2b-message-row__bubble").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("reactions come and go without moving any row", async () => {
+    const page = await open({ rich: true, width: 390 });
+    try {
+      const rows = () =>
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (row) => {
+            const box = row.getBoundingClientRect();
+            return `${row.dataset.key} ${box.top.toFixed(2)} ${box.height.toFixed(2)}`;
+          }),
+        );
+      const settle = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      const before = await rows();
+      const many = Array.from("😀😃😄😁😆😅🤣😂🙂🙃😉😊", (emoji, index) => ({ key: emoji, emoji, count: index + 1 }));
+
+      // The first reaction on a reserved bar, many more than fit, and the last one going away.
+      await page.evaluate(
+        ([many]) => fixture.setReactions({ m14: [{ key: "👍", emoji: "👍", count: 1, own: true }], m12: many, m11: [] }),
+        [many] as const,
+      );
+      await settle();
+      expect(await rows()).toEqual(before);
+      expect(await rowOf(page, "m14").getByRole("button", { name: "👍 1 reaction" }).getAttribute("aria-pressed")).toBe("true");
+      expect(
+        await rowOf(page, "m12")
+          .locator(".k2b-message-row__reaction-list")
+          .evaluate((list) => list.scrollWidth > list.clientWidth),
+      ).toBe(true);
+      expect(await rowOf(page, "m11").locator(".k2b-message-row__reaction").count()).toBe(0);
+
+      await page.evaluate(() => fixture.setReactions({}));
+      await settle();
+      expect(await rows()).toEqual(before);
+      const heights = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
+      for (const [key, sizes] of Object.entries(heights)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("quote, reactions, and thread work from the keyboard and name themselves", async () => {
+    const page = await open({ rich: true });
+    try {
+      const reactions = rowOf(page, "m11").getByRole("group", { name: "Reactions" });
+      expect(
+        await reactions.getByRole("button", { name: "👍 4 reactions: Tobias, Mara, Robin, Minutes" }).getAttribute("aria-pressed"),
+      ).toBe("false");
+      expect(await reactions.getByRole("button", { name: "☕ 1 reaction: Robin" }).getAttribute("aria-pressed")).toBe("true");
+
+      await rowOf(page, "m11").focus();
+      const order: string[] = [];
+      for (let step = 0; step < 7; step++) {
+        await page.keyboard.press("Tab");
+        order.push(
+          await page.evaluate(() => {
+            const active = document.activeElement as HTMLElement;
+            return active.getAttribute("aria-label") ?? active.className;
+          }),
+        );
+      }
+      expect(order).toEqual([
+        "k2b-message-row__quote",
+        "k2b-message-row__thread",
+        "👍 4 reactions: Tobias, Mara, Robin, Minutes",
+        "☕ 1 reaction: Robin",
+        "Add reaction",
+        "Reply",
+        "React",
+      ]);
+
+      await rowOf(page, "m11").locator(".k2b-message-row__quote").focus();
+      await page.keyboard.press("Enter");
+      await reactions.getByRole("button", { name: "👍 4 reactions: Tobias, Mara, Robin, Minutes" }).focus();
+      await page.keyboard.press("Enter");
+      await reactions.getByRole("button", { name: "Add reaction" }).focus();
+      await page.keyboard.press("Space");
+      await rowOf(page, "m11").getByRole("button", { name: "3 replies Last reply 10:42" }).focus();
+      await page.keyboard.press("Enter");
+      expect(await recorded(page)).toMatchObject({ quoted: 1, toggled: ["m11 👍"], addedFrom: "Add reaction", threadOpened: "m11" });
+
+      // The quote reads as a reply to its author for screen readers.
+      expect(
+        await rowOf(page, "m11")
+          .getByRole("button", { name: /^In reply to Tobias Kern The meter reading API/ })
+          .count(),
+      ).toBe(1);
+
+      // An empty, reserved bar shows "Add reaction" only while the message is hovered or focused.
+      const add = rowOf(page, "m14").getByRole("button", { name: "Add reaction" });
+      expect(await add.evaluate((button) => getComputedStyle(button).opacity)).toBe("0");
+      await rowOf(page, "m14").focus();
+      expect(await add.evaluate((button) => getComputedStyle(button).opacity)).toBe("1");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a reaction chip keeps its element and focus while it toggles and others come and go", async () => {
+    const page = await open({ rich: true });
+    try {
+      const chip = rowOf(page, "m11").getByRole("button", { name: /^👍/ });
+      await chip.focus();
+      await chip.evaluate((element) => {
+        (element as HTMLElement).dataset.probe = "";
+      });
+      const focused = () =>
+        page.evaluate(() => {
+          const active = document.activeElement as HTMLElement;
+          return {
+            same: active.dataset.probe === "",
+            pressed: active.getAttribute("aria-pressed"),
+            label: active.getAttribute("aria-label"),
+          };
+        });
+
+      // The fixture answers each press with a new list of new objects, as an application would.
+      await page.keyboard.press("Enter");
+      expect(await focused()).toEqual({ same: true, pressed: "true", label: "👍 5 reactions: Tobias, Mara, Robin, Minutes" });
+      await page.keyboard.press("Space");
+      expect(await focused()).toEqual({ same: true, pressed: "false", label: "👍 4 reactions: Tobias, Mara, Robin, Minutes" });
+      await page.evaluate(() =>
+        fixture.setReactions({
+          m11: [
+            { key: "👍", emoji: "👍", count: 4, label: "Tobias, Mara, Robin, Minutes" },
+            { key: "🎉", emoji: "🎉", count: 1, label: "Nora" },
+          ],
+        }),
+      );
+      expect(await focused()).toMatchObject({ same: true, pressed: "false" });
+      expect(await rowOf(page, "m11").locator(".k2b-message-row__reaction").count()).toBe(2);
+      expect((await recorded(page)).toggled).toEqual(["m11 👍", "m11 👍"]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("Stop keeps focus while the message streams in place", async () => {
+    const page = await open({ rich: true });
+    try {
+      const stop = rowOf(page, "m15").getByRole("button", { name: "Stop" });
+      await stop.focus();
+      await stop.evaluate((element) => {
+        (element as HTMLElement).dataset.probe = "";
+      });
+      const words = "Here is what changed since this morning: the meter reading API is live with a limit of 60 requests".split(" ");
+      for (let count = 1; count <= words.length; count++) {
+        await page.evaluate((text) => fixture.setTexts({ m15: text }), words.slice(0, count).join(" "));
+        if (count === 5) await page.evaluate(() => fixture.setProgress({ m15: "Searching the files" }));
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+        expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.probe), `after ${count} words`).toBe("");
+      }
+      expect(await rowOf(page, "m15").locator(".k2b-message-row__text").innerText()).toEndWith("60 requests");
+      expect(await rowOf(page, "m15").locator(".k2b-message-row__bubble").getAttribute("aria-busy")).toBe("true");
+
+      await page.keyboard.press("Enter");
+      expect((await recorded(page)).stopped).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  for (const locale of ["en", "de"] as const)
+    test(`the send state, progress, and their buttons stay whole beside many reactions on a narrow phone (${locale})`, async () => {
+      const many = Array.from("😀😃😄😁😆😅🤣😂🙂🙃😉😊", (emoji, index) => ({ key: emoji, emoji, count: index + 1 }));
+      const page = await open({
+        width: 320,
+        locale,
+        messages: [
+          { id: "n1", author: "me", own: true, text: "This one failed.", minute: 1, status: "failed", reactions: many },
+          { id: "n2", author: "me", own: true, text: "Pending.", minute: 2, status: "pending", reactions: many },
+          { id: "n3", author: "me", own: true, text: "Read.", minute: 3, status: "sent", reactions: many.slice(0, 6) },
+          { id: "n4", author: "bot", text: "", minute: 4, progress: "Searching the files in the archive", reactions: many },
+        ],
+      });
+      try {
+        await page.evaluate(() => fixture.setReceipt("Read by Nora Brandt, Tobias Kern and Mara Feldmann", "n3"));
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        const layout = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (item) => {
+            const row = item.querySelector(".k2b-message-row")!.getBoundingClientRect();
+            const line = item.querySelector(".k2b-message-row__line")!;
+            const list = item.querySelector<HTMLElement>(".k2b-message-row__reaction-list")!;
+            const add = item.querySelector(".k2b-message-row__react")!.getBoundingClientRect();
+            const text = line.querySelector(".k2b-message-row__receipt, .k2b-message-row__line-text");
+            return {
+              key: item.dataset.key,
+              // Every part of the line lies inside the row, after "Add reaction", and words other than the receipt or
+              // progress are whole.
+              inside: Array.from(line.children).every((child) => {
+                const box = child.getBoundingClientRect();
+                return box.left >= add.right && box.right <= row.right;
+              }),
+              whole: Array.from(
+                line.querySelectorAll("span:not(.k2b-message-row__receipt, .k2b-message-row__line-text, .k2b-sr-only)"),
+              ).every((span) => span.scrollWidth <= span.clientWidth),
+              text: text ? Math.round(text.getBoundingClientRect().width) : undefined,
+              chips: Math.round(list.getBoundingClientRect().width),
+              fade: list.getAttribute("data-scroll-fade"),
+            };
+          }),
+        );
+        for (const row of layout) {
+          expect(row.inside, row.key).toBe(true);
+          expect(row.whole, row.key).toBe(true);
+          // Beside a receipt or progress, the chips keep room for at least one, and a fade says that more follow. A
+          // message that is not sent yet has no one's reactions, so there the chips may give way entirely.
+          if (row.text === undefined) continue;
+          expect(row.chips, row.key).toBeGreaterThanOrEqual(36);
+          expect(row.fade, row.key).toBe("bottom");
+          // The receipt and the progress keep at least a word.
+          expect(row.text, row.key).toBeGreaterThanOrEqual(24);
+        }
+        await rowOf(page, "n1")
+          .getByRole("button", { name: locale === "de" ? "Erneut senden" : "Retry" })
+          .click();
+        await rowOf(page, "n4")
+          .getByRole("button", { name: locale === "de" ? "Stoppen" : "Stop" })
+          .click();
+        expect(await page.evaluate(() => retried)).toBe(1);
+        expect((await recorded(page)).stopped).toBe(1);
+        await page.screenshot({ path: `/tmp/k2b-ui-message-rows-${browserName}-narrow-footer-${locale}.png` });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+  test("read-only reactions say which are the reader's own, and their list scrolls from the keyboard", async () => {
+    const many = Array.from("😀😃😄😁😆😅🤣😂🙂🙃😉😊", (emoji, index) => ({ key: emoji, emoji, count: index + 1 }));
+    const page = await open({
+      width: 390,
+      readOnly: true,
+      messages: [
+        {
+          id: "r1",
+          author: "nora",
+          text: "Lunch?",
+          minute: 1,
+          reactions: [{ key: "☕", emoji: "☕", count: 1, own: true, label: "Robin" }, ...many],
+        },
+      ],
+    });
+    try {
+      const reactions = rowOf(page, "r1").getByRole("group", { name: "Reactions" });
+      expect(await reactions.getByRole("img", { name: "☕ your reaction: Robin" }).count()).toBe(1);
+      expect(await reactions.getByRole("img", { name: "😀 1 reaction" }).count()).toBe(1);
+      expect(await rowOf(page, "r1").locator("button.k2b-message-row__reaction").count()).toBe(0);
+
+      const list = rowOf(page, "r1").locator(".k2b-message-row__reaction-list");
+      await rowOf(page, "r1").focus();
+      await page.keyboard.press("Tab");
+      expect(await list.evaluate((element) => element === document.activeElement)).toBe(true);
+      // Arrow keys scroll the focused list; WebKit animates each step.
+      expect(await list.getAttribute("data-scroll-fade")).toBe("bottom");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.waitForFunction(() => document.querySelector(".k2b-message-row__reaction-list")!.scrollLeft >= 24);
+      await page.waitForFunction(
+        () => document.querySelector(".k2b-message-row__reaction-list")!.getAttribute("data-scroll-fade") === "both",
+      );
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("on a touch screen the quote, thread bar, and reaction chips take taps in a 44 px area without taking others'", async () => {
+    const page = await open({
+      width: 390,
+      touch: true,
+      messages: [
+        {
+          id: "t1",
+          author: "nora",
+          text: "The plan:",
+          minute: 1,
+          attachments: [{ kind: "file", name: "Plan.pdf", alt: "Plan.pdf", open: true }],
+          thread: { count: 2, participants: ["tobias"], lastReply: "10:42" },
+        },
+        { id: "t2", author: "tobias", text: "Looks good.", minute: 3, reactions: [{ key: "👍", emoji: "👍", count: 2 }] },
+        { id: "t3", author: "tobias", text: "Which one?", minute: 4, quote: { author: "Nora Brandt", text: "The plan:" } },
+        { id: "t4", author: "me", own: true, text: "Sending this one failed.", minute: 5, status: "failed" },
+      ],
+    });
+    try {
+      const box = async (key: string, selector: string) => (await rowOf(page, key).locator(selector).first().boundingBox())!;
+      const tap = (x: number, y: number) => page.touchscreen.tap(x, y);
+      const reach = (height: number) => (44 - height) / 2;
+
+      const thread = await box("t1", ".k2b-message-row__thread");
+      const center = thread.x + Math.min(thread.width, 120) / 2;
+      await tap(center, thread.y - reach(thread.height) + 1);
+      expect((await recorded(page)).threadOpened).toBe("t1");
+      await page.evaluate(() => delete (window as { threadOpened?: string }).threadOpened);
+      await tap(center, thread.y + thread.height + reach(thread.height) - 1);
+      expect((await recorded(page)).threadOpened).toBe("t1");
+      await page.evaluate(() => delete (window as { threadOpened?: string }).threadOpened);
+      // The file chip above keeps its last pixel row.
+      const file = await box("t1", ".k2b-message-row__file");
+      await tap(file.x + 20, file.y + file.height - 1);
+      expect(await recorded(page)).toMatchObject({ opened: ["Plan.pdf"], threadOpened: undefined });
+
+      const chip = await box("t2", ".k2b-message-row__reaction");
+      await tap(chip.x + chip.width / 2, chip.y - reach(chip.height) + 1);
+      await tap(chip.x + chip.width / 2, chip.y + chip.height + reach(chip.height) - 1);
+      expect((await recorded(page)).toggled).toEqual(["t2 👍", "t2 👍"]);
+
+      // A quote that opens a continuation reaches up without taking the reactions of the row before.
+      const quote = await box("t3", ".k2b-message-row__quote");
+      await tap(quote.x + 40, quote.y - reach(quote.height) + 1);
+      await tap(quote.x + 40, quote.y + quote.height + reach(quote.height) - 1);
+      expect((await recorded(page)).quoted).toBe(2);
+      expect((await recorded(page)).toggled).toHaveLength(2);
+
+      const retry = await box("t4", ".k2b-message-row__line .k2b-button");
+      await tap(retry.x + retry.width / 2, retry.y + retry.height + reach(retry.height) - 1);
+      expect(await page.evaluate(() => retried)).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("the thread bar, the read line, and the footer keep a fixed height whatever they show", async () => {
+    const page = await open({ width: 320, locale: "de", rich: true });
+    try {
+      const heights = (selector: string) =>
+        page.evaluate(
+          (selector) => Array.from(document.querySelectorAll(selector), (element) => element.getBoundingClientRect().height),
+          selector,
+        );
+      const settle = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      expect(await heights(".k2b-message-row__thread")).toEqual([28, 28]);
+      expect(new Set(await heights(".k2b-message-row__line"))).toEqual(new Set([20]));
+      const footers = await heights(".k2b-message-row__footer");
+      expect((await rowOf(page, "m15").locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ")).toBe("Writing Stoppen");
+
+      await page.evaluate(() =>
+        fixture.setThreads({
+          m11: { count: 128, participants: ["tobias", "mara", "nora", "bot", "me"], lastReply: "gestern um 23:59 Uhr" },
+          m16: { count: 2, participants: [], lastReply: undefined },
+        }),
+      );
+      // The own message with its reserved reactions goes through every send state and gets read; the agent changes its step.
+      for (const step of [
+        { statuses: { m14: "pending" }, progress: { m15: "Durchsucht die Dateien im Archiv der Abteilung" } },
+        { statuses: { m14: "failed" } },
+        { statuses: { m14: "sent" }, receipt: "Gelesen von Nora Brandt, Tobias Kern und Mara Feldmann" },
+      ]) {
+        await page.evaluate((step) => {
+          fixture.setStatuses(step.statuses);
+          if (step.progress) fixture.setProgress(step.progress);
+          if (step.receipt) fixture.setReceipt(step.receipt, "m14");
+        }, step);
+        await settle();
+        expect(await heights(".k2b-message-row__thread"), JSON.stringify(step)).toEqual([28, 28]);
+        expect(new Set(await heights(".k2b-message-row__line")), JSON.stringify(step)).toEqual(new Set([20]));
+        expect(await heights(".k2b-message-row__footer"), JSON.stringify(step)).toEqual(footers);
+        expect(
+          await rowOf(page, "m14")
+            .locator(".k2b-message-row__line")
+            .evaluate((line) => line.getBoundingClientRect().right <= line.closest(".k2b-message-row")!.getBoundingClientRect().right),
+        ).toBe(true);
+        if (step.statuses.m14 === "failed")
+          expect((await rowOf(page, "m14").locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ")).toBe(
+            "Nicht gesendet Erneut senden",
+          );
+      }
+
+      const thread = rowOf(page, "m11").locator(".k2b-message-row__thread");
+      expect(await thread.locator(".k2b-avatar").count()).toBe(3);
+      expect(
+        await rowOf(page, "m11").getByRole("button", { name: "128 Antworten Letzte Antwort gestern um 23:59 Uhr", exact: true }).count(),
+      ).toBe(1);
+      expect(
+        await thread.evaluate((bar) => bar.getBoundingClientRect().right <= bar.closest(".k2b-message-row")!.getBoundingClientRect().right),
+      ).toBe(true);
+      const rows = await page.evaluate(() => Object.fromEntries((window as unknown as { heights: Map<string, number[]> }).heights));
+      for (const [key, sizes] of Object.entries(rows)) expect(new Set(sizes).size, `${key}: ${sizes.join(", ")}`).toBe(1);
+
+      await rowOf(page, "m15").getByRole("button", { name: "Stoppen" }).click();
+      expect((await recorded(page)).stopped).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  for (const rich of [false, true])
+    for (const width of [390, 720])
+      for (const theme of ["light", "dark"] as const)
+        for (const locale of ["en", "de"] as const)
+          test(`renders every ${rich ? "rich " : ""}state readably at ${width}px in ${theme}, ${locale}`, async () => {
+            const page = await open({ width, theme, locale, rich });
+            try {
+              await page.evaluate(() => fixture.setReceipt("Read by Nora"));
+              const result = await page.evaluate(() => {
+                // A canvas resolves every color syntax, including the color() that color-mix() computes to.
+                const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+                const luminance = (color: string) => {
+                  context.clearRect(0, 0, 1, 1);
+                  context.fillStyle = color;
+                  context.fillRect(0, 0, 1, 1);
+                  const [r, g, b] = Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3), (value) => {
+                    const channel = value / 255;
+                    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+                  });
+                  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+                };
+                const contrast = (a: string, b: string) => {
+                  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+                  return (light! + 0.05) / (dark! + 0.05);
+                };
+                const surface = getComputedStyle(document.body).backgroundColor;
+                const pairs: Record<string, number> = {};
+                for (const row of document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item")) {
+                  const key = row.dataset.key!;
+                  const bubble = row.querySelector(".k2b-message-row__bubble");
+                  const text = row.querySelector(".k2b-message-row__text");
+                  if (bubble && text)
+                    pairs[`${key} text`] = contrast(getComputedStyle(text).color, getComputedStyle(bubble).backgroundColor);
+                  // Text drawn on a fill of its own: the edited marker on the bubble, chips on their fill.
+                  for (const [name, selector, fill] of [
+                    ["edited", ".k2b-message-row__edited", ".k2b-message-row__bubble"],
+                    ["reaction", ".k2b-message-row__reaction", ".k2b-message-row__reaction"],
+                    ["own reaction", ".k2b-message-row__reaction[data-own]", ".k2b-message-row__reaction[data-own]"],
+                    ["file", ".k2b-message-row__file-name", ".k2b-message-row__file"],
+                    ["file detail", ".k2b-message-row__file-detail", ".k2b-message-row__file"],
+                  ] as const) {
+                    const element = row.querySelector(selector);
+                    if (element)
+                      pairs[`${key} ${name}`] = contrast(
+                        getComputedStyle(element).color,
+                        getComputedStyle(row.querySelector(fill)!).backgroundColor,
+                      );
+                  }
+                  const avatar = row.querySelector<HTMLElement>("span.k2b-avatar");
+                  if (avatar) pairs[`${key} avatar`] = contrast(getComputedStyle(avatar).color, getComputedStyle(avatar).backgroundColor);
+                  for (const [name, selector] of [
+                    ["time", ".k2b-message-row__time"],
+                    ["line", ".k2b-message-row__line"],
+                    ["system", ".k2b-message-system-row"],
+                    ["quote", ".k2b-message-row__quote"],
+                    ["quote author", ".k2b-message-row__quote-author"],
+                    ["marker", ".k2b-message-row__marker"],
+                    ["deleted", ".k2b-message-row__deleted"],
+                    ["thread", ".k2b-message-row__thread-count"],
+                    ["thread time", ".k2b-message-row__thread-time"],
+                  ] as const) {
+                    const element = row.querySelector(selector);
+                    if (element) pairs[`${key} ${name}`] = contrast(getComputedStyle(element).color, surface);
+                  }
                 }
+                return { pairs, overflow: document.querySelector(".k2b-virtual-feed__viewport")!.scrollWidth > innerWidth };
+              });
+              for (const [pair, ratio] of Object.entries(result.pairs)) expect(ratio, pair).toBeGreaterThanOrEqual(4.5);
+              expect(result.overflow).toBe(false);
+              const line = async (key: string) =>
+                (await rowOf(page, key).locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ");
+              const words = async (key: string, selector: string) =>
+                (await rowOf(page, key).locator(selector).innerText()).replace(/\s+/g, " ").trim();
+              if (rich) {
+                expect(Object.keys(result.pairs)).toEqual(
+                  expect.arrayContaining([
+                    "m11 edited",
+                    "m11 reaction",
+                    "m11 own reaction",
+                    "m12 file detail",
+                    "m14 marker",
+                    "m16 deleted",
+                    "m11 thread",
+                  ]),
+                );
+                expect(await words("m11", ".k2b-message-row__edited")).toBe(locale === "de" ? "bearbeitet" : "edited");
+                expect(await words("m14", ".k2b-message-row__marker")).toBe(locale === "de" ? "Weitergeleitet" : "Forwarded");
+                expect(await words("m16", ".k2b-message-row__deleted")).toBe(
+                  locale === "de" ? "Diese Nachricht wurde gelöscht" : "This message was deleted",
+                );
+                expect(
+                  await rowOf(page, "m11")
+                    .getByRole("button", {
+                      name: locale === "de" ? "3 Antworten Letzte Antwort 10:42" : "3 replies Last reply 10:42",
+                      exact: true,
+                    })
+                    .count(),
+                ).toBe(1);
+                expect(await line("m15")).toBe(locale === "de" ? "Writing Stoppen" : "Writing Stop");
+              } else {
+                expect(await line("m6")).toBe(locale === "de" ? "Wird gesendet" : "Sending");
+                expect(await line("m8")).toBe(locale === "de" ? "Nicht gesendet Erneut senden" : "Not sent Retry");
+                expect(await line("m7")).toBe("Read by Nora");
               }
-              return { pairs, overflow: document.querySelector(".k2b-virtual-feed__viewport")!.scrollWidth > innerWidth };
-            });
-            for (const [pair, ratio] of Object.entries(result.pairs)) expect(ratio, pair).toBeGreaterThanOrEqual(4.5);
-            expect(result.overflow).toBe(false);
-            const line = async (key: string) => (await rowOf(page, key).locator(".k2b-message-row__line").innerText()).replace(/\s+/g, " ");
-            expect(await line("m6")).toBe(locale === "de" ? "Wird gesendet" : "Sending");
-            expect(await line("m8")).toBe(locale === "de" ? "Nicht gesendet Erneut senden" : "Not sent Retry");
-            expect(await line("m7")).toBe("Read by Nora");
-            await page.screenshot({ path: `/tmp/k2b-ui-message-rows-${browserName}-${width}-${theme}-${locale}.png` });
-          } finally {
-            await page.close();
-          }
-        }, 30_000);
+              await page.screenshot({
+                path: `/tmp/k2b-ui-message-rows-${browserName}-${rich ? "rich-" : ""}${width}-${theme}-${locale}.png`,
+              });
+            } finally {
+              await page.close();
+            }
+          }, 30_000);
 });

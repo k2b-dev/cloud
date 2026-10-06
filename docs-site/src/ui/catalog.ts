@@ -229,7 +229,7 @@ const portableSections = [
         "message-rows",
         "Message rows",
         "ti ti-message-2",
-        "Grouped conversation messages with avatars, safe Markdown, send state, and actions that never move the layout.",
+        "Grouped conversation messages with safe Markdown, quotes, reactions, threads, and attachments that never move the layout.",
       ),
       page("structured-data", "Structured data", "ti ti-braces", "Formatted and raw JSON-like data disclosure."),
       page("media", "Media previews", "ti ti-photo", "Image lightboxes, PDF previews, and zoomable content."),
