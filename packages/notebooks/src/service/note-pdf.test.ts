@@ -61,7 +61,8 @@ describe("note PDF HTML", () => {
     const html = build(":::warning\n![Karte](attach://AbC123)\n:::", { locale: "de" });
     expect(html).not.toContain(".katex{");
     expect(html).toContain("Bild: Karte");
-    expect(html).toContain('<span class="sr-only">Warnung: </span>');
+    expect(html).toContain('<span class="k2b-sr-only">Warnung: </span>');
+    expect(html).toContain(".k2b-sr-only {");
   });
 
   test("prints arrow and relation ligatures in one symbol font and keeps the others in the text font", () => {

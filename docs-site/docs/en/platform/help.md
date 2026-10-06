@@ -159,20 +159,23 @@ Deleting an item cannot be undone.
 :::
 ```
 
-Callout text supports bold, emphasis, inline code, and line breaks. It does not
-parse lists, links, tables, or nested blocks. Put those after the callout.
+The callout body is ordinary Markdown: emphasis, links, lists, tables, and
+code render as they do elsewhere on the page. Close the callout with `:::` on
+its own line; a `:::` inside code or a list does not close it. Callouts inside
+lists, quotes, or another callout stay text.
 
 A callout renders as a calm [notice](/en/ui/feedback/blocks): a light tint of
-its tone, neutral text, and no icon. The optional title after the type is the
-visible heading and names the callout for everyone. Without a title, screen
-readers hear the English type name, and sighted readers see only the tint, so
-add a title in the reader's language, or start the text with a word such as
-**Risk:**, when the type matters.
+its tone, neutral text, and no icon. The optional plain-text title after the
+type is the visible heading and names the callout for everyone. Without a
+title, screen readers hear the type name in the Help document's language, and
+sighted readers see only the tint, so add a title, or start the text with a
+word such as **Risk:**, when the type matters.
 
-The shared `markdown.render()` and `markdown.renderSync()` helpers from
-`@k2b/cloud/shared` render the same callouts. Notebooks and Notebooks PDF
-exports draw callouts the same way, but a Notebooks callout takes no title:
-start its text with a label instead.
+Callouts are one syntax and one look across Cloud: `MarkdownView` from
+`@k2b/ui`, the shared `markdown.render()` and `markdown.renderSync()` helpers
+from `@k2b/cloud/shared` (pass `{ locale }` to name untitled callouts in the
+reader's language), Notebooks, and Markdown PDF exports. See
+[Markdown content](/en/ui/content/markdown#info-blocks) for the exact rules.
 
 Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
 email. Each link then renders as an ordinary anchor around its text instead of

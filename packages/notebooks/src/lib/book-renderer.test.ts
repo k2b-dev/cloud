@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { markdown } from "@k2b/cloud/shared";
+import { renderMarkdownInfoBlock } from "@k2b/ui";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
@@ -217,17 +218,21 @@ describe("Notebook Book HTML", () => {
     expect(html).not.toContain("scripts");
   });
 
-  test("notices show their tone colour only and name the type for screen readers", () => {
-    const tones = { note: "neutral", info: "info", success: "success", warning: "warning", danger: "danger" } as const;
+  test("notices are the shared info block of every Markdown view", () => {
     for (const locale of ["en", "de"]) {
-      const { t } = bookRendererMessages.resolve([locale]);
-      for (const [kind, tone] of Object.entries(tones) as [keyof typeof tones, string][]) {
-        const { html } = render(`:::${kind}\nBody\n:::`, locale);
-        expect(html).toBe(
-          `<aside class="k2b-notice-card" data-tone="${tone}" role="note"><span class="sr-only">${t[kind]}: </span><div class="k2b-notice-card__body"><p>Body</p>\n</div></aside>`,
-        );
+      for (const type of ["note", "info", "success", "warning", "danger"] as const) {
+        const { html } = render(`:::${type}\nBody\n:::`, locale);
+        expect(html).toBe(renderMarkdownInfoBlock({ type, bodyHtml: "<p>Body</p>\n", locale }));
       }
     }
+    expect(render(":::note\nBody\n:::", "de").html).toContain('<span class="k2b-sr-only">Notiz: </span>');
+  });
+
+  test("a notice title is the visible heading, as in every Markdown view", () => {
+    const { html } = render(":::warning Before <deleting>\nBody\n:::", "de");
+    expect(html).toBe(renderMarkdownInfoBlock({ type: "warning", title: "Before <deleting>", bodyHtml: "<p>Body</p>\n" }));
+    expect(html).toContain('<p class="k2b-notice-card__title">Before &lt;deleting&gt;</p>');
+    expect(html).not.toContain("Warnung");
   });
 
   test("invalid and unclosed data is not silently discarded", () => {

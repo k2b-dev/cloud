@@ -1,9 +1,12 @@
 import { expect, setSystemTime, test } from "bun:test";
-import { evaluateFormula } from "@k2b/cloud/shared";
+import { evaluateFormula, markdown as sharedMarkdown } from "@k2b/cloud/shared";
+import { renderSafeMarkdown } from "@k2b/ui";
 import { renderNotebookBook } from "./lib/book-renderer";
 import { extractNamedDataProperties } from "./lib/named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./lib/query-blocks";
 import { extractTags } from "./service/tags";
+
+const sanitizedMarkdown = (source: string) => sharedMarkdown.renderSync(source);
 
 const reference = (file: string) => Bun.file(new URL(`./cli-references/${file}`, import.meta.url)).text();
 
@@ -21,7 +24,7 @@ test("every Markdown example in the agent references renders as documented", asy
     const { html } = renderNotebookBook({ markdown, notebookId: "Ab12Cd", locale: "en" });
     expect(html, markdown).not.toContain("md-formula-error");
     expect(html.replace(/<pre>[\s\S]*?<\/pre>/g, ""), markdown).not.toContain(":::");
-    const callouts = markdown.match(/^:::(?:note|info|success|warning|danger)$/gm) ?? [];
+    const callouts = markdown.match(/^:::(?:note|info|success|warning|danger)(?:[ \t].*)?$/gm) ?? [];
     expect(html.match(/<aside /g)?.length ?? 0, markdown).toBe(callouts.length);
   }
 });
@@ -48,9 +51,12 @@ test("the formula examples compute the values they are meant to show", async () 
   }
 });
 
-test("a callout title is not Notebook syntax", () => {
-  const { html } = renderNotebookBook({ markdown: ":::warning Before deleting\nText\n:::", notebookId: "Ab12Cd", locale: "en" });
-  expect(html).not.toContain("<aside");
+test("a callout title is the visible heading, as in every Cloud Markdown view", () => {
+  const source = ":::warning Before deleting\nText\n:::";
+  const { html } = renderNotebookBook({ markdown: source, notebookId: "Ab12Cd", locale: "en" });
+  expect(html).toContain('<p class="k2b-notice-card__title">Before deleting</p>');
+  expect(html).toBe(renderSafeMarkdown(source).trim());
+  expect(sanitizedMarkdown(source)).toBe(html);
 });
 
 test("tags are extracted as the Markdown reference describes, also around code", () => {

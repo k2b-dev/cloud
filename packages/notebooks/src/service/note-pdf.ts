@@ -28,20 +28,9 @@ const SYMBOL_LIGATURE_CSS = `:where(${LIGATURES.filter(({ symbol }) => /[←-⋿
 /**
  * Print styles for the Book renderer's note blocks. They use `em` and plain
  * colours so they sit on top of every preset without Cloud's theme tokens.
- * Notices print as the calm NoticeCard: a light tint per tone, no border, and
- * the preset's own text colour, so they stay readable on paper. The tints are
- * a step stronger than on screen because paper and printers wash them out.
+ * Notices are Markdown info blocks; the shared PDF presets style them.
  */
 const NOTE_PRINT_CSS = `
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.k2b-notice-card { margin: 0 0 1em; padding: .85em 1.05em; border-radius: .8em; background: var(--notice-tint); break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.k2b-notice-card[data-tone="neutral"] { --notice-tint: #f1f2f4; }
-.k2b-notice-card[data-tone="info"] { --notice-tint: #e9f1fe; }
-.k2b-notice-card[data-tone="success"] { --notice-tint: #e6f6ee; }
-.k2b-notice-card[data-tone="warning"] { --notice-tint: #fcf2da; }
-.k2b-notice-card[data-tone="danger"] { --notice-tint: #fcebeb; }
-.k2b-notice-card__body > :first-child { margin-top: 0; }
-.k2b-notice-card__body > :last-child { margin-bottom: 0; }
 .md-block-handle { display: inline-block; margin: .5em 0 .25em; padding: .05em .4em; border-radius: 3px; background: #eff6ff; color: #1d4ed8; font: 600 .75em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .md-data-block { margin: 0 0 1em; break-inside: avoid; }
 .md-data-grid { display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; }

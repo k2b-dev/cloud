@@ -35,7 +35,7 @@ export type HelpCollection = {
 
 type ParsedHelpDocument = Omit<HelpDefinitionDocument, "order"> & { order?: number };
 
-const parseSource = (source: string): ParsedHelpDocument => {
+const parseSource = (source: string, locale: string): ParsedHelpDocument => {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(source);
   if (!match) throw new Error("Help documents require YAML frontmatter wrapped in --- markers");
 
@@ -46,7 +46,7 @@ const parseSource = (source: string): ParsedHelpDocument => {
   return {
     ...metadata,
     markdown,
-    html: renderHelpMarkdown(markdown),
+    html: renderHelpMarkdown(markdown, locale),
     searchText: markdownToPlainText(markdown),
   };
 };
@@ -65,7 +65,7 @@ const parseDocuments = (
   baseById?: ReadonlyMap<string, HelpDefinitionDocument>,
 ): readonly HelpDefinitionDocument[] => {
   const documents = sources
-    .map(parseSource)
+    .map((source) => parseSource(source, locale))
     .map((document): HelpDefinitionDocument => {
       const base = baseById?.get(document.id);
       if (!baseById) return { ...document, order: document.order ?? 100 };

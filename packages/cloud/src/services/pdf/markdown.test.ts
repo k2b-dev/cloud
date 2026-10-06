@@ -88,6 +88,18 @@ describe("Markdown PDF renderer", () => {
     expect(html).not.toContain("Please report this to");
   });
 
+  test("prints info blocks as the shared notice in every preset", () => {
+    for (const templateId of ["document", "report", "compact"] as const) {
+      const html = buildMarkdownPdfHtml({ markdown: ":::warning Before printing\nCheck <the> **totals**.\n:::", templateId });
+
+      expect(html).toContain(
+        '<aside class="k2b-notice-card" data-tone="warning" role="note"><p class="k2b-notice-card__title">Before printing</p><div class="k2b-notice-card__body"><p>Check &lt;the&gt; <strong>totals</strong>.</p>',
+      );
+      expect(html).toContain('.k2b-notice-card[data-tone="warning"] { --notice-tint:');
+    }
+    expect(buildMarkdownPdfHtml({ markdown: ":::note\nPlain\n:::" })).toContain('<span class="k2b-sr-only">Note: </span>');
+  });
+
   test("rejects empty input, invalid CSS, remote CSS resources, and oversized CSS", () => {
     expect(() => buildMarkdownPdfHtml({ markdown: "  " })).toThrow(MarkdownPdfError);
     expect(() => buildMarkdownPdfHtml({ markdown: "Hello", customCss: "main {" })).toThrow("not valid CSS");

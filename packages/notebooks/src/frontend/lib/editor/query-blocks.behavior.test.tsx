@@ -5,9 +5,13 @@ import { EditorView } from "@codemirror/view";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { dispatchWorkspaceEvent } from "../../[id]/_components/sidebar/workspace-events";
 import type { BlockPreviewResult } from "./query-blocks";
+
+// The notebook parsers share @k2b/ui's info-block grammar; its browser build needs the DOM globals before it loads.
+const loading = createDomTestHarness();
+const { extractNotebookDirectiveRanges } = await import("../../../lib/query-blocks");
+loading.cleanup();
 
 const DOCUMENT = "# Heading\n\n:::query\nsource: notes\n:::\n\n:::toc\n:::";
 const response = (markdown = DOCUMENT, label = "Result"): BlockPreviewResult => ({

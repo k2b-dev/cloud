@@ -11,6 +11,7 @@ Use `cld spaces` to list and change work, track agent handoffs, manage task depe
 - [Address spaces and items](#address-spaces-and-items)
 - [List and read work](#list-and-read-work)
 - [Add and change items](#add-and-change-items)
+- [Write Markdown](#write-markdown)
 - [Track implementation work and handoffs](#track-implementation-work-and-handoffs)
 - [Dependencies](#dependencies)
 - [Comments, checklists, references, links, and attachments](#comments-checklists-references-links-and-attachments)
@@ -94,6 +95,18 @@ cld spaces create "Hiring" --description "Open roles"
 - Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
+
+## Write Markdown
+
+Descriptions, comments, progress notes, and completion results are Markdown: headings, emphasis, lists, tables, links, inline code, code blocks, and info blocks. Raw HTML is shown as text.
+
+```markdown
+:::warning Before the release
+Run the migration on a **copy** first.
+:::
+```
+
+Info blocks look the same as in Notebooks and Help. The types are `note`, `info`, `success`, `warning`, and `danger`. The opening line holds `:::`, the type, and an optional plain-text title; close the block with `:::` on its own line. The body is ordinary Markdown. Write info blocks at the top level, not inside lists, quotes, or code.
 
 ## Track implementation work and handoffs
 

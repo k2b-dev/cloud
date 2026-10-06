@@ -1,3 +1,4 @@
+import { markdownInfoBlocks } from "@k2b/ui";
 import { Marked, Renderer, type Tokens } from "marked";
 import postcss from "postcss";
 import {
@@ -122,6 +123,25 @@ hr { border: 0; border-top: 1px solid #d1d5db; margin: .9em 0; }
 `,
 };
 
+/**
+ * Markdown info blocks print as the calm NoticeCard: a light tint per tone, no
+ * border, and the preset's own text colour, so they stay readable on paper.
+ * The tints are a step stronger than on screen because paper and printers wash
+ * them out. Every preset and application document shares them.
+ */
+const INFO_BLOCK_PRINT_CSS = `
+.k2b-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.k2b-notice-card { margin: 0 0 1em; padding: .85em 1.05em; border-radius: .8em; background: var(--notice-tint); break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.k2b-notice-card[data-tone="neutral"] { --notice-tint: #f1f2f4; }
+.k2b-notice-card[data-tone="info"] { --notice-tint: #e9f1fe; }
+.k2b-notice-card[data-tone="success"] { --notice-tint: #e6f6ee; }
+.k2b-notice-card[data-tone="warning"] { --notice-tint: #fcf2da; }
+.k2b-notice-card[data-tone="danger"] { --notice-tint: #fcebeb; }
+.k2b-notice-card__title { margin: 0 0 .25em; font-weight: 600; }
+.k2b-notice-card__body > :first-child { margin-top: 0; }
+.k2b-notice-card__body > :last-child { margin-bottom: 0; }
+`;
+
 const byteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
 const escapeHtml = (value: string): string =>
@@ -156,7 +176,7 @@ const renderMarkdown = (source: string): string => {
     return `<a href="${escapeHtml(safeHref)}"${titleAttribute}>${body}</a>`;
   };
 
-  const parser = new Marked({ breaks: true, gfm: true, renderer });
+  const parser = new Marked({ breaks: true, gfm: true, renderer }, markdownInfoBlocks());
   try {
     return parser.parse(source, { async: false }) as string;
   } catch (cause) {
@@ -216,7 +236,7 @@ export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
   const suppliedCustomCss = input.customCss?.trim() ?? "";
   const customCss = suppliedCustomCss ? validateCustomCss(input.customCss ?? "") : "";
   const presetCss = templateId ? TEMPLATE_CSS[templateId] : customCss ? "" : TEMPLATE_CSS.document;
-  const baseCss = [presetCss, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
+  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
   const stylesheet = `${baseCss}${baseCss && customCss ? `\n/* Custom CSS overrides */\n` : ""}${customCss}`;
   return `<!doctype html>
 <html lang="en">

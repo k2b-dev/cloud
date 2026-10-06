@@ -705,11 +705,12 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
 
 /** Render one unified turn block. Shared by persisted assistant groups and the live turn. */
 export function AiTurnBlockView(props: { block: AiTurnBlock; turnId: string; streaming?: boolean; active?: boolean }) {
+  const locale = useLocale();
   // The id/kind remain stable while the immutable block value changes during a turn.
   return (
     <Switch>
       <Match when={props.block.kind === "text" && props.block}>
-        {(block) => <AssistantMarkdownBlock html={markdown.renderSync(block().text)} />}
+        {(block) => <AssistantMarkdownBlock html={markdown.renderSync(block().text, { locale: locale() })} />}
       </Match>
       <Match when={props.block.kind === "thinking" && props.block}>
         {(block) => <ThinkingBlockView text={block().text} streaming={props.streaming} />}

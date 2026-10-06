@@ -14,6 +14,12 @@ Use `MarkdownEditor` when the same surface also edits Markdown. Use the [Markdow
 import { MarkdownEditor, MarkdownView, renderSafeMarkdown } from "@k2b/ui";
 ```
 
+Renderers with their own Markdown pipeline import the info-block helpers:
+
+```ts
+import { markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
+```
+
 ## Render Markdown
 
 Pass untrusted Markdown directly:
@@ -42,8 +48,43 @@ boundary and bypasses the renderer.
 
 Embedded components such as `NoticeCard` keep their own inner spacing and sit
 one paragraph apart from the surrounding prose; ordinary Markdown paragraphs
-retain the standard prose spacing. Markdown callouts render as the same calm
-notice as the [`NoticeCard`](/en/ui/feedback/blocks) component.
+retain the standard prose spacing.
+
+### Info blocks
+
+Info blocks render as the same calm notice as the
+[`NoticeCard`](/en/ui/feedback/blocks) component: a light tint of the tone,
+neutral text, and no icon.
+
+```md
+:::warning Before deleting
+Export the data first. **Deleting cannot be undone.**
+:::
+```
+
+- The types are `note`, `info`, `success`, `warning`, and `danger`.
+- The opening line holds `:::`, the type, and an optional plain-text title.
+  The title is the visible heading. Without a title, screen readers hear the
+  type name in the render locale, such as "Warning" or "Warnung"; sighted
+  readers see only the tint, so start the text with a label when the type
+  matters.
+- The block ends at a line holding only `:::`, indented no deeper than the
+  opener. A `:::` inside code, a list, a quote, or HTML does not end it.
+- The body is ordinary Markdown with the same escaping and link rules as the
+  rest of the view. Raw HTML stays text.
+- Blocks work at the top level of a document. Inside a list, a quote, or
+  another block, and without a closing line, the text stays as written.
+
+This grammar and markup are one implementation for every Cloud surface:
+`MarkdownView`, the shared `markdown.render()` helper in `@k2b/cloud/shared`,
+Help, Notebooks, and PDF exports. A renderer with its own `marked` instance
+adds `markdownInfoBlocks({ locale })`; its body still runs through that
+instance's renderer and sanitizer. A renderer that scans source lines itself
+uses `scanMarkdownInfoBlock(source)` for the block's type, title, body, and
+extent, and `renderMarkdownInfoBlock({ type, title, bodyHtml, locale })` for
+the markup. `bodyHtml` crosses a trust boundary: the caller sanitizes it.
+`renderSafeMarkdown(source, { locale })` names untitled blocks in that locale;
+`MarkdownView` passes the inherited render locale.
 
 Prose stays flat on the surrounding surface. Links use the action colour and
 an underline. Inline code and fenced code blocks are text on a light fill

@@ -1,10 +1,8 @@
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { NOTICE_CARD_CLASSES, type NoticeTone } from "@k2b/ui";
-import { bookRendererMessages } from "../../../lib/book-renderer-messages";
-import { literalMarkdownLines, notebookDirectiveLength } from "../../../lib/markdown-context";
-import { closesNotice } from "../../../lib/markdown-fences";
+import { type MarkdownInfoBlockType, NOTICE_CARD_CLASSES, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
+import { literalMarkdownLines } from "../../../lib/markdown-context";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -13,22 +11,11 @@ import {
 } from "./_lib/cursor-zone-field";
 import { applyLigatures } from "./ligatures";
 
-type BlockType = "note" | "info" | "success" | "warning" | "danger";
-
 type InfoBlockData = {
-  type: BlockType;
+  type: MarkdownInfoBlockType;
+  title?: string;
   content: string;
 };
-
-const blockTones = {
-  note: "neutral",
-  info: "info",
-  success: "success",
-  warning: "warning",
-  danger: "danger",
-} as const satisfies Record<BlockType, NoticeTone>;
-
-const isBlockType = (value: string): value is BlockType => Object.hasOwn(blockTones, value);
 
 const escapeHtml = (value: string): string => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -49,7 +36,7 @@ class InfoBlockWidget extends WidgetType {
   constructor(
     private blockData: InfoBlockData,
     private fromPos: number,
-    private label: string,
+    private locale: string,
   ) {
     super();
   }
@@ -69,24 +56,15 @@ class InfoBlockWidget extends WidgetType {
       event.stopPropagation();
     };
 
-    // The calm NoticeCard: tone tint and neutral text; the type name remains for screen readers.
-    const block = document.createElement("div");
-    block.className = NOTICE_CARD_CLASSES.root;
-    block.dataset.tone = blockTones[this.blockData.type];
-    block.setAttribute("role", "note");
-
-    const label = document.createElement("span");
-    label.className = "sr-only";
-    label.textContent = `${this.label}: `;
-
-    const contentDiv = document.createElement("div");
-    contentDiv.className = NOTICE_CARD_CLASSES.body;
-    contentDiv.innerHTML = renderContent(this.blockData.content);
-    applyLigatures(contentDiv);
-
-    block.appendChild(label);
-    block.appendChild(contentDiv);
-    container.appendChild(block);
+    // The shared info block, as in Book; the editor preview renders inline formatting only.
+    container.innerHTML = renderMarkdownInfoBlock({
+      type: this.blockData.type,
+      title: this.blockData.title,
+      bodyHtml: renderContent(this.blockData.content),
+      locale: this.locale,
+    });
+    const body = container.querySelector<HTMLElement>(`.${NOTICE_CARD_CLASSES.body}`);
+    if (body) applyLigatures(body);
     return container;
   }
 
@@ -94,8 +72,9 @@ class InfoBlockWidget extends WidgetType {
     return (
       other instanceof InfoBlockWidget &&
       other.fromPos === this.fromPos &&
-      other.label === this.label &&
+      other.locale === this.locale &&
       other.blockData.type === this.blockData.type &&
+      other.blockData.title === this.blockData.title &&
       other.blockData.content === this.blockData.content
     );
   }
@@ -105,17 +84,15 @@ class InfoBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight() {
-    // One 22px body line per source line plus the card's padding and border.
-    const lines = this.blockData.content.split("\n").length;
+    // One 22px line per title and body source line plus the card's padding and border.
+    const lines = this.blockData.content.split("\n").length + (this.blockData.title ? 1 : 0);
     return lines * 22 + 34;
   }
 }
 
-const NOTICE_OPENER = /^ {0,3}:::(\w+)[ \t]*$/;
-
 /** Finds notices with the same block scanner as the book view, so every
  *  directive ends at its own `:::` and code or list content stays source. */
-const findInfoBlocks = (state: EditorState, labels: Record<BlockType, string>): CursorZoneState => {
+const findInfoBlocks = (state: EditorState, locale: string): CursorZoneState => {
   const decorations: Range<Decoration>[] = [];
   const ranges: { from: number; to: number }[] = [];
   const cursor = state.selection.main;
@@ -125,13 +102,13 @@ const findInfoBlocks = (state: EditorState, labels: Record<BlockType, string>): 
 
   for (let number = 1; number <= state.doc.lines; number++) {
     const opener = state.doc.line(number);
-    const type = NOTICE_OPENER.exec(opener.text)?.[1];
-    if (!type || !isBlockType(type) || literal.has(number - 1)) continue;
+    if (!/^ {0,3}:::/.test(opener.text) || literal.has(number - 1)) continue;
+    const notice = scanMarkdownInfoBlock(text.slice(opener.from));
+    if (!notice?.closed) continue;
     const blockLines = text
-      .slice(opener.from, opener.from + (notebookDirectiveLength(text.slice(opener.from)) ?? 0))
+      .slice(opener.from, opener.from + notice.length)
       .replace(/\n$/, "")
       .split("\n");
-    if (blockLines.length < 2 || !closesNotice(blockLines.at(-1)!, opener.text)) continue;
     const blockStart = opener.from;
     const blockEnd = state.doc.line(number + blockLines.length - 1).to;
     const sourceVisibleStart = state.doc.lineAt(Math.max(blockStart - 1, 0)).from;
@@ -142,10 +119,10 @@ const findInfoBlocks = (state: EditorState, labels: Record<BlockType, string>): 
     // can edit the raw `:::xxx` markers.
     if (selectionIntersectsRange(cursor, sourceVisibleStart, sourceVisibleEnd)) continue;
 
-    const blockData = { type, content: blockLines.slice(1, -1).join("\n").trim() };
+    const blockData = { type: notice.type, title: notice.title, content: notice.body.trim() };
     decorations.push(
       Decoration.replace({
-        widget: new InfoBlockWidget(blockData, blockStart, labels[type]),
+        widget: new InfoBlockWidget(blockData, blockStart, locale),
         block: true,
       }).range(blockStart, blockEnd),
     );
@@ -155,13 +132,11 @@ const findInfoBlocks = (state: EditorState, labels: Record<BlockType, string>): 
   return { decorations: set, atomicDecorations: set, ranges };
 };
 
-/** `locale` names each notice type for screen readers; the rendered block shows it as the tone tint. */
+/** `locale` names an untitled notice's type for screen readers; the rendered block shows it as the tone tint. */
 export const infoBlocksExtension = (locale: string): Extension => {
-  const { t } = bookRendererMessages.resolve([locale]);
-  const labels = { note: t.note, info: t.info, success: t.success, warning: t.warning, danger: t.danger };
   // Container context anywhere above a notice decides whether it renders, so
   // every document change rescans, like the query and table-of-contents blocks.
-  const stateField = cursorZoneStateField((state) => findInfoBlocks(state, labels));
+  const stateField = cursorZoneStateField((state) => findInfoBlocks(state, locale));
 
   const theme = EditorView.theme({
     ".cm-notice-card-widget": {

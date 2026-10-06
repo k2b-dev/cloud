@@ -4,10 +4,14 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { refreshMarkdownDecorationsEffect } from "./_lib/cursor-zone-field";
-import { applyLigatures, ligaturesExtension } from "./ligatures";
-import { markdownExtension } from "./markdown";
-import { customLightInit } from "./theme";
+
+// The notebook parsers share @k2b/ui's info-block grammar; its browser build needs the DOM globals before it loads.
+const loading = createDomTestHarness();
+const { refreshMarkdownDecorationsEffect } = await import("./_lib/cursor-zone-field");
+const { applyLigatures, ligaturesExtension } = await import("./ligatures");
+const { markdownExtension } = await import("./markdown");
+const { customLightInit } = await import("./theme");
+loading.cleanup();
 
 const mount = (doc: string, anchor = doc.length) => {
   const dom = createDomTestHarness();

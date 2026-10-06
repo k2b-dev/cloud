@@ -37,7 +37,7 @@ export const makeLegalPage = (kind: LegalKind) =>
     }
 
     const trimmedContent = (content ?? "").trim();
-    const html = trimmedContent ? markdown.render(trimmedContent) : null;
+    const html = trimmedContent ? markdown.render(trimmedContent, { locale: getLocale(c) }) : null;
 
     return () => (
       <Layout c={c} title={title}>

@@ -5,13 +5,13 @@
  * the visual appearance of the CodeMirror editor extensions.
  */
 
+import { markdownInfoBlocks } from "@k2b/ui";
 import { Marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import { markdownClient } from "./client";
 import { codeExtension } from "./extensions/code";
 import { guidedHelpExtension } from "./extensions/guided-help";
 import { imagesExtension } from "./extensions/images";
-import { infoBlocksExtension } from "./extensions/info-blocks";
 import { katexExtension } from "./extensions/katex";
 import { linksExtension } from "./extensions/links";
 import { markExtension } from "./extensions/mark";
@@ -23,7 +23,7 @@ import { taskListExtension } from "./extensions/task-list";
 type MarkdownProfile = "content" | "help";
 type LinkStyle = "widget" | "plain";
 
-const createMarked = (profile: MarkdownProfile = "content", links: LinkStyle = "widget") => {
+const createMarked = (profile: MarkdownProfile, links: LinkStyle, locale: string | undefined) => {
   const marked = new Marked();
 
   marked.use({
@@ -33,7 +33,7 @@ const createMarked = (profile: MarkdownProfile = "content", links: LinkStyle = "
 
   // Apply extensions in order
   // Note: katexExtension must come before codeExtension to handle ```math blocks
-  marked.use(infoBlocksExtension());
+  marked.use(markdownInfoBlocks({ locale }));
   marked.use(taskListExtension());
   marked.use(tablesExtension());
   // Plain links keep marked's own renderer: an anchor around the link text.
@@ -49,16 +49,25 @@ const createMarked = (profile: MarkdownProfile = "content", links: LinkStyle = "
   return marked;
 };
 
-const marked = createMarked();
-const helpMarked = createMarked("help");
-const plainLinksMarked = createMarked("content", "plain");
+const instances = new Map<string, Marked>();
+const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale?: string): Marked => {
+  const key = `${profile}:${links}:${locale ?? ""}`;
+  let instance = instances.get(key);
+  if (!instance) {
+    instance = createMarked(profile, links, locale);
+    instances.set(key, instance);
+  }
+  return instance;
+};
+
+const marked = markedFor("content");
 
 export type MarkdownRenderOptions = {
   /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. */
   links?: LinkStyle;
+  /** Request locale for the screen-reader names of untitled info blocks. Defaults to English. */
+  locale?: string;
 };
-
-const markedFor = ({ links = "widget" }: MarkdownRenderOptions): Marked => (links === "plain" ? plainLinksMarked : marked);
 
 const sanitizeRenderedHtml = (html: string): string =>
   sanitizeHtml(html, {
@@ -136,7 +145,8 @@ const sanitizeRenderedHtml = (html: string): string =>
  *
  * Supported features:
  * - GFM (GitHub Flavored Markdown)
- * - Notice cards (:::note, :::info, :::success, :::warning, :::danger)
+ * - Info blocks (:::note, :::info, :::success, :::warning, :::danger), shared
+ *   with `MarkdownView` from `@k2b/ui`
  * - Task lists with checkboxes
  * - Tables with cell formatting
  * - Styled links and images
@@ -160,7 +170,7 @@ const sanitizeRenderedHtml = (html: string): string =>
 export function renderMarkdown(content: string, options: MarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
 
-  const html = markedFor(options).parse(content);
+  const html = markedFor("content", options.links, options.locale).parse(content);
   if (typeof html !== "string") return "";
 
   return sanitizeRenderedHtml(html);
@@ -172,7 +182,7 @@ export function renderMarkdown(content: string, options: MarkdownRenderOptions =
 export function renderMarkdownSync(content: string, options: MarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
 
-  const html = markedFor(options).parse(content);
+  const html = markedFor("content", options.links, options.locale).parse(content);
   if (typeof html !== "string") return "";
 
   return sanitizeRenderedHtml(html);
@@ -182,9 +192,9 @@ export function renderMarkdownSync(content: string, options: MarkdownRenderOptio
  * Render trusted documentation Markdown with guided sections and internal
  * navigation. All fenced code remains visible source, as in ordinary Markdown.
  */
-export function renderHelpMarkdown(content: string): string {
+export function renderHelpMarkdown(content: string, locale?: string): string {
   if (!content || typeof content !== "string") return "";
-  const html = helpMarked.parse(content);
+  const html = markedFor("help", "widget", locale).parse(content);
   return typeof html === "string" ? sanitizeRenderedHtml(html) : "";
 }
 
