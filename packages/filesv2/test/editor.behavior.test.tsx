@@ -180,7 +180,7 @@ describe("Filesv2 office editing", () => {
       dom.cleanup();
     };
     await flush();
-    expect(submitted).toEqual([`${launch.action}&closebutton=1`]);
+    expect(submitted).toEqual([`${launch.action}&closebutton=1&lang=en-US`]);
     const form = dom.root.querySelector("form")!;
     expect(form.querySelector<HTMLInputElement>('input[name="access_token"]')!.value).toBe("body.signature");
     expect(form.querySelector<HTMLInputElement>('input[name="ui_defaults"]')!.value).toContain("UITheme=light");
@@ -206,6 +206,39 @@ describe("Filesv2 office editing", () => {
     if (frame.contentWindow) expect(posted).toEqual(["Host_PostmessageReady", "Hide_Command", "Hide_Command"]);
     message({ MessageId: "UI_Close", Values: { EverModified: false } });
     expect(backs).toEqual([1]);
+  });
+  test("the editor opens Collabora in the Cloud language through the URL it reads it from", async () => {
+    const dom = createDomTestHarness();
+    const submitted: Array<{ action: string; fields: string[] }> = [];
+    const submit = dom.window.HTMLFormElement.prototype.submit;
+    dom.window.HTMLFormElement.prototype.submit = function (this: HTMLFormElement) {
+      submitted.push({ action: this.action, fields: [...this.querySelectorAll("input")].map((input) => input.name) });
+    };
+    const { default: Editor } = await import("../src/frontend/Editor");
+    let dispose = () => {};
+    cleanup = () => {
+      dispose();
+      dom.window.HTMLFormElement.prototype.submit = submit;
+      dom.cleanup();
+    };
+    // Collabora takes `lang` only from the cool.html query; a posted field leaves it in the browser language.
+    // Spelling dictionaries are regional, so a bare language gains its likely region and a region stays.
+    for (const [cloud, collabora] of [
+      ["de", "de-DE"],
+      ["de-CH", "de-CH"],
+    ] as const) {
+      dispose();
+      submitted.length = 0;
+      dom.document.documentElement.lang = cloud;
+      dispose = render(() => createComponent(Editor, { launch, onBack: () => {} }), dom.root);
+      await flush();
+      expect(submitted).toHaveLength(1);
+      const action = new URL(submitted[0]!.action);
+      expect(action.searchParams.get("lang")).toBe(collabora);
+      expect(action.searchParams.get("WOPISrc")).toBe(new URL(launch.action).searchParams.get("WOPISrc"));
+      expect(submitted[0]!.fields).toEqual(["access_token", "access_token_ttl", "css_variables", "ui_defaults"]);
+      expect(dom.root.textContent).toContain("Editor wird geladen");
+    }
   });
   test("the editor explains external-write limitations once per browser for writable unmanaged files", async () => {
     const dom = createDomTestHarness();
