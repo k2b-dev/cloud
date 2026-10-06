@@ -170,4 +170,28 @@ describe("capabilityContractIssues", () => {
       { code: "data", path: "$.items[].ref.type", message: "value does not match the pattern" },
     ]);
   });
+
+  test("checks literal numbers against the contract range", () => {
+    const contract = {
+      kind: "query" as const,
+      input: z.object({ size: z.literal(0).describe("Size.") }).strict(),
+      data: z.object({ size: z.number().int().min(0).max(10), weight: z.number().positive() }).strict(),
+    };
+    const provider = (data: z.ZodType, input: z.ZodType = contract.input) => suggestProvider(input, data);
+    const issues = (size: z.ZodType, weight: z.ZodType = z.literal(1)) =>
+      capabilityContractIssues(contract, provider(z.object({ size, weight }).strict()));
+
+    expect(issues(z.literal(0))).toEqual([]);
+    expect(issues(z.union([z.literal(0), z.literal(10)]))).toEqual([]);
+    expect(issues(z.literal(-1))).toEqual([{ code: "data", path: "$.size", message: "value -1 is out of range" }]);
+    expect(issues(z.literal(11))).toEqual([{ code: "data", path: "$.size", message: "value 11 is out of range" }]);
+    expect(issues(z.literal(1.5))).toEqual([{ code: "data", path: "$.size", message: "value 1.5 has the wrong type" }]);
+    // An exclusive bound rejects the bound itself.
+    expect(issues(z.literal(1), z.literal(0))).toEqual([{ code: "data", path: "$.weight", message: "value 0 is out of range" }]);
+    // The contract's own literals are checked against the provider's input range.
+    const narrowInput = z.object({ size: z.number().int().min(1).describe("Size.") }).strict();
+    expect(
+      capabilityContractIssues(contract, provider(z.object({ size: z.literal(0), weight: z.literal(1) }).strict(), narrowInput)),
+    ).toEqual([{ code: "input", path: "$.size", message: "value 0 is out of range" }]);
+  });
 });

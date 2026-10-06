@@ -104,6 +104,20 @@ const patternMatches = (pattern: string, value: string): boolean => {
   }
 };
 
+type Bound = { value: number; exclusive: boolean };
+const lowerBound = (schema: Json): Bound | null =>
+  typeof schema.exclusiveMinimum === "number"
+    ? { value: schema.exclusiveMinimum, exclusive: true }
+    : typeof schema.minimum === "number"
+      ? { value: schema.minimum, exclusive: false }
+      : null;
+const upperBound = (schema: Json): Bound | null =>
+  typeof schema.exclusiveMaximum === "number"
+    ? { value: schema.exclusiveMaximum, exclusive: true }
+    : typeof schema.maximum === "number"
+      ? { value: schema.maximum, exclusive: false }
+      : null;
+
 /** Checks one literal value against a provider or contract schema. Unknown keywords never pass. */
 const valueIssue = (value: unknown, sup: Side, depth: number): string | null => {
   const resolved = deref(sup, depth);
@@ -128,22 +142,15 @@ const valueIssue = (value: unknown, sup: Side, depth: number): string | null => 
     if (typeof schema.maxLength === "number" && value.length > schema.maxLength) return "value is too long";
     if (typeof schema.pattern === "string" && !patternMatches(schema.pattern, value)) return "value does not match the pattern";
   }
+  if (typeof value === "number") {
+    const lower = lowerBound(schema);
+    const upper = upperBound(schema);
+    if (lower && (lower.exclusive ? value <= lower.value : value < lower.value)) return `value ${value} is out of range`;
+    if (upper && (upper.exclusive ? value >= upper.value : value > upper.value)) return `value ${value} is out of range`;
+  }
   return null;
 };
 
-type Bound = { value: number; exclusive: boolean };
-const lowerBound = (schema: Json): Bound | null =>
-  typeof schema.exclusiveMinimum === "number"
-    ? { value: schema.exclusiveMinimum, exclusive: true }
-    : typeof schema.minimum === "number"
-      ? { value: schema.minimum, exclusive: false }
-      : null;
-const upperBound = (schema: Json): Bound | null =>
-  typeof schema.exclusiveMaximum === "number"
-    ? { value: schema.exclusiveMaximum, exclusive: true }
-    : typeof schema.maximum === "number"
-      ? { value: schema.maximum, exclusive: false }
-      : null;
 const withinLower = (sub: Bound | null, sup: Bound | null): boolean =>
   !sup || (sub !== null && (sub.value > sup.value || (sub.value === sup.value && (sub.exclusive || !sup.exclusive))));
 const withinUpper = (sub: Bound | null, sup: Bound | null): boolean =>
