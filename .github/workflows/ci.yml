@@ -8,7 +8,8 @@ name: CI
 # No job installs from the runner's apt mirror: its outages hang apt-get
 # without output until the job times out. Chromium's system libraries come
 # with the image's Google Chrome, so Playwright installs only the browser;
-# Poppler comes from Homebrew bottles on ghcr.io.
+# WebKit runs in the Playwright image, which brings its libraries; Poppler
+# comes from Homebrew bottles on ghcr.io.
 
 # Pull requests run the gate on the branch; the merge queue runs it once more
 # on the exact merge result and merges only when it passed. main itself is
@@ -40,6 +41,7 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       images: ${{ steps.filter.outputs.images }}
       packed: ${{ steps.filter.outputs.packed }}
+      webkit: ${{ steps.filter.outputs.webkit }}
       bundles: ${{ steps.filter.outputs.bundles }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           apps=$(bun scripts/workspace.ts apps | xargs)
-          all() { for key in cloud grids ui docs images packed; do echo "$key=true" >> "$GITHUB_OUTPUT"; done; echo "bundles=$apps" >> "$GITHUB_OUTPUT"; }
+          all() { for key in cloud grids ui docs images packed webkit; do echo "$key=true" >> "$GITHUB_OUTPUT"; done; echo "bundles=$apps" >> "$GITHUB_OUTPUT"; }
           if [[ "$EVENT" == "workflow_dispatch" || -z "$BASE" || "$BASE" == "0000000000000000000000000000000000000000" ]]; then
             all; exit 0
           fi
@@ -62,6 +64,9 @@ jobs:
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
           shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh))'
+          # Workspaces with tests that `bun run test --browser` runs: they start a browser through
+          # packages/ui/test/browser.ts and need no integration targets.
+          browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
           # An application's production bundle depends on its package, the shared inputs, and the
           # non-application packages: @k2b/ui, and packages/cloud-cli, whose install script core bundles.
           bundles=()
@@ -75,6 +80,7 @@ jobs:
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
+            echo "webkit=$(match "$shared|^($browser)/")"
             echo "bundles=${bundles[*]}"
           } | tee -a "$GITHUB_OUTPUT"
 
@@ -157,6 +163,47 @@ jobs:
         env:
           # Unit tests of encrypted settings and grants derive keys from the application secret.
           APP_SECRET: ${{ env.TEST_SECRET }}
+
+  # The browser tests again in WebKit, the engine of Safari and of every
+  # browser on iOS. The Playwright image of the catalog's version serves it
+  # through `playwright run-server`; contributing/testing.md runs the same
+  # locally. Two shards finish well before the integration job.
+  webkit:
+    needs: [changes, setup]
+    if: needs.changes.outputs.webkit == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      TEST_BROWSER: webkit
+      TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Start WebKit in the Playwright image
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.workspaces.catalog.playwright' package.json)
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" "mcr.microsoft.com/playwright:v$version-noble"
+          docker run --detach --name playwright --network host --init --ipc=host --user pwuser --workdir /home/pwuser \
+            "mcr.microsoft.com/playwright:v$version-noble" npx -y "playwright@$version" run-server --port 3333 --host 127.0.0.1
+      - run: bun ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - name: Wait for the Playwright server
+        run: timeout 120s bash -c 'until docker logs playwright 2>&1 | grep -q "Listening on"; do sleep 1; done'
+      - run: bun run test --browser --shard ${{ matrix.shard }}/2
+      - if: always()
+        run: |
+          docker logs playwright 2>&1 | tail -50
+          docker rm --force playwright
 
   integration:
     needs: setup
@@ -525,7 +572,7 @@ jobs:
         run: docker rm --force app-core gateway postgres nats valkey || true
 
   gate:
-    needs: [changes, setup, check, unit, integration, grids, ui, docs, packed, bundles, images]
+    needs: [changes, setup, check, unit, webkit, integration, grids, ui, docs, packed, bundles, images]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -534,7 +581,7 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           # The path-filtered jobs, whose `if:` reads the `changes` outputs.
           # Only they may be skipped; every other job must succeed (`ci-gate` check).
-          MAY_SKIP: grids ui docs packed bundles images
+          MAY_SKIP: webkit grids ui docs packed bundles images
         run: |
           set -euo pipefail
           jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }
