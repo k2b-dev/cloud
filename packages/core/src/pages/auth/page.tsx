@@ -190,11 +190,11 @@ export default ssr(async (c) => {
 
                 {!isAdminLogin && !token && (
                   <div class="auth-secondary-actions flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
+                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} />}
                     <ButtonLink href={supportHref} variant="secondary" size="sm">
                       <i class="ti ti-lifebuoy" />
                       {t.contactSupport}
                     </ButtonLink>
-                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} />}
                     <ButtonLink href={adminHref} variant="secondary" size="sm">
                       <i class="ti ti-shield" />
                       {t.adminToken}
