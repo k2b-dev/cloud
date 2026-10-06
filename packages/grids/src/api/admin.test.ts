@@ -231,6 +231,7 @@ describe("Grids admin API", () => {
         resourceType: "base",
         resourceId: baseId,
         actorId: user.id,
+        locale: "en",
         principal: { type: "authenticated" },
         permission: "read",
       },
@@ -241,7 +242,21 @@ describe("Grids admin API", () => {
     const response = await app().request(`/bases/${basePublicId}/access/${tableAccessId}`, jsonRequest("PATCH", { permission: "read" }));
 
     expect(response.status).toBe(204);
-    expect(updateCalls).toEqual([[tableAccessId, "read", user.id]]);
+    expect(updateCalls).toEqual([[tableAccessId, "read", user.id, undefined, "en"]]);
+  });
+
+  test("passes the service's refusal to remove the last manager through with its code", async () => {
+    mock.restore();
+    spyOn(gridsService.access, "resolveBinding").mockResolvedValue({ resourceType: "base", baseId });
+    spyOn(gridsService.access, "updateLevel").mockResolvedValue({
+      ok: false,
+      error: { code: "LAST_MANAGER", message: "Last manager", status: 409 },
+    });
+
+    const response = await app().request(`/bases/${basePublicId}/access/${baseAccessId}`, jsonRequest("PATCH", { permission: "read" }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ code: "LAST_MANAGER", message: "Last manager" });
   });
 
   test("rejects invalid Grids App ACL levels in the admin repair route", async () => {
@@ -267,7 +282,7 @@ describe("Grids admin API", () => {
     const response = await app().request(`/bases/${basePublicId}/access/${tableAccessId}`, { method: "DELETE" });
 
     expect(response.status).toBe(204);
-    expect(revokeCalls).toEqual([[tableAccessId, user.id]]);
+    expect(revokeCalls).toEqual([[tableAccessId, user.id, undefined, "en"]]);
   });
 
   test("deletes bases only through the admin route", async () => {

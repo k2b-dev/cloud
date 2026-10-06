@@ -42,6 +42,7 @@ export const createAccessEntryRoutes = (deps: AccessEntryRouteDeps = defaultDeps
           204: { description: "OK" },
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
           404: jsonResponse(ErrorResponseSchema, "Not found"),
+          409: jsonResponse(ErrorResponseSchema, "The base would be left without a manager"),
         },
       }),
       v("json", UpdateLevelSchema),
@@ -56,7 +57,7 @@ export const createAccessEntryRoutes = (deps: AccessEntryRouteDeps = defaultDeps
         const validationError = validateAccessPermission(binding.resourceType, permission, getLocale(c));
         if (validationError) return c.json({ message: validationError }, 400);
         const result = await updateAccessLevel(accessId, permission, deps.actorId(c), deps.authorization(c), getLocale(c));
-        if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+        if (!result.ok) return respond(c, result);
         return c.body(null, 204);
       },
     )
@@ -69,6 +70,7 @@ export const createAccessEntryRoutes = (deps: AccessEntryRouteDeps = defaultDeps
           204: { description: "Revoked" },
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
           404: jsonResponse(ErrorResponseSchema, "Not found"),
+          409: jsonResponse(ErrorResponseSchema, "The base would be left without a manager"),
         },
       }),
       async (c) => {
@@ -78,7 +80,7 @@ export const createAccessEntryRoutes = (deps: AccessEntryRouteDeps = defaultDeps
         const gate = await deps.gate(c, { baseId: binding.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const result = await revokeAccess(accessId, deps.actorId(c), deps.authorization(c), getLocale(c));
-        if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+        if (!result.ok) return respond(c, result);
         return c.body(null, 204);
       },
     );

@@ -177,6 +177,7 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
           resourceType: "base",
           resourceId: baseId,
           actorId: currentActorUserId(c),
+          locale: getLocale(c),
           ...c.req.valid("json"),
         });
         if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -194,6 +195,7 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
         responses: {
           204: { description: "OK" },
           404: jsonResponse(ErrorResponseSchema, "Not found"),
+          409: jsonResponse(ErrorResponseSchema, "The base would be left without a manager"),
         },
       }),
       v("json", UpdateLevelSchema),
@@ -208,8 +210,8 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
         const { permission } = c.req.valid("json");
         const validationError = validateAccessLevelForResource(binding.resourceType, permission);
         if (validationError) return c.json({ message: validationError }, 400);
-        const result = await gridsService.access.updateLevel(accessId, permission, currentActorUserId(c));
-        if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+        const result = await gridsService.access.updateLevel(accessId, permission, currentActorUserId(c), undefined, getLocale(c));
+        if (!result.ok) return respond(c, result);
         return c.body(null, 204);
       },
     )
@@ -222,6 +224,7 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
         responses: {
           204: { description: "Revoked" },
           404: jsonResponse(ErrorResponseSchema, "Not found"),
+          409: jsonResponse(ErrorResponseSchema, "The base would be left without a manager"),
         },
       }),
       async (c) => {
@@ -232,8 +235,8 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
         if (!binding || binding.baseId !== baseId) {
           return c.json({ message: apiMessages(c).accessEntryNotFound }, 404);
         }
-        const result = await gridsService.access.revoke(accessId, currentActorUserId(c));
-        if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+        const result = await gridsService.access.revoke(accessId, currentActorUserId(c), undefined, getLocale(c));
+        if (!result.ok) return respond(c, result);
         return c.body(null, 204);
       },
     )

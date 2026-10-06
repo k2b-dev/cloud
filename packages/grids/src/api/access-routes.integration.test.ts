@@ -157,7 +157,23 @@ describe("access routes integration", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ permission: "write" }),
       });
-      expect(updated.status).toBe(204);
+      // The fixture's only manager keeps Manage; the route passes the stable code through.
+      expect(updated.status).toBe(409);
+      expect(await updated.json()).toMatchObject({ code: "LAST_MANAGER" });
+      const readable = await app.request(`/by-base/${fixture.baseShortId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ principal: { type: "authenticated" }, permission: "read" }),
+      });
+      expect(readable.status).toBe(201);
+      const granted = (await readable.json()) as { accessId: string };
+      fixture.accessIds.push(granted.accessId);
+      const lowered = await app.request(`/${granted.accessId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permission: "write" }),
+      });
+      expect(lowered.status).toBe(204);
 
       expect((await app.request(`/${uuid()}`, { method: "DELETE" })).status).toBe(404);
       expect((await app.request(`/${fixture.foreignAccessId}`, { method: "DELETE" })).status).toBe(403);

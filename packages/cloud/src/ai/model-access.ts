@@ -114,13 +114,14 @@ export const aiModelAccess = {
         service_account_id: string | null;
         authenticated_only: boolean | null;
         display_name: string | null;
+        avatar_hash: string | null;
         service_account_kind: ServiceAccountKind | null;
       }[]
     >`
       SELECT resource.profile_id, resource.revision, access.id, access.created_at,
         access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
-        COALESCE(users.display_name, groups.name, service_accounts.name) AS display_name,
-        service_accounts.kind AS service_account_kind
+        COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name) AS display_name,
+        users.avatar_hash, service_accounts.kind AS service_account_kind
       FROM ai.model_access_resources resource LEFT JOIN ai.model_access model ON model.profile_id = resource.profile_id
       LEFT JOIN auth.access access ON access.id = model.access_id
       LEFT JOIN auth.users users ON users.id = access.user_id
@@ -148,6 +149,7 @@ export const aiModelAccess = {
         permission: "read",
         createdAt: row.created_at.toISOString(),
         ...(row.display_name ? { displayName: row.display_name } : {}),
+        ...(row.user_id ? { avatarHash: row.avatar_hash } : {}),
         ...(row.service_account_kind ? { serviceAccountKind: row.service_account_kind } : {}),
       });
     }

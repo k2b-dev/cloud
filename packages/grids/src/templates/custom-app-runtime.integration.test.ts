@@ -74,7 +74,8 @@ describe("published template user journeys", () => {
           const baseGrants = await sql<
             Array<{ access_id: string }>
           >`SELECT access_id::text FROM grids.base_access WHERE base_id = ${baseId}::uuid`;
-          for (const grant of baseGrants) expect((await revokeAccess(grant.access_id)).ok).toBe(true);
+          // Strip the creator's grants directly: revoking the only manager through the service is refused.
+          for (const grant of baseGrants) await sql`DELETE FROM auth.access WHERE id = ${grant.access_id}::uuid`;
           expect(await sql`SELECT 1 FROM grids.base_access WHERE base_id = ${baseId}::uuid`).toHaveLength(0);
 
           let actor = userFor(actorId);

@@ -71,7 +71,13 @@ export const readableScopeFilter = (scope: AccessScope): { subject: AccessSubjec
   return { subject: subjectForScope(scope), boundBaseShortId: bound };
 };
 
-export const requireBaseAccess = async (baseId: string, scope: AccessScope, required: PermissionLevel): Promise<Result<void>> => {
+/** Pass the transaction that locked the base to authorize a change against the state it writes. */
+export const requireBaseAccess = async (
+  baseId: string,
+  scope: AccessScope,
+  required: PermissionLevel,
+  db: typeof sql = sql,
+): Promise<Result<void>> => {
   if (!canRequestPermission(scope, required)) return fail(err.forbidden("Access denied"));
   const bound = boundBaseShortId(scope);
   if (missingBinding(scope, bound)) return fail(err.forbidden("Access denied"));
@@ -85,7 +91,7 @@ export const requireBaseAccess = async (baseId: string, scope: AccessScope, requ
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const [row] = await sql<{ permission: PermissionLevel }[]>`
+  const [row] = await db<{ permission: PermissionLevel }[]>`
     SELECT MAX(a.permission)::text AS permission
     FROM pulse.base_access ba
     JOIN pulse.bases b ON b.id = ba.base_id

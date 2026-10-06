@@ -4,6 +4,7 @@ import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
 import { groupDisplayName } from "../shared/account-display";
+import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
 import PrincipalPicker from "./PrincipalPicker";
 import { serviceAccountKindDisplay } from "./service-account-kind";
@@ -43,8 +44,10 @@ type PermissionEditorProps = {
   /** Update an existing entry's permission level. */
   updateAccess: (accessId: string, permission: GrantableLevel) => Promise<void>;
 
-  /** Revoke an existing entry. The last entry IS deletable — for
-   *  hierarchical resources the parent ACL still applies. */
+  /** Revoke an existing entry. Any entry can be revoked except the last
+   *  manager: once exactly one entry manages the resource (`admin` for a
+   *  person, group, all signed-in users, or a standalone or agent service
+   *  account), its row can neither be lowered nor removed. */
   revokeAccess: (accessId: string) => Promise<void>;
 
   /** Allow granting `public` access from this editor. */
@@ -120,9 +123,10 @@ const resolveEntryDisplay = (
 };
 
 const getEntryDisplayName = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"], locale: string): string => {
-  if (entry.displayName) return entry.principal.type === "group" ? groupDisplayName(entry.displayName, locale) : entry.displayName;
+  // Audiences always use the localized label; a server-supplied name is not translated.
   if (entry.principal.type === "authenticated") return t.allUsers;
   if (entry.principal.type === "public") return t.public;
+  if (entry.displayName) return entry.principal.type === "group" ? groupDisplayName(entry.displayName, locale) : entry.displayName;
   if (entry.principal.type === "user") return entry.principal.userId;
   if (entry.principal.type === "service_account") return entry.principal.serviceAccountId;
   return entry.principal.groupId;
@@ -209,6 +213,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     onError: (err) => prompts.error(err.message),
   });
   const busy = () => grantMut.loading() || updateMut.loading() || revokeMut.loading();
+  // The service refuses to remove the last manager; the row says so up front.
+  const lastManagerId = () => {
+    const managers = entries().filter(isManagerEntry);
+    return managers.length === 1 ? managers[0]!.id : null;
+  };
 
   return (
     <div class="flex flex-col gap-3">
@@ -220,6 +229,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               entry={entry}
               canEdit={canEdit()}
               disabled={busy()}
+              lastManager={entry.id === lastManagerId()}
               allowed={allowed(entry.principal)}
               singlePicker={allowed(entry.principal).length === 1}
               onUpdatePermission={(permission) => {
@@ -264,6 +274,8 @@ function AccessEntryRow(props: {
   entry: AccessEntry;
   canEdit: boolean;
   disabled: boolean;
+  /** The only entry that manages the resource: it keeps its level and cannot be removed. */
+  lastManager: boolean;
   allowed: ResolvedLevel[];
   /** When true the per-row picker collapses to a non-interactive badge
    *  (single-level mode — there's nothing to switch to). */
@@ -275,6 +287,8 @@ function AccessEntryRow(props: {
   const t = () => accessMessages.resolve([locale()]).t;
   const displayName = () => getEntryDisplayName(props.entry, t(), locale());
   const display = () => resolveEntryDisplay(props.entry.permission, props.allowed, t());
+  const manageLabel = () => resolveEntryDisplay("admin", props.allowed, t()).label;
+  const removeLabel = () => (props.lastManager ? t().lastManager({ level: manageLabel() }) : t().remove({ name: displayName() }));
   const isInteractive = () =>
     props.canEdit && !props.disabled && !props.singlePicker && props.allowed.some((option) => option.level === props.entry.permission);
 
@@ -334,11 +348,16 @@ function AccessEntryRow(props: {
         <SelectChip
           aria-label={t().permissionFor({ name: displayName() })}
           value={() => props.entry.permission as GrantableLevel}
-          options={props.allowed.map((option) => ({
-            value: option.level,
-            label: option.label,
-            icon: `ti ${option.icon}`,
-          }))}
+          options={props.allowed.map((option) => {
+            const locked = props.lastManager && option.level !== "admin";
+            return {
+              value: option.level,
+              label: option.label,
+              icon: `ti ${option.icon}`,
+              disabled: locked,
+              description: locked ? t().lastManagerOption({ level: manageLabel() }) : undefined,
+            };
+          })}
           icon={`ti ${display().icon}`}
           position="bottom-left"
           onValueChange={(permission) => {
@@ -351,7 +370,7 @@ function AccessEntryRow(props: {
           remain keyboard reachable and stay visible on touch-sized layouts. */}
       <Show when={props.canEdit}>
         <Tooltip.Anchor
-          content={t().remove({ name: displayName() })}
+          content={removeLabel()}
           class="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
         >
           <IconButton
@@ -360,9 +379,11 @@ function AccessEntryRow(props: {
             variant="ghost"
             size="xs"
             onClick={props.onRevoke}
-            disabled={props.disabled}
+            disabled={props.disabled || props.lastManager}
             aria-label={t().remove({ name: displayName() })}
-            class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors hover:bg-red-500/[0.08] hover:text-red-600 focus:opacity-100 dark:hover:text-red-400"
+            // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
+            aria-description={props.lastManager ? removeLabel() : undefined}
+            class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
           >
             <i class="ti ti-x text-sm" />
           </IconButton>

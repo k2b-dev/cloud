@@ -30,10 +30,11 @@ const listBaseAccess = async (baseId: string, fallback: string): Promise<ScopedA
   return (await response.json()) as ScopedAccessEntry[];
 };
 
-const entryLabel = (entry: AccessEntry, signedInUsers: string, publicLabel: string): string => {
-  if (entry.displayName) return entry.displayName;
+/** Audiences keep the localized label; the server's audience name is English. */
+export const entryLabel = (entry: AccessEntry, signedInUsers: string, publicLabel: string): string => {
   if (entry.principal.type === "authenticated") return signedInUsers;
   if (entry.principal.type === "public") return publicLabel;
+  if (entry.displayName) return entry.displayName;
   if (entry.principal.type === "user") return entry.principal.userId;
   if (entry.principal.type === "group") return entry.principal.groupId;
   return entry.principal.serviceAccountId;
