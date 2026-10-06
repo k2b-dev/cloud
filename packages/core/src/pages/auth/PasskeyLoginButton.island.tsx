@@ -41,7 +41,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
       <Button
         type="button"
         size="sm"
-        variant="ghost"
+        variant="text"
         loading={mutation.loading()}
         loadingLabel={t().signingIn}
         onClick={() => mutation.mutate({})}

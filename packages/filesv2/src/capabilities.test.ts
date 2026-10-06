@@ -1,8 +1,13 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
   capabilityResultSchema,
+  FILE_PROVIDER_NAME_CONFLICT,
+  FileProviderListDataSchema,
+  FileProviderListInputSchema,
+  FileProviderSaveDataSchema,
+  fileProviderIssues,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
@@ -26,6 +31,13 @@ let serviceFailure: Error | null = null;
 let items: FileEntry[] = [];
 let calls = 0;
 const uploadKeys: string[] = [];
+const uploadInputs: unknown[] = [];
+const folderCalls: unknown[] = [];
+let folderWritable = true;
+let baseItems: Array<Record<string, unknown>> | null = null;
+let baseIssues: Array<{ area: string; code: string }> = [];
+let readName: string | null = null;
+let uploaded: FileEntry | null = null;
 const ids = new Map<string, { baseId: string; path: string }>();
 const persistedEntryRefId = async (baseId: string, path: string) => {
   const id = entryRefId(baseId, path) ?? `p:${"a".repeat(64)}`;
@@ -61,11 +73,36 @@ const lease = { url: "https://storage.example.test/direct/opaque-token", method:
 mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
-    bases: async () => ({ items: Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })) }),
+    bases: async () => ({
+      items: baseItems ?? Array.from({ length: baseCount }, (_, index) => ({ ...base, id: `base${index}` })),
+      issues: baseIssues,
+    }),
+    capabilityUpload: async (_actor: unknown, input: { baseId: string }, body: ReadableStream<Uint8Array>) => {
+      await body.cancel();
+      if (serviceFailure) throw serviceFailure;
+      return { base: { ...base, id: input.baseId }, entry: uploaded };
+    },
+    capabilityUploadStatus: async () => {
+      if (serviceFailure) throw serviceFailure;
+      return { state: "completed", entry: uploaded };
+    },
     upload: async (_actor: unknown, input: { idempotencyKey: string }) => {
       if (serviceFailure) throw serviceFailure;
       uploadKeys.push(input.idempotencyKey);
+      uploadInputs.push(input);
       return { id: input.idempotencyKey };
+    },
+    folder: async (_actor: unknown, input: { id: string }) => {
+      folderCalls.push(input);
+      if (serviceFailure) throw serviceFailure;
+      const ref = ids.get(input.id);
+      if (!ref) throw new MockFilesError("not_found", 404);
+      return { base: { ...base, id: ref.baseId }, writable: folderWritable, items, next };
+    },
+    folderLocation: async (_actor: unknown, id: string) => {
+      const ref = ids.get(id);
+      if (!ref) throw new MockFilesError("not_found", 404);
+      return ref;
     },
     // The service resolves every file ID form; unknown IDs are not found before storage is asked.
     downloadById: async (actor: unknown, id: string) => {
@@ -79,7 +116,7 @@ mock.module("./service", () => ({
       if (serviceFailure) throw serviceFailure;
       const ref = ids.get(id);
       if (!ref) throw new MockFilesError("not_found", 404);
-      return { base: { ...base, id: ref.baseId }, entry: entry(ref.path) };
+      return { base: { ...base, id: ref.baseId }, entry: { ...entry(ref.path), ...(readName ? { name: readName } : {}) } };
     },
     list: page,
     search: page,
@@ -124,6 +161,13 @@ afterEach(() => {
   ids.clear();
   downloads.length = 0;
   downloadFailure = null;
+  uploadInputs.length = 0;
+  folderCalls.length = 0;
+  folderWritable = true;
+  baseItems = null;
+  baseIssues = [];
+  readName = null;
+  uploaded = null;
 });
 const entry = (path: string): FileEntry => ({ name: "report", path, directory: false, size: 4, modified: "2026-09-19" });
 
@@ -382,3 +426,215 @@ for (const [failure, expected] of [
     else await expect(read).rejects.toEqual(expected);
   });
 }
+
+describe("Files as a file provider", () => {
+  const listProvider = (input: Record<string, unknown>, caller = context) =>
+    filesCapabilities.queries["provider.list"].run(FileProviderListInputSchema.parse(input), caller);
+  const modified = "2026-09-19T08:30:00.123456789Z";
+
+  test("the provider operations match the shared contract", async () => {
+    const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
+    // Files declares itself together with the chooser; the operations already have to fit.
+    const fileProvider = { list: "provider.list", read: "content.read", save: "provider.save" };
+    const manifest = compileCapabilityManifest("filesv2", { ...filesCapabilities, fileProvider });
+    expect(fileProviderIssues(manifest)).toEqual([]);
+  });
+
+  test("the root lists usable bases as virtual folders under their Files names, filtered and paged", async () => {
+    const home = { ...base, id: "cloud:users:me", name: "alice" };
+    const group = (id: string, name: string) => ({ ...base, id, name, kind: "groups" as const });
+    baseItems = [
+      group("cloud:groups:b", "zeta"),
+      home,
+      group("cloud:groups:a", "alpha"),
+      { ...group("cloud:groups:c", "gone"), status: "missing" },
+    ];
+    const first = await listProvider({ limit: 2 });
+    if (!first.ok) throw new Error("expected root page");
+    expect(first.data.data).toEqual({
+      writable: false,
+      items: [
+        { kind: "folder", id: entryRefId("cloud:users:me", "")!, name: "My files", icon: "ti ti-home" },
+        { kind: "folder", id: entryRefId("cloud:groups:a", "")!, name: "alpha", icon: "ti ti-users" },
+      ],
+      next: "2",
+    });
+    expect(capabilityResultSchema(FileProviderListDataSchema).safeParse(first.data).success).toBe(true);
+    const second = await listProvider({ limit: 2, cursor: "2" });
+    if (!second.ok) throw new Error("expected second page");
+    expect(second.data.data.items.map((item) => item.name)).toEqual(["zeta"]);
+    expect(second.data.data.next).toBeNull();
+
+    const german = await listProvider({ query: "dateien" }, { ...context, locale: "de" });
+    if (!german.ok) throw new Error("expected filtered root");
+    expect(german.data.data.items.map((item) => item.name)).toEqual(["Meine Dateien"]);
+    await expect(listProvider({ cursor: "base0" })).rejects.toMatchObject({ code: "cursor_invalid", status: 409 });
+  });
+
+  test("a folder page maps entries, keeps writability, and reads half the limit from storage", async () => {
+    ids.set("folder-id", { baseId: "base", path: "Docs" });
+    folderWritable = false;
+    next = "cursor-2";
+    items = [
+      { name: "Plans", path: "Docs/Plans", directory: true, size: 0, modified },
+      { name: "photo.PNG", path: "Docs/photo.PNG", directory: false, size: 12, modified },
+      { name: "notes", path: "Docs/notes", directory: false, size: 3, modified },
+    ];
+    const result = await listProvider({ parent: "folder-id", query: "o", cursor: "cursor-1", limit: 25 });
+    if (!result.ok) throw new Error("expected folder page");
+    expect(folderCalls).toEqual([{ id: "folder-id", q: "o", after: "cursor-1", pageSize: 13 }]);
+    expect(result.data.data).toEqual({
+      writable: false,
+      items: [
+        {
+          kind: "folder",
+          id: entryRefId("base", "Docs/Plans")!,
+          name: "Plans",
+          updatedAt: modified,
+          icon: expect.stringMatching(/^ti ti-/),
+        },
+        {
+          kind: "file",
+          id: entryRefId("base", "Docs/photo.PNG")!,
+          name: "photo.PNG",
+          size: 12,
+          mediaType: "image/png",
+          updatedAt: modified,
+          icon: expect.stringMatching(/^ti ti-/),
+        },
+        {
+          kind: "file",
+          id: entryRefId("base", "Docs/notes")!,
+          name: "notes",
+          size: 3,
+          mediaType: "application/octet-stream",
+          updatedAt: modified,
+          icon: expect.stringMatching(/^ti ti-/),
+        },
+      ],
+      next: "cursor-2",
+    });
+    expect(capabilityResultSchema(FileProviderListDataSchema).safeParse(result.data).success).toBe(true);
+    await expect(listProvider({ parent: "unknown" })).rejects.toMatchObject({ code: "not_found", status: 404 });
+  });
+
+  test("content.read reports the media type of the file name", async () => {
+    ids.set("pdf-id", { baseId: "base", path: "Q3 report.PDF" });
+    readName = "Q3 report.PDF";
+    const read = await filesCapabilities.queries["content.read"].run({ id: "pdf-id" }, context);
+    if (!read.ok) throw new Error("expected read");
+    expect(read.data.stream).toMatchObject({ name: "Q3 report.PDF", mediaType: "application/pdf" });
+    readName = "README";
+    const plain = await filesCapabilities.queries["content.read"].run({ id: "pdf-id" }, context);
+    if (!plain.ok) throw new Error("expected read");
+    expect(plain.data.stream?.mediaType).toBe("application/octet-stream");
+  });
+
+  test("save creates only, inside the chosen folder, with a key bound to user and call", async () => {
+    ids.set("root-id", { baseId: "base", path: "" });
+    ids.set("docs-id", { baseId: "base", path: "Docs" });
+    const save = filesCapabilities.actions["provider.save"];
+    const caller = { ...context, idempotencyKey: "save-key" };
+    const input = { parent: "docs-id", name: "Report (2).pdf", mediaType: "application/pdf", size: 4 };
+    const first = await save.run(input, caller);
+    await save.run(input, caller);
+    await save.run({ ...input, parent: "root-id" }, { ...caller, idempotencyKey: "other-key" });
+    if (!first.ok) throw new Error("expected save");
+    expect(first.data.data).toEqual({});
+    expect(first.data.stream).toMatchObject({ direction: "write", name: "Report (2).pdf", mediaType: "application/pdf", size: 4 });
+    expect(uploadInputs).toEqual([
+      expect.objectContaining({ baseId: "base", path: "Docs/Report (2).pdf", size: 4, onConflict: "error" }),
+      expect.objectContaining({ baseId: "base", path: "Docs/Report (2).pdf", size: 4, onConflict: "error" }),
+      expect.objectContaining({ baseId: "base", path: "Report (2).pdf", onConflict: "error" }),
+    ]);
+    expect(uploadKeys[0]).toBe(uploadKeys[1]);
+    expect(uploadKeys[2]).not.toBe(uploadKeys[0]);
+    // The same caller key never collides with an upload through content.create.
+    await filesCapabilities.actions["content.create"].run(
+      { baseId: "base", path: "Docs/Report (2).pdf", size: 4, mediaType: "application/pdf", onConflict: "error" },
+      caller,
+    );
+    expect(uploadKeys[3]).not.toBe(uploadKeys[0]);
+
+    expect(await save.run({ ...input, size: 50 * 1024 * 1024 + 1 }, caller)).toMatchObject({ ok: false, error: { status: 400 } });
+  });
+
+  test("the root fails while storage is unreachable instead of listing fewer bases", async () => {
+    const group = { ...base, id: "freeipa:groups:a", name: "alpha", area: "freeipa", kind: "groups" };
+    baseItems = [{ ...base, id: "cloud:users:me", name: "alice" }];
+    baseIssues = [{ area: "freeipa", code: "unavailable" }];
+    await expect(listProvider({})).rejects.toMatchObject({ code: "unavailable", status: 503 });
+    baseIssues = [];
+    baseItems.push({ ...group, status: "unknown", reason: "unavailable" });
+    await expect(listProvider({})).rejects.toMatchObject({ code: "unavailable", status: 503 });
+    // A configuration state is not an outage: the bases the person cannot use stay out of the root.
+    baseItems[1] = { ...group, status: "unknown", reason: "identity_incomplete" };
+    baseIssues = [{ area: "freeipa", code: "freeipa_disabled" }];
+    const root = await listProvider({});
+    if (!root.ok) throw new Error("expected root page");
+    expect(root.data.data.items.map((item) => item.name)).toEqual(["My files"]);
+  });
+
+  test("save reports a taken name with the contract code and every other failure with its own", async () => {
+    ids.set("docs-id", { baseId: "base", path: "Docs" });
+    const save = filesCapabilities.actions["provider.save"];
+    const stream = save.stream!;
+    const caller = { ...context, idempotencyKey: "save-key" };
+    const input = { parent: "docs-id", name: "report.pdf", mediaType: "application/pdf", size: 4 };
+    const offer = { id: JSON.stringify({ baseId: "base", id: crypto.randomUUID() }) } as Parameters<typeof stream.status>[0];
+    const write = () => stream.write(offer, new Blob(["data"]).stream(), caller);
+    const conflict = { code: FILE_PROVIDER_NAME_CONFLICT, status: 409 };
+
+    // A file or folder of that name before the transfer, a folder that appeared since, or a file published meanwhile.
+    for (const code of ["path_conflict", "not_file", "write_conflict"]) {
+      serviceFailure = new MockFilesError(code, 409);
+      await expect(save.run(input, caller)).rejects.toMatchObject(conflict);
+      await expect(write()).rejects.toMatchObject(conflict);
+      await expect(stream.status(offer, caller)).rejects.toMatchObject(conflict);
+    }
+    for (const [code, status] of [
+      ["insufficient_space", 409],
+      ["upload_changed", 409],
+      ["operation_conflict", 409],
+      ["not_file", 400],
+      ["unavailable", 503],
+    ] as const) {
+      serviceFailure = new MockFilesError(code, status);
+      await expect(save.run(input, caller)).rejects.toMatchObject({ code, status });
+      await expect(write()).rejects.toMatchObject({ code, status });
+    }
+    // Files' own upload keeps its codes.
+    serviceFailure = new MockFilesError("path_conflict", 409);
+    await expect(
+      filesCapabilities.actions["content.create"].stream.write(offer, new Blob(["data"]).stream(), caller),
+    ).rejects.toMatchObject({
+      code: "path_conflict",
+      status: 409,
+    });
+  });
+
+  test("a receipt for a very deep folder stays valid with the entry's deep link", async () => {
+    const folder = Array.from({ length: 12 }, (_, index) => `${index}${"報告書".repeat(7)}`).join("/");
+    uploaded = { name: "report.pdf", path: `${folder}/report.pdf`, directory: false, size: 4, modified };
+    const stream = filesCapabilities.actions["provider.save"].stream!;
+    const offer = { id: JSON.stringify({ baseId: "base", id: crypto.randomUUID() }) } as Parameters<typeof stream.status>[0];
+    const receipt = await stream.write(offer, new Blob(["data"]).stream(), context);
+    const id = receipt.data?.file?.id ?? "";
+    expect(receipt).toEqual({
+      data: { file: { id, name: "report.pdf", size: 4 } },
+      links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }],
+    });
+    expect(capabilityResultSchema(FileProviderSaveDataSchema).safeParse(receipt).success).toBe(true);
+    expect(capabilityResultSchema(filesCapabilities.actions["provider.save"].data).safeParse(receipt).success).toBe(true);
+
+    // A shallow folder keeps its folder link, and content.read follows the same bound.
+    uploaded = { ...uploaded, path: "Docs/report.pdf" };
+    expect((await stream.write(offer, new Blob(["data"]).stream(), context)).links).toEqual([
+      { rel: "open", href: "/app/filesv2?base=base&path=Docs" },
+    ]);
+    ids.set("deep-id", { baseId: "base", path: `${folder}/report.pdf` });
+    const read = await filesCapabilities.queries["content.read"].run({ id: "deep-id" }, context);
+    if (!read.ok) throw new Error("expected read");
+    expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }]);
+  });
+});

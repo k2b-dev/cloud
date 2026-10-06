@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { PWA_LIMITS as limits, type PwaDeviceView, type PwaErrorCode, type PwaPairingState, type PwaPlatform } from "../contracts/pwa";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
+import { logger } from "./logging";
 import { pairingSecret } from "./pairing-secret";
 import { type AuthenticatedSession, session } from "./session";
 import { requireRecentWebSession } from "./session/recent";
@@ -32,6 +33,19 @@ export type PwaWebActor = { userId: string; sid: string };
 /** Administration of another account's phones needs current admin authority. */
 export type PwaDeviceAdministrator = { userId: string; admin: boolean };
 export type PwaRevocationReason = "user" | "unpaired" | "admin" | "replaced" | "account_expired";
+/**
+ * The "new phone paired" notice, sent once per device after its pairing committed. It carries no
+ * pairing code, secret or key. `locale` is the completing request's locale, if one was stored.
+ */
+export type PwaDevicePairedNotice = {
+  deviceId: string;
+  userId: string;
+  name: string;
+  platform: PwaPlatform;
+  pairedAt: string;
+  locale: string | null;
+};
+export type PwaDeviceNotifier = (notice: PwaDevicePairedNotice) => Promise<unknown>;
 
 type PairingRow = {
   id: string;
@@ -59,6 +73,8 @@ type DeviceRow = {
   created_at: Date;
   last_used_at: Date;
   revoked_at: Date | null;
+  locale: string | null;
+  notified_at: Date | null;
 };
 type UserRow = {
   id: string;
@@ -70,6 +86,7 @@ type UserRow = {
   account_expires: Date | null;
 };
 
+const log = logger("pwa-devices");
 const iso = (value: Date | string) => new Date(value).toISOString();
 const passed = (value: Date | string) => new Date(value).getTime() <= Date.now();
 const DEVICE_KEY = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/;
@@ -123,6 +140,30 @@ const initiatorValid = async (tx: SQL, pairing: PairingRow): Promise<boolean> =>
 };
 
 const accountExpired = (user: UserRow) => Boolean(user.account_expires && passed(user.account_expires));
+
+/** `name` is the one the owner confirmed; the phone can rename itself once it is paired. */
+const pairedNotice = (device: DeviceRow, name: string): PwaDevicePairedNotice => ({
+  deviceId: device.id,
+  userId: device.user_id,
+  name,
+  platform: device.platform,
+  pairedAt: iso(device.created_at),
+  locale: device.locale,
+});
+
+/**
+ * Sends the "new phone paired" notice and marks it sent. The notification owner deduplicates by
+ * device id, so a crash between the two sends nothing twice. A failure leaves it to maintenance.
+ */
+const announce = async (notify: PwaDeviceNotifier, notice: PwaDevicePairedNotice) => {
+  try {
+    await notify(notice);
+    await sql`UPDATE auth.pwa_devices SET notified_at = now() WHERE id = ${notice.deviceId}::uuid AND notified_at IS NULL`;
+  } catch (error) {
+    log.warn("App device notice failed", { error: error instanceof Error ? error.name : "UnknownError" });
+  }
+};
+
 const legalAccepted = async (tx: SQL, userId: string) =>
   (await tx`SELECT 1 FROM auth.legal_acceptances WHERE user_id = ${userId}::uuid`).length > 0;
 
@@ -402,7 +443,9 @@ export const createPwaDeviceService = () => {
 
     /**
      * Finishes a confirmed pairing in the app. `webUserId` is the owner of a valid web session in
-     * the same cookie jar; `appSession` is a valid app session presented with the request.
+     * the same cookie jar; `appSession` is a valid app session presented with the request. The
+     * "new phone paired" notice goes out before the phone receives its credentials, so the phone
+     * can neither turn it off, rename itself in it, nor sign out before it is sent.
      */
     completePairing: async (
       c: Context,
@@ -411,6 +454,9 @@ export const createPwaDeviceService = () => {
         deviceKey: string | null | undefined;
         appSession: AuthenticatedSession | null;
         webUserId: string | null;
+        /** The request locale, kept for the "new phone paired" notice. */
+        locale?: string;
+        notify: PwaDeviceNotifier;
       },
     ): Promise<PwaCompletion> => {
       if (!input.completionSecret) return fail("EXPIRED", 410);
@@ -428,7 +474,7 @@ export const createPwaDeviceService = () => {
       if (snapshot.state !== "confirmed" && snapshot.state !== "completed") return fail("EXPIRED", 410);
       // The device key of this app, read before the locks; it is rechecked under them.
       const presented = await presentedDevice(input.deviceKey);
-      type Step = { kind: "already" } | { kind: "issued"; deviceKey: string };
+      type Step = { kind: "already" } | { kind: "issued"; deviceKey: string; notice: PwaDevicePairedNotice | null };
       const { value, token } = await session.issueInTransaction<Step>(c, async (tx, issue) => {
         const user = await lockUser(tx, snapshot.user_id);
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot.id}::uuid FOR UPDATE`;
@@ -447,7 +493,9 @@ export const createPwaDeviceService = () => {
           const deviceKey = await newKey(tx, device.id, "rotate");
           await issue(user.id, appSession(device.id));
           await record(tx, "device.recover", { type: "pwa_device", id: device.id }, user.id);
-          return { kind: "issued", deviceKey };
+          // The first answer may have been lost before its notice went out.
+          const notice = device.notified_at ? null : pairedNotice(device, p.device_name ?? device.name);
+          return { kind: "issued", deviceKey, notice };
         }
         if (p.state !== "confirmed" || !p.platform || !p.device_name) return fail("EXPIRED", 410);
         if (!(await initiatorValid(tx, p))) return fail("EXPIRED", 410);
@@ -466,16 +514,21 @@ export const createPwaDeviceService = () => {
         if ((active?.count ?? 0) >= limits.devicesPerAccount) return fail("LIMIT_REACHED", 429);
         const deviceId = crypto.randomUUID();
         const secret = pairingSecret.create();
-        await tx`INSERT INTO auth.pwa_devices (id, user_id, name, platform, auth_epoch, secret_hash, rotated_at)
-          VALUES (${deviceId}::uuid, ${user.id}::uuid, ${p.device_name}, ${p.platform}, ${user.auth_epoch}, ${pairingSecret.hash(secret)}, now())`;
+        // An unusually long locale tag is dropped; the notice then uses the operator's locale.
+        const locale = input.locale && input.locale.length <= 35 ? input.locale : null;
+        const [device] = await tx<DeviceRow[]>`
+          INSERT INTO auth.pwa_devices (id, user_id, name, platform, auth_epoch, secret_hash, rotated_at, locale)
+          VALUES (${deviceId}::uuid, ${user.id}::uuid, ${p.device_name}, ${p.platform}, ${user.auth_epoch}, ${pairingSecret.hash(secret)}, now(), ${locale})
+          RETURNING *`;
         await issue(user.id, appSession(deviceId));
         await tx`UPDATE auth.pwa_pairings SET state = 'completed', device_id = ${deviceId}::uuid WHERE id = ${p.id}::uuid`;
         await record(tx, "device.enroll", { type: "pwa_device", id: deviceId }, user.id, { platform: p.platform, pairingId: p.id });
-        return { kind: "issued", deviceKey: `${deviceId}.${secret}` };
+        return { kind: "issued", deviceKey: `${deviceId}.${secret}`, notice: pairedNotice(device!, p.device_name) };
       });
       const platform = snapshot.platform ?? "other";
       if (value.kind === "already") return { state: "paired", credentials: null, platform };
       if (!token) throw new Error("App session was not issued");
+      if (value.notice) await announce(input.notify, value.notice);
       return { state: "paired", credentials: { deviceKey: value.deviceKey, sessionToken: token }, platform };
     },
 
@@ -543,8 +596,11 @@ export const createPwaDeviceService = () => {
 
     // ---------- Maintenance ----------
 
-    /** Bounded to 100 rows per step; runs every minute from Core's scheduler. */
-    maintain: async (signal?: AbortSignal) => {
+    /**
+     * Bounded to 100 rows per step; runs every minute from Core's scheduler. `notify` retries the
+     * "new phone paired" notices that completion could not send.
+     */
+    maintain: async (notify: PwaDeviceNotifier, signal?: AbortSignal) => {
       await sql`DELETE FROM auth.pwa_pairings WHERE id IN (
         SELECT id FROM auth.pwa_pairings WHERE expires_at < now() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
       signal?.throwIfAborted();
@@ -567,6 +623,16 @@ export const createPwaDeviceService = () => {
         WHERE (d.revoked_at < now() - interval '30 days' OR d.rotated_at < now() - ${limits.idleDays + 30} * interval '1 day')
           AND NOT EXISTS (SELECT 1 FROM auth.session_families f WHERE f.pwa_device_id = d.id)
         ORDER BY d.id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+      signal?.throwIfAborted();
+      // Every pairing is announced, also of a phone removed since: it had access to the account.
+      const pending = await sql<DeviceRow[]>`
+        SELECT * FROM auth.pwa_devices WHERE notified_at IS NULL ORDER BY created_at, id LIMIT 100
+      `;
+      for (const row of pending) {
+        signal?.throwIfAborted();
+        // A failing notice stays pending for the next run and does not hold back the others.
+        await announce(notify, pairedNotice(row, row.name));
+      }
     },
   };
 };

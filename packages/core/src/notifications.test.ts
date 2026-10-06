@@ -13,6 +13,14 @@ describe("Core notification definitions", () => {
     expect(en.title).toBe("New sign-in device linked");
     expect(de.targetHref).toBe("/me/security");
   });
+  test("the new-phone notice is a personal preference: email first, browser where email is missing", () => {
+    const notice = app.notifications.appDevicePaired;
+    expect(notice.id).toBe("core.appDevicePaired");
+    expect(notice.recipient).toBe("user");
+    expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    // The payload names the phone only; pairing codes, secrets and keys have no field to travel in.
+    expect(Object.keys(notice.data.shape).sort()).toEqual(["name", "pairedAt", "platform"]);
+  });
   test("keeps account expiry reminders required and user-bound", () => {
     const reminder = app.notifications.accountExpiryReminder;
 

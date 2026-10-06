@@ -156,8 +156,8 @@ and design-review guidance. Trace real task paths and consumers before choosing
 result fields or changing contracts; keep detailed API rules in that guide.
 Cloud records one execution row for every capability call on every surface;
 an application writes `context.requestId` into its own audit rows so the two
-trails join without sharing payloads. For a shared cross-app contract such as
-the contact directory, read `/en/docs/platform/contact-directory`.
+trails join without sharing payloads. For a shared cross-app contract, read
+`/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
 
 For deployment questions, read **Deployment requirements** in the Docs
 collection (`/en/docs/operations/deployment-requirements`) before selecting

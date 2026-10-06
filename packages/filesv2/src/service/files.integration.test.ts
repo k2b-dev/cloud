@@ -238,8 +238,8 @@ suite("Files service and durable bindings", () => {
           versions: 0,
           versionBytes: 0,
           activeUploads: 0,
-          available: 1000,
-          capacity: 2000,
+          available: 1_000_000,
+          capacity: 2_000_000,
         });
       if (operation === "content")
         return nodes.has(`${root}:${req.searchParams.get("path")}`)
@@ -923,7 +923,7 @@ suite("Files service and durable bindings", () => {
       service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "trash/x.txt", size: 1, onConflict: "error" }),
     ).rejects.toMatchObject({ code: "reserved_path" });
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "huge.bin", size: 5000, onConflict: "error" }),
+      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "huge.bin", size: 5_000_000, onConflict: "error" }),
     ).rejects.toMatchObject({ code: "insufficient_space" });
     // Another user cannot commit, renew or abort a session they did not open.
     const bob = await user("bob", "ipa");
@@ -934,6 +934,65 @@ suite("Files service and durable bindings", () => {
     expect(privateSession(replace.id)?.state).toBe("aborted");
     await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
     await service.abortUpload(actor, { baseId, id: replace.id });
+  });
+  test("file chooser pages show readable children per base and path, and saves create once and conflict by name", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Reports");
+    directory("freeipa", "users/alice/Reports/q3.pdf", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Reports/notes.txt", 1001, 2001, "0640", false);
+    directory("freeipa", "users/alice/Reports/secret.txt", 999, 999, "0600", false);
+    directory("freeipa", "users/alice/Private", 999, 999, "0700");
+    directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
+    directory("freeipa", "users/alice/trash");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    const ref = (path: string) => entryRefId(baseId, path)!;
+
+    const top = await service.folder(actor, { id: ref(""), pageSize: 50 });
+    expect(top).toMatchObject({ writable: true, next: null });
+    // Unreadable folders and the trash never appear; readable ones do, even without write access.
+    expect(top.items.map((item) => item.name)).toEqual(["ReadOnly", "Reports"]);
+    expect((await service.folder(actor, { id: ref("ReadOnly"), pageSize: 50 })).writable).toBe(false);
+    await expect(service.folder(actor, { id: ref("Private"), pageSize: 50 })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.folder(actor, { id: ref("Reports/q3.pdf"), pageSize: 50 })).rejects.toMatchObject({ code: "not_directory" });
+
+    const names: string[] = [];
+    let after: string | undefined;
+    do {
+      const page = await service.folder(actor, { id: ref("Reports"), after, pageSize: 1 });
+      expect(page.items.length).toBeLessThanOrEqual(1);
+      names.push(...page.items.map((item) => item.name));
+      after = page.next ?? undefined;
+    } while (after);
+    expect(names).toEqual(["notes.txt", "q3.pdf"]);
+    expect((await service.folder(actor, { id: ref("Reports"), q: " Q3 ", pageSize: 50 })).items.map((item) => item.path)).toEqual([
+      "Reports/q3.pdf",
+    ]);
+
+    // Another account cannot browse or save into this base, whatever ID it holds.
+    const bob = await user("bob", "ipa");
+    directory("freeipa", "users/bob");
+    await expect(service.folder(bob, { id: ref("Reports"), pageSize: 50 })).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.folderLocation(bob, ref("Reports"))).rejects.toMatchObject({ code: "not_found" });
+
+    const folder = await service.folderLocation(actor, ref("Reports"));
+    expect(folder).toEqual({ baseId, path: "Reports" });
+    expect(await service.folderLocation(actor, ref(""))).toEqual({ baseId, path: "" });
+    await expect(service.folderLocation(actor, ref("Private"))).rejects.toMatchObject({ code: "forbidden" });
+    const save = (name: string, idempotencyKey: string) =>
+      service.upload(actor, { baseId: folder.baseId, path: `${folder.path}/${name}`, size: 12, onConflict: "error", idempotencyKey });
+    const key = crypto.randomUUID();
+    const opened = await save("q4.pdf", key);
+    expect((await save("q4.pdf", key)).id).toBe(opened.id);
+    privateSession(opened.id)!.received = 12;
+    await service.commitUpload(actor, { baseId, id: opened.id });
+    // Retrying the committed save answers with the same transfer instead of a second file or a conflict.
+    expect(await save("q4.pdf", key)).toMatchObject({ id: opened.id, state: "committed" });
+    await expect(save("q4.pdf", crypto.randomUUID())).rejects.toMatchObject({ code: "path_conflict", status: 409 });
+    await expect(save("q3.pdf", crypto.randomUUID())).rejects.toMatchObject({ code: "path_conflict", status: 409 });
+    await expect(
+      service.upload(actor, { baseId, path: "ReadOnly/new.pdf", size: 1, onConflict: "error", idempotencyKey: crypto.randomUUID() }),
+    ).rejects.toMatchObject({ code: "forbidden" });
   });
   test("folder readmes ignore listing filters and pages, select casing deterministically and obey Unix read access", async () => {
     const actor = await user("alice", "ipa");

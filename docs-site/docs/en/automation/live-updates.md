@@ -287,9 +287,18 @@ and receives `resync`. When `authorize`, `keys()`, or the credential check
 throws or does not answer within 10 seconds, the socket closes with `1011`
 and nothing is skipped: the tab reconnects and resumes from its cursor.
 
-A collection that comes back from its cursor receives `resync` when one of
-its keys had an access update meanwhile. A key it gained or lost through a
-group while it was away, without an update, shows at its next reload.
+A collection that comes back from its cursor receives `resync` when its
+replica has already read an access update published after that cursor, even
+one of a key it does not follow now: Cloud does not know which keys the tab
+had, and only loading the state again removes a key it lost. An access update
+the replica reads only after the tab subscribed, usually one made within the
+second before, shows at the next reload, as does a key gained or lost through
+a group without an update.
+
+A replay uses the same access decisions as live delivery, so the table above
+applies to it too. A subscription that comes back from its cursor while its
+replica reads an access update receives `resync` instead of a replay, so an
+answer from before that update releases nothing published after it.
 
 ### Close codes
 

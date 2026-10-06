@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
-import { type AppDeviceEnrollmentNotice, notifications, renderTemplate } from "@k2b/cloud/services";
+import { type AppDeviceEnrollmentNotice, notifications, type PwaDevicePairedNotice, renderTemplate } from "@k2b/cloud/services";
 import type { AccountLifecycleNotificationSender } from "@k2b/cloud/services/account-lifecycle/notification-sender";
 import type { AuthNotificationSender } from "@k2b/cloud/services/auth-flows";
 import * as settings from "@k2b/cloud/services/settings";
@@ -8,6 +8,8 @@ import { dates, i18n } from "@k2b/stdlib";
 import { z } from "zod";
 
 const requiredEmail: NotificationDeliveryPolicy = { required: ["email"] };
+type PwaPlatform = PwaDevicePairedNotice["platform"];
+const platformLabel = (platform: PwaPlatform, other: string) => (platform === "ios" ? "iOS" : platform === "android" ? "Android" : other);
 const presentation = (label: string, description: string) => ({ baseLocale: "en", translations: { de: { label, description } } });
 
 const notificationMessages = i18n.define({
@@ -29,6 +31,11 @@ const notificationMessages = i18n.define({
       expiryTitle: "Account expires soon",
       expiryBody: ({ date }: { date: string }) => `Your account expires on ${date}.`,
       expirySubject: ({ appName }: { appName: string }) => `${appName} account expires soon`,
+      phonePairedTitle: "New phone paired",
+      phonePairedBody: ({ name, platform, time, where }: { name: string; platform: PwaPlatform; time: string; where: string }) =>
+        `The phone “${name}” (${platformLabel(platform, "other platform")}) was paired with your account in the mobile app on ${time}. If this wasn't you, remove it ${where} and contact your administrator.`,
+      phonePairedInApp: "under App in your profile menu",
+      phonePairedAt: ({ url }: { url: string }) => `at ${url}`,
     },
     de: {
       deviceTitle: "Neues Anmeldegerät gekoppelt",
@@ -46,6 +53,11 @@ const notificationMessages = i18n.define({
       expiryTitle: "Dein Konto läuft bald ab",
       expiryBody: ({ date }) => `Dein Konto läuft am ${date} ab.`,
       expirySubject: ({ appName }) => `Dein Konto bei ${appName} läuft bald ab`,
+      phonePairedTitle: "Neues Telefon gekoppelt",
+      phonePairedBody: ({ name, platform, time, where }) =>
+        `Das Telefon „${name}“ (${platformLabel(platform, "andere Plattform")}) wurde am ${time} in der Mobile App mit deinem Konto gekoppelt. Falls du das nicht warst, entferne es ${where} und wende dich an die Verwaltung.`,
+      phonePairedInApp: "unter „App“ in deinem Profilmenü",
+      phonePairedAt: ({ url }) => `unter ${url}`,
     },
   },
 });
@@ -53,12 +65,26 @@ const notificationMessages = i18n.define({
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
 const configuredLocale = (locale?: string): Promise<string> => (locale ? Promise.resolve(locale) : settings.get<string>("app.locale"));
 
-const accountExtensionUrl = async (): Promise<string> => {
+const absoluteUrl = async (path: string): Promise<string> => {
   const configured = (await settings.get<string>("app.url")).trim();
-  if (!configured) return "/auth/extend";
-  const baseUrl = configured.startsWith("http://") || configured.startsWith("https://") ? configured : `https://${configured}`;
-  return `${baseUrl.replace(/\/+$/, "")}/auth/extend`;
+  if (!configured) return path;
+  let baseUrl = configured.startsWith("http://") || configured.startsWith("https://") ? configured : `https://${configured}`;
+  // A loop, because /\/+$/ backtracks polynomially on a value with many slashes inside.
+  while (baseUrl.endsWith("/")) baseUrl = baseUrl.slice(0, -1);
+  return `${baseUrl}${path}`;
 };
+const accountExtensionUrl = (): Promise<string> => absoluteUrl("/auth/extend");
+
+/** The pairing time in the installation's timezone, named so that nobody has to guess it. */
+const pairedTime = async (pairedAt: string, locale: string): Promise<string> => {
+  const timeZone = (await settings.get<string>("app.timezone"))?.trim() || "UTC";
+  return `${dates.formatDateTime(pairedAt, { locale, timeZone })} (${timeZone})`;
+};
+const phonePairedBody = async (
+  data: { name: string; platform: PwaPlatform; pairedAt: string },
+  locale: string,
+  where: string,
+): Promise<string> => text(locale).phonePairedBody({ ...data, time: await pairedTime(data.pairedAt, locale), where });
 
 export const NOTIFICATIONS = {
   deviceEnrollment: notification({
@@ -70,6 +96,31 @@ export const NOTIFICATIONS = {
     data: z.object({ name: z.string(), assisted: z.boolean() }),
     render: (data, { locale }) => ({ title: text(locale).deviceTitle, body: text(locale).deviceBody(data), targetHref: "/me/security" }),
     email: (data, { locale }) => ({ subject: text(locale).deviceTitle, content: text(locale).deviceBody(data) }),
+  }),
+  appDevicePaired: notification({
+    recipient: "user",
+    label: "Phones paired with the mobile app",
+    description: "Security notice when a phone is paired with your account in the mobile app.",
+    presentation: presentation(
+      "Gekoppelte Telefone der Mobile App",
+      "Sicherheitshinweis, wenn ein Telefon in der Mobile App mit deinem Konto gekoppelt wird.",
+    ),
+    // A personal preference: email first, a browser notification where email is not set up.
+    delivery: { recommended: ["email", "browser"] },
+    data: z.object({
+      name: z.string().min(1).max(80),
+      platform: z.enum(["ios", "android", "other"]),
+      pairedAt: z.string().datetime(),
+    }),
+    render: async (data, { locale }) => ({
+      title: text(locale).phonePairedTitle,
+      body: await phonePairedBody(data, locale, text(locale).phonePairedInApp),
+      targetHref: "/me/app",
+    }),
+    email: async (data, { locale }) => ({
+      subject: text(locale).phonePairedTitle,
+      content: await phonePairedBody(data, locale, text(locale).phonePairedAt({ url: await absoluteUrl("/me/app") })),
+    }),
   }),
   magicLink: notification({
     recipient: "email",
@@ -186,6 +237,7 @@ const fingerprint = (value: string): string => createHash("sha256").update(value
 export type CoreNotificationSender = AuthNotificationSender &
   AccountLifecycleNotificationSender & {
     sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
+    sendAppDevicePaired: (notice: PwaDevicePairedNotice) => Promise<unknown>;
   };
 
 export const createCoreNotificationSender = (definitions: CoreNotificationDescriptors): CoreNotificationSender => ({
@@ -196,6 +248,20 @@ export const createCoreNotificationSender = (definitions: CoreNotificationDescri
       idempotencyKey: `device-enrollment:${deviceId}`,
       locale: await configuredLocale(),
     }),
+  sendAppDevicePaired: async ({ deviceId, userId, name, platform, pairedAt, locale }) => {
+    const result = await notifications.send(definitions.appDevicePaired, {
+      recipient: { userId },
+      data: { name, platform, pairedAt },
+      idempotencyKey: `pwa-device-paired:${deviceId}`,
+      locale: await configuredLocale(locale ?? undefined),
+    });
+    // Nothing went out because preparing a delivery failed: the phone stays pending, and the next
+    // send with this key prepares again. A notice the person turned off, or one without a
+    // destination, is done.
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("The new-phone notice could not be prepared");
+    return result;
+  },
   sendMagicLink: async ({ email, token, magicLink, locale }) =>
     notifications.send(definitions.magicLink, {
       recipient: { email },

@@ -755,10 +755,13 @@ The provider still parses and authorizes inside `run`. Core's validation is an
 additional transport invariant, not a replacement for app-side checks.
 
 When several providers can serve the same consumer, the shared schemas belong
-in `@k2b/cloud/contracts` instead of either app, and the consumer selects the
-provider through its settings. [Contact directory](/en/docs/platform/contact-directory)
-is the current example; `capabilityContractIssues` checks a published operation
-against such a contract.
+in `@k2b/cloud/contracts` instead of either app. `capabilityContractIssues`
+checks a published operation against such a contract, including the stream
+direction a contract names. There are two ways to choose a provider: the
+consumer selects it through its settings, as Mail does for the
+[contact directory](/en/docs/platform/contact-directory), or providers declare
+themselves in their manifest, as with `fileProvider` for
+[file providers](/en/docs/platform/file-providers).
 
 ### Evolve published local IDs additively
 
@@ -807,6 +810,10 @@ come from a newer Cloud release than the code that reads it. Every reader in
 - Entries that depend on a left-out entry follow it. A Universal Search Query
   scoped to a left-out Type is left out, and a Type whose reader was left out
   has no reader.
+- A `fileProvider` with a field the reader does not know is left out as a
+  whole, and Core logs it with the left-out entries. Whether its operations
+  exist and match the contract is checked by `fileProviderIssues`; see
+  [File providers](/en/docs/platform/file-providers#understand-compatibility).
 - Core ignores presentation fields it does not know and skips translations of
   left-out entries; the remaining translations still apply.
 - A manifest with a different `protocolVersion` is not read at all. Core also

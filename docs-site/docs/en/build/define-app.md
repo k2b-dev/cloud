@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Define an application
@@ -127,8 +127,8 @@ only selects where authorized navigation is displayed.
 
 ## Add pages to the mobile app
 
-> **Preview:** the mobile app is not released yet. This option may still change
-> in a minor release.
+> **Preview:** the mobile app is not released yet. This option may still
+> change until it is, without counting as a breaking change.
 
 `pwa` adds the application to the installation's
 [mobile app](/en/docs/frontend/mobile-app-pages):

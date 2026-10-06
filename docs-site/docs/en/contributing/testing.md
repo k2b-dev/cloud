@@ -162,9 +162,10 @@ branch:
   `test.skipIf(browserName === "webkit")` and a comment that names the reason.
 - WebKit matches `forced-colors: active` under emulation but has no forced
   colours mode that repaints author colours.
-- WebKit does not support `reading-flow` yet, so focus keeps the source order
-  where Chromium follows the visual rows. Such a test expects WebKit's order
-  and names the gap, so it fails once WebKit follows the rows.
+- WebKit does not support `reading-flow` yet, so focus and VoiceOver keep the
+  source order where a grid or flex layout shows elements in another order.
+  Put elements in the source in the order they are shown, in every layout,
+  so that a focus order test expects the same order in both engines.
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page

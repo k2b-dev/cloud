@@ -29,6 +29,22 @@ Move a block out of a list, or end it with a bare `:::` line, to keep it
 rendering. See [Markdown content](/en/ui/content/markdown#info-blocks) for the
 exact rules.
 
+## Applications can offer files to other applications
+
+Capability manifests can now declare an optional `fileProvider`; see
+[File providers](/en/docs/platform/file-providers). A manifest without it keeps
+its earlier shape and hash, so nothing changes for applications that do not
+offer files. Files implements the provider operations in this release but does
+not declare itself as a provider yet.
+
+Before one of your own applications declares `fileProvider`, update Core,
+your other applications on `@k2b/cloud`, and the `capabilities` plugin of each
+`cld` profile to this release, as described in
+[Capability readers ignore fields from newer releases](#capability-readers-ignore-fields-from-newer-releases).
+Readers of earlier releases cannot read a manifest that carries `fileProvider`:
+Core drops the application, and the other readers fail on the whole catalog
+page. See [Roll out a provider](/en/docs/platform/file-providers#roll-out-a-provider).
+
 ## Capability readers ignore fields from newer releases
 
 Capability manifests and catalog pages are now read tolerantly: a reader
@@ -38,9 +54,10 @@ whole catalog page, or skip the application, as soon as its manifest carries
 one new field. See
 [Read manifests from other Cloud releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases).
 
-- Update `@k2b/cloud` once in your own applications that read the catalog with
-  `listCapabilityCatalog()`, `getCapabilityCatalogApp()`, or
-  `CapabilityCatalogSchema`. Later manifest fields then no longer break them.
+- Update `@k2b/cloud` once in your own applications. Their global search
+  reads the catalog for Commands, as do `listCapabilityCatalog()`,
+  `getCapabilityCatalogApp()`, and `CapabilityCatalogSchema`. Later manifest
+  fields then no longer break them.
 - Update the `capabilities` CLI plugin of each `cld` profile with
   `cld plugins update capabilities`.
 - `app.start()` now rejects a capability declaration field its release does

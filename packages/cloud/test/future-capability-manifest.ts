@@ -72,7 +72,8 @@ export const futureLibrary = () => {
   const { manifestHash: _current, ...current } = structuredClone(currentLibrary.manifest);
   const base = {
     ...current,
-    fileProvider: { list: "book.search", read: "book.read" },
+    // A file provider with a function this release does not know.
+    fileProvider: { list: "book.search", read: "book.read", trash: "book.archive" },
     events: [{ localId: "book.changed", title: "Book changed", dataSchema: { type: "object" } }],
     // A type with a field this release does not know; the Universal Search Query scoped to it depends on it.
     types: current.types.map((type) => (type.localId === "shelf" ? { ...type, nesting: "rooms" } : type)),
