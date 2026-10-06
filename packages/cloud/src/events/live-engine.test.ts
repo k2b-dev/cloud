@@ -61,6 +61,8 @@ class FakeTopic implements LiveTopic {
           position = event.sequence;
           yield event;
         }
+        // An event published while the consumer held the last one woke nobody: read it before waiting.
+        if (topic.last() > position) continue;
         await new Promise<void>((resolve) => {
           topic.wake.add(resolve);
           options.signal?.addEventListener("abort", () => resolve(), { once: true });
@@ -397,6 +399,30 @@ describe("live engine", () => {
     quiet.send({ t: "sub", id: "all", channel: "list", scope: {}, after: "s6t.app.2" });
     await until(() => quiet.framesOf("all").length === 2);
     expect(quiet.framesOf("all").map((frame) => frame.t)).toEqual(["event", "ready"]);
+  });
+
+  test("a collection that resumes after losing a key with an access update resyncs and never sees that key again", async () => {
+    const first = connect();
+    first.send({ t: "sub", id: "all", channel: "list", scope: {} });
+    await until(() => first.framesOf("all").length === 1);
+    topic.publish(event("a", 1));
+    await until(() => first.framesOf("all").length === 2);
+    const cursor = first.framesOf("all")[1]?.cursor as string;
+    first.handle.closed();
+    // While the tab is away, ada loses "b", the application announces it, and "b" changes again.
+    readers.set("b", new Set());
+    topic.publish({ v: 1, k: "b", a: true });
+    topic.publish(event("b", 3));
+    topic.publish(event("a", 4));
+    await Bun.sleep(30);
+    const back = connect();
+    back.send({ t: "sub", id: "all", channel: "list", scope: {}, after: cursor });
+    await until(() => ["ready", "resync"].includes(back.framesOf("all").at(-1)?.t ?? ""));
+    expect(back.framesOf("all")).toEqual([{ t: "resync", id: "all", cursor: "s6t.app.4" }]);
+    topic.publish(event("b", 5));
+    topic.publish(event("a", 6));
+    await until(() => back.framesOf("all").length === 2);
+    expect(back.framesOf("all")[1]).toEqual({ t: "event", id: "all", cursor: "s6t.app.6", data: { n: 6 } });
   });
 
   test("an answer requested before an access update is used once but not cached", async () => {

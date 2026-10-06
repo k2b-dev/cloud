@@ -287,9 +287,12 @@ and receives `resync`. When `authorize`, `keys()`, or the credential check
 throws or does not answer within 10 seconds, the socket closes with `1011`
 and nothing is skipped: the tab reconnects and resumes from its cursor.
 
-A collection that comes back from its cursor receives `resync` when one of
-its keys had an access update meanwhile. A key it gained or lost through a
-group while it was away, without an update, shows at its next reload.
+A collection that comes back from its cursor receives `resync` when any
+access update was published after that cursor, even one of a key it does not
+follow now: Cloud does not know which keys the tab had, and only loading the
+state again removes a key it lost. Updates of a key the viewer can no longer
+read are never replayed. A key it gained or lost through a group while it was
+away, without an update, shows at its next reload.
 
 ### Close codes
 

@@ -692,12 +692,10 @@ export const createLiveEngine = (input: { appId: string; topic: () => LiveTopic;
     // the replay covers everything up to it, live delivery everything after it.
     const position = Math.max(head, ring.at(-1)?.seq ?? 0);
     const oldest = ring[0]?.seq ?? position + 1;
-    // A collection cannot tell which keys it had before: an access update of a key it follows now,
-    // missed while it was away, may have added that key.
+    // A collection cannot tell which keys it had at its cursor: any access update it missed may have
+    // added one of its keys now or removed one it had then, and only `resync` drops a removed one.
     const missedAccess =
-      channel.collection === true &&
-      after !== null &&
-      ring.some((entry) => entry.access && entry.seq > after && entry.seq <= position && readable.includes(entry.key as string));
+      channel.collection === true && after !== null && ring.some((entry) => entry.access && entry.seq > after && entry.seq <= position);
     const resync = request.after !== undefined && (after === null || after < oldest - 1 || recreated || missedAccess);
     const sub: Subscription = {
       id: request.id,
