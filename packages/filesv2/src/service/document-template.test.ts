@@ -97,7 +97,12 @@ describe("document templates", () => {
     const region = (name: string) => styles.match(new RegExp(`<style:${name}(?:\\s[^>]*)?>(.*?)</style:${name}>`, "s"))?.[1] ?? "";
     expect(region("header")).toMatch(/<text:sheet-name\b/);
     expect(region("footer")).toMatch(/<text:page-number\b/);
-    for (const name of ["header", "footer"]) expect(region(name).replace(/<[^>]*>/g, ""), name).not.toMatch(/\p{L}/u);
+    // Split rather than replace: code scanning reads a tag-stripping replace as incomplete HTML sanitization.
+    const text = (name: string) =>
+      region(name)
+        .split(/<[^>]*>/)
+        .join("");
+    for (const name of ["header", "footer"]) expect(text(name), name).not.toMatch(/\p{L}/u);
   });
 
   test("a missing template is reported as a packaging defect", async () => {
