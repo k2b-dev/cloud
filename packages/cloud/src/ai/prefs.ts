@@ -1,9 +1,16 @@
 import { sql } from "bun";
 import type { RequestActor } from "../server";
 
+/**
+ * Learning from private chats applies to everyone who has not chosen.
+ * A stored `NULL` means "never chose"; only an explicit save stores a boolean.
+ */
+export const AI_MEMORY_LEARNING_DEFAULT_ENABLED = true;
+
 export type AiUserPrefs = {
   userId: string;
   memoryEnabled: boolean;
+  /** Effective setting: the user's explicit choice, otherwise the default. */
   memoryLearningEnabled: boolean;
   /** Model profile id of the user's most recent chat turn — preselected for new chats. */
   lastModelId: string;
@@ -13,7 +20,7 @@ export type AiUserPrefs = {
 type PrefsRow = {
   user_id: string;
   memory_enabled: boolean;
-  memory_learning_enabled: boolean;
+  memory_learning_enabled: boolean | null;
   last_model_id: string | null;
   updated_at: string | Date;
 };
@@ -21,7 +28,7 @@ type PrefsRow = {
 const toPrefs = (row: PrefsRow): AiUserPrefs => ({
   userId: row.user_id,
   memoryEnabled: row.memory_enabled,
-  memoryLearningEnabled: row.memory_learning_enabled,
+  memoryLearningEnabled: row.memory_learning_enabled ?? AI_MEMORY_LEARNING_DEFAULT_ENABLED,
   lastModelId: row.last_model_id ?? "",
   updatedAt: new Date(row.updated_at).toISOString(),
 });
@@ -29,7 +36,7 @@ const toPrefs = (row: PrefsRow): AiUserPrefs => ({
 const emptyPrefs = (userId: string): AiUserPrefs => ({
   userId,
   memoryEnabled: true,
-  memoryLearningEnabled: false,
+  memoryLearningEnabled: AI_MEMORY_LEARNING_DEFAULT_ENABLED,
   lastModelId: "",
   updatedAt: new Date(0).toISOString(),
 });
@@ -56,13 +63,20 @@ export const aiUserPrefs = {
   ): Promise<AiUserPrefs> {
     const memoryEnabled = patch.memoryEnabled ?? null;
     const memoryLearningEnabled = patch.memoryLearningEnabled ?? null;
+    // Records when the person last saved the learning switch, so a stored "off"
+    // from an earlier release stays distinguishable from a choice made since.
+    const learningChosen = memoryLearningEnabled !== null;
     const lastModelId = patch.lastModelId?.trim().slice(0, 200) ?? null;
     const rows = (await sql`
-      INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, last_model_id, updated_at)
-      VALUES (${userId}, ${memoryEnabled ?? true}, ${memoryLearningEnabled ?? false}, ${lastModelId ?? ""}, now())
+      INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, memory_learning_chosen_at, last_model_id, updated_at)
+      VALUES (
+        ${userId}, ${memoryEnabled ?? true}, ${memoryLearningEnabled},
+        CASE WHEN ${learningChosen}::boolean THEN now() END, ${lastModelId ?? ""}, now()
+      )
       ON CONFLICT (user_id) DO UPDATE SET
         memory_enabled = COALESCE(${memoryEnabled}, ai.user_prefs.memory_enabled),
         memory_learning_enabled = COALESCE(${memoryLearningEnabled}, ai.user_prefs.memory_learning_enabled),
+        memory_learning_chosen_at = CASE WHEN ${learningChosen}::boolean THEN now() ELSE ai.user_prefs.memory_learning_chosen_at END,
         last_model_id = COALESCE(${lastModelId}, ai.user_prefs.last_model_id),
         updated_at = now()
       RETURNING *

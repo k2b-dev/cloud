@@ -16,6 +16,7 @@ import {
   listAiTurnWorkflowEvidence,
   markAiWorkflowPatternReviewed,
 } from "./memory-workflow-evidence";
+import { AI_MEMORY_LEARNING_DEFAULT_ENABLED, aiUserPrefs } from "./prefs";
 import { aiConversations } from "./store";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
 import { resolveAiBackgroundModel, runAiStructured } from "./structured";
@@ -148,11 +149,11 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
         ) AS user_rank
       FROM ai.turns turn
       JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
-      JOIN ai.user_prefs prefs ON prefs.user_id = conversation.created_by_user_id
+      LEFT JOIN ai.user_prefs prefs ON prefs.user_id = conversation.created_by_user_id
       LEFT JOIN monthly_usage usage ON usage.user_id = conversation.created_by_user_id
       WHERE conversation.created_by_user_id IS NOT NULL
         AND conversation.archived_at IS NULL
-        AND prefs.memory_learning_enabled = TRUE
+        AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
         AND turn.status = 'completed'
         AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
         AND turn.memory_learned_at IS NULL
@@ -196,14 +197,7 @@ const markFailed = async (candidate: Candidate): Promise<void> => {
   `;
 };
 
-const learningEnabled = async (userId: string): Promise<boolean> => {
-  const [row] = await sql<{ enabled: boolean }[]>`
-    SELECT COALESCE(memory_learning_enabled, FALSE) AS enabled
-    FROM ai.user_prefs
-    WHERE user_id = ${userId}::uuid
-  `;
-  return Boolean(row?.enabled);
-};
+const learningEnabled = async (userId: string): Promise<boolean> => (await aiUserPrefs.get(userId)).memoryLearningEnabled;
 
 const monthlyAccountedTokens = async (userId: string): Promise<number> => {
   const [row] = await sql<{ tokens: number }[]>`
@@ -447,7 +441,6 @@ export const learnAiMemoriesFromPrivateChats = async (
     let runId: string | null = null;
     let changes: AiMemoryLearningChange[] = [];
     try {
-      if (!(await learningEnabled(candidate.userId))) continue;
       const evidence = await loadTurnEvidence(candidate);
       if (!evidence.userText) {
         await markLearned(candidate);
@@ -465,6 +458,8 @@ export const learnAiMemoriesFromPrivateChats = async (
       });
       const reservedTokens = estimatedTokens(systemPrompt, taskInput);
       if ((await readMonthlyUsage(candidate.userId)) + reservedTokens > monthlyTokenBudget) continue;
+      // Read the choice again right before the turn can reach the model.
+      if (!(await learningEnabled(candidate.userId))) continue;
       runId = await aiMemoryLearningRuns.start({
         userId: candidate.userId,
         conversationId: candidate.conversationId,
@@ -550,7 +545,6 @@ export const learnAiMemoriesFromPrivateChats = async (
     let runId: string | null = null;
     const startedAt = Date.now();
     try {
-      if (!(await learningEnabled(pattern.userId))) continue;
       const context = await workflowPatternInput(pattern);
       if (!context.source) {
         await markAiWorkflowPatternReviewed(pattern);
@@ -564,6 +558,7 @@ export const learnAiMemoriesFromPrivateChats = async (
       });
       const reservedTokens = estimatedTokens(workflowPrompt, context.input);
       if ((await readMonthlyUsage(pattern.userId)) + reservedTokens > monthlyTokenBudget) continue;
+      if (!(await learningEnabled(pattern.userId))) continue;
       runId = await aiMemoryLearningRuns.start({
         userId: pattern.userId,
         conversationId: context.source.candidate.conversationId,

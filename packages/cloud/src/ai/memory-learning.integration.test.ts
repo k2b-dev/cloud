@@ -4,9 +4,11 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiMemories } from "./memories";
 import { learnAiMemoriesFromPrivateChats, listAiMemoryLearningCandidates } from "./memory-learning";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
-import { listAiPendingWorkflowPatterns, recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
+import { listAiPendingWorkflowPatterns, listAiTurnWorkflowEvidence, recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { migrateCloudAi } from "./migrate";
+import { aiUserPrefs } from "./prefs";
 import { createAiShortId } from "./short-id";
+import { aiConversations } from "./store";
 import type { AiResolvedModel } from "./types";
 
 databaseSuite()("AI memory learning (integration)", () => {
@@ -282,6 +284,141 @@ databaseSuite()("AI memory learning (integration)", () => {
       expect((await aiMemoryLearningRuns.list({ userId: user!.id })).total).toBe(0);
     } finally {
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+  test("considers people who never chose and skips an explicit off", async () => {
+    const createUserWithTurn = async (label: string) => {
+      const suffix = crypto.randomUUID();
+      const [user] = await sql<{ id: string }[]>`
+        INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+        VALUES (${`ai-default-${label}-${suffix}`}, 'local', 'user', 'AI Default Test', ${`ai-default-${label}-${suffix}@example.test`}, 'AI', 'Default')
+        RETURNING id
+      `;
+      const [conversation] = await sql<{ id: string }[]>`
+        INSERT INTO ai.conversations (short_id, created_by_user_id, title)
+        VALUES (${createAiShortId()}, ${user!.id}::uuid, 'Default learning test') RETURNING id
+      `;
+      // Three successful uses of one mailbox make a workflow pattern; the first turn is the learning candidate.
+      const turns: { id: string; completed_as_of: string }[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const [turn] = await sql<{ id: string; completed_as_of: string }[]>`
+          INSERT INTO ai.turns (short_id, conversation_id, status, run_config, completed_at)
+          VALUES (${createAiShortId()}, ${conversation!.id}::uuid, 'completed', ${JSON.stringify({ kind: "chat", input: [] })}::jsonb, now())
+          RETURNING id, completed_at::text AS completed_as_of
+        `;
+        turns.push(turn!);
+        await recordAiMemoryWorkflowEvidence({
+          userId: user!.id,
+          conversationId: conversation!.id,
+          turnId: turn!.id,
+          capabilityId: "mail.conversation.search",
+          resources: [{ ref: { type: "mail.mailbox", id: "BoxDefault" } }],
+        });
+      }
+      const turn = turns[0]!;
+      await sql`
+        INSERT INTO ai.messages (short_id, conversation_id, seq, role, message, loop_id)
+        VALUES (${createAiShortId()}, ${conversation!.id}::uuid, 1, 'user',
+          ${JSON.stringify({ role: "user", content: [{ type: "text", text: "Always answer briefly." }] })}::jsonb, ${turn.id}::uuid)
+      `;
+      return { userId: user!.id, conversationId: conversation!.id, turnId: turn.id, completedAsOf: turn.completed_as_of };
+    };
+    const noRow = await createUserWithTurn("none");
+    const neverChose = await createUserWithTurn("null");
+    const chose = await createUserWithTurn("off");
+    await aiUserPrefs.update(neverChose.userId, { lastModelId: "test-model" });
+    await aiUserPrefs.update(chose.userId, { memoryLearningEnabled: false });
+
+    try {
+      const candidates = (await listAiMemoryLearningCandidates(100, 1_000_000)).map((candidate) => candidate.turnId);
+      expect(candidates).toContain(noRow.turnId);
+      expect(candidates).toContain(neverChose.turnId);
+      expect(candidates).not.toContain(chose.turnId);
+
+      const patternUsers = (await listAiPendingWorkflowPatterns(20)).map((pattern) => pattern.userId);
+      expect(patternUsers).toContain(noRow.userId);
+      expect(patternUsers).toContain(neverChose.userId);
+      expect(patternUsers).not.toContain(chose.userId);
+
+      // The run reads the choice again right before the model call, so turning
+      // learning off takes effect even for a candidate that was already listed.
+      let modelCalls = 0;
+      const summary = await learnAiMemoriesFromPrivateChats({
+        deps: {
+          resolveModel: async () => ({ profile: { id: "test-model" } }) as AiResolvedModel,
+          listCandidates: async () => [{ ...chose, failCount: 0 }],
+          listWorkflowPatterns: async () => [],
+          monthlyTokenBudget: 1_000_000,
+          readMonthlyAccountedTokens: async () => 0,
+          structured: async () => {
+            modelCalls += 1;
+            throw new Error("must not run");
+          },
+        },
+      });
+      expect(summary).toEqual({ scanned: 1, learned: 0, updated: 0, retired: 0, skipped: 0, failed: 0 });
+      expect(modelCalls).toBe(0);
+      expect((await aiMemoryLearningRuns.list({ userId: chose.userId })).total).toBe(0);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id IN (${noRow.userId}::uuid, ${neverChose.userId}::uuid, ${chose.userId}::uuid)`;
+    }
+  });
+
+  test("learns only from turns that finish while learning is on", async () => {
+    const createUser = async (label: string) => {
+      const suffix = crypto.randomUUID();
+      const [user] = await sql<{ id: string }[]>`
+        INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+        VALUES (${`ai-since-${label}-${suffix}`}, 'local', 'user', 'AI Since Test', ${`ai-since-${label}-${suffix}@example.test`}, 'AI', 'Since')
+        RETURNING id
+      `;
+      const [conversation] = await sql<{ id: string }[]>`
+        INSERT INTO ai.conversations (short_id, created_by_user_id, title)
+        VALUES (${createAiShortId()}, ${user!.id}::uuid, 'Learning since test') RETURNING id
+      `;
+      return { userId: user!.id, conversationId: conversation!.id };
+    };
+    const finishTurn = async (owner: { userId: string; conversationId: string }) => {
+      const [turn] = await sql<{ id: string }[]>`
+        INSERT INTO ai.turns (short_id, conversation_id, status, run_config)
+        VALUES (${createAiShortId()}, ${owner.conversationId}::uuid, 'running', ${JSON.stringify({ kind: "chat", input: [] })}::jsonb)
+        RETURNING id
+      `;
+      await recordAiMemoryWorkflowEvidence({
+        userId: owner.userId,
+        conversationId: owner.conversationId,
+        turnId: turn!.id,
+        capabilityId: "mail.conversation.search",
+        resources: [{ ref: { type: "mail.mailbox", id: "BoxSince" } }],
+      });
+      expect(await aiConversations.completeTurn({ conversationId: owner.conversationId, turnId: turn!.id, status: "completed" })).toBe(
+        "completed",
+      );
+      return turn!.id;
+    };
+    const learnedAt = async (turnId: string) =>
+      (await sql<{ learned: boolean }[]>`SELECT memory_learned_at IS NOT NULL AS learned FROM ai.turns WHERE id = ${turnId}::uuid`)[0]!
+        .learned;
+    const byDefault = await createUser("default");
+    const off = await createUser("off");
+    await aiUserPrefs.update(off.userId, { memoryLearningEnabled: false });
+    try {
+      const defaultTurn = await finishTurn(byDefault);
+      const offTurn = await finishTurn(off);
+      expect(await learnedAt(defaultTurn)).toBe(false);
+      expect(await learnedAt(offTurn)).toBe(true);
+      expect(await listAiTurnWorkflowEvidence(byDefault.userId, defaultTurn)).toHaveLength(1);
+      expect(await listAiTurnWorkflowEvidence(off.userId, offTurn)).toEqual([]);
+
+      // Turning learning on does not reach back to the turn that finished while it was off.
+      await aiUserPrefs.update(off.userId, { memoryLearningEnabled: true });
+      const laterTurn = await finishTurn(off);
+      const candidates = (await listAiMemoryLearningCandidates(100, 1_000_000)).map((candidate) => candidate.turnId);
+      expect(candidates).toContain(defaultTurn);
+      expect(candidates).toContain(laterTurn);
+      expect(candidates).not.toContain(offTurn);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id IN (${byDefault.userId}::uuid, ${off.userId}::uuid)`;
     }
   });
 });

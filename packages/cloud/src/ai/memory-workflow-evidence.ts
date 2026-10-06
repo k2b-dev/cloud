@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 
 const MAX_RECEIPT_RESOURCES = 20;
 const MAX_CAPABILITY_ID_CHARS = 180;
@@ -22,7 +23,11 @@ export type AiMemoryWorkflowPattern = {
   turnIds: string[];
 };
 
-/** Persist only successful, schema-valid capability/resource receipts. */
+/**
+ * Persist only successful, schema-valid capability/resource receipts, and only
+ * while learning is on for the user: receipts from a time it was off never
+ * count toward a workflow pattern.
+ */
 export const recordAiMemoryWorkflowEvidence = async (input: {
   userId: string;
   conversationId: string;
@@ -61,9 +66,11 @@ export const recordAiMemoryWorkflowEvidence = async (input: {
           ${resource.ref.type}, ${resource.ref.id}, ${resource.title ?? null}
         FROM ai.turns turn
         JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
+        LEFT JOIN ai.user_prefs prefs ON prefs.user_id = conversation.created_by_user_id
         WHERE turn.id = ${input.turnId}::uuid
           AND conversation.id = ${input.conversationId}::uuid
           AND conversation.created_by_user_id = ${input.userId}::uuid
+          AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
         ON CONFLICT (turn_id, capability_id, resource_type, resource_id)
         DO UPDATE SET resource_title = COALESCE(EXCLUDED.resource_title, ai.memory_workflow_evidence.resource_title)
       `;
@@ -116,10 +123,11 @@ export const listAiPendingWorkflowPatterns = async (limit = 5): Promise<AiMemory
              FILTER (WHERE evidence.resource_title IS NOT NULL))[1] AS resource_title,
            count(*)::int AS observation_count
     FROM ai.memory_workflow_evidence evidence
-    JOIN ai.user_prefs prefs ON prefs.user_id = evidence.user_id AND prefs.memory_learning_enabled = TRUE
+    LEFT JOIN ai.user_prefs prefs ON prefs.user_id = evidence.user_id
     JOIN ai.conversations conversation
       ON conversation.id = evidence.conversation_id AND conversation.created_by_user_id = evidence.user_id
     WHERE evidence.reviewed_at IS NULL
+      AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
     GROUP BY evidence.user_id, evidence.capability_id, evidence.resource_type, evidence.resource_id
     HAVING count(*) >= 3
     ORDER BY min(evidence.observed_at), evidence.user_id, evidence.capability_id, evidence.resource_type, evidence.resource_id

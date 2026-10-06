@@ -129,8 +129,6 @@ const germanText: Record<string, string> = {
   "Add the supporting information Assistant may need for this workflow.":
     "Ergänze Informationen, die der Assistent für diesen Ablauf benötigen kann.",
   Added: "Hinzugefügt",
-  "After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults.":
-    "Nach einer Anfrage in einem privaten Chat kann der Assistent dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern.",
   "All chats": "Alle Chats",
   Approvals: "Freigaben",
   "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
@@ -327,6 +325,8 @@ const germanText: Record<string, string> = {
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",
+  "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats; review or delete them under Saved personalization.":
+    "Solange dies eingeschaltet ist, kann der Assistent aus deinen privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   Type: "Typ",
   "You can view and export it, but you cannot change it.": "Du kannst ihn ansehen und exportieren, aber nicht ändern.",
   failed: "fehlgeschlagen",

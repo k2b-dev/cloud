@@ -951,7 +951,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE TABLE IF NOT EXISTS ai.user_prefs (
       user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
       memory_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      memory_learning_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      memory_learning_enabled BOOLEAN,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
@@ -960,7 +960,16 @@ export const migrateCloudAi = async (): Promise<void> => {
   // memory blob. Deliberately discard it instead of migrating ambiguous lines.
   await sql`ALTER TABLE ai.user_prefs DROP COLUMN IF EXISTS memory`.simple();
   await sql`ALTER TABLE ai.user_prefs DROP COLUMN IF EXISTS instructions`.simple();
-  await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS memory_learning_enabled BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+  await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS memory_learning_enabled BOOLEAN`.simple();
+  // NULL means the user never chose, so the default (on) applies. Earlier
+  // releases stored FALSE for every new row, and an explicit "off" looks the
+  // same, so existing FALSE rows stay as they are rather than being switched on.
+  // memory_learning_chosen_at, added below, tells later explicit choices apart.
+  await sql`
+    ALTER TABLE ai.user_prefs
+      ALTER COLUMN memory_learning_enabled DROP NOT NULL,
+      ALTER COLUMN memory_learning_enabled DROP DEFAULT
+  `.simple();
 
   // Last model the user actually ran a turn with — preselected for new chats.
   await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS last_model_id TEXT NOT NULL DEFAULT ''`.simple();
@@ -1123,6 +1132,40 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_ai_memory_workflow_evidence_pending
     ON ai.memory_workflow_evidence(user_id, capability_id, resource_type, resource_id, observed_at)
     WHERE reviewed_at IS NULL
+  `.simple();
+
+  // Learning considers only turns that finish while it is on: completeTurn marks
+  // the others, and receipts are recorded only while it is on. When learning
+  // became the default, every earlier turn and receipt of a person without an
+  // explicit "on" came from a time it was off, so they are marked as considered
+  // exactly once, when the column that records explicit choices is introduced.
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'ai' AND table_name = 'user_prefs' AND column_name = 'memory_learning_chosen_at'
+      ) THEN
+        ALTER TABLE ai.user_prefs ADD COLUMN memory_learning_chosen_at TIMESTAMPTZ;
+        UPDATE ai.turns turn
+        SET memory_learned_at = COALESCE(turn.completed_at, turn.created_at)
+        FROM ai.conversations conversation
+        WHERE conversation.id = turn.conversation_id
+          AND turn.status = 'completed'
+          AND turn.memory_learned_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM ai.user_prefs prefs
+            WHERE prefs.user_id = conversation.created_by_user_id AND prefs.memory_learning_enabled
+          );
+        UPDATE ai.memory_workflow_evidence evidence
+        SET reviewed_at = now()
+        WHERE evidence.reviewed_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM ai.user_prefs prefs
+            WHERE prefs.user_id = evidence.user_id AND prefs.memory_learning_enabled
+          );
+      END IF;
+    END $$
   `.simple();
 
   await sql`

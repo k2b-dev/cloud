@@ -4,6 +4,7 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
@@ -2801,6 +2802,19 @@ export const aiConversations: AiConversationService = {
             live_blocks = NULL
         WHERE id = ${input.turnId}
       `;
+      if (input.status === "completed") {
+        // Learning considers only turns that finish while it is on for the chat
+        // owner; turning it on later does not reach back to this turn.
+        await tx`
+          UPDATE ai.turns turn
+          SET memory_learned_at = turn.completed_at
+          FROM ai.conversations conversation
+          LEFT JOIN ai.user_prefs prefs ON prefs.user_id = conversation.created_by_user_id
+          WHERE turn.id = ${input.turnId}
+            AND conversation.id = turn.conversation_id
+            AND NOT COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
+        `;
+      }
       await tx`
         UPDATE ai.pending_actions
         SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
