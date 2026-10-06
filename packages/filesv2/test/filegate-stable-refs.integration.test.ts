@@ -19,9 +19,10 @@ import { createFilesService } from "../src/service";
 import { assertPrivateDatabase } from "./private-database";
 
 // A private Filegate container with one root that offers stable IDs and one indexed root that does not.
-// Never attach the shared development daemon or its volumes.
+// Never attach the shared development daemon or its volumes. The suite starts its own daemon, so it needs
+// no `CLOUD_TEST_FILEGATE_URL` and runs wherever Docker is available, including the CI gate.
 const dockerAvailable = (await Bun.$`docker info`.quiet().nothrow()).exitCode === 0;
-const suite = dockerAvailable ? suiteFor("database", "nats", "filegate") : describe.skip;
+const suite = dockerAvailable ? suiteFor("database", "nats") : describe.skip;
 const version = "7.0.0";
 const name = `filesv2-stable-refs-${randomUUID()}`;
 const volume = `${name}-data`;

@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # Testing
@@ -305,6 +305,13 @@ suites against PostgreSQL 17, NATS JetStream, Valkey, and Gotenberg, the Grids
 certification, and an image boot smoke when `packages/cloud` or the
 `Dockerfile` changed.
 Run the same commands locally before opening a pull request.
+
+An integration suite that starts its own container needs only Docker and its
+`CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
+stable-reference suite starts a private Filegate this way. The integration job
+pulls such images first, with retries, because `docker run` does not retry a
+failed pull. When you add a suite like this or change its image, add the image
+to that pull step in `.github/workflows/ci.yml`.
 
 The gate also builds the production bundle of every application whose package
 changed, and of every application when `packages/cloud`, `packages/ui`, or
