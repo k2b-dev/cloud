@@ -721,13 +721,16 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
 
   const onScroll = () => {
     const top = viewport.scrollTop;
-    if (Math.abs(top - lastTop) > 0.5) {
+    // The feed checked its edges when it wrote scrollTop. Its own scroll event arrives a frame later, and checking again
+    // then would retry a load that failed in between.
+    const reader = Math.abs(top - lastTop) > 0.5;
+    if (reader) {
       lastTop = top;
       captureAnchor();
     }
     if (ios && !touching && settleTimer !== undefined) settle();
     updateRange();
-    checkEdges();
+    if (reader) checkEdges();
   };
 
   /** Applies the correction held back during iOS momentum once scrolling has come to rest. */

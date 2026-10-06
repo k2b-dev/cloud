@@ -50,6 +50,8 @@ also loads when `hasOlder` or `hasNewer` turns on while the reader is at that
 edge, so a reader at the end follows newer items reported by a live update.
 Handle errors inside the callback; a rejected promise ends the busy state,
 and when a load toward the end brought nothing, "Jump to latest" shows again.
+A failed load is not repeated right away; the feed asks again when the reader
+scrolls at that edge, or when the items or the layout change.
 
 When the newest items are not loaded, for example after jumping to an old
 item, pass `onLoadNewest`. "Jump to latest" then calls it once running loads

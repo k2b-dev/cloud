@@ -930,12 +930,19 @@ describe(`VirtualFeed in ${browserName}`, () => {
 
   test("shows Jump to latest again when loading the newest items fails", async () => {
     const page = await open({ count: 300, newer: 400, newest: "fail", manual: true });
-    await page.locator(".k2b-virtual-feed__end").click();
-    await page.locator('[role="feed"][aria-busy="true"]').waitFor();
-    expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(0);
-    // An item that changes meanwhile does not make the failed load look like a success.
-    await page.evaluate(() => feed.replace("m299", 299));
-    expect(await page.evaluate(() => feed.release())).toBe(1);
+    // The load fails in the task of the jump, so the scroll event of the jump arrives after the failure.
+    const jumped = await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".k2b-virtual-feed__end")!.click();
+      const busy = document.querySelector('[role="feed"]')!.getAttribute("aria-busy");
+      const shown = document.querySelectorAll(".k2b-virtual-feed__end").length;
+      // An item that changes meanwhile does not make the failed load look like a success.
+      feed.replace("m299", 299);
+      return { busy, shown, released: feed.release() };
+    });
+    expect(jumped).toEqual({ busy: "true", shown: 0, released: 1 });
+    await frames(page, 4);
+    // That scroll event is the feed's own and starts no newer page; only the reader's next scroll retries.
+    expect(await page.evaluate(() => feed.release())).toBe(0);
     await page.locator('[role="feed"][aria-busy="false"]').waitFor();
     expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
     expect(await page.locator(".k2b-virtual-feed__end").count()).toBe(1);
