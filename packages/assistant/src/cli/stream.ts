@@ -228,6 +228,13 @@ export const streamAssistantTurn = async (input: {
       emitJsonLine({ type: "usage", messageId: event.message.id, usage: event.message.usage });
       return null;
     }
+    if (event.type === "provider_retry") {
+      emitJsonLine({ type: "provider_retry" });
+      if (ctx.options.output === "text") ctx.error("model: reconnecting");
+      return null;
+    }
+    // Event types added by a newer server are not the end of the turn.
+    if (event.type !== "turn_finished") return null;
     const messages = event.messages ?? [];
     const result = {
       conversationId,

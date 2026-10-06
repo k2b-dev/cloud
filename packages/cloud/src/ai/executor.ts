@@ -40,6 +40,7 @@ import {
   streamBlockId,
   toolBlockId,
 } from "./protocol";
+import { retryTransientProviderErrors } from "./provider-retry";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { AiRunTimeout } from "./run-timeout";
@@ -249,6 +250,8 @@ export type ExecutorConfig = {
   validateTurn?: typeof validateAiTurnRequest;
   /** Runs after the durable turn state and final wire event are flushed. */
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
+  /** Waits before retrying a transient provider failure without Retry-After; tests shorten them. */
+  providerRetryDelaysMs?: readonly number[];
 };
 
 type ResolvedModel = Awaited<ReturnType<typeof resolveAiModel>>;
@@ -1064,8 +1067,19 @@ export class AiTurnExecutor {
     });
     const priorToolRounds = toolRoundState(loopMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
+    const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
     const toolRoundPolicy = applyToolRoundPolicy({
-      provider: assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
+      provider: retryTransientProviderErrors(
+        assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
+        {
+          deadline,
+          delaysMs: this.config.providerRetryDelaysMs,
+          onRetry: async ({ retry, delayMs, issue }) => {
+            log.warn("AI provider call retried", { conversationId, turnId, retry, delayMs, kind: issue.kind, message: issue.message });
+            await pipeline.emitProviderRetry();
+          },
+        },
+      ),
       tools,
       maxToolRounds: resolved.profile.maxToolRounds,
       issuedToolRounds: priorToolRounds.issued,
@@ -1763,6 +1777,12 @@ class StreamPipeline {
     const event = this.envelope({ type: "block_set" as const, seq, block }) as AiWireEvent;
     this.blocks = applyWireEventToBlocks(this.blocks, event);
     await this.publish(event);
+  }
+
+  /** Transient: says a model call is waiting to be retried. Snapshots never carry it. */
+  async emitProviderRetry(): Promise<void> {
+    const seq = this.nextSeq();
+    await this.publish(this.envelope({ type: "provider_retry" as const, seq }));
   }
 
   async emitTurnFinished(status: "completed" | "failed" | "aborted", error: string | null): Promise<void> {

@@ -5,10 +5,31 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Deprecations and migrations
+
+## Conversation streams announce provider retries
+
+The conversation stream now sends a `provider_retry` event while a model call
+waits to be retried after a transient provider failure; see
+[Transient provider failures](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures).
+Only `turn_finished` ends a turn. A client must ignore event types it does not
+know, as the chat controller of earlier `@k2b/cloud` releases already does.
+
+The `assistant` CLI plugin of earlier releases reads any event it does not know
+as the end of the turn. At the first retry, `cld assistant` and
+`cld assistant turns watch` stop following the turn and exit with status 0,
+while the turn keeps running on the server; `--json` and `--jsonl` report a
+finished turn without status and with empty text. A profile keeps its plugin
+version until you update it, and `cld update` replaces only the `cld` binary.
+Update the plugin of each profile:
+
+```sh
+cld plugins update assistant   # the current profile
+cld plugins update --all       # every profile
+```
 
 ## Assistant learns from private chats by default
 

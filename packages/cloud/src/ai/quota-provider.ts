@@ -5,7 +5,7 @@ import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
-import { runWithProviderFetchMarks } from "./provider-fetch";
+import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 import type { AiModelProfile } from "./types";
 
 const log = logger("ai:quotas");
@@ -93,7 +93,7 @@ export function inferenceProvider(
       let status: "ok" | "failed" = "failed";
       let error: string | undefined;
       const requestStartedAt = Date.now();
-      const marks: { headersAt?: number; firstByteAt?: number } = {};
+      const marks: ProviderFetchMarks = {};
       try {
         const result = await runWithProviderFetchMarks(marks, () =>
           provider.complete({ ...request, maxOutputTokens: call.maxOutputTokens }),
@@ -112,7 +112,9 @@ export function inferenceProvider(
         throw thrown;
       } finally {
         call.stop();
-        if (!usage && status === "failed") usage = { input: call.inputTokens, output: 0, estimated: true };
+        // A request the provider refused or never received cost nothing; any other failure may have been processed.
+        if (!usage && status === "failed")
+          usage = marks.refused ? { input: 0, output: 0 } : { input: call.inputTokens, output: 0, estimated: true };
         const cancelled = request.signal?.aborted === true;
         await finish(call.id, usage, cancelled && status === "failed" ? "aborted" : status, {
           error: cancelled ? null : error,
@@ -133,7 +135,7 @@ export function inferenceProvider(
       const outputBlocks = new Map<string, number>();
       let generated = false;
       const requestStartedAt = Date.now();
-      const marks: { headersAt?: number; firstByteAt?: number; firstBlockAt?: number } = {};
+      const marks: ProviderFetchMarks & { firstBlockAt?: number } = {};
       // The wrapped adapter reads lazily, so the request only leaves once the first pull runs inside the marked scope.
       const events = provider.stream({ ...request, maxOutputTokens: call.maxOutputTokens })[Symbol.asyncIterator]();
       const next = () => runWithProviderFetchMarks(marks, () => events.next());
@@ -158,7 +160,14 @@ export function inferenceProvider(
             outputBlocks.set(event.blockId, size);
           }
           if (event.type === "block_start" || event.type === "block_delta" || event.type === "block_end") generated = true;
-          if (event.type === "issue" && event.issue.kind === "provider_error" && event.issue.contextOverflow && !generated && !usage)
+          // A provider that refused the request, or never received it, did not process it.
+          if (
+            event.type === "issue" &&
+            event.issue.kind === "provider_error" &&
+            (event.issue.contextOverflow || marks.refused) &&
+            !generated &&
+            !usage
+          )
             usage = { input: 0, output: 0 };
           if (event.type === "usage") {
             if (event.finishReason === "aborted" || event.finishReason === "interrupted" || event.finishReason === "error") failed = true;

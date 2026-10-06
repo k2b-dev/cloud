@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { createMemo } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } from "../client/projection";
-import type { AiWireEvent } from "../protocol";
+import type { AiTurnBlock, AiWireEvent } from "../protocol";
 
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
@@ -63,6 +63,119 @@ import type { AiWireEvent } from "../protocol";
     setState("activeTurn", reconcile(mergeActiveTurn(state.activeTurn, old)));
     await new Promise((resolve) => setTimeout(resolve, 0));
     for (let index = 0; index < 10; index++) expect(dom.root.textContent?.split(`Unique message ${index}.`).length).toBe(2);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a provider retry shows one calm reconnecting row at the end of the live turn", async () => {
+  const dom = createDomTestHarness();
+  const { Chat, LocaleProvider } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const [locale, setLocale] = createSignal("en");
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <LocaleProvider locale={locale()}>
+        <AiChatActionsProvider actions={{}}>
+          {(() => {
+            const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+            return <Chat.Timeline items={items()} />;
+          })()}
+        </AiChatActionsProvider>
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const rows = () => Array.from(dom.root.querySelectorAll(".k2b-chat-activity")).map((row) => row.textContent?.trim());
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "provider_retry" });
+    await settle();
+    expect(rows()).toEqual(["Reconnecting"]);
+
+    emit({ ...base, seq: 3, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Checking the files." });
+    emit({
+      ...base,
+      seq: 4,
+      type: "block_set",
+      block: { id: "tool-1", kind: "tool", callId: "call-1", name: "code_run", args: {}, status: "completed", result: {} },
+    });
+    await settle();
+    expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
+    const before = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
+
+    emit({ ...base, seq: 5, type: "provider_retry" });
+    await settle();
+    // The wait appends one row and leaves every earlier node in place.
+    const during = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
+    expect(during).toHaveLength(before.length + 1);
+    before.forEach((node, index) => expect(during[index]).toBe(node));
+    expect(rows().at(-1)).toBe("Reconnecting");
+
+    setLocale("de");
+    await settle();
+    expect(rows().at(-1)).toBe("Verbindung wird wiederhergestellt");
+    const retryRow = Array.from(dom.root.querySelectorAll(".k2b-chat-activity")).at(-1);
+    expect(retryRow?.getAttribute("data-busy")).toBeNull();
+
+    emit({ ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Done." });
+    await settle();
+    expect(rows().some((row) => row?.includes("Verbindung"))).toBe(false);
+    expect(dom.root.textContent).toContain("Done.");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a provider retry stays visible after a steer that waits for the next model call", async () => {
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const rows = () => Array.from(dom.root.querySelectorAll(".k2b-chat-activity")).map((row) => row.textContent?.trim());
+  const nodes = () => dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message");
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Reading the report." });
+    // The controller appends the steer locally; the server applies it with the next model call.
+    setState("activeTurn", "blocks", (blocks): AiTurnBlock[] => [
+      ...blocks,
+      { id: "steer-request-1", kind: "steer_message", steerId: "1", text: "Use the newer file", status: "pending" },
+    ]);
+    await settle();
+    const before = nodes();
+    expect(rows()).toEqual([]);
+
+    emit({ ...base, seq: 3, type: "provider_retry" });
+    await settle();
+    expect(rows().at(-1)).toBe("Reconnecting");
+    expect(nodes()).toHaveLength(before.length + 1);
+    expect(dom.root.textContent?.indexOf("Use the newer file")).toBeLessThan(dom.root.textContent?.indexOf("Reconnecting") ?? -1);
+
+    emit({ ...base, seq: 4, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Using the newer file." });
+    await settle();
+    expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
+    expect(dom.root.textContent).toContain("Using the newer file.");
   } finally {
     dispose();
     dom.cleanup();

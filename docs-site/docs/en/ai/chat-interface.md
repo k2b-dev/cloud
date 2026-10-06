@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-05
+updated: 2026-10-07
 ---
 
 # Chat interface
@@ -252,13 +252,20 @@ shell. Use `defaultOpen` for the initial disclosure policy; hosts that must
 preserve a person's choice across a remount can control it with `open` and
 `onOpenChange`.
 
-An active response always uses the shared streaming state of `Chat.Message`,
-including before the first model block arrives. It renders the minimal
+An active response always ends with the shared streaming state of
+`Chat.Message`, including before the first model block arrives and after a
+steering message that waits for the next model call. It renders the minimal
 three-dot progress indicator; do not add a separate generating activity or
 label. Active tool rows set `busy` on `Chat.Activity`, which moves a quiet
 text-color-to-transparency shimmer across the tool icon and title instead of
 adding another loader or pulsing the accent color. Reduced-motion clients keep
 the same text static.
+
+While a model call waits for its
+[retry](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures),
+the live turn ends with one **Reconnecting** activity row (German: **Verbindung
+wird wiederhergestellt**) without the shimmer. Earlier rows keep their place,
+and the next turn event replaces the row with the model's output.
 
 Approval prompts span the available message column and lead with the owning
 application's name and icon. The primary control names the concrete action;

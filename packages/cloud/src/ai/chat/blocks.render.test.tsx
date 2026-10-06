@@ -1138,7 +1138,8 @@ describe("survey answer timeline", () => {
     const accepted = snapshot([], turn([survey]));
     expect(accepted.map((item) => item.kind === "message" && item.role)).toEqual(["user", "assistant"]);
     expect(accepted[1]).toMatchObject({ status: "streaming" });
-    expect(accepted[1]!.html).toBe("");
+    // Only the hydration marker of the provider-retry slot; no visible content.
+    expect(accepted[1]!.html.replace(/<!--[^>]*-->/g, "")).toBe("");
   });
 
   test("keeps empty answers and zero ratings readable and IDs scoped to their turn", () => {

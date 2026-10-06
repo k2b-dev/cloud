@@ -210,13 +210,20 @@ const storedItems = (
     });
   });
 
+// Calm by design: no busy sweep while the model call waits for its retry.
+function ProviderRetryActivity() {
+  const locale = useLocale();
+  return <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />;
+}
+
 const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosureState: AiToolDisclosureState): ChatTimelineItem[] => {
   if (!turn) return [];
   const segments = splitActiveTurnBlocks(turn.blocks).flatMap((segment): (AiActiveTurnSegment | SurveySegment)[] =>
     segment.type === "steer" ? [segment] : splitSurveyResults(segment.blocks),
   );
-  // Keep the shared assistant progress indicator after the accepted answer.
-  if (turn.status === "running" && segments.at(-1)?.type === "survey") segments.push({ type: "assistant", blocks: [] });
+  // A running turn ends with an assistant item, so its progress indicator and a retry wait stay visible after an accepted answer or a pending steer.
+  const tail = segments.at(-1)?.type;
+  if (turn.status === "running" && (tail === "survey" || tail === "steer")) segments.push({ type: "assistant", blocks: [] });
   if (segments.length === 0) {
     return [
       {
@@ -224,6 +231,7 @@ const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosu
         id: `${turn.turnId}-pending`,
         role: "assistant",
         status: "streaming",
+        content: turn.providerRetry ? <ProviderRetryActivity /> : undefined,
         anchorId: turn.seq,
       },
     ];
@@ -246,20 +254,29 @@ const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosu
     }
 
     const blocks = segment.blocks;
+    const last = index === segments.length - 1;
     return {
       kind: "message",
       id: `${turn.turnId}-assistant-${index}`,
       role: "assistant",
-      status: turn.status === "running" && index === segments.length - 1 ? "streaming" : "complete",
+      status: turn.status === "running" && last ? "streaming" : "complete",
       class: blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
       content: (
-        <AiTurnBlockList
-          blocks={blocks}
-          turnId={turn.turnId}
-          streaming={turn.status === "running" && index === segments.length - 1}
-          active={index === segments.length - 1}
-          disclosureState={disclosureState}
-        />
+        <>
+          <AiTurnBlockList
+            blocks={blocks}
+            turnId={turn.turnId}
+            streaming={turn.status === "running" && last}
+            active={last}
+            disclosureState={disclosureState}
+          />
+          {/* Reactive, so the wait neither rebuilds nor moves the rows above it. */}
+          <Show when={last && turn.providerRetry}>
+            <div class={blocks.length > 0 ? "mt-2" : undefined}>
+              <ProviderRetryActivity />
+            </div>
+          </Show>
+        </>
       ),
     };
   });

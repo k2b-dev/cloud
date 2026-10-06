@@ -9,6 +9,8 @@ export type AiActiveTurn = {
   status: "running" | "waiting_for_action";
   blocks: AiTurnBlock[];
   modelProfileId: string | null;
+  /** A model call failed transiently and waits for its retry. Live only: the next turn event or a snapshot ends it. */
+  providerRetry?: boolean;
 };
 
 export type AiChatProjection = {
@@ -125,6 +127,7 @@ export const activeTurnFromSnapshot = (snapshot: AiTurnSnapshot | null): AiActiv
  *   stale attempts are ignored. Older senders without a baseline reset to only
  *   locally pending steering blocks.
  * - block events apply only when strictly newer than the active turn's cursor.
+ * - `provider_retry` marks the active turn until its next event.
  * - `turn_finished` folds the turn's persisted messages in and clears the active turn.
  */
 export const reduceProjection = (state: AiChatProjection, event: AiStreamEvent): AiChatProjection => {
@@ -145,6 +148,8 @@ export const reduceProjection = (state: AiChatProjection, event: AiStreamEvent):
 
   return reduceWireEvent(state, event);
 };
+
+const withoutProviderRetry = ({ providerRetry: _, ...turn }: AiActiveTurn): AiActiveTurn => turn;
 
 export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): AiChatProjection => {
   const active = state.activeTurn;
@@ -172,20 +177,26 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
     return { ...state, messages: mergeMessages(state.messages, event.messages ?? []), activeTurn: null };
   }
 
+  if (!active || active.turnId !== event.turnId || !isNewerWireEvent(event, active)) return state;
+
+  if (event.type === "provider_retry") {
+    return { ...state, activeTurn: { ...active, seq: event.seq, attempt: event.attempt, providerRetry: true } };
+  }
+
   if (event.type === "message_saved") {
-    if (!active || active.turnId !== event.turnId || !isNewerWireEvent(event, active)) return state;
     return {
       ...state,
       messages: mergeMessages(state.messages, [event.message]),
-      activeTurn: { ...active, seq: event.seq, attempt: event.attempt },
+      activeTurn: { ...withoutProviderRetry(active), seq: event.seq, attempt: event.attempt },
     };
   }
 
   // block_set / block_delta
-  if (!active || active.turnId !== event.turnId) return state;
-  if (!isNewerWireEvent(event, active)) return state;
   const blocks = applyWireEventToBlocks(active.blocks, event);
-  return { ...state, activeTurn: { ...active, attempt: event.attempt, seq: event.seq, blocks, status: deriveStatus(blocks) } };
+  return {
+    ...state,
+    activeTurn: { ...withoutProviderRetry(active), attempt: event.attempt, seq: event.seq, blocks, status: deriveStatus(blocks) },
+  };
 };
 
 /** Assistant/tool messages of the active turn are represented by live blocks; hide them. */
