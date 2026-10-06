@@ -37,7 +37,7 @@ render(
     menu("Short", { items: [{ label: "Rename", action: () => {} }, { label: "Archive", action: () => {} }] }),
     menu("Long", {
       items: [
-        { label: long, description: "Erstellt eine Gutschrift und bucht sie gegen die offene Rechnung", action: () => {} },
+        { label: long, description: "Erstellt eine Gutschrift für die Rücksendung und bucht sie gegen die offene Rechnung", action: () => {} },
         { label: word, action: () => {} },
         { sectionLabel: heading, items: [{ label: "Archive", action: () => {} }] },
       ],

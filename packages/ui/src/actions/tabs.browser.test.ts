@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Scroll overflow depends on layout, which happy-dom does not model, so a real
 // engine renders the shipped stylesheet.
@@ -110,7 +110,9 @@ describe("@k2b/ui tab list scrolling", () => {
           [3, 24].map((count) => ({
             list: `${variant} with ${count} tabs`,
             baseline: variant === "line" ? "CanvasText 0px -1px 0px 0px inset" : "none",
-            selectedUnderline: "CanvasText",
+            // WebKit matches `forced-colors: active` under emulation but has no forced colours mode that repaints
+            // author colours, so only Chromium can show that the tabs stay forced.
+            selectedUnderline: browserName === "chromium" ? "CanvasText" : expect.any(String),
           })),
         ),
       );

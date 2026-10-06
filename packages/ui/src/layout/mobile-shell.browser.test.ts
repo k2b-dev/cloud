@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Scrolling, touch-action, the toast rail's place, and the room a persistent toast takes are layout results, which
 // happy-dom does not model, so a real engine runs the built package at phone size.
@@ -430,17 +430,21 @@ describe("Tab bar taps in a phone browser", () => {
     }
   });
 
-  test("a press on a tab shows its page's frame at once, and the end of the tap loads the page", async () => {
-    const context = await browser.newContext({
-      viewport: { width: 390, height: 844 },
-      deviceScaleFactor: 2,
-      isMobile: true,
-      hasTouch: true,
-    });
-    const page = await context.newPage();
-    // While a load is pending, Playwright's evaluations wait for it, so the page reports its frame itself. The content
-    // also holds bare text and an element that shows itself, as a running pull-to-refresh spinner does.
-    const report = `const body = document.querySelector(".k2b-mobile-shell__body");
+  // A finger that stays down needs Chromium's input protocol: Playwright drives WebKit's touch input only as a whole
+  // tap, and has no back button for it either.
+  test.skipIf(browserName === "webkit")(
+    "a press on a tab shows its page's frame at once, and the end of the tap loads the page",
+    async () => {
+      const context = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        deviceScaleFactor: 2,
+        isMobile: true,
+        hasTouch: true,
+      });
+      const page = await context.newPage();
+      // While a load is pending, Playwright's evaluations wait for it, so the page reports its frame itself. The content
+      // also holds bare text and an element that shows itself, as a running pull-to-refresh spinner does.
+      const report = `const body = document.querySelector(".k2b-mobile-shell__body");
     const spinner = document.createElement("span");
     spinner.style.visibility = "visible";
     spinner.textContent = "Refreshing";
@@ -462,82 +466,85 @@ describe("Tab bar taps in a phone browser", () => {
     const tell = () => console.log(JSON.stringify(frame()));
     addEventListener("pointerdown", () => setTimeout(tell));
     requestAnimationFrame(tell);`;
-    const document = (header: string) =>
-      `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>${header} window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script><script>${report}</script></body></html>`;
-    type Frame = {
-      switching: boolean;
-      title: string;
-      titleLeft: number;
-      back: string | null;
-      content: boolean;
-      header: number;
-      footerTop: number;
-    };
-    const frames: Frame[] = [];
-    page.on("console", (message) => {
-      if (message.text().startsWith("{")) frames.push(JSON.parse(message.text()));
-    });
-    let tasksRequests = 0;
-    await page.route("https://app.test/**", async (route) => {
-      const path = new URL(route.request().url()).pathname;
-      if (path === "/plain") return route.fulfill({ contentType: "text/html", body: document("") });
-      if (path === "/start") return route.fulfill({ contentType: "text/html", body: document('window.fixtureHeader = "back";') });
-      if (path !== "/tasks") return route.fulfill({ status: 404 });
-      tasksRequests++;
-      // The page arrives at once, as on a fast connection, so a load started during the press would end before it.
-      await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" });
-    });
-    const next = async (count: number) => {
-      while (frames.length < count) await Bun.sleep(10);
-      return frames[count - 1]!;
-    };
-    try {
-      // A page without Back shows where a page's title belongs. The tab sits at the same place on both pages.
-      await page.goto("https://app.test/plain");
-      const plain = await next(1);
-      const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
-      // Opened without a touch, as is every page that a tab has just opened. Playwright's own calls into a page count
-      // as the person's action, so none reaches this page before the press.
-      await page.goto("https://app.test/start");
-      const before = await next(2);
-      expect(before).toMatchObject({ switching: false, title: "Tasks", back: "flex", content: false });
-
-      const cdp = await context.newCDPSession(page);
-      await cdp.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+      const document = (header: string) =>
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>${header} window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script><script>${report}</script></body></html>`;
+      type Frame = {
+        switching: boolean;
+        title: string;
+        titleLeft: number;
+        back: string | null;
+        content: boolean;
+        header: number;
+        footerTop: number;
+      };
+      const frames: Frame[] = [];
+      page.on("console", (message) => {
+        if (message.text().startsWith("{")) frames.push(JSON.parse(message.text()));
       });
-      // The finger is still down: the shell shows the page's frame where that page will have it, without this page's
-      // Back or any of its content, and with nothing else moving.
-      expect(await next(3)).toEqual({
-        switching: true,
-        title: '"My tasks"',
-        titleLeft: plain.titleLeft,
-        back: "none",
-        content: true,
-        header: before.header,
-        footerTop: before.footerTop,
+      let tasksRequests = 0;
+      await page.route("https://app.test/**", async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === "/plain") return route.fulfill({ contentType: "text/html", body: document("") });
+        if (path === "/start") return route.fulfill({ contentType: "text/html", body: document('window.fixtureHeader = "back";') });
+        if (path !== "/tasks") return route.fulfill({ status: 404 });
+        tasksRequests++;
+        // The page arrives at once, as on a fast connection, so a load started during the press would end before it.
+        await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" });
       });
-      // The page loads only with the click at the end of the tap, which the browser counts as the person's action.
-      // A page that arrived before it would drop this one from the history, so Back would skip it.
-      await Bun.sleep(200);
-      expect(tasksRequests).toBe(0);
+      const next = async (count: number) => {
+        while (frames.length < count) await Bun.sleep(10);
+        return frames[count - 1]!;
+      };
+      try {
+        // A page without Back shows where a page's title belongs. The tab sits at the same place on both pages.
+        await page.goto("https://app.test/plain");
+        const plain = await next(1);
+        const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
+        // Opened without a touch, as is every page that a tab has just opened. Playwright's own calls into a page count
+        // as the person's action, so none reaches this page before the press.
+        await page.goto("https://app.test/start");
+        const before = await next(2);
+        expect(before).toMatchObject({ switching: false, title: "Tasks", back: "flex", content: false });
 
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await page.waitForURL("https://app.test/tasks");
-      expect(tasksRequests).toBe(1);
-      // The browser's own Back, which skips pages left without the person's action, returns to the pressed page.
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 100, y: 300 });
-      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 100, y: 300, button: "back", buttons: 8, clickCount: 1 });
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 100, y: 300, button: "back", buttons: 0, clickCount: 1 });
-      await page.waitForURL((url) => url.pathname !== "/tasks");
-      expect(new URL(page.url()).pathname).toBe("/start");
-    } finally {
-      await context.close();
-    }
-  }, 20_000);
+        const cdp = await context.newCDPSession(page);
+        await cdp.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+        });
+        // The finger is still down: the shell shows the page's frame where that page will have it, without this page's
+        // Back or any of its content, and with nothing else moving.
+        expect(await next(3)).toEqual({
+          switching: true,
+          title: '"My tasks"',
+          titleLeft: plain.titleLeft,
+          back: "none",
+          content: true,
+          header: before.header,
+          footerTop: before.footerTop,
+        });
+        // The page loads only with the click at the end of the tap, which the browser counts as the person's action.
+        // A page that arrived before it would drop this one from the history, so Back would skip it.
+        await Bun.sleep(200);
+        expect(tasksRequests).toBe(0);
 
-  test("a press on a tab that turns into a scroll takes its frame back and loads nothing", async () => {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await page.waitForURL("https://app.test/tasks");
+        expect(tasksRequests).toBe(1);
+        // The browser's own Back, which skips pages left without the person's action, returns to the pressed page.
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 100, y: 300 });
+        await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: 100, y: 300, button: "back", buttons: 8, clickCount: 1 });
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 100, y: 300, button: "back", buttons: 0, clickCount: 1 });
+        await page.waitForURL((url) => url.pathname !== "/tasks");
+        expect(new URL(page.url()).pathname).toBe("/start");
+      } finally {
+        await context.close();
+      }
+    },
+    20_000,
+  );
+
+  // A finger that moves needs Chromium's input protocol: Playwright drives WebKit's touch input only as a whole tap.
+  test.skipIf(browserName === "webkit")("a press on a tab that turns into a scroll takes its frame back and loads nothing", async () => {
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
       deviceScaleFactor: 2,

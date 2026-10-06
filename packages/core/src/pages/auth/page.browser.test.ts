@@ -9,7 +9,7 @@ import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../../ui/test/browser";
 
 // Whether the sign-in card is a frame or flat is decided by the cascade
 // between Tailwind utilities, @k2b/ui and Cloud styles at a viewport width,
@@ -420,18 +420,29 @@ describe("sign-in page in a browser", () => {
     }
   }, 120_000);
 
-  test("moves focus through the action grid row by row", async () => {
-    expect(await tabOrder(phone, forms.password, 3)).toEqual(["Use passkey", "Contact support", "Admin token"]);
-    expect(await tabOrder(desktop, forms.password, 3)).toEqual(["Contact support", "Use passkey", "Admin token"]);
-  }, 30_000);
+  // The rows rely on `reading-flow`, which WebKit does not support yet: Safari keeps the source order, as
+  // `src/styles/app.css` describes.
+  test.skipIf(browserName === "webkit")(
+    "moves focus through the action grid row by row",
+    async () => {
+      expect(await tabOrder(phone, forms.password, 3)).toEqual(["Use passkey", "Contact support", "Admin token"]);
+      expect(await tabOrder(desktop, forms.password, 3)).toEqual(["Contact support", "Use passkey", "Admin token"]);
+    },
+    30_000,
+  );
 
-  test("switches at the same rem breakpoint as the page's own md: layout with a larger default font", async () => {
-    // With a 20 px default font, md starts at 960 px: at 800 px the page is a phone page throughout,
-    // and the form column keeps its 28rem (560 px) width centered on the flat page.
-    const narrow = await measure({ width: 800, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
-    expect([narrow.surface, narrow.aside]).toEqual([flat, "none"]);
-    for (const field of narrow.fields) expect([field.left, field.right]).toEqual([120, 680]);
-    const wide = await measure({ width: 1000, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
-    expect([wide.surface.border, wide.surface.radius, wide.aside]).toEqual(["1px", "20px", "flex"]);
-  }, 30_000);
+  // Only Chromium's input protocol can change the browser's default font size, which rem breakpoints follow.
+  test.skipIf(browserName === "webkit")(
+    "switches at the same rem breakpoint as the page's own md: layout with a larger default font",
+    async () => {
+      // With a 20 px default font, md starts at 960 px: at 800 px the page is a phone page throughout,
+      // and the form column keeps its 28rem (560 px) width centered on the flat page.
+      const narrow = await measure({ width: 800, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
+      expect([narrow.surface, narrow.aside]).toEqual([flat, "none"]);
+      for (const field of narrow.fields) expect([field.left, field.right]).toEqual([120, 680]);
+      const wide = await measure({ width: 1000, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
+      expect([wide.surface.border, wide.surface.radius, wide.aside]).toEqual(["1px", "20px", "flex"]);
+    },
+    30_000,
+  );
 });

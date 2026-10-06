@@ -165,7 +165,8 @@ type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const head = (lang: string, dark = false) =>
-  `<!doctype html><html lang="${lang}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+  // Playwright's WebKit ignores the charset of a routed response, so the page names it, as a Cloud page does.
+  `<!doctype html><html lang="${lang}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>`;
 
 const open = async (view: View, dark = false) => {

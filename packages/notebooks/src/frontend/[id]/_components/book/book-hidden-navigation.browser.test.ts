@@ -5,7 +5,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 
 // What a reader sees on the first paint of Book view depends on the shipped
 // cascade of Cloud, @k2b/ui and the app's own stylesheet, so a real engine
@@ -219,8 +219,13 @@ describe("Book view reading position when the navigation hides and shows", () =>
     for (const painted of result.steps) expect(new Set(painted).size).toBe(1);
   });
 
-  test("without it the browser's scroll anchoring lets the text the reader is on move out of view", async () => {
-    const result = await run(false);
-    expect(result.steps.some((painted) => !steady(painted, result.before))).toBe(true);
-  });
+  // The control for the test above: it shows what Chromium's scroll anchoring does without the fix. WebKit keeps the
+  // line in view on its own here, so there is nothing to show.
+  test.skipIf(browserName === "webkit")(
+    "without it the browser's scroll anchoring lets the text the reader is on move out of view",
+    async () => {
+      const result = await run(false);
+      expect(result.steps.some((painted) => !steady(painted, result.before))).toBe(true);
+    },
+  );
 });

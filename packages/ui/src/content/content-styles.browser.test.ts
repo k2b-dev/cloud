@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Which rule wins is decided by the built stylesheet: the build rewrites some
 // selectors, so a real engine computes styles from the shipped files.
@@ -261,8 +261,9 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(new Set(table.rowFills)).toEqual(new Set(["rgba(0, 0, 0, 0)"]));
     expect(table.rowLines).toEqual(["0px", "1px", "1px"]);
     expect(table.lineColor).toBe(tokens.border);
-    expect(table.start).toBe(0);
-    expect(table.end).toBe(0);
+    // Flush within WebKit's layout unit of 1/64 px.
+    expect(table.start).toBeCloseTo(0, 1);
+    expect(table.end).toBeCloseTo(0, 1);
   });
 
   for (const host of ["article", "#inset"]) {
@@ -401,7 +402,9 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(result).toEqual({ scrolled: true, hostScrolls: false, header: 0, overlay: true });
   });
 
-  test("a Markdown code block keeps its edge in forced colours", async () => {
+  // The edge is the transparent border that a forced colours mode paints. WebKit matches `forced-colors: active`
+  // under emulation but has no such mode, so the border stays transparent there, as it does in Safari.
+  test.skipIf(browserName === "webkit")("a Markdown code block keeps its edge in forced colours", async () => {
     await page.emulateMedia({ forcedColors: "active" });
     try {
       const edge = await page.evaluate(() => getComputedStyle(document.querySelector("article pre")!).borderTopColor);
