@@ -38,6 +38,18 @@ function cloudTheme(): string {
   }
 }
 const isDark = () => document.documentElement.classList.contains("dark");
+/**
+ * Collabora uses `lang` for its menus and as the language of text without one, which picks the spelling
+ * dictionary. Dictionaries are regional, so a bare `de` would leave new text unchecked: complete the region.
+ */
+function collaboraLanguage(locale: string): string {
+  try {
+    const tag = new Intl.Locale(locale);
+    return tag.region ? tag.baseName : new Intl.Locale(tag.baseName, { region: tag.maximize().region }).baseName;
+  } catch {
+    return locale;
+  }
+}
 const EDITOR_LOAD_TIMEOUT_MS = 60_000;
 /** Writable files outside managed bases get one notice per browser; unavailable storage only repeats it. */
 const EXTERNAL_WRITES_NOTICE_KEY = "filesv2-editor-external-writes";
@@ -102,8 +114,9 @@ export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () =
         .alert(b().editorExternalWrites, { title: b().editorExternalWritesTitle, icon: "ti ti-alert-triangle" })
         .then(acknowledgeExternalWrites);
   });
-  // Collabora shows its own close button for this parameter and reports the click as UI_Close.
-  const action = () => `${props.launch.action}&closebutton=1`;
+  // Collabora shows its own close button for this parameter and reports the click as UI_Close. It reads
+  // `lang` only from this URL, never from the posted form.
+  const action = () => `${props.launch.action}&closebutton=1&lang=${encodeURIComponent(collaboraLanguage(locale()))}`;
   return (
     <AppWorkspace.Main scroll={false} class="filesv2-editor" aria-busy={!loaded()}>
       <div class="filesv2-editor__frame">
@@ -139,7 +152,6 @@ export default function Editor(props: { launch: OfficeEditorLaunch; onBack: () =
           name="ui_defaults"
           value={`SavedUIState=false;UIMode=compact;TextRuler=false;TextSidebar=false;SpreadsheetSidebar=false;PresentationSidebar=false;UITheme=${dark() ? "dark" : "light"}`}
         />
-        <input type="hidden" name="lang" value={locale()} />
       </form>
     </AppWorkspace.Main>
   );

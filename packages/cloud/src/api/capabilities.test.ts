@@ -3,9 +3,11 @@ import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
+import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
-import { defineCapabilities } from "../contracts/capabilities";
+import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { auth, type RequestAuthority } from "../server";
 import type { signInvocationToken } from "../services/identity/invocation-token";
@@ -223,6 +225,42 @@ describe("capability API", () => {
       schemaHash: compiled.manifest.queries[0]?.schemaHash,
     });
     expect(manifest?.queries[0]?.inputSchema).toMatchObject({ properties: { id: { description: "Stabile Element-ID." } } });
+  });
+
+  test("serves a manifest that a newer app registered and refuses the entries it left out", async () => {
+    const { manifest, presentation } = futureLibrary();
+    const app: AppRegistryEntry = {
+      id: "library",
+      name: "Library",
+      icon: "ti ti-books",
+      description: "Books",
+      baseUrl: "http://library:3000",
+      routes: [],
+      capabilities: { protocolVersion: 2, manifestHash: manifest.manifestHash },
+    };
+    const capability = resolveLiveCapabilityRegistryEntry("capabilities/library", { appId: "library", manifest, presentation }, app);
+    let requested = false;
+    const routes = createCapabilityRoutes({
+      listApps: async () => [app],
+      getCapability: async () => capability,
+      authenticate,
+      fetch: async () => {
+        requested = true;
+        return Response.json({ data: { id: "one" } });
+      },
+    });
+
+    const catalog = CapabilityCatalogSchema.parse(await (await routes.request("/capabilities/v1/catalog")).json());
+    expect(catalog.apps.map((entry) => entry.manifest.queries.map((query) => query.localId))).toEqual([["book.read"]]);
+    expect(catalog.apps[0]?.manifest.manifestHash).toBe(manifest.manifestHash);
+
+    const leftOut = await routes.request("/capabilities/v1/actions/library/book.archive", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "attempt-1" },
+      body: JSON.stringify({ input: { id: "one" } }),
+    });
+    expect(leftOut.status).toBe(404);
+    expect(requested).toBe(false);
   });
 
   test("returns a structured error for an unavailable app", async () => {

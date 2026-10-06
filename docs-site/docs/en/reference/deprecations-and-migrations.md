@@ -29,6 +29,29 @@ Move a block out of a list, or end it with a bare `:::` line, to keep it
 rendering. See [Markdown content](/en/ui/content/markdown#info-blocks) for the
 exact rules.
 
+## Capability readers ignore fields from newer releases
+
+Capability manifests and catalog pages are now read tolerantly: a reader
+ignores top-level fields that a newer Cloud release added and leaves out only
+the entries it cannot read completely. Readers of earlier releases fail on a
+whole catalog page, or skip the application, as soon as its manifest carries
+one new field. See
+[Read manifests from other Cloud releases](/en/docs/platform/capabilities#read-manifests-from-other-cloud-releases).
+
+- Update `@k2b/cloud` once in your own applications that read the catalog with
+  `listCapabilityCatalog()`, `getCapabilityCatalogApp()`, or
+  `CapabilityCatalogSchema`. Later manifest fields then no longer break them.
+- Update the `capabilities` CLI plugin of each `cld` profile with
+  `cld plugins update capabilities`.
+- `app.start()` now rejects a capability declaration field its release does
+  not define, at every level, instead of ignoring it: in the declaration, a
+  Type, Query, Action, or Command, Universal Search, a search tag, or a stream.
+  Remove such a field or update `@k2b/cloud` to the release that defines it.
+- `CapabilityManifestSchema` is now a Zod pipe instead of an object schema. It
+  no longer has `.shape`, `.extend()`, `.pick()`, or `.strict()`, and
+  `z.input<typeof CapabilityManifestSchema>` is `unknown`. Parse with it and
+  use the `CapabilityManifest` type for the result.
+
 ## Files references survive rename and move
 
 On roots where Filegate 7 reports stable file IDs (`index: true` and
