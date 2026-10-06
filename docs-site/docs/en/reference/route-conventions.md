@@ -5,7 +5,7 @@ section: Reference
 order: 1220
 description: Look up the route prefixes reserved by Cloud and those owned by applications.
 tags: [routes, gateway, prefixes]
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Route conventions
@@ -54,8 +54,8 @@ completed registration and all awaited lifecycle startup work.
 
 ## Mobile app paths
 
-> **Preview:** the mobile app is not released yet. These paths may still change
-> in a minor release.
+> **Preview:** the mobile app is not released yet. These paths may still
+> change until it is, without counting as a breaking change.
 
 `/pwa` is the installable mobile app's scope. Only three claims are valid:
 

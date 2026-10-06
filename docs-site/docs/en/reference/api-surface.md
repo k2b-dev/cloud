@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # API surface
@@ -17,8 +17,8 @@ writing.
 not make every symbol in a mixed barrel an application API. `Platform-owned`
 is for Cloud itself. `Advanced` paths are public exports, but application code
 should use them only when a feature guide gives the exact import.
-`Preview` marks a documented export whose contract may still change in a minor
-release; its guide says so at the top until the feature is released.
+`Preview` means the contract may still change before its feature is released,
+and such changes are not treated as breaking until then.
 
 ## Application entry points
 
@@ -241,6 +241,21 @@ for execution, model access, and usage accounting.
 Every app-facing specialized row has a guide. `Platform-owned` and `Advanced`
 rows are exported for Cloud itself or for a narrowly documented integration;
 their presence is not an application support promise.
+
+## Preview surfaces
+
+The mobile app is not released yet, so its part contract and the platform
+exports behind it are `Preview`. Their guides say so at the top.
+
+| Surface | Status | Use | Guide |
+| --- | --- | --- | --- |
+| `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the mobile app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
+| `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#paths) |
+| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#pwalayout) |
+| `ssr.pwaAccess` of the defined application | Preview, server-only | Handle a part request without an app session | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#serve-pages) |
+| `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the mobile app lists on Start | — |
+| `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and phone contracts of the mobile app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
+| `pwaDevices`, `PwaError` and their types from `@k2b/cloud/services` | Preview, platform-owned | Pairing, app sessions and phone administration | [Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app) |
 
 ## Platform-owned and limited surfaces
 

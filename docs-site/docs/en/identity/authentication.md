@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Request identity
@@ -207,7 +207,7 @@ they must not persist or replay a browser cookie.
 ## App sessions (preview)
 
 > **Preview:** the mobile app is not released yet. This contract may still
-> change in a minor release.
+> change until it is, without counting as a breaking change.
 
 A phone pairs with the [mobile app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
 through `/me/app`; it never sees a password. A paired phone holds two

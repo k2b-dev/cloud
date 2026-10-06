@@ -5,13 +5,13 @@ section: Frontend
 order: 835
 description: Add phone-first pages of an application to the installable mobile app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # Pages in the mobile app
 
 > **Preview:** the mobile app is not released yet. This contract may still
-> change in a minor release.
+> change until it is, without counting as a breaking change.
 
 Each Cloud installation has one installable phone app. The `pwa` application
 provides it: the Home Screen app, its Start page, Settings, and pairing. An
