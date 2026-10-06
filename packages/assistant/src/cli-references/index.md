@@ -320,7 +320,7 @@ cld assistant personalization forget <memory-id> --yes
 
 `--content` also accepts `--content-file` and `--stdin`. Forgetting an entry requires `--yes`.
 
-Personalization use and learning from chats are separate settings. Learning is on unless the user turns it off; `--learning` stores that choice. Learning considers only genuine user-authored text, not attached Cloud resources, files, tool results, scheduled prompts, inter-chat deliveries, or Assistant output:
+Personalization use and learning from chats are separate settings. Learning is on for users who have not chosen; a setting stored before learning became the default stays as it was, and `--learning` stores a new choice. Learning considers only private-chat turns that finish while it is on, and only genuine user-authored text, not attached Cloud resources, files, tool results, scheduled prompts, inter-chat deliveries, or Assistant output:
 
 ```bash
 cld assistant personalization status

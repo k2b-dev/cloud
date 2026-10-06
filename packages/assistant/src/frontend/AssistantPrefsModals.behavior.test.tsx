@@ -28,7 +28,6 @@ test("saving one personalization switch does not record a choice for learning", 
   try {
     const dialog = openAssistantPrefsModal();
     await tick();
-    expect(dom.document.body.textContent).toContain("On by default.");
     const switches = Array.from(dom.document.querySelectorAll<HTMLInputElement>('input[role="switch"]'));
     expect(switches.map((input) => input.checked)).toEqual([true, true]);
 

@@ -317,15 +317,20 @@ and each person can turn it off or on again in **Assistant settings >
 Personalization** or with `cld assistant personalization configure --learning
 off`. Cloud stores a choice only when the person saves that switch; changing
 **Use personalization** alone records nothing for learning, and a stored choice
-always wins over the default. Turning learning off takes effect immediately:
-the background run checks the setting again before it calls a model and before
-it changes any entry. Learning still needs a working background model and stays
-within the budgets below. After an upgrade, every "off" that an earlier release
-stored stays off, because those releases also stored "off" for people who never
-chose; see
+always wins over the default. After an upgrade, every "off" that an earlier
+release stored stays off, because those releases also stored "off" for people
+who never chose; see
 [Deprecations](/en/docs/reference/deprecations-and-migrations#assistant-learns-from-private-chats-by-default).
 
-Learning processes a newly completed private-chat turn once. It does not replay a conversation after later Assistant or tool updates.
+Learning considers only private-chat turns that finish while it is on, each
+once. A turn that finishes while learning is off is never learned from, also
+not after learning is turned on again, and workflow receipts are recorded only
+while it is on. Turning learning off stops it right away: the background run
+reads the setting again just before it sends a turn or workflow pattern to the
+model and before it saves any change. Learning still needs a working
+background model and stays within the budgets below.
+
+Learning does not replay a conversation after later Assistant or tool updates.
 The bounded input contains the new user-authored text, sanitized receipts for
 successful Cloud capability calls, the final Assistant Markdown as context
 only, and a small relevant memory set. Attachments, quoted Cloud resources, raw

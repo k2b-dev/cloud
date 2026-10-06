@@ -441,7 +441,6 @@ export const learnAiMemoriesFromPrivateChats = async (
     let runId: string | null = null;
     let changes: AiMemoryLearningChange[] = [];
     try {
-      if (!(await learningEnabled(candidate.userId))) continue;
       const evidence = await loadTurnEvidence(candidate);
       if (!evidence.userText) {
         await markLearned(candidate);
@@ -459,6 +458,8 @@ export const learnAiMemoriesFromPrivateChats = async (
       });
       const reservedTokens = estimatedTokens(systemPrompt, taskInput);
       if ((await readMonthlyUsage(candidate.userId)) + reservedTokens > monthlyTokenBudget) continue;
+      // Read the choice again right before the turn can reach the model.
+      if (!(await learningEnabled(candidate.userId))) continue;
       runId = await aiMemoryLearningRuns.start({
         userId: candidate.userId,
         conversationId: candidate.conversationId,
@@ -544,7 +545,6 @@ export const learnAiMemoriesFromPrivateChats = async (
     let runId: string | null = null;
     const startedAt = Date.now();
     try {
-      if (!(await learningEnabled(pattern.userId))) continue;
       const context = await workflowPatternInput(pattern);
       if (!context.source) {
         await markAiWorkflowPatternReviewed(pattern);
@@ -558,6 +558,7 @@ export const learnAiMemoriesFromPrivateChats = async (
       });
       const reservedTokens = estimatedTokens(workflowPrompt, context.input);
       if ((await readMonthlyUsage(pattern.userId)) + reservedTokens > monthlyTokenBudget) continue;
+      if (!(await learningEnabled(pattern.userId))) continue;
       runId = await aiMemoryLearningRuns.start({
         userId: pattern.userId,
         conversationId: context.source.candidate.conversationId,

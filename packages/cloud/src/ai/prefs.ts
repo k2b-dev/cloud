@@ -63,13 +63,20 @@ export const aiUserPrefs = {
   ): Promise<AiUserPrefs> {
     const memoryEnabled = patch.memoryEnabled ?? null;
     const memoryLearningEnabled = patch.memoryLearningEnabled ?? null;
+    // Records when the person last saved the learning switch, so a stored "off"
+    // from an earlier release stays distinguishable from a choice made since.
+    const learningChosen = memoryLearningEnabled !== null;
     const lastModelId = patch.lastModelId?.trim().slice(0, 200) ?? null;
     const rows = (await sql`
-      INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, last_model_id, updated_at)
-      VALUES (${userId}, ${memoryEnabled ?? true}, ${memoryLearningEnabled}, ${lastModelId ?? ""}, now())
+      INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, memory_learning_chosen_at, last_model_id, updated_at)
+      VALUES (
+        ${userId}, ${memoryEnabled ?? true}, ${memoryLearningEnabled},
+        CASE WHEN ${learningChosen}::boolean THEN now() END, ${lastModelId ?? ""}, now()
+      )
       ON CONFLICT (user_id) DO UPDATE SET
         memory_enabled = COALESCE(${memoryEnabled}, ai.user_prefs.memory_enabled),
         memory_learning_enabled = COALESCE(${memoryLearningEnabled}, ai.user_prefs.memory_learning_enabled),
+        memory_learning_chosen_at = CASE WHEN ${learningChosen}::boolean THEN now() ELSE ai.user_prefs.memory_learning_chosen_at END,
         last_model_id = COALESCE(${lastModelId}, ai.user_prefs.last_model_id),
         updated_at = now()
       RETURNING *

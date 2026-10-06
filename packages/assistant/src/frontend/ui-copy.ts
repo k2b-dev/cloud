@@ -249,8 +249,6 @@ const germanText: Record<string, string> = {
   "No personalization changed": "Keine Personalisierung geändert",
   "No personalization yet": "Noch keine Personalisierung",
   "No remembered approvals. Actions will ask before they run.": "Keine gespeicherten Freigaben. Vor der Ausführung wird nachgefragt.",
-  "On by default. After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults; review or delete them under Saved personalization.":
-    "Standardmäßig an. Nach einer Anfrage in einem privaten Chat kann der Assistent dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   "Only Project instructions are treated as instructions; files, knowledge, and references remain data.":
     "Nur Projektanweisungen gelten als Anweisungen; Dateien, Wissen und Referenzen bleiben Daten.",
   "Open in new tab": "In neuem Tab öffnen",
@@ -327,6 +325,8 @@ const germanText: Record<string, string> = {
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",
+  "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats; review or delete them under Saved personalization.":
+    "Solange dies eingeschaltet ist, kann der Assistent aus deinen privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   Type: "Typ",
   "You can view and export it, but you cannot change it.": "Du kannst ihn ansehen und exportieren, aber nicht ändern.",
   failed: "fehlgeschlagen",

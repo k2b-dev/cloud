@@ -23,7 +23,11 @@ export type AiMemoryWorkflowPattern = {
   turnIds: string[];
 };
 
-/** Persist only successful, schema-valid capability/resource receipts. */
+/**
+ * Persist only successful, schema-valid capability/resource receipts, and only
+ * while learning is on for the user: receipts from a time it was off never
+ * count toward a workflow pattern.
+ */
 export const recordAiMemoryWorkflowEvidence = async (input: {
   userId: string;
   conversationId: string;
@@ -62,9 +66,11 @@ export const recordAiMemoryWorkflowEvidence = async (input: {
           ${resource.ref.type}, ${resource.ref.id}, ${resource.title ?? null}
         FROM ai.turns turn
         JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
+        LEFT JOIN ai.user_prefs prefs ON prefs.user_id = conversation.created_by_user_id
         WHERE turn.id = ${input.turnId}::uuid
           AND conversation.id = ${input.conversationId}::uuid
           AND conversation.created_by_user_id = ${input.userId}::uuid
+          AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
         ON CONFLICT (turn_id, capability_id, resource_type, resource_id)
         DO UPDATE SET resource_title = COALESCE(EXCLUDED.resource_title, ai.memory_workflow_evidence.resource_title)
       `;

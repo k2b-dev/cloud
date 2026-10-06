@@ -17,39 +17,83 @@ chosen. Earlier releases kept it off until a person turned it on. A person's
 own choice always wins: Cloud stores a choice only when they save the **Learn
 personalization from private chats** switch in **Assistant settings >
 Personalization** or run `cld assistant personalization configure --learning`,
-and they can turn learning off at any time with immediate effect. Saving
-**Use personalization** alone no longer records a learning choice. Nothing else
-changes: learning needs AI and a usable background model, reads only private chats,
-and stays within the monthly budget described in
+and they can turn learning off at any time. Saving **Use personalization** alone
+no longer records a learning choice. Learning needs AI and a usable background
+model, reads only private chats, and stays within the monthly budget described
+in
 [Personalization](/en/docs/ai/files-projects-and-personalization#use-personalization-for-durable-user-context).
+
+Learning now considers only private-chat turns that finish while it is on.
+When Core first starts this release, it marks every earlier turn and workflow
+receipt of people who had not turned learning on as already considered, so the
+new default never processes chats from before the upgrade. Later, chats that
+finish while a person has learning off are never learned from either, also not
+after they turn it on.
 
 Earlier releases stored "off" for every person who ran an Assistant turn, so a
 stored "off" can be an explicit choice or just the old default. Cloud cannot
 tell them apart and keeps all of them off. Only people without a stored choice,
 in practice those who have not used Assistant yet, follow the new default. To
-see how many people keep a stored "off", run:
+see how many people keep an "off" from an earlier release, run:
 
 ```sql
-SELECT count(*) FROM ai.user_prefs WHERE memory_learning_enabled = FALSE;
+SELECT count(*) FROM ai.user_prefs WHERE memory_learning_enabled = FALSE AND memory_learning_chosen_at IS NULL;
 ```
+
+### Switch earlier "off" values to the default
 
 Learning is private-data processing, so tell people before it starts, for
 example in your release announcement: it is on unless they turn it off, it
 saves facts, preferences, and repeated workflows only from their own private
-chats, and they can review or delete every entry under **Saved
-personalization**. If you then decide that the stored "off" values should
-follow the new default, run this statement once. It leaves out everyone who
-had learning on and later turned it off, because that "off" was certainly
-their own choice:
+chats that finish from now on, and they can review or delete every entry under
+**Saved personalization**. If you then decide that the "off" values from
+earlier releases should follow the new default, run:
 
 ```sql
-UPDATE ai.user_prefs SET memory_learning_enabled = NULL WHERE memory_learning_enabled = FALSE AND NOT EXISTS (SELECT 1 FROM ai.memory_learning_runs run WHERE run.user_id = ai.user_prefs.user_id);
+UPDATE ai.user_prefs SET memory_learning_enabled = NULL
+WHERE memory_learning_enabled = FALSE
+  AND memory_learning_chosen_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM ai.memory_learning_runs run WHERE run.user_id = ai.user_prefs.user_id);
 ```
 
-A stored "off" from an earlier release can still be a deliberate choice, so
-the statement can switch learning on for people who turned it off on purpose.
+The statement never changes a choice saved since the upgrade, so you can run
+it at any time. It also leaves out people for whom learning has already run at
+least once: they had learning on, so their "off" is certainly their own choice.
+Run history proves nothing about anyone else. An "off" from an earlier release
+can still be deliberate, for example when someone turned learning on and off
+again before it ever ran, and the statement switches those people on as well.
+Learning then starts with chats that finish after the statement; their earlier
+chats stay unprocessed.
+
 There is no installation-wide setting for the default; learning stops only
 while AI is disabled or no background model is available.
+
+### Upgrade and roll back
+
+Update Core and Assistant together and keep the mixed state short. A Core
+replica of an earlier release shows learning as off for people without a
+stored choice, although updated replicas already learn for them, and the chats
+it finishes for people with learning off are not marked, so those chats can
+still be learned from if learning is turned on for them later. An Assistant of
+an earlier release saves both personalization switches together, so saving
+**Use personalization** there also stores the learning switch as a choice.
+
+Earlier releases treat a missing choice as off, but their settings dialog
+sends the missing choice back, so saving only **Use personalization** fails for
+those people. Before you roll back, store the earlier default for them and restore the
+earlier column definition:
+
+```sql
+UPDATE ai.user_prefs SET memory_learning_enabled = FALSE WHERE memory_learning_enabled IS NULL;
+ALTER TABLE ai.user_prefs
+  ALTER COLUMN memory_learning_enabled SET DEFAULT FALSE,
+  ALTER COLUMN memory_learning_enabled SET NOT NULL;
+```
+
+After a later upgrade, these people count as an "off" from an earlier release
+again, and so does every "off" saved while the earlier release ran. Chats that
+the earlier release finished can be learned from once learning is on for their
+owner.
 
 ## Resources keep at least one manager
 
