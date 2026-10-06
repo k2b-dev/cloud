@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # Mail
@@ -318,7 +318,8 @@ as failed instead of empty. A search that runs out of time fails with
 internal error.
 
 BM25 ranking with `pg_textsearch` is optional; Mail creates its index when the
-extension is installed. See
+extension is installed. Once the index exists, Postgres must keep the library
+preloaded. See
 [Optional Mail search ranking](/en/docs/operations/deployment-requirements#optional-mail-search-ranking).
 
 ## Deployment requirements

@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-09-15
+updated: 2026-10-06
 ---
 
 # In-product Help
@@ -348,8 +348,9 @@ priority. Without it, native full-text search remains available. Both paths
 use the same matching and language rules; ordering can differ. The Help UI
 preserves the returned document order and uses local metadata matches while
 a search is pending or unavailable. See
-[Deployment requirements](/en/docs/operations/deployment-requirements#optional-help-search-ranking)
-for installation and verification.
+[Deployment requirements](/en/docs/operations/deployment-requirements#optional-bm25-search-ranking)
+for installation and verification. Once the indexes exist, every Postgres
+server that runs the database must keep `pg_textsearch` preloaded.
 
 `read_help` and `cloud__help__read` return at most 7,000 characters, selecting
 relevant sections when a query is supplied. An exact level-two heading selects

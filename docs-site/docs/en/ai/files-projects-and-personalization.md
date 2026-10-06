@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-09-27
+updated: 2026-10-06
 ---
 
 # Files, Projects, Skills, and personalization
@@ -182,7 +182,9 @@ not searched or loaded during discovery. Server callers use
 (up to 30 results, query length up to 200 characters); omit `q` to keep the ordinary
 Skill management list, including disabled entries. PostgreSQL's standard `pg_trgm`
 extension supplies fuzzy matching. Optional `pg_textsearch` adds BM25 ranking;
-without it, native PostgreSQL relevance remains available. A normal small
+without it, native PostgreSQL relevance remains available. See
+[Optional BM25 search ranking](/en/docs/operations/deployment-requirements#optional-bm25-search-ranking)
+for setup and the preload it requires. A normal small
 catalog needs no search call. Explicitly attached `core.ai.skill` resources are
 loaded by the server before the response. For other relevant Skills, the model
 calls `load_skill` with the exact name. Both paths recheck access and pin the

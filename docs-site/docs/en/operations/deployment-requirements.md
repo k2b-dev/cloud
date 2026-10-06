@@ -30,7 +30,7 @@ this service set.
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
-| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. |
+| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
@@ -52,6 +52,9 @@ Notebooks, Grids and Spaces use Postgres; deploying those apps does not itself
 require Filegate or S3. Notebook S3 snapshots are an optional export, not a
 replacement for a Cloud database backup. See
 [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state).
+If the database uses optional BM25 ranking, the server you restore into must
+preload `pg_textsearch`; see
+[Restore a backup without the library](#restore-a-backup-without-the-library).
 
 Releases up to 0.8.0 held session advisory locks, which a transaction pooler
 leaves behind on its pooled backends and which then reject writes as
@@ -294,7 +297,7 @@ or mutate real data without approval.
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.0 (tested) or Filegate 6.1, which does not report stable file IDs (`stableIds`), with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Cloud storage requires local Linux identities; FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses shared SMTP, not the Mail app. Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
-| [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
+| [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
 | [Spaces](/en/apps/spaces) (`spaces`) | Baseline | Live updates require WebSockets. Attachments use Postgres. Mail-backed invitations require Mail and an authorized sender/mailbox. Calendar weather uses the shared weather service; the Weather app UI is not required for that in-process feature. | Create a disposable item/event, verify live updates and reload; test invitations only if configured. |
 | [Venues](/en/apps/venue) (`venue`) | Baseline | No additional external service for venue records, hours, shifts and feedback. | Create a test venue and verify its public status page and intended staff-only access. |
 
@@ -527,34 +530,133 @@ Application authors remove calls to `syncOps.registerDeadLetters()` and
 Custom administration clients must include `queue`, `job`, or `topic` in dead-letter
 mutation paths, between `/dead-letters/` and the resource name.
 
-## Optional Help search ranking
+## Optional BM25 search ranking
 
 Help publication and native full-text search require the Core-managed Postgres
 schema. Every supported PostgreSQL version (15 to 17) provides this baseline.
 Apps renew their Help collection through the existing app heartbeat; Core owns
 bounded cleanup of expired collections. See [In-product Help](/en/docs/platform/help).
 
-BM25 ranking is optional. This integration was verified with `pg_textsearch`
-1.4.0 on PostgreSQL 17. The extension supports PostgreSQL 17 and 18; check its
-[installation instructions](https://github.com/timescale/pg_textsearch) against
-your operator-managed database before enabling it.
+Help, Notebooks, Mail, Assistant conversations, AI memories, and AI Skills
+search with native PostgreSQL full-text search. BM25 ranking with
+`pg_textsearch` is optional; it changes the order of matches, not which
+matches a user may see. This integration was verified with `pg_textsearch`
+1.4.0 and 1.5.1 on PostgreSQL 17. The extension supports PostgreSQL 17 and 18;
+check its [installation instructions](https://github.com/timescale/pg_textsearch)
+against your operator-managed database before enabling it. Read
+[Keep the library loaded while BM25 indexes exist](#keep-the-library-loaded-while-bm25-indexes-exist)
+first: enabling BM25 is easy to undo only while the library is still loaded.
 
 1. Install the extension package matching the database major version and architecture.
 2. Add `pg_textsearch` to `shared_preload_libraries` and restart Postgres during
    an approved maintenance window.
 3. Enable it in the Cloud database with `CREATE EXTENSION pg_textsearch`.
-4. Run Core setup again to create the optional Help indexes.
+4. Restart Core, then Notebooks and Mail. Their setup creates the BM25 indexes.
 
-Cloud does not install this extension automatically. It checks extension and
-index availability when searching, so existing processes can use the indexes
-once they are ready. If the extension or an index is absent, native search
-remains active. Ordinary database failures are still reported as errors.
+| Application | BM25 indexes |
+| --- | --- |
+| Help (Core) | `help.help_bm25_english_idx`, `help.help_bm25_german_idx`, `help.help_bm25_simple_idx` |
+| Assistant conversations (Core) | `ai.conversations_search_bm25_idx`, `ai.messages_search_bm25_idx` |
+| AI memories (Core) | `ai.memories_search_bm25_idx` |
+| AI Skills (Core) | `ai.skills_search_bm25_idx` |
+| Notebooks | `notebooks.notes_search_bm25_idx` |
+| Mail | `mail.message_contents_bm25_idx`, built in the background; see [Optional Mail search ranking](#optional-mail-search-ranking) |
+
+Step 3 can happen without you. On PostgreSQL 17 and later, Core's AI setup and
+Notebooks setup run `CREATE EXTENSION IF NOT EXISTS pg_textsearch` when the
+package is installed. Without the preload this fails and setup continues with
+native search. With the preload and a database role that may create the
+extension, it succeeds, so a Postgres image that preloads `pg_textsearch`
+enables BM25 on the next start.
+
+Searches check extension and index availability, so existing processes can
+use the indexes once they are ready. If the extension or an index is absent,
+native search remains active. Ordinary database failures are still reported as
+errors.
 
 Keep the existing database's storage and major version unchanged when testing
 BM25 in a separate environment. Verify both search modes with real application
 articles and the required language; a healthy Postgres container alone does
 not prove that the optional indexes are usable.
 
+### Keep the library loaded while BM25 indexes exist
+
+BM25 is optional when you set it up, not afterwards. Once any index above
+exists, Postgres rejects every statement on its table unless `pg_textsearch`
+is in `shared_preload_libraries`. Reads, writes, `DROP INDEX`, and
+`DROP EXTENSION pg_textsearch CASCADE` all fail:
+
+```text
+ERROR:  pg_textsearch must be loaded via shared_preload_libraries
+HINT:  Add 'pg_textsearch' to shared_preload_libraries in postgresql.conf and restart the server.
+```
+
+When the package is missing from the server entirely, the same statements fail
+with `could not access file "$libdir/pg_textsearch"`, and a server that still
+lists `pg_textsearch` in `shared_preload_libraries` does not start.
+
+Native search cannot take over, because it reads the same tables. Core setup
+stops with this error, so Core does not start. Notebooks setup fails the same
+way. Mail setup passes, but every search and write of stored message text
+fails.
+
+Treat the preloaded library as part of the database. Every server that runs it
+needs the package installed and `pg_textsearch` in `shared_preload_libraries`:
+
+- streaming replicas and standbys that serve reads or can be promoted;
+- any server you restore a backup into;
+- the new cluster of a major-version upgrade, which must be PostgreSQL 17 or
+  later;
+- a replacement Postgres image or configuration. The `postgres:17-alpine`
+  image, for example, does not include the package.
+
+#### Recover a server without the library
+
+1. Install the package matching the server's major version.
+2. Add `pg_textsearch` to `shared_preload_libraries` and restart Postgres.
+3. Start Core, then the other applications.
+
+The tables and BM25 indexes are intact; nothing needs to be rebuilt.
+
+#### Return to native search
+
+Remove BM25 while the library is still loaded:
+
+1. Stop Core, Notebooks, and Mail, so that their setup cannot recreate the
+   extension or its indexes.
+2. In the Cloud database, remove the extension together with every BM25 index:
+
+   ```sql
+   DROP EXTENSION pg_textsearch CASCADE;
+   ```
+
+   Dropping only the indexes is not enough: while the extension remains, Core,
+   Notebooks, and Mail create them again on their next start. Run the same
+   statement in every other database on this server that has the extension.
+3. Remove `pg_textsearch` from `shared_preload_libraries` and restart Postgres.
+   Do this before starting Cloud again; otherwise setup can recreate the
+   extension.
+4. Start Core, then the other applications. Setup logs that the optional BM25
+   indexes are unavailable and keeps native search.
+
+Mailboxes set to `pg_textsearch` then search natively;
+`cld mail operator status --mailbox <mailbox>` shows `search postgres (fallback)`.
+
+#### Restore a backup without the library
+
+`pg_restore` into a server without the library restores every table and row,
+but exits with status 1: creating the extension and each BM25 index fails. The
+restored database then searches natively. To restore a custom-format dump
+without these errors, leave the BM25 objects out:
+
+```bash
+pg_restore --list cloud.dump | grep -v -E 'pg_textsearch|_bm25_' > restore.list
+pg_restore --use-list restore.list --dbname <target-database> cloud.dump
+```
+
+Compare the two lists first: only the extension, its comment, and the indexes
+in the table above may be missing. To keep BM25, restore into a server that
+preloads the library instead.
 
 ### Files capability downloads
 
@@ -566,7 +668,7 @@ for the capability flow, lease expiry, and access checks.
 
 Mail searches with native PostgreSQL full-text search on every supported
 version. With `pg_textsearch` installed as described in
-[Optional Help search ranking](#optional-help-search-ranking), Mail ranks with
+[Optional BM25 search ranking](#optional-bm25-search-ranking), Mail ranks with
 BM25 once its index `mail.message_contents_bm25_idx` is valid. Mailboxes set
 to `postgres` keep native ranking.
 
@@ -621,5 +723,8 @@ DROP INDEX CONCURRENTLY IF EXISTS mail.message_contents_bm25_idx;
 ```
 
 Mail builds the index again on its next start while the extension stays
-installed, so set the mailboxes to `postgres` first if BM25 should stay off. See [Mail search in large mailboxes](/en/apps/mail#search-in-large-mailboxes)
+installed, so set the mailboxes to `postgres` first if BM25 should stay off.
+Dropping Mail's index does not remove the need for the preloaded library while
+the other BM25 indexes exist; to stop using `pg_textsearch` entirely, follow
+[Return to native search](#return-to-native-search). See [Mail search in large mailboxes](/en/apps/mail#search-in-large-mailboxes)
 for how search bounds its work.
