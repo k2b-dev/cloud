@@ -149,6 +149,8 @@ describe("mailHelp", () => {
 
     expect(mailHelp.getMarkdown("mail-start", "de-CH")).toContain("Mail spiegelt E-Mails");
     expect(mailHelp.getMarkdown("mail-workflows", "de")).toContain("Mail-Workflow-YAML");
+    expect(mailHelp.getMarkdown("mail-automation", "de")).toContain("**Administration > Systembeobachtung > Workflows**");
+    expect(mailHelp.getMarkdown("mail-automation", "de")).not.toContain("**Admin > ");
     expect(mailHelp.getMarkdown("mail-start", "fr")).toBe(mailHelp.getMarkdown("mail-start")!);
   });
 

@@ -27,7 +27,7 @@ export const app = defineApp({
         translations: {
           de: {
             label: "Dateikonfiguration",
-            description: "Wird in der Dateiverwaltung verwaltet. Enthält Filegate-Zugang und beide Dateibereiche.",
+            description: "Wird in der Dateien-Administration verwaltet. Enthält Filegate-Zugang und beide Dateibereiche.",
           },
         },
       },

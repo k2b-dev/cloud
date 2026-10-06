@@ -100,7 +100,7 @@ export const filesMessages = i18n.define({
     },
     de: {
       files: "Dateien",
-      admin: "Dateiverwaltung",
+      admin: "Dateien-Administration",
       storage: "Ablagen",
       home: "Persönlich",
       group: "Gruppe",

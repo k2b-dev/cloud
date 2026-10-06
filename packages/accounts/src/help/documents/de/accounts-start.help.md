@@ -32,4 +32,4 @@ FreeIPA-gestützte Personen und Gruppen werden bei aktiviertem FreeIPA über den
 
 ## Konto oder Gruppe finden {icon="search"}
 
-Der Suchbutton und **Cmd/Ctrl+Shift+K** öffnen die Cloud-Suche mit einem Konten-Chip. Du findest lesbare Gruppen; Administratoren zusätzlich Nutzer und Service Accounts. Ein Treffer öffnet die bestehende Verwaltungsseite. Entferne den Chip, um andere Apps zu durchsuchen.
+Der Suchbutton und **Cmd/Ctrl+Shift+K** öffnen die Cloud-Suche mit einem Konten-Chip. Du findest lesbare Gruppen; Administratoren zusätzlich Nutzer und Service Accounts. Ein Treffer öffnet die zugehörige Seite in Accounts. Entferne den Chip, um andere Apps zu durchsuchen.

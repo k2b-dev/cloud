@@ -55,7 +55,7 @@ const notificationMessages = i18n.define({
       expirySubject: ({ appName }) => `Dein Konto bei ${appName} läuft bald ab`,
       phonePairedTitle: "Neues Telefon gekoppelt",
       phonePairedBody: ({ name, platform, time, where }) =>
-        `Das Telefon „${name}“ (${platformLabel(platform, "andere Plattform")}) wurde am ${time} in der Mobile App mit deinem Konto gekoppelt. Falls du das nicht warst, entferne es ${where} und wende dich an die Verwaltung.`,
+        `Das Telefon „${name}“ (${platformLabel(platform, "andere Plattform")}) wurde am ${time} in der Mobile App mit deinem Konto gekoppelt. Falls du das nicht warst, entferne es ${where} und wende dich an die Administration.`,
       phonePairedInApp: "unter „App“ in deinem Profilmenü",
       phonePairedAt: ({ url }) => `unter ${url}`,
     },

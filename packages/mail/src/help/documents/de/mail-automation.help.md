@@ -149,7 +149,7 @@ Die Vorlage **Referenzbestätigung** vergibt die Referenz vor dem Senden und fü
 4. Wähle **Workflow erstellen** oder **Version speichern**.
 5. Prüfe die neue Version unter **Versionen**.
 6. Wähle **Aktivieren** oder **Aktuelle Version aktivieren**.
-7. Prüfe die erste passende Ausführung unter **Automatisierungen > Aktivität**. Plattformbetreiber können außerdem **Admin > Beobachtbarkeit > Workflows** verwenden.
+7. Prüfe die erste passende Ausführung unter **Automatisierungen > Aktivität**. Plattformbetreiber können außerdem **Administration > Systembeobachtung > Workflows** verwenden.
 :::
 
 Das Speichern aktiviert niemals eine Version. Eine bereits aktive Version läuft weiter, bis ein Administrator die neuere ausdrücklich aktiviert. **Aktualisierung verfügbar** bedeutet, dass sich die gespeicherte aktuelle und die aktive Version unterscheiden.
@@ -158,7 +158,7 @@ Effektbudgets sind feste Obergrenzen für Verschiebungen, Sendungen, Schlüsselw
 
 ## Workflow-Ausführungen beobachten und stoppen {icon="activity"}
 
-Postfachadministratoren verwenden **Automatisierungen > Aktivität** für postfachbezogene automatische Antworten, eingehende Automatisierungen, eigene Workflows und fortsetzbare Backfills. Die Tabelle zeigt Automatisierungstyp, Status, Dauer, Zeitpunkt und eine begrenzte Fehler- oder Ergebnismeldung. Plattformadministratoren behalten die anwendungsübergreifende Detailansicht unter **Admin > Beobachtbarkeit > Workflows**.
+Postfachadministratoren verwenden **Automatisierungen > Aktivität** für postfachbezogene automatische Antworten, eingehende Automatisierungen, eigene Workflows und fortsetzbare Backfills. Die Tabelle zeigt Automatisierungstyp, Status, Dauer, Zeitpunkt und eine begrenzte Fehler- oder Ergebnismeldung. Plattformadministratoren behalten die anwendungsübergreifende Detailansicht unter **Administration > Systembeobachtung > Workflows**.
 
 Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Der Abbruch macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Eine Ausführung mit Klärungsbedarf wartet darauf, dass ein Administrator festhält, ob ein unklarer externer Effekt eingetreten ist. Das Deaktivieren eines Mail-Workflows verhindert neue passende Auslöser; der abgeschlossene Verlauf bleibt unverändert.
 

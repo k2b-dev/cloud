@@ -38,10 +38,10 @@ const notificationMessages = i18n.define({
       welcomeSubject: ({ appName }) => `Willkommen bei ${appName}`,
       requestUpdate: "Aktualisierung deiner Kontoanfrage",
       requestReviewed: "Deine Kontoanfrage wurde geprüft.",
-      administrativeMessage: "Du hast eine neue Nachricht von der Verwaltung erhalten.",
+      administrativeMessage: "Du hast eine neue Nachricht von der Administration erhalten.",
       deviceRevoked: "Anmeldegerät widerrufen",
       deviceRevokedBody: ({ name }) =>
-        `Die Verwaltung hat das Gerät „${name}“ widerrufen. Es kann keine Cloud-Anmeldungen mehr bestätigen. Um die App-Anmeldung weiter zu nutzen, kopple erneut ein Gerät oder wende dich an die Verwaltung.`,
+        `Die Administration hat das Gerät „${name}“ widerrufen. Es kann keine Cloud-Anmeldungen mehr bestätigen. Um die App-Anmeldung weiter zu nutzen, kopple erneut ein Gerät oder wende dich an die Administration.`,
     },
   },
 });
@@ -61,7 +61,7 @@ export const NOTIFICATIONS = {
     description: "Required when an administrator sends a one-time sign-in link to a local account.",
     presentation: presentation(
       "Administrative Anmeldelinks",
-      "Erforderlich, wenn die Verwaltung einen einmaligen Anmeldelink an ein lokales Konto sendet.",
+      "Erforderlich, wenn die Administration einen einmaligen Anmeldelink an ein lokales Konto sendet.",
     ),
     delivery: requiredEmail,
     data: z.object({ token: z.string(), magicLink: z.string().url() }),
@@ -156,7 +156,7 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Administrative messages",
     description: "Messages sent directly to an account by an administrator.",
-    presentation: presentation("Nachrichten der Verwaltung", "Nachrichten, die die Verwaltung direkt an ein Konto sendet."),
+    presentation: presentation("Nachrichten der Administration", "Nachrichten, die die Administration direkt an ein Konto sendet."),
     delivery: { recommended: ["email"] },
     data: z.object({ subject: z.string(), rawHtml: z.string() }),
     render: ({ subject }, { locale }) => ({ title: subject, body: text(locale).administrativeMessage, targetHref: "/me/notifications" }),
@@ -168,7 +168,7 @@ export const NOTIFICATIONS = {
     description: "Security notice when an administrator revokes a device that approves Cloud sign-ins.",
     presentation: presentation(
       "Anmeldegerät widerrufen",
-      "Sicherheitshinweis, wenn die Verwaltung ein Gerät widerruft, das Cloud-Anmeldungen bestätigt.",
+      "Sicherheitshinweis, wenn die Administration ein Gerät widerruft, das Cloud-Anmeldungen bestätigt.",
     ),
     // Best effort: a person without email still gets a browser notice where one is set up.
     delivery: { recommended: ["email", "browser"] },

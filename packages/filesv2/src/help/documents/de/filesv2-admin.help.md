@@ -6,7 +6,7 @@ description: Filegate verbinden, Verzeichnisse prüfen und Archiv sowie Lebenszy
 order: 200
 ---
 
-Öffne **Dateiverwaltung**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
+Öffne **Dateien-Administration**, um die Dateien-App zu verwalten. Die Ansichten trennen Speicherinformationen, aktuelle Verzeichnisse, archivierte Verzeichnisse, öffentliche Freigaben und Einstellungen. Filter, Ordner und Seiten bleiben in der Adresse erhalten, auch beim Vor- und Zurücknavigieren.
 
 ## Ablagen unter Einstellungen verbinden {icon="plug"}
 
