@@ -1,10 +1,10 @@
 import { type CloudCliContext, type CloudCliText, cliAmbiguityText, cliText, parseCliAddress } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
 import type { BaseSummary, BasesResult, EntryResult } from "./contracts";
-import { parseEntryRefId } from "./resource-ref";
+import { parseEntryRefId, parseStableEntryRefId } from "./resource-ref";
 
 /**
- * `cld filesv2` addresses. A file argument is `<area>:/path` or a file ID; an
+ * `cld filesv2` addresses. A file argument is `<area>:/path` or a file ID (stable `n:…`, persisted `p:…`, or inline); an
  * area is `me` (the personal area), a group area's ID or exact name, or a
  * full area ID such as `cloud:groups:<uuid>`. Parsing never contacts the
  * server; the resolver matches areas against `GET /bases` and never guesses.
@@ -42,6 +42,8 @@ const normalizePath = (raw: string) => ({
 });
 
 export function parseFileAddress(raw: string): FileAddress {
+  // A stable ID contains an area ID and colons, so it is recognized before any split.
+  if (parseStableEntryRefId(raw)) return { kind: "file-id", id: raw };
   const id = AREA_ID.exec(raw);
   if (id) return { kind: "path", area: { kind: "id", id: id[1]! }, container: id[1]!, ...normalizePath(id[2] ?? "") };
   if (PERSISTED_FILE_ID.test(raw)) return { kind: "file-id", id: raw };

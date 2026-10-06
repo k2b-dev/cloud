@@ -46,6 +46,9 @@ test("accepts inline and persisted file IDs and rejects bare names and local pat
   expect(parseFileAddress(inline)).toEqual({ kind: "file-id", id: inline });
   const persisted = `p:${"a".repeat(64)}`;
   expect(parseFileAddress(persisted)).toEqual({ kind: "file-id", id: persisted });
+  // A stable ID starts with "n:" and contains an area ID; it is neither the area "n" nor an area path.
+  const stable = `n:${team.id}:019b72cf-5200-7000-8000-000000000001`;
+  expect(parseFileAddress(stable)).toEqual({ kind: "file-id", id: stable });
   expect(failure(() => parseFileAddress("team")).en).toContain('"team:"');
   for (const local of ["./report.pdf", "/tmp/x", "../x", "~/x"]) expect(failure(() => parseFileAddress(local)).en).toContain("local path");
 });

@@ -15,6 +15,11 @@ export async function persistedEntryRefId(baseId: string, path: string): Promise
   return id;
 }
 
+/** The ref an entry is handed out under: its stable ref where the server minted one, its path ref otherwise. */
+export const entryRef = (baseId: string, entry: { path: string; resourceId?: string }): Promise<string> =>
+  entry.resourceId ? Promise.resolve(entry.resourceId) : persistedEntryRefId(baseId, entry.path);
+
+/** Path refs only; stable `n:` refs resolve through the Files service, which checks the base before asking Filegate. */
 export async function resolveEntryRefId(id: string): Promise<{ baseId: string; path: string } | null> {
   if (!/^p:[a-f0-9]{64}$/.test(id)) return parseEntryRefId(id);
   const row = (await sql<{ base_id: string; path: string }[]>`SELECT base_id,path FROM filesv2.entry_references WHERE id=${id}`)[0];

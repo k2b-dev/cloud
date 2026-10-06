@@ -50,9 +50,13 @@ export type BaseSummary = {
   reason: string | null;
   indexEnabled: boolean;
   versioningEnabled: boolean;
+  /** The root offers Filegate stable IDs (`index` and `managed`); entries then carry stable refs. */
+  stableIds?: boolean;
 };
 export type FileEntry = {
   revision?: string;
+  /** Stable `filesv2.entry` ref (`n:<baseId>:<fileId>`) that survives rename and move; absent where only path refs exist. */
+  resourceId?: string;
   name: string;
   path: string;
   directory: boolean;
@@ -77,7 +81,7 @@ export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: bool
 /** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */
 export type MarkedEntry = { base: { id: string; name: string; kind: BaseKind; area: Area }; entry: FileEntry; markedAt: string };
 export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096), favorite: z.boolean() });
-/** A file ID: an inline `filesv2.entry` ref or a persisted `p:<sha256>` one. */
+/** A file ID: a stable `n:<baseId>:<fileId>` ref, an inline `filesv2.entry` ref, or a persisted `p:<sha256>` one. */
 export const EntryIdSchema = z.object({ id: z.string().min(1).max(512) });
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
@@ -212,6 +216,8 @@ export type PublicShare = {
 };
 export type RootSummary = {
   managed?: boolean;
+  /** Filegate reports stable file IDs for this root, so new Files refs survive rename and move. */
+  stableIds?: boolean;
   executionEnabled?: boolean;
   observation?: {
     complete: boolean;

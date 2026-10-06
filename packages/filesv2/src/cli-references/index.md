@@ -14,7 +14,8 @@ A file argument is `<area>:/path` or a file ID:
   `cloud:groups:<uuid>:/Shared`. It is the only way to reach a group area that
   `ls` hides, such as a personal Linux group, or a group named `me`.
 - A file ID is the `resourceId` from `stat --json` or the `filesv2.entry` ref
-  from the capability catalog. It always resolves and needs no area.
+  from the capability catalog. It needs no area. See [Keep file
+  references](#keep-file-references).
 - `me:` and `me:/` are the area root. A trailing `/` names a folder to put
   entries into (`put`, `mv`).
 
@@ -33,6 +34,31 @@ cld filesv2 stat me:/Documents/report.pdf --json
 cld filesv2 cat me:/Notes/todo.md
 cld filesv2 search me:/Documents report --json
 ```
+
+## Keep file references
+
+To remember a file or folder, or to hand it to another app, keep its file ID
+exactly as Cloud returned it. Never build one from a path or change its form.
+
+- On storage with stable file IDs, the ID is `n:<area-id>:<file-id>`. It keeps
+  naming the same file or folder after a rename or move inside its area and
+  after replacing its content or restoring a version. A copy gets its own ID.
+  Deleting a file and creating a new one at the same path does not carry the
+  ID over.
+- Elsewhere the ID names the area and path, as an opaque string or
+  `p:<hash>` for long paths. A rename or move breaks it; a new file at the
+  same path takes it over.
+- IDs saved earlier keep their own form and keep working. The same file can
+  therefore have an older path ID and a newer stable ID. Equal IDs name the
+  same entry, but different IDs do not prove different files. `stat --json`
+  through either ID returns the current `resourceId`.
+- An ID grants no access. Every use rechecks it. An entry in the trash, in an
+  area you lost access to, or deleted is `not_found` (404); storage outages
+  stay `unavailable` (503), so do not treat them as deletion.
+
+`ls --json` reports `stableIds` for each area; administrators see it per root
+as `root.stableIds` in `admin inventory`. An older Files CLI plugin reads
+`n:…` as an area named `n`; run `cld plugins update filesv2`.
 
 ## Commands
 
@@ -308,9 +334,8 @@ cld capabilities query filesv2 content.download --input '{"id":"<filesv2.entry-r
 `entry.list` and `entry.search-in-base` return `data.items` with a qualified
 `filesv2.entry` ref next to each entry. Its `id` is the same file ID that the
 CLI accepts. Continue with `data.next` as `after` until null. Lists do not
-issue download leases. Refs are stable for an area and path, including long
-paths; rename or move changes them, replacing content at the same path does
-not. They grant no access.
+issue download leases. Refs follow [Keep file references](#keep-file-references):
+stable refs survive rename and move, path refs do not. They grant no access.
 
 Only request `content.download` when downloading a selected file. The result's
 `data` is `{url,method:"GET",expires}`; the bearer URL is valid for 60 seconds.

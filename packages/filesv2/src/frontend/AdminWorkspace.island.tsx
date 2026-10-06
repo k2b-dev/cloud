@@ -393,6 +393,10 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                               />
                               <StatusBadge
                                 tone="neutral"
+                                label={`${a().stableIds}: ${root().stableIds === undefined ? t().unknown : root().stableIds ? t().on : t().off}`}
+                              />
+                              <StatusBadge
+                                tone="neutral"
                                 label={`${a().unixExecution}: ${root().executionEnabled === undefined ? t().unknown : root().executionEnabled ? t().on : t().off}`}
                               />
                               <Button

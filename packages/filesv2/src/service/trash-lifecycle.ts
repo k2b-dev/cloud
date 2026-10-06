@@ -6,6 +6,7 @@ import { withRootLock } from "../data/operations";
 import { type TrashRow, trash } from "../data/trash";
 import { operationError, runFileBatch } from "./batches";
 import { FilesError } from "./errors";
+import { fileEntry } from "./file-entry";
 import { joinPath, relativePath, userPath } from "./paths";
 
 /** Request-authorized location. Rights checks remain in the owning service. */
@@ -72,13 +73,6 @@ const recordEntry = (row: TrashRow): TrashEntry => ({
   deletedAt: row.original === null ? null : row.deleted_at.toISOString(),
   state: row.state === "pending" || row.state === "restoring" ? row.state : "trashed",
   ...(row.error_code ? { error: row.error_code } : {}),
-});
-const fileEntry = (path: string, node: Node) => ({
-  name: path.split("/").at(-1)!,
-  path,
-  directory: node.directory,
-  size: node.size,
-  modified: node.modified,
 });
 const filesystemId = (path: string) => `fs:${Buffer.from(path).toString("base64url")}`;
 function filesystemPath(id: string): string {
@@ -313,7 +307,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
           sameLocation(current, restored);
           if (restored.bindingId !== current.bindingId || !sameTrashNode(row.snapshot, restored.node))
             throw new FilesError("source_changed", 409);
-          return { base: restored.base, entry: fileEntry(row.restore_path, restored.node) };
+          return { base: restored.base, entry: fileEntry(restored.base, row.restore_path, restored.node) };
         }
         if (row.state === "pending") {
           await reconcile(current, row, false);
@@ -332,7 +326,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         }
         const restored = await reconcile(current, row, true);
         if (!restored) throw new FilesError("operation_unresolved", 409);
-        return { base: destination.base, entry: fileEntry(path, restored) };
+        return { base: destination.base, entry: fileEntry(destination.base, path, restored) };
       });
     },
   };
