@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import capabilitiesCliModule from "./capabilities";
@@ -192,6 +193,29 @@ describe("capabilities CLI", () => {
     const { ctx, lines } = createContext(["catalog"], {}, async () => new Response(`${" ".repeat(300 * 1024)}${payload}`));
     await capabilitiesCliModule.run(ctx);
     expect(lines).toContain(payload);
+  });
+
+  test("reads catalog pages from a newer Cloud release", async () => {
+    const page = {
+      protocolVersion: 2,
+      generatedAt: "2027-01-01T00:00:00Z",
+      apps: [{ appId: "library", appName: "Library", appIcon: "ti ti-books", appDescription: "Books", manifest: futureLibrary().manifest }],
+      page: { hasMore: false },
+    };
+    const catalog = createContext(["catalog"], {}, async () => Response.json(page));
+    await capabilitiesCliModule.run(catalog.ctx);
+    const listed = JSON.parse(catalog.lines[0]!);
+    expect(listed).not.toHaveProperty("generatedAt");
+    expect(listed.apps[0].manifest).not.toHaveProperty("fileProvider");
+    expect(listed.apps[0].manifest.queries.map((query: { localId: string }) => query.localId)).toEqual(["book.read"]);
+
+    const requests: string[] = [];
+    const read = createContext(["read", "library.book", "b1"], {}, async (path) => {
+      requests.push(path);
+      return path.startsWith("/api/capabilities/v1/catalog") ? Response.json(page) : Response.json({ data: { id: "b1", name: "Book" } });
+    });
+    await capabilitiesCliModule.run(read.ctx);
+    expect(requests.at(-1)).toBe("/api/capabilities/v1/queries/library/book.read");
   });
 
   test("rejects invalid catalog and invocation envelopes", async () => {
