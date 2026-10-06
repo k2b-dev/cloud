@@ -20,6 +20,12 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     revocation_reason TEXT
   )`.simple();
   await db`CREATE INDEX IF NOT EXISTS pwa_devices_user_active ON auth.pwa_devices(user_id) WHERE revoked_at IS NULL`.simple();
+  // The "new phone paired" notice: Core's maintenance sends it once per device in the locale of
+  // the completing request, then sets notified_at.
+  await db`ALTER TABLE auth.pwa_devices
+    ADD COLUMN IF NOT EXISTS locale TEXT CHECK (locale IS NULL OR char_length(locale) BETWEEN 1 AND 35),
+    ADD COLUMN IF NOT EXISTS notified_at TIMESTAMPTZ`.simple();
+  await db`CREATE INDEX IF NOT EXISTS pwa_devices_unnotified ON auth.pwa_devices(created_at) WHERE notified_at IS NULL`.simple();
   // App sessions are ordinary session families bound to one device.
   await db`ALTER TABLE auth.session_families
     ADD COLUMN IF NOT EXISTS pwa_device_id UUID REFERENCES auth.pwa_devices(id) ON DELETE CASCADE`.simple();

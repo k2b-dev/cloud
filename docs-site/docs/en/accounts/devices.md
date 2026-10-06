@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1085
 description: Pair a sign-in app with QR or a copy link, and remove a lost sign-in device or app device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Pair and manage sign-in devices
@@ -140,6 +140,15 @@ asked, choose **Confirm it's you**, and the dialog opens again after sign-in.
 To remove a phone, choose **Remove** in its row. The app on that phone is
 signed out at once.
 
+Within about a minute of pairing, Cloud sends you a **New phone paired**
+notice with the phone's name, platform and pairing time, and a link to this
+page. If you did not pair that phone, remove it there and contact your
+administrator. The notice goes by email, or as a browser notification when
+your account has no email address; choose how it reaches you under
+**My account → Notifications** (**Phones paired with the mobile app**).
+You get it once per pairing, not when the app later renews its sign-in. The
+notice never contains the pairing link or code.
+
 ## Remove an app device for someone
 
 > **Preview:** the mobile app is not released yet. Until it is, no account has
@@ -159,6 +168,11 @@ on that phone shows that it was signed out, and nobody can use it for that
 account until it is paired again. Web sessions and sign-in devices stay as they
 are. Cloud records the removal in the audit log; the person is not notified.
 
+From the terminal, administrators use
+`cld accounts users app-devices list <user>` and
+`cld accounts users app-devices remove <user> <device-id> --yes`. Both accept
+`--json`; repeating a removal answers `revoked: false`.
+
 An administrator cannot do this from the mobile app: app sessions never carry
-the administrator role. There is no `cld` command for app devices yet. For the
-HTTP routes, see [Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app).
+the administrator role. For the HTTP routes, see
+[Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app).

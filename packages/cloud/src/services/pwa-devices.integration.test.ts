@@ -16,7 +16,7 @@ import { invocationAuthorityFromRequest } from "./identity/invocation-authority"
 import { revokeIdentitySigningKey } from "./identity/key-ring";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { toPgUuidArray } from "./postgres";
-import { pwaDevices } from "./pwa-devices";
+import { type PwaDevicePairedNotice, pwaDevices } from "./pwa-devices";
 import { session } from "./session";
 import { requireRecentWebSession } from "./session/recent";
 import { createTestAppSession, createTestSession } from "./session/session.test-fixture";
@@ -113,6 +113,18 @@ const confirm = (owner: Person, id: string, code: string) =>
   call(owner.web, "POST", `${PWA_API_PATH}/pairings/${id}/confirm`, { body: { code } });
 const renew = (phone: Jar) => call(phone, "POST", `${PWA_AUTH_PATH}/session/renew`);
 const probe = (phone: Jar) => call(phone, "GET", "/pwa/probe", { origin: null, headers: { "sec-fetch-mode": "navigate" } });
+/** Runs maintenance until no phone of this person waits for its notice; returns their notices. */
+const announce = async (userId: string) => {
+  const notices: PwaDevicePairedNotice[] = [];
+  for (let run = 0; run < 10; run++) {
+    await pwaDevices.maintain(async (notice) => {
+      if (notice.userId === userId) notices.push(notice);
+    });
+    const waiting = await sql`SELECT 1 FROM auth.pwa_devices WHERE user_id = ${userId}::uuid AND notified_at IS NULL`;
+    if (!waiting.length) break;
+  }
+  return notices;
+};
 const wrong = (code: string) => String((Number(code) + 1) % 1_000_000).padStart(6, "0");
 
 /** A complete link pairing with the typed code. */
@@ -362,6 +374,53 @@ suite("mobile app pairing and app sessions", () => {
     expect(replaced?.revocation_reason).toBe("replaced");
   });
 
+  test("a new phone is announced once, without secrets; renewal and a repeated completion announce nothing", async () => {
+    const owner = await person();
+    const started = await startPairing(owner);
+    const phone = new Jar();
+    const { code } = await typed<{ code: string }>(await claim(phone, started.secret, "android"));
+    await confirm(owner, started.id, code);
+    const pairingCookie = phone.get("pwa_pairing")!;
+    const completed = await call(phone, "POST", `${PWA_AUTH_PATH}/pairings/complete`, { headers: { "x-cloud-locale": "de" } });
+    expect(completed.status).toBe(200);
+    const deviceId = phone.get("pwa_device")!.split(".")[0]!;
+    const [device] = await sql<{ created_at: Date }[]>`SELECT created_at FROM auth.pwa_devices WHERE id = ${deviceId}::uuid`;
+
+    const notices = await announce(owner.id);
+    expect(notices).toEqual([
+      {
+        deviceId,
+        userId: owner.id,
+        name: "Android",
+        platform: "android",
+        pairedAt: device!.created_at.toISOString(),
+        locale: "de",
+      },
+    ]);
+    const sent = JSON.stringify(notices);
+    for (const value of [started.secret, code, pairingCookie, phone.get("pwa_device")!, phone.get("pwa_session")!])
+      expect(sent).not.toContain(value);
+    expect(await announce(owner.id)).toEqual([]);
+
+    // Renewal rotates the key and a lost completion answer recovers the phone: neither is a new phone.
+    phone.cookies.delete("pwa_session");
+    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
+    expect(await announce(owner.id)).toEqual([]);
+
+    // Pairing again in the same app adds a new phone, which is announced.
+    const again = await pair(owner, phone);
+    expect((await announce(owner.id)).map((notice) => notice.deviceId)).toEqual([again.deviceId]);
+
+    // A phone removed before its notice went out needs none.
+    const removed = await pair(owner);
+    expect((await call(owner.web, "DELETE", `${PWA_API_PATH}/devices/${removed.deviceId}`)).status).toBe(204);
+    expect(await announce(owner.id)).toEqual([]);
+    const [marked] = await sql<{ notified_at: Date | null }[]>`
+      SELECT notified_at FROM auth.pwa_devices WHERE id = ${removed.deviceId}::uuid`;
+    expect(marked?.notified_at).not.toBeNull();
+  });
+
   test("an app of another account and Chrome signed in as someone else are refused", async () => {
     const owner = await person();
     const stranger = await person({ name: "Grace Example" });
@@ -585,7 +644,7 @@ suite("mobile app pairing and app sessions", () => {
     const { phone, deviceId } = await pair(owner);
     await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${owner.id}::uuid`;
     await sql`UPDATE auth.pwa_pairings SET expires_at = now() - interval '1 minute' WHERE user_id = ${owner.id}::uuid`;
-    await pwaDevices.maintain();
+    await pwaDevices.maintain(async () => {});
     const [device] = await sql<
       { revocation_reason: string }[]
     >`SELECT revocation_reason FROM auth.pwa_devices WHERE id = ${deviceId}::uuid`;

@@ -2,7 +2,7 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { env } from "../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES, PWA_LIMITS, PWA_SCOPE, PwaClaimSchema, type PwaLaunchState, PwaRenameSchema } from "../contracts/pwa";
-import { type AuthContext, auth, rateLimit, v } from "../server";
+import { type AuthContext, auth, getLocale, rateLimit, v } from "../server";
 import { type PwaCredentials, PwaError, pwaDevices } from "../services/pwa-devices";
 import { defaultShellAvailable, handlePwaError, type PwaRouteOptions, pwaErrorResponse, pwaInvalidRequest, pwaTransport } from "./pwa";
 
@@ -102,6 +102,7 @@ export const createPwaPhoneRoutes = (options: PwaRouteOptions = {}) => {
           deviceKey: getCookie(c, PWA_COOKIES.device),
           appSession: await appSession(c),
           webUserId: web?.user.id ?? null,
+          locale: getLocale(c),
         });
         if (result.state === "waiting") return c.json(result, 202);
         if (result.credentials) setAppCredentials(c, result.credentials);
