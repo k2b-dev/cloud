@@ -238,8 +238,8 @@ suite("Files service and durable bindings", () => {
           versions: 0,
           versionBytes: 0,
           activeUploads: 0,
-          available: 1000,
-          capacity: 2000,
+          available: 1_000_000,
+          capacity: 2_000_000,
         });
       if (operation === "content")
         return nodes.has(`${root}:${req.searchParams.get("path")}`)
@@ -923,7 +923,7 @@ suite("Files service and durable bindings", () => {
       service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "trash/x.txt", size: 1, onConflict: "error" }),
     ).rejects.toMatchObject({ code: "reserved_path" });
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "huge.bin", size: 5000, onConflict: "error" }),
+      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "huge.bin", size: 5_000_000, onConflict: "error" }),
     ).rejects.toMatchObject({ code: "insufficient_space" });
     // Another user cannot commit, renew or abort a session they did not open.
     const bob = await user("bob", "ipa");
