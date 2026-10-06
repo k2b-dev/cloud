@@ -77,11 +77,10 @@ Export the data first. **Deleting cannot be undone.**
 - Blocks work at the top level of a document. Inside a list, a quote, or
   another block, and without a closing line, the text stays as written.
 
-This grammar and markup are one implementation for every Cloud surface:
-`MarkdownView`, the shared `markdown.render()` helper in `@k2b/cloud/shared`,
-Help, Notebooks, and PDF exports. Notebooks Book is stricter about one case:
-it marks a block without its closing line as invalid and shows the rest of the
-note as source, so the author sees what to fix.
+This grammar and markup are one implementation: `MarkdownView` and every
+renderer built on the exports below produce the same blocks. A renderer may be
+stricter about one case and mark a block without its closing line as invalid,
+so the author sees what to fix.
 
 A renderer with its own `marked` instance adds `markdownInfoBlocks({ locale })`;
 its body still runs through that instance's renderer and sanitizer. Locales
