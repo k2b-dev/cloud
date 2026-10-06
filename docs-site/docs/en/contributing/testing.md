@@ -173,6 +173,12 @@ branch:
 - Chromium's phone emulation widens `window.innerWidth` to content that is
   wider than the screen. Measure sideways overflow against
   `document.documentElement.clientWidth`.
+- Playwright can read and type into a page before its first frame, and WebKit
+  can hold that frame back while a page loads. A dialog places its initial
+  focus in the next frame after it opens; until then, keys go to the element
+  the browser focused first. A test that types into a dialog right after it
+  opens first waits for the dialog's content and then for one frame:
+  `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
 

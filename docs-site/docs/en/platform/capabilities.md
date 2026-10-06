@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-09-23
+updated: 2026-10-06
 ---
 
 # App capabilities
@@ -691,6 +691,10 @@ fail the Action rather than applying a different effect.
 Cloud validates the declaration at startup:
 
 - `protocolVersion` is currently `2`;
+- the declaration and every Type, Query, Action, Command, Universal Search
+  block, search tag, and stream in it use only fields that your `@k2b/cloud`
+  release defines, so a field from a newer release fails startup instead of
+  being ignored;
 - local IDs start with a lower-case letter and may contain `.`, `_`, or `-`;
 - one local ID may occur only once across Types, Queries, Actions, and Commands;
 - inputs are closed `z.object(...).strict()` schemas;
@@ -781,6 +785,49 @@ assertCapabilityManifestEvolution(previousManifestFixture, current);
 Titles and descriptions may improve without changing the local ID. Consumers
 should still project only the fields they need with permissive runtime schemas
 so additive result fields remain compatible.
+
+### Read manifests from other Cloud releases
+
+Applications and Core update independently, so a manifest or catalog page can
+come from a newer Cloud release than the code that reads it. Every reader in
+`@k2b/cloud` follows one rule: `CapabilityManifestSchema`,
+`CapabilityCatalogSchema`, `listCapabilityCatalog()`, Core's registry, and the
+`capabilities` CLI plugin.
+
+- Readers ignore top-level fields they do not know: in the manifest, in each
+  catalog app, and in the catalog page and its `page` object. The app's other
+  capabilities stay available.
+- A Type, Query, Action, or Command with a field or value the reader does not
+  know is left out, not stripped. The unknown part may change how the entry
+  runs or who may use it, so reading the rest could widen access. Core returns
+  404 for an operation it left out.
+- Core also leaves out a Query, Action, or Command it cannot use as described,
+  for example because it cannot read its JSON Schema. It logs the left-out
+  entries once per registered manifest with the app ID and their local IDs.
+- Entries that depend on a left-out entry follow it. A Universal Search Query
+  scoped to a left-out Type is left out, and a Type whose reader was left out
+  has no reader.
+- Core ignores presentation fields it does not know and skips translations of
+  left-out entries; the remaining translations still apply.
+- A manifest with a different `protocolVersion` is not read at all. Core also
+  rejects the whole manifest when its app ID, unique local IDs, or
+  `manifestHash` do not check out.
+
+Producers stay strict. `app.start()` and `compileCapabilityManifest()` reject
+every declaration field their release does not define, at every level, so an
+application never registers a field it believes is in effect while its
+`@k2b/cloud` ignores it.
+
+Because older readers ignore them, new top-level manifest fields may only add
+something, such as a provider declaration. A change that restricts how an
+existing Type, Query, Action, or Command may run belongs inside that entry,
+where an older reader leaves the entry out instead of running it with fewer
+restrictions.
+
+Core checks `manifestHash` against the manifest exactly as the app sent it,
+including the fields Core ignores, and keeps that hash. It therefore still
+matches the hash in the app's registry entry, and a manifest without newer
+fields has the same hash as before.
 
 ## Return structured results
 

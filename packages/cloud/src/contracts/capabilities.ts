@@ -504,17 +504,70 @@ export const CapabilityAppIdSchema = z
   .max(80)
   .regex(/^[a-z][a-z0-9-]*$/);
 
-export const CapabilityManifestSchema = z
-  .object({
+const MAX_MANIFEST_ENTRIES = 200;
+
+/** Keeps the sent entries this release reads completely. */
+const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
+  // Not a bounded list: leave the value to the manifest schema, which rejects it.
+  if (!Array.isArray(values) || values.length > MAX_MANIFEST_ENTRIES) return null;
+  return values.flatMap((value) => {
+    const parsed = entry.safeParse(value);
+    return parsed.success ? [parsed.data] : [];
+  });
+};
+
+/**
+ * Reads what this release understands from a manifest that a newer release may have produced.
+ *
+ * - Unknown top-level fields are ignored. A newer release may therefore only add something at the top
+ *   level; anything that restricts an existing entry belongs inside that entry.
+ * - An entry with a field or value from a newer release is left out rather than stripped: its unknown
+ *   part may change how the entry runs or who may use it, so guessing could widen access.
+ * - Entries that depend on an entry that is not there follow it: a Query scoped to a missing type is
+ *   left out, and a type whose reader is missing keeps no reader.
+ *
+ * Every other entry stays available.
+ */
+const readableManifest = (value: unknown): unknown => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const sent = value as Record<string, unknown>;
+  const types = readEntries(sent.types, CapabilityResourceTypeManifestSchema);
+  const queries = readEntries(sent.queries, CapabilityQueryManifestSchema);
+  const actions = readEntries(sent.actions, CapabilityActionManifestSchema);
+  const commands = readEntries(sent.commands, CapabilityCommandManifestSchema);
+  if (!types || !queries || !actions || !commands) return value;
+  const typeIds = new Set(types.map((type) => type.localId));
+  const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
+  const queryIds = new Set(readableQueries.map((query) => query.localId));
+  return {
+    ...sent,
+    types: types.map((type) => {
+      if (!type.reader || queryIds.has(type.reader)) return type;
+      const { reader: _missing, ...withoutReader } = type;
+      return withoutReader;
+    }),
+    queries: readableQueries,
+    actions,
+    commands,
+  };
+};
+
+/**
+ * Reads a manifest from any Cloud release with the same protocol version (see `readableManifest`).
+ * Producers stay strict: `app.start()` registers exactly the manifest its release defines.
+ */
+export const CapabilityManifestSchema = z.preprocess(
+  readableManifest,
+  z.object({
     protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
     appId: CapabilityAppIdSchema,
     manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
-    types: z.array(CapabilityResourceTypeManifestSchema).max(200),
-    queries: z.array(CapabilityQueryManifestSchema).max(200),
-    actions: z.array(CapabilityActionManifestSchema).max(200),
-    commands: z.array(CapabilityCommandManifestSchema).max(200),
-  })
-  .strict();
+    types: z.array(CapabilityResourceTypeManifestSchema).max(MAX_MANIFEST_ENTRIES),
+    queries: z.array(CapabilityQueryManifestSchema).max(MAX_MANIFEST_ENTRIES),
+    actions: z.array(CapabilityActionManifestSchema).max(MAX_MANIFEST_ENTRIES),
+    commands: z.array(CapabilityCommandManifestSchema).max(MAX_MANIFEST_ENTRIES),
+  }),
+);
 
 export type CapabilityResourceTypeManifest = z.infer<typeof CapabilityResourceTypeManifestSchema>;
 export type CapabilityQueryManifest = z.infer<typeof CapabilityQueryManifestSchema>;
@@ -533,22 +586,19 @@ export const resolveCapabilityResourceReader = (manifest: CapabilityManifest, re
   return manifest.queries.find((candidate) => candidate.localId === type.reader) ?? null;
 };
 
-export const CapabilityCatalogAppSchema = z
-  .object({
-    appId: CapabilityAppIdSchema,
-    appName: z.string().min(1).max(200),
-    appIcon: z.string().min(1).max(120),
-    appDescription: z.string().max(1000),
-    manifest: CapabilityManifestSchema,
-  })
-  .strict();
+/** Like the manifest, catalog entries, pages, and their pagination ignore fields that a newer Cloud release added. */
+export const CapabilityCatalogAppSchema = z.object({
+  appId: CapabilityAppIdSchema,
+  appName: z.string().min(1).max(200),
+  appIcon: z.string().min(1).max(120),
+  appDescription: z.string().max(1000),
+  manifest: CapabilityManifestSchema,
+});
 
-export const CapabilityCatalogSchema = z
-  .object({
-    protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
-    apps: z.array(CapabilityCatalogAppSchema).max(25),
-    page: CapabilityPageSchema,
-  })
-  .strict();
+export const CapabilityCatalogSchema = z.object({
+  protocolVersion: z.literal(CAPABILITY_PROTOCOL_VERSION),
+  apps: z.array(CapabilityCatalogAppSchema).max(25),
+  page: z.discriminatedUnion("hasMore", [CapabilityPageSchema.options[0].strip(), CapabilityPageSchema.options[1].strip()]),
+});
 
 export type CapabilityCatalog = z.infer<typeof CapabilityCatalogSchema>;

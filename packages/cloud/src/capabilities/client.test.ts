@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
+import { futureLibrary } from "../../test/future-capability-manifest";
 import { invokeCapability, invokeCapabilityWithDataSchema, listCapabilityCatalog, reviewCapabilityAction } from "./client";
 
 describe("public capability client", () => {
@@ -51,6 +52,20 @@ describe("public capability client", () => {
     });
     expect(result).toEqual({ ok: true, data: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
     expect(url).toBe("/api/capabilities/v1/catalog?cursor=demo&limit=10");
+  });
+
+  test("reads a catalog page from a newer Cloud release without losing an app", async () => {
+    const manifest = futureLibrary().manifest;
+    const app = { appId: "library", appName: "Library", appIcon: "ti ti-books", appDescription: "Books", appAccent: "#0f766e", manifest };
+    const result = await listCapabilityCatalog({
+      fetch: async () => Response.json({ protocolVersion: 2, apps: [app], page: { hasMore: false }, generatedAt: "2027-01-01T00:00:00Z" }),
+    });
+    expect(result.ok).toBeTrue();
+    const [read] = result.ok ? result.data.apps : [];
+    expect(read).not.toHaveProperty("appAccent");
+    expect(read?.manifest).not.toHaveProperty("events");
+    expect(read?.manifest.queries.map((query) => query.localId)).toEqual(["book.read"]);
+    expect(read?.manifest.actions.map((action) => action.localId)).toEqual(["book.rename"]);
   });
 
   test("accepts a valid catalog page larger than the invocation result limit", async () => {
