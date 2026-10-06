@@ -34,7 +34,9 @@ const make = (seq) => {
   }
   return { id: "m" + seq, seq, lines: image ? 0 : lines, image, text: image ? "" : words.join(" "), grow: createSignal(0) };
 };
-const all = Array.from({ length: older + visible + (options.future ?? 1000) }, (_, seq) => make(seq));
+const newer = options.newer ?? 0;
+const all = Array.from({ length: older + visible + newer + (options.future ?? 1000) }, (_, seq) => make(seq));
+const newest = older + visible + newer;
 let first = older;
 let next = older + visible;
 const [items, setItems] = createSignal(all.slice(first, next));
@@ -74,6 +76,29 @@ const list = () =>
     get hasOlder() {
       return first > 0;
     },
+    get hasNewer() {
+      return next < newest;
+    },
+    onLoadNewer: () =>
+      new Promise((done) =>
+        setTimeout(() => {
+          const page = all.slice(next, Math.min(newest, next + 50));
+          next += page.length;
+          setItems((current) => [...current, ...page]);
+          done();
+        }, 150),
+      ),
+    onLoadNewest: options.newest
+      ? () =>
+          new Promise((done) =>
+            setTimeout(() => {
+              first = newest - 100;
+              next = newest;
+              setItems(all.slice(first, next));
+              done();
+            }, 150),
+          )
+      : undefined,
     onLoadOlder: () =>
       new Promise((done) =>
         setTimeout(() => {
@@ -249,7 +274,16 @@ declare const probe: Probe;
 declare const feed: Feed;
 
 const open = async (
-  options: { count?: number; older?: number; future?: number; locale?: string; separators?: boolean; marker?: string } = {},
+  options: {
+    count?: number;
+    older?: number;
+    newer?: number;
+    newest?: boolean;
+    future?: number;
+    locale?: string;
+    separators?: boolean;
+    marker?: string;
+  } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const page = await (await browser.newContext({ viewport: { width: 720, height: 800 }, ...context })).newPage();
@@ -524,6 +558,24 @@ describe(`VirtualFeed in ${browserName}`, () => {
     await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent, null, { timeout: 3_000 });
     expect(await page.locator('[role="log"] > *').allTextContents()).toEqual(["2 neue Einträge"]);
     await page.close();
+  });
+
+  test("Jump to latest reaches the newest item when it is not loaded yet, with or without onLoadNewest", async () => {
+    for (const newest of [false, true]) {
+      const page = await open({ count: 300, newer: 400, newest });
+      const end = page.locator(".k2b-virtual-feed__end");
+      expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(false);
+      await end.click();
+      // Without onLoadNewest the feed follows the end while newer pages arrive; with it, the newest page replaces them.
+      await page.waitForFunction(() => document.querySelector('[data-key="m699"]'), null, { timeout: 10_000 });
+      await page.locator('[role="feed"][aria-busy="false"]').waitFor();
+      await frames(page, 6);
+      expect(await page.evaluate(() => feed.count())).toBe(newest ? 100 : 700);
+      expect(await page.evaluate(() => feed.controller.isAtEnd())).toBe(true);
+      expect(Math.abs(await page.evaluate(() => probe.gap()))).toBeLessThanOrEqual(1);
+      expect(await end.count()).toBe(0);
+      await page.close();
+    }
   });
 
   test("holds corrections back while an iOS finger or momentum scroll is moving the list", async () => {

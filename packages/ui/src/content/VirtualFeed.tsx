@@ -133,8 +133,9 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
   let pendingAnnouncement: T[] = [];
   let announceTimer: ReturnType<typeof setTimeout> | undefined;
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
-  /** "Jump to latest" asked for the newest page while a newer page was still loading. */
-  let wantNewest = false;
+  /** "Jump to latest" asked for the newest page; it waits for running loads and stops new paging until it settles. */
+  let newest: "waiting" | "loading" | undefined;
+  let disposed = false;
   let observeRow: (row: HTMLElement) => void = () => {};
   let unobserveRow: (row: HTMLElement) => void = () => {};
   const owner = getOwner();
@@ -386,6 +387,15 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     dropFocus();
   };
 
+  const loadNewest = () => {
+    if (loadingOlder() || loadingNewer()) {
+      newest = "waiting";
+      return;
+    }
+    newest = "loading";
+    load("newest");
+  };
+
   const load = (direction: "older" | "newer" | "newest") => {
     const setLoading = direction === "older" ? setLoadingOlder : setLoadingNewer;
     const callback = direction === "older" ? props.onLoadOlder : direction === "newer" ? props.onLoadNewer : props.onLoadNewest;
@@ -402,13 +412,14 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       .catch(() => undefined)
       .then(() => {
         setLoading(false);
-        if (direction !== "older" && wantNewest) {
-          wantNewest = false;
-          load("newest");
+        if (disposed) return;
+        if (direction === "newest") newest = undefined;
+        if (newest === "waiting") {
+          if (!loadingOlder() && !loadingNewer()) loadNewest();
           return;
         }
         // Keep loading while the reader still sits at the edge and the last page arrived.
-        if (list !== before && viewport) checkEdges();
+        if (list !== before) checkEdges();
       });
   };
 
@@ -427,7 +438,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         restore(true);
         return;
       }
-      if (props.hasOlder && !loadingOlder()) load("older");
+      if (props.hasOlder && !loadingOlder() && !newest) load("older");
     }
     if (total() - top - height < margin) {
       if (hi < list.length) {
@@ -438,7 +449,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         restore(true);
         return;
       }
-      if (props.hasNewer && !loadingNewer()) load("newer");
+      if (props.hasNewer && !loadingNewer() && !newest) load("newer");
     }
   };
 
@@ -550,23 +561,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     }
   };
 
+  /**
+   * Follows the end. With newer items not loaded, `onLoadNewest` replaces the items, after any running load; without
+   * it, following the end keeps `onLoadNewer` paging until the newest item arrives or the reader scrolls away.
+   */
   const scrollToEnd = () => {
-    if (props.hasNewer && !props.onLoadNewest) {
-      // Without a way to load the newest page, go to the last loaded item and let `onLoadNewer` continue.
-      const last = list.length - 1;
-      if (last < 0) return;
-      if (hi < list.length) windowAround(last);
-      setStick(false);
-      anchor = { index: last, delta: viewport.clientHeight - sizes[last]! };
-      restore(true);
-      return;
-    }
     setStick(true);
-    // Loading the newest page first keeps newer paging from starting next to it; a newer page in flight goes first.
-    if (props.hasNewer) {
-      if (loadingNewer()) wantNewest = true;
-      else load("newest");
-    }
+    if (props.hasNewer && props.onLoadNewest) loadNewest();
     if (hi < list.length) windowAround(list.length - 1);
     restore(true);
   };
@@ -695,6 +696,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     viewport.addEventListener("touchend", touchEnd, { passive: true });
     viewport.addEventListener("touchcancel", touchEnd, { passive: true });
     onCleanup(() => {
+      disposed = true;
       observer.disconnect();
       viewport.removeEventListener("touchstart", touchStart);
       viewport.removeEventListener("touchend", touchEnd);

@@ -48,8 +48,10 @@ Handle errors inside the callback; a rejected promise only ends the busy
 state.
 
 When the newest items are not loaded, for example after jumping to an old
-item, pass `onLoadNewest`. "Jump to latest" then calls it, and the feed lands
-at the end of the new `items`.
+item, pass `onLoadNewest`. "Jump to latest" then calls it once running loads
+have finished, starts no other page meanwhile, and lands at the end of the new
+`items`. Without `onLoadNewest`, the feed follows the end while `onLoadNewer`
+pages arrive, until the newest item is loaded or the reader scrolls away.
 
 ### Jump to an item
 
