@@ -755,10 +755,13 @@ The provider still parses and authorizes inside `run`. Core's validation is an
 additional transport invariant, not a replacement for app-side checks.
 
 When several providers can serve the same consumer, the shared schemas belong
-in `@k2b/cloud/contracts` instead of either app, and the consumer selects the
-provider through its settings. [Contact directory](/en/docs/platform/contact-directory)
-is the current example; `capabilityContractIssues` checks a published operation
-against such a contract.
+in `@k2b/cloud/contracts` instead of either app. `capabilityContractIssues`
+checks a published operation against such a contract, including the stream
+direction a contract names. There are two ways to choose a provider: the
+consumer selects it through its settings, as Mail does for the
+[contact directory](/en/docs/platform/contact-directory), or providers declare
+themselves in their manifest, as with `fileProvider` for
+[file providers](/en/docs/platform/file-providers).
 
 ### Evolve published local IDs additively
 

@@ -1,6 +1,7 @@
 import type { EphemeralConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
+import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import type { DashboardWidgetPresentation } from "../contracts/widgets";
 import { resolveAppPresentations } from "../shared/app-presentation";
@@ -208,6 +209,41 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
   );
 };
 
+/** Last checked manifest per app: its hash and whether its file provider passed the contract check. */
+const checkedFileProviders = new Map<string, { manifestHash: string; valid: boolean }>();
+
+/**
+ * Ignores a file provider that does not match the contract, logging once per manifest; the app's other
+ * capabilities stay available. The delivered `manifestHash` stays, because it identifies what the app registered.
+ */
+const withValidFileProvider = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.fileProvider) return manifest;
+  const checked = checkedFileProviders.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = fileProviderIssues(manifest);
+    valid = issues.length === 0;
+    checkedFileProviders.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored a file provider that does not match the file-provider contract",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues: issues
+            .slice(0, 10)
+            .map(({ function: name, localId, code, path, message }) => ({ function: name, localId, code, path, message })),
+        }),
+      );
+    }
+  }
+  if (valid) return manifest;
+  const { fileProvider: _ignored, ...rest } = manifest;
+  return rest;
+};
+
 /** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
@@ -221,7 +257,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   const endpoint = capabilityEndpoint(app.baseUrl);
   if (!endpoint) return null;
   try {
-    const manifest = parseCapabilityManifest(record.manifest, app.id);
+    const manifest = withValidFileProvider(parseCapabilityManifest(record.manifest, app.id));
     const presentation = compileCapabilityPresentation(manifest, record.presentation, "reader");
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;

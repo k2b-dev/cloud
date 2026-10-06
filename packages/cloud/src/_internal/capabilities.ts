@@ -14,6 +14,7 @@ import {
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
   type CapabilityDefinitions,
+  type CapabilityFileProviderDeclaration,
   type CapabilityError,
   CapabilityErrorSchema,
   type CapabilityExecutionContext,
@@ -35,6 +36,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
+import { fileProviderIssues } from "../contracts/file-provider";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
 
 type JsonSchema = Record<string, unknown>;
@@ -59,7 +61,9 @@ const DECLARATION_FIELDS = {
   queries: true,
   actions: true,
   commands: true,
+  fileProvider: true,
 } satisfies DefinedFields<CapabilityDefinitions>;
+const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
 const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
   title: true,
@@ -551,6 +555,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
   assertDefinedFields(definitions, DECLARATION_FIELDS, "Capability declaration");
+  if (definitions.fileProvider) assertDefinedFields(definitions.fileProvider, FILE_PROVIDER_FIELDS, "fileProvider");
 
   const localIds = new Set<string>();
   const registerLocalId = (localId: string, kind: string): void => {
@@ -707,6 +712,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       });
     });
 
+  const fileProvider = definitions.fileProvider;
   const manifestBase = {
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
@@ -714,11 +720,23 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
     commands,
+    // Omitted when unused so manifests without a provider keep their earlier hash.
+    ...(fileProvider
+      ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
+      : {}),
   };
   const manifest = StrictCapabilityManifestSchema.parse({
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  const providerIssues = fileProviderIssues(manifest);
+  if (providerIssues.length > 0) {
+    throw new Error(
+      `fileProvider does not match the file-provider contract:\n- ${providerIssues
+        .map((issue) => `${issue.function} (${issue.localId}) ${issue.path}: ${issue.message}`)
+        .join("\n- ")}`,
+    );
+  }
   const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest)).byteLength;
   if (manifestBytes > MAX_CAPABILITY_MANIFEST_BYTES) {
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
@@ -831,6 +849,7 @@ export const resolveCapabilityManifestPresentation = (
             }
           : operation;
       }),
+      ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
     };
     current = CapabilityManifestSchema.parse({ ...manifestBase, manifestHash: capabilityHash(manifestBase) });
   }

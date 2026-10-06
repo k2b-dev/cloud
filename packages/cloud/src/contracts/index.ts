@@ -6,6 +6,7 @@ export * from "./capabilities";
 export * from "./capability-compatibility";
 export * from "./commands";
 export * from "./contact-directory";
+export * from "./file-provider";
 export * from "./notification-types";
 export * from "./posix";
 export * from "./profile";

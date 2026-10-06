@@ -948,6 +948,41 @@ export function createFilesService(
         readme: await folderReadme(current),
       };
     },
+    /**
+     * One page of a folder named by its file ID, for apps that choose or save files through Files. Only readable
+     * children are listed, filtered by name inside the folder, folders first. A Filegate read returns at most
+     * `pageSize` entries, so one page holds at most 2 × pageSize − 1 where folders end and files begin.
+     */
+    async folder(
+      actor: RequestActor,
+      input: { id: string; q?: string; after?: string; pageSize: number },
+    ): Promise<{ base: BaseSummary; writable: boolean; items: FileEntry[]; next: string | null }> {
+      const current = await located(actor, input.id, true);
+      const q = input.q?.trim().toLocaleLowerCase();
+      const page = await browsePage(
+        { after: input.after },
+        JSON.stringify([current.inspection.summary.locationKey, current.target, q ?? ""]),
+        (options) => current.root.list(current.target, { ...options, maxEntries: SEARCH_SCAN_LIMIT }),
+        input.pageSize,
+      );
+      const writable = await canWriteDirectory(current);
+      const items: FileEntry[] = [];
+      for (const node of page.items) {
+        if (!node.path.startsWith(`${current.target}/`) || node.path.slice(current.target.length + 1).includes("/"))
+          throw new FilesError("unavailable", 503);
+        const relative = node.path.slice(current.inspection.candidate.path.length + 1);
+        if (!relative || relative.split("/")[0] === "trash") continue;
+        if (q && !relative.split("/").at(-1)!.toLocaleLowerCase().includes(q)) continue;
+        if (current.inspection.candidate.area === "freeipa" && !(await entryActions(current, node, node.path, writable)).share) continue;
+        items.push(fileEntry(current.inspection.summary, relative, node));
+      }
+      return { base: current.inspection.summary, writable, items, next: page.next };
+    },
+    /** The base and base-relative path of a folder named by its file ID, after the usual access checks. */
+    async folderLocation(actor: RequestActor, id: string): Promise<{ baseId: string; path: string }> {
+      const current = await located(actor, id, true);
+      return { baseId: current.inspection.summary.id, path: current.relative };
+    },
     async mkdir(actor: RequestActor, input: { baseId: string; path: string }): Promise<EntryResult> {
       const current = await writableParent(actor, input.baseId, input.path);
       const node = await current.root.mkdir(joinPath(current.target, current.name), { ownership: ownershipFor(current, true) });

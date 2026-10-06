@@ -10,6 +10,19 @@ updated: 2026-10-06
 
 # Deprecations and migrations
 
+## Applications can offer files to other applications
+
+Capability manifests can now declare an optional `fileProvider`; see
+[File providers](/en/docs/platform/file-providers). A manifest without it keeps
+its earlier shape and hash, so nothing changes for applications that do not
+offer files. Files implements the provider operations in this release but does
+not declare itself as a provider yet.
+
+If one of your own applications declares `fileProvider`, update Core first.
+Core of an earlier release ignores the declaration, or, before Cloud read
+manifests from newer releases, drops the whole application from its
+capability catalog.
+
 ## Capability readers ignore fields from newer releases
 
 Capability manifests and catalog pages are now read tolerantly: a reader

@@ -8,6 +8,8 @@ import type { CapabilityActionManifest, CapabilityQueryManifest } from "./capabi
 export type CapabilityContract = {
   kind: "query" | "action";
   idempotency?: "required";
+  /** The binary stream direction the operation must declare. Without it, streaming operations do not match. */
+  stream?: "read" | "write";
   input: z.ZodType;
   data: z.ZodType;
 };
@@ -356,7 +358,12 @@ export const capabilityContractIssues = (
     return [{ code: "kind", path: "$", message: `Expected ${contract.kind === "query" ? "a Query" : "an Action"}` }];
   }
   const issues: CapabilityContractIssue[] = [];
-  if (candidate.operation.stream) issues.push({ code: "stream", path: "$", message: "Streaming capabilities are not supported" });
+  const direction = candidate.operation.stream?.direction;
+  if (contract.stream && direction !== contract.stream) {
+    issues.push({ code: "stream", path: "$", message: `Expected a ${contract.stream} stream` });
+  } else if (!contract.stream && direction) {
+    issues.push({ code: "stream", path: "$", message: "Streaming capabilities are not supported" });
+  }
   if (contract.idempotency === "required" && candidate.kind === "action" && candidate.operation.idempotency !== "required") {
     issues.push({ code: "idempotency", path: "$", message: "The Action must require an idempotency key" });
   }

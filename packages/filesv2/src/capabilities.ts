@@ -47,6 +47,8 @@ export const filesCapabilities = defineCapabilities({
       reader: "entry.read",
     },
   },
+  // Other apps choose and save files through Files with the shared file-provider contract.
+  fileProvider: { list: "provider.list", read: "content.read", save: "provider.save" },
   actions: fileActions,
   queries: {
     ...fileQueries,

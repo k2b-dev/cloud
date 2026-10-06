@@ -721,8 +721,12 @@ describe("capability v1 compilation", () => {
       compileCapabilities("example", defineCapabilities({ ...base, queries: { ...base.queries, search }, commands: { open } })),
     ).not.toThrow();
     rejects(
-      defineCapabilities({ ...base, fileProvider: { list: "get", read: "get" } }),
-      'Capability declaration contains unsupported field "fileProvider"',
+      defineCapabilities({ ...base, events: { changed: { title: "Changed" } } }),
+      'Capability declaration contains unsupported field "events"',
+    );
+    rejects(
+      defineCapabilities({ ...base, fileProvider: { list: "get", read: "get", trash: "rename" } }),
+      'fileProvider contains unsupported field "trash"',
     );
     rejects(
       defineCapabilities({ ...base, types: { item: { ...base.types.item, scope: "owner" } } }),

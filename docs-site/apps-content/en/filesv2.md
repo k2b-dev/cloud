@@ -641,6 +641,29 @@ binary transfers. The existing `cld filesv2` CLI remains available for direct ta
 
 The canonical `entry.read` capability returns a stable `open` link and a resource reference with the current name. Consumers can open a Files entry through this shared contract without constructing file paths. Reading and opening still require the current user's access.
 
+`content.read` reports the media type that matches the file name, for example
+`application/pdf` for `report.pdf`, and `application/octet-stream` when the
+extension is unknown. Files never inspects the content for it.
+
+## Offer files to other apps
+
+Files is a [file provider](/en/docs/platform/file-providers): other apps can
+browse, open, and save files in it through the shared contract.
+
+- `provider.list` shows a person's usable storage bases as the root, under the
+  names Files shows, such as **My files**. Inside a base it lists readable
+  folders first, then files, filtered by name inside the folder. A folder is
+  writable when the person may create files in it.
+- `content.read` opens a file, up to 50 MiB.
+- `provider.save` creates a new file in a writable folder, up to 50 MiB. It
+  never replaces a file: an existing name is a `409` conflict, and a retry
+  with the same idempotency key returns the same upload.
+
+Every call checks the person's current storage access and, on FreeIPA
+storage, their Unix permissions, exactly as browsing in Files does. Entry IDs
+are the same `filesv2.entry` refs as everywhere else; see
+[Refer to files and folders](#refer-to-files-and-folders).
+
 ## Compose private file lists and downloads
 
 Studio Apps can combine Files entries and stored Grids documents without
