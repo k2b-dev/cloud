@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Scroll overflow depends on layout, which happy-dom does not model, so a real
 // engine renders the shipped stylesheet.
@@ -24,7 +25,7 @@ const viewports = {
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -97,7 +98,11 @@ describe("@k2b/ui tab list scrolling", () => {
         const probe = document.body.appendChild(document.createElement("i"));
         probe.style.color = "CanvasText";
         const canvasText = getComputedStyle(probe).color;
-        const named = (value: string) => value.replaceAll(canvasText, "CanvasText");
+        probe.style.color = "var(--k2b-action)";
+        const action = getComputedStyle(probe).color;
+        probe.style.color = "var(--k2b-text)";
+        const text = getComputedStyle(probe).color;
+        const named = (value: string) => value.replaceAll(canvasText, "CanvasText").replaceAll(action, "action").replaceAll(text, "text");
         return Array.from(document.querySelectorAll<HTMLElement>(".k2b-tabs__list")).map((list) => ({
           list: list.getAttribute("aria-label"),
           baseline: named(getComputedStyle(list).boxShadow),
@@ -109,7 +114,10 @@ describe("@k2b/ui tab list scrolling", () => {
           [3, 24].map((count) => ({
             list: `${variant} with ${count} tabs`,
             baseline: variant === "line" ? "CanvasText 0px -1px 0px 0px inset" : "none",
-            selectedUnderline: "CanvasText",
+            // WebKit matches `forced-colors: active` under emulation but has no forced colours mode that repaints
+            // author colours, so only Chromium can show that the tabs stay forced. WebKit keeps the author colours:
+            // the line's action underline and the current colour of the borderless pill.
+            selectedUnderline: browserName === "chromium" ? "CanvasText" : variant === "line" ? "action" : "text",
           })),
         ),
       );

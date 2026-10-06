@@ -95,6 +95,7 @@ export const adminMessages = i18n.define({
       success: "Action completed.",
       versions: "Versions",
       managedWrites: "Atomic conflict checks",
+      stableIds: "Stable file IDs",
       unixExecution: "Unix execution",
       statisticsUnavailable: "No filesystem scan is available. File, folder and size totals are unknown; Refresh requests a new scan.",
       statisticsPartial: "The last scan was incomplete. File, folder and size totals remain unknown; Refresh requests a new scan.",
@@ -229,6 +230,7 @@ export const adminMessages = i18n.define({
       success: "Aktion abgeschlossen.",
       versions: "Versionen",
       managedWrites: "Atomare Konfliktprüfung",
+      stableIds: "Stabile Datei-IDs",
       unixExecution: "Unix-Ausführung",
       statisticsUnavailable:
         "Es liegt keine Dateisystemprüfung vor. Datei-, Ordneranzahl und Gesamtgröße sind unbekannt; Aktualisieren fordert eine neue Prüfung an.",

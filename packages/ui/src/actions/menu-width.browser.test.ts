@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../test/browser";
 
 // A menu's width now follows its entries, which only a real layout engine
 // measures, so the shipped browser build opens real menus here.
@@ -36,7 +37,7 @@ render(
     menu("Short", { items: [{ label: "Rename", action: () => {} }, { label: "Archive", action: () => {} }] }),
     menu("Long", {
       items: [
-        { label: long, description: "Erstellt eine Gutschrift und bucht sie gegen die offene Rechnung", action: () => {} },
+        { label: long, description: "Erstellt eine Gutschrift für die Rücksendung und bucht sie gegen die offene Rechnung", action: () => {} },
         { label: word, action: () => {} },
         { sectionLabel: heading, items: [{ label: "Archive", action: () => {} }] },
       ],
@@ -154,7 +155,7 @@ const viewports = {
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

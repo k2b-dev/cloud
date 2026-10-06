@@ -7,6 +7,7 @@ export function rootSummary(info: RootInfo): RootSummary {
   return {
     name: info.name,
     managed: info.managed,
+    stableIds: info.stableIds === true,
     executionEnabled: info.execution,
     indexEnabled: info.index.enabled,
     versioningEnabled: info.versioning.enabled,

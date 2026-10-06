@@ -17,7 +17,9 @@ const Snippet = (props: { label: string; value: string }) => (
 const LocalizedCopyButton = (props: { value: string; label: string }) => {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
-  return <CopyButton text={props.value} label={t().copyLabel({ label: props.label })} size="xs" />;
+  // The snippet's name stands next to the button, so the button shows only its icon and keeps the name for its
+  // tooltip and accessible name; a visible "Copy …" label does not fit a phone in German.
+  return <CopyButton text={props.value} label={t().copyLabel({ label: props.label })} iconOnly size="xs" />;
 };
 
 export default function McpSetup(props: { endpoint: string }) {

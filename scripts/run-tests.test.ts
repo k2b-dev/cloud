@@ -72,6 +72,38 @@ describe("root test orchestration", () => {
     }
   });
 
+  test("browser mode runs each file that starts a browser in a process of its own, without integration files", async () => {
+    const suites = await discoverTestSuites(workspaceRoot, { integration: false, browser: true });
+    const byName = new Map(suites.map((suite) => [suite.name, suite]));
+    expect(byName.get("@k2b/ui src/styles/touch-targets.browser.test.ts")?.command).toEqual([
+      "bun",
+      "test",
+      "--preload",
+      preload,
+      "src/styles/touch-targets.browser.test.ts",
+    ]);
+    // A behavior test that starts a browser keeps the browser conditions and the Solid DOM preload.
+    expect(byName.get("@k2b/pwa-auth src/status-bar.behavior.test.ts")?.command).toContain("--conditions=browser");
+    expect(byName.has("@k2b/cloud-app-spaces src/frontend/[id]/_components/kanban/kanban-board.browser.test.ts")).toBeTrue();
+    expect(suites.some((suite) => suite.name.includes("consent-browser.integration"))).toBeFalse();
+    // Assistant's artifact suites run nightly in Google Chrome, not through the shared launcher.
+    expect(suites.some((suite) => suite.name.startsWith("@k2b/cloud-app-assistant"))).toBeFalse();
+  });
+
+  test("browser mode fails instead of passing when it selects no test file", () => {
+    const run = Bun.spawnSync(
+      ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--browser", "--filter", "no-such-suite"],
+      {
+        cwd: workspaceRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr.toString()).toContain("--browser selected no test file");
+    expect(run.stdout.toString()).not.toContain("passed");
+  });
+
   test("filters and shards deterministically", () => {
     const suites: TestSuite[] = ["a", "b", "c", "d", "e"].map((name) => ({
       name,
@@ -96,6 +128,7 @@ describe("root test orchestration", () => {
       filter: "gateway",
       shard: { index: 2, total: 3 },
     });
+    expect(parseArgs(["--browser", "--shard", "1/2"])).toEqual({ integration: false, browser: true, shard: { index: 1, total: 2 } });
     expect(() => parseArgs(["--shard", "0/3"])).toThrow();
     expect(() => parseArgs(["--shard", "4/3"])).toThrow();
     expect(() => parseArgs(["--bogus"])).toThrow();

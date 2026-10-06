@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { adminHref, parseAdminLocation } from "./admin-location";
-import { filesUrl, pathCrumbs } from "./urls";
+import { filesUrl, pathCrumbs, referenceHref } from "./urls";
 
 test("navigation retains opaque identities and filenames as query values", () => {
   const url = new URL(filesUrl("freeipa:group:123", "Budget #1/über uns?", "next/+="), "https://cloud.test");
@@ -43,4 +43,12 @@ test("paging and reload URLs preserve the whole global browse query", () => {
     type: "files",
     groupFolders: "false",
   });
+});
+
+test("a copied stable reference links through the deep link; path refs link to their folder and file", () => {
+  const baseId = "cloud:users:6f1c2e4a-1b2c-4d3e-8f90-1234567890ab";
+  const stable = `n:${baseId}:019b72cf-5200-7000-8000-000000000001`;
+  expect(referenceHref(baseId, { path: "Docs/a.txt", directory: false }, stable)).toBe(`/app/filesv2/ref/${encodeURIComponent(stable)}`);
+  expect(referenceHref(baseId, { path: "Docs/a.txt", directory: false }, "inline")).toBe(filesUrl(baseId, "Docs", null, "Docs/a.txt"));
+  expect(referenceHref(baseId, { path: "Docs", directory: true }, "inline")).toBe(filesUrl(baseId, "Docs"));
 });

@@ -27,11 +27,17 @@ let items: FileEntry[] = [];
 let calls = 0;
 const uploadKeys: string[] = [];
 const ids = new Map<string, { baseId: string; path: string }>();
+const persistedEntryRefId = async (baseId: string, path: string) => {
+  const id = entryRefId(baseId, path) ?? `p:${"a".repeat(64)}`;
+  ids.set(id, { baseId, path });
+  return id;
+};
 mock.module("./data/references", () => ({
-  persistedEntryRefId: async (baseId: string, path: string) => {
-    const id = entryRefId(baseId, path) ?? `p:${"a".repeat(64)}`;
-    ids.set(id, { baseId, path });
-    return id;
+  persistedEntryRefId,
+  entryRef: async (baseId: string, entry: { path: string; resourceId?: string }) => {
+    if (!entry.resourceId) return persistedEntryRefId(baseId, entry.path);
+    ids.set(entry.resourceId, { baseId, path: entry.path });
+    return entry.resourceId;
   },
   resolveEntryRefId: async (id: string) => ids.get(id) ?? null,
 }));
@@ -61,14 +67,19 @@ mock.module("./service", () => ({
       uploadKeys.push(input.idempotencyKey);
       return { id: input.idempotencyKey };
     },
-    download: async (actor: unknown, input: { baseId: string; path: string }) => {
+    // The service resolves every file ID form; unknown IDs are not found before storage is asked.
+    downloadById: async (actor: unknown, id: string) => {
+      const input = ids.get(id);
+      if (!input) throw new MockFilesError("not_found", 404);
       downloads.push({ actor, input });
       if (downloadFailure) throw downloadFailure;
       return lease;
     },
-    entry: async (_actor: unknown, ref: { path: string }) => {
+    entryById: async (_actor: unknown, id: string) => {
       if (serviceFailure) throw serviceFailure;
-      return { base, entry: entry(ref.path) };
+      const ref = ids.get(id);
+      if (!ref) throw new MockFilesError("not_found", 404);
+      return { base: { ...base, id: ref.baseId }, entry: entry(ref.path) };
     },
     list: page,
     search: page,
@@ -125,6 +136,19 @@ test("capability explicitly describes truncated base and source-page coverage", 
   expect(result.data.summary).toContain("Partial results");
   expect(result.data.summary).toContain("2 further");
   expect(calls).toBe(10);
+});
+
+test("the reference's search across areas passes the query input as written and returns file IDs", async () => {
+  const reference = await Bun.file(new URL("./cli-references/index.md", import.meta.url)).text();
+  const [, queryId, input] = reference.match(/cld capabilities query filesv2 (\S+) --input '([^']+)' --json/) ?? [];
+  expect(queryId).toBe("entry.search");
+  const query = filesCapabilities.queries["entry.search"];
+  items = [entry("Documents/report.pdf")];
+  const result = await query.run(query.input.parse(JSON.parse(input!)), context);
+  if (!result.ok) throw new Error("expected success");
+  const ref = result.data.data[0]!.ref;
+  expect(ref.type).toBe("filesv2.entry");
+  expect(ids.get(ref.id)).toEqual({ baseId: base.id, path: "Documents/report.pdf" });
 });
 
 test("failed capability reads are never presented as empty search results", async () => {
@@ -193,6 +217,23 @@ test("canonical entry reader exposes an authorized stable open link", async () =
   expect(result.data.links).toEqual([{ rel: "open", href: "/app/filesv2/ref/entry-id" }]);
 });
 
+test("stable refs pass through listing, universal search and the reader unchanged", async () => {
+  const stable = `n:cloud:users:${"1".repeat(8)}-1111-4111-8111-${"1".repeat(12)}:019b72cf-5200-7000-8000-000000000001`;
+  items = [{ ...entry("Docs/report.pdf"), resourceId: stable }];
+  const list = filesCapabilities.queries["entry.list"];
+  const listed = await list.run(list.input.parse({ baseId: base.id }), context);
+  if (!listed.ok) throw new Error("expected list success");
+  expect(listed.data.data.items[0]!.ref).toEqual({ type: "filesv2.entry", id: stable });
+  expect(listed.data.data.items[0]).not.toHaveProperty("resourceId");
+  const found = await filesCapabilities.queries["entry.search"].run({ query: "report", tags: [], limit: 10 }, context);
+  if (!found.ok) throw new Error("expected search success");
+  expect(found.data.data[0]!.ref).toEqual({ type: "filesv2.entry", id: stable });
+  const read = await filesCapabilities.queries["entry.read"].run({ id: stable }, context);
+  if (!read.ok) throw new Error("expected reader success");
+  expect(read.data.refs).toEqual([{ type: "filesv2.entry", id: stable, title: "report" }]);
+  expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(stable)}` }]);
+});
+
 for (const query of ["entry.list", "entry.search-in-base"] as const) {
   test(`${query} supplies stable refs without minting leases, including long paths and continuation`, async () => {
     items = [entry("report.pdf"), entry("Ordner ä/".repeat(100) + "report.pdf")];
@@ -238,8 +279,7 @@ test("download contract is discoverable, ref-only and returns storage expiry unc
 
 test("unknown references never reach storage and non-user actors cannot request a lease", async () => {
   const query = filesCapabilities.queries["content.download"];
-  const result = await query.run({ id: "missing" }, context);
-  expect(result).toMatchObject({ ok: false, error: { status: 404 } });
+  await expect(query.run({ id: "missing" }, context)).rejects.toMatchObject({ code: "not_found", status: 404 });
   await expect(
     query.run(
       { id: "missing" },
@@ -323,5 +363,22 @@ for (const [status, upstreamCode, code, expectedStatus] of [
     await expect(
       create.run(create.input.parse({ baseId: base.id, path: "report.pdf", size: 4 }), { ...context, idempotencyKey: "create" }),
     ).rejects.toEqual(expected);
+  });
+}
+
+for (const [failure, expected] of [
+  [new FilegateError(403, "permission_denied", "private"), { code: "FORBIDDEN", message: "forbidden", status: 403 }],
+  [new FilegateError(404, "missing", "private"), { code: "NOT_FOUND", message: "File entry not found", status: 404 }],
+  [new FilegateError(409, "execution_mismatch", "private"), { code: "identity_changed", message: "identity_changed", status: 409 }],
+  [new FilegateError(502, "upstream_failure", "private"), { code: "unavailable", message: "unavailable", status: 503 }],
+  [new MockFilesError("unavailable", 503), { code: "unavailable", message: "unavailable", status: 503 }],
+] as const) {
+  test(`entry reader answers ${failure.name} ${failure.code} without upstream details`, async () => {
+    ids.set("ref", { baseId: base.id, path: "report.pdf" });
+    serviceFailure = failure;
+    const read = filesCapabilities.queries["entry.read"].run({ id: "ref" }, context);
+    // Access answers stay reader results; other failures are thrown as sanitized service errors.
+    if (expected.status === 403 || expected.status === 404) expect(await read).toMatchObject({ ok: false, error: expected });
+    else await expect(read).rejects.toEqual(expected);
   });
 }

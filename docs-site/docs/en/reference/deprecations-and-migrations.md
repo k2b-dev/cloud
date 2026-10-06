@@ -29,6 +29,31 @@ Move a block out of a list, or end it with a bare `:::` line, to keep it
 rendering. See [Markdown content](/en/ui/content/markdown#info-blocks) for the
 exact rules.
 
+## Files references survive rename and move
+
+On roots where Filegate 7 reports stable file IDs (`index: true` and
+`managed: true`), Files now hands out `filesv2.entry` refs of the form
+`n:<baseId>:<fileId>`. Spaces links, Grids resource fields, Assistant App data,
+copied references, and `cld filesv2` file IDs created from now on keep naming
+the same file or folder after a rename or move. Roots without stable IDs,
+typically FreeIPA storage that users also write over NFS or SSH, keep path
+refs. Nothing needs to be migrated:
+
+- Refs stored earlier keep their path meaning and keep resolving. Files does
+  not rewrite them, so the same file can have an older path ref and a newer
+  stable ref.
+- Check **Stable file IDs** for each root in `/admin/filesv2`. If it is off
+  where you expect it, check that the root has `index: true` and
+  `managed: true` and that Filegate is 7.0 or later.
+- A backup restore onto new inodes or another device, or turning `managed`
+  off, makes the stable refs of that root `not_found`. Back up as described in
+  [Files supports Filegate 7](#files-supports-filegate-7).
+- Update the Files CLI plugin of each profile with
+  `cld plugins update filesv2`. An older plugin reads `n:…` as an area named
+  `n` and rejects it.
+
+See [Refer to files and folders](/en/apps/filesv2#refer-to-files-and-folders).
+
 ## Assistant live updates use the shared live layer
 
 Core now serves AI live updates on the shared live layer, at the same path
@@ -235,7 +260,9 @@ listing.
 Filegate 7 reports stable file IDs (`stableIds`) only for roots with both
 `index: true` and `managed: true`. Such a root needs Filegate as its only
 writer and readable and writable `user.*` extended attributes on the real
-mount. Files does not use these IDs yet. An ID stays valid only while the file
+mount. Files uses these IDs for stable file references; see
+[Files references survive rename and move](#files-references-survive-rename-and-move).
+An ID stays valid only while the file
 keeps its device and inode, so back up each root with its `.filegate`
 directory, ownership, ACLs, and extended attributes together with the complete
 `state_dir`, with Filegate stopped. Restoring copies onto new inodes or another

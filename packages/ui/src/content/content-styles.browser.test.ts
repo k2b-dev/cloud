@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Which rule wins is decided by the built stylesheet: the build rewrites some
 // selectors, so a real engine computes styles from the shipped files.
@@ -153,7 +154,7 @@ const script = await build.outputs[0]!.text();
 let browser: Browser;
 let page: Page;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>#plain-sheet .stretched{flex:1 1 auto;min-height:0}.notice-host :where(p){margin-block:14px}</style></head>` +
@@ -283,7 +284,9 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(table.rowLines).toEqual(["0px", "1px", "1px"]);
     expect(table.lineColor).toBe(tokens.border);
     expect(table.start).toBe(0);
-    expect(table.end).toBe(0);
+    // WebKit rounds the column widths to its layout unit of 1/64 px: here the last column ends 1/32 px past the
+    // table, which is as wide as the prose.
+    expect(Math.abs(table.end)).toBeLessThanOrEqual(browserName === "webkit" ? 1 / 32 : 0);
   });
 
   for (const host of ["article", "#inset"]) {
@@ -422,7 +425,9 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(result).toEqual({ scrolled: true, hostScrolls: false, header: 0, overlay: true });
   });
 
-  test("a Markdown code block keeps its edge in forced colours", async () => {
+  // The edge is the transparent border that a forced colours mode paints. WebKit matches `forced-colors: active`
+  // under emulation but has no such mode, so the border stays transparent there, as it does in Safari.
+  test.skipIf(browserName === "webkit")("a Markdown code block keeps its edge in forced colours", async () => {
     await page.emulateMedia({ forcedColors: "active" });
     try {
       const edge = await page.evaluate(() => getComputedStyle(document.querySelector("article pre")!).borderTopColor);

@@ -11,11 +11,12 @@ import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
+import { launchBrowser } from "../../ui/test/browser";
 
 // A person approves or denies an MCP client in a real browser: dynamic registration, authorization,
 // the consent page with its real headers and form, the loopback callback, and the code exchange.
@@ -81,7 +82,7 @@ suite("OAuth consent in a browser", () => {
     `;
     userId = row!.id;
     sessionToken = await createTestSession(userId);
-    browser = await chromium.launch();
+    browser = await launchBrowser();
   }, 60_000);
 
   afterAll(async () => {

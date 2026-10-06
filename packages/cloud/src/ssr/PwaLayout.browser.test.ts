@@ -5,9 +5,10 @@ import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { launchBrowser } from "../../../ui/test/browser";
 import type { RuntimeAppMeta } from "../contracts/app";
 import { PWA_CANVAS_COLORS } from "../contracts/pwa";
 import type { User } from "../contracts/shared";
@@ -16,7 +17,7 @@ import { announcements } from "../services/announcements";
 import { session } from "../services/session";
 
 // The status bar takes its colour from `theme-color` and the top layer, and only a real engine computes the
-// cascade of the shared stylesheets, so the complete app document renders in Chromium at phone size.
+// cascade of the shared stylesheets, so the complete app document renders in a real browser at phone size.
 const root = mkdtempSync(join(tmpdir(), "cloud-pwa-layout-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
@@ -102,7 +103,7 @@ beforeAll(async () => {
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
   css = await build.outputs[0]!.text();
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();

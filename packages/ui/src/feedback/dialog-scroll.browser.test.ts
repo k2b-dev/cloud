@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Which box scrolls is decided by layout, which happy-dom does not model, so a
 // real engine runs the shipped browser build and stylesheet.
@@ -141,7 +142,7 @@ const variants = [...Object.keys(footers), "custom dialog", "full custom dialog"
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -207,7 +208,8 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
         const box = document.querySelector<HTMLDialogElement>("dialog[open]")!.getBoundingClientRect();
         return { left: box.left, right: box.right };
       });
-      expect(gutter).toEqual({ left: 0, right: 380 });
+      // Playwright's WebKit draws overlay scrollbars, which reserve no gutter, so its frame fills the whole width.
+      expect(gutter).toEqual({ left: 0, right: browserName === "webkit" ? 390 : 380 });
     } finally {
       await page.close();
     }

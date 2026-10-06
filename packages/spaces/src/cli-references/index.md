@@ -75,6 +75,7 @@ cld spaces show Item01 --context --json
 ```bash
 cld spaces add "Roadmap":"Publish release notes" --deadline 2026-10-20 --estimate-minutes 90 --assignee me
 cld spaces add "Roadmap":"Launch review" --starts-at 2026-10-20T10:00:00Z --ends-at 2026-10-20T11:00:00Z
+cld spaces add "Roadmap":"Migrate the archive" --priority high --from task.md
 cld spaces set "Roadmap":"Publish release notes" --priority high --from notes.md
 cld spaces set Item01 --clear-tags --clear-assignees --clear-estimate
 cld spaces mv Item01 "In progress"
@@ -89,8 +90,8 @@ cld spaces rm Item01 --yes
 cld spaces create "Hiring" --description "Open roles"
 ```
 
-- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column.
-- `set` changes only the fields you pass. `--description <text>` or `--from <file|->` replaces the description (5,000 characters at most). Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
+- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most).
+- `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
 - Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
@@ -98,7 +99,7 @@ cld spaces create "Hiring" --description "Open roles"
 
 ## Write Markdown
 
-Descriptions, comments, progress notes, and completion results are Markdown: headings, emphasis, lists, tables, links, inline code, code blocks, and info blocks. Raw HTML is shown as text.
+Descriptions, comments, progress notes, and completion results are Markdown: headings, emphasis, strikethrough, lists, task lists, tables, links, images, inline code, code blocks, and info blocks. Task list boxes are display-only; use `checklist` for steps that people tick off. Raw HTML is shown as text. Math and diagrams do not render and stay text or a code block; `> [!NOTE]` is an ordinary quote.
 
 ```markdown
 :::warning Before the release
@@ -173,7 +174,7 @@ id=$(cld filesv2 stat team:/Projects/plan.ods --json | jq -r .resourceId)
 cld spaces references add Item01 --type filesv2.entry --id "$id" --label "plan.ods"
 ```
 
-A Files ID stands for the file's area and path. Replacing the file's content keeps the reference working; after a move or rename the task shows only the label and no longer opens the file, so delete the reference and add the new ID. To upload a file first, see `cld filesv2 reference`.
+On storage with stable file IDs (`n:…`), the reference keeps opening the file or folder after a rename or move. Elsewhere the ID names the area and path: replacing the content keeps it working, but after a move or rename the task shows only the label, so delete the reference and add the new ID. `cld filesv2 reference` explains both forms under "Keep file references" and how to upload a file first.
 
 Comments can be edited and deleted by their author for a short time. Attachments are task images; `attachments add` uploads the file as-is, subject to the 10 MB stored-file limit. An attachment is named by ID or file name; a file name used twice fails with both IDs. Preview and download links returned by `spaces.item.read` need the same read access as the task; they are not public links.
 

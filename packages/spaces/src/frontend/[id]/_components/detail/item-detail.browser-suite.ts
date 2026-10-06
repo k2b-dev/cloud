@@ -3,15 +3,16 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
-// are layout questions, so the route renders on the server and then runs its real island bundle in Chromium, as the
-// workspace page does.
+// are layout questions, so the route renders on the server and then runs its real island bundle in a real browser, as
+// the workspace page does.
 const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-detail-browser-"));
@@ -157,7 +158,7 @@ beforeAll(async () => {
         : new Response("Not found", { status: 404 });
     },
   });
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 120_000);
 
 afterAll(async () => {
@@ -227,9 +228,9 @@ const writesReach = async (count: number) => {
   expect(writes.length).toBe(count);
 };
 const shot = (page: Page, name: string) =>
-  page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-chromium-${name}.png`, animations: "disabled" });
+  page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-${browserName}-${name}.png`, animations: "disabled" });
 
-describe("Spaces item detail in Chromium", () => {
+describe("Spaces item detail in a browser", () => {
   for (const [name, view] of [
     ["desktop", desktop],
     ["phone", phone],

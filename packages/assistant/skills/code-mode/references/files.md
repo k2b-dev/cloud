@@ -57,10 +57,14 @@ Studio list, alongside the `grids.document` refs from `grids.document.list`.
 Use both `type` and `id` as the identity; dispatch each type to its own
 operations. Grids uses its own `page` cursor, not Filesv2's `data.next`.
 
-Filesv2 refs identify a base and path, including long paths; they do not grant
-access or pin a content version. Moving or renaming changes the ref, and
-replacing bytes at the same path keeps it. Refresh metadata when needed.
-Never construct storage URLs or turn files into public shares for this flow.
+Filesv2 refs are opaque; they do not grant access or pin a content version.
+On storage with stable file IDs (`n:…` refs), a ref keeps naming the same file
+across rename and move; elsewhere it names a base and path, so moving or
+renaming changes it. Store refs exactly as returned and never build one from a
+path. Different refs can name the same file, because older path refs stay
+valid. A 404 means not found or no longer visible; 503 is an outage, not a
+deletion. Refresh metadata when needed. Never construct storage URLs or turn
+files into public shares for this flow.
 
 Only on a user's download request, call `filesv2.content.download` with the
 selected Filesv2 ref's exact `id`. Its `data` is `{url,method:"GET",expires}`.

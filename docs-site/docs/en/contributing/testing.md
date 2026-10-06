@@ -97,6 +97,84 @@ its own document.
 loads its component after module mocks and registers delegated events in each
 test.
 
+## Test in Chromium and WebKit
+
+Layout, focus, touch, and paint need a real engine, so these tests drive one
+through Playwright. They are named `*.browser.test.ts`, except a few behavior
+tests that start a browser. Each one starts its browser with `launchBrowser()`
+from `packages/ui/test/browser.ts`:
+
+```ts
+import { browserName, launchBrowser } from "../../test/browser";
+
+const browser = await launchBrowser();
+```
+
+`TEST_BROWSER` chooses the engine: `chromium`, the default, or `webkit`, the
+engine of Safari and of every browser on iOS. `bun run check` fails when a test
+starts a Playwright browser type directly, or when a Playwright test does not
+import the launcher directly as `.../test/browser`, without a file extension:
+`bun run test --browser` finds the tests by that import. The Assistant artifact
+suites are the only exception: they run nightly in Google Chrome.
+
+`bun run test --browser` runs only these tests, each file in a process of its
+own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
+targets, such as the OAuth consent test, run with `--integration` instead.
+`--filter` narrows the run to a package or a file name.
+
+### Run WebKit locally
+
+Playwright's WebKit needs system libraries that most Linux machines do not
+have. The Playwright image brings them, and `playwright run-server` serves its
+browsers to tests outside the container. `TEST_BROWSER_ENDPOINT` makes
+`launchBrowser()` connect to that server instead of starting a browser. The
+server must have the `playwright` version of the root `package.json` catalog.
+The tests read `@k2b/ui` from `packages/ui/dist`, which `--browser` does not
+rebuild, so build it first:
+
+```bash
+bun run --cwd packages/ui build
+version=$(bun -p 'require("./package.json").workspaces.catalog.playwright')
+docker run --detach --name playwright-webkit --network host --init --ipc=host \
+  --user pwuser --workdir /home/pwuser "mcr.microsoft.com/playwright:v$version-noble" \
+  npx -y "playwright@$version" run-server --port 3333 --host 127.0.0.1
+
+TEST_BROWSER=webkit TEST_BROWSER_ENDPOINT=ws://127.0.0.1:3333/ \
+  bun run test --browser --filter packages/ui
+
+docker rm --force playwright-webkit
+```
+
+Host networking lets the browser reach the servers that tests start on
+`127.0.0.1`. On a Mac, Playwright's WebKit runs without the image: install it
+with `./packages/ui/node_modules/.bin/playwright install webkit` and leave
+`TEST_BROWSER_ENDPOINT` unset.
+
+### Engine differences
+
+Write each test so that it checks the same behavior in both engines. Where
+they legitimately differ, branch on `browserName` and say why next to the
+branch:
+
+- Playwright drives WebKit's touch input only as a whole tap. A test that holds
+  or moves a finger, or that changes the default font size, needs Chromium's
+  DevTools protocol. Such a test is skipped in WebKit with
+  `test.skipIf(browserName === "webkit")` and a comment that names the reason.
+- WebKit matches `forced-colors: active` under emulation but has no forced
+  colours mode that repaints author colours.
+- WebKit does not support `reading-flow` yet, so focus keeps the source order
+  where Chromium follows the visual rows. Such a test expects WebKit's order
+  and names the gap, so it fails once WebKit follows the rows.
+- Playwright's WebKit draws overlay scrollbars that reserve no gutter.
+- Playwright's WebKit ignores the charset of a routed response. A page that a
+  test serves names it with `<meta charset="utf-8">`, as every Cloud page
+  does.
+- Chromium's phone emulation widens `window.innerWidth` to content that is
+  wider than the screen. Measure sideways overflow against
+  `document.documentElement.clientWidth`.
+- Fonts differ between machines and engines. A test that expects text to wrap
+  or fit uses text that is clearly too long or clearly short enough.
+
 ## Replace modules in tests
 
 `mock.module` replaces a module for the whole Bun process. Without
@@ -306,6 +384,13 @@ certification, and an image boot smoke when `packages/cloud` or the
 `Dockerfile` changed.
 Run the same commands locally before opening a pull request.
 
+An integration suite that starts its own container needs only Docker and its
+`CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
+stable-reference suite starts a private Filegate this way. The integration job
+pulls such images first, with retries, because `docker run` does not retry a
+failed pull. When you add a suite like this or change its image, add the image
+to that pull step in `.github/workflows/ci.yml`.
+
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a
 path-filtered job listed in its `MAY_SKIP` variable. Any other result fails it
@@ -329,6 +414,11 @@ code. Build one application the same way with:
 ```bash
 NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
+
+`bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
+them again in WebKit with `bun run test --browser`, against the Playwright image
+as in [Run WebKit locally](#run-webkit-locally). It runs when a workspace with
+browser tests or a shared input such as `packages/cloud` or `scripts/` changed.
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too

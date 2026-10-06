@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { type Browser, chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../../packages/ui/test/browser";
 import { iconStyles } from "../scripts/icons";
 
 // The build inlines the icon subset as a data URL, which a busy device still decodes after the first frame. Here the
@@ -16,7 +17,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>${inlined.
 
 let browser: Browser;
 beforeAll(async () => {
-  browser = await chromium.launch();
+  browser = await launchBrowser();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();

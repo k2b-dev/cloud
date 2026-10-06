@@ -1,4 +1,9 @@
-/** A file entry has no server-side id; the ref encodes base and path so both sides can rebuild it. */
+/**
+ * `filesv2.entry` ref forms. A path ref (inline, below, or a persisted `p:<sha256>` one for long paths) encodes
+ * base and path, so a rename or move changes it. On roots with Filegate stable IDs the server mints
+ * `n:<baseId>:<fileId>` instead, which keeps naming the same file across rename and move. Base64url has no
+ * colon, so the forms never collide.
+ */
 const encode = (value: string) =>
   btoa(String.fromCharCode(...new TextEncoder().encode(value)))
     .replace(/\+/g, "-")
@@ -23,4 +28,16 @@ export function parseEntryRefId(id: string): { baseId: string; path: string } | 
   } catch {
     return null;
   }
+}
+
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const STABLE_REF = new RegExp(`^n:((?:cloud|freeipa):(?:users|groups):${UUID}):(${UUID})$`);
+export function parseStableEntryRefId(id: string): { baseId: string; fileId: string } | null {
+  const match = STABLE_REF.exec(id);
+  return match ? { baseId: match[1]!, fileId: match[2]! } : null;
+}
+/** Only canonical forms are minted, so every stable ref Cloud hands out also parses. */
+export function stableEntryRefId(baseId: string, fileId: string): string | null {
+  const id = `n:${baseId}:${fileId}`;
+  return parseStableEntryRefId(id) ? id : null;
 }
