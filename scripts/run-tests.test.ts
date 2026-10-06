@@ -90,6 +90,20 @@ describe("root test orchestration", () => {
     expect(suites.some((suite) => suite.name.startsWith("@k2b/cloud-app-assistant"))).toBeFalse();
   });
 
+  test("browser mode fails instead of passing when it selects no test file", () => {
+    const run = Bun.spawnSync(
+      ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--browser", "--filter", "no-such-suite"],
+      {
+        cwd: workspaceRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr.toString()).toContain("--browser selected no test file");
+    expect(run.stdout.toString()).not.toContain("passed");
+  });
+
   test("filters and shards deterministically", () => {
     const suites: TestSuite[] = ["a", "b", "c", "d", "e"].map((name) => ({
       name,

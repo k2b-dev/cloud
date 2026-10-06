@@ -65,7 +65,7 @@ jobs:
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
           shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh))'
           # Workspaces with tests that `bun run test --browser` runs: they start a browser through
-          # packages/ui/test/browser.ts and need no integration targets.
+          # packages/ui/test/browser.ts and need no integration targets. Some import tests/fixtures/.
           browser=$(git grep -lF '/test/browser"' -- 'packages/*' 'pwas/*' ':!*.integration.test.ts' | cut -d/ -f1-2 | sort -u | paste -sd '|')
           # An application's production bundle depends on its package, the shared inputs, and the
           # non-application packages: @k2b/ui, and packages/cloud-cli, whose install script core bundles.
@@ -80,7 +80,7 @@ jobs:
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
-            echo "webkit=$(match "$shared|^($browser)/")"
+            echo "webkit=$(match "$shared|^tests/fixtures/|^($browser)/")"
             echo "bundles=${bundles[*]}"
           } | tee -a "$GITHUB_OUTPUT"
 
@@ -167,7 +167,8 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Two shards finish well before the integration job.
+  # locally. It runs in two shards so that it stays shorter than the
+  # integration job.
   webkit:
     needs: [changes, setup]
     if: needs.changes.outputs.webkit == 'true'

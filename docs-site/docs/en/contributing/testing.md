@@ -112,26 +112,32 @@ const browser = await launchBrowser();
 
 `TEST_BROWSER` chooses the engine: `chromium`, the default, or `webkit`, the
 engine of Safari and of every browser on iOS. `bun run check` fails when a test
-starts a Playwright browser type directly. The Assistant artifact suites are
-the only exception: they run nightly in Google Chrome.
+starts a Playwright browser type directly, or when a Playwright test does not
+import the launcher directly as `.../test/browser`, without a file extension:
+`bun run test --browser` finds the tests by that import. The Assistant artifact
+suites are the only exception: they run nightly in Google Chrome.
 
 `bun run test --browser` runs only these tests, each file in a process of its
-own. Files that also need `CLOUD_TEST_*` targets, such as the OAuth consent
-test, run with `--integration` instead. `--filter` narrows the run to a package
-or a file name.
+own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
+targets, such as the OAuth consent test, run with `--integration` instead.
+`--filter` narrows the run to a package or a file name.
 
 ### Run WebKit locally
 
 Playwright's WebKit needs system libraries that most Linux machines do not
 have. The Playwright image brings them, and `playwright run-server` serves its
 browsers to tests outside the container. `TEST_BROWSER_ENDPOINT` makes
-`launchBrowser()` connect to that server instead of starting a browser. Use
-the image of the `playwright` version in the root `package.json` catalog:
+`launchBrowser()` connect to that server instead of starting a browser. The
+server must have the `playwright` version of the root `package.json` catalog.
+The tests read `@k2b/ui` from `packages/ui/dist`, which `--browser` does not
+rebuild, so build it first:
 
 ```bash
+bun run --cwd packages/ui build
+version=$(bun -p 'require("./package.json").workspaces.catalog.playwright')
 docker run --detach --name playwright-webkit --network host --init --ipc=host \
-  --user pwuser --workdir /home/pwuser mcr.microsoft.com/playwright:v1.63.0-noble \
-  npx -y playwright@1.63.0 run-server --port 3333 --host 127.0.0.1
+  --user pwuser --workdir /home/pwuser "mcr.microsoft.com/playwright:v$version-noble" \
+  npx -y "playwright@$version" run-server --port 3333 --host 127.0.0.1
 
 TEST_BROWSER=webkit TEST_BROWSER_ENDPOINT=ws://127.0.0.1:3333/ \
   bun run test --browser --filter packages/ui

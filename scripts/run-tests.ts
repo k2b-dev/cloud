@@ -28,7 +28,8 @@
  * `--browser` runs the Playwright tests alone, for example in another engine:
  * `TEST_BROWSER=webkit bun run test --browser` (see `packages/ui/test/browser.ts`).
  * Each file runs in a process of its own, a behavior test with the browser
- * conditions and preload above.
+ * conditions and preload above. The run fails when it selects no file, and it
+ * uses the existing `packages/ui/dist` without building it.
  *
  * With `CLOUD_TEST_NATS_SERVERS` set, the runner first deletes the test Sync
  * namespaces that killed test processes left on the broker
@@ -198,6 +199,11 @@ const run = async (): Promise<void> => {
   }
 
   const suites = await discoverTestSuites(workspaceRoot, options);
+  // An empty browser run would pass while WebKit tested nothing, for example after the launcher moved.
+  if (options.browser && suites.length === 0) {
+    console.error("--browser selected no test file that imports packages/ui/test/browser.");
+    process.exit(2);
+  }
   const preload = `--preload=${join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")}`;
   const envFile = dotenvLeak(process.cwd(), process.execArgv);
   if (envFile) {
