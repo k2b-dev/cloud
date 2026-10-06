@@ -70,3 +70,54 @@
   gap: 0.5rem;
   margin-top: auto;
 }
+
+/* One compact row per item. The preview keeps a fixed slot, so rows line up
+   and a state change inside a row never moves its name. */
+.k2b-ui .k2b-file-grid[data-layout="list"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.125rem;
+}
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__item {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "preview name actions"
+    "preview meta actions";
+  align-items: center;
+  gap: 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+/* Without a meta line the name is the only row, centred beside the preview. */
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__item:has(> .k2b-file-grid__meta:empty) {
+  grid-template-areas: "preview name actions";
+}
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__preview {
+  grid-area: preview;
+  width: 2rem;
+  height: 2rem;
+}
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__name {
+  grid-area: name;
+  -webkit-line-clamp: 1;
+}
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__meta {
+  grid-area: meta;
+  min-width: 0;
+}
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__meta:empty {
+  display: none;
+}
+.k2b-ui .k2b-file-grid[data-layout="list"] .k2b-file-grid__actions {
+  grid-area: actions;
+  margin-top: 0;
+}
+.k2b-ui .k2b-file-grid__item[aria-disabled="true"] {
+  color: var(--k2b-text-muted);
+  cursor: default;
+}
+.k2b-ui .k2b-file-grid__item[aria-disabled="true"]:hover {
+  background: none;
+}
+.k2b-ui .k2b-file-grid__item[aria-disabled="true"] .k2b-file-grid__preview {
+  opacity: 0.55;
+}

@@ -7,6 +7,13 @@ export type FileGridProps<T> = {
   selection: CollectionSelection;
   label: string;
   size?: "sm" | "md" | "lg";
+  /** `list` shows one compact row per item: preview, name, and meta beside each other. Defaults to `grid`. */
+  layout?: "grid" | "list";
+  /**
+   * Items that cannot be opened or selected, for example a file the host cannot accept. Leave their IDs out of the
+   * selection's `ids` and explain why in `renderMeta`.
+   */
+  isDisabled?: (row: T) => boolean;
   renderPreview: (row: T) => JSX.Element;
   renderLabel: (row: T) => JSX.Element;
   renderMeta?: (row: T) => JSX.Element;
@@ -31,13 +38,15 @@ export function FileGrid<T>(props: FileGridProps<T>) {
       ref={grid}
       class={`k2b-file-grid ${props.class ?? ""}`}
       data-size={props.size ?? "md"}
+      data-layout={props.layout ?? "grid"}
       role="grid"
       aria-label={props.label}
-      aria-multiselectable="true"
+      aria-multiselectable={props.selection.multiple}
     >
       <For each={props.rows}>
         {(row) => {
           const id = () => props.getRowId(row);
+          const disabled = () => props.isDisabled?.(row) ?? false;
           return (
             <div role="row" class="k2b-file-grid__row">
               <div
@@ -45,17 +54,18 @@ export function FileGrid<T>(props: FileGridProps<T>) {
                 role="gridcell"
                 class="k2b-file-grid__item"
                 aria-selected={props.selection.selected().has(id())}
+                aria-disabled={disabled() || undefined}
                 ref={(element) => props.selection.register(id(), element)}
                 tabIndex={props.selection.focused() === id() ? 0 : -1}
                 onFocus={() => props.selection.markFocused(id())}
                 onClick={(event) => {
-                  if (!nested(event)) {
+                  if (!nested(event) && !disabled()) {
                     props.selection.select(id(), event);
                     props.onRowClick?.(row);
                   }
                 }}
                 onDblClick={(event) => {
-                  if (!nested(event)) props.onOpen(row);
+                  if (!nested(event) && !disabled()) props.onOpen(row);
                 }}
                 onContextMenu={() => props.onContextMenu?.(row)}
                 onKeyDown={(event) => {

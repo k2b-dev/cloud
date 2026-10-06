@@ -299,6 +299,30 @@ context menus, authorization, previews, and navigation; `onContextMenu` can alig
 selection before opening a menu. Use `sm`, `md`, or `lg` for tile size. `FileGrid`
 has no scroll owner; place it in `ScrollArea`. A `DataTable` already owns scrolling.
 
+`layout="list"` shows one compact row per item instead of a tile: a 2 rem
+preview slot, the name on one line, and the meta below it, with actions at the
+trailing edge. Rows have no lines between them; hover and selection use the same
+fills as tiles. Use it for choosing among files that have no thumbnail, for
+example in a picker dialog. Keep `DataTable` for lists that need columns,
+sorting, or row structure.
+
+`isDisabled(row)` marks an item that cannot be opened or selected, for example a
+file a picker cannot accept. The item gets `aria-disabled` and muted text, and
+clicks do nothing. Leave disabled IDs out of the selection's `ids`, so arrow keys
+skip them, and say why in `renderMeta`.
+
+Two options of `createCollectionSelection` serve pickers:
+
+- `multiple: false` keeps at most one item selected. A click or arrow key
+  selects only that item; ranges and Ctrl/Cmd-A do nothing. The grid reports
+  `aria-multiselectable="false"`.
+- `checklist: true` makes a plain click or tap toggle one item, so touch users
+  can choose several. Arrow keys then only move focus, Space toggles, and
+  Shift-click still selects a range.
+
+Escape clears a selection. With nothing selected, it is left to the host, so
+Escape inside a dialog closes the dialog.
+
 For signed native media URLs, `FileView.crossOrigin="anonymous"` omits credentials
 on cross-origin media requests. `onPreviewError` reports native image/audio/video
 load errors so the host can request a fresh URL and offer retry. These options
