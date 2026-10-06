@@ -288,7 +288,7 @@ export const artifactMessages = i18n.define({
       projectScriptsHelp:
         "Mitglieder dieser Projekte können die veröffentlichte Studio App und ihre geteilten App-Daten nutzen. Bearbeitungsrechte bleiben unverändert.",
       add: "Hinzufügen",
-      administration: "Studio verwalten",
+      administration: "Studio-Administration",
       storageHelp:
         "Die Zahlen zeigen den gemeinsamen Serverspeicher. Lokale Browser-Dateien und KV lassen sich nicht zentral zählen oder löschen.",
       testConnection: "Verbindung prüfen",

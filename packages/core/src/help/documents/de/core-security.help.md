@@ -53,7 +53,7 @@ Fortfahren oder brich ab, um dich abzumelden.
 **Gekoppelte Geräte** zeigt Namen, Kopplungsdatum, letzte Nutzung und eine
 mögliche Unterstützung durch die Administration. Benenne Geräte um oder
 widerrufe Geräte, die du nicht mehr kontrollierst. Der Widerruf verhindert neue
-Anmeldungen, beendet aber keine bestehenden Sitzungen. Die Verwaltung bleibt
+Anmeldungen, beendet aber keine bestehenden Sitzungen. Diese Funktionen bleiben
 auch bei deaktivierter App-Anmeldung verfügbar.
 Hast du dein Gerät verloren und kannst dich nicht anmelden, bitte die
 Administration, es zu widerrufen. Setzt du dein Passwort mit **Passwort

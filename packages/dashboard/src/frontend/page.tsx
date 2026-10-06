@@ -288,7 +288,7 @@ export default ssr<AuthContext>(async (c) => {
       ? [
           {
             id: "admin",
-            name: "Admin",
+            name: t.adminName,
             icon: "ti ti-settings",
             href: "/admin",
             description: t.adminDescription,
