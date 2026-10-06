@@ -34,6 +34,8 @@ one app. Use the authenticator address configured by your administrator.
 Choose **Install app** under **My account → Security** to open
 the configured authenticator on a phone. On a desktop, this shows a QR code and
 a button to copy the app address. Installing the app does not pair an account.
+On Android, install Cloud Login from Chrome; see
+[Install on Android](/en/apps/cloud-login#install-on-android).
 
 1. Open **My account → Security → Pair a device**. The pairing dialog starts
    immediately. If asked, confirm your identity; pairing reopens after sign-in.

@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-09-27
+updated: 2026-10-06
 ---
 
 # Run Cloud Login
@@ -275,6 +275,14 @@ The dots menu also offers notifications, language, appearance, and installation 
 Approvals need an internet connection. Before making the app available to your
 organization, check camera access, installation, notifications and switching
 between Cloud and the app on the devices and browsers you support.
+
+On Android, tell people to install from Chrome. On Samsung phones, Samsung
+Internet builds its own app package, which Android 14 and later may block as
+built for an older Android version. The manifest, icons and headers of this
+origin neither cause nor prevent that warning. The app's installation guide
+therefore offers **Open in Chrome** in Samsung Internet instead of an install
+button. For what people see and how to move to Chrome, see
+[Install on Android](/en/apps/cloud-login#install-on-android).
 
 ## Turn on notifications
 

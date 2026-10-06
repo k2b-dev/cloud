@@ -8,6 +8,12 @@ browsers. A browser on iPhone or iPad other than Safari, and one on Android
 other than Chrome, gets a notice above its steps that names the browser that
 installs most reliably.
 
+Samsung Internet on Android gets no steps and no Install button, even when it
+offers its own dialog. On Samsung phones it builds its own app package, which
+Android 14 and later may block as built for an older version of Android. The
+guide explains that warning and shows **Open in Chrome**, a link that opens
+`url` in Chrome; without Chrome, the browser loads `url` itself.
+
 A browser inside another app, such as a social, mail, or QR-scanner app,
 cannot install at all. There the guide shows a warning instead of steps: open
 this page in Safari (on iPhone and iPad) or in the browser (elsewhere), with
@@ -38,10 +44,11 @@ const install = createInstallPrompt();
 ```
 
 - `appName` is the name people see on their Home Screen.
-- `url` is the address that **Copy link** copies inside another app, for
-  example the app's start page or a link the person must take along. When
-  copying fails, the guide shows it as text to copy by hand, so pass only an
-  address the person may see on screen.
+- `url` is the absolute address that **Copy link** copies inside another app
+  and **Open in Chrome** opens from Samsung Internet, for example the app's
+  start page or a link the person must take along, including its fragment.
+  When copying fails, the guide shows it as text to copy by hand, so pass only
+  an address the person may see on screen.
 - `note` adds an application note under the steps, or under the link inside
   another app, for example what else the installed app enables or where the
   app offers installation again. Pass the note that fits `install.platform`.
@@ -64,7 +71,8 @@ tracks whether the page runs installed. It returns:
   | `"apple-in-app"` | A browser view inside another app on iPhone or iPad | Warning to open the page in Safari, and **Copy link** |
   | `"apple-desktop"` | Safari on a Mac | Dock steps |
   | `"android"` | Chrome on Android | Menu steps |
-  | `"android-browser"` | Another browser on Android | Notice that Chrome works best, then the menu steps |
+  | `"android-samsung"` | Samsung Internet on Android | Notice that explains Android's warning, and **Open in Chrome** |
+  | `"android-browser"` | Firefox, Edge, Opera, or another browser on Android | Notice that Chrome works best, then the menu steps |
   | `"in-app"` | A browser view inside another app elsewhere | Warning to open the page in the browser, and **Copy link** |
   | `"generic"` | Any other browser | Menu steps and a note that installation may be missing |
 

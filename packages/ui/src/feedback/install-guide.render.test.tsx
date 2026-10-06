@@ -92,6 +92,25 @@ describe("InstallGuide", () => {
     expect(steps(other)).toEqual([]);
   });
 
+  test("Samsung Internet is sent to Chrome with the warning explained, even when it offers its own dialog", () => {
+    for (const canPrompt of [false, true]) {
+      const html = render(prompt("android-samsung", { canPrompt }), "en", "Notifications work in the app.");
+      expect(notice(html)).toEqual(["info", "Install with Chrome"]);
+      expect(html).toContain("“built for an older version of Android”. The warning is about that package, not about Northwind.");
+      expect(html).toContain(
+        'href="intent://cloud.example/pwa/#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=https%3A%2F%2Fcloud.example%2Fpwa%2F;end"',
+      );
+      expect(html).toContain("Open in Chrome");
+      expect(html).not.toContain("Install app");
+      expect(steps(html)).toEqual([]);
+      expect(html).toContain("Notifications work in the app.");
+    }
+    const german = render(prompt("android-samsung"), "de");
+    expect(notice(german)).toEqual(["info", "Mit Chrome installieren"]);
+    expect(german).toContain("„für eine ältere Android-Version entwickelt“");
+    expect(german).toContain("In Chrome öffnen");
+  });
+
   test("the browser's own dialog, its request, and its failure replace the steps", () => {
     const native = render(prompt("android", { canPrompt: true }));
     expect(native).toContain("Your browser can install Northwind.");

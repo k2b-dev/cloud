@@ -62,7 +62,7 @@ function DeniedSteps(props: { platform: Installation["platform"] }) {
   const steps = createMemo(() =>
     onApplePhone(props.platform)
       ? [t().pushDeniedIos1, t().pushDeniedIos2, t().pushDeniedIos3]
-      : props.platform === "android" || props.platform === "android-browser"
+      : props.platform === "android" || props.platform === "android-samsung" || props.platform === "android-browser"
         ? [t().pushDeniedAndroid1, t().pushDeniedAndroid2, t().pushDeniedAndroid3]
         : [t().pushDeniedBrowser1, t().pushDeniedBrowser2, t().pushDeniedBrowser3],
   );
