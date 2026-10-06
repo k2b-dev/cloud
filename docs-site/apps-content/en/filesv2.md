@@ -333,11 +333,13 @@ Only the Files server mints refs, in one place. An entry that Filegate has not
 identified yet keeps a path ref even on a root with stable IDs. Editor (WOPI)
 file IDs stay path-based and are not `filesv2.entry` refs.
 
-Resolving a stable ref checks the actor's access to its base before asking
-Filegate, then asks Filegate for the current path, then runs the same path
-checks as every other request. The current path must lie inside the same base
-and outside its trash, and must still hold the same file. A stable ref
-therefore never grants access and never opens a different file.
+Resolving a stable ref first checks that the actor can use its base, as for
+any path in it, and only then asks Filegate for the current path, so no answer
+depends on files in storage the actor cannot use. The usual path checks
+follow: the current path must lie inside the same base and outside its trash,
+and must still hold the same file. A stable ref therefore never grants access.
+Download links still name the checked path: if another file takes that path in
+the same instant, the link serves that file from the same base.
 
 | Change | Stable ref | Path ref |
 | --- | --- | --- |
@@ -357,7 +359,9 @@ do not prove different files. `GET /api/filesv2/entries/<id>` and
 
 A stable ref that cannot be resolved is `not_found` (404), whatever the
 reason: unknown or foreign base, unknown ID, `managed` turned off, a path
-outside the base or in its trash. Storage outages and network failures stay
+outside the base or in its trash. If the base is one of the actor's but cannot
+be used, for example because of a binding conflict, every ID in it answers like
+any path there: 403 with the reason. Storage outages and network failures stay
 `unavailable` (503), so a short Filegate outage never looks like a deleted
 file. After resolution, the path checks answer as for any path, for example
 403 when FreeIPA Unix permissions deny the file. `/app/filesv2/ref/<id>` opens

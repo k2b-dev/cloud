@@ -286,29 +286,27 @@ export function createFilesService(
       throw error;
     }
   }
-  async function authorized(
-    actor: RequestActor,
-    baseId: string,
-    path: string,
-    directory?: boolean,
-    snapshot?: Awaited<ReturnType<typeof context>>,
-  ) {
+  /** The actor's base, usable and bound, before any path in it is looked at. */
+  async function authorizedBase(actor: RequestActor, baseId: string, snapshot?: Awaited<ReturnType<typeof context>>) {
     const state = snapshot ?? (await context(actor));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
     if (!item) throw new FilesError("not_found", 404);
     const issue = issueFor(state.config, item.area, state.self.availability);
     if (issue) throw new FilesError(issue, 403);
-    const client = deps.connect(state.config);
-    let root = client.root(item.root);
-    const info = await root.info();
-    let inspection = await inspect(root, item, info, state.config.url);
+    const service = deps.connect(state.config).root(item.root);
+    const info = await service.info();
+    let inspection = await inspect(service, item, info, state.config.url);
     if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
       await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-      inspection = await inspect(root, item, info, state.config.url);
+      inspection = await inspect(service, item, info, state.config.url);
     }
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const execution = executionFor({ inspection, state });
-    if (execution) root = root.as(execution);
+    return { state, item, info, inspection, service, root: execution ? service.as(execution) : service };
+  }
+  /** An existing entry in that base, after the path checks the actor's execution identity must pass. */
+  async function authorizedPath(base: Awaited<ReturnType<typeof authorizedBase>>, path: string, directory?: boolean) {
+    const { state, item, info, inspection, root } = base;
     const relative = userPath(path);
     const target = joinPath(item.path, relative);
     let node: Node;
@@ -323,6 +321,15 @@ export function createFilesService(
     if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4);
     if (directory !== undefined && node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
     return { root, inspection, target, relative, state, node, info };
+  }
+  async function authorized(
+    actor: RequestActor,
+    baseId: string,
+    path: string,
+    directory?: boolean,
+    snapshot?: Awaited<ReturnType<typeof context>>,
+  ) {
+    return authorizedPath(await authorizedBase(actor, baseId, snapshot), path, directory);
   }
   function executionFor(current: { inspection: Inspection; state: Awaited<ReturnType<typeof context>> }): ExecutionIdentity | null {
     if (current.inspection.candidate.area !== "freeipa") return null;
@@ -512,46 +519,40 @@ export function createFilesService(
     };
   }
   /**
-   * The base and path a file ID names. A stable ref is checked against the actor's bases before Filegate is asked,
-   * and every failure to resolve it is `not_found`; storage outages stay outages. Path refs decode as before.
+   * The authorized entry a file ID names. Path refs decode to their base and path. A stable ref needs a base the
+   * actor can use before Filegate is asked for the ID, so no answer depends on files in storage the actor cannot use.
+   * Every failure to resolve it is `not_found`; storage outages stay outages. After the usual path checks, the entry
+   * must still be the same file.
    */
-  async function locate(actor: RequestActor, id: string) {
+  async function located(actor: RequestActor, id: string, directory?: boolean) {
     const stable = parseStableEntryRefId(id);
     if (!stable) {
       const ref = await resolveEntryRefId(id);
       if (!ref) throw new FilesError("not_found", 404);
-      return { ...ref, fileId: null, state: undefined };
+      return authorized(actor, ref.baseId, ref.path, directory);
     }
-    const state = await context(actor);
-    const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === stable.baseId);
-    if (!item) throw new FilesError("not_found", 404);
-    const issue = issueFor(state.config, item.area, state.self.availability);
-    if (issue) throw new FilesError(issue, 403);
+    const base = await authorizedBase(actor, stable.baseId);
     let node: Node;
     try {
       // Unscoped like `info()`: the Unix checks follow on the resolved path with the actor's execution identity.
-      node = await deps.connect(state.config).root(item.root).resolve(stable.fileId);
+      node = await base.service.resolve(stable.fileId);
     } catch (error) {
       // Unknown, invalid, or disabled IDs (`feature_disabled` once `managed` is off) are not found.
       if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) throw new FilesError("not_found", 404);
       if (error instanceof FilegateError) throw error;
       throw new FilesError("unavailable", 503, { cause: error });
     }
+    const { item } = base;
     if (node.root !== item.root || !node.path.startsWith(`${item.path}/`)) throw new FilesError("not_found", 404);
     const path = node.path.slice(item.path.length + 1);
     if (path.split("/")[0] === "trash") throw new FilesError("not_found", 404);
-    return { baseId: stable.baseId, path, fileId: stable.fileId, state };
-  }
-  /** The authorized entry a file ID names; a stable ref must still name the same file after the path checks. */
-  async function located(actor: RequestActor, id: string, directory?: boolean) {
-    const ref = await locate(actor, id);
     try {
-      const current = await authorized(actor, ref.baseId, ref.path, directory, ref.state);
-      if (ref.fileId && current.node.id !== ref.fileId) throw new FilesError("not_found", 404);
+      const current = await authorizedPath(base, path, directory);
+      if (current.node.id !== stable.fileId) throw new FilesError("not_found", 404);
       return current;
     } catch (error) {
       // Moved away between resolve and stat: still the same unresolvable ref.
-      if (ref.fileId && error instanceof FilegateError && error.status === 404) throw new FilesError("not_found", 404);
+      if (error instanceof FilegateError && error.status === 404) throw new FilesError("not_found", 404);
       throw error;
     }
   }

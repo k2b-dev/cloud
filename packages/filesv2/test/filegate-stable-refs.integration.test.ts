@@ -184,11 +184,14 @@ roots:
       const transport = Object.assign(
         async (input: RequestInfo | URL, init?: RequestInit) => {
           const url = new URL(input instanceof Request ? input.url : input.toString());
-          const failure = url.pathname.endsWith("/resolve") ? resolveFailure : undefined;
-          resolveFailure = undefined;
-          if (failure) return failure();
+          const resolving = url.pathname.endsWith("/resolve");
+          const failure = resolving ? resolveFailure : undefined;
+          if (failure) {
+            resolveFailure = undefined;
+            return failure();
+          }
           const response = await fetch(input, init);
-          if (url.pathname.endsWith("/resolve")) {
+          if (resolving) {
             resolves.push(url.searchParams.get("id") ?? "");
             const hook = afterResolve;
             afterResolve = undefined;
@@ -360,6 +363,47 @@ roots:
       const unknown = `n:${home(alice)}:${randomUUID()}`;
       await expect(service.entryById(alice, unknown)).rejects.toMatchObject(notFound);
       expect(resolves).toHaveLength(1);
+    }, 30_000);
+
+    test("a base the actor cannot use answers before Filegate is asked, so old IDs reveal nothing", async () => {
+      const service = services.stable;
+      const old = randomUUID();
+      memberships = [{ id: old, provider: "local", name: "stable-refs-reused", gidNumber: 40002, personal: false }];
+      await service.createFromBytes(bob, { baseId: `cloud:groups:${old}`, path: "old.txt" }, new TextEncoder().encode("old"));
+      const fileId = parseStableEntryRefId(await ref(service, bob, `cloud:groups:${old}`, "old.txt"))!.fileId;
+      // The group is deleted and a new one takes its name, so its candidate path still holds the old group's directory.
+      const reused = randomUUID();
+      memberships = [{ id: reused, provider: "local", name: "stable-refs-reused", gidNumber: 40003, personal: false }];
+      expect((await service.bases(bob)).items.find((base) => base.id === `cloud:groups:${reused}`)).toMatchObject({
+        status: "conflict",
+        reason: "binding_conflict",
+      });
+      resolves.length = 0;
+      const conflict = { code: "binding_conflict", status: 403 };
+      for (const id of [fileId, randomUUID()]) {
+        await expect(service.entryById(bob, `n:cloud:groups:${reused}:${id}`)).rejects.toMatchObject(conflict);
+        await expect(service.downloadById(bob, `n:cloud:groups:${reused}:${id}`)).rejects.toMatchObject(conflict);
+      }
+      expect(resolves).toEqual([]);
+      memberships = [];
+    }, 30_000);
+
+    test("a stable ref never reaches outside its base, not even its root folder", async () => {
+      const service = services.stable;
+      const team = randomUUID();
+      memberships = [{ id: team, provider: "local", name: "stable-refs-other", gidNumber: 40004, personal: false }];
+      await service.createFromBytes(alice, { baseId: `cloud:groups:${team}`, path: "team.txt" }, new TextEncoder().encode("team"));
+      const teamFile = parseStableEntryRefId(await ref(service, alice, `cloud:groups:${team}`, "team.txt"))!.fileId;
+      const homeRoot = (await stable.stat("users/stable-refs-alice")).id;
+      const teamRoot = (await stable.stat("groups/stable-refs-other")).id;
+      expect(homeRoot && teamRoot).toBeTruthy();
+      resolves.length = 0;
+      // Alice may use both bases; each ID still names its own base only.
+      await expect(service.entryById(alice, `n:${home(alice)}:${teamFile}`)).rejects.toMatchObject(notFound);
+      await expect(service.entryById(alice, `n:${home(alice)}:${homeRoot}`)).rejects.toMatchObject(notFound);
+      await expect(service.entryById(alice, `n:cloud:groups:${team}:${teamRoot}`)).rejects.toMatchObject(notFound);
+      expect(resolves).toHaveLength(3);
+      memberships = [];
     }, 30_000);
 
     test("resolution failures are not found; storage outages stay unavailable", async () => {
