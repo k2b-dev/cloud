@@ -159,6 +159,7 @@ const measure = async (view: View, query: string, options: Options = {}) => {
         actions: Array.from(document.querySelectorAll(".auth-secondary-actions :is(a, button)")).map((action) => ({
           name: action.textContent?.trim() ?? "",
           ...box(action),
+          iconLeft: action.querySelector("i")!.getBoundingClientRect().left,
         })),
         textLinks: [...(reset ? [reset] : []), ...Array.from(document.querySelectorAll(".auth-footer-link"))].map((link) => ({
           name: link.textContent?.trim() ?? "",
@@ -341,10 +342,11 @@ describe("sign-in page in a browser", () => {
       });
       expect(page.aside, context).toBe("flex");
       expect(page.scrollWidth, context).toBeLessThanOrEqual(view.width);
-      // The passkey starts the row; support and the admin token close it together.
+      // The passkey starts the row; support and the admin token close it together. The passkey has no box of
+      // its own, so its icon lines up with the fields and labels above, as the outlined help actions' boxes do.
       const [passkey, support, admin] = page.actions;
       expect(new Set(page.actions.map((action) => action.height)).size, context).toBe(1);
-      expect([passkey!.left, admin!.right], context).toEqual([page.fields[0]!.left, page.fields[0]!.right]);
+      expect([passkey!.iconLeft, admin!.right], context).toEqual([page.fields[0]!.left, page.fields[0]!.right]);
       expect(passkey!.right, context).toBeLessThan(support!.left - 8);
       expect(admin!.left - support!.right, context).toBe(8);
       expect([support!.top, admin!.top], context).toEqual([passkey!.top, passkey!.top]);

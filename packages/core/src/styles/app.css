@@ -26,7 +26,9 @@
    every browser: the passkey, a way to sign in, first, then the two ways to
    get help. Where the form column has room for all three (about 23rem in
    German) they share one row, the passkey on the left and support and the
-   admin token together on the right. In a narrower column (a phone, the
+   admin token together on the right. The passkey is a text button without a
+   box or inset, so its icon lines up with the fields above it, as the help
+   actions' outlined boxes do on the right. In a narrower column (a phone, the
    two-column card on a small tablet) they would wrap unevenly, so there they
    form a grid: the passkey on a full row, support and the admin token as two
    equal halves below it. The rows are 2.25rem tall and keep the distance
