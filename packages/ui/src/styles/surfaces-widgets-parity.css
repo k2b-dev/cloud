@@ -54,8 +54,11 @@
 }
 
 /* ---------------------------------------------------------------- Avatar --
- * Additive portable adapter. Geometry and the neutral palette follow Cloud's
- * `misc/Avatar` size ladder so avatars match Cloud at every step.
+ * Additive portable adapter. Geometry follows Cloud's `misc/Avatar` size
+ * ladder so avatars match Cloud at every step. Initials and icons sit on a
+ * stable tint per person (`data-tint`, the palette of `@k2b/stdlib`'s
+ * generated avatar), mixed with the theme's surface and text so they stay
+ * calm and readable (at least 4.5:1) in both themes.
  */
 .k2b-ui .k2b-avatar {
   display: inline-flex;
@@ -66,18 +69,22 @@
   justify-content: center;
   overflow: hidden;
   border-radius: 999px;
-  color: var(--k2b-neutral-600);
-  background: var(--k2b-neutral-200);
+  color: color-mix(in srgb, var(--k2b-avatar-hue, var(--k2b-neutral-500)) 55%, var(--k2b-text));
+  background: color-mix(in srgb, var(--k2b-avatar-hue, var(--k2b-neutral-500)) 18%, var(--k2b-surface));
   font-size: 0.875rem;
   font-weight: 600;
   object-fit: cover;
 }
-.k2b-ui[data-theme="dark"] .k2b-avatar,
-.k2b-ui.k2b-dark .k2b-avatar,
-.dark .k2b-ui .k2b-avatar {
-  color: var(--k2b-neutral-300);
-  background: var(--k2b-neutral-700);
-}
+.k2b-ui .k2b-avatar[data-tint="0"] { --k2b-avatar-hue: #3b82f6; }
+.k2b-ui .k2b-avatar[data-tint="1"] { --k2b-avatar-hue: #8b5cf6; }
+.k2b-ui .k2b-avatar[data-tint="2"] { --k2b-avatar-hue: #ec4899; }
+.k2b-ui .k2b-avatar[data-tint="3"] { --k2b-avatar-hue: #f97316; }
+.k2b-ui .k2b-avatar[data-tint="4"] { --k2b-avatar-hue: #eab308; }
+.k2b-ui .k2b-avatar[data-tint="5"] { --k2b-avatar-hue: #22c55e; }
+.k2b-ui .k2b-avatar[data-tint="6"] { --k2b-avatar-hue: #14b8a6; }
+.k2b-ui .k2b-avatar[data-tint="7"] { --k2b-avatar-hue: #06b6d4; }
+.k2b-ui .k2b-avatar[data-tint="8"] { --k2b-avatar-hue: #6366f1; }
+.k2b-ui .k2b-avatar[data-tint="9"] { --k2b-avatar-hue: #a855f7; }
 .k2b-ui .k2b-avatar[data-size="xs"] { width: 1.5rem; height: 1.5rem; font-size: 0.625rem; }
 .k2b-ui .k2b-avatar[data-size="sm"] { width: 2rem; height: 2rem; font-size: 0.75rem; }
 .k2b-ui .k2b-avatar[data-size="md"] { width: 2.5rem; height: 2.5rem; font-size: 0.875rem; }

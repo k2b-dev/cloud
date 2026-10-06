@@ -216,7 +216,7 @@ describe("Spaces item detail panel", () => {
     const foreign = renderPanel({ item: { ...task, claim } });
     expect(foreign).toContain('title="Mira Beck is on it"');
     expect(foreign).toContain(
-      '<span class="k2b-avatar spaces-claim-ring" data-size="xs" style="" role="img" aria-label="Mira Beck is on it">MB</span></span><div class="min-w-0 flex-1"><span class="flex min-w-0 items-center gap-1.5"><span class="truncate text-sm">Mira Beck</span><span class="k2b-status-badge shrink-0" data-tone="ok" data-variant="chip"><span class="k2b-status-badge__label">working on it</span></span></span><span class="block text-xs text-dimmed">since <time class="whitespace-nowrap" datetime="' +
+      '<span class="k2b-avatar spaces-claim-ring" data-size="xs" data-tint="6" style="" role="img" aria-label="Mira Beck is on it">MB</span></span><div class="min-w-0 flex-1"><span class="flex min-w-0 items-center gap-1.5"><span class="truncate text-sm">Mira Beck</span><span class="k2b-status-badge shrink-0" data-tone="ok" data-variant="chip"><span class="k2b-status-badge__label">working on it</span></span></span><span class="block text-xs text-dimmed">since <time class="whitespace-nowrap" datetime="' +
         now +
         '">',
     );

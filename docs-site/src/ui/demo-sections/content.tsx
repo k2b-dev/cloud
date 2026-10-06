@@ -1,4 +1,5 @@
 import {
+  announce,
   Button,
   CodeDisplay,
   DataTable,
@@ -22,6 +23,9 @@ import {
   LogEntriesTable,
   MarkdownEditor,
   MarkdownView,
+  MessageRow,
+  type MessageRowStatus,
+  MessageSystemRow,
   NoticeCard,
   Pagination,
   PanelDialog,
@@ -30,6 +34,7 @@ import {
   panelDialogOptions,
   StatusBadge,
   StructuredDataPreview,
+  startsMessageGroup,
   TemplateEditor,
   TemplatePreview,
   TemplateSampleData,
@@ -383,6 +388,166 @@ const VirtualFeedDemo = () => {
                 <span>{event.text}</span>
               </div>
             )}
+          </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+type ChatEntry = { id: string; author: string; at: number; text: string; system?: boolean; status?: MessageRowStatus };
+const chatPeople: Record<string, { name: string; icon?: string }> = {
+  me: { name: "Robin Example" },
+  nora: { name: "Nora Brandt" },
+  tobias: { name: "Tobias Kern" },
+  lea: { name: "Lea Sommer" },
+  minutes: { name: "Minutes", icon: "ti ti-robot" },
+};
+const chatLines: [string, string][] = [
+  ["nora", "I added the sign-in test cases."],
+  ["tobias", "The meter reading API is done. The docs are at https://example.com/docs/meter-readings"],
+  ["nora", "Thanks! Is there a limit per minute?"],
+  ["tobias", "Yes, **60 requests** per minute and account."],
+  ["me", "Then I will throttle the form right away."],
+  [
+    "lea",
+    "Here is the call I use:\n\n```ts\nconst readings = await fetch(`/api/meter-readings?from=${from}&to=${to}&include=history,corrections`);\n```",
+  ],
+  ["me", "Looks good to me."],
+  [
+    "minutes",
+    `Summary since yesterday:\n${Array.from({ length: 18 }, (_, index) => `- Decision ${index + 1}: keep the tile grid calm and check it on phones`).join("\n")}`,
+  ],
+  ["tobias", "<b>Raw HTML</b> and [this link](javascript:alert(1)) stay text."],
+];
+const CHAT_TOTAL = 600;
+const chatStart = Date.UTC(2026, 9, 1, 8);
+const chatEntry = (seq: number): ChatEntry => {
+  if (seq % 97 === 0) return { id: `msg-${seq}`, author: "nora", at: chatStart + seq * 4 * 60_000, text: "Nora added Lea", system: true };
+  const [author, text] = chatLines[seq % chatLines.length]!;
+  // Pairs of messages a minute apart, so groups form.
+  return {
+    id: `msg-${seq}`,
+    author,
+    at: chatStart + seq * 4 * 60_000 - (seq % 2) * 3 * 60_000,
+    text,
+    status: author === "me" ? "sent" : undefined,
+  };
+};
+const chatGroupEntry = (entry?: ChatEntry) => entry && { author: entry.author, at: entry.at, system: entry.system };
+
+const MessageRowsDemo = () => {
+  const [entries, setEntries] = createSignal(Array.from({ length: CHAT_TOTAL }, (_, seq) => chatEntry(seq)));
+  let next = CHAT_TOTAL;
+  const update = (id: string, status: MessageRowStatus) =>
+    setEntries((current) => current.map((entry) => (entry.id === id ? { ...entry, status } : entry)));
+  const send = (fails: boolean) => {
+    const id = `msg-${next++}`;
+    const last = entries().at(-1)!;
+    setEntries((current) => [
+      ...current,
+      { id, author: "me", at: last.at + 60_000, text: fails ? "This one will not get through." : "On my way.", status: "pending" },
+    ]);
+    setTimeout(() => {
+      update(id, fails ? "failed" : "sent");
+      // The application announces a failed send; the row may not even be mounted when it fails.
+      if (fails) announce("Not sent");
+    }, 900);
+  };
+  const receive = () => {
+    const last = entries().at(-1)!;
+    setEntries((current) => [...current, { id: `msg-${next++}`, author: "nora", at: last.at + 60_000, text: "See you at eleven." }]);
+  };
+  const readBy = (entry: ChatEntry) =>
+    entry.id === entries().findLast((other) => other.status === "sent")?.id ? "Read by Nora and Tobias" : undefined;
+  return (
+    <DemoCard
+      id="message-rows"
+      chip={[
+        { kind: "component", name: "MessageRow", from: "@k2b/ui" },
+        { kind: "component", name: "MessageSystemRow", from: "@k2b/ui" },
+        { kind: "component", name: "VirtualFeed", from: "@k2b/ui" },
+      ]}
+      description="600 messages in a VirtualFeed with groups, a system row, code, a collapsed summary, and unsafe Markdown shown as text. Hover or focus a message for its actions; send one that fails and retry it."
+      code={`<VirtualFeed items={messages()} getKey={(message) => message.id} estimateSize={() => 60} label="Project chat"
+  itemLabel={(message) => (message.system ? undefined : \`\${name(message)}, \${clock(message.at)}\`)}>
+  {(message, index) =>
+    message.system ? (
+      <MessageSystemRow icon="ti ti-user-plus" time={clock(message.at)}>{message.text}</MessageSystemRow>
+    ) : (
+      <MessageRow
+        author={people[message.author]}
+        text={message.text}
+        time={clock(message.at)}
+        own={message.author === "me"}
+        groupStart={startsMessageGroup(entry(message), entry(messages()[index() - 1]))}
+        status={message.status}
+        receipt={readBy(message)}
+        onRetry={() => resend(message)}
+        actions={[{ id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => reply(message) }]}
+      />
+    )
+  }
+</VirtualFeed>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="Conversation actions" wrap>
+          <Button size="sm" variant="subtle" onClick={() => send(false)}>
+            Send a message
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => send(true)}>
+            Send one that fails
+          </Button>
+          <Button size="sm" variant="subtle" onClick={receive}>
+            Receive a message
+          </Button>
+        </Toolbar>
+        <div style={{ display: "flex", height: "32rem" }}>
+          <VirtualFeed
+            items={entries()}
+            getKey={(entry) => entry.id}
+            estimateSize={(entry) => (entry.system ? 36 : 60)}
+            label="Project chat"
+            itemLabel={(entry) => (entry.system ? undefined : `${chatPeople[entry.author]!.name}, ${feedTime.format(entry.at)}`)}
+            separator={(entry, previous) => (previous && sameDay(entry.at, previous.at) ? undefined : feedDay.format(entry.at))}
+          >
+            {(entry, index) =>
+              entry.system ? (
+                <MessageSystemRow icon="ti ti-user-plus" time={feedTime.format(entry.at)} dateTime={new Date(entry.at)}>
+                  {entry.text}
+                </MessageSystemRow>
+              ) : (
+                <MessageRow
+                  author={chatPeople[entry.author]!}
+                  text={entry.text}
+                  time={feedTime.format(entry.at)}
+                  dateTime={new Date(entry.at)}
+                  own={entry.author === "me"}
+                  groupStart={(() => {
+                    const previous = entries()[index() - 1];
+                    return (
+                      startsMessageGroup(chatGroupEntry(entry)!, chatGroupEntry(previous)) || !previous || !sameDay(entry.at, previous.at)
+                    );
+                  })()}
+                  badge={entry.author === "minutes" ? <StatusBadge label="Agent" tone="info" icon={null} /> : undefined}
+                  status={entry.status}
+                  receipt={readBy(entry)}
+                  onRetry={() => {
+                    update(entry.id, "pending");
+                    setTimeout(() => update(entry.id, "sent"), 900);
+                  }}
+                  actions={[
+                    {
+                      id: "reply",
+                      label: "Reply",
+                      icon: "ti ti-arrow-back-up",
+                      onSelect: () => void toast(`Reply to ${chatPeople[entry.author]!.name}`),
+                    },
+                    { id: "react", label: "React", icon: "ti ti-mood-smile", onSelect: () => void toast("Reaction added") },
+                  ]}
+                />
+              )
+            }
           </VirtualFeed>
         </div>
       </div>
@@ -897,6 +1062,11 @@ const demos: DemoSection = {
   "virtual-feed": () => (
     <DemoGrid columns="one">
       <VirtualFeedDemo />
+    </DemoGrid>
+  ),
+  "message-rows": () => (
+    <DemoGrid columns="one">
+      <MessageRowsDemo />
     </DemoGrid>
   ),
   "structured-data": () => (

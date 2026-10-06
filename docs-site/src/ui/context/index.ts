@@ -20,6 +20,7 @@ import contentIntl from "./content/intl.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
+import contentMessageRows from "./content/message-rows.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
@@ -145,6 +146,7 @@ const catalogContextSources = {
   "content/code": { file: "content/code.md", content: contentCode },
   "content/logs": { file: "content/logs.md", content: contentLogs },
   "content/virtual-feed": { file: "content/virtual-feed.md", content: contentVirtualFeed },
+  "content/message-rows": { file: "content/message-rows.md", content: contentMessageRows },
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },
   "content/media": { file: "content/media.md", content: contentMedia },
   "content/files": { file: "content/files.md", content: contentFiles },

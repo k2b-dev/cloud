@@ -40,7 +40,7 @@ export type MarkdownRenderOptions = {
   locale?: string;
 };
 
-const escapeHtml = (value: string): string =>
+export const escapeHtml = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
 const safeUrl = (value: string): string | null => {
@@ -61,7 +61,7 @@ const isStandaloneInlineToken = (text: string, start: number, value: string): bo
   return !(after === "." && /[a-zA-Z0-9_]/.test(text[end + 1] ?? ""));
 };
 
-const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
+export const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
   const renderer = new Renderer();
   const inlineTokens = normalizeInlineTokens(options.inlineTokens);
   const baseText = renderer.text.bind(renderer);
@@ -131,10 +131,13 @@ const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
 };
 
 export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOptions = {}): string =>
-  new Marked(markdownInfoBlocks({ locale: options.locale })).parse(markdown, {
-    async: false,
-    renderer: createSafeRenderer(options),
-  }) as string;
+  createSafeMarked(options.locale).parse(markdown, { async: false, renderer: createSafeRenderer(options) }) as string;
+
+/**
+ * Internal to the package: the Markdown grammar of `renderSafeMarkdown`, for a component that renders with an adjusted
+ * safe renderer or reads the tokens, as `MessageRow` does.
+ */
+export const createSafeMarked = (locale?: string): Marked => new Marked(markdownInfoBlocks({ locale }));
 
 /**
  * Markdown View Component (SSR)

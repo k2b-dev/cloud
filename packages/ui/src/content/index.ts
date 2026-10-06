@@ -80,6 +80,15 @@ export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
+export type {
+  MessageGroupEntry,
+  MessageRowAction,
+  MessageRowAuthor,
+  MessageRowProps,
+  MessageRowStatus,
+  MessageSystemRowProps,
+} from "./MessageRow";
+export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export {
   type MarkdownInfoBlock,
   type MarkdownInfoBlockRenderInput,
