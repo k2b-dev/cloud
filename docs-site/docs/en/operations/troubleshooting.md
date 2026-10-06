@@ -94,7 +94,8 @@ inside a container.
 
 ## Postgres requires pg_textsearch
 
-Core setup, Notebooks, Mail search, or a `psql` query fails with
+Core or Notebooks setup, an application that publishes new Help content, Mail,
+or a `psql` query fails with
 `pg_textsearch must be loaded via shared_preload_libraries` or
 `could not access file "$libdir/pg_textsearch"`. The database has optional BM25
 indexes, and this Postgres server does not load their library. Native search

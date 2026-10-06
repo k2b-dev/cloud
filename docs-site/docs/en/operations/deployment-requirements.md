@@ -566,13 +566,19 @@ Step 3 can happen without you. On PostgreSQL 17 and later, Core's AI setup and
 Notebooks setup run `CREATE EXTENSION IF NOT EXISTS pg_textsearch` when the
 package is installed. Without the preload this fails and setup continues with
 native search. With the preload and a database role that may create the
-extension, it succeeds, so a Postgres image that preloads `pg_textsearch`
-enables BM25 on the next start.
+extension, it succeeds. A Postgres image that preloads `pg_textsearch`
+therefore creates the extension and the AI and Notebooks indexes on the next
+start, and from then on the database needs the library. Core sets up Help
+before its AI, so the Help indexes follow on the second Core start, and Mail
+builds its index on its first start after the extension exists. Run step 3
+before restarting to create every index in one pass.
 
-Searches check extension and index availability, so existing processes can
-use the indexes once they are ready. If the extension or an index is absent,
-native search remains active. Ordinary database failures are still reported as
-errors.
+Help and Mail check extension and index availability on every search, so
+running processes use the indexes once they are ready. Assistant
+conversations, AI memories, AI Skills, and Notebooks check once per process
+and use new indexes after Core or Notebooks restarts. If the extension or an
+index is absent, native search remains active. Ordinary database failures are
+still reported as errors.
 
 Keep the existing database's storage and major version unchanged when testing
 BM25 in a separate environment. Verify both search modes with real application
@@ -595,10 +601,16 @@ When the package is missing from the server entirely, the same statements fail
 with `could not access file "$libdir/pg_textsearch"`, and a server that still
 lists `pg_textsearch` in `shared_preload_libraries` does not start.
 
-Native search cannot take over, because it reads the same tables. Core setup
-stops with this error, so Core does not start. Notebooks setup fails the same
-way. Mail setup passes, but every search and write of stored message text
-fails.
+Native search cannot take over, because it reads the same tables:
+
+- Core setup stops with this error, so Core does not start. Notebooks setup
+  fails the same way.
+- Any application, built-in or not, that publishes Help content the database
+  does not hold yet, for example after an upgrade, does not start: it writes
+  those articles to `help.documents` when it starts.
+- Mail usually starts, but conversation lists, messages, search, and
+  synchronization fail, because they read and write `mail.message_contents`.
+  An upgrade whose Mail setup changes that table stops Mail setup too.
 
 Treat the preloaded library as part of the database. Every server that runs it
 needs the package installed and `pg_textsearch` in `shared_preload_libraries`:
@@ -614,7 +626,8 @@ needs the package installed and `pg_textsearch` in `shared_preload_libraries`:
 
 1. Install the package matching the server's major version.
 2. Add `pg_textsearch` to `shared_preload_libraries` and restart Postgres.
-3. Start Core, then the other applications.
+3. Restart Core, then the other applications. Processes that kept running may
+   have switched to native ranking and return to BM25 only after a restart.
 
 The tables and BM25 indexes are intact; nothing needs to be rebuilt.
 
@@ -644,10 +657,12 @@ Mailboxes set to `pg_textsearch` then search natively;
 
 #### Restore a backup without the library
 
-`pg_restore` into a server without the library restores every table and row,
-but exits with status 1: creating the extension and each BM25 index fails. The
-restored database then searches natively. To restore a custom-format dump
-without these errors, leave the BM25 objects out:
+With default options, `pg_restore` into a server without the library restores
+every table and row, but exits with status 1: creating the extension and each
+BM25 index fails. The restored database then searches natively. With
+`--single-transaction` or `--exit-on-error`, the restore stops at the
+extension before any table exists. To restore a custom-format dump without
+these errors, with or without these options, leave the BM25 objects out:
 
 ```bash
 pg_restore --list cloud.dump | grep -v -E 'pg_textsearch|_bm25_' > restore.list
@@ -657,6 +672,12 @@ pg_restore --use-list restore.list --dbname <target-database> cloud.dump
 Compare the two lists first: only the extension, its comment, and the indexes
 in the table above may be missing. To keep BM25, restore into a server that
 preloads the library instead.
+
+A plain-format dump restored with `psql` reports the same errors. By default
+`psql` continues, restores the data, and exits with status 0; with
+`ON_ERROR_STOP` it stops at the extension before any table exists. Check that
+every error names `pg_textsearch` or `bm25`, or restore into a server that
+preloads the library.
 
 ### Files capability downloads
 
