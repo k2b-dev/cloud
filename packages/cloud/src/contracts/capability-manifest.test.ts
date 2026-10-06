@@ -44,6 +44,17 @@ test("an entry with a newer field or value is left out, never weakened, and its 
   expect(resolveCapabilityResourceReader(manifest, { type: "library.author", id: "a1" })).toBeNull();
 });
 
+test("a file provider is read as sent and left out as a whole when it has a newer field or value", () => {
+  const future = futureLibrary().manifest;
+  const fileProvider = { list: "book.search", read: "book.read" };
+  const read = (sent: unknown) => CapabilityManifestSchema.parse({ ...future, fileProvider: sent });
+  expect(read(fileProvider).fileProvider).toEqual(fileProvider);
+  // A function this release does not know; keeping the rest would offer a provider the app did not declare.
+  expect(read({ ...fileProvider, trash: "book.archive" })).not.toHaveProperty("fileProvider");
+  // A known function with a value this release cannot read.
+  expect(read({ ...fileProvider, save: 1 })).not.toHaveProperty("fileProvider");
+});
+
 test("tolerance stops at the protocol version and at invalid known fields", () => {
   const future = futureLibrary().manifest;
   expect(CapabilityManifestSchema.safeParse({ ...future, protocolVersion: 3 }).success).toBeFalse();

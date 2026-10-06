@@ -643,6 +643,36 @@ binary transfers. The existing `cld filesv2` CLI remains available for direct ta
 
 The canonical `entry.read` capability returns a stable `open` link and a resource reference with the current name. Consumers can open a Files entry through this shared contract without constructing file paths. Reading and opening still require the current user's access.
 
+`content.read` reports the media type that matches the file name, for example
+`application/pdf` for `report.pdf`, and `application/octet-stream` when the
+extension is unknown. Files never inspects the content for it.
+
+## Offer files to other apps
+
+Files implements the operations of the shared
+[file-provider contract](/en/docs/platform/file-providers), so other apps can
+browse, open, and save files in it. Files declares itself as a provider in a
+later release, together with a shared file chooser. Until then, apps call
+these capabilities by their IDs like any other Files capability.
+
+- `provider.list` shows a person's usable storage bases as the root, under the
+  names Files shows, such as **My files**. While storage cannot be reached,
+  the root fails with `unavailable` (503), even if other bases work, so an
+  outage never looks like missing storage. Inside a base it lists readable
+  folders first, then files, filtered by name inside the folder. A folder is
+  writable when the person may create files in it.
+- `content.read` opens a file, up to 50 MiB.
+- `provider.save` creates a new file in a writable folder, up to 50 MiB. It
+  never replaces a file or folder: an existing name fails with
+  `FILE_NAME_CONFLICT` (409), also when it appears during the transfer. Other
+  failures keep their own codes, such as `insufficient_space`. A retry with
+  the same idempotency key returns the same upload.
+
+Every call checks the person's current storage access and, on FreeIPA
+storage, their Unix permissions, exactly as browsing in Files does. Entry IDs
+are the same `filesv2.entry` refs as everywhere else; see
+[Refer to files and folders](#refer-to-files-and-folders).
+
 ## Compose private file lists and downloads
 
 Studio Apps can combine Files entries and stored Grids documents without

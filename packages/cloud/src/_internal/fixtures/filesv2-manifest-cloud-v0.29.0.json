@@ -1,0 +1,887 @@
+{
+  "protocolVersion": 2,
+  "appId": "filesv2",
+  "manifestHash": "c0ccc3b2c8736e8a9a94e3d4bf37a48ce6f9bfd084bb79a48bd3015c90f04822",
+  "types": [
+    {
+      "localId": "entry",
+      "title": "File or folder",
+      "description": "One file or folder in an accessible Cloud or FreeIPA storage base.",
+      "icon": "ti ti-folders",
+      "reader": "entry.read"
+    }
+  ],
+  "queries": [
+    {
+      "localId": "bases.list",
+      "title": "List storage bases",
+      "description": "List accessible homes and group storage. Use the returned base IDs for browsing; unavailable bases include their state.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "after": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." }
+        },
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+                "name": { "type": "string" },
+                "area": { "type": "string", "enum": ["cloud", "freeipa"] },
+                "kind": { "type": "string", "enum": ["users", "groups"] },
+                "status": { "type": "string" }
+              },
+              "required": ["id", "name", "area", "kind", "status"],
+              "additionalProperties": false
+            }
+          },
+          "next": { "type": ["string", "null"] }
+        },
+        "required": ["items", "next"],
+        "additionalProperties": false
+      },
+      "schemaHash": "6e94a0f7aa333d68e16f2b3c287867e80092549222c287750615f2c6f4c88996",
+      "openWorld": false
+    },
+    {
+      "localId": "content.download",
+      "title": "Get file download link",
+      "description": "Request a direct single-file download lease only when the user downloads a filesv2.entry from listing or search. Rechecks current access. Returns a bearer URL valid for 60 seconds; never store it in a list or shared data. Use content.read for processing bytes in code.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Exact ID from a filesv2.entry ref returned by listing or search."
+          }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Private bearer URL from the download service. Use unchanged without Cloud credentials."
+          },
+          "method": { "type": "string", "const": "GET" },
+          "expires": { "type": "string", "description": "Lease expiry timestamp returned by storage. Request a fresh lease after expiry." }
+        },
+        "required": ["url", "method", "expires"],
+        "additionalProperties": false
+      },
+      "schemaHash": "0811b86f2bc2e69d792fc6003c8b4dc1167b5f8a74c6c56e5d29dcd43b630ff1",
+      "openWorld": false
+    },
+    {
+      "localId": "content.read",
+      "title": "Read file content",
+      "description": "Open one file as an authenticated binary stream. Use its filesv2.entry ID from search or listing. No text truncation.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Entry ID from listing or search." } },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "stream": { "direction": "read", "maxBytes": 52428800 },
+      "schemaHash": "ac3dc9ffe3df386efc0f5e14960da4018e714aad59129539641c832cb439f5e3",
+      "openWorld": false
+    },
+    {
+      "localId": "entry.list",
+      "title": "List folder entries",
+      "description": "Read one page of immediate children of a known folder. Continue with next until null, including empty filtered pages.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sort": {
+            "default": "name",
+            "description": "Sort entries by this field.",
+            "type": "string",
+            "enum": ["name", "modified", "size"]
+          },
+          "order": { "default": "asc", "description": "Ascending or descending order.", "type": "string", "enum": ["asc", "desc"] },
+          "type": {
+            "default": "all",
+            "description": "Include all entries, files or directories.",
+            "type": "string",
+            "enum": ["all", "files", "directories"]
+          },
+          "groupFolders": {
+            "description": "Group directories before files.",
+            "anyOf": [{ "type": "boolean" }, { "type": "string", "enum": ["true", "false"] }]
+          },
+          "path": { "default": "", "description": "Folder path relative to the storage base.", "type": "string", "maxLength": 4096 },
+          "after": { "description": "Cursor from the previous page; omit for the first page.", "type": "string", "maxLength": 16384 },
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": { "type": "string", "maxLength": 4096, "description": "Path relative to this storage base; empty means its root." },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "path": { "type": "string" },
+                "directory": { "type": "boolean" },
+                "size": { "type": "number" },
+                "modified": { "type": "string" },
+                "revision": { "type": "string" },
+                "ref": {
+                  "type": "object",
+                  "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                  "required": ["type", "id"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["name", "path", "directory", "size", "modified", "ref"],
+              "additionalProperties": false
+            }
+          },
+          "next": { "type": ["string", "null"] }
+        },
+        "required": ["baseId", "path", "items", "next"],
+        "additionalProperties": false
+      },
+      "schemaHash": "39d084b2ed129fffbcb2417113761de66b6f8608ca921b812e37148c762afad4",
+      "openWorld": false
+    },
+    {
+      "localId": "entry.read",
+      "title": "Read file entry",
+      "description": "Read the current metadata of one filesv2.entry ref after checking access.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Entry ID from a filesv2.entry ref or search result." }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "base": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "area": { "type": "string", "enum": ["cloud", "freeipa"] }
+            },
+            "required": ["id", "name", "area"],
+            "additionalProperties": false
+          },
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "directory": { "type": "boolean" },
+          "size": { "type": "number" },
+          "modified": { "type": "string" },
+          "revision": { "type": "string" },
+          "href": { "type": "string" }
+        },
+        "required": ["id", "base", "path", "name", "directory", "size", "modified", "href"],
+        "additionalProperties": false
+      },
+      "schemaHash": "c51da9502a28decbea84d5b2408a86dcd61eb580216e7062fba4a617985f1b30",
+      "openWorld": false
+    },
+    {
+      "localId": "entry.search",
+      "title": "Search files",
+      "description": "Find file and folder names in up to 10 accessible storage bases, one bounded source page each. The summary reports omitted bases or further results; browse Files for complete results.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "User-entered search text. Empty text is allowed when a facet narrows the query."
+          },
+          "tags": {
+            "maxItems": 20,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "description": "Canonical search facets supported by this query."
+          },
+          "scope": {
+            "description": "Optional resource containing the search results; must be an explicitly supported scope type.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Stable app-owned resource identifier." }
+            },
+            "required": ["type", "id"],
+            "additionalProperties": false
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum number of results to return." }
+        },
+        "required": ["query", "tags", "limit"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 180,
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                  "description": "Namespaced resource type declared by the owning app."
+                },
+                "id": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Stable app-owned resource identifier." }
+              },
+              "required": ["type", "id"],
+              "additionalProperties": false,
+              "description": "Stable identity of the result."
+            },
+            "title": { "type": "string", "minLength": 1, "maxLength": 500, "description": "Primary result label." },
+            "preview": { "description": "Short plain-text result preview.", "type": "string", "maxLength": 2000 },
+            "icon": { "description": "Optional presentation icon.", "type": "string", "minLength": 1, "maxLength": 120 },
+            "priority": { "description": "App-local relevance hint from zero to nine.", "type": "integer", "minimum": 0, "maximum": 9 },
+            "metadata": {
+              "description": "Small structured metadata shown with the result.",
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+                  "value": { "type": "string", "maxLength": 1000 }
+                },
+                "required": ["label", "value"],
+                "additionalProperties": false
+              }
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": ["open", "edit", "status", "preview", "download"],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": { "description": "Optional human-readable link label.", "type": "string", "minLength": 1, "maxLength": 120 }
+                },
+                "required": ["rel", "href"],
+                "additionalProperties": false
+              },
+              "description": "Semantic links for the resource."
+            }
+          },
+          "required": ["ref", "title", "links"],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "5b78e710d3729f50c18b549cedce82e88fbd22757c37d87a0e245682c8d1608e",
+      "openWorld": false,
+      "universalSearch": {
+        "tags": [
+          { "tag": "file", "title": "Files", "description": "Search file and folder names.", "aliases": ["files", "folder", "folders"] }
+        ]
+      }
+    },
+    {
+      "localId": "entry.search-in-base",
+      "title": "Search within storage",
+      "description": "Find names in one known storage base or folder, with complete cursor traversal. Does not search file contents.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sort": {
+            "default": "name",
+            "description": "Sort entries by this field.",
+            "type": "string",
+            "enum": ["name", "modified", "size"]
+          },
+          "order": { "default": "asc", "description": "Ascending or descending order.", "type": "string", "enum": ["asc", "desc"] },
+          "type": {
+            "default": "all",
+            "description": "Include all entries, files or directories.",
+            "type": "string",
+            "enum": ["all", "files", "directories"]
+          },
+          "groupFolders": {
+            "description": "Group directories before files.",
+            "anyOf": [{ "type": "boolean" }, { "type": "string", "enum": ["true", "false"] }]
+          },
+          "path": { "default": "", "description": "Folder path relative to the storage base.", "type": "string", "maxLength": 4096 },
+          "after": { "description": "Cursor from the previous page; omit for the first page.", "type": "string", "maxLength": 16384 },
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "q": { "type": "string", "minLength": 1, "maxLength": 500, "description": "File or folder name to find." }
+        },
+        "required": ["baseId", "q"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": { "type": "string", "maxLength": 4096, "description": "Path relative to this storage base; empty means its root." },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "path": { "type": "string" },
+                "directory": { "type": "boolean" },
+                "size": { "type": "number" },
+                "modified": { "type": "string" },
+                "revision": { "type": "string" },
+                "ref": {
+                  "type": "object",
+                  "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                  "required": ["type", "id"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["name", "path", "directory", "size", "modified", "ref"],
+              "additionalProperties": false
+            }
+          },
+          "next": { "type": ["string", "null"] }
+        },
+        "required": ["baseId", "path", "items", "next"],
+        "additionalProperties": false
+      },
+      "schemaHash": "0136c2ee602012f9a34ca5ec6359d899c96f87080565036e7386bcf4a1b7476c",
+      "openWorld": false
+    },
+    {
+      "localId": "trash.list",
+      "title": "List trash",
+      "description": "List one page of recoverable entries; next is the cursor for the following page.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "after": { "description": "Cursor returned by the previous page.", "type": "string", "maxLength": 16384 }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+              "name": { "type": "string" }
+            },
+            "required": ["id", "name"],
+            "additionalProperties": false
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "original": { "type": ["string", "null"] },
+                "name": { "type": "string" },
+                "directory": { "type": "boolean" },
+                "deletedAt": { "type": ["string", "null"] },
+                "state": { "type": "string" },
+                "error": { "type": "string" }
+              },
+              "required": ["id", "original", "name", "directory", "deletedAt"],
+              "additionalProperties": false
+            }
+          },
+          "next": { "type": ["string", "null"] }
+        },
+        "required": ["base", "entries", "next"],
+        "additionalProperties": false
+      },
+      "schemaHash": "93a0becb3dd94d8e9569af5db9be425b7975941ce5270520e507577c0219313d",
+      "openWorld": false
+    }
+  ],
+  "actions": [
+    {
+      "localId": "content.create",
+      "title": "Write file content",
+      "description": "Prepare one binary upload at an exact base-relative path. Default: create only. Replacing requires an expectedRevision obtained from current metadata.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path relative to this storage base; empty means its root."
+          },
+          "size": { "type": "integer", "minimum": 0, "maximum": 52428800, "description": "Exact byte count of the new content." },
+          "mediaType": {
+            "default": "application/octet-stream",
+            "description": "Media type of the binary payload.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "pattern": "^[\\x20-\\x7e]+$"
+          },
+          "onConflict": {
+            "default": "error",
+            "description": "Create only, or explicitly replace an existing file.",
+            "type": "string",
+            "enum": ["error", "overwrite"]
+          },
+          "expectedRevision": {
+            "description": "Current revision from entry metadata; required when replacing.",
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": ["baseId", "path", "size"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "stream": { "direction": "write", "maxBytes": 52428800 },
+      "schemaHash": "430a1090607fafcf1e615eb72c46b8ead4a210c0ade55bbefc4fa6a77ce6dea7",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "entry.copy",
+      "title": "Copy entry",
+      "description": "Copy entry using current storage permissions. Existing targets are not overwritten.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path relative to this storage base; empty means its root."
+          },
+          "targetBaseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "folder": { "type": "string", "maxLength": 4096, "description": "Path relative to this storage base; empty means its root." }
+        },
+        "required": ["baseId", "path", "targetBaseId", "folder"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "9b3dfa05b556872d7901348310f7f0c843c56023336c455b3e4c34bd4b0a770d",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "entry.move",
+      "title": "Move entry",
+      "description": "Move entry using current storage permissions. Existing targets are not overwritten.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path relative to this storage base; empty means its root."
+          },
+          "folder": { "type": "string", "maxLength": 4096, "description": "Path relative to this storage base; empty means its root." }
+        },
+        "required": ["baseId", "path", "folder"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "9c8d60a357000660edd2f33909fee8f61b5bcfda8b52a408057cdf27eeda355b",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "entry.rename",
+      "title": "Rename entry",
+      "description": "Rename entry using current storage permissions. Existing targets are not overwritten.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path relative to this storage base; empty means its root."
+          },
+          "name": { "type": "string", "minLength": 1, "maxLength": 255, "description": "New name without directory separators." }
+        },
+        "required": ["baseId", "path", "name"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "a909f361be13b7efd561e81ded4ddec7d54855b659a4a8e48516a39d2e71c4bf",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "entry.trash",
+      "title": "Move entry to trash",
+      "description": "Move entry to trash using current storage permissions. Existing targets are not overwritten.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path relative to this storage base; empty means its root."
+          }
+        },
+        "required": ["baseId", "path"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "d67937f6a14aabe9bdf0416308d12a4c23499c11af68ed2f94aba09df911d2da",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "folder.create",
+      "title": "Create folder",
+      "description": "Create folder using current storage permissions. Existing targets are not overwritten.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Path relative to this storage base; empty means its root."
+          }
+        },
+        "required": ["baseId", "path"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "d67937f6a14aabe9bdf0416308d12a4c23499c11af68ed2f94aba09df911d2da",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    },
+    {
+      "localId": "trash.restore",
+      "title": "Restore entry from trash",
+      "description": "Restore entry from trash using current storage permissions. Existing targets are not overwritten.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "id": { "type": "string", "maxLength": 5500, "description": "ID returned by trash.list." },
+          "path": { "type": "string", "maxLength": 4096, "description": "Path relative to this storage base; empty means its root." }
+        },
+        "required": ["baseId", "id"],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "baseId": { "type": "string", "minLength": 1, "maxLength": 512, "description": "Exact base ID returned by bases.list." },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "directory": { "type": "boolean" },
+              "size": { "type": "number" },
+              "modified": { "type": "string" },
+              "revision": { "type": "string" },
+              "ref": {
+                "type": "object",
+                "properties": { "type": { "type": "string", "const": "filesv2.entry" }, "id": { "type": "string" } },
+                "required": ["type", "id"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "path", "directory", "size", "modified", "ref"],
+            "additionalProperties": false
+          },
+          "uploadId": { "type": "string" }
+        },
+        "required": ["baseId"],
+        "additionalProperties": false
+      },
+      "schemaHash": "704bb9a1bb1e2107d01d118d382a9025c1101bff4e6db876f7b508e0be3a48ec",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required",
+      "review": true
+    }
+  ],
+  "commands": []
+}

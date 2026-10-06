@@ -1,12 +1,24 @@
 import { createHash } from "node:crypto";
-import type { CapabilityActionDefinition, CapabilityExecutionContext, CapabilityResult, CapabilityStream } from "@k2b/cloud/contracts";
+import {
+  type CapabilityActionDefinition,
+  type CapabilityExecutionContext,
+  type CapabilityResult,
+  type CapabilityStream,
+  FILE_PROVIDER_NAME_CONFLICT,
+  type FileProviderEntry,
+  FileProviderListDataSchema,
+  FileProviderListInputSchema,
+  FileProviderSaveInputSchema,
+} from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
-import { err, fail, ok } from "@k2b/stdlib";
+import { err, fail, fileIcons, isServiceError, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
-import { BrowseQuerySchema, CONTENT_STREAM_LIMIT } from "./contracts";
+import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
+import { baseLabel } from "./frontend/base-label";
+import { browserMessages } from "./frontend/browser-messages";
 import { filesUrl } from "./frontend/urls";
 import { FilesError, filesService } from "./service";
 
@@ -52,17 +64,115 @@ async function domain<T>(run: () => Promise<T>): Promise<T> {
     throw e;
   }
 }
+/** Files reports a taken name as these 409 codes; provider.save answers all of them with the contract's one code. */
+const NAME_TAKEN = new Set(["path_conflict", "not_file", "write_conflict"]);
+async function saveDomain<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await domain(run);
+  } catch (e) {
+    if (isServiceError(e) && e.status === 409 && NAME_TAKEN.has(e.code))
+      throw { code: FILE_PROVIDER_NAME_CONFLICT, message: "A file or folder with this name already exists", status: 409 };
+    throw e;
+  }
+}
 type ListedEntry = z.infer<typeof Entry> & { resourceId?: string };
 const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => ({
   ...entry,
   revision: markdownRevision(entry),
   ref: { type: "filesv2.entry" as const, id: await entryRef(baseId, { path: entry.path, resourceId }) },
 });
-const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityResult<z.infer<typeof Result>>> => ({
-  data: { baseId, entry: await item(baseId, entry) },
-  links: [{ rel: "open", href: filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")) }],
-});
+/** Capability links hold at most 2,048 characters; a deep path opens through the entry's deep link instead. */
+const openLink = (href: string, id: string) => [
+  { rel: "open" as const, href: href.length <= 2048 ? href : `/app/filesv2/ref/${encodeURIComponent(id)}` },
+];
+const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityResult<z.infer<typeof Result>>> => {
+  const listed = await item(baseId, entry);
+  return {
+    data: { baseId, entry: listed },
+    links: openLink(filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")), listed.ref.id),
+  };
+};
+/** Bun's media type table, by extension only; Files never sniffs content. */
+const mediaTypeOf = (name: string) => Bun.file(name).type;
+
+const providerEntry = async (baseId: string, entry: FileEntry): Promise<FileProviderEntry> => {
+  const facts = {
+    id: await entryRef(baseId, entry),
+    name: entry.name,
+    updatedAt: entry.modified,
+    icon: `ti ${fileIcons.getFileIcon({ name: entry.name, type: entry.directory ? "directory" : "file" })}`,
+  };
+  return entry.directory ? { kind: "folder", ...facts } : { kind: "file", ...facts, size: entry.size, mediaType: mediaTypeOf(entry.name) };
+};
+
+/** The provider root: the caller's usable storage bases as folders, under the names Files shows. Never writable. */
+const providerRoot = async (c: CapabilityExecutionContext, input: z.output<typeof FileProviderListInputSchema>) => {
+  const offset = input.cursor === undefined ? 0 : /^\d{1,6}$/.test(input.cursor) ? Number(input.cursor) : -1;
+  if (offset < 0) throw new FilesError("cursor_invalid", 409);
+  const locale = c.locale ?? "en";
+  const messages = browserMessages.resolve([locale]).t;
+  const q = input.query?.trim().toLocaleLowerCase();
+  const available = await filesService.bases(readActor(c));
+  // An outage must not look like lost storage: fail the whole root, even beside usable bases, so consumers offer a retry.
+  if (available.issues.some((issue) => issue.code === "unavailable") || available.items.some((base) => base.reason === "unavailable"))
+    throw new FilesError("unavailable", 503);
+  const bases = available.items
+    .filter((base) => base.status === "existing")
+    .map((base) => ({ base, name: baseLabel(base, messages, locale) }))
+    .filter(({ name }) => !q || name.toLocaleLowerCase().includes(q))
+    .sort((a, b) => (a.base.kind === b.base.kind ? a.name.localeCompare(b.name, locale) : a.base.kind === "users" ? -1 : 1));
+  const page = bases.slice(offset, offset + input.limit);
+  return {
+    writable: false,
+    items: await Promise.all(
+      page.map(async ({ base, name }) => ({
+        kind: "folder" as const,
+        id: await entryRef(base.id, { path: "" }),
+        name,
+        icon: base.kind === "users" ? "ti ti-home" : "ti ti-users",
+      })),
+    ),
+    next: offset + page.length < bases.length ? String(offset + page.length) : null,
+  };
+};
+
+const SavedFile = z
+  .object({
+    file: z
+      .object({ id: z.string().min(1).max(512), name: z.string().min(1).max(255), size: z.number().int().min(0) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+const savedFile = async (baseId: string, entry: FileEntry): Promise<CapabilityResult<z.infer<typeof SavedFile>>> => {
+  const id = await entryRef(baseId, entry);
+  return {
+    data: { file: { id, name: entry.name, size: entry.size } },
+    links: openLink(filesUrl(baseId, entry.path.split("/").slice(0, -1).join("/")), id),
+  };
+};
+
 const uploadRef = z.object({ baseId: Base, id: z.uuid() }).strict();
+const joinName = (folder: string, name: string) => (folder ? `${folder}/${name}` : name);
+/** The write stream of an upload session; `receipt` shapes the completed result and `errors` the failures of its Action. */
+const uploadStream = <T>(receipt: (baseId: string, entry: FileEntry) => Promise<CapabilityResult<T>>, errors = domain) => ({
+  direction: "write" as const,
+  maxBytes: CONTENT_STREAM_LIMIT,
+  write: async (s: CapabilityStream, body: ReadableStream<Uint8Array>, c: CapabilityExecutionContext) =>
+    errors(async () => {
+      const ref = uploadRef.parse(JSON.parse(s.id));
+      const saved = await filesService.capabilityUpload(readActor(c), ref, body, c.signal);
+      return receipt(ref.baseId, saved.entry);
+    }),
+  status: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
+    errors(async () => {
+      const ref = uploadRef.parse(JSON.parse(s.id));
+      const status = await filesService.capabilityUploadStatus(readActor(c), ref);
+      return status.state === "completed" ? { state: "completed" as const, result: await receipt(ref.baseId, status.entry) } : status;
+    }),
+  abort: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
+    domain(() => filesService.abortUpload(readActor(c), uploadRef.parse(JSON.parse(s.id)))),
+});
 const sourceRef = z.object({ id: z.string().max(512), revision: z.string().max(512) }).strict();
 const uuidKey = (key: string) => {
   const hex = createHash("sha256").update(key).digest("hex");
@@ -192,7 +302,7 @@ export const fileQueries = {
             id: JSON.stringify({ id: input.id, revision: markdownRevision(file.entry) }),
             direction: "read" as const,
             name: file.entry.name,
-            mediaType: "application/octet-stream",
+            mediaType: mediaTypeOf(file.entry.name),
             size: file.entry.size,
             expiresAt: new Date(Date.now() + 3600_000).toISOString(),
           },
@@ -215,6 +325,32 @@ export const fileQueries = {
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
       domain(async () => {
         return ok({ data: await filesService.downloadById(readActor(c), input.id) });
+      }),
+  },
+  "provider.list": {
+    title: "Browse files for a file chooser",
+    description:
+      "Read one page of a folder for choosing or saving files: without parent, the accessible storage bases; inside, readable folders first, then files. Continue with next until null, including empty filtered pages. Open files with content.read.",
+    input: FileProviderListInputSchema,
+    data: FileProviderListDataSchema,
+    openWorld: false,
+    run: async (input: z.output<typeof FileProviderListInputSchema>, c: CapabilityExecutionContext) =>
+      domain(async () => {
+        if (input.parent === undefined) return ok({ data: await providerRoot(c, input) });
+        // A Filegate read may join folders and files on one page; half the limit keeps that page within it.
+        const page = await filesService.folder(readActor(c), {
+          id: input.parent,
+          q: input.query,
+          after: input.cursor,
+          pageSize: Math.ceil(input.limit / 2),
+        });
+        return ok({
+          data: {
+            writable: page.writable,
+            items: await Promise.all(page.items.map((entry) => providerEntry(page.base.id, entry))),
+            next: page.next,
+          },
+        });
       }),
   },
 };
@@ -281,24 +417,47 @@ export const fileActions = {
           },
         });
       }),
-    stream: {
-      direction: "write" as const,
-      maxBytes: CONTENT_STREAM_LIMIT,
-      write: async (s: CapabilityStream, body: ReadableStream<Uint8Array>, c: CapabilityExecutionContext) =>
-        domain(async () => {
-          const ref = uploadRef.parse(JSON.parse(s.id));
-          const saved = await filesService.capabilityUpload(readActor(c), ref, body, c.signal);
-          return result(ref.baseId, saved.entry);
-        }),
-      status: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-        domain(async () => {
-          const ref = uploadRef.parse(JSON.parse(s.id));
-          const status = await filesService.capabilityUploadStatus(readActor(c), ref);
-          return status.state === "completed" ? { state: "completed" as const, result: await result(ref.baseId, status.entry) } : status;
-        }),
-      abort: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-        domain(() => filesService.abortUpload(readActor(c), uploadRef.parse(JSON.parse(s.id)))),
-    },
+    stream: uploadStream(result),
+  },
+  "provider.save": {
+    title: "Save a new file",
+    description:
+      "Create one new file in a writable folder from provider.list, then send its bytes through the write stream. Never replaces: an existing name fails with code FILE_NAME_CONFLICT; choose another name.",
+    input: FileProviderSaveInputSchema,
+    data: SavedFile,
+    openWorld: false,
+    destructive: false,
+    idempotency: "required" as const,
+    review: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
+      domain(async () => {
+        const folder = await filesService.folderLocation(readActor(c), input.parent);
+        return ok({ message: `Create ${joinName(folder.path, input.name)} (${input.size} bytes) in ${folder.baseId}.` });
+      }),
+    run: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
+      saveDomain(async () => {
+        if (input.size > CONTENT_STREAM_LIMIT) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
+        const actor = readActor(c);
+        const folder = await filesService.folderLocation(actor, input.parent);
+        const session = await filesService.upload(actor, {
+          baseId: folder.baseId,
+          path: joinName(folder.path, input.name),
+          size: input.size,
+          onConflict: "error",
+          idempotencyKey: uuidKey(JSON.stringify(["filesv2.provider.save", actor.user.id, c.idempotencyKey!])),
+        });
+        return ok({
+          data: {},
+          stream: {
+            id: JSON.stringify({ baseId: folder.baseId, id: session.id }),
+            direction: "write" as const,
+            name: input.name,
+            mediaType: input.mediaType,
+            size: input.size,
+            expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          },
+        });
+      }),
+    stream: uploadStream(savedFile, saveDomain),
   },
   "entry.trash": action("Move entry to trash", Target, async (input, c) => {
     successfulEntry(await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));

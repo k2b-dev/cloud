@@ -173,8 +173,9 @@ describe("resolveLiveCapabilityRegistryEntry", () => {
         source: "capability-registry",
         appId: "archive",
         manifestHash: manifest.manifestHash,
-        leftOutCount: 4,
-        leftOut: ["types/shelf", "queries/author.read", "queries/book.search", "actions/book.archive"],
+        leftOutCount: 5,
+        // The file provider names a function this release does not know, so the app no longer offers files.
+        leftOut: ["types/shelf", "queries/author.read", "queries/book.search", "actions/book.archive", "fileProvider"],
       });
 
       // An app whose manifest this release reads completely logs nothing.

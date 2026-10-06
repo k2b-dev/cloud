@@ -436,6 +436,9 @@ export type CapabilityCommandManifest = z.infer<typeof CapabilityCommandManifest
 
 type CapabilityDefinitionCatalog<T> = Readonly<Record<string, T>>;
 
+/** Offers files to other apps: local IDs of the list Query, the read Query, and the optional save Action. */
+export type CapabilityFileProviderDeclaration = { list: string; read: string; save?: string };
+
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
   presentation?: CapabilityPresentationCatalog;
@@ -443,6 +446,7 @@ export type CapabilityDefinitions = {
   queries?: CapabilityDefinitionCatalog<CapabilityQueryDefinition>;
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;
   commands?: CapabilityDefinitionCatalog<CapabilityCommandDefinition>;
+  fileProvider?: CapabilityFileProviderDeclaration;
 };
 
 /**
@@ -506,6 +510,10 @@ export const CapabilityAppIdSchema = z
 
 const MAX_MANIFEST_ENTRIES = 200;
 
+export const CapabilityFileProviderManifestSchema = z
+  .object({ list: CapabilityLocalIdSchema, read: CapabilityLocalIdSchema, save: CapabilityLocalIdSchema.optional() })
+  .strict();
+
 /** Keeps the sent entries this release reads completely. */
 const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
   // Not a bounded list: leave the value to the manifest schema, which rejects it.
@@ -525,6 +533,8 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
  *   part may change how the entry runs or who may use it, so guessing could widen access.
  * - Entries that depend on an entry that is not there follow it: a Query scoped to a missing type is
  *   left out, and a type whose reader is missing keeps no reader.
+ * - A file provider with a field from a newer release is left out. Whether its operations are still
+ *   there and match the contract is `fileProviderIssues`' job, which Core and consumers run.
  *
  * Every other entry stays available.
  */
@@ -539,8 +549,11 @@ const readableManifest = (value: unknown): unknown => {
   const typeIds = new Set(types.map((type) => type.localId));
   const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
   const queryIds = new Set(readableQueries.map((query) => query.localId));
+  const { fileProvider: sentProvider, ...rest } = sent;
+  const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   return {
-    ...sent,
+    ...rest,
+    ...(provider.success ? { fileProvider: provider.data } : {}),
     types: types.map((type) => {
       if (!type.reader || queryIds.has(type.reader)) return type;
       const { reader: _missing, ...withoutReader } = type;
@@ -566,6 +579,8 @@ export const CapabilityManifestSchema = z.preprocess(
     queries: z.array(CapabilityQueryManifestSchema).max(MAX_MANIFEST_ENTRIES),
     actions: z.array(CapabilityActionManifestSchema).max(MAX_MANIFEST_ENTRIES),
     commands: z.array(CapabilityCommandManifestSchema).max(MAX_MANIFEST_ENTRIES),
+    // Optional without a default: a manifest without a provider keeps the shape and hash of earlier releases.
+    fileProvider: CapabilityFileProviderManifestSchema.optional(),
   }),
 );
 
