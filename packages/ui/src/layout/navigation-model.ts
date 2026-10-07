@@ -16,6 +16,11 @@ type NavigationEntry = {
   /** Owner-held disclosure state. The renderer shows it and reports toggles through `onExpandedChange`. */
   expanded?: boolean;
   actions?: readonly NavigationItem[];
+  /**
+   * Square icon buttons in the row, before the `actions` menu. They run an `action`; a destination belongs in a row,
+   * where its link keeps modified clicks and new tabs.
+   */
+  inlineActions?: readonly { id: string; label: string; icon: string; action: string; disabled?: boolean }[];
 };
 
 /** Serializable presentation. Functions stay with the controller's owning island. */
@@ -38,7 +43,10 @@ export function findNavigationItem(items: readonly NavigationItem[], id: string)
   for (const item of items) {
     if (item.disabled) continue;
     if (item.id === id) return item;
-    const found = findNavigationItem(item.children ?? [], id) ?? findNavigationItem(item.actions ?? [], id);
+    const found =
+      findNavigationItem(item.children ?? [], id) ??
+      findNavigationItem(item.inlineActions ?? [], id) ??
+      findNavigationItem(item.actions ?? [], id);
     if (found) return found;
   }
 }

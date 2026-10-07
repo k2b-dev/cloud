@@ -2,7 +2,7 @@ import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
-import { type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
+import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
   AiClientToolId,
@@ -201,6 +201,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const abortRequests = new Map<string, Promise<boolean>>();
   let stream: AiStreamHandle | null = null;
   let streamSession: AiStreamSession | null = null;
+  let silenceTimer: ReturnType<typeof setTimeout> | undefined;
   /** The chat error left by a stream that ended for good, until a stream opens again. */
   let streamError: string | null = null;
   let streamGeneration = 0;
@@ -294,8 +295,32 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     void markConversationViewed(session.conversationId);
   };
 
+  const clearSilenceTimer = () => {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = undefined;
+  };
+
+  /**
+   * A running turn whose open stream delivers nothing for one worker lease either works silently or lost an update,
+   * such as its end. The stream then starts again from the turn's saved state. The wait starts with the stream's
+   * first event, so a slow first state is never cut off. A turn that waits for an action in this browser is not
+   * silent, and a stream that reconnects brings a fresh state anyway.
+   */
+  const watchSilence = (session: AiStreamSession) => {
+    clearSilenceTimer();
+    silenceTimer = setTimeout(() => {
+      silenceTimer = undefined;
+      if (!isCurrentStreamSession(streamSession, session)) return;
+      const status = streamStatus();
+      if (state.activeTurn?.status !== "running" || status === "connecting" || status === "reconnecting") return watchSilence(session);
+      closeStream();
+      openStream(session.conversationId);
+    }, AI_TURN_LEASE_MS);
+  };
+
   const applyEvent = (session: AiStreamSession, event: AiStreamEvent) => {
     if (!isCurrentStreamSession(streamSession, session)) return;
+    watchSilence(session);
     const conversationId = session.conversationId;
     if (event.type === "turn_finished" && pendingSends()[conversationId]) {
       completedDuringSend.set(conversationId, event.turnId);
@@ -327,6 +352,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const closeStream = () => {
+    clearSilenceTimer();
     stream?.close();
     stream = null;
     streamSession = null;
@@ -400,15 +426,15 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       console.warn(`No frontend handler registered for AI tool "${name}" — leaving the action request pending.`);
       return false;
     }
+    let result: unknown;
     try {
-      const result = await handler({ name, callId, args, turnId, conversationId });
-      return submitTurnActionForConversation(conversationId, turnId, callId, { type: "tool_result", result });
+      result = await handler({ name, callId, args, turnId, conversationId });
     } catch (toolError) {
-      return submitTurnActionForConversation(conversationId, turnId, callId, {
-        type: "tool_result",
-        result: { error: toolError instanceof Error ? toolError.message : "Frontend tool failed" },
-      });
+      result = { error: toolError instanceof Error ? toolError.message : "Frontend tool failed" };
     }
+    const submitted = await submitTurnActionForConversation(conversationId, turnId, callId, { type: "tool_result", result });
+    if (submitted) showActionResolved(conversationId, turnId, { type: "tool_result", callId, result });
+    return submitted;
   };
 
   // ---- conversation loading --------------------------------------------
@@ -1258,6 +1284,28 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     }
   };
 
+  /**
+   * Shows an action the server accepted as resolved, so the turn runs on before the stream confirms it. A turn that
+   * runs is watched for silence again, which heals a confirmation that never arrives.
+   */
+  const showActionResolved = (
+    conversationId: string,
+    turnId: string,
+    action: { type: "approval_response"; callId: string; approved: boolean } | { type: "tool_result"; callId: string; result: unknown },
+  ) => {
+    if (!isActiveConversation(conversationId) || state.activeTurn?.turnId !== turnId) return;
+    const waitingStatus = action.type === "approval_response" ? "awaiting_approval" : "awaiting_client";
+    setState("activeTurn", (current) => {
+      if (!current || current.turnId !== turnId) return current;
+      const pending = current.blocks.some(
+        (block) => block.kind === "tool" && block.callId === action.callId && block.status === waitingStatus,
+      );
+      if (!pending) return current;
+      return reconcileActiveTurnActions(current, [{ callId: action.callId, resolvedEvent: action }]);
+    });
+    cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
+  };
+
   const submitTurnAction = (
     turnId: string,
     callId: string,
@@ -1277,18 +1325,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       approved: input.approved,
       remember: input.remember,
     });
-    if (!submitted || !isActiveConversation(conversationId) || state.activeTurn?.turnId !== request.turnId) return submitted;
-    const action = { type: "approval_response" as const, callId: request.callId, approved: input.approved };
-    setState("activeTurn", (current) => {
-      if (!current || current.turnId !== request.turnId) return current;
-      const pending = current.blocks.some(
-        (block) => block.kind === "tool" && block.callId === request.callId && block.status === "awaiting_approval",
-      );
-      if (!pending) return current;
-      return reconcileActiveTurnActions(current, [{ callId: request.callId, resolvedEvent: action }]);
-    });
-    cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
-    return true;
+    if (submitted)
+      showActionResolved(conversationId, request.turnId, { type: "approval_response", callId: request.callId, approved: input.approved });
+    return submitted;
   };
 
   const submitFrontendToolResult = async (request: { turnId: string; callId: string }, result: unknown) => {
@@ -1299,18 +1338,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       type: "tool_result",
       result,
     });
-    if (!submitted || !isActiveConversation(conversationId) || state.activeTurn?.turnId !== request.turnId) return submitted;
-    const action = { type: "tool_result" as const, callId: request.callId, result };
-    setState("activeTurn", (current) => {
-      if (!current || current.turnId !== request.turnId) return current;
-      const pending = current.blocks.some(
-        (block) => block.kind === "tool" && block.callId === request.callId && block.status === "awaiting_client",
-      );
-      if (!pending) return current;
-      return reconcileActiveTurnActions(current, [{ callId: request.callId, resolvedEvent: action }]);
-    });
-    cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
-    return true;
+    if (submitted) showActionResolved(conversationId, request.turnId, { type: "tool_result", callId: request.callId, result });
+    return submitted;
   };
 
   if (options.initialConversationId) {

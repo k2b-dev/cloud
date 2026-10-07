@@ -15,7 +15,7 @@ import {
   untrack,
 } from "solid-js";
 import { markdown } from "../../shared";
-import type { AiTurnBlock } from "../protocol";
+import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import { ApprovalBlockView, CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
@@ -47,8 +47,12 @@ export type AiTurnSegment = {
   duration: () => AiTurnDuration | null;
   /** Shown above the work of a delivered scheduled result. */
   scheduledTask?: { taskId: string; occurrenceId: string } | null;
-  /** A model call of the live turn waits for its retry. Set on the turn's last segment, so the wait ends the turn. */
-  retrying?: boolean;
+  /**
+   * The live turn cannot reach the model or the server right now: a model call waits for its retry, or the stream
+   * reconnects. The working segment's work line says so while its clock stands; a turn without a work line yet says
+   * it in a row at the end of its last segment.
+   */
+  reconnect?: "line" | "row";
 };
 
 const isLive = (phase: AiTurnPhase) => phase === "running" || phase === "waiting";
@@ -62,6 +66,10 @@ export const formatWorkDuration = (ms: number, t: Messages, long = false): strin
   const hours = Math.floor(minutes / 60);
   return long ? t.durationHoursLong({ hours, minutes: minutes % 60 }) : t.durationHours({ hours, minutes: minutes % 60 });
 };
+
+/** Identity of the current step: it changes when another block becomes current or the current call changes state. */
+const stepKey = (block: AiTurnBlock | null): string =>
+  !block ? "start" : `${block.id}:${block.kind === "tool" || block.kind === "compaction" ? block.status : block.kind}`;
 
 /** A running clock: "2:41", "1:02:41". */
 export const formatWorkClock = (ms: number): string => {
@@ -80,14 +88,25 @@ const toolTarget = (block: ToolBlock): string => {
   return typeof value === "string" ? basename(value.trim()) : "";
 };
 
-/** The current step of a live turn, as a short progressive phrase. */
-export const liveStepLabel = (block: AiTurnBlock | null, t: Messages): string => {
+/** A step that runs longer than this shows its duration, so a long step does not look like a stalled one. */
+export const AI_LONG_STEP_MS = AI_TURN_LEASE_MS;
+
+/**
+ * The current step of a live turn, as a short progressive phrase. A step that runs long shows its duration in place of
+ * its target: "Running code · 3 min".
+ */
+export const liveStepLabel = (block: AiTurnBlock | null, t: Messages, stepMs = 0): string => {
+  if (stepMs < AI_LONG_STEP_MS) return stepPhrase(block, t, true);
+  return `${stepPhrase(block, t, false)} · ${formatWorkDuration(stepMs, t)}`;
+};
+
+const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean): string => {
   if (!block || block.kind === "thinking" || block.kind === "steer_applied" || block.kind === "steer_message") return t.stepThinking;
   if (block.kind === "text") return t.stepWriting;
   if (block.kind === "compaction") return block.status === "running" ? t.stepCompacting : t.stepThinking;
   // A finished call means the model is deciding what to do next.
   if (block.status !== "running" && block.status !== "awaiting_client") return t.stepThinking;
-  const target = toolTarget(block);
+  const target = withTargets ? toolTarget(block) : "";
   const withTarget = (label: string) => (target ? `${label} · ${target}` : label);
   const name = block.name;
   if (block.presentation?.kind === "capability") return withTarget(t.stepUsingApp({ app: block.presentation.appName }));
@@ -117,15 +136,31 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   const t = () => aiChatMessages(locale());
   const segment = () => props.segment();
   const layout = () => segment().layout;
-  const waiting = () => segment().phase === "waiting" && layout().waitingFor !== null;
-  const working = () => isLive(segment().phase) && !waiting();
+  const reconnecting = () => isLive(segment().phase) && segment().reconnect === "line";
+  const waiting = () => !reconnecting() && segment().phase === "waiting" && layout().waitingFor !== null;
+  const working = () => isLive(segment().phase) && !waiting() && !reconnecting();
+  // The current step is timed on the work clock, so it stands while the turn reconnects.
+  const currentStep = createMemo(() => (isLive(segment().phase) ? stepKey(layout().current) : null));
+  const step = createMemo(on(currentStep, (key) => (key === null ? null : (untrack(segment().duration)?.workedMs ?? 0))));
+  const stepMs = () => {
+    const startedAt = step();
+    const workedMs = segment().duration()?.workedMs;
+    return startedAt === null || workedMs === undefined ? 0 : workedMs - startedAt;
+  };
+  // Screen readers hear once that the turn reconnects; the line itself is not read while it changes.
+  createEffect(
+    on(reconnecting, (now, before) => {
+      if (now && !before) announce(t().reconnecting);
+    }),
+  );
   const worked = () => {
     const duration = segment().duration();
     return !segment().earlier && duration && duration.workedMs > 0 ? duration.workedMs : null;
   };
   const steps = () => t().steps({ count: layout().steps });
   const label = () => {
-    if (working()) return liveStepLabel(layout().current, t());
+    if (reconnecting()) return t().reconnecting;
+    if (working()) return liveStepLabel(layout().current, t(), stepMs());
     if (waiting()) return layout().waitingFor === "approval" ? t().waitingForApproval : t().waitingForAnswer;
     const duration = worked();
     const short = duration === null ? "" : formatWorkDuration(duration, t());
@@ -145,7 +180,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   };
   const trailing = () => {
     const duration = segment().duration();
-    if (working() && duration) {
+    if ((working() || reconnecting()) && duration) {
       return (
         <span class="ai-turn-work__meta">
           {formatWorkClock(duration.workedMs)}
@@ -599,8 +634,8 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}
         </For>
-        <Show when={props.segment().retrying}>
-          {/* Calm by design: no busy sweep while the model call waits for its retry. */}
+        <Show when={props.segment().reconnect === "row"}>
+          {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
         </Show>
       </div>

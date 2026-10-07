@@ -502,7 +502,7 @@ describe("projection reducer", () => {
     expect(reconciled.blocks[1]).toMatchObject({ status: "running", approval: undefined });
   });
 
-  test("a provider retry marks the active turn until its next event or snapshot", () => {
+  test("a provider retry marks the active turn until its next event or a snapshot past it", () => {
     const started = [
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,
       wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
@@ -534,21 +534,25 @@ describe("projection reducer", () => {
     );
     expect(saved.activeTurn).not.toHaveProperty("providerRetry");
 
-    const snapshot = reduceProjection(waiting, {
-      type: "state",
-      conversation,
-      messages: [],
-      activeTurn: {
-        turnId: "turn-1",
-        attempt: 1,
-        status: "running",
-        seq: 2,
-        blocks: [],
-        modelProfileId: "m",
-        createdAt: conversation.createdAt,
-      },
-    });
-    expect(snapshot.activeTurn).not.toHaveProperty("providerRetry");
+    const snapshot = (seq: number) =>
+      reduceProjection(waiting, {
+        type: "state",
+        conversation,
+        messages: [],
+        activeTurn: {
+          turnId: "turn-1",
+          attempt: 1,
+          status: "running",
+          seq,
+          blocks: [],
+          modelProfileId: "m",
+          createdAt: conversation.createdAt,
+        },
+      });
+    // A snapshot at the retry's own position, such as after subscribing again during a long wait, has seen nothing
+    // after it; one that moved past it ends the wait.
+    expect(snapshot(2).activeTurn).toMatchObject({ providerRetry: true });
+    expect(snapshot(3).activeTurn).not.toHaveProperty("providerRetry");
   });
 
   test("turn_finished for a different turn is ignored", () => {

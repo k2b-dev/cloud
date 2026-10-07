@@ -33,7 +33,7 @@ Wenn die Live-Anwesenheit verfügbar ist, zeigt **Gerade hier** die Personen, di
 
 ## Berechtigungen verstehen {icon="shield-lock"}
 
-Der Postfachzugriff wird unter **Einstellungen > Zugriff** vergeben.
+Der Postfachzugriff wird unter **Einstellungen > Zugriff** vergeben. Alle, die das Postfach lesen dürfen, sehen unter **Postfachdetails**, der Schaltfläche (i) neben **Verfassen**, wer welchen Zugriff hat. Gastkonten sehen dort nur ihren eigenen Zugriff und den ihrer Gruppen.
 
 | Berechtigung | Erlaubte Aktionen |
 | --- | --- |

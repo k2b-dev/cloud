@@ -8,6 +8,7 @@ import {
   createNavigation,
   Dropdown,
   type DropdownSection,
+  IconButton,
   type NavigationItem,
   prompts,
   toast,
@@ -76,6 +77,9 @@ export default function MailSidebar(props: {
   canAdmin: boolean;
   managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
   settingsOpening: boolean;
+  /** The mailbox details are loading; the details button keeps its place and shows progress. */
+  detailsOpening: boolean;
+  onOpenDetails: () => void;
   onOpenHealth: () => void;
   onOpenSharedLinks: () => void;
   onOpenRemoteContent: () => void;
@@ -504,18 +508,26 @@ export default function MailSidebar(props: {
       ? { ...common, href: `/app/mail/${props.mailboxId}?folder=${folder.id}`, navigation: "enhanced", scroll: "preserve" }
       : common;
   };
+  // Used as a row and as an inline action, so its type stays inferred and fits both.
+  const details = () => ({
+    id: "details",
+    label: messages().mailboxDetails,
+    icon: "ti ti-info-circle",
+    action: "details",
+    disabled: props.detailsOpening,
+  });
   const navigation = createNavigation({
     items: () => [
-      ...(props.canWrite
-        ? [
-            {
-              id: "compose",
-              label: messages().compose,
-              icon: "ti ti-pencil",
-              href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
-            },
-          ]
-        : []),
+      // Like the desktop sidebar, the details sit beside Compose; readers, who cannot compose, get them as their own row.
+      props.canWrite
+        ? {
+            id: "compose",
+            label: messages().compose,
+            icon: "ti ti-pencil",
+            href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
+            inlineActions: [details()],
+          }
+        : details(),
       { id: "mailboxes", label: messages().allMailboxes, icon: "ti ti-switch-horizontal", href: "/app/mail" },
       { id: "follow-up", label: messages().followUp, children: views(followUpViewItems()) },
       { id: "assignment", label: messages().assignment, children: views(assignmentViewItems()) },
@@ -610,6 +622,7 @@ export default function MailSidebar(props: {
     onNavigate: props.onNavigate,
     onAction: (action) => {
       if (action === "settings") return props.onOpenSettings();
+      if (action === "details") return props.onOpenDetails();
       const item = mailboxToolSections()
         .flatMap((group) => group.items)
         .find((item) => `tool:${item.id}` === action);
@@ -622,12 +635,30 @@ export default function MailSidebar(props: {
       <WorkspaceNavigationProvider navigation={navigation} label={props.mailboxName} />
       <AppWorkspace.Sidebar class="mail-workspace-navigation">
         <AppWorkspace.SidebarDesktop>
-          {props.canWrite && (
-            <ButtonLink size="sm" href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`} class="mail-compose-action mx-2 mt-2">
-              <i class="ti ti-pencil" aria-hidden="true" />
-              <span>{messages().compose}</span>
-            </ButtonLink>
-          )}
+          <div class="mail-sidebar-actions mx-2 mt-2 flex items-center gap-2">
+            {props.canWrite && (
+              <ButtonLink
+                size="sm"
+                href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`}
+                class="mail-compose-action min-w-0 flex-1"
+              >
+                <i class="ti ti-pencil" aria-hidden="true" />
+                <span>{messages().compose}</span>
+              </ButtonLink>
+            )}
+            {/* Square beside Compose. While the details load, only its icon changes: it keeps its size and focus. */}
+            <IconButton
+              type="button"
+              size="sm"
+              variant="secondary"
+              class="mail-details-action ms-auto shrink-0"
+              label={messages().mailboxDetails}
+              aria-busy={props.detailsOpening ? "true" : undefined}
+              onClick={() => props.onOpenDetails()}
+            >
+              <i class={props.detailsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-info-circle"} aria-hidden="true" />
+            </IconButton>
+          </div>
           <AppWorkspace.SidebarBody scrollPreserveKey={`mail-sidebar-${props.mailboxId}`}>
             <AppWorkspace.SidebarSection title={messages().followUp}>
               {viewItems(followUpViewItems(), "desktop")}

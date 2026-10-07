@@ -52,6 +52,53 @@ test("before hydration an owner's folds only set where the menu's disclosure sta
   }
 });
 
+test("an inline action sits in its row as a square icon button and waits for its owner", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const { createNavigation, Navigation } = await import("@k2b/ui");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const compose = {
+    id: "compose",
+    label: "Compose",
+    href: "/compose",
+    inlineActions: [{ id: "details", label: "Mailbox details", icon: "ti ti-info-circle", action: "details" }],
+  };
+  const host = dom.document.createElement("div");
+  dom.root.append(host);
+  const actions: string[] = [];
+  const [loading, setLoading] = createSignal(false);
+  const owned = createNavigation({
+    items: () => [{ ...compose, inlineActions: compose.inlineActions.map((action) => ({ ...action, disabled: loading() })) }],
+    onAction: (action) => void actions.push(action),
+  });
+  const dispose = render(() => <Navigation navigation={owned} label="Mail" />, host);
+  try {
+    const row = host.querySelector(".k2b-navigation__row")!;
+    const button = row.querySelector<HTMLButtonElement>(".k2b-navigation__inline-action")!;
+    // The action shares the destination's row instead of hiding in the row menu.
+    expect(row.querySelector(".k2b-navigation__control")?.textContent).toBe("Compose");
+    expect(button.getAttribute("aria-label")).toBe("Mailbox details");
+    expect(button.querySelector("i")?.className).toBe("ti ti-info-circle");
+    expect(row.querySelector("[aria-haspopup]")).toBeNull();
+    button.click();
+    await Bun.sleep(0);
+    expect(actions).toEqual(["details"]);
+    // A model update keeps the button, and with it keyboard focus.
+    setLoading(true);
+    expect(row.querySelector(".k2b-navigation__inline-action")).toBe(button);
+    expect(button.disabled).toBe(true);
+  } finally {
+    dispose();
+  }
+
+  // Before the owner hydrates, the server snapshot keeps the link and disables the action it cannot run yet.
+  dom.root.innerHTML = `<script data-cloud-workspace-navigation type="application/json">${JSON.stringify({ label: "Mail", items: [compose] })}</script>`;
+  const [snapshot] = readWorkspaceNavigation()!.navigation.items();
+  expect(snapshot?.disabled).toBe(false);
+  expect(snapshot?.inlineActions?.[0]?.disabled).toBe(true);
+  dom.cleanup();
+});
+
 test("live snapshots update and old owner cleanup cannot remove a newer workspace", async () => {
   const dom = createDomTestHarness();
   const { createNavigation } = await import("@k2b/ui");

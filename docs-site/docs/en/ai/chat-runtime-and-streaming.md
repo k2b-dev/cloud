@@ -300,6 +300,28 @@ longer available. The transport reports the status as an `AiStreamError` code;
 the controller chooses the text. Reopening or refreshing the chat, or acting in
 it, subscribes again. Other failures keep reconnecting with backoff.
 
+Each attempt numbers its events without holes and starts with
+`turn_started`, and a turn ends with `turn_finished` before the next one
+starts. The worker saves the turn's live state within one second of every
+event. The stream checks each event against this order. When an event is
+missing, it sends a fresh `state` as soon as the saved state holds that event
+and continues after it, so a reader never applies updates over a hole. An event
+can go missing because the snapshot a subscription starts from lags the live
+events, because its publish failed, or because it is too large for the live
+topic. Events over 257 KiB, such as a tool block with a large web page, travel
+only as their position, and the stream delivers them in full through the saved
+state. Such a `state` carries the conversation as it is now, with its current
+draft revision and run status; the stream ends once the conversation is
+archived or deleted. A turn's end always reaches readers, also when a stop or
+the sweep numbers it from a saved state that lags the live events, and also
+when the turn ended while the stream waited for its saved state. Then the
+`state` already shows the turn as finished, its `turn_finished` follows, and
+replayed events of that turn are dropped. If the saved state does not catch up
+within five seconds, the stream continues with what it has and logs the
+warning `AI conversation stream continues without an event the saved state
+does not hold` under `ai:stream`; readers then miss part of the turn until
+it ends.
+
 The server closes a stream once its reader has left about 4 MiB unread. The
 event that crosses that limit is still queued, and a `state` snapshot or a
 `turn_finished` event with its stored messages can be larger than one stream
@@ -581,9 +603,49 @@ lease recovery. Resuming after a human interaction uses that same configured
 budget for its new running phase. Individual provider and tool timeouts and
 worker leases remain independent, even with an unlimited turn budget.
 
-An expired execution deadline ends the turn as failed with a time-limit message
-and an instruction to continue with a new message. It is distinct from a user's
+The last tenth of the run time is kept for the answer: a model call that starts
+in it gets no tools and is asked to answer with what the turn has done, to say
+what is still open, and to tell the user that a new message continues the task.
+With the default of 30 minutes, tool use ends after 27 minutes. The turn then
+completes normally with that answer.
+
+An expired execution deadline still ends the turn as failed with a time-limit
+message and an instruction to continue with a new message, for example when a
+single model or tool call outlasts the reserve. It is distinct from a user's
 Stop action. Continuing does not automatically replay uncertain external calls.
+
+### Loops within a turn
+
+A chat turn, including one that runs scheduled or in the background, watches
+for two patterns that rarely lead anywhere:
+
+- the same tool called with the same input fails twice;
+- six calls in a row to `search_tools`, `list_apps`, or `load_tools` without a
+  working step that completed.
+
+The first time a pattern appears, the next model call gets a short hint to
+change its approach or tell the user what blocks it. When either pattern
+appears again after its hint, also with another tool or input, the next model
+call gets no tools and is asked to answer with what the turn has, say what
+blocked it, and what the user can do. The turn then completes with that
+answer. A rejected approval is the user's decision and does not count as a
+failure. After the search hint, loading a tool that a search found is still
+allowed; another search, or a load that adds no tool, continues the pattern.
+
+The counts belong to the turn since its start or its latest steering message.
+When a turn resumes after an approval or on another worker, its finished calls
+count again, including rounds that compaction archived, but a hint given
+before is not remembered, so the pattern gets one more hint. A steering
+message starts these checks over: the turn continues with tools, also after a
+loop's final answer, unless it is in the last tenth of its run time or has
+used up the model profile's `maxToolRounds`.
+
+The model profile's `maxToolRounds` ends tool use the same way; see
+[Models and providers](/en/docs/ai/models-and-providers). If the model still
+calls a tool in a model call without tools, the turn ends as failed instead of
+continuing without them. Each hint logs the warning `AI turn got a loop hint`
+and each switch to the final answer logs `AI turn answers without further
+tools`, both under `ai:executor` with the conversation and turn IDs.
 
 ### Transient provider failures
 
@@ -603,9 +665,13 @@ separate provider call with its own admission, quota check and
 [usage record](/en/docs/ai/usage-and-feedback#read-the-report).
 
 While a call waits, the stream sends `provider_retry`. The controller marks the
-active turn with `providerRetry: true` until its next event; a state snapshot
-never carries it. Meanwhile the chat timeline of `@k2b/cloud/ai/ui` ends the
-live turn with **Reconnecting**, and `cld assistant` prints `model: reconnecting`
+active turn with `providerRetry: true` until its next event. A state snapshot
+never carries it; the controller keeps the mark through a snapshot at the
+retry's own position, so subscribing again during a long wait does not end it.
+Meanwhile the work line of the live turn in the chat timeline
+of `@k2b/cloud/ai/ui` reads **Reconnecting** and its clock stands; a turn
+without a work line yet shows a **Reconnecting** row at its end. `cld assistant`
+prints `model: reconnecting`
 to standard error or writes a `provider_retry` JSONL line. An `assistant` CLI
 plugin from an earlier release stops following the turn at this event; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).

@@ -112,6 +112,53 @@ test("disabled parents block descendants and local links keep modified clicks na
   dom.cleanup();
 });
 
+test("inline actions run their action after host dismissal and never navigate", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const events: string[] = [];
+  const nav = createNavigation({
+    items: () => [
+      {
+        id: "compose",
+        label: "Compose",
+        href: "/compose",
+        inlineActions: [{ id: "details", label: "Mailbox details", icon: "ti ti-info-circle", action: "details" }],
+      },
+    ],
+    onAction: (action) => {
+      events.push(action);
+    },
+  });
+  const dispose = render(
+    () => (
+      <Navigation
+        navigation={nav}
+        label="Mail"
+        beforeSelect={() => {
+          events.push("closed");
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const button = dom.root.querySelector<HTMLButtonElement>(".k2b-navigation__inline-action")!;
+    expect(button.tagName).toBe("BUTTON");
+    button.click();
+    await Bun.sleep(0);
+    expect(events).toEqual(["closed", "details"]);
+    // A destination belongs in a row, where its link keeps modified clicks and new tabs.
+    const inline: NonNullable<NavigationItem["inlineActions"]>[number][] = [
+      // @ts-expect-error An inline action runs an action and has no href.
+      { id: "open", label: "Open", icon: "ti ti-external-link", href: "/open" },
+    ];
+    expect(inline).toHaveLength(1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test("collapsed groups disclose with a chevron without dismissing the host and preserve a user toggle", async () => {
   const dom = createDomTestHarness();
   const { default: Navigation } = await import("../src/layout/Navigation");

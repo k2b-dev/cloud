@@ -1,5 +1,5 @@
 import { Chat } from "@k2b/ui";
-import { createMemo } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import { emptyProjection, reduceProjection, visibleMessages } from "../client/projection";
@@ -8,11 +8,14 @@ import { AiChatActionsProvider, createAiChatTimeline } from "./presentation";
 
 /**
  * The live chat timeline for a browser test, folded from wire events like the
- * controller does. `window.emit(event)` applies one event, and
- * `window.steer(text)` appends a pending steer as the controller does.
+ * controller does. `window.emit(event)` applies one event,
+ * `window.steer(text)` appends a pending steer as the controller does, and
+ * `window.reconnect(on)` sets whether the stream reconnects.
  */
 const [state, setState] = createStore(emptyProjection());
+const [reconnecting, setReconnecting] = createSignal(false);
 Object.assign(window, {
+  reconnect: (on: boolean) => setReconnecting(on),
   emit: (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true })),
   steer: (text: string) =>
     setState("activeTurn", "blocks", (blocks): AiTurnBlock[] => [
@@ -28,7 +31,11 @@ render(
   () => (
     <AiChatActionsProvider actions={{}}>
       {(() => {
-        const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+        const items = createAiChatTimeline({
+          messages: createMemo(() => visibleMessages(state)),
+          activeTurn: () => state.activeTurn,
+          reconnecting,
+        });
         return <Chat.Timeline items={items()} />;
       })()}
     </AiChatActionsProvider>

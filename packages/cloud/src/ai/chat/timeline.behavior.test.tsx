@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -176,7 +176,7 @@ import type { AiStoredMessage } from "../types";
   }
 });
 
-(isServer ? test.skip : test)("a provider retry shows one calm reconnecting row at the end of the live turn", async () => {
+(isServer ? test.skip : test)("a provider retry shows calmly in the work line, or in a row before it has one", async () => {
   const dom = createDomTestHarness();
   const { Chat, LocaleProvider } = await import("@k2b/ui");
   const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
@@ -215,20 +215,20 @@ import type { AiStoredMessage } from "../types";
     await settle();
     expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
     const before = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
+    const workLine = () => dom.root.querySelector(".ai-turn-work");
+    const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
 
     emit({ ...base, seq: 5, type: "provider_retry" });
     await settle();
-    // The wait appends one row and leaves every earlier node in place.
+    // Once the turn has a work line, the wait changes its label in place: no row comes or goes.
     const during = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
-    expect(during).toHaveLength(before.length + 1);
-    before.forEach((node, index) => expect(during[index]).toBe(node));
-    expect(rows().at(-1)).toBe("Reconnecting");
+    expect(during).toEqual(before);
+    expect(label()).toBe("Reconnecting");
+    expect(workLine()?.getAttribute("data-busy")).toBeNull();
 
     setLocale("de");
     await settle();
-    expect(rows().at(-1)).toBe("Verbindung wird wiederhergestellt");
-    const retryRow = Array.from(dom.root.querySelectorAll(".k2b-chat-activity")).at(-1);
-    expect(retryRow?.getAttribute("data-busy")).toBeNull();
+    expect(label()).toBe("Verbindung wird wiederhergestellt");
 
     emit({ ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Done." });
     await settle();
@@ -480,5 +480,119 @@ const renderTimeline = async (
   } finally {
     dispose();
     dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("the work line says that the stream reconnects and how long a long step runs", async () => {
+  jest.useFakeTimers();
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const [reconnecting, setReconnecting] = createSignal(false);
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({
+            messages: createMemo(() => visibleMessages(state)),
+            activeTurn: () => state.activeTurn,
+            reconnecting,
+          });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const workLine = () => dom.root.querySelector(".ai-turn-work");
+  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_set", block: { ...run, status: "running" } });
+    jest.advanceTimersByTime(10_000);
+    expect(label()).toBe("Running code · Report");
+    expect(clock()).toBe("0:10");
+    const nodes = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
+
+    // The connection drops: the line says so in place, calmly, and its clock stands.
+    setReconnecting(true);
+    expect(label()).toBe("Reconnecting");
+    expect(workLine()?.getAttribute("data-busy")).toBeNull();
+    jest.advanceTimersByTime(20_000);
+    expect(clock()).toBe("0:10");
+    expect(Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"))).toEqual(nodes);
+
+    // Back online, the clock shows the true work time, and the step that ran all along shows how long.
+    setReconnecting(false);
+    jest.advanceTimersByTime(1_000);
+    expect(clock()).toBe("0:31");
+    expect(label()).toBe("Running code · Report");
+    jest.advanceTimersByTime(15_000);
+    expect(label()).toBe("Running code · 46 s");
+    jest.advanceTimersByTime(120_000);
+    expect(label()).toBe("Running code · 2 min");
+
+    // The next step starts its own time.
+    emit({ ...base, seq: 3, type: "block_set", block: { ...run, status: "completed", result: {} } });
+    expect(label()).toBe("Thinking");
+    expect(Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"))).toEqual(nodes);
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
+  }
+});
+
+(isServer ? test.skip : test)("a step that starts right after a model retry times only itself", async () => {
+  jest.useFakeTimers();
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const workLine = () => dom.root.querySelector(".ai-turn-work");
+  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
+  const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_set", block: { ...read, status: "completed", result: {} } });
+    jest.advanceTimersByTime(5_000);
+
+    // The model call waits 30 seconds for its retry; the shown time stands.
+    emit({ ...base, seq: 3, type: "provider_retry" });
+    expect(label()).toBe("Reconnecting");
+    jest.advanceTimersByTime(30_000);
+    expect(clock()).toBe("0:05");
+
+    // The next step starts with the true work time and is timed from there.
+    emit({ ...base, seq: 4, type: "block_set", block: { ...run, status: "running" } });
+    expect(clock()).toBe("0:35");
+    jest.advanceTimersByTime(16_000);
+    expect(label()).toBe("Running code · Report");
+    jest.advanceTimersByTime(30_000);
+    expect(label()).toBe("Running code · 46 s");
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
   }
 });

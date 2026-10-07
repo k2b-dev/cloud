@@ -1,4 +1,4 @@
-import type { CompactEvent, LoopAggregate, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
+import type { CompactEvent, LoopAggregate, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
@@ -29,6 +29,7 @@ import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
 import {
+  AI_TURN_LEASE_MS,
   type AiTurnBlock,
   type AiWireEvent,
   applyWireEventToBlocks,
@@ -49,11 +50,12 @@ import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
-import { publishAiWireEvent } from "./stream";
+import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
   AiChatTurnRunConfig,
@@ -72,13 +74,9 @@ import { validateAiTurnRequest } from "./validate";
 
 const log = logger("ai:executor");
 
-const AI_TURN_LEASE_MS = 45_000;
 const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
-const AI_SNAPSHOT_INTERVAL_MS = 1_000;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
-const AI_FINAL_TOOL_ROUND_PROMPT = `# Final response
-The configured tool-round budget has been reached, so no more tools are available in this turn. Answer the user's request now with the best result supported by the evidence already gathered. State any material uncertainty or incomplete part clearly.`;
 
 const toolRoundState = (messages: AiStoredMessage[]): { issued: number; completed: number } => {
   const completedCallIds = new Set(messages.flatMap(({ message }) => (message.role === "tool_result" ? [message.callId] : [])));
@@ -90,50 +88,6 @@ const toolRoundState = (messages: AiStoredMessage[]): { issued: number; complete
   return {
     issued: rounds.length,
     completed: rounds.filter((callIds) => callIds.every((callId) => completedCallIds.has(callId))).length,
-  };
-};
-
-const applyToolRoundPolicy = (input: {
-  provider: Provider;
-  tools: Tool[] | ToolResolver;
-  maxToolRounds?: number;
-  issuedToolRounds: number;
-  completedToolRounds: number;
-}): { provider: Provider; tools: Tool[] | ToolResolver; maxTurns?: number; noteToolRound: () => void } => {
-  const limit = Math.floor(input.maxToolRounds ?? 0);
-  if (limit <= 0) return { provider: input.provider, tools: input.tools, noteToolRound: () => undefined };
-
-  const issuedAtStart = Math.max(0, Math.floor(input.issuedToolRounds));
-  let completed = Math.max(0, Math.floor(input.completedToolRounds));
-  let finalSynthesis = completed >= limit;
-  const tools: ToolResolver = async () => {
-    finalSynthesis = completed >= limit;
-    if (finalSynthesis) return [];
-    return typeof input.tools === "function" ? input.tools() : input.tools;
-  };
-  const provider: Provider = {
-    name: input.provider.name,
-    family: input.provider.family,
-    model: input.provider.model,
-    contextWindow: input.provider.contextWindow,
-    capabilities: input.provider.capabilities,
-    complete: (request) => input.provider.complete(request),
-    stream: async function* (request) {
-      yield* input.provider.stream(
-        finalSynthesis ? { ...request, systemPrompt: `${request.systemPrompt ?? ""}\n\n${AI_FINAL_TOOL_ROUND_PROMPT}`.trim() } : request,
-      );
-    },
-  };
-
-  // Nessi checks this before provider calls. The extra round is the tool-free
-  // synthesis call after the last allowed tool-using round.
-  return {
-    provider,
-    tools,
-    maxTurns: Math.max(1, limit - issuedAtStart + 1),
-    noteToolRound: () => {
-      completed += 1;
-    },
   };
 };
 
@@ -1074,10 +1028,13 @@ export class AiTurnExecutor {
       timeZone,
       locale: promptLocale,
     });
-    const priorToolRounds = toolRoundState(loopMessages);
+    // The turn policy counts the whole turn, including rounds that compaction archived.
+    const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
+    const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const priorToolRounds = toolRoundState(turnMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
-    const toolRoundPolicy = applyToolRoundPolicy({
+    const turnPolicy = applyAiTurnPolicy({
       provider: retryTransientProviderErrors(
         assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
         {
@@ -1093,12 +1050,21 @@ export class AiTurnExecutor {
       maxToolRounds: resolved.profile.maxToolRounds,
       issuedToolRounds: priorToolRounds.issued,
       completedToolRounds: priorToolRounds.completed,
+      deadline,
+      runBudgetMs: claim.turn.runBudgetMs ?? null,
+      finishedToolCalls: turnBlocks
+        .slice(turnBlocks.findLastIndex((block) => block.kind === "steer_applied") + 1)
+        .flatMap((block) => (block.kind === "tool" ? [block] : [])),
+      onDecision: (decision) =>
+        decision.kind === "hint"
+          ? log.warn("AI turn got a loop hint", { conversationId, turnId, hints: decision.hints })
+          : log.info("AI turn answers without further tools", { conversationId, turnId, reason: decision.reason }),
     });
     const loop = nessi({
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: toolRoundPolicy.provider,
+      provider: turnPolicy.provider,
       systemPrompt,
       store,
       steering: async ({ signal: steeringSignal }) => {
@@ -1109,10 +1075,12 @@ export class AiTurnExecutor {
           leaseOwner: this.config.leaseOwner,
         });
         appliedSteers.push(...steers);
-        return steers.length > 0 ? steers.map((steer) => steer.text) : undefined;
+        if (steers.length === 0) return undefined;
+        turnPolicy.noteSteering();
+        return steers.map((steer) => steer.text);
       },
-      tools: toolRoundPolicy.tools,
-      ...(toolRoundPolicy.maxTurns === undefined ? {} : { maxTurns: toolRoundPolicy.maxTurns }),
+      tools: turnPolicy.tools,
+      ...(turnPolicy.maxTurns === undefined ? {} : { maxTurns: turnPolicy.maxTurns }),
       temperature: resolved.profile.temperature,
       maxOutputTokens: resolved.profile.maxOutputTokens,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
@@ -1150,7 +1118,8 @@ export class AiTurnExecutor {
       rememberableCapabilityApprovals,
       capabilityActionReviews,
       appliedSteers,
-      noteToolRound: toolRoundPolicy.noteToolRound,
+      noteToolRound: turnPolicy.noteToolRound,
+      noteToolCall: turnPolicy.noteToolCall,
       onBackgroundBlocked: (message) => {
         backgroundError = message;
       },
@@ -1216,6 +1185,7 @@ export class AiTurnExecutor {
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
+    noteToolCall: (call: AiTurnPolicyToolCall) => void;
     onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
@@ -1231,6 +1201,7 @@ export class AiTurnExecutor {
       capabilityActionReviews,
       appliedSteers,
       noteToolRound,
+      noteToolCall,
     } = input;
     const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
     let lastIssueMessage: string | null = null;
@@ -1289,6 +1260,12 @@ export class AiTurnExecutor {
             .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
+          // The policy keys calls by the name the model called, as the persisted calls it seeds from.
+          noteToolCall(
+            toolBlock?.kind === "tool"
+              ? { ...toolBlock, name: event.name }
+              : { name: event.name, status: event.isError ? "failed" : "completed", result: event.result },
+          );
           await indexConversationToolSource({
             conversationId,
             turnId,
@@ -1620,6 +1597,9 @@ class StreamPipeline {
   readonly timing: ReturnType<typeof createTurnTimingRecorder>;
   private lastSnapshotAt = 0;
   private snapshotDirty = false;
+  private snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The newest save of the live state. Saves run one after another, so an older one never lands last. */
+  private saving: Promise<void> = Promise.resolve();
   private chain: Promise<void> = Promise.resolve();
 
   constructor(input: {
@@ -1651,6 +1631,8 @@ class StreamPipeline {
 
   private nextSeq(): number {
     this.seq += 1;
+    // The saved state follows every event, so a reader that reloads it catches up with the live stream.
+    this.snapshotDirty = true;
     return this.seq;
   }
 
@@ -1699,12 +1681,14 @@ class StreamPipeline {
       const seq = this.nextSeq();
       await this.publish(this.envelope({ type: "block_set" as const, seq, block }) as AiWireEvent);
     }
-    this.snapshotDirty = this.blocks.length > 0;
+    // A new attempt's baseline is saved at once: a stream that reloads the turn must not wait for the first model event.
+    await this.maybeSnapshot();
   }
 
   async emitMessage(message: AiStoredMessage): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "message_saved" as const, seq, message }));
+    await this.maybeSnapshot();
   }
 
   async emitTurnStarted(modelProfileId: string): Promise<void> {
@@ -1764,24 +1748,36 @@ class StreamPipeline {
     await this.publish(event);
   }
 
+  /**
+   * Saves the live state at most once per interval. A change inside the interval is saved when it ends, even if no
+   * event follows, so the saved state lags the live stream by at most one interval.
+   */
   private async maybeSnapshot(): Promise<void> {
     if (!this.snapshotDirty) return;
-    if (Date.now() - this.lastSnapshotAt < AI_SNAPSHOT_INTERVAL_MS) return;
+    const wait = AI_LIVE_SNAPSHOT_INTERVAL_MS - (Date.now() - this.lastSnapshotAt);
+    if (wait > 0) {
+      this.snapshotTimer ??= setTimeout(() => {
+        this.snapshotTimer = undefined;
+        void this.maybeSnapshot();
+      }, wait);
+      return;
+    }
     await this.persistSnapshot();
   }
 
   async persistSnapshot(): Promise<void> {
+    this.cancelSnapshotTimer();
     this.lastSnapshotAt = Date.now();
     this.snapshotDirty = false;
-    await aiConversations
-      .saveTurnLiveState({
-        conversationId: this.conversationId,
-        turnId: this.turnId,
-        leaseOwner: this.leaseOwner,
-        blocks: this.blocks,
-        seq: this.seq,
-      })
-      .catch(() => undefined);
+    const blocks = this.blocks;
+    const seq = this.seq;
+    this.saving = this.saving.then(() =>
+      aiConversations
+        .saveTurnLiveState({ conversationId: this.conversationId, turnId: this.turnId, leaseOwner: this.leaseOwner, blocks, seq })
+        .then(() => undefined)
+        .catch(() => undefined),
+    );
+    await this.saving;
   }
 
   async emitError(message: string): Promise<void> {
@@ -1796,6 +1792,7 @@ class StreamPipeline {
   async emitProviderRetry(): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "provider_retry" as const, seq }));
+    await this.maybeSnapshot();
   }
 
   async emitTurnFinished(status: "completed" | "failed" | "aborted", error: string | null): Promise<void> {
@@ -1808,15 +1805,24 @@ class StreamPipeline {
     return this.ordered(() => publishAiWireEvent(event).catch(() => undefined));
   }
 
+  private cancelSnapshotTimer(): void {
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = undefined;
+  }
+
+  /**
+   * Waits for every publish and save. The attempt ends here: a later save would overwrite what suspension or the next
+   * attempt saved.
+   */
   async flush(): Promise<void> {
-    await this.chain;
+    this.cancelSnapshotTimer();
+    await Promise.all([this.chain, this.saving]);
   }
 }
 
 export const __aiExecutorTest = {
   indexConversationToolSource,
   StreamPipeline,
-  applyToolRoundPolicy,
   createEventMapper,
   rebuildAttemptBaseline,
   rebuildBlocksFromMessages,

@@ -13,7 +13,7 @@ import {
   Show,
 } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
-import { type AiActiveTurnSegment, splitActiveTurnBlocks } from "../protocol";
+import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
@@ -299,6 +299,7 @@ const activeItems = (
   actions: AiChatActions,
   views: TurnViews,
   duration: Accessor<AiTurnDuration | null>,
+  reconnecting: boolean,
 ): ChatTimelineItem[] => {
   if (!turn) return [];
   const segments = splitActiveTurnBlocks(turn.blocks).flatMap((segment): (AiActiveTurnSegment | SurveySegment)[] =>
@@ -314,6 +315,14 @@ const activeItems = (
   // Until the model takes up the steering message, the segment above it is still the one at work.
   const above = steerTail ? segments.findLastIndex((segment, index) => segment.type === "assistant" && index < lastAssistant) : -1;
   const working = above >= 0 ? above : lastAssistant;
+  const phaseOf = (index: number): AiTurnPhase =>
+    index !== working ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
+  const layoutOf = (blocks: AiTurnBlock[], index: number) =>
+    layoutAiTurn(blocks, { phase: phaseOf(index), codePresentations: Boolean(actions.renderCodePresentation) });
+  // The work line says in place that the turn reconnects. A turn without one yet says it in a row at its end, where a
+  // row that comes and goes moves nothing above it.
+  const workingSegment = segments[working];
+  const reconnectInLine = reconnecting && workingSegment?.type === "assistant" && layoutOf(workingSegment.blocks, working).showWork;
   const segmentId = createSegmentIds();
   let opener = "start";
 
@@ -339,8 +348,8 @@ const activeItems = (
 
     const last = index === lastAssistant;
     const live = index === working;
-    const phase: AiTurnPhase = !live ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
-    const layout = layoutAiTurn(segment.blocks, { phase, codePresentations: Boolean(actions.renderCodePresentation) });
+    const phase = phaseOf(index);
+    const layout = layoutOf(segment.blocks, index);
     // Consecutive steering messages leave empty segments between them; history has none. The last segment stays, since
     // it carries the progress indicator.
     if (!last && isEmptyLayout(layout)) return [];
@@ -358,7 +367,7 @@ const activeItems = (
         layout,
         earlier: !live,
         duration: live ? duration : () => null,
-        retrying: last && turn.providerRetry === true,
+        reconnect: live && reconnectInLine ? "line" : last && reconnecting && !reconnectInLine ? "row" : undefined,
       }),
     };
   });
@@ -367,9 +376,10 @@ const activeItems = (
 /**
  * Work time of the active turn: wall time minus time spent waiting for the user. A state snapshot seeds it after a
  * reconnect; the clock stands while the turn waits for an approval or an answer and continues from the same value
- * afterwards.
+ * afterwards. While `paused`, the shown time stands too and then jumps to the true work time; the clock itself keeps
+ * running, so a step that starts right after the pause is timed from the true work time.
  */
-const createActiveTurnClock = (source: AiChatTimelineSource): Accessor<AiTurnDuration | null> => {
+const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<boolean>): Accessor<AiTurnDuration | null> => {
   const [now, setNow] = createSignal(Date.now());
   const running = createMemo(() => source.activeTurn() !== null);
   createEffect(() => {
@@ -379,7 +389,7 @@ const createActiveTurnClock = (source: AiChatTimelineSource): Accessor<AiTurnDur
     onCleanup(() => window.clearInterval(timer));
   });
   let state: { turnId: string; seed: string; startedAt: number; waitMs: number; waitingSince: number | null } | null = null;
-  return createMemo(() => {
+  const duration = createMemo(() => {
     const turn = source.activeTurn();
     const time = now();
     if (!turn) {
@@ -411,11 +421,19 @@ const createActiveTurnClock = (source: AiChatTimelineSource): Accessor<AiTurnDur
       waitingMs: state.waitingSince === null ? null : Math.max(0, time - state.waitingSince),
     };
   });
+  let shown: AiTurnDuration | null = null;
+  return createMemo(() => {
+    const current = duration();
+    if (!paused() || !shown || !current) shown = current;
+    return shown;
+  });
 };
 
 export type AiChatTimelineSource = {
   messages: Accessor<readonly AiStoredMessage[]>;
   activeTurn: Accessor<AiActiveTurn | null>;
+  /** The conversation stream lost its connection and reconnects, such as `streamStatus() === "reconnecting"`. */
+  reconnecting?: Accessor<boolean>;
 };
 
 /**
@@ -428,9 +446,11 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   const locale = useLocale();
   const disclosureState = createAiToolDisclosureState();
   const views = createTurnViews(disclosureState);
-  const clock = createActiveTurnClock(source);
+  // While the stream reconnects or a model call waits for its retry, the live turn says so and its clock stands.
+  const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
+  const clock = createActiveTurnClock(source, reconnecting);
   const stored = createMemo(() => storedItems(source.messages(), actions, views, locale()));
-  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock));
+  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting()));
   return createMemo(() => {
     const items = [...stored(), ...active()];
     views.retain(new Set(items.map((item) => item.id)));

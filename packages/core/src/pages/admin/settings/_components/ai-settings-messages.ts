@@ -98,7 +98,7 @@ export const aiSettingsMessages = i18n.define({
       filterVisionModels: "Filter vision models",
       turnTimeout: "Run time limit (minutes)",
       turnTimeoutDescription:
-        "Default: 30 minutes. Zero or empty means unlimited. Applies to new runs; individual request and tool timeouts remain in effect.",
+        "Default: 30 minutes. In the last tenth, the Assistant stops using tools and answers. Zero or empty means unlimited. Applies to new runs; individual request and tool timeouts remain in effect.",
       toolResultCeiling: "Tool result ceiling",
       toolResultCeilingDescription:
         "Maximum characters in one tool result. The runtime automatically uses less for models with smaller context windows.",
@@ -348,7 +348,7 @@ export const aiSettingsMessages = i18n.define({
       filterVisionModels: "Bildmodelle filtern",
       turnTimeout: "Laufzeitlimit (Minuten)",
       turnTimeoutDescription:
-        "Standard: 30 Minuten. Null oder leer bedeutet unbegrenzt. Gilt für neue Läufe; einzelne Request- und Tool-Timeouts bleiben bestehen.",
+        "Standard: 30 Minuten. Im letzten Zehntel nutzt der Assistant keine Werkzeuge mehr und antwortet. Null oder leer bedeutet unbegrenzt. Gilt für neue Läufe; einzelne Request- und Tool-Timeouts bleiben bestehen.",
       toolResultCeiling: "Obergrenze für Werkzeugergebnisse",
       toolResultCeilingDescription:
         "Maximale Zeichenzahl eines Werkzeugergebnisses. Bei kleineren Kontextfenstern verwendet die Laufzeit automatisch weniger.",

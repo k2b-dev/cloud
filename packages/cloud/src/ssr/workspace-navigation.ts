@@ -35,7 +35,11 @@ function validItems(value: unknown): value is NavigationItem[] {
       if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || typeof entry.label !== "string") return false;
       if (entry.href !== undefined && typeof entry.href !== "string") return false;
       if (entry.action !== undefined && typeof entry.action !== "string") return false;
-      return (entry.children === undefined || validItems(entry.children)) && (entry.actions === undefined || validItems(entry.actions));
+      return (
+        (entry.children === undefined || validItems(entry.children)) &&
+        (entry.actions === undefined || validItems(entry.actions)) &&
+        (entry.inlineActions === undefined || validItems(entry.inlineActions))
+      );
     })
   );
 }
@@ -59,6 +63,8 @@ export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined 
         ...(item.expanded !== undefined ? { expanded: undefined, defaultExpanded: item.expanded } : {}),
         ...(item.children ? { children: links(item.children) } : {}),
         ...(item.actions ? { actions: links(item.actions) } : {}),
+        // Inline actions only run actions, so each waits for the owner.
+        ...(item.inlineActions ? { inlineActions: item.inlineActions.map((action) => ({ ...action, disabled: true })) } : {}),
       }));
     const items = links(value.items);
     return {
