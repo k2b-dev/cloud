@@ -20,6 +20,7 @@ export function checkWorkbookArchive(buffer: ArrayBuffer, format: "XLSX" | "ODS"
   const count = view.getUint16(end + 10, true);
   let offset = view.getUint32(end + 16, true),
     expanded = 0;
+  const names = new Set<string>();
   if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || count === 0xffff || offset === 0xffffffff)
     throw new Error("Multipart and ZIP64 workbooks are not supported");
   for (let i = 0; i < count; i++) {
@@ -27,9 +28,11 @@ export function checkWorkbookArchive(buffer: ArrayBuffer, format: "XLSX" | "ODS"
     if (view.getUint16(offset + 8, true) & 1) throw new Error("Encrypted workbooks are not supported");
     expanded += view.getUint32(offset + 24, true);
     if (expanded > budget) throw new Error("Workbook exceeds the 128 MiB expanded XML budget");
+    names.add(new TextDecoder().decode(new Uint8Array(buffer, offset + 46, view.getUint16(offset + 28, true))));
     offset += 46 + view.getUint16(offset + 28, true) + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
   }
   if (offset !== end) throw new Error(`Invalid ${format} ZIP directory length`);
+  return names;
 }
 
 export type OdsCell = string | number | boolean | Date | null | undefined;
@@ -97,7 +100,7 @@ export async function writeOdsWorkbook(sheets: OdsSheet[], maxExpandedBytes = WO
   });
   // A copy owns a plain ArrayBuffer for the exact check and the Blob.
   const archive = (await writeOds({ sheets: encoded })).slice();
-  // Exact check on the written archive so the result stays readable with `sheet.openOds`.
+  // Exact check on the written archive so the result stays readable with `cloud.sheet.read`.
   checkWorkbookArchive(archive.buffer, "ODS", maxExpandedBytes);
   return new Blob([archive], { type: ODS_MEDIA_TYPE });
 }

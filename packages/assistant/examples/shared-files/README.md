@@ -17,7 +17,7 @@ Grids contains stored documents for one template. Selecting a row and choosing
 stream. Grids downloads the primary artifact. No new document is rendered.
 
 Each read checks the current user's access. Studio sandbox code uses
-`capabilities.streams.read` and `files.save`, rather than fetching an application
+`cloud.capabilities.streams.read` and `cloud.download`, rather than fetching an application
 URL. Ordinary authenticated Cloud pages can use Grids' `downloadUrl` directly.
 Streams are scoped to the current run and limited to 50 MiB per file; create a
 fresh stream for every download. This example neither persists streams nor

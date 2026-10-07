@@ -15,20 +15,21 @@ const load = async () => {
 };
 const RunnerActions = await load();
 
-test("standalone readers retain personal controls while public visitors only manage local data", async () => {
+test("standalone readers retain personal controls while anonymous visitors have no personal data control", async () => {
   const dom = createDomTestHarness();
   const [serverAccess, setServerAccess] = createSignal(true);
   const dispose = render(() => <RunnerActions id="App001" userId="reader" serverAccess={serverAccess()} />, dom.root);
   try {
     expect(dom.root.textContent).toContain("Create your own copy");
     expect(dom.root.textContent).not.toContain("Secrets");
-    expect(dom.root.textContent).toContain("Local data");
+    expect(dom.root.textContent).toContain("Personal data");
     expect(dom.root.textContent).toContain("Copy app link");
     expect(dom.root.textContent).not.toContain("Manage access");
     setServerAccess(false);
+    await Promise.resolve();
     expect(dom.root.textContent).not.toContain("Create your own copy");
     expect(dom.root.textContent).not.toContain("Secrets");
-    expect(dom.root.textContent).toContain("Local data");
+    expect(dom.root.textContent).not.toContain("Personal data");
   } finally {
     dispose();
     dom.cleanup();

@@ -6,15 +6,28 @@ import { app } from "../config";
 import { LIMITS } from "./contracts";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { databaseConfigLock } from "./database-lock";
+import {
+  boundedRows,
+  checkColumns,
+  checkRowWrite,
+  FlatDatabaseRequest,
+  listRows,
+  pageRows,
+  TableSchema,
+  tableWrite,
+  typedRow,
+} from "./database-runtime";
 import { safeQuery } from "./database-sql";
+import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
 export class DatabaseError extends Error {
   constructor(
     readonly code: string,
     readonly status: 400 | 403 | 409 | 502 = 400,
+    message = code,
   ) {
-    super(code);
+    super(message);
   }
 }
 function admin(identity: ArtifactIdentity) {
@@ -24,7 +37,7 @@ async function config() {
   return { url: await app.settings.get("assistant.rsql_url"), token: await app.settings.get("assistant.rsql_api_token") };
 }
 function connection(c: { url: string; token: string }, signal?: AbortSignal, streaming = false) {
-  if (!c.url || !c.token) throw new DatabaseError("DB_NOT_CONFIGURED", 409);
+  if (!c.url || !c.token) throw new DatabaseError("DB_NOT_CONFIGURED", 409, "The app database service is not configured.");
   const address = new URL(c.url);
   if (!["http:", "https:"].includes(address.protocol) || address.username || address.password || address.search || address.hash)
     throw new DatabaseError("INVALID_INPUT");
@@ -69,7 +82,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
 function result<T>(r: RsqlResult<T>): T {
   if (!r.ok) {
     if (r.status === 401 || r.status === 403) throw new DatabaseError("DB_AUTH_FAILED", 502);
-    throw new DatabaseError(r.error.error, r.status === 409 ? 409 : 400);
+    throw new DatabaseError(r.error.error, r.status === 409 ? 409 : 400, r.error.message);
   }
   return r.data;
 }
@@ -246,19 +259,16 @@ export const artifactDatabase = {
     signal?: AbortSignal,
     mode: "runtime" | "inspect" | "maintenance" = "runtime",
   ) {
+    if (mode === "runtime") {
+      const flat = FlatDatabaseRequest.parse(input);
+      return this.runtime(id, flat, identity, signal);
+    }
     const req = DatabaseRequest.parse(input);
     if (mode === "inspect" && !["tables.list", "schema.get", "rows.list", "query"].includes(req.operation))
       throw new DatabaseError("DB_SQL_UNSUPPORTED");
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
-      id = (
-        await requireArtifact(
-          db,
-          id,
-          identity,
-          mode !== "runtime" || (req.operation.startsWith("tables.") && req.operation !== "tables.list") ? "admin" : "read",
-        )
-      ).row.id;
+      id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const c = await config();
       connection(c, signal);
       const [mapping] = await db<
@@ -274,16 +284,39 @@ export const artifactDatabase = {
           data = result(await client.tables.list());
           break;
         case "tables.create":
-          data = result(await client.tables.create({ type: "table", name: req.name, columns: req.columns }));
+          data = result(
+            await client.tables.create({
+              type: "table",
+              name: req.name,
+              metadata: { write: req.write },
+              columns: [...req.columns, { name: "created_by", type: "text" }, { name: "updated_by", type: "text" }],
+            }),
+          );
           break;
         case "tables.update":
-          data = result(await client.tables.update(req.table, req.changes));
+          {
+            const { write, ...changes } = req.changes;
+            if (
+              changes.drop_columns?.some((name) =>
+                ["id", "created_at", "updated_at", "created_by", "updated_by"].includes(name.toLowerCase()),
+              ) ||
+              Object.entries(changes.rename_columns ?? {}).some(([from, to]) =>
+                [from, to].some((name) => ["id", "created_at", "updated_at", "created_by", "updated_by"].includes(name.toLowerCase())),
+              )
+            )
+              throw new CloudError("invalid", "Cloud-managed columns cannot be dropped or renamed.");
+            const schema = TableSchema.parse(result(await client.tables.get(req.table)));
+            data = result(
+              await client.tables.update(req.table, { ...changes, ...(write ? { metadata: { ...schema.metadata, write } } : {}) }),
+            );
+          }
           break;
         case "tables.delete":
           data = result(await client.tables.delete(req.table));
           break;
         case "schema.get":
-          data = result(await client.tables.get(req.table));
+          const schema = TableSchema.parse(result(await client.tables.get(req.table)));
+          data = { ...schema, write: tableWrite(schema) };
           break;
         case "rows.list": {
           const limit = Number(req.query.limit ?? 50);
@@ -296,11 +329,23 @@ export const artifactDatabase = {
           data = result(await client.table(req.table).rows.get(req.id));
           break;
         case "rows.insert":
-          data = result(await client.table(req.table).rows.insert(req.rows));
+        case "rows.update": {
+          const schema = TableSchema.parse(result(await client.tables.get(req.table)));
+          const batch = req.operation === "rows.insert" ? (Array.isArray(req.rows) ? req.rows : [req.rows]) : [req.row];
+          batch.forEach((row) => checkColumns(schema, Object.keys(row), true));
+          const missing = ["created_by", "updated_by"].filter((name) => !schema.columns.some((column) => column.name === name));
+          if (missing.length) {
+            result(await client.tables.update(req.table, { add_columns: missing.map((name) => ({ name, type: "text" })) }));
+          }
+          const requester = user(identity).id;
+          data =
+            req.operation === "rows.insert"
+              ? result(
+                  await client.table(req.table).rows.insert(batch.map((row) => ({ ...row, created_by: requester, updated_by: requester }))),
+                )
+              : result(await client.table(req.table).rows.update(req.id, { ...req.row, updated_by: requester }));
           break;
-        case "rows.update":
-          data = result(await client.table(req.table).rows.update(req.id, req.row));
-          break;
+        }
         case "rows.delete":
           data = result(await client.table(req.table).rows.delete(req.id));
           break;
@@ -322,6 +367,93 @@ export const artifactDatabase = {
         throw new DatabaseError("DB_LIMIT");
       if (new TextEncoder().encode(JSON.stringify(data ?? null)).length > LIMITS.rpcBytes) throw new DatabaseError("DB_LIMIT");
       return data ?? null;
+    });
+  },
+  async runtime(id: string, input: unknown, identity: ArtifactIdentity, signal?: AbortSignal) {
+    const req = FlatDatabaseRequest.parse(input);
+    return sql.begin(async (db) => {
+      await databaseConfigLock(db);
+      const resource = await requireArtifact(db, id, identity, "read");
+      id = resource.row.id;
+      const upstream = connection(await config(), signal);
+      const [mapping] = await db<
+        { namespace: string; connected: boolean }[]
+      >`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
+      if (!mapping?.connected) throw new DatabaseError("DB_NOT_CONNECTED", 409);
+      const client = upstream.ns(mapping.namespace);
+      if (req.operation === "query") {
+        let sqlQuery: string;
+        try {
+          sqlQuery = safeQuery(req.sql, req.params.length);
+        } catch (error) {
+          throw new CloudError(
+            "invalid",
+            error instanceof Error && error.message === "DB_SQL_PARAMS"
+              ? "Supply one parameter per SQL placeholder."
+              : "Use one read-only SELECT without comments or CTEs.",
+          );
+        }
+        const rows = boundedRows(pageRows(result(await client.query.run({ sql: sqlQuery, params: req.params }))));
+        if (new TextEncoder().encode(JSON.stringify(rows)).length > LIMITS.rpcBytes) throw new DatabaseError("DB_LIMIT");
+        return rows;
+      }
+      const tables = result(await client.tables.list());
+      if (!tables.some((table) => table.name === req.table))
+        throw new CloudError(
+          "not_found",
+          `Unknown table "${req.table}"; existing tables: ${tables.map((table) => table.name).join(", ") || "none"}.`,
+        );
+      let schema = TableSchema.parse(result(await client.tables.get(req.table)));
+      const missing = ["created_by", "updated_by"].filter((name) => !schema.columns.some((column) => column.name === name));
+      if (missing.length) {
+        await markDataMutation(id);
+        result(await client.tables.update(req.table, { add_columns: missing.map((name) => ({ name, type: "text" })) }));
+        schema = TableSchema.parse(result(await client.tables.get(req.table)));
+      }
+      const rows = client.table(req.table).rows;
+      const get = async (key: number) => {
+        const response = await rows.get(key);
+        if (!response.ok && response.status === 404) return null;
+        return typedRow(result(response), schema);
+      };
+      let output: unknown;
+      if (req.operation === "list")
+        output = await listRows(
+          req,
+          schema,
+          async (query) => result(await client.query.run(query)),
+          async (query) => result(await rows.list(query)),
+        );
+      else if (req.operation === "get") output = await get(req.id);
+      else {
+        const requester = user(identity).id;
+        const previous = req.operation === "insert" ? null : await get(req.id);
+        checkRowWrite(tableWrite(schema), requester, resource.permission === "admin", req.operation, previous);
+        if (req.operation !== "insert" && !previous) return req.operation === "delete" ? false : null;
+        await markDataMutation(id);
+        if (req.operation === "insert") {
+          const batch = Array.isArray(req.rows) ? req.rows : [req.rows];
+          batch.forEach((row) => checkColumns(schema, Object.keys(row), true));
+          const inserted = pageRows(
+            result(
+              await rows.insert(
+                batch.map((row) => ({ ...row, created_by: requester, updated_by: requester })),
+                { prefer: "return=representation" },
+              ),
+            ),
+          ).map((row) => typedRow(row, schema));
+          output = Array.isArray(req.rows) ? inserted : inserted[0];
+        } else if (req.operation === "update") {
+          checkColumns(schema, Object.keys(req.values), true);
+          result(await rows.update(req.id, { ...req.values, updated_by: requester }, { prefer: "return=representation" }));
+          output = await get(req.id);
+        } else {
+          result(await rows.delete(req.id));
+          output = true;
+        }
+      }
+      if (new TextEncoder().encode(JSON.stringify(output ?? null)).length > LIMITS.rpcBytes) throw new DatabaseError("DB_LIMIT");
+      return output ?? null;
     });
   },
   async cleanup() {

@@ -1,0 +1,19 @@
+{
+  "id": "APP_ID",
+  "operation": "tables.create",
+  "name": "invoice_links",
+  "write": "everyone",
+  "columns": [
+    {
+      "name": "transaction_key",
+      "type": "text",
+      "unique": true,
+      "not_null": true
+    },
+    {
+      "name": "invoice_path",
+      "type": "text",
+      "not_null": true
+    }
+  ]
+}

@@ -42,12 +42,11 @@ async function harness(deny = false) {
       },
     },
   };
-  const run = new Function("ui", "kv", "capabilities", "files", source.replace("export default", "return"))(
-    ui,
-    { shared: { get: async () => ({ gridsTemplateId: "Tpl001", filesBaseId: "base" }) } },
+  const run = new Function("ui", "cloud", source.replace("export default", "return"))(ui, {
+    kv: { get: async () => ({ gridsTemplateId: "Tpl001", filesBaseId: "base" }) },
     capabilities,
-    { save: async (content: File, name: string) => saved.push({ content, name }) },
-  );
+    download: async (name: string, content: File) => saved.push({ content, name }),
+  });
   await run();
   return { buttons, calls, saved, messages, rows: () => rows, select: (index: number) => selectRow(rows[index]) };
 }

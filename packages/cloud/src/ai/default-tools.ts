@@ -110,7 +110,7 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_secret",
     description:
-      "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey, app controls or code_interact. Personal secrets are scoped to this chat or resource and bound to the exact HTTPS origin, header and prefix. Use secret(name,{prefix}) in http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
+      "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey, app controls or code_interact. Personal secrets are scoped to this chat or resource and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
     inputSchema: CodeSecretInput,
     outputSchema: z.object({ configured: z.boolean(), name: z.string() }),
     approval: "never",
@@ -128,7 +128,7 @@ export const createCloudAiCodeTools = () => [
     promptHint:
       "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
-      "Run a saved resource id OR one-off code in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts accept current chat inputPaths; app test runs use them only as explicit picker fixtures. Returns output, logs and UI state for agent inspection only; use code_present to show a one-off visualization to the user. Local test storage is temporary; shared data, database writes and capability effects are real and keep normal permissions and approvals.",
+      "Run a saved resource id OR one-off code in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts accept current chat inputPaths; app test runs use them only as explicit picker fixtures. Returns output, logs and UI state for agent inspection only; use code_present to show a one-off visualization to the user. Test runs use the app’s real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
     inputSchema: CodeRunInput,
     outputSchema: z.json(),
     approval: "never",

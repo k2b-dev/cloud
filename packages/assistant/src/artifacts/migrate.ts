@@ -101,6 +101,9 @@ export async function migrateArtifacts() {
   await sql`ALTER TABLE assistant.artifact_storage ADD COLUMN IF NOT EXISTS data BYTEA`.simple();
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS storage_revision BIGINT NOT NULL DEFAULT 1`.simple();
   await sql`ALTER TABLE assistant.artifact_storage ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1`.simple();
+  await sql`ALTER TABLE assistant.artifact_storage ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE`.simple();
+  await sql`ALTER TABLE assistant.artifact_storage DROP CONSTRAINT IF EXISTS artifact_storage_pkey`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS artifact_storage_scope_key ON assistant.artifact_storage(artifact_id,area,key,user_id) NULLS NOT DISTINCT`.simple();
   // One-way migration: file bytes no longer live in Base64 text.
   await sql`UPDATE assistant.artifact_storage SET data=decode(content,'base64'),content=''
     WHERE area='files' AND data IS NULL`.simple();

@@ -1,11 +1,11 @@
 # DATEV and SEPA exports
 
-`datev` and `sepa` are globals. Calls are synchronous and local; no imports
-or network access are needed. Both expose `validate(input)`
+`cloud.finance.datev` and `cloud.finance.sepa` load on first use. Await all calls;
+no package imports or worker network access are needed. Both expose `validate(input)`
 and `serialize(batch)`, returning `{ok:true,data}` or `{ok:false,error}`.
 Errors contain `code`, `message`, and `issues` with field paths (row indices are
 zero-based). Serialization also validates inputs. Use the returned `bytes`
-unchanged with `files.save(new Blob([bytes]), filename)`, then `code_export` in agent runs.
+unchanged with `cloud.download(filename, new Blob([bytes]))`, then `code_export` in agent runs.
 
 DATEV supports `datev-700-13`: EUR bookings, S/H direction, UTF-8 BOM CSV with
 CRLF, 31 header fields and 125 columns. SEPA supports ordinary EUR SCT transfers
@@ -50,12 +50,12 @@ const sepaExample = {
 
 
 export default async () => {
-  const csv = datev.serialize(datevExample);
-  const xml = sepa.serialize(sepaExample);
+  const csv = await cloud.finance.datev.serialize(datevExample);
+  const xml = await cloud.finance.sepa.serialize(sepaExample);
   if (!csv.ok) throw new Error(JSON.stringify(csv.error));
   if (!xml.ok) throw new Error(JSON.stringify(xml.error));
-  await files.save(new Blob([csv.data.bytes], {type:"text/csv"}), "buchungen.csv");
-  await files.save(new Blob([xml.data.bytes], {type:"application/xml"}), "ueberweisungen.xml");
+  await cloud.download("buchungen.csv", new Blob([csv.data.bytes], {type:"text/csv"}));
+  await cloud.download("ueberweisungen.xml", new Blob([xml.data.bytes], {type:"application/xml"}));
   return { bookings: csv.data.rowCount, debit: csv.data.debitTotal,
     credit: csv.data.creditTotal, transfers: xml.data.rowCount, total: xml.data.total };
 };
@@ -68,11 +68,11 @@ remittance text are escaped by the serializer; do not build CSV/XML yourself.
 
 ## Contracts and validation
 
-`datev.validate(input)` returns a Result containing the validated batch;
-`datev.serialize(batch)` returns a Result containing
+`await cloud.finance.datev.validate(input)` returns a Result containing the validated batch;
+`await cloud.finance.datev.serialize(batch)` returns a Result containing
 `{ bytes: Uint8Array, rowCount: number, debitTotal: string, creditTotal: string }`.
-`sepa.validate(input)` returns the validated batch;
-`sepa.serialize(batch)` returns
+`await cloud.finance.sepa.validate(input)` returns the validated batch;
+`await cloud.finance.sepa.serialize(batch)` returns
 `{ bytes: Uint8Array, rowCount: number, total: string }` inside its Result.
 Both batch shapes are demonstrated completely above: every field is required
 except the explicitly listed optional fields. Unknown fields are rejected;

@@ -65,9 +65,9 @@ export function SqlConsole(props: {
         for (const table of tables) {
           current.signal.throwIfAborted();
           const schema = z
-            .object({ columns: z.array(z.record(z.string(), z.unknown())) })
+            .object({ columns: z.array(z.record(z.string(), z.unknown())), write: z.enum(["everyone", "own", "managers"]) })
             .parse(await artifactClient.databaseInspect(props.id, { operation: "schema.get", table: table.name }, current.signal));
-          data.push(...schema.columns.map((column) => ({ [a().table]: table.name, ...column })));
+          data.push(...schema.columns.map((column) => ({ [a().table]: table.name, write: schema.write, ...column })));
         }
       } else {
         data = Rows.parse(

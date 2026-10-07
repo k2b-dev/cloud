@@ -29,7 +29,7 @@ that its numbers are correct. Keep blocked source work open and explain why.
 
 Identify the actual source, unit of observation, time window, timezone, and
 latest complete period. Read files or discover the relevant Cloud capabilities
-before selecting fields. External APIs use `http.fetch`; credentials are entered
+before selecting fields. External APIs use `cloud.http.fetch`; credentials are entered
 only through the trusted `code_secret` dialog.
 
 Inspect a bounded sample, missing values, duplicate keys, types, and coverage.
@@ -84,7 +84,7 @@ until display formatting. Test reset, one/multiple/all selections, empty results
 and complete versus partial periods. A newly generated timestamp is not source
 freshness: keep the real retrieval or file-snapshot timestamp stable.
 
-For a Studio App data snapshot, export the validated dataset with `files.save` and
+For a Studio App data snapshot, export the validated dataset with `cloud.download` and
 `code_export`, then copy its exact path/version into the resource with
 `code_write({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
 Obtain the exact reference with `code_file_stat`; importing private files into

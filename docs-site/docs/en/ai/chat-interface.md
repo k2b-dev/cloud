@@ -460,7 +460,7 @@ Core forwards each operation to Assistant using an operation-bound invocation.
 The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
-`capabilities.run` remains available for other applications, not these tools.
+`cloud.capabilities.run` remains available for other applications, not these tools.
 `code_write` saves one atomic batch against `expectedRevision`, preserves sibling
 files and reports compilation diagnostics without rejecting incomplete source.
 Conflicting revisions and duplicate paths reject the whole batch. A file can
@@ -491,11 +491,13 @@ The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users
 enter the standalone runner; managers enter Studio management. Management actions
 include editing, publication, and access. The runner retains personal actions for copying an app,
-clearing browser-local data. Secrets are available in management only.
+viewing and clearing their own server-side **Personal data** (`cloud.kv.user`).
+Secrets are available in management only.
 Copying asks for confirmation, then opens a new chat with the copy attached
 and an unsent customization prompt. Only published code is copied, not data,
-secrets, or sharing settings. Public-only visitors can manage
-only their browser-local data. Permissions use the Cloud editor in a dialog.
+secrets, or sharing settings. Anonymous public visitors have no personal-data
+control; `cloud.kv.user` and database writes reject with `denied`. Permissions
+use the Cloud editor in a dialog.
 Artifacts are independent of chats. Cloud `auth.access` grants are linked
 through `assistant.artifact_access`: `read` is presented as **Use**, `admin` as
 **Manage**. Existing artifact `write` grants migrate to `admin`. Person, nested
@@ -592,7 +594,8 @@ app access. Public visitors see the app without the Cloud navigation shell.
 To share publicly, publish the app and add **Public** in **Manage access**.
 Only **Use** is available; public **Manage** is rejected through every interface.
 The dialog explains the limits: public visitors can compute locally, select
-files, download results and use browser-local storage. Public access never grants
+files through the transitional UI filePicker and download results. Browser-local
+runtime storage is removed. Public access never grants
 the app database, server files/KV, personal secrets, server HTTP/PDF or protected
 Cloud actions. Signed-in visitors still need a separate explicit app grant for
 server features. Existing apps that require these features may not work publicly.

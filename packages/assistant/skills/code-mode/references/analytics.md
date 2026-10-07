@@ -1,5 +1,8 @@
 # Analytics UI
 
+The transitional `ui` tree remains available until HTML apps replace it.
+
+
 Create an interactive analysis with the built-in UI API:
 
 ```js

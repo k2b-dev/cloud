@@ -1474,10 +1474,10 @@ interactive and service-account authority; mandate-backed background
 invocations of streaming operations fail before execution. Existing operations
 without streams retain their contracts.
 
-Assistant code mode exposes `capabilities.streams.read/write/status/abort`.
+Assistant code mode exposes `cloud.capabilities.streams.read/write/status/abort`.
 `read` returns a `File`, and `write` accepts a `Blob`, string, `ArrayBuffer` or
 `Uint8Array`. It uses only references returned by that run's approved
-`capabilities.run` calls. The existing runtime budget applies: 50 MiB per
+`cloud.capabilities.run` calls. The existing runtime budget applies: 50 MiB per
 payload and 250 MiB across transfers, with at most 64 references per run.
 HTTP and CLI clients may use the provider's larger advertised limit.
 

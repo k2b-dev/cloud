@@ -1,4 +1,5 @@
 import { expect, jest, test } from "bun:test";
+import { ChunkName, chunkSource } from "../artifacts/runtime/chunks";
 import { cliHostBundle } from "../artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../artifacts/runtime/compile";
 import { createCliCodeHost } from "./code-host";
@@ -31,6 +32,8 @@ test("published actions execute in the isolated host and validate their returned
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.includes("runtime/action")) {
         const body = JSON.parse(await new Response(init?.body).text());
@@ -72,13 +75,15 @@ test("published actions execute in the isolated host and validate their returned
 
 test("CLI runs one-off code in the existing isolated worker without a GUI chat", async () => {
   const code =
-    'export default async () => { await files.save("42", "answer.txt"); return { answer: 42, serverProcess: typeof process, networkBlocked: await fetch("https://example.invalid/").then(() => false, () => true) }; }';
+    'export default async (_input, {files,signal,progress}) => { await cloud.download("answer.txt", "42"); return { answer: 42, serverProcess: typeof process, networkBlocked: await fetch("https://example.invalid/").then(() => false, () => true) }; }';
   const bundle = await cliHostBundle();
   const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
   const requests: string[] = [];
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       requests.push(path);
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/claim")) return Response.json({ status: "execute" });
@@ -208,11 +213,11 @@ test("a stalled startup fails at the deadline and names the step it stopped at",
 }, 60000);
 
 test("CLI worker chains capabilities through host approvals and keeps denial out of worker control", async () => {
-  const code = `export default async () => {
-    const first=await capabilities.run("demo.read",{});
-    const [second]=await Promise.all([capabilities.run("demo.write",{value:first.data.value}),capabilities.run("demo.read",{})]);
+  const code = `export default async (_input, {files,signal,progress}) => {
+    const first=await cloud.capabilities.run("demo.read",{});
+    const [second]=await Promise.all([cloud.capabilities.run("demo.write",{value:first.data.value}),cloud.capabilities.run("demo.read",{})]);
     let denied=false;
-    try {await capabilities.run("demo.denied",{});} catch {denied=true;}
+    try {await cloud.capabilities.run("demo.denied",{});} catch {denied=true;}
     return {value:second.data.value,denied};
   }`;
   const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
@@ -223,6 +228,8 @@ test("CLI worker chains capabilities through host approvals and keeps denial out
     {
       fetch: async (input, init) => {
         const path = String(input);
+        const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+        if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
         if (path.endsWith("host.js")) return new Response(bundle);
         if (path.endsWith("/claim")) return Response.json({ status: "execute" });
         if (path.endsWith("/complete")) return Response.json({ saved: true });
@@ -279,14 +286,15 @@ test("CLI worker chains capabilities through host approvals and keeps denial out
 }, 90000);
 
 test("chat inputs load on demand and app fixtures are visible only to the picker", async () => {
-  const appCode =
-    "export default async()=>{const hidden=await files.list();const picked=await files.openFolder();return {hidden:hidden.length,path:files.path(picked[0]),text:await picked[0].text()};}";
+  const appCode = `export default async (_input, {files,signal,progress}) =>{const hidden=files;ui.filePicker({id:"pick",label:"Pick inputs",multiple:true,onChange:async picked=>ui.text({id:"result",value:JSON.stringify({hidden:hidden.length,name:picked[0].name,text:await picked[0].text()})})});}`;
   const appSource = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: appCode }] });
   const bundle = await cliHostBundle();
   let reads = 0;
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/compile")) return Response.json(await compileArtifact(await new Response(init?.body).json()));
       if (path.includes("/files/content?")) {
@@ -305,7 +313,10 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
       ...ids,
       name: "code_run",
       callId: "list-only",
-      args: { code: "export default async()=>({count:(await files.list()).length})", inputPaths: ["/folder/report.csv"] },
+      args: {
+        code: "export default async (_input, {files,signal,progress}) =>({count:(files).length})",
+        inputPaths: ["/folder/report.csv"],
+      },
     });
     expect(listed).toMatchObject({ output: '{"count":1}' });
     expect(reads).toBe(0);
@@ -315,13 +326,22 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
       callId: "picker",
       args: { id: "aBc234", inputPaths: ["/folder/report.csv"] },
     });
-    expect(picked).toMatchObject({ output: JSON.stringify({ hidden: 0, path: "/folder/report.csv", text: "hello" }) });
+    expect(picked).toMatchObject({ status: "ready" });
+    const selection = await host.execute({ ...ids, name: "code_interact", callId: "select", args: { runId: "picker", id: "pick" } });
+    expect(selection).toMatchObject({
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ id: "result", value: JSON.stringify({ hidden: 0, name: "report.csv", text: "hello" }) }),
+      ]),
+    });
     expect(reads).toBe(1);
     const denied = await host.execute({
       ...ids,
       name: "code_run",
       callId: "unselected",
-      args: { code: 'export default async()=>await files.read("/not-selected.csv")', inputPaths: ["/folder/report.csv"] },
+      args: {
+        code: 'export default async (_input, {files,signal,progress}) =>await files.find(file=>file.path === "/not-selected.csv").file()',
+        inputPaths: ["/folder/report.csv"],
+      },
     });
     expect(denied).toMatchObject({ status: "error" });
     expect(reads).toBe(1);
@@ -333,16 +353,17 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
 test("database error codes survive HTTP and the worker bridge", async () => {
   const id = "aBc234";
   const code =
-    'export default async()=>{try{await database.connect();return "unexpected success";}catch(error){return {code:error.code,message:error.message};}}';
+    'export default async (_input, {files,signal,progress}) =>{try{await cloud.db.list("records",{}, {limit:1});return "unexpected success";}catch(error){return {code:error.code,message:error.message};}}';
   const source = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
   const bundle = await cliHostBundle();
   const host = await createCliCodeHost({
     fetch: async (input) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/files")) return Response.json({ files: [] });
-      if (path.includes("/database/connect"))
-        return Response.json({ code: "DB_NOT_CONFIGURED", message: "Configure rsql first" }, { status: 503 });
+      if (path.includes("/database")) return Response.json({ code: "DB_NOT_CONFIGURED", message: "Configure rsql first" }, { status: 503 });
       if (path.includes("/compiled")) return Response.json({ ...source, revision: 1 });
       if (path.includes("/artifacts/")) return Response.json({ id, kind: "script", revision: 1, sourceRevision: 1 });
       throw new Error(`Unexpected request ${path}`);
@@ -352,7 +373,7 @@ test("database error codes survive HTTP and the worker bridge", async () => {
     const result = await host.execute({ name: "code_run", callId: "db-error", conversationId: id, turnId: id, args: { id } });
     expect(result).toMatchObject({
       status: "ready",
-      output: JSON.stringify({ code: "DB_NOT_CONFIGURED", message: "Configure rsql first" }),
+      output: JSON.stringify({ code: "unavailable", message: "Configure rsql first" }),
     });
   } finally {
     await host.close();
@@ -365,6 +386,8 @@ test("slow chat input crosses startup deadlines and invalid arguments remain inp
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/compile")) return Response.json(await compileArtifact(await new Response(init?.body).json()));
       if (path.endsWith("/files")) return Response.json({ files: [{ path: "/slow.csv", size: 4, mediaType: "text/csv" }] });
@@ -391,7 +414,7 @@ test("slow chat input crosses startup deadlines and invalid arguments remain inp
       name: "code_run",
       callId: "slow",
       args: {
-        code: 'export default async()=>({rows:(await sheet.fromCsv(await files.read("/slow.csv"),{delimiter:","})).length})',
+        code: 'export default async (_input, {files,signal,progress}) =>({rows:(await cloud.sheet.parseCsv(await files[0].file(),{delimiter:","})).length})',
         inputPaths: ["/slow.csv"],
       },
     });
@@ -407,6 +430,8 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/compile")) return Response.json(await compileArtifact(await new Response(init?.body).json()));
       throw new Error(`Unexpected request ${path}`);
@@ -415,11 +440,14 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
   const ids = { conversationId: "00000000-0000-4000-8000-000000000001", turnId: "00000000-0000-4000-8000-000000000001" };
   const run = (callId: string, code: string) => host.execute({ ...ids, name: "code_run", callId, args: { code } });
   try {
-    await run("retained", 'export default async()=>{await files.save("important","result.csv");return 1;}');
+    await run(
+      "retained",
+      'export default async (_input, {files,signal,progress}) =>{await cloud.download("result.csv", "important");return 1;}',
+    );
     await run("interactive", 'export default()=>{ui.button({label:"Keep",onClick:()=>{},id:"keep"});}');
     await run(
       "retained-work",
-      "export default()=>{work.run(async job=>{for(;;){await new Promise(r=>setTimeout(r,1000));await job.checkpoint();}});}",
+      "export default async (_input,{signal,progress})=>{for(let i=0;!signal.aborted;i++){progress(i);await new Promise(r=>setTimeout(r,1000));}}",
     );
     for (let i = 0; i < 32; i++) expect(await run(`probe-${i}`, `export default()=>${i}`)).toMatchObject({ status: "ready" });
     expect(await host.execute({ ...ids, name: "code_inspect", callId: "files", args: { runId: "retained" } })).toMatchObject({
@@ -441,17 +469,19 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
 test("slow database and shared storage calls do not consume the short callback deadline", async () => {
   const id = "aBc234";
   const code =
-    'export default()=>{ui.button({label:"Import",onClick:async()=>{await database.connect();await kv.shared.set("done",true);ui.text({value:"Finished"});},id:"import"});}';
+    'export default()=>{ui.button({label:"Import",onClick:async()=>{await cloud.db.list("records",{}, {limit:1});await cloud.kv.set("done",true);ui.text({value:"Finished"});},id:"import"});}';
   const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
   const bundle = await cliHostBundle();
   const host = await createCliCodeHost({
     fetch: async (input) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.includes("/compiled")) return Response.json({ ...compiled, revision: 1 });
-      if (path.includes("/database/connect")) {
+      if (path.includes("/database")) {
         await Bun.sleep(17000);
-        return Response.json({ connected: true });
+        return Response.json([]);
       }
       if (path.includes("/storage")) {
         await Bun.sleep(17000);
@@ -517,16 +547,17 @@ test("finance exports and resource-scoped one-offs use the existing worker and m
   const example = document.match(/```js\n([\s\S]*?)```/)![1]!;
   const code = example.replace(
     "return { bookings:",
-    `const db = await database.connect();
-    const tables = await db.tables();
-    await kv.shared.set("probe", {ok:true});
-    return { tables, invalid: datev.validate({}).ok, local: await kv.local.get("probe"), bookings:`,
+    `const records = await cloud.db.list("records",{}, {limit:1});
+    await cloud.kv.set("probe", {ok:true});
+    return { records, invalid: (await cloud.finance.datev.validate({})).ok, personal: await cloud.kv.user.get("probe"), bookings:`,
   );
   const requests: string[] = [];
   let denied = false;
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       requests.push(path);
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/access"))
@@ -536,25 +567,34 @@ test("finance exports and resource-scoped one-offs use the existing worker and m
         expect(compiled.runtime).not.toContain("libxml2");
         return Response.json(compiled);
       }
-      if (path.includes("/database/maintenance/connect")) return Response.json({ connected: true });
-      if (path.includes("/database/maintenance")) return Response.json({ tables: [] });
-      if (path.endsWith("/storage/manage")) return Response.json({ saved: true });
+      if (new URL(path, "http://localhost").pathname === `/api/assistant/artifacts/${id}/database`) {
+        expect(new URL(path, "http://localhost").searchParams.get("conversationId")).toBe(id);
+        expect(await new Response(init?.body).json()).toEqual({ operation: "list", table: "records", where: {}, limit: 1 });
+        return Response.json([]);
+      }
+      if (path.endsWith("/storage/manage")) {
+        const request = await new Response(init?.body).json();
+        expect(request).toMatchObject({ area: "kv", key: "probe" });
+        expect(request.scope).toBe(request.operation === "write" ? "shared" : "user");
+        return Response.json({ item: null });
+      }
       throw new Error(`Unexpected request ${path}`);
     },
   });
   try {
     const args = { code, resourceId: id };
     const result = await host.execute({ name: "code_run", callId: "finance", conversationId: id, turnId: id, args });
-    expect(result).toMatchObject({ status: "ready" });
+    expect(result, JSON.stringify(result)).toMatchObject({ status: "ready" });
     if (!result || typeof result !== "object" || !("output" in result)) throw new Error("Missing output");
     expect(JSON.parse(String(result.output))).toMatchObject({
+      records: [],
       bookings: 2,
       transfers: 2,
       total: "12.31",
       debit: "123.45",
       credit: "3.00",
       invalid: false,
-      local: null,
+      personal: null,
     });
     expect(JSON.stringify(result)).toContain("buchungen.csv");
     expect(JSON.stringify(result)).toContain("ueberweisungen.xml");
@@ -569,7 +609,7 @@ test("finance exports and resource-scoped one-offs use the existing worker and m
 
 test("HTTP crosses the real CLI worker bridge as secret references and waits for trusted consent", async () => {
   const code =
-    'export default async()=>{const response=await http.fetch("https://api.example.com/data",{headers:{Authorization:secret("crm",{prefix:"Bearer "})}});return {status:response.status,data:await response.json()};}';
+    'export default async (_input, {files,signal,progress}) =>{const response=await cloud.http.fetch("https://api.example.com/data",{headers:{Authorization:cloud.http.secret("crm",{prefix:"Bearer "})}});return {status:response.status,data:await response.json()};}';
   const bundle = await cliHostBundle(),
     compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
   let sent = 0,
@@ -578,6 +618,8 @@ test("HTTP crosses the real CLI worker bridge as secret references and waits for
     {
       fetch: async (input, init) => {
         const path = String(input);
+        const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+        if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
         if (path.endsWith("host.js")) return new Response(bundle);
         if (path.endsWith("/compile")) return Response.json(compiled);
         const body = await new Response(init?.body).json();
@@ -635,6 +677,8 @@ test("CLI uses UI typed controls and bounded explorer inspection", async () => {
   const host = await createCliCodeHost({
     fetch: async (input) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/compile")) return Response.json(compiled);
       if (path.includes("/files")) return Response.json({ files: [] });
@@ -716,6 +760,8 @@ test("documented CSV dashboard uses numeric KPIs and survives real filter/reset 
   const host = await createCliCodeHost({
     fetch: async (input) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.includes("/compiled")) return Response.json({ ...compiled, revision: 7 });
       if (path.includes("/files")) return Response.json({ files: [] });
@@ -791,17 +837,17 @@ test("shared files cross the CLI/browser host as binary above the JSON budget", 
       turnId: "aBc234",
       args: {
         resourceId: "aBc234",
-        code: `export default async()=>{
-      const bytes=new Uint8Array(17*1024*1024);bytes[0]=255;
-      await files.shared.write("binary",new Blob([bytes]));
-      const file=await files.shared.read("binary");
+        code: `export default async (_input, {files,signal,progress}) =>{
+      const bytes=new Uint8Array(16*1024*1024);bytes[0]=255;
+      await cloud.files.write("binary",new Blob([bytes]));
+      const file=await cloud.files.read("binary");
       return {size:file.size,first:new Uint8Array(await file.arrayBuffer())[0]};
     }`,
       },
     });
     expect(result).toMatchObject({ status: "ready" });
-    expect(stored.length).toBe(17 * 1024 * 1024);
-    expect(JSON.stringify(result)).toContain("17825792");
+    expect(stored.length).toBe(16 * 1024 * 1024);
+    expect(JSON.stringify(result)).toContain("16777216");
     expect(JSON.stringify(result)).toContain("255");
   } finally {
     await host.close();
@@ -809,11 +855,11 @@ test("shared files cross the CLI/browser host as binary above the JSON budget", 
 }, 30000);
 
 test("native host transport reads and writes a 50 MiB binary file without IPC body copies", async () => {
-  const code = `export default async () => {
-    const source = await capabilities.run("demo.read", {});
-    const file = await capabilities.streams.read(source.stream);
-    const target = await capabilities.run("demo.write", {});
-    const result = await capabilities.streams.write(target.stream, file);
+  const code = `export default async (_input, {files,signal,progress}) => {
+    const source = await cloud.capabilities.run("demo.read", {});
+    const file = await cloud.capabilities.streams.read(source.stream);
+    const target = await cloud.capabilities.run("demo.write", {});
+    const result = await cloud.capabilities.streams.write(target.stream, file);
     return { size: file.size, saved: result.data.bytes };
   }`;
   const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
@@ -823,6 +869,8 @@ test("native host transport reads and writes a 50 MiB binary file without IPC bo
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
       const path = String(input);
+      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.endsWith("/compile")) return Response.json(compiled);
       if (path.endsWith("/capabilities")) {
@@ -888,6 +936,8 @@ test("unattended code runs without a tab, keeps hosts isolated and rejects user 
   const bundle = await cliHostBundle();
   const fetchHost = async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input);
+    const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
+    if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
     if (path.endsWith("host.js")) return new Response(bundle);
     if (path.endsWith("/compile")) return Response.json(await compileArtifact(JSON.parse(await new Response(init?.body).text())));
     if (path.includes("/files")) return Response.json({ files: [] });
@@ -912,7 +962,9 @@ test("unattended code runs without a tab, keeps hosts isolated and rejects user 
       await first.execute({
         ...call,
         callId: "dialog",
-        args: { code: 'export default async () => await ui.modal.confirm({title:"Confirm",message:"Continue?"});' },
+        args: {
+          code: 'export default async (_input, {files,signal,progress}) => await ui.modal.confirm({title:"Confirm",message:"Continue?"});',
+        },
       }),
     ).toMatchObject({
       status: "error",

@@ -512,7 +512,9 @@ capability query/action entries, `{kind:"http",fixedInput:{origin,url,method}}`
 and `{kind:"database",fixedInput:{resourceId,operation,table}}`. All fixed fields
 are optional; omitted fields remain unrestricted. HTTP origins match exactly,
 not by suffix; URL restrictions match the full URL. Database operations match
-exactly, so an operation-specific grant also needs a `connect` grant. Resource
+exactly. Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
+Runtime `cloud.db` calls need no `connect` grant; `code_database`
+`tables.create` provisions the database under its `tables.create` grant. Resource
 permissions and the HTTP service's public-HTTPS/secret-binding checks still apply.
 HTTP authority is rechecked against the stored request immediately before sending.
 The same access review and task-detail presentation show all three grant types.

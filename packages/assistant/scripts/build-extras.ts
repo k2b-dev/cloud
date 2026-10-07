@@ -13,6 +13,29 @@ const build = await Bun.build({
 if (!build.success) throw new Error(build.logs.join("\n"));
 await Bun.write(resolve(output, "assistant-artifact-worker.js"), await build.outputs[0]!.text());
 
+const chunks: Record<string, string> = {};
+for (const [name, entry] of Object.entries({
+  csv: "sheet-lib.ts",
+  sheet: "sheet-chunk.ts",
+  finance: "finance-chunk.ts",
+  "pdf-read": "pdf-reader.ts",
+})) {
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, `../src/artifacts/runtime/${entry}`)],
+    target: "browser",
+    format: "esm",
+    minify: true,
+    define: { "import.meta.url": JSON.stringify("about:blank") },
+  });
+  if (!build.success) throw new Error(build.logs.join("\n"));
+  const code = await build.outputs[0]!.text();
+  const hash = new Bun.CryptoHasher("sha256").update(code).digest("hex").slice(0, 16);
+  const file = `assistant-artifact-${name}-${hash}.js`;
+  await Bun.write(resolve(output, file), code);
+  chunks[name] = file;
+}
+await Bun.write(resolve(output, "assistant-artifact-chunks.json"), JSON.stringify(chunks));
+
 const host = await Bun.build({
   entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/cli-host.ts")],
   target: "browser",

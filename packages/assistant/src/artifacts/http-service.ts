@@ -17,6 +17,8 @@ import {
   SecretSave,
   SecretView,
 } from "./http-contracts";
+import { redactSecrets } from "./http-redaction";
+import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, artifacts, user } from "./service";
 
 export class HttpError extends Error {
@@ -165,12 +167,15 @@ export const httpService = {
     const { available, used } = await bindings(stored.request, stored.scope, identity);
     if (digest(used) !== digest(stored.used)) throw new HttpError("HTTP_CONFLICT");
     const headers: Record<string, string> = {};
+    const inserted: { value: string; sent: string }[] = [];
     try {
       for (const [name, value] of Object.entries(stored.request.headers)) {
-        headers[name] =
-          typeof value === "string"
-            ? value
-            : value.prefix + HeaderValue.parse(await secrets.decrypt(available.find((row) => row.name === value.secret)!.encrypted));
+        if (typeof value === "string") headers[name] = value;
+        else {
+          const secret = HeaderValue.parse(await secrets.decrypt(available.find((row) => row.name === value.secret)!.encrypted));
+          headers[name] = value.prefix + secret;
+          inserted.push({ value: secret, sent: headers[name] });
+        }
       }
     } catch {
       throw new HttpError("HTTP_SECRET");
@@ -190,9 +195,13 @@ export const httpService = {
         signal: AbortSignal.any([signal, AbortSignal.timeout(HTTP_TIMEOUT_MS)]),
       });
       await sql`UPDATE assistant.http_calls SET status='completed' WHERE id=${id}::uuid AND user_id=${userId}::uuid`;
-      return { status: response.status, headers: response.headers, body: Buffer.from(response.body).toString("base64") };
-    } catch {
+      const redacted = redactSecrets(response, inserted);
+      if (redacted.body.length > HTTP_BYTES) throw new HttpError("HTTP_LIMIT");
+      return { status: response.status, headers: redacted.headers, body: Buffer.from(redacted.body).toString("base64") };
+    } catch (error) {
       await sql`UPDATE assistant.http_calls SET status='unknown' WHERE id=${id}::uuid AND user_id=${userId}::uuid`.catch(() => {});
+      if (error instanceof HttpError || error instanceof CloudError) throw error;
+      if (signal.aborted) throw signal.reason;
       throw new HttpError("HTTP_UNKNOWN");
     }
   },

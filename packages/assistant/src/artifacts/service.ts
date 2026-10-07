@@ -205,7 +205,7 @@ async function checkAccessRevision(db: SQL, id: string, expected: string | undef
 async function managementState(db: SQL, row: ArtifactRow) {
   const [storage] = await db<
     { files: number; kv: number }[]
-  >`SELECT count(*) FILTER (WHERE area='files')::int AS files,count(*) FILTER (WHERE area='kv')::int AS kv FROM assistant.artifact_storage WHERE artifact_id=${row.id}::uuid`;
+  >`SELECT count(*) FILTER (WHERE area='files')::int AS files,count(*) FILTER (WHERE area='kv')::int AS kv FROM assistant.artifact_storage WHERE artifact_id=${row.id}::uuid AND user_id IS NULL`;
   const [database] = await db<
     { namespace: string; data_revision: string; connected: boolean }[]
   >`SELECT namespace,data_revision,connected FROM assistant.artifact_databases WHERE artifact_id=${row.id}::uuid`;
@@ -521,13 +521,14 @@ export const artifacts = {
       return { publishedRevision: row.revision, publishedVersion: version };
     });
   },
-  async storageState(id: string, identity: ArtifactIdentity) {
+  async storageState(id: string, identity: ArtifactIdentity, scope: "shared" | "user" = "shared") {
+    const storageUser = scope === "user" ? user(identity).id : null;
     return sql.begin(async (db) => {
-      const { row } = await requireArtifact(db, id, identity, "admin");
+      const { row } = await requireArtifact(db, id, identity, scope === "user" ? "read" : "admin");
       const areas = await db<
         { area: "files" | "kv"; items: number; bytes: number }[]
       >`SELECT area,count(*)::int AS items,coalesce(sum(bytes),0)::bigint AS bytes
-        FROM assistant.artifact_storage WHERE artifact_id=${row.id}::uuid GROUP BY area ORDER BY area`;
+        FROM assistant.artifact_storage WHERE artifact_id=${row.id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid GROUP BY area ORDER BY area`;
       return {
         id: row.short_id,
         title: row.title,
@@ -536,15 +537,22 @@ export const artifacts = {
       };
     });
   },
-  async clearStorage(id: string, area: "files" | "kv" | "all", identity: ArtifactIdentity, expectedStorageRevision?: number) {
+  async clearStorage(
+    id: string,
+    area: "files" | "kv" | "all",
+    identity: ArtifactIdentity,
+    expectedStorageRevision?: number,
+    scope: "shared" | "user" = "shared",
+  ) {
     z.enum(["files", "kv", "all"]).parse(area);
+    const storageUser = scope === "user" ? user(identity).id : null;
     return sql.begin(async (db) => {
-      const { row } = await requireArtifact(db, id, identity, "admin");
+      const { row } = await requireArtifact(db, id, identity, scope === "user" ? "read" : "admin");
       id = row.id;
       if (expectedStorageRevision !== undefined && Number(row.storage_revision) !== expectedStorageRevision)
         throw new ArtifactError("CONFLICT");
       await db`UPDATE assistant.artifacts SET storage_revision=storage_revision+1 WHERE id=${id}::uuid`;
-      await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND (${area} = 'all' OR area=${area})`;
+      await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND (${area} = 'all' OR area=${area})`;
       return { cleared: true };
     });
   },
@@ -552,7 +560,7 @@ export const artifacts = {
     const previous = await sql.begin(async (db) => {
       const resource = await requireArtifact(db, id, identity, management ? "admin" : "read");
       const [file] = await db<{ bytes: number }[]>`SELECT bytes FROM assistant.artifact_storage
-        WHERE artifact_id=${resource.row.id}::uuid AND area='files' AND key=${key}`;
+        WHERE artifact_id=${resource.row.id}::uuid AND area='files' AND user_id IS NULL AND key=${key}`;
       return Number(file?.bytes ?? 0);
     });
     const maximum = Math.min(
@@ -571,6 +579,7 @@ export const artifacts = {
     expected?: { storageRevision?: number; version?: number | null },
   ) {
     const request = StorageRequest.parse(input);
+    const storageUser = request.scope === "user" ? user(identity).id : null;
     if (request.operation !== "list" && !request.key) throw new ArtifactError("INVALID_INPUT");
     let bytes = 0;
     if (request.operation === "write") {
@@ -593,39 +602,39 @@ export const artifacts = {
             total: Number(await app.settings.get("assistant.storage_total_mib")) * 1024 * 1024,
             file: Number(await app.settings.get("assistant.storage_file_mib")) * 1024 * 1024,
           }
-        : { total: LIMITS.rpcBytes, file: LIMITS.rpcBytes };
+        : { total: LIMITS.rpcBytes, file: 1024 * 1024 };
     return sql.begin(async (db) => {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
-      const { row } = await requireArtifact(db, id, identity, management ? "admin" : "read");
+      const { row } = await requireArtifact(db, id, identity, management && request.scope === "shared" ? "admin" : "read");
       id = row.id;
       if (expected?.storageRevision !== undefined && Number(row.storage_revision) !== expected.storageRevision)
         throw new ArtifactError("CONFLICT");
       if (expected?.version !== undefined) {
         const [current] = await db<
           { version: number }[]
-        >`SELECT version FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
+        >`SELECT version FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key=${request.key!}`;
         if ((current ? Number(current.version) : null) !== expected.version) throw new ArtifactError("CONFLICT");
       }
       if (request.operation === "list") {
         const items = await db<
           { key: string; bytes: number; mediaType: string; version: number }[]
         >`SELECT key,bytes,version,media_type AS "mediaType"
-          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key > ${request.after} ORDER BY key LIMIT ${request.limit}`;
+          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key > ${request.after} ORDER BY key LIMIT ${request.limit}`;
         return { items: items.map((item) => ({ ...item, bytes: Number(item.bytes), version: Number(item.version) })) };
       }
       if (request.operation === "delete") {
         await db`UPDATE assistant.artifacts SET storage_revision=storage_revision+1 WHERE id=${id}::uuid`;
-        await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
+        await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key=${request.key!}`;
         return { deleted: true };
       }
       if (request.operation === "write") {
         const [usage] = await db<{ bytes: number; items: number; previous: number }[]>`SELECT
           coalesce(sum(bytes),0)::bigint AS bytes,count(*)::int AS items,
           coalesce(max(bytes) FILTER (WHERE key=${request.key!}),0)::bigint AS previous
-          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area}`;
+          FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area}`;
         const [existing] = await db`SELECT 1 FROM assistant.artifact_storage
-          WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
+          WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key=${request.key!}`;
         if (
           !checkStorageBudget({
             area: request.area,
@@ -640,15 +649,15 @@ export const artifacts = {
           throw new ArtifactError("STORAGE_FULL");
         const version = Number(row.storage_revision) + 1;
         await db`UPDATE assistant.artifacts SET storage_revision=${version} WHERE id=${id}::uuid`;
-        await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,content,data,media_type,bytes,version)
-          VALUES(${id}::uuid,${request.area},${request.key!},${request.content ?? ""},${fileData ?? null},${request.mediaType},${bytes},${version})
-          ON CONFLICT(artifact_id,area,key) DO UPDATE SET content=excluded.content,data=excluded.data,media_type=excluded.media_type,bytes=excluded.bytes,version=excluded.version,updated_at=now()`;
+        await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,user_id,content,data,media_type,bytes,version)
+          VALUES(${id}::uuid,${request.area},${request.key!},${storageUser}::uuid,${request.content ?? ""},${fileData ?? null},${request.mediaType},${bytes},${version})
+          ON CONFLICT(artifact_id,area,key,user_id) DO UPDATE SET content=excluded.content,data=excluded.data,media_type=excluded.media_type,bytes=excluded.bytes,version=excluded.version,updated_at=now()`;
         return { written: true, version };
       }
       const [item] = await db<
         { content: string; mediaType: string; data: Uint8Array | null; version: number }[]
       >`SELECT content,data,version,media_type AS "mediaType"
-        FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND area=${request.area} AND key=${request.key!}`;
+        FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key=${request.key!}`;
       return { item: item ? { ...item, version: Number(item.version) } : null };
     });
   },

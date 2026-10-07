@@ -7,6 +7,11 @@ import { createCliCodeHost } from "./code-host";
 import { jsonRequest, parseJson, printValue, queryString, readAssistantApi, requireConfirmation } from "./shared";
 import { resolveConversation } from "./turn";
 
+export function databaseRequestPath(input: unknown) {
+  const { operation } = z.object({ operation: z.string() }).parse(input);
+  return ["list", "get", "insert", "update", "delete", "query"].includes(operation) ? "/database" : "/database/maintenance";
+}
+
 const resource = arg.required({ valueLabel: "resource-id" });
 const path = (id: string, suffix = "") => `/artifacts/${encodeURIComponent(CodeResourceId.parse(id))}${suffix}`;
 const jsonInput = async (input: Parameters<typeof readCliInput>[0]) =>
@@ -262,17 +267,25 @@ export const assistantCodeCommands = [
     },
   }),
   command("code storage-clear", {
-    summary: "Clear shared files, KV or both; database and source stay unchanged",
+    summary: "Clear shared files/KV or your personal KV; database and source stay unchanged",
     args: { id: resource },
-    flags: { area: flag.string({ required: true }), yes: flag.boolean() },
+    flags: {
+      area: flag.string({ required: true }),
+      scope: flag.string({ default: "shared", description: "shared|user" }),
+      yes: flag.boolean(),
+    },
     async run({ ctx, args, flags }) {
-      requireConfirmation(flags.yes, "Clearing shared storage");
+      requireConfirmation(flags.yes, "Clearing storage");
       printValue(
         ctx,
         await readAssistantApi(
           ctx,
           path(args.id, "/storage/clear"),
-          jsonRequest("POST", { area: z.enum(["files", "kv", "all"]).parse(flags.area), confirmed: true }),
+          jsonRequest("POST", {
+            area: z.enum(["files", "kv", "all"]).parse(flags.area),
+            scope: z.enum(["shared", "user"]).parse(flags.scope),
+            confirmed: true,
+          }),
         ),
       );
     },
@@ -513,16 +526,17 @@ export const assistantCodeCommands = [
     },
   }),
   command("code database", {
-    summary: "Run SELECT or a structured schema/row operation on the connected database",
+    summary: "Run flat row/SELECT operations with Use, or dotted schema/row maintenance with Manage",
     args: { id: resource },
     flags: { input: inputFlag(), conversation: flag.string() },
     async run({ ctx, args, flags }) {
+      const input = await jsonInput(flags.input);
       printValue(
         ctx,
         await readAssistantApi(
           ctx,
-          path(args.id, "/database") + queryString({ conversationId: flags.conversation }),
-          jsonRequest("POST", await jsonInput(flags.input)),
+          path(args.id, databaseRequestPath(input)) + queryString({ conversationId: flags.conversation }),
+          jsonRequest("POST", input),
         ),
       );
     },

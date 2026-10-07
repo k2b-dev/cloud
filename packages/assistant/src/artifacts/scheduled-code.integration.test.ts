@@ -41,7 +41,13 @@ databaseSuite()("Scheduled Code Mode", () => {
       await sql`UPDATE ai.turns SET status='running' WHERE id=${delivered.turnId}::uuid`;
       const foreground = crypto.randomUUID();
       await sql`INSERT INTO ai.turns(id,short_id,conversation_id,status,run_config) VALUES(${foreground}::uuid,${createAiShortId()},${conversation.id}::uuid,'running','{"kind":"chat","input":"Foreground","toolSource":{"kind":"none"}}'::jsonb)`;
-      const context = { ...testIdentity(userId), conversationId: conversation.id, locale: "en", signal: new AbortController().signal };
+      const context = {
+        ...testIdentity(userId),
+        conversationId: conversation.id,
+        locale: "de-DE",
+        timeZone: "Europe/Berlin",
+        signal: new AbortController().signal,
+      };
       const run = async (turnId: string, code: string, callId: string = crypto.randomUUID()) => {
         const input = { turnId, callId, name: "code_run" as const, args: { code } };
         for (let i = 0; i < 240; i++) {
@@ -54,16 +60,19 @@ databaseSuite()("Scheduled Code Mode", () => {
       const [background, interactive] = await Promise.all([
         run(
           delivered.turnId,
-          'export default()=>{globalThis.marker="background";return {answer:42,process:typeof process};}',
+          'export default()=>{globalThis.marker="background";return {answer:42,process:typeof process,locale:cloud.locale,timeZone:cloud.timeZone};}',
           "same-call-id",
         ),
         run(foreground, "export default()=>({marker:globalThis.marker??null})", "same-call-id"),
       ]);
-      expect(background).toMatchObject({ status: "done", result: { status: "ready", output: '{"answer":42,"process":"undefined"}' } });
+      expect(background).toMatchObject({
+        status: "done",
+        result: { status: "ready", output: '{"answer":42,"process":"undefined","locale":"de-DE","timeZone":"Europe/Berlin"}' },
+      });
       expect(interactive).toMatchObject({ status: "done", result: { status: "ready", output: '{"marker":null}' } });
       const denied = await run(
         delivered.turnId,
-        'export default async()=>{try {await http.fetch("https://example.com/"); return "unexpected";} catch(e) {return String(e);}}',
+        'export default async()=>{try {await cloud.http.fetch("https://example.com/"); return "unexpected";} catch(e) {return String(e);}}',
       );
       expect(JSON.stringify(denied)).toContain("access denied");
       const pendingHttp = HttpPrepare.parse({

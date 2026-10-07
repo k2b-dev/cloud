@@ -7,9 +7,9 @@ export const DbName = z
   .describe("Table or column identifier; letters, digits and underscores, starting with a letter.");
 export const DbColumn = z
   .object({
-    name: DbName.refine((name) => !["id", "created_at", "updated_at"].includes(name.toLowerCase()), {
-      message: "id, created_at and updated_at are managed by Studio; omit them.",
-    }).describe("Custom column name; id, created_at and updated_at are automatic and must be omitted."),
+    name: DbName.refine((name) => !["id", "created_at", "updated_at", "created_by", "updated_by"].includes(name.toLowerCase()), {
+      message: "id, created_at, updated_at, created_by and updated_by are managed by Studio; omit them.",
+    }).describe("Custom column name; id, created_at, updated_at, created_by and updated_by are automatic and must be omitted."),
     type: z
       .enum(["text", "integer", "real", "boolean", "json", "date", "datetime"])
       .describe("Column value type; integer for exact minor currency units."),
@@ -36,17 +36,24 @@ export const DatabaseRequest = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("tables.create").describe("Database operation: tables.create."),
     name: DbName,
+    write: z
+      .enum(["everyone", "own", "managers"])
+      .default("everyone")
+      .describe("Runtime write policy: own restricts changes to the creator; managers requires Manage."),
     columns: z
       .array(DbColumn)
       .min(1)
       .max(LIMITS.rows)
-      .describe("Custom columns only. Studio automatically adds id, created_at and updated_at; never declare them."),
+      .describe(
+        "Custom columns only. Studio automatically adds id, created_at, updated_at, created_by and updated_by; never declare them.",
+      ),
   }),
   z.object({
     operation: z.literal("tables.update").describe("Database operation: tables.update."),
     table: DbName,
     changes: z
       .object({
+        write: z.enum(["everyone", "own", "managers"]).optional(),
         rename: DbName.optional(),
         add_columns: z.array(DbColumn).optional().describe("New column definitions."),
         drop_columns: z.array(DbName).optional().describe("Existing columns to remove."),

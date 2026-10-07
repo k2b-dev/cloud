@@ -9,11 +9,11 @@ export default () => ({ answer: 42 });
 ## Inspect a supplied CSV and produce a copy
 
 ```js
-export default async () => {
-  const inputs = await files.list();
+export default async (_input, {files}) => {
+  const inputs = files;
   if (!inputs.length) throw new Error("Supply a CSV file first.");
-  const rows = await sheet.fromCsv(await files.read(inputs[0].name));
-  await files.save(sheet.toCsv(rows), "export.csv");
+  const rows = await cloud.sheet.parseCsv(await inputs[0].file());
+  await cloud.download("export.csv", await cloud.sheet.toCsv(rows));
   return { rows: rows.length, columns: Object.keys(rows[0] ?? {}) };
 };
 ```
@@ -31,7 +31,7 @@ export default () => {
   const add = ui.button({label:"Add task", id:"add", variant:"primary", async onClick() {
     const title = await ui.modal.text({title:"Add task", label:"Task", required:true, maxLength:200});
     if (title === null) return;
-    rows = [...rows, {id:ids.ulid(), title}];
+    rows = [...rows, {id:crypto.randomUUID(), title}];
     tasks.setData(rows);
   }});
   const complete = ui.button({label:"Complete selected", onClick() {
@@ -63,8 +63,8 @@ month,region,revenue
 
 ```js
 import csv from "./sales.csv";
-export default async () => {
-  const rows = (await sheet.fromCsv(csv)).map(row => ({
+export default async (_input, {files}) => {
+  const rows = (await cloud.sheet.parseCsv(csv)).map(row => ({
     month: String(row.month), region: String(row.region), revenue: Number(row.revenue)
   }));
   if (rows.some(row => !/^\d{4}-\d{2}$/.test(row.month) || !Number.isFinite(row.revenue)))
@@ -108,7 +108,7 @@ The `runId` always identifies the saved revision being tested.
 ## Reusable procedures beyond a GUI
 
 - **Stateless converter:** publish a `convert` action taking explicit CSV text,
-  save a JSON output with `files.save`, then let the agent export it. No database
+  save a JSON output with `cloud.download`, then let the agent export it. No database
   is needed. A one-time conversion remains a chat-scoped script.
 - **Agent-only importer:** publish an `importItems` action with stable business
   keys. Initialize schema with Manage before sharing; Use-level callers reuse

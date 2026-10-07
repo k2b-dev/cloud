@@ -21,8 +21,7 @@ import { RuntimeView } from "./RuntimeView";
 import { runnerClient } from "./runner-client";
 import type { RunnerMetadata } from "./runner-contracts";
 import { type ArtifactSession, createArtifactSession, type RunSnapshot } from "./runtime/session";
-import { localStorageCall, RuntimeStorage, sharedStorage } from "./runtime/shared-storage";
-import { ArtifactStorage } from "./runtime/storage";
+import { RuntimeStorage, sharedStorage } from "./runtime/shared-storage";
 
 export function pickFiles(multiple: boolean, folder: boolean, accept: string, signal: AbortSignal): Promise<File[]> {
   return new Promise((resolve) => {
@@ -243,22 +242,27 @@ export function ArtifactPanel(props: {
       setActiveServerAccess(serverAccess);
       const server = serverAccess ? (await import("./runtime/browser-server")).browserServerOptions(props.artifactId) : {};
       if (token !== generation) return;
-      const storage = new ArtifactStorage(serverAccess ? props.userId : "public-visitor", props.artifactId);
       session = createArtifactSession(container, compiled, {
         mode: props.test ? "test" : "user",
         changed: setState,
         pickerInputs: props.pickerInputs,
         modal: (request, signal) => openArtifactModal(request, signal, locale()),
         ...server,
-        storage: (method, args) => {
-          if (method !== "storage") return storage.call(method, args);
-          const request = RuntimeStorage.parse(args[0]);
-          if (request.scope === "shared") {
-            if (!serverAccess) throw new Error(t().publicServerUnavailable);
-            return sharedStorage(props.artifactId, request);
-          }
-          const local = localStorageCall(request);
-          return storage.call(local.method, local.args);
+        chunk: async (name, signal) => {
+          const response = await fetch(`/api/assistant/${props.runner ? "runner" : "artifacts/runtime"}/chunks/${name}`, { signal });
+          if (!response.ok) throw new Error("Runtime library unavailable");
+          return response.text();
+        },
+        ...(!serverAccess
+          ? {
+              database: async () => {
+                throw Object.assign(new Error(t().publicServerUnavailable), { code: "denied" });
+              },
+            }
+          : {}),
+        storage: (_method, args) => {
+          if (!serverAccess) throw Object.assign(new Error(t().publicServerUnavailable), { code: "denied" });
+          return sharedStorage(props.artifactId, RuntimeStorage.parse(args[0]));
         },
         pick: pickFiles,
         save: async (file, signal) => {

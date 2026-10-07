@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
-import { aiChatTasks, aiConversations, aiProjects, aiToolAudit } from "@k2b/cloud/ai";
+import { aiChatTasks, aiConversations, aiProjects, aiToolAudit, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
@@ -113,7 +113,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(
       await artifactCodeHandlers.code_access_change(
         { id: resource.id, accessId: publicGrant!.id, permission: "admin", expectedAccessRevision: accessRevision(grants) },
-        { ...owner, locale: "en", signal: new AbortController().signal, review: true },
+        { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal, review: true },
       ),
     ).toMatchObject({ ok: false, error: { code: "PUBLIC_READ_ONLY" } });
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
@@ -196,7 +196,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await rejected.json()).toMatchObject({ code: "ACTION_INPUT_INVALID", message: expect.stringContaining("value: ") });
       expect((await call({ value: 3 })).status).toBe(200);
       await artifacts.writeFile(resource.id, "double.ts", "export default ({ value }: { value: number }) => value * 3;", owner);
-      const context = { ...owner, locale: "en", signal: new AbortController().signal };
+      const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(await artifactCodeHandlers.code_actions({ id: resource.id, draft: false }, context)).toMatchObject({
         ok: true,
         data: { data: { publishedVersion: 1 } },
@@ -221,7 +221,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   test("agent publication and draft discovery report invalid source without changing publication", async () => {
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     for (const content of [
       "{",
       JSON.stringify({ actions: [{ name: "Convert" }] }),
@@ -591,7 +591,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   test("reviewed app grants reject stale approval and serialize concurrent changes", async () => {
     const resource = await artifacts.create({ title: "Reviewed sharing", source }, owner);
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const grants = await artifacts.access(resource.id, owner);
     const input = {
       id: resource.id,
@@ -635,7 +635,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ),
     ).toMatchObject({ ok: false, error: { code: "LAST_MANAGER" } });
     expect(
-      await artifactCodeHandlers.code_access_read({ id: resource.id }, { ...stranger, locale: "en", signal: context.signal }),
+      await artifactCodeHandlers.code_access_read(
+        { id: resource.id },
+        { ...stranger, locale: "en", timeZone: "UTC", signal: context.signal },
+      ),
     ).toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
   });
 
@@ -656,7 +659,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     );
     const file = await studioFiles.read({ scope: "app", id: from.id, path: "invoice.pdf" }, reader);
     const destination = { scope: "app" as const, id: to.id, path: "invoice.pdf" };
-    const context = { ...reader, locale: "en", signal: new AbortController().signal };
+    const context = { ...reader, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const input = { source: file!.reference, destination, expectedVersion: null };
     expect(await artifactCodeHandlers.code_file_copy(input, { ...context, review: true })).toMatchObject({
       ok: true,
@@ -681,11 +684,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   test("storage reviews reject intervening writes and file versions survive delete/recreate", async () => {
     const resource = await artifacts.create({ title: "Storage review", source }, owner);
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const write = () => artifacts.storage(resource.id, { area: "kv", operation: "write", key: "state", content: "{}" }, owner);
     await write();
     const state = await artifacts.storageState(resource.id, owner);
-    const input = { id: resource.id, area: "kv" as const, expectedStorageRevision: state.storageRevision };
+    const input = { id: resource.id, scope: "shared" as const, area: "kv" as const, expectedStorageRevision: state.storageRevision };
     expect(await artifactCodeHandlers.code_storage_delete(input, { ...context, review: true })).toMatchObject({
       ok: true,
       data: { data: { message: expect.stringContaining("Storage review") } },
@@ -723,6 +726,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const context = {
       ...owner,
       locale: "en",
+      timeZone: "UTC",
       requestId: crypto.randomUUID(),
       origin: "assistant" as const,
       signal: new AbortController().signal,
@@ -1144,7 +1148,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   test("reviewed App deletion rejects storage changes and removes only the reviewed resource", async () => {
     const resource = await artifacts.create({ title: "Delete review", source }, owner);
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const before = await artifacts.managementState(resource.id, owner);
     const input = { id: resource.id, expectedManagementRevision: before.managementRevision };
     expect(await artifactCodeHandlers.code_delete(input, { ...context, review: true })).toMatchObject({
@@ -1211,7 +1215,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(
         await artifactCodeHandlers.code_sql(
           { id: applet.id, sql: "SELECT title FROM todos", params: [] },
-          { ...owner, locale: "en", signal: new AbortController().signal },
+          { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal },
         ),
       ).toMatchObject({ ok: false, error: { code: "DB_NOT_CONFIGURED" } });
       expect(
@@ -1223,7 +1227,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.connect(applet.id, owner)).toEqual({ connected: true });
       expect(await artifactDatabase.connect(applet.id, owner)).toEqual({ connected: true });
       expect(creates).toBe(1);
-      const context = { ...owner, locale: "en", signal: new AbortController().signal };
+      const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(
         await artifactCodeHandlers.code_sql({ id: applet.id, sql: "SELECT title FROM todos LIMIT 10", params: [] }, context),
       ).toMatchObject({ ok: true });
@@ -1236,7 +1240,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await artifactCodeHandlers.code_sql({ id: applet.id, sql: "SELECT title FROM todos", params: [] }, { ...context, ...stranger }),
       ).toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
       await expect(
-        artifactDatabase.call(applet.id, { operation: "query", sql: "DELETE FROM todos", params: [] }, owner),
+        artifactDatabase.call(applet.id, { operation: "query", sql: "DELETE FROM todos", params: [] }, owner, undefined, "maintenance"),
       ).rejects.toMatchObject({ code: "DB_SQL_UNSUPPORTED" });
       await artifacts.publish(applet.id, 1, owner, "Initial release");
       const fork = await artifacts.fork(applet.id, owner);
@@ -1246,6 +1250,194 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     } finally {
       settings.mockRestore();
       await upstream.stop(true);
+    }
+  });
+
+  test("personal KV isolates viewers on every device and denies anonymous access", async () => {
+    const resource = await artifacts.create({ title: "Personal data", source }, owner);
+    await artifacts.publish(resource.id, 1, owner, "Initial release");
+    await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    const anonymous = { ...owner };
+    Reflect.deleteProperty(anonymous, "actor");
+    const request = { scope: "user", area: "kv", key: "settings", operation: "write", content: '{"theme":"dark"}' };
+    await artifacts.storage(resource.id, request, owner);
+    await artifacts.storage(resource.id, { ...request, content: '{"theme":"light"}' }, reader);
+    expect(await artifacts.storage(resource.id, { ...request, operation: "read" }, owner)).toMatchObject({
+      item: { content: '{"theme":"dark"}' },
+    });
+    expect(await artifacts.storage(resource.id, { ...request, operation: "read" }, reader, true)).toMatchObject({
+      item: { content: '{"theme":"light"}' },
+    });
+    expect(await artifacts.storage(resource.id, { ...request, scope: "shared", operation: "read" }, owner)).toEqual({ item: null });
+    await artifacts.clearStorage(resource.id, "kv", reader, undefined, "user");
+    expect(await artifacts.storage(resource.id, { ...request, operation: "read" }, owner)).toMatchObject({
+      item: { content: '{"theme":"dark"}' },
+    });
+    await expect(artifacts.storage(resource.id, { ...request, operation: "read" }, anonymous)).rejects.toMatchObject({
+      code: "ACCESS_DENIED",
+    });
+    await expect(artifacts.storage(resource.id, { ...request, userId: owner.user.id }, reader)).rejects.toBeInstanceOf(Error);
+  });
+
+  test("KV scopes retain independent 16 MiB budgets and 1 MiB values", async () => {
+    const resource = await artifacts.create({ title: "KV budgets", source }, owner);
+    await artifacts.publish(resource.id, 1, owner, "Initial release");
+    await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    const content = JSON.stringify("x".repeat(1024 * 1024 - 2));
+    const write = (scope: "shared" | "user", key: string, value = content, identity = owner) =>
+      artifacts.storage(resource.id, { area: "kv", operation: "write", scope, key, content: value }, identity);
+    try {
+      for (const scope of ["shared", "user"] as const) {
+        for (let i = 0; i < 16; i++) await write(scope, String(i));
+        await expect(write(scope, "extra", "0")).rejects.toMatchObject({ code: "STORAGE_FULL" });
+        // Replacing a value does not double-count its storage.
+        await write(scope, "0");
+        await expect(write(scope, "0", JSON.stringify("x".repeat(1024 * 1024)))).rejects.toMatchObject({ code: "STORAGE_FULL" });
+      }
+      await expect(write("user", "oversized", JSON.stringify("x".repeat(1024 * 1024)), reader)).rejects.toMatchObject({
+        code: "STORAGE_FULL",
+      });
+      await write("user", "independent", content, reader);
+    } finally {
+      await artifacts.remove(resource.id, owner);
+    }
+  });
+
+  testFor("rsql")("flat db returns typed rows, manages audit fields, bounds lists and enforces every write rule", async () => {
+    const resource = await artifacts.create({ title: "Flat db", kind: "app", source }, owner);
+    await artifacts.publish(resource.id, 1, owner, "Initial release");
+    await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
+    const anonymous = { ...owner };
+    Reflect.deleteProperty(anonymous, "actor");
+    const settings = spyOn(app.settings, "get").mockImplementation(
+      async (key) =>
+        ({
+          "assistant.storage_total_mib": 250,
+          "assistant.storage_file_mib": 50,
+          "assistant.rsql_url": requireInfraUrl("rsql"),
+          "assistant.rsql_api_token": "artifact-test-only",
+        })[key],
+    );
+    try {
+      await artifactDatabase.connect(resource.id, owner);
+      const manage = (request: unknown) => artifactDatabase.call(resource.id, request, owner, undefined, "maintenance");
+      const runtime = (request: unknown, identity = owner) => artifactDatabase.call(resource.id, request, identity);
+      await manage({
+        operation: "tables.create",
+        name: "tasks",
+        columns: [
+          { name: "title", type: "text" },
+          { name: "done", type: "boolean" },
+          { name: "payload", type: "json" },
+        ],
+        write: "everyone",
+      });
+      await expect(
+        manage({ operation: "rows.insert", table: "tasks", rows: { title: "forged", created_by: reader.user.id } }),
+      ).rejects.toMatchObject({ code: "invalid" });
+      await manage({ operation: "rows.insert", table: "tasks", rows: { title: "managed" } });
+      const managed = z
+        .object({ id: z.number(), created_by: z.string(), updated_by: z.string() })
+        .parse(z.array(z.unknown()).parse(await runtime({ operation: "list", table: "tasks" }))[0]);
+      expect(managed).toMatchObject({ created_by: owner.user.id, updated_by: owner.user.id });
+      const managerGrant = await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "admin", owner);
+      await artifactDatabase.call(
+        resource.id,
+        { operation: "rows.update", table: "tasks", id: managed.id, row: { title: "managed update" } },
+        reader,
+        undefined,
+        "maintenance",
+      );
+      expect(await runtime({ operation: "get", table: "tasks", id: managed.id })).toMatchObject({
+        created_by: owner.user.id,
+        updated_by: reader.user.id,
+      });
+      await expect(
+        manage({ operation: "rows.update", table: "tasks", id: managed.id, row: { updated_by: owner.user.id } }),
+      ).rejects.toMatchObject({ code: "invalid" });
+      await artifacts.changeGrant(resource.id, managerGrant!.id, null, owner);
+      await manage({ operation: "tables.update", table: "tasks", changes: { write: "own" } });
+      expect(await runtime({ operation: "update", table: "tasks", id: managed.id, values: { title: "own update" } })).toMatchObject({
+        created_by: owner.user.id,
+        updated_by: owner.user.id,
+      });
+      await runtime({ operation: "delete", table: "tasks", id: managed.id });
+      await manage({ operation: "tables.update", table: "tasks", changes: { write: "everyone" } });
+      expect(
+        await artifactCodeHandlers.code_database(
+          { id: resource.id, operation: "tables.update", table: "tasks", changes: { drop_columns: ["created_by"] } },
+          { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal },
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: { code: "INVALID_INPUT", status: 400, message: "Cloud-managed columns cannot be dropped or renamed." },
+      });
+      const row = z
+        .object({ id: z.number(), created_by: z.string(), updated_by: z.string(), done: z.boolean(), payload: z.object({ a: z.number() }) })
+        .parse(await runtime({ operation: "insert", table: "tasks", rows: { title: "one", done: true, payload: { a: 1 } } }, reader));
+      expect(row).toMatchObject({ created_by: reader.user.id, updated_by: reader.user.id, done: true, payload: { a: 1 } });
+      expect(await runtime({ operation: "get", table: "tasks", id: row.id })).toMatchObject(row);
+      expect(await runtime({ operation: "list", table: "tasks", where: { done: true }, order: "-id" })).toMatchObject([row]);
+      expect(await runtime({ operation: "update", table: "tasks", id: row.id, values: { title: "changed" } })).toMatchObject({
+        created_by: reader.user.id,
+        updated_by: owner.user.id,
+      });
+      await expect(
+        runtime({ operation: "update", table: "tasks", id: row.id, values: { created_by: owner.user.id } }),
+      ).rejects.toMatchObject({ code: "invalid" });
+      expect(await runtime({ operation: "get", table: "tasks", id: 999999 })).toBeNull();
+      expect(await runtime({ operation: "update", table: "tasks", id: 999999, values: { title: "missing" } })).toBeNull();
+      expect(await runtime({ operation: "delete", table: "tasks", id: 999999 })).toBe(false);
+      await manage({ operation: "tables.update", table: "tasks", changes: { write: "own" } });
+      await expect(runtime({ operation: "delete", table: "tasks", id: row.id })).rejects.toMatchObject({ code: "denied" });
+      expect(await runtime({ operation: "update", table: "tasks", id: row.id, values: { done: false } }, reader)).toMatchObject({
+        done: false,
+      });
+      await manage({ operation: "tables.update", table: "tasks", changes: { write: "managers" } });
+      for (const request of [
+        { operation: "insert", table: "tasks", rows: { title: "denied" } },
+        { operation: "update", table: "tasks", id: row.id, values: { done: true } },
+        { operation: "delete", table: "tasks", id: row.id },
+      ])
+        await expect(runtime(request, reader)).rejects.toMatchObject({ code: "denied" });
+      expect(await runtime({ operation: "delete", table: "tasks", id: row.id })).toBe(true);
+      await runtime({
+        operation: "insert",
+        table: "tasks",
+        rows: Array.from({ length: 1000 }, (_, i) => ({ title: String(i), done: false, payload: { a: i } })),
+      });
+      await runtime({ operation: "insert", table: "tasks", rows: { title: "extra" } });
+      await expect(runtime({ operation: "list", table: "tasks" })).rejects.toMatchObject({ code: "limit" });
+      expect(z.array(z.unknown()).parse(await runtime({ operation: "list", table: "tasks", limit: 1000 }))).toHaveLength(1000);
+      expect(z.array(z.unknown()).parse(await runtime({ operation: "list", table: "tasks", limit: 1000, offset: 1000 }))).toHaveLength(1);
+      expect(await runtime({ operation: "query", sql: "SELECT count(*) AS total FROM tasks WHERE done = ?", params: [false] })).toEqual([
+        { total: 1000 },
+      ]);
+      await expect(runtime({ operation: "query", sql: "DELETE FROM tasks", params: [] })).rejects.toBeInstanceOf(Error);
+      await expect(runtime({ operation: "insert", table: "tasks", rows: { title: "anonymous" } }, anonymous)).rejects.toMatchObject({
+        code: "ACCESS_DENIED",
+      });
+      // A pre-slice table gains nullable audit columns on first access, without backfill.
+      await manage({ operation: "tables.create", name: "legacy", columns: [{ name: "value", type: "text" }] });
+      const [mapping] = await sql<
+        { namespace: string }[]
+      >`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`;
+      const { createRsqlClient } = await import("@k2b/rsql");
+      const client = createRsqlClient({ url: requireInfraUrl("rsql"), token: "artifact-test-only" }).ns(mapping!.namespace);
+      expect((await client.tables.update("legacy", { drop_columns: ["created_by", "updated_by"] })).ok).toBe(true);
+      expect((await client.table("legacy").rows.insert({ value: "existing" })).ok).toBe(true);
+      await manage({ operation: "rows.insert", table: "legacy", rows: { value: "maintenance" } });
+      expect(await runtime({ operation: "list", table: "legacy", where: { value: "maintenance" } })).toMatchObject([
+        { created_by: owner.user.id, updated_by: owner.user.id },
+      ]);
+      expect(await runtime({ operation: "list", table: "legacy", where: { value: "existing" } })).toMatchObject([
+        { created_by: null, updated_by: null },
+      ]);
+      expect(await runtime({ operation: "list", table: "legacy", where: { value: "existing" } })).toMatchObject([
+        { created_by: null, updated_by: null },
+      ]);
+    } finally {
+      settings.mockRestore();
     }
   });
 
@@ -1262,7 +1454,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     );
     try {
       await artifactDatabase.connect(resource.id, owner);
-      const call = (input: unknown) => artifactDatabase.call(resource.id, input, owner);
+      const call = (input: unknown) => artifactDatabase.call(resource.id, input, owner, undefined, "maintenance");
       await call({
         operation: "tables.create",
         name: "ledger_rows",
@@ -1274,9 +1466,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const db = {
         query: async (sql: string, params: string[]) =>
           z
-            .object({ data: z.array(z.object({ import_key: z.string(), payload: z.string() })) })
-            .parse(await call({ operation: "query", sql, params })),
-        table: () => ({ insert: (rows: unknown) => call({ operation: "rows.insert", table: "ledger_rows", rows }) }),
+            .array(z.object({ import_key: z.string(), payload: z.string() }))
+            .parse(await artifactDatabase.call(resource.id, { operation: "query", sql, params }, owner)),
+        insert: (table: string, rows: unknown) => artifactDatabase.call(resource.id, { operation: "insert", table, rows }, owner),
       };
       const rows = Array.from({ length: 2500 }, (_, i) => ({
         import_key: `folder/book.xlsx::Ledger::${i + 2}`,
@@ -1294,7 +1486,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             sql: "SELECT count(*) AS total FROM ledger_rows a JOIN ledger_rows b ON a.import_key = b.import_key",
             params: [],
           },
-          { ...owner, locale: "en", signal: new AbortController().signal },
+          { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal },
         ),
       ).toMatchObject({ ok: true, data: { data: { data: [{ total: 2500 }] } } });
     } finally {
@@ -1319,15 +1511,29 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         resource.id,
         { operation: "tables.create", name: "records", columns: [{ name: "key", type: "text", unique: true }] },
         owner,
+        undefined,
+        "maintenance",
       );
-      await artifactDatabase.call(resource.id, { operation: "rows.insert", table: "records", rows: { key: "first" } }, owner);
+      await artifactDatabase.call(
+        resource.id,
+        { operation: "rows.insert", table: "records", rows: { key: "first" } },
+        owner,
+        undefined,
+        "maintenance",
+      );
       // Leave exactly one ordinary pool connection for the mutation transaction.
       // Its durable intent must not wait for a second connection from that pool.
       const reserved = await Promise.all(Array.from({ length: (sql.options.max ?? 10) - 1 }, () => sql.reserve()));
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          artifactDatabase.call(resource.id, { operation: "rows.insert", table: "records", rows: { key: "pool-check" } }, owner),
+          artifactDatabase.call(
+            resource.id,
+            { operation: "rows.insert", table: "records", rows: { key: "pool-check" } },
+            owner,
+            undefined,
+            "maintenance",
+          ),
           new Promise((_, reject) => {
             timeout = setTimeout(() => reject(new Error("Mutation exhausted the ordinary SQL pool")), 2000);
           }),
@@ -1338,7 +1544,13 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       }
       const before = await artifactDatabase.status(resource.id, owner);
       await expect(
-        artifactDatabase.call(resource.id, { operation: "rows.insert", table: "records", rows: { key: "first" } }, owner),
+        artifactDatabase.call(
+          resource.id,
+          { operation: "rows.insert", table: "records", rows: { key: "first" } },
+          owner,
+          undefined,
+          "maintenance",
+        ),
       ).rejects.toBeInstanceOf(Error);
       const afterFailure = await artifactDatabase.status(resource.id, owner);
       expect(afterFailure.dataRevision).not.toBe(before.dataRevision);
@@ -1349,8 +1561,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         completed: true,
         clearedTables: ["records"],
       });
-      expect(await artifactDatabase.call(resource.id, { operation: "rows.list", table: "records" }, owner)).toMatchObject({ data: [] });
-      expect(await artifactDatabase.call(resource.id, { operation: "schema.get", table: "records" }, owner)).toMatchObject({
+      expect(
+        await artifactDatabase.call(resource.id, { operation: "rows.list", table: "records" }, owner, undefined, "maintenance"),
+      ).toMatchObject({ data: [] });
+      expect(
+        await artifactDatabase.call(resource.id, { operation: "schema.get", table: "records" }, owner, undefined, "maintenance"),
+      ).toMatchObject({
         name: "records",
       });
       expect((await artifacts.get(resource.id, owner)).source).toEqual(source);
@@ -1393,22 +1609,34 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           resource.id,
           { operation: "tables.create", name: table, columns: [{ name: "value", type: "text" }] },
           owner,
+          undefined,
+          "maintenance",
         );
-        await artifactDatabase.call(resource.id, { operation: "rows.insert", table, rows: { value: "keep" } }, owner);
+        await artifactDatabase.call(
+          resource.id,
+          { operation: "rows.insert", table, rows: { value: "keep" } },
+          owner,
+          undefined,
+          "maintenance",
+        );
       }
       const before = await artifactDatabase.status(resource.id, owner);
       const cleared = await artifactDatabase.clear(resource.id, before.generation!, before.dataRevision!, owner, controller.signal);
       expect(cleared).toMatchObject({ completed: false, clearedTables: ["first"], failedTable: "second", error: "DB_CANCELLED" });
       const after = await artifactDatabase.status(resource.id, owner);
       expect(after.dataRevision).not.toBe(before.dataRevision);
-      expect(await artifactDatabase.call(resource.id, { operation: "rows.list", table: "first" }, owner)).toMatchObject({ data: [] });
-      expect(await artifactDatabase.call(resource.id, { operation: "rows.list", table: "second" }, owner)).toMatchObject({
+      expect(
+        await artifactDatabase.call(resource.id, { operation: "rows.list", table: "first" }, owner, undefined, "maintenance"),
+      ).toMatchObject({ data: [] });
+      expect(
+        await artifactDatabase.call(resource.id, { operation: "rows.list", table: "second" }, owner, undefined, "maintenance"),
+      ).toMatchObject({
         data: [{ value: "keep" }],
       });
       await expect(artifactDatabase.clear(resource.id, before.generation!, before.dataRevision!, owner)).rejects.toMatchObject({
         code: "CONFLICT",
       });
-      const context = { ...owner, locale: "en", signal: new AbortController().signal };
+      const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(
         await artifactCodeHandlers.code_database_reset(
           { id: resource.id, expectedGeneration: before.generation!, expectedDataRevision: before.dataRevision! },
@@ -1497,6 +1725,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         resource.id,
         { operation: "tables.create", name: "ledger", columns: [{ name: "amount", type: "integer" }] },
         owner,
+        undefined,
+        "maintenance",
       );
       await artifactDatabase.call(
         resource.id,
@@ -1530,7 +1760,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         updatedAt: new Date().toISOString(),
       });
       try {
-        const context = { ...owner, conversationId: conversation.id, locale: "en", signal: new AbortController().signal };
+        const context = { ...owner, conversationId: conversation.id, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
         expect(await artifactCodeHandlers.code_database_export({ id: resource.id, path: "/database.sqlite" }, context)).toMatchObject({
           ok: true,
         });
@@ -1568,7 +1798,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       >`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`;
       expect(next!.namespace).not.toBe(old!.namespace);
       await expect(artifactDatabase.reset(resource.id, oldGeneration, owner)).rejects.toMatchObject({ code: "CONFLICT" });
-      expect(await artifactDatabase.call(resource.id, { operation: "tables.list" }, owner)).toEqual([]);
+      expect(await artifactDatabase.call(resource.id, { operation: "tables.list" }, owner, undefined, "maintenance")).toEqual([]);
       expect((await artifacts.get(resource.id, owner)).source).toEqual(source);
       // Draining old generations must not remove the new connection.
       for (let i = 0; i < 10; i++) await artifactDatabase.cleanup();
@@ -1744,7 +1974,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect((await artifacts.list(stranger, 1, "Shared calculation")).items).toMatchObject([{ id: script.id, permission: "read" }]);
       expect(await artifacts.runner(script.id, stranger)).toMatchObject({ serverAccess: true, canManage: false });
       await expect(artifacts.runner(script.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
-      const toolContext = { ...stranger, locale: "en", signal: new AbortController().signal };
+      const toolContext = { ...stranger, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(await artifactCodeHandlers.code_read({ id: script.id, path: "main.js", offset: 0 }, toolContext)).toMatchObject({
         ok: true,
         data: { data: { content: source.files[0]!.content } },
@@ -1897,7 +2127,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         waitingSince: null,
       });
       try {
-        const result = await evaluateCodeMode({ ...owner, conversationId, locale: "de", signal: AbortSignal.timeout(1_200_000) }, turnId);
+        const result = await evaluateCodeMode(
+          { ...owner, conversationId, locale: "de", timeZone: "Europe/Berlin", signal: AbortSignal.timeout(1_200_000) },
+          turnId,
+        );
         expect(result.apps).toHaveLength(1);
         const app = result.apps[0]!;
         const runs = result.history
@@ -2031,7 +2264,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     );
     spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" } });
     const abort = new AbortController();
-    const context = { ...owner, conversationId, locale: "en", signal: abort.signal };
+    const context = { ...owner, conversationId, locale: "en", timeZone: "UTC", signal: abort.signal };
     const call = {
       turnId,
       callId: "server-run",
@@ -2120,11 +2353,15 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           );
           const example = await artifacts.create({ title: folder, source: { entry: "main.js", files } }, owner);
           try {
-            const setup = files.find((file) => file.path === "setup.js");
-            if (setup)
-              expect(
-                await wait({ ...call, callId: `${folder}-setup`, args: { code: setup.content, resourceId: example.id } }),
-              ).toMatchObject({ status: "done", result: { status: "ready" } });
+            const setupFile = Bun.file(new URL("setup.json", directory));
+            if (await setupFile.exists()) {
+              const definition = z.record(z.string(), z.unknown()).parse(await setupFile.json());
+              const request = CODE_SOURCE_TOOLS.code_database.input.parse({ ...definition, id: example.id });
+              // This setup is a new tool request, separate from the detached caller above.
+              expect(await artifactCodeHandlers.code_database(request, { ...context, signal: new AbortController().signal })).toMatchObject(
+                { ok: true },
+              );
+            }
             if (folder === "invoice-matcher")
               await artifacts.storage(
                 example.id,
@@ -2168,7 +2405,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         ...call,
         callId: "produce-data",
         args: {
-          code: `export default async()=>{await files.save(JSON.stringify(${JSON.stringify(generated)}),"data.json");return "saved";}`,
+          code: `export default async()=>{await cloud.download("data.json",JSON.stringify(${JSON.stringify(generated)}));return "saved";}`,
         },
       };
       expect(await wait(produce)).toMatchObject({ status: "done", result: { status: "ready" } });
@@ -2269,7 +2506,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         const network = {
           ...call,
           callId: "approved-http",
-          args: { code: 'export default async()=>await (await http.fetch("https://example.com/data")).json()' },
+          args: { code: 'export default async()=>await (await cloud.http.fetch("https://example.com/data")).json()' },
         };
         let approval: { id: string } | undefined;
         for (let i = 0; i < 200 && !approval; i++) {

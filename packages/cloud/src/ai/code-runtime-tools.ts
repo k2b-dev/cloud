@@ -6,6 +6,7 @@ import type { RequestActor } from "../server";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
+import { TIMEZONE_COOKIE } from "../shared/time";
 import { CodeToolFailure } from "./browser-code-contracts";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
@@ -26,6 +27,7 @@ type Context = ToolContext & {
   conversationId?: string;
   turnId?: string;
   locale?: string;
+  timeZone?: string;
   reportProgress?: (message: string) => Promise<void>;
 };
 
@@ -98,6 +100,7 @@ export const runManagedCodeTool =
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
       headers.set(CODE_CAPABILITY_TOKEN_HEADER, callback.token);
       if (context.locale) headers.set(LOCALE_HEADER, context.locale);
+      if (context.timeZone) headers.set("cookie", `${TIMEZONE_COOKIE}=${encodeURIComponent(context.timeZone)}`);
       const response = await fetch(new URL(`/_internal/assistant/tools/${name}`, app.baseUrl), {
         method: "POST",
         headers,

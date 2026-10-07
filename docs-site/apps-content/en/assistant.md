@@ -144,8 +144,9 @@ Publishing selects a runnable version; it does not grant public access.
 **Open fullscreen** stays visible for drafts and offers publishing first.
 
 The runner's action menu keeps **Create your own copy**, **Secrets** and
-**Local data** available to authorized users. Public-only visitors can manage
-their browser-local data, without access to personal secrets or server features.
+**Personal data** available to authorized users. Personal JSON lives on the
+server and follows the signed-in user across devices. Anonymous visitors have
+no personal storage or server features.
 
 **Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
 latest publication, even for managers. It loads no Assistant sidebar, chat list,
@@ -155,7 +156,7 @@ app access. Anonymous visitors see the app without the Cloud navigation shell.
 To share publicly, publish the app and add **Public** in **Manage access**.
 Only **Use** is available; public **Manage** is rejected through every interface.
 The dialog explains the limits: public visitors can compute locally, select
-files, download results and use browser-local storage. Public access never grants
+files through the transitional UI picker and download results. Public access never grants
 the app database, server files/KV, personal secrets, server HTTP/PDF or protected
 Cloud actions. Signed-in visitors still need a separate explicit app grant for
 server features. Existing apps that require these features may not work publicly.
@@ -461,27 +462,24 @@ escape spreadsheet formulas. SQL drafts stay in this browser profile per user
 and resource. Opening the console does not create a database: use **Connect
 database** explicitly. An unconfigured instance explains why it is unavailable.
 
-**Local data** is available to everyone who can use the app. It lists only the
-current user's files and KV in this browser profile. Deleting stops this page's
-app runs and waits for accepted writes. Other tabs can create data again.
-Resource managers can inspect and clear **Shared data**, and use **Manage
-database** to download a SQLite backup or reset the database. Reset preserves
-source, publications and files/KV. The next connection creates an empty database.
-All source and publication versions use the same current data; restoring code
-does not restore a database backup.
+**Personal data** shows only the signed-in viewer’s JSON keys, on every device.
+No app can select another viewer’s personal data. Anonymous public-share visitors
+cannot access it. Resource managers can inspect and clear **Shared data**, and
+use **Manage database** to download a SQLite backup or reset the database.
+Reset preserves source, publications and file/KV stores. Source restore does not
+restore data. The SQL Schema view also shows each table’s write rule.
 
-Remote administration is also available through `assistant code
-database-status`, `database-export ID --out backup.sqlite`, `database-reset ID
---yes`, `storage-manage ID --input-file request.json`, and `storage-clear ID
---area files|kv|all --yes`. These operations require the same resource Manage
-grant as the UI. CLI processes cannot purge another browser profile's local
-storage. Global rsql credentials remain restricted to AI administration.
+Remote administration uses the same permission-aware services through
+`assistant code database-status`, `database-export`, `database-reset`,
+`storage-manage`, and `storage-clear`. Shared storage requires Manage;
+`scope:"user"` limits KV inspection and changes to the current viewer.
+Global rsql credentials remain restricted to AI administration.
 
 ### Analyze once or reuse an App
 
 Code Mode uses direct Assistant tools named `code_*`, loaded individually when
 needed. They are not Cloud capabilities and cannot be called through
-`capabilities.run`. Source operations and SQL execute on the server; code runs
+`cloud.capabilities.run`. Source operations and SQL execute on the server; code runs
 and UI interaction use the isolated server or CLI host. The GUI, tools, and
 CLI use the same permission-aware resource services.
 
@@ -522,45 +520,42 @@ and `assistant code action --chat CHAT --input-file call.json`.
 
 ### Store data and combine Cloud actions
 
-Saved resources can keep files and key/value data locally in the current browser
-or share them through server storage. Data belongs to the resource across
-publications. A copy starts empty. Agent test runs use temporary local storage,
-but shared writes and Cloud actions affect real resources.
+Code Mode exposes one frozen global `cloud` in scripts, app actions, Studio,
+CLI, and scheduled hosts. The code-mode skill includes the self-contained
+`cloud.md` contract reference. The transitional `ui` tree remains available until HTML apps replace it.
 
-Shared files default to **250 MiB per resource** and **50 MiB per file**, with
-no file count limit. Shared KV is separate: **16 MiB and 1,000 entries**.
-Administrators can change `assistant.storage_file_mib` and
-`assistant.storage_total_mib` through Cloud settings. CLI equivalents are
-`cld assistant studio-admin storage-settings` and
-`cld assistant studio-admin storage-configure --input-file limits.json`, where
-`limits.json` contains `{"fileMiB":50,"totalMiB":250}`. Values are positive
-integers; file transfers support up to 64 MiB and total storage up to 1 TiB
-per resource. Changes apply to subsequent writes. Lowering a limit preserves
-existing data and allows reading, deleting, or replacing it without increasing
-its size. These settings do not change chat or document-processing limits.
+Choose storage by who owns the data: `cloud.kv.user` for personal preferences
+and todos across devices, `cloud.kv` for small shared app settings, `cloud.db`
+for records several people add or edit, and `cloud.files` for shared files.
+Each KV scope allows 1,000 keys, 1 MiB per value, and 16 MiB in total. Keys are
+sorted and paged with `after` and `limit` (default 100, maximum 1,000). Personal data is isolated
+by app and signed-in user; anonymous visitors receive `denied`.
 
-For example, an app can retain invoice PDFs while keeping import status in KV.
-File listings remain paginated regardless of how many documents are stored.
-Use `cld assistant code file-upload ID --file invoice.pdf --key invoices/invoice.pdf`
-to store the original and `file-download ID --key invoices/invoice.pdf --out invoice.pdf`
-to retrieve it. Uploading an existing key replaces that file; it does not create
-a version. The JSON `code storage` interface lists/deletes files and manages KV;
-file contents now use binary upload/download rather than Base64 JSON.
+Runtime file writes accept Blob or string, at most 16 MiB. File reads return
+File or null. Operator settings still bound shared file storage and binary CLI
+transfers; lowering a quota preserves existing data. Browser-local storage,
+OPFS, personal file storage, and runtime file-picker methods are removed.
+The transitional UI filePicker node remains until HTML apps replace the UI tree.
 
+Schema belongs to the Manage-only `code_database` tools. Table creation connects
+the database when needed; the operator must configure rsql. Runtime code uses
+the flat `cloud.db.list/get/insert/update/delete/query` API. Lists return arrays,
+plain filters mean equality, and null means IS NULL. More than 1,000 matches
+without a limit raise `limit` and explain `limit`/`offset` paging. Missing rows
+return null from get/update and false from delete. Boolean and JSON columns
+retain their types; inserts return rows with generated ids.
 
-A resource can explicitly connect a database when it needs structured records.
-Creating an app does not create a database. Database support requires an
-administrator-configured rsql server and secret API token. Without it, connecting
-fails with an explanation; apps that do not use a database continue to work.
-SQL queries support SELECT; schema and record mutations use structured calls.
-The agent can inspect an existing database directly with `code_sql`
-without writing a script. The CLI equivalent is `assistant code sql`; neither
-creates a database nor bypasses resource permissions.
+Cloud manages `id`, timestamps, and nullable `created_by`/`updated_by` user ids.
+The server takes audit ids from trusted identity and rejects client values.
+Each table has a durable `write` rule: everyone (default), own (only creators
+update/delete), or managers (Manage required for all writes). Anonymous viewers
+cannot write. Existing tables gain nullable audit columns on first runtime
+access without backfill. SELECT queries use positional `?` parameters;
+`code_sql` and the SQL console allow direct authorized inspection.
 
-Code can combine discovered Cloud capabilities through `capabilities.run`.
-Normal access checks and action approvals still apply. Required confirmations
-appear in the chat or app, with remembered approval when the action supports it.
-Code cannot approve its own actions.
+`cloud.capabilities.run` and `cloud.capabilities.streams` call discovered Cloud
+operations with current permissions and approvals. Code cannot approve itself.
+All server writes remain real in tests and survive source restoration.
 
 ### Run code from the CLI
 
@@ -588,48 +583,41 @@ manage access, delete resources, and configure or test the rsql connection.
 The stored API token is never returned. Removing or changing the server is
 blocked while databases or queued database cleanup still depend on it.
 
-Deleting a resource removes its source, publications, grants, and shared data;
-remote database deletion is queued for cleanup. The inventory cannot count or
-remove private browser-local files. The same management operations are available
+Deleting a resource removes its source, publications, grants, shared data and
+personal JSON; remote database deletion is queued for cleanup. The same management operations are available
 under `cld assistant studio-admin`.
 
-### Process large local document folders
+### Process input documents
 
-Code Mode includes bundled PDF.js text extraction and read-only XLSX/ODS parsing.
-`sheet.openOds(file)` returns `sheetNames`, `readSheet(name)`, and `close()`, like
-`sheet.openExcel(file)`. It reads typed cell values and cached formula results,
-including grouped and repeated rows. ODS numbers use JavaScript numeric precision;
-the Excel-only `numbers: "string"` option is not available for ODS.
-Apps can select thousands of files, including subfolders, without uploading
-original documents. File references cross the worker bridge; bytes are read on
-demand. Relative paths distinguish equal basenames. Scripts may instead select
-existing chat attachments; app tests can use those only as explicit picker
-fixtures, never through implicit access to chat files.
+A script default-exports `(input, {files,signal,progress}) => Json | void`.
+`files` contains the selected chat inputs as `{path,size,type,file()}`; content
+loads on demand. App actions receive an empty array. Stop aborts the signal.
+Progress is available only while the entry function runs. Reports renew the 15-second responsive-work watchdog; time-limit
+errors name the limit and suggest splitting work, reporting progress, or using
+a scheduled action. Completed writes are not rolled back.
 
-Background work reports progress and supports cooperative cancellation. A stuck
-worker is terminated after 15 seconds without a responsive heartbeat; this is
-not a total processing timeout. Closing, reloading, or suspending the execution
-host can interrupt work. Completed external writes are not undone by stopping.
-Agents and CLI steps can wait with `code_inspect` and `waitMs` (up to 30 seconds).
-The returned work status distinguishes running, completed, cancelled, and failed.
+`cloud.sheet` detects CSV delimiters and UTF-8/Windows-1252 encoding. Numeric
+columns become numbers in their source convention, including currency values;
+leading-zero codes and dates stay text. Ambiguous numeric columns use unambiguous number columns in the same file, then the export convention: dot decimals with a comma delimiter, otherwise the locale’s decimal mark. Columns containing unsafe integers stay text. Duplicate or blank header collisions get unique suffixes; malformed CSV and rows beyond the header fail with `invalid` and a line number.
+`numbers:false` disables conversion.
+`toCsv` is asynchronous and emits semicolon, BOM, CRLF, formula-escaped cells,
+and the same decimal convention. Await it before `cloud.download(name,data)`; passing
+a Promise raises `invalid` with guidance. XLSX/ODS are detected from bytes;
+`rows()` defaults to the first sheet and includes headers. `toOds` exports ODS.
 
-Parsing budgets apply per document: 64 MiB input and, for XLSX/ODS, 128 MiB expanded
-ZIP entries. Process and close documents sequentially to bound memory. There is
-no OCR, spreadsheet formula execution, XLS/XLSB support, or XLSX/ODS writer. Use CSV for
-exports. PDF text includes page and position information; format-specific
-invoice parsers still need representative document validation.
+CSV, spreadsheet readers, finance formats, and the PDF.js reader load on first
+use from separate content-hashed bundles through the host bridge. The worker
+never fetches them from the network. PDF reading uses `cloud.pdf.read`, then
+`page(number)` and `close()`. Document budgets remain 64 MiB input and 128 MiB
+expanded workbook XML. There is no OCR, formula execution, or XLS/XLSB reader.
 
-Chat test inputs and captured outputs use the existing 50 MiB-per-file and
-250 MiB-total chat budgets, with at most 64 selected/captured files. Script
-inputs are fetched on demand. Input reads pause the 15-second startup watchdog
-and the agent host readiness guard. A tool call still has a 45-second outer
-budget including compilation and transfers; capability approval waits pause
-that budget. Native file-picker waits do not consume the startup watchdog.
-Large exports use Blob rather than JSON strings.
-User downloads are not accumulated as captured outputs. Browser-local storage,
-shared storage, chat uploads, and source history are separate budgets. Shared
-storage counts decoded data and allows transport encoding overhead. Local/shared
-key listings accept `after` and `limit` for pagination.
+Selected inputs and captured downloads retain the 50 MiB-per-file,
+250 MiB-total, 64-file run budget. Input reads and approval waits pause startup
+watchdogs. A tool call still has a 45-second outer budget including compilation
+and transfers; capability approval waits pause that budget. Each failed cloud
+call uses `CloudError` with a stable code: denied, not_found, invalid, conflict,
+limit, unavailable, or cancelled. Unhandled failures remain visible in
+diagnostics.
 
 Source history reclaims oldest unpublished revisions when its 250 MiB budget
 fills. Current source and published versions remain protected. If these alone
@@ -637,11 +625,6 @@ fill the budget, saves fail atomically; a separate copy starts fresh but does no
 copy data or grants. Active runtime calls renew their execution ownership, so a
 long human approval does not make a second tab report a fixed-time interruption.
 An expired host is never replaced by automatic replay of an uncertain action.
-
-Database and other coded host errors preserve `error.code` in scripts as well
-as a readable message. For example, handle `DB_NOT_CONFIGURED` by explaining
-that the instance administrator must configure rsql; do not parse translated
-error text or silently select another database.
 
 Finished one-off runs without UI, exports, pending requests, or running jobs are
 reclaimed automatically when the host reaches its 32-run limit. Saved resources
@@ -660,8 +643,7 @@ execution; existing access and action-review checks still apply.
 
 Resource managers can permanently delete an App from its Studio menu
 or with `cld assistant code delete ID --yes`. Publications, grants and shared
-storage are removed; database cleanup is queued and retried. Browser-local data
-cannot be erased remotely. Platform administrators retain the administration
+and personal JSON storage are removed; database cleanup is queued and retried. Platform administrators retain the administration
 surface for operator cleanup.
 
 Chat starters prepare editable prompts for file analysis, app creation,
@@ -680,19 +662,18 @@ stored path. Pending code approvals remain visible when switching chats.
 ### Finance exports and app maintenance scripts
 
 Code Mode bundles pure-JavaScript DATEV CSV and SEPA SCT XML generation through
-`datev.validate/serialize` and `sepa.validate/serialize`. Export bytes through the
+`cloud.finance.datev.validate/serialize` and `cloud.finance.sepa.validate/serialize`. Export bytes through the
 normal file workflow. No WASM/XSD validator is included. Input validation does
 not guarantee bank acceptance; creating an export never submits a payment.
 
 Use `code_run({code, resourceId})` to inspect, import, migrate or export an existing
 app's database and shared files/KV without editing its source. This requires
-Manage access, checked on every remote data operation. Local storage stays
-temporary; chat files still require explicit inputPaths. Source restoration does
+Manage access, checked on every remote data operation. Personal KV is server-side; chat files require explicit inputPaths. Source restoration does
 not undo database or storage changes. The CLI accepts the same run input.
 
 ### Call external APIs with personal secrets
 
-Code Mode supports server-side `http.fetch()` with `secret()` references in
+Code Mode supports server-side `cloud.http.fetch()` with `cloud.http.secret()` references in
 headers. The server injects the saved value after checking the current user's
 access and the secret's exact HTTPS origin, header and prefix. The worker and
 chat receive references, not saved values. Public requests work without a
@@ -711,8 +692,8 @@ secrets. There is no fallback across contexts. HTTP is unavailable in chats
 with a restricted tool scope.
 
 ```js
-const response = await http.fetch("https://api.example.com/customers", {
-  headers: { Authorization: secret("crm", { prefix: "Bearer " }) },
+const response = await cloud.http.fetch("https://api.example.com/customers", {
+  headers: { Authorization: cloud.http.secret("crm", { prefix: "Bearer " }) },
 });
 if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
 const customers = await response.json();
@@ -726,9 +707,7 @@ body. Network failures can leave the external outcome unknown: inspect the
 service before deliberately retrying. Stopping a run cannot undo completed
 external actions.
 
-The external API receives the credential and may return sensitive information,
-including reflected headers. Configure only trusted API origins. Source and
-HTTP results may be visible to the agent or other app users if code shares them.
+Before returning an HTTP response, Cloud redacts every inserted secret value, its full prefixed header value, base64/base64url, JSON-escaped (including escaped slashes and ASCII Unicode escapes), and URL-encoded forms from headers and body bytes. When at least one occurrence is replaced, the response carries `x-cloud-redacted: secret` and its content-length header is removed. Other returned content remains untrusted.
 
 The CLI uses the same execution path and prompts for HTTP confirmation in
 interactive mode. Unattended runs can authorize an exact origin with
@@ -760,9 +739,9 @@ executable examples, formatting rules, limits, and structured interaction events
 
 A PDF from a chat file needs no code: Assistant converts Markdown with
 `markdown_to_pdf`, and HTML with its CSS, header, footer, images, and fonts
-with `html_to_pdf`. Studio Apps and one-off scripts can generate PDFs with `pdf.render({ html, ... })`,
-embed files with `pdf.attach({ document, attachments })`, and combine invoice
-HTML and XML with `pdf.facturX({ html, xml, profile, ... })`. Each returns a Blob
+with `html_to_pdf`. Studio Apps and one-off scripts can generate PDFs with `cloud.pdf.render({ html, ... })`,
+embed files with `cloud.pdf.attach({ document, attachments })`, and combine invoice
+HTML and XML with `cloud.pdf.render({ html, facturX: { xml, profile }, ... })`. Each returns a Blob
 for download or explicit storage. HTML contains its own CSS; local images,
 fonts and stylesheets can be passed as named assets. External resources and
 scripts are blocked. Paper format, orientation, millimeter margins, optional
@@ -774,8 +753,8 @@ server. Requests can be cancelled, are bounded by configured Gotenberg limits
 and a 64 MiB transfer ceiling, and store no result automatically. A PDF/A-3b
 with XML and Factur-X metadata is not a certificate of invoice validity.
 
-Studio also includes stdlib `camt` and `einvoice` alongside `money`, `datev`
-and `sepa`. Read camt.052.001.08 reports, calculate exact invoice totals,
+Studio supplies `cloud.money` and lazy `cloud.finance.camt`, `einvoice`, `datev`
+and `sepa` methods; finance calls are awaited. Read camt.052.001.08 reports, calculate exact invoice totals,
 generate supported ZUGFeRD CII EN16931 XML, including zero-rated, exempt,
 reverse-charge, intra-EU, export and out-of-scope VAT, or read invoice XML
 directly or from PDF attachments. Generation covers invoices, credit notes,
@@ -871,8 +850,7 @@ suite runs their published handlers in the isolated Studio runtime.
 | Export database, clear rows, discard schema and data | `code_database_export`, reviewed `code_database_clear` and `code_database_reset` |
 | Delete App and queue external database cleanup | Reviewed `code_delete` |
 
-Browser-local storage belongs to that browser and cannot be erased by a server
-agent. Personal secret values stay in the trusted `code_secret` dialog; listing
+Personal JSON is stored on the server, visible only to its owner, and deleted with the App. Personal secret values stay in the trusted `code_secret` dialog; listing
 or deleting another person's credentials is not an App management operation.
 Project associations are managed from the **Studio Apps** section of a Project or the CLI
 (`assistant code projects` and `assistant code project-link`). Linking or unlinking requires
@@ -959,7 +937,7 @@ have a 250 MiB per-conversation storage budget, including retained inputs.
 ### AI inside Code Mode
 
 Scripts, interactive chat presentations and authenticated Studio apps can use
-`ai.generateText`, `ai.classify`, `ai.classifyMany` and `ai.extractData`.
+`cloud.ai.text`, `cloud.ai.classify` (including multiple choices), and `cloud.ai.extract`.
 These server-backed calculations return ordinary values and do not load chat
 history, files, memories or tools automatically. Supply the intended input.
 The executing user's model access and personal chat allowance apply, including

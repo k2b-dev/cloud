@@ -23,3 +23,19 @@ test("capabilities.run preserves the public domain-data and reference envelope",
     prepare.mockRestore();
   }
 });
+
+for (const [response, code, message] of [
+  [{ status: "denied" }, "denied", "Capability Action was rejected by the user."],
+  [{ status: "completed", result: { ok: false, error: { code: "NOT_FOUND", message: "Missing record" } } }, "not_found", "Missing record"],
+  [{ status: "completed", result: null }, "unavailable", "Invalid capability result"],
+] as const)
+  test(`capability failures preserve ${code}`, async () => {
+    const prepare = spyOn(artifactClient, "capabilityPrepare").mockResolvedValue(response);
+    try {
+      await expect(
+        runCapability("example.read", {}, {}, async () => ({ approved: false }), new AbortController().signal),
+      ).rejects.toMatchObject({ name: "CloudError", code, message });
+    } finally {
+      prepare.mockRestore();
+    }
+  });

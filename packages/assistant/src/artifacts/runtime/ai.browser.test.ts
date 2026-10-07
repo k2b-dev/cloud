@@ -16,11 +16,11 @@ test("opaque worker awaits AI beyond the startup watchdog and cancels server req
     files: [
       {
         path: "main.js",
-        content: `export default async () => ({
-    text: await ai.generateText({prompt:"Summarize",input:"example"}),
-    category: await ai.classify({prompt:"Classify",input:"example",choices:["a","b"]}),
-    categories: await ai.classifyMany({prompt:"Classify",input:"example",choices:["a","b"]}),
-    data: await ai.extractData({prompt:"Extract",input:"example",fields:[{name:"ready",type:"boolean",description:"Ready"}]})
+        content: `export default async (_input, {files,signal,progress}) => ({
+    text: await cloud.ai.text({prompt:"Summarize",input:"example"}),
+    category: await cloud.ai.classify({prompt:"Classify",input:"example",choices:["a","b"]}),
+    categories: await cloud.ai.classify({multiple:true, prompt:"Classify",input:"example",choices:["a","b"]}),
+    data: await cloud.ai.extract({prompt:"Extract",input:"example",fields:[{name:"ready",type:"boolean",description:"Ready"}]})
   });`,
       },
     ],

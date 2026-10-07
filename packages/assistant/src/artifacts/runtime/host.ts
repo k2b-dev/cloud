@@ -1,9 +1,16 @@
 import { LIMITS } from "../contracts";
+import type { RuntimeContext } from "./cloud";
+import { CloudError, cloudError } from "./errors";
 import { RuntimeEvent, type UiNode, WorkerMessage } from "./protocol";
 import { sandboxDocument } from "./sandbox";
 import type { WorkState } from "./work";
 
+export const timeLimitMessage = (milliseconds: number) =>
+  `The run reached the ${milliseconds / 1000}-second time limit; split the work, report progress, or use a scheduled action.`;
+
 export type RuntimeHooks = {
+  context?: RuntimeContext;
+  files?: { path: string; size: number; type: string }[];
   work?: (state: WorkState) => void;
   pending?: (count: number) => void;
   ui: (nodes: UiNode[]) => void;
@@ -53,7 +60,9 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
     queued = 0,
     eventId = 0;
   let chain = Promise.resolve();
-  let waitingForModal = false;
+  let waitingForModal = false,
+    workRunning = false;
+  let stopPromise: Promise<void> | undefined;
   let workWatchdog: ReturnType<typeof setTimeout> | undefined;
   const events = new Map<
     number,
@@ -63,20 +72,35 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
     if (!stopped) frame.contentWindow?.postMessage(message, "*");
   };
   const stop = () => {
-    if (stopped) return chain;
+    if (stopped) return stopPromise ?? chain;
     post({ type: "stop" });
     stopped = true;
     clearTimeout(workWatchdog);
     abort.abort();
     window.removeEventListener("message", receive);
-    frame.remove();
+    // Give the worker one task to observe signal.abort before terminating it.
+    const cleanup = new Promise<void>((resolve) =>
+      setTimeout(() => {
+        frame.remove();
+        resolve();
+      }, 50),
+    );
     for (const event of events.values()) {
       clearTimeout(event.timer);
-      event.reject(new Error("Run stopped"));
+      event.reject(new CloudError("cancelled", "Run stopped"));
     }
     events.clear();
     hooks.busy(false);
-    return chain;
+    stopPromise = cleanup.then(() => chain);
+    return stopPromise;
+  };
+  const armWork = () => {
+    clearTimeout(workWatchdog);
+    if (workRunning && !waitingForModal)
+      workWatchdog = setTimeout(() => {
+        hooks.error(timeLimitMessage(15000));
+        void stop();
+      }, 15000);
   };
   function receive(event: MessageEvent) {
     if (stopped || event.source !== frame.contentWindow) return;
@@ -88,7 +112,12 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       // Enforce the per-second transport budget at the host boundary.
       if (++messages > 600) throw new Error("Run exceeded message budget");
       if (event.data?.type === "bridge-ready") {
-        post({ type: "boot", ...source });
+        post({
+          type: "boot",
+          ...source,
+          context: hooks.context ?? { locale: "en-US", timeZone: "UTC", user: null },
+          files: hooks.files ?? [],
+        });
         return;
       }
       const encoded = JSON.stringify(event.data);
@@ -106,12 +135,9 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       else if (m.type === "busy") hooks.busy(m.value);
       else if (m.type === "ready") hooks.ready();
       else if (m.type === "work") {
-        clearTimeout(workWatchdog);
+        workRunning = m.status === "running";
+        armWork();
         if (m.status === "running") {
-          workWatchdog = setTimeout(() => {
-            hooks.error("Background worker stopped responding; run stopped");
-            void stop();
-          }, 15000);
           if (!waitingForModal)
             for (const event of events.values()) {
               clearTimeout(event.timer);
@@ -148,22 +174,19 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
                 "file.read",
                 "file.open",
                 "file.openMultiple",
-                "file.openFolder",
                 "capabilities.run",
                 "capabilities.stream",
               ].includes(m.method)
             ) {
               waitingForModal = true;
+              armWork();
               for (const event of events.values()) clearTimeout(event.timer);
             }
             const value = await hooks.request(m.method, m.args, AbortSignal.any([abort.signal, requestAbort.signal]));
             post({ type: "result", id: m.id, value });
           } catch (error) {
-            const code =
-              error && typeof error === "object" && "code" in error && typeof error.code === "string"
-                ? error.code.slice(0, 128)
-                : undefined;
-            post({ type: "result", id: m.id, error: String(error instanceof Error ? error.message : error).slice(0, LIMITS.text), code });
+            const mapped = cloudError(error);
+            post({ type: "result", id: m.id, error: mapped.message, code: mapped.code });
           } finally {
             if (
               [
@@ -176,12 +199,12 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
                 "file.read",
                 "file.open",
                 "file.openMultiple",
-                "file.openFolder",
                 "capabilities.run",
                 "capabilities.stream",
               ].includes(m.method)
             ) {
               waitingForModal = false;
+              if (!stopped) armWork();
               if (!stopped) for (const event of events.values()) event.timer = setTimeout(event.expire, event.timeoutMs);
             }
             requests.delete(m.id);
@@ -203,14 +226,14 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       return stopped;
     },
     event: (input: RuntimeEvent, timeoutMs = 15000): Promise<void> => {
-      if (stopped) return Promise.reject(new Error("Run stopped"));
+      if (stopped) return Promise.reject(new CloudError("cancelled", "Run stopped"));
       if (events.size >= LIMITS.pendingRequests) return Promise.reject(new Error("Too many pending interactions"));
       const parsed = RuntimeEvent.parse(input),
         id = eventId++;
       return new Promise((resolve, reject) => {
         const expire = () => {
           events.delete(id);
-          reject(new Error("Interaction timed out; the run was stopped"));
+          reject(new Error(timeLimitMessage(timeoutMs)));
           void stop();
         };
         const timer = waitingForModal ? undefined : setTimeout(expire, timeoutMs);

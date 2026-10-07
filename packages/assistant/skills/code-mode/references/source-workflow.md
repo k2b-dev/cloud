@@ -95,7 +95,7 @@ explain that tradeoff before proposing it as recovery.
 
 For Apps intended to be started by a person, show a short readable
 summary with `ui.text({value, markdown:true})` or a compact `ui.table` and offer detailed results
-with `files.save`. Keep structured return values for agent inspection. Read the
+with `cloud.download`. Keep structured return values for agent inspection. Read the
 UI reference only for the presentation controls you need; a full app is optional.
 
 Before editing source while the user is also using the editor, announce the
@@ -130,7 +130,7 @@ Imports receive fresh review because the bytes become source that can be shared
 or published. Export validated data with `code_export`, then inspect it, and avoid
 printing/retyping large datasets. A stale revision or file version fails without
 saving any files; re-read before reconciling. Source imports support `.json`
-objects and `.csv`, `.tsv`, `.txt` strings; pass CSV strings to `sheet.fromCsv`.
+objects and `.csv`, `.tsv`, `.txt` strings; pass CSV strings to `cloud.sheet.parseCsv`.
 Imported text must be UTF-8; decode older encodings in a script before exporting.
 Each source/data file is limited to 1 MiB and the bundle to 2 MiB. Use resource
 storage or its database for larger datasets. Keep full numeric precision in

@@ -86,10 +86,11 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     ),
     defineTool({
       name: "read_file",
-      description: "Read exact chat file path, or /skills/assistant-code-mode/references/<name>.md",
+      description:
+        "Read an exact chat file path or /skills/assistant-code-mode/references/<name>.md; read cloud.md first for the runtime contract",
       inputSchema: z.object({ path: z.string() }),
     }).server(async ({ path }) => {
-      if (/^\/skills\/assistant-code-mode\/references\/[a-z-]+\.md$/.test(path))
+      if (/^\/skills\/assistant-code-mode\/references\/[a-z.-]+\.md$/.test(path))
         return Bun.file(new URL(`../../skills/code-mode/references/${path.split("/").at(-1)}`, import.meta.url)).text();
       const stat = (await listAiConversationFiles(context.conversationId!)).find((file) => file.path === path);
       if (!stat) throw new Error("File not found. Use exact manifest paths; do not invent /input.");

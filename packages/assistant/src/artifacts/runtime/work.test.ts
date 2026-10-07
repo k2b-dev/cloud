@@ -1,35 +1,49 @@
 import { expect, test } from "bun:test";
-import { createWork, type WorkState } from "./work";
+import { createContext, runInContext } from "node:vm";
+import { runtimeSource } from "./compile";
 
-test("work reports failure before the error hook and releases ownership", async () => {
-  const events: string[] = [];
-  const work = createWork(
-    (state) => events.push(state.status),
-    () => {},
-    () => events.push("error-hook"),
-  );
-  const failed = work.run(async () => {
-    throw new Error("broken");
+async function worker() {
+  const messages: { type: string; status?: string; text?: string }[] = [];
+  let receive: (event: { data: unknown }) => void = () => {};
+  const context = createContext({
+    crypto,
+    Blob,
+    File,
+    URL,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    console: { log() {}, info() {}, warn() {}, error() {} },
+    postMessage: (message: (typeof messages)[number]) => messages.push(message),
+    addEventListener: (name: string, listener: typeof receive) => {
+      if (name === "message") receive = listener;
+    },
   });
-  expect(() => work.run(async () => 1)).toThrow("already running");
-  await expect(failed.done).rejects.toThrow("broken");
-  expect(events.indexOf("error")).toBeLessThan(events.indexOf("error-hook"));
-  expect(await work.run(async () => 42).done).toBe(42);
+  runInContext(await runtimeSource(), context);
+  runInContext('__artifactInit({locale:"en-US",timeZone:"UTC",user:null},[]);', context);
+  return { context, messages, stop: () => receive({ data: { type: "stop" } }) };
+}
+test("script failure reports a terminal work state before the error and cannot start twice", async () => {
+  const { context, messages } = await worker();
+  await runInContext('__artifactStart(async()=>{throw new Error("broken");});', context);
+  expect(messages.map((message) => message.type)).toEqual(["work", "error"]);
+  expect(messages[0]?.status).toBe("error");
+  expect(messages[1]?.text).toContain("broken");
+  await runInContext("__artifactStart(()=>42);", context);
+  expect(messages).toHaveLength(2);
 });
-test("cooperative cancellation is distinct from failure", async () => {
-  const states: WorkState[] = [];
-  let errors = 0;
-  const work = createWork(
-    (state) => states.push(state),
-    () => {},
-    () => errors++,
+test("script context cancellation is distinct from failure and suppresses output", async () => {
+  const { context, messages, stop } = await worker();
+  const done = runInContext(
+    `__artifactStart(async (_input,{signal,progress})=>{
+    progress(2,4,"Importing");
+    await new Promise(resolve=>signal.addEventListener("abort",resolve,{once:true}));
+    return 42;
+  });`,
+    context,
   );
-  const job = work.run(async (context) => {
-    await context.checkpoint();
-    return 1;
-  });
-  job.cancel();
-  await expect(job.done).rejects.toThrow("cancelled");
-  expect(states.at(-1)?.status).toBe("cancelled");
-  expect(errors).toBe(0);
+  stop();
+  await done;
+  expect(messages.at(-1)).toMatchObject({ type: "work", status: "cancelled", completed: 2, total: 4, label: "Importing" });
+  expect(messages.some((message) => message.type === "error" || message.type === "output")).toBe(false);
 });

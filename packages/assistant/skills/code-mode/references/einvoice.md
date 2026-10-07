@@ -1,21 +1,20 @@
 # Electronic invoices
 
-`einvoice` is a global. These methods return Results: inspect `ok`, then use
+`cloud.finance.einvoice` loads on first use. Await its methods, which return Results: inspect `ok`, then use
 `data` or `error: {code,status,message,issues}`. Issue entries contain
 `{code,path,message,line?,column?}`; paths have zero-based row indices.
 
 | Call | Successful `data` |
 | --- | --- |
-| `einvoice.validate(input)` | `Invoice` |
-| `einvoice.calculate(lines)` | `InvoiceCalculation` |
-| `einvoice.serialize(invoice, {format: "zugferd-2.5-en16931"})` | `{format, xml: string, bytes: Uint8Array}` |
-| `einvoice.parseXml(xml, options?)` | `ParsedInvoice` |
-| `await einvoice.parsePdf(bytes, options?)` | `ParsedInvoice` |
-| `einvoice.parseXml(xml, {mode: "incoming"})` | `ParsedIncomingInvoice` |
-| `await einvoice.parsePdf(bytes, {mode: "incoming"})` | `ParsedIncomingInvoice` |
+| `await cloud.finance.einvoice.validate(input)` | `Invoice` |
+| `await cloud.finance.einvoice.calculate(lines)` | `InvoiceCalculation` |
+| `await cloud.finance.einvoice.serialize(invoice, {format: "zugferd-2.5-en16931"})` | `{format, xml: string, bytes: Uint8Array}` |
+| `await cloud.finance.einvoice.parseXml(xml, options?)` | `ParsedInvoice` |
+| `await cloud.finance.einvoice.parsePdf(file, options?)` | `ParsedInvoice` |
+| `await cloud.finance.einvoice.parseXml(xml, {mode: "incoming"})` | `ParsedIncomingInvoice` |
+| `await cloud.finance.einvoice.parsePdf(file, {mode: "incoming"})` | `ParsedIncomingInvoice` |
 
-All calls except `parsePdf` are synchronous. `parsePdf` takes a `Uint8Array`,
-for example `new Uint8Array(await file.arrayBuffer())`. It reads embedded XML,
+All methods are asynchronous. `parsePdf` takes a PDF `File` or `Blob` and reads embedded XML,
 not scanned pages or arbitrary visual invoice layouts. For those, use the
 [local PDF text reader](documents.md) or the agent's document/vision tools.
 
@@ -141,9 +140,9 @@ const invoice = {
   payment: { iban: "DE89370400440532013000", accountName: "Example Seller" },
   lines: [{ id: "1", name: "Service", quantity: "2.0000", unitPrice: "50.0000", unitCode: "HUR", taxRate: "19.00" }],
 };
-const result = einvoice.serialize(invoice, { format: "zugferd-2.5-en16931" });
+const result = await cloud.finance.einvoice.serialize(invoice, { format: "zugferd-2.5-en16931" });
 if (!result.ok) throw new Error(JSON.stringify(result.error));
-await files.save(new Blob([result.data.bytes], { type: "application/xml" }), "invoice.xml");
+await cloud.download("invoice.xml", new Blob([result.data.bytes], { type: "application/xml" }));
 ```
 
 Never infer a missing VAT identifier, tax category, exemption reason, delivery
@@ -160,5 +159,5 @@ Amounts are declared strings, never recalculated; O lines have no `taxRate`.
 accounting. Do not pass this `invoice` to `validate` or `serialize`.
 
 For an invoice PDF, pass `serialized.data.xml` to
-[`pdf.facturX`](pdf.md) with profile `"EN 16931"` and matching HTML.
+[`cloud.pdf.render`](pdf.md) with profile `"EN 16931"` and matching HTML.
 Numbering, business mapping, issuance and persistence belong to the app.

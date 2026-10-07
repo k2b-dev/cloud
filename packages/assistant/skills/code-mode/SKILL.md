@@ -15,14 +15,13 @@ Markdown; use code for exact cells, calculations, original PDF text or positions
 
 Load the needed `code_*` tools individually through `load_tools` and read their
 input schemas. They are Assistant tools, not capabilities or functions inside
-code. Discover other Cloud operations before using `capabilities.run`.
+code. Discover other Cloud operations before using `cloud.capabilities.run`.
 
-Runtime namespaces are globals: no imports or package installation are needed.
-Only relative imports of the resource's own source files are supported. There is
-no DOM or native network access. Before using a namespace, read its reference
-below for signatures, options and return values. Do not invent methods or infer
-an API from a familiar library. For discovered Cloud capabilities and external
-APIs, obtain their actual contracts separately.
+Read [cloud contract](references/cloud.md) first: it is the complete runtime contract.
+One frozen global `cloud` supplies storage, data, AI, HTTP, files, document
+helpers, money, and charts. The transitional `ui` tree remains available until HTML apps replace it.
+Only relative source imports are supported. There is no DOM or native networking.
+Discover external capability and HTTP contracts separately.
 
 Inspect supplied data before joining, filtering or calculating: column names,
 types, units, date ranges and missing values. Ask only for decisions or inputs
@@ -36,18 +35,17 @@ Pass exact current-chat manifest paths as `code_run.inputPaths`, and this entry
 as `code_run.code` for a small CSV:
 
 ```js
-export default async () => {
-  const [input] = await files.list();
+export default async (_input, { files }) => {
+  const [input] = files;
   if (!input) throw new Error("Select a CSV input.");
-  const rows = await sheet.fromCsv(await files.read(input.name));
+  const rows = await cloud.sheet.parseCsv(await input.file());
   return { rows: rows.length, columns: Object.keys(rows[0] ?? {}), sample: rows.slice(0, 3) };
 };
 ```
 
-`input.name` is the full path, such as `/sales.csv`; pass it unchanged to
-`files.read`, which returns a `File`. CSV rows are objects keyed by headers:
-`rows[0]` is already data. Do not drop it. For older Excel CSVs, use
-`sheet.fromCsv(file, {encoding:"windows-1252"})`. Inspect actual headings first.
+`input.path` is the full selected chat path. CSV objects are data rows keyed by
+headers; keep the first object. Encoding and numeric conventions are detected;
+verify representative names and amounts. Dates and leading-zero codes stay text.
 For a tiny experiment without files, `export default () => ({answer:42})` suffices.
 Each run has fresh variables. No saved resource or UI is required.
 
@@ -58,7 +56,7 @@ supported surface; links within references add related workflows when needed.
 
 | Task / API | Read |
 | --- | --- |
-| Source entry, input/output files, pickers, CSV, IDs | [Runtime and files](references/runtime.md) |
+| Script context, input/output files, CSV, IDs | [Runtime and files](references/runtime.md) |
 | Inspect PDF pages, read PDF text/positions or XLSX/ODS cells, write ODS | [Documents](references/documents.md) |
 | Generate a PDF, save one in Files, embed attachments, combine invoice HTML and XML | [PDF generation](references/pdf.md) |
 | Exact amounts, taxes, allocation, localized money | [Money](references/money.md) |
@@ -67,8 +65,8 @@ supported surface; links within references add related workflows when needed.
 | Calculate, create or read electronic invoices/XML/PDF attachments | [Electronic invoices](references/einvoice.md) |
 | Controls, layouts and dialogs | [UI and dialogs](references/ui.md), [Analytics UI](references/analytics.md) |
 | Chart types, series and axes | [Charts](references/charts.md) |
-| Long processing, progress, cancellation | [Background work](references/work.md) |
-| Persist JSON or files locally/shared | [Storage](references/storage.md) |
+| Long processing, progress, cancellation | [Script context](references/runtime.md) |
+| Persist personal/shared JSON or shared files | [Storage](references/storage.md) |
 | Copy files between stores; list and download Filesv2 beside Grids documents | [File transfers](references/files.md) |
 | Resource SQL, schema, row CRUD, imports | [Database](references/database.md) |
 | Generate text, classify data or extract structured fields | [AI calculations](references/ai.md) |
@@ -96,7 +94,7 @@ A successful run is visible to the agent only; present it before saying the
 user can see it. No saved App or chat file is necessary.
 
 Use a Studio App when the user needs an independently accessible, reusable
-application. Use `files.save`, `code_export`, and `present` when the requested
+application. Use `cloud.download`, `code_export`, and `present` when the requested
 result is a file. These are separate delivery choices.
 
 ## Verify and deliver
@@ -108,10 +106,10 @@ compiling or saving source does not verify behavior. If `work.status` is
 Inspect only when the returned snapshot needs more detail. Errors and
 `outputTruncated` are not successful complete results.
 
-For a CSV, call `await files.save(sheet.toCsv(rows), "result.csv")` inside code;
-for a spreadsheet, `await files.save(await sheet.toOds(sheets), "result.ods")`.
+For a CSV, call `await cloud.download("result.csv", await cloud.sheet.toCsv(rows))` inside code;
+for a spreadsheet, `await cloud.download("result.ods", await cloud.sheet.toOds(sheets))`.
 Then call the **tool** `code_export` with the returned `runId` and captured file
-name, and `present` its returned chat path. `files.save` returns no path.
+name, and `present` its returned chat path. `cloud.download` returns no path.
 Reuse exported data via its path/version rather than retyping truncated output.
 Reconcile row counts, exclusions and totals before reporting findings.
 
@@ -119,9 +117,7 @@ Open GUI apps with `code_open`. Saving or testing does
 not replace a user's already-running app. Stop runs no longer needed that retain
 UI, jobs or output files. Never claim an unexecuted result is verified.
 
-Agent execution runs independently of the user's tab. Agent local storage is
-temporary; shared storage, database writes and external actions are real, even
-in tests. Cancellation and source restore do not undo them. Apps select local
-files explicitly; they never gain implicit access to chat attachments. Use
+Agent execution runs independently of the user's tab. Personal and shared storage, database writes and external actions are real, even
+in tests. Cancellation and source restore do not undo them. Actions receive no chat files; scripts receive only explicit inputPaths. Use
 `code_secret` for credentials, never chat or app controls. Honor normal access
 and approval decisions; availability is not authorization for unrelated actions.

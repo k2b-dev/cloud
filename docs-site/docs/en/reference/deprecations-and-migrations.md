@@ -10,6 +10,44 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Studio script and action library
+
+This breaking Assistant runtime change replaces top-level helpers with one
+frozen `cloud` global. Existing app source is not automatically migrated.
+Update scripts and actions before deploying the new runtime. Operators should
+ship the eager worker, content-hashed lazy chunks, and chunk manifest together.
+Assistant’s normal startup migration adds personal KV storage; existing database
+tables gain nullable audit columns on first access, without backfill.
+
+| Previous API | Replacement |
+| --- | --- |
+| ai.generateText / classify / classifyMany / extractData | cloud.ai.text / classify (multiple) / extract |
+| money | cloud.money; format/parse default to viewer locale |
+| datev / sepa / camt / einvoice | cloud.finance.*; await every method |
+| ids.ulid() | crypto.randomUUID() |
+| http.fetch / secret | cloud.http.fetch / cloud.http.secret; every request requires approval |
+| capabilities.run / streams | cloud.capabilities.run / streams |
+| database.connect().table(name) | flat cloud.db.list/get/insert/update/delete; schema uses code_database tools |
+| kv.shared | cloud.kv |
+| kv.local | removed; use server-side cloud.kv.user for personal JSON |
+| files.shared | cloud.files |
+| files.local / store / opfs | removed; no personal file store or browser-local runtime storage |
+| files.list/read for run inputs | script context files with path/size/type/file() |
+| files.open/openMultiple/openFolder/path | removed; transitional UI filePicker stays until HTML apps |
+| files.save(data,name) | cloud.download(name,data) |
+| sheet.fromCsv / openExcel / openOds | cloud.sheet.parseCsv / read (detected from bytes) |
+| sheet.toCsv | await cloud.sheet.toCsv before downloading |
+| pdf.open / facturX | cloud.pdf.read / render({facturX}) |
+| work.* | script context signal/progress |
+| ui.* | transitional; remains until HTML apps replace it |
+
+Lists return at most 1,000 rows and raise `limit` when paging is needed. The
+server sets created_by/updated_by and enforces each table’s everyone/own/managers
+write rule. Personal KV is isolated per app and viewer across devices; anonymous
+public-share visitors cannot use it or write database rows. Cloud calls fail with
+CloudError and one of the documented stable codes. Secret-bearing HTTP responses
+redact raw, prefixed, base64/base64url, JSON-escaped (including escaped slashes and ASCII Unicode escapes), and URL-encoded secret forms before reaching code.
+
 ## Assistant turns end loops and long runs with an answer
 
 A chat turn, including scheduled and background ones, now stops using tools
