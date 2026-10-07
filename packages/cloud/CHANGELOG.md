@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.27.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.26.0...npm-cloud-v0.27.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **assistant:** give Studio scripts and actions one cloud.* library ([#705](https://github.com/k2b-dev/cloud/issues/705))
+
+### Features
+
+* **ai:** end looping or long turns with an answer ([#704](https://github.com/k2b-dev/cloud/issues/704)) ([781f4e6](https://github.com/k2b-dev/cloud/commit/781f4e6d60973a6312861a3ef4e514d748e16bde))
+* **ai:** offer Skills for recurring work ([#709](https://github.com/k2b-dev/cloud/issues/709)) ([d884e21](https://github.com/k2b-dev/cloud/commit/d884e211ce7265607055552c3ef203c11f751e70))
+* **ai:** set the thinking level, extra headers and extra parameters per model ([#711](https://github.com/k2b-dev/cloud/issues/711)) ([28fec41](https://github.com/k2b-dev/cloud/commit/28fec411e9f75d5d299a55aa8ba2a8d9ebc614e0))
+* **ai:** show chat results first in an always-available sidebar ([#699](https://github.com/k2b-dev/cloud/issues/699)) ([616e3c2](https://github.com/k2b-dev/cloud/commit/616e3c2199b1a6887fb5b235bbd6b9ad71f0aef8))
+* **assistant:** give Studio scripts and actions one cloud.* library ([#705](https://github.com/k2b-dev/cloud/issues/705)) ([730d9dc](https://github.com/k2b-dev/cloud/commit/730d9dcc60471cec1856fd29a5bba8699dd9875a))
+* **core:** manage outgoing mail sender profiles ([#710](https://github.com/k2b-dev/cloud/issues/710)) ([967022a](https://github.com/k2b-dev/cloud/commit/967022a630204a559ebc2c0aea141a7c448f0f3b))
+* **mail:** show mailbox details to everyone who can read it ([#703](https://github.com/k2b-dev/cloud/issues/703)) ([2b5b306](https://github.com/k2b-dev/cloud/commit/2b5b306c1eb913cdeec589bf8eaab665220ce110))
+
+
+### Bug Fixes
+
+* **ai:** keep every page of chat sources when timestamps share a millisecond ([#706](https://github.com/k2b-dev/cloud/issues/706)) ([7bab886](https://github.com/k2b-dev/cloud/commit/7bab8863ed97f4c3aee41783db44ac0cb83ea717))
+* **ai:** keep the live assistant view in sync ([#702](https://github.com/k2b-dev/cloud/issues/702)) ([3e6e1d5](https://github.com/k2b-dev/cloud/commit/3e6e1d5e66c3a05b53a2123337b38817eaaeb76f))
+* **ai:** offer runtime tools everywhere and explain missing tools ([#707](https://github.com/k2b-dev/cloud/issues/707)) ([daae0f3](https://github.com/k2b-dev/cloud/commit/daae0f360984de59ba4cbe0adec821d3934dbee8))
+* **ai:** report code tool failures as errors ([#698](https://github.com/k2b-dev/cloud/issues/698)) ([3734ed9](https://github.com/k2b-dev/cloud/commit/3734ed9023aee3855a624e3402b812253713ac56))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.16.0 to 0.17.0
+
 ## [0.26.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.25.0...npm-cloud-v0.26.0) (2026-10-07)
 
 
