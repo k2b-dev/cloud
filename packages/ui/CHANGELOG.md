@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.16.0...npm-ui-v0.17.0) (2026-10-07)
+
+
+### Features
+
+* **mail:** show mailbox details to everyone who can read it ([#703](https://github.com/k2b-dev/cloud/issues/703)) ([2b5b306](https://github.com/k2b-dev/cloud/commit/2b5b306c1eb913cdeec589bf8eaab665220ce110))
+
 ## [0.16.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.15.0...npm-ui-v0.16.0) (2026-10-07)
 
 
