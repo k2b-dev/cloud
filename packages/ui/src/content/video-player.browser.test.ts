@@ -12,6 +12,8 @@ const videos: Record<string, Uint8Array<ArrayBuffer>> = {
   landscape: new Uint8Array(readFileSync(resolve(ui, "test/media/landscape-320x180.webm"))),
   portrait: new Uint8Array(readFileSync(resolve(ui, "test/media/portrait-180x320.webm"))),
 };
+/** An iPhone reel as the camera records it by default: HEVC with AAC sound in QuickTime. */
+const hevcReel = new Uint8Array(readFileSync(resolve(ui, "test/media/hevc-aac-180x320.mov")));
 /**
  * A chunked answer carries at most this many bytes, so playing a test video takes several range requests. Real servers
  * answer the whole requested range; WebKit's media stack cannot seek against shortened answers.
@@ -31,6 +33,24 @@ const [options, setOptions] = createSignal(null);
 const [src, setSrc] = createSignal(null);
 window.renewals = 0;
 window.fallbacks = 0;
+// The player's own clock, which the tests move forward instead of waiting.
+const now = performance.now.bind(performance);
+let skipped = 0;
+performance.now = () => now() + skipped;
+window.skipTime = (ms) => {
+  skipped += ms;
+};
+// Media events do not bubble, but the document sees them on their way to the video, before the player does.
+window.mediaEvents = [];
+for (const type of ["loadeddata", "seeked", "canplay"])
+  document.addEventListener(
+    type,
+    (event) => {
+      const video = event.target;
+      window.mediaEvents.push({ type, src: video.currentSrc, time: video.currentTime, seeking: video.seeking, readyState: video.readyState });
+    },
+    true,
+  );
 window.mount = (next) => {
   setSrc(next.src);
   setOptions(next);
@@ -56,10 +76,11 @@ render(
               label: "Reel for approval",
               ratio: current.ratio,
               crossOrigin: current.crossOrigin,
+              // RENEWAL in the address becomes the number of the renewal, so every renewal gets its own address.
               renew: current.renew
                 ? async () => {
                     window.renewals += 1;
-                    return current.renew;
+                    return current.renew.replace("RENEWAL", String(window.renewals));
                   }
                 : undefined,
               onFallback: () => {
@@ -97,7 +118,8 @@ const leaseUses = new Map<string, number>();
 let held: Promise<void> = Promise.resolve();
 
 const ranged = (request: Request, bytes: Uint8Array<ArrayBuffer>, path: string, chunked: boolean): Response => {
-  const headers = { "content-type": "video/webm", "accept-ranges": "bytes", "access-control-allow-origin": "*" };
+  const type = path.endsWith(".mov") ? "video/quicktime" : "video/webm";
+  const headers = { "content-type": type, "accept-ranges": "bytes", "access-control-allow-origin": "*" };
   const match = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get("range") ?? "");
   if (!match) {
     requests.push({ path, range: null, status: 200 });
@@ -132,10 +154,12 @@ beforeAll(async () => {
         );
       if (path === "/fixture.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
       if (path === "/styles.css") return new Response(css, { headers: { "content-type": "text/css" } });
-      if (path === "/broken.mp4") {
+      if (path === "/broken.mp4" || path === "/held/broken.mp4") {
+        if (path.startsWith("/held/")) await held;
         requests.push({ path, range: request.headers.get("range"), status: 200 });
         return new Response("This is no video at all.", { headers: { "content-type": "video/mp4" } });
       }
+      if (path === "/reel.mov") return ranged(request, hevcReel, path, false);
       // /video/<name>.webm, /chunked/<name>.webm, /held/<name>.webm, and /lease/<lease>/<name>.webm, which is chunked
       const match = /^\/(video|chunked|held|lease\/([a-z]+))\/([a-z]+)\.webm$/.exec(path);
       const bytes = match ? videos[match[3]!] : undefined;
@@ -321,12 +345,55 @@ describe(`VideoPlayer (${browserName})`, () => {
     try {
       await page.waitForSelector(".k2b-video-player__fallback");
       expect(await box(page, ".k2b-video-player")).toMatchObject({ width: 640, height: 360 });
+      // Screen readers announce it.
+      expect(await page.getAttribute(".k2b-video-player__fallback", "role")).toBe("alert");
       expect(await page.$eval(".k2b-video-player__fallback", (element) => (element as HTMLElement).innerText)).toContain(
         "This video cannot play here",
       );
       expect(await page.getAttribute(".k2b-video-player__fallback a", "href")).toBe("/download");
       expect(await page.$(".k2b-video-player__video")).toBeNull();
       expect(await counters(page)).toEqual({ renewals: 0, fallbacks: 1 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("when the focused video fails, focus moves to the fallback's action", async () => {
+    let release = () => {};
+    held = new Promise<void>((done) => {
+      release = done;
+    });
+    const page = await open({ src: "/held/broken.mp4", host: "width:640px;height:360px" });
+    try {
+      await page.focus(".k2b-video-player__video");
+      release();
+      await page.waitForSelector(".k2b-video-player__fallback");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("href"))).toBe("/download");
+    } finally {
+      held = Promise.resolve();
+      await page.close();
+    }
+  });
+
+  test("a reel whose picture the browser cannot decode falls back instead of playing its sound in an empty frame", async () => {
+    const page = await open({ src: "/reel.mov", renew: "/reel.mov?RENEWAL", host: "width:640px;height:360px" });
+    try {
+      // Safari decodes HEVC; Chromium without a platform decoder plays only the sound.
+      const decodes = await page.evaluate(() => document.createElement("video").canPlayType('video/mp4; codecs="hvc1"') !== "");
+      if (decodes) {
+        await metadata(page);
+        const size = await page.$eval(".k2b-video-player__video", (element) => {
+          const video = element as HTMLVideoElement;
+          return [video.videoWidth, video.videoHeight];
+        });
+        expect(size).toEqual([180, 320]);
+        expect(await counters(page)).toEqual({ renewals: 0, fallbacks: 0 });
+      } else {
+        await page.waitForSelector(".k2b-video-player__fallback");
+        expect(await page.$(".k2b-video-player__video")).toBeNull();
+        // A fresh address does not teach the browser a codec.
+        expect(await counters(page)).toEqual({ renewals: 0, fallbacks: 1 });
+      }
     } finally {
       await page.close();
     }
@@ -363,6 +430,70 @@ describe(`VideoPlayer (${browserName})`, () => {
       expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 0 });
       expect((await state(page)).src).toContain("/lease/fresh/landscape.webm");
       expect(leaseUses.get("expiring")).toBeGreaterThan(2);
+    } finally {
+      await page.close();
+    }
+  });
+
+  /**
+   * The viewer pauses at 1.5 s, and the address expires during the pause. Each failure is the video element's own error
+   * event, so the player sees what an expired address causes, at exactly the point it chooses.
+   */
+  const renewWhilePaused = async () => {
+    const page = await open({
+      src: "/video/landscape.webm",
+      renew: "/video/landscape.webm?renewal=RENEWAL",
+      host: "width:640px;height:360px",
+    });
+    await metadata(page);
+    await page.$eval(".k2b-video-player__video", (element) => {
+      const video = element as HTMLVideoElement;
+      video.muted = true;
+      video.currentTime = 1.5;
+    });
+    await expireAt(page, 1);
+    return page;
+  };
+  /** Fails the current address where the video stands and waits until renewal number `renewal` shows that point again. */
+  const expireAt = async (page: Page, renewal: number) => {
+    await page.waitForFunction(() => {
+      const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement;
+      return !video.seeking && video.readyState >= 2;
+    });
+    await page.$eval(".k2b-video-player__video", (video) => video.dispatchEvent(new Event("error")));
+    await page.waitForFunction(
+      (renewal) =>
+        (window as unknown as { mediaEvents: { src: string; time: number; seeking: boolean; readyState: number }[] }).mediaEvents.some(
+          (event) =>
+            event.src.includes(`renewal=${renewal}`) && !event.seeking && event.readyState >= 2 && Math.abs(event.time - 1.5) < 0.05,
+        ),
+      renewal,
+    );
+  };
+
+  test("an address renewed during a pause is renewed again when it expires during the next pause", async () => {
+    const page = await renewWhilePaused();
+    try {
+      // The renewed address held for longer than any video takes to fail again by itself.
+      await page.evaluate(() => (window as unknown as { skipTime: (ms: number) => void }).skipTime(60_000));
+      await expireAt(page, 2);
+      expect(await counters(page)).toEqual({ renewals: 2, fallbacks: 0 });
+      expect(await state(page)).toMatchObject({ paused: true, time: 1.5 });
+      await page.$eval(".k2b-video-player__video", (element) => (element as HTMLVideoElement).play());
+      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
+        timeout: 15_000,
+      });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a renewed address that fails right after it showed its point falls back instead of renewing again", async () => {
+    const page = await renewWhilePaused();
+    try {
+      await page.$eval(".k2b-video-player__video", (video) => video.dispatchEvent(new Event("error")));
+      await page.waitForSelector(".k2b-video-player__fallback");
+      expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 1 });
     } finally {
       await page.close();
     }

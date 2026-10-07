@@ -46,9 +46,11 @@ The browser fetches the video by range while it plays and seeks. Serve `src` inl
 
 `src` may be `null` while the host still fetches the address, for example a signed URL: the frame shows a loading state at its final size. Without `poster`, the player shows the video's first frame before playback, also on iOS.
 
-Pass `renew` when `src` can expire during playback, such as a short-lived lease. When playback fails, the player asks `renew` for a fresh address of the same video and continues at the same time and speed, playing if it was. A renewed address that fails before it loads, or a second failure at the same point, ends in the fallback. Changing `src` itself starts a different video from the beginning.
+Pass `renew` when `src` can expire during playback, such as a short-lived lease. When playback fails, the player asks `renew` for a fresh address of the same video and continues at the same time and speed, playing if it was. It does so after every expiry, also across long pauses. A renewed address that fails before it shows that point, or within ten seconds after, ends in the fallback, because a video that cannot play there fails again at once. Issue renewed addresses that stay valid much longer, a minute or more. Changing `src` itself starts a different video from the beginning.
 
-When the browser cannot play the video, for example because of its codec, the frame shows a localized notice with `fallbackAction`, typically a download link, and calls `onFallback`.
+When the browser cannot play the video, for example because of its codec, the frame shows a localized notice with `fallbackAction`, typically a download link, and calls `onFallback`. A video whose picture the browser cannot decode falls back as well, even when its sound would play: an HEVC recording from an iPhone plays in Safari, but a browser without an HEVC decoder would otherwise play only its sound in an empty frame.
+
+Pass `error` to show the host's own content in the frame instead of the video, for example an error with a retry when fetching the address failed. The frame keeps its size, so nothing moves when the error appears or the retry succeeds.
 
 ## PDF requests
 
@@ -114,7 +116,7 @@ type PdfPreviewProps = {
 type VideoPlayerProps = {
   src: string | null; label: string; poster?: string; ratio?: number;
   crossOrigin?: "anonymous" | "use-credentials"; renew?: () => Promise<string>;
-  fallbackAction?: JSX.Element; onFallback?: () => void; class?: string;
+  fallbackAction?: JSX.Element; error?: JSX.Element; onFallback?: () => void; class?: string;
 };
 ```
 
@@ -139,7 +141,7 @@ The lightbox uses a native dialog, labeled navigation controls, arrow keys, Esca
 
 `PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a retry removes the focused retry action, focus moves to the open action once the document is shown, to the document itself when the host leaves `actions` out, or to the retry of a new error state.
 
-`VideoPlayer` names its video with `label`. The browser's controls bring their own labels and keyboard support. With focus on the video, the player adds the same keys in every engine: Space and `K` play and pause, the left and right arrows seek five seconds, `M` mutes, and `F` opens fullscreen. Focus draws its ring around the frame. The loading state is a polite status, and the fallback names the problem and offers its action.
+`VideoPlayer` names its video with `label`. The browser's controls bring their own labels and keyboard support. With focus on the video, the player adds the same keys in every engine: Space and `K` play and pause, the left and right arrows seek five seconds, `M` mutes, and `F` opens fullscreen. Focus draws its ring around the frame. The loading state is a polite status. The fallback is an alert that names the problem and offers its action; when it replaces the focused video, focus moves to that action, or to the frame when there is none.
 
 `ZoomPanViewport` is a focusable group with the caller's `label` and a localized description of its keys. With focus on the viewport, `+` and `-` zoom, `0` resets, `F` opens fullscreen, and arrow keys pan when zoomed in. At fit, arrow keys keep scrolling the page. Every control has a localized label and a tooltip with its key. Motion is off under `prefers-reduced-motion`.
 
@@ -186,6 +188,7 @@ const images: LightboxImage[] = [
     crossOrigin="anonymous"
     renew={async () => (await issueLease(file.path)).url}
     fallbackAction={<a href={downloadUrl} download={file.name}>Download</a>}
+    error={leaseFailed() ? <Placeholder state="error" description="Could not load the video." action={retry} /> : undefined}
   />
 </PanelDialog.Body>
 ```

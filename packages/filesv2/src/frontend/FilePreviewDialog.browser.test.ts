@@ -112,6 +112,8 @@ const files: Record<string, [string, string | Buffer]> = {
 };
 /** Media requests to the lease addresses, with the range each asked for and the status it got. */
 const mediaRequests: { name: string; range: string | null; status: number }[] = [];
+/** Files whose next lease request fails, as during a network blip. */
+const failingLeases = new Set<string>();
 
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
@@ -135,34 +137,44 @@ const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "l
     if (path === "/") return route.fulfill({ contentType: "text/html", body: page(theme, "en") });
     if (path === "/api/filesv2/bases/personal/download") {
       const name = (route.request().postDataJSON() as { path: string }).path.split("/").at(-1)!;
+      if (failingLeases.delete(name))
+        return route.fulfill({ status: 503, json: { error: "unavailable", message: "Storage is unavailable" } });
       return route.fulfill({
-        json: { url: `http://preview.test/content/${encodeURIComponent(name)}`, method: "GET", expires: "2026-09-28T11:00:00.000Z" },
+        json: {
+          url: `http://preview.test/v1/direct/${Buffer.from(name).toString("hex")}`,
+          method: "GET",
+          expires: "2026-09-28T11:00:00.000Z",
+        },
       });
     }
-    if (path.startsWith("/content/")) {
-      const name = path.slice("/content/".length);
+    if (path.startsWith("/v1/direct/")) {
+      const name = Buffer.from(path.slice("/v1/direct/".length), "hex").toString();
       const file = files[name];
       if (!file) return route.fulfill({ status: 404 });
-      if (hold && (path.endsWith(".md") || file[0].startsWith("video/"))) await hold;
-      // As Filegate does: a range request gets exactly its bytes with 206.
+      if (hold && (name.endsWith(".md") || file[0].startsWith("video/"))) await hold;
+      // A range request gets exactly its bytes with 206. A video gets the answer of a real Filegate direct lease: an
+      // attachment of no particular type at an address without an extension, which the browser has to play anyway.
       const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
       const body = Buffer.from(file[1]);
-      if (file[0].startsWith("video/")) mediaRequests.push({ name, range: range?.[0] ?? null, status: range ? 206 : 200 });
+      const video = file[0].startsWith("video/");
+      const contentType = video ? "application/octet-stream" : file[0];
+      const headers = {
+        "access-control-allow-origin": "*",
+        "accept-ranges": "bytes",
+        ...(video ? { "content-disposition": `attachment; filename="${name}"`, "x-content-type-options": "nosniff" } : {}),
+      };
+      if (video) mediaRequests.push({ name, range: range?.[0] ?? null, status: range ? 206 : 200 });
       if (range) {
         const start = Number(range[1]);
         const end = Math.min(range[2] ? Number(range[2]) : body.length - 1, body.length - 1);
         return route.fulfill({
           status: 206,
-          contentType: file[0],
+          contentType,
           body: body.subarray(start, end + 1),
-          headers: {
-            "access-control-allow-origin": "*",
-            "accept-ranges": "bytes",
-            "content-range": `bytes ${start}-${end}/${body.length}`,
-          },
+          headers: { ...headers, "content-range": `bytes ${start}-${end}/${body.length}` },
         });
       }
-      return route.fulfill({ contentType: file[0], body, headers: { "access-control-allow-origin": "*", "accept-ranges": "bytes" } });
+      return route.fulfill({ contentType, body, headers });
     }
     if (hold && path.endsWith(".woff2")) await hold;
     const asset = assets[path] ?? (path.endsWith(".woff2") ? ["font/woff2", readFileSync(`${ui}dist${path}`)] : null);
@@ -626,6 +638,25 @@ describe("file preview dialog in a browser", () => {
           await tab.context().close();
         }
       });
+
+    test("a lease that cannot be fetched shows its retry inside the video's frame, which keeps its size", async () => {
+      failingLeases.add("Clip.webm");
+      const tab = await open(desktop);
+      try {
+        await show(tab, "Clip.webm");
+        await tab.waitForSelector(".k2b-video-player .k2b-placeholder[role=alert]");
+        const frame = await box(tab, ".k2b-video-player");
+        expect(await tab.$eval(".k2b-video-player", (element) => (element as HTMLElement).innerText)).toContain(
+          "The preview could not be loaded.",
+        );
+        await tab.click(".k2b-video-player button");
+        await metadata(tab);
+        expect(await box(tab, ".k2b-video-player")).toEqual(frame);
+      } finally {
+        failingLeases.clear();
+        await tab.context().close();
+      }
+    });
 
     test("a video the browser cannot play offers its download in the same frame", async () => {
       const tab = await open(desktop);

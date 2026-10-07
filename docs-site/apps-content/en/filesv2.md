@@ -466,7 +466,9 @@ new download.
 Files does not transcode. Whether a video plays depends on its codec and the
 browser: H.264 and VP9 play in most current browsers, while HEVC (H.265) plays in
 Safari but not in every other browser. A video the browser cannot play shows a
-notice with **Download** in the same frame.
+notice with **Download** in the same frame, also when the browser could play
+only its sound. When Files cannot issue a lease, the same frame shows the error
+with **Retry**.
 
 The preview frame keeps its size while the video loads, and the picture fits it
 uncropped: a vertical 9:16 reel shows at the dialog's full height, and on a

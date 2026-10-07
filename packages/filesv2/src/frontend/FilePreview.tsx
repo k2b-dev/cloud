@@ -71,6 +71,17 @@ function RevisionPreview(props: PreviewProps) {
       {f().download}
     </Button>
   );
+  const previewFailed = () => (
+    <Placeholder
+      state="error"
+      description={t().previewFailed}
+      action={
+        <Button size="sm" onClick={retry}>
+          {t().retry}
+        </Button>
+      }
+    />
+  );
   return (
     <div class="filesv2-preview">
       <Switch>
@@ -87,10 +98,10 @@ function RevisionPreview(props: PreviewProps) {
             {(parts) => <div class="filesv2-preview__pdf">{parts.content}</div>}
           </PdfPreview>
         </Match>
-        {/* A video keeps its frame from the start and asks for a fresh lease itself when one expires during
-            playback; the browser fetches it by range, so it never loads into memory. The details panel shows it in a
-            square, which suits portrait reels and wide recordings alike. */}
-        <Match when={kind() === "video" && !lease.error()}>
+        {/* A video keeps its frame from the start, also when its lease fails, and asks for a fresh lease itself when
+            one expires during playback; the browser fetches it by range, so it never loads into memory. The details
+            panel shows it in a square, which suits portrait reels and wide recordings alike. */}
+        <Match when={kind() === "video"}>
           <VideoPlayer
             src={url() ?? null}
             label={props.entry.name}
@@ -98,19 +109,10 @@ function RevisionPreview(props: PreviewProps) {
             crossOrigin="anonymous"
             renew={async () => (await contentLease(props.baseId, props.entry.path, abort.signal, t().previewFailed)).url}
             fallbackAction={download}
+            error={lease.error() ? previewFailed() : undefined}
           />
         </Match>
-        <Match when={failed() || (media() && lease.error())}>
-          <Placeholder
-            state="error"
-            description={t().previewFailed}
-            action={
-              <Button size="sm" onClick={retry}>
-                {t().retry}
-              </Button>
-            }
-          />
-        </Match>
+        <Match when={failed() || (media() && lease.error())}>{previewFailed()}</Match>
         <Match when={media() && !url()}>
           <Placeholder state="loading" description={t().loadingDetails} />
         </Match>

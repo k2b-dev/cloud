@@ -6,7 +6,7 @@
  * nothing moves while the video loads.
  */
 
-import { createEffect, createSignal, type JSX, on, Show } from "solid-js";
+import { createEffect, createSignal, type JSX, Match, on, Switch } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 
@@ -26,11 +26,17 @@ export type VideoPlayerProps = {
   crossOrigin?: "anonymous" | "use-credentials";
   /**
    * Resolves a fresh address of the same video, for example a renewed signed URL. When playback fails, the player asks
-   * for one and continues at the same time, playing if it was. A second failure at the same point shows the fallback.
+   * for one and continues at the same time, playing if it was. A renewed address that fails before it shows that point,
+   * or within ten seconds after, shows the fallback, so a renewed address must stay valid for longer.
    */
   renew?: () => Promise<string>;
   /** Offered with the fallback when the browser cannot play the video, typically a download. */
   fallbackAction?: JSX.Element;
+  /**
+   * Shown in the frame instead of the video while set, for example the host's own error with a retry when it could not
+   * fetch the address. The frame keeps its size.
+   */
+  error?: JSX.Element;
   /** Called when the player gives up on the video and shows its fallback. */
   onFallback?: () => void;
   class?: string;
@@ -39,28 +45,39 @@ export type VideoPlayerProps = {
 /** How far the arrow keys move playback, in seconds. */
 const SEEK_STEP = 5;
 
+/**
+ * How long a renewed address has to hold at the point where its predecessor failed before a failure there counts as
+ * new. A video that cannot play at a point fails again within moments, also where the engine reads or decodes ahead of
+ * playback; an expired address fails only after its lifetime, which for a signed URL is typically a minute or more.
+ */
+const RENEWED_GRACE_MS = 10_000;
+
 /** Safari on iOS shows no frame before playback without a poster; a media fragment makes it load and show the first one. */
 const withFirstFrame = (src: string) => (src.includes("#") ? src : `${src}#t=0.001`);
+
+/** Where focus goes when the fallback replaces the focused video. */
+const FALLBACK_FOCUS = ".k2b-video-player__fallback :is(a[href], button:not(:disabled))";
 
 export function VideoPlayer(props: VideoPlayerProps) {
   const messages = useUiMessages();
   const [source, setSource] = createSignal<string | null>(props.src);
   const [failed, setFailed] = createSignal(false);
+  let frame: HTMLDivElement | undefined;
   let video: HTMLVideoElement | undefined;
-  /** Where to continue once a renewed address has loaded. */
-  let resume: { time: number; rate: number; playing: boolean } | null = null;
+  /**
+   * The last renewal: where to continue once the renewed address has loaded, and since when it shows that point. Until
+   * it has held there for a while, a failure means the video itself does not play, not that the address expired.
+   */
+  let renewal: { time: number; rate: number; playing: boolean; loaded: boolean; readyAt: number | null } | null = null;
   /** Playing as the viewer meant it; a failing source may stop without a pause event. */
   let playing = false;
-  /** Where playback last failed; failing there again means a renewed address does not help. */
-  let failedAt: number | null = null;
 
   // A new address from the host is another video: start over without resuming.
   createEffect(
     on(
       () => props.src,
       (src) => {
-        resume = null;
-        failedAt = null;
+        renewal = null;
         playing = false;
         setFailed(false);
         setSource(src);
@@ -75,23 +92,23 @@ export function VideoPlayer(props: VideoPlayerProps) {
   };
 
   const giveUp = () => {
+    // The fallback replaces the video, so focus on the video would drop to the page; it moves into the fallback.
+    const focused = video !== undefined && document.activeElement === video;
     setFailed(true);
+    if (focused) (frame?.querySelector<HTMLElement>(FALLBACK_FOCUS) ?? frame)?.focus();
     props.onFallback?.();
   };
 
   const fail = async () => {
     const element = video;
     if (!element || failed()) return;
-    const time = element.currentTime;
-    // A renewed address that fails before it loads, or a failure at the same point again, is not an expired address.
-    if (!props.renew || resume || (failedAt !== null && Math.abs(time - failedAt) < 0.5)) return giveUp();
-    failedAt = time;
-    const state = { time, rate: element.playbackRate, playing };
+    const recent = renewal && (renewal.readyAt === null || performance.now() - renewal.readyAt < RENEWED_GRACE_MS);
+    if (!props.renew || recent) return giveUp();
     const requested = props.src;
+    renewal = { time: element.currentTime, rate: element.playbackRate, playing, loaded: false, readyAt: null };
     try {
       const renewed = await props.renew();
       if (requested !== props.src) return;
-      resume = state;
       if (renewed === source()) element.load();
       else setSource(renewed);
     } catch {
@@ -101,12 +118,22 @@ export function VideoPlayer(props: VideoPlayerProps) {
 
   const loaded = () => {
     const element = video;
-    if (!element || !resume) return;
-    const { time, rate, playing: wasPlaying } = resume;
-    resume = null;
-    if (time > 0) element.currentTime = time;
-    element.playbackRate = rate;
-    if (wasPlaying) void element.play().catch(() => undefined);
+    if (!element) return;
+    // Sound in an empty frame: the browser cannot decode the picture, for example HEVC outside Safari. A fresh address
+    // does not change that.
+    if (element.videoWidth === 0 && element.videoHeight === 0) return giveUp();
+    if (!renewal || renewal.loaded) return;
+    renewal.loaded = true;
+    if (renewal.time > 0) element.currentTime = renewal.time;
+    element.playbackRate = renewal.rate;
+    if (renewal.playing) void element.play().catch(() => undefined);
+  };
+
+  /** The renewed address holds once the video shows the point where it continues. */
+  const ready = (event: Event & { currentTarget: HTMLVideoElement }) => {
+    const element = event.currentTarget;
+    if (renewal?.loaded && renewal.readyAt === null && !element.seeking && element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)
+      renewal.readyAt = performance.now();
   };
 
   const fullscreen = (element: HTMLVideoElement) => {
@@ -168,57 +195,58 @@ export function VideoPlayer(props: VideoPlayerProps) {
 
   return (
     <div
+      ref={frame}
       class={`k2b-video-player ${props.class ?? ""}`}
       data-state={failed() ? "failed" : undefined}
+      tabIndex={failed() ? -1 : undefined}
       style={{ "aspect-ratio": String(props.ratio && props.ratio > 0 ? props.ratio : 16 / 9) }}
     >
-      <Show
-        when={!failed() && source()}
-        fallback={
-          <Show when={failed()} fallback={<Placeholder class="k2b-video-player__fallback" state="loading" />}>
-            <Placeholder
-              class="k2b-video-player__fallback"
-              icon="ti ti-video-off"
-              title={messages().videoCannotPlay}
-              description={messages().videoCannotPlayDescription}
-              action={props.fallbackAction}
-            />
-          </Show>
-        }
-      >
-        <video
-          ref={video}
-          class="k2b-video-player__video"
-          src={videoSource()}
-          poster={props.poster}
-          crossOrigin={props.crossOrigin}
-          controls
-          playsinline
-          preload="metadata"
-          tabIndex={0}
-          aria-label={props.label}
-          onKeyDown={onKeyDown}
-          onKeyUp={onKeyUp}
-          onPlay={() => {
-            playing = true;
-          }}
-          onPause={(event) => {
-            // A video that stops because its source failed has not been paused by the viewer.
-            if (!event.currentTarget.error) playing = false;
-          }}
-          onEnded={() => {
-            playing = false;
-          }}
-          onLoadedMetadata={loaded}
-          onTimeUpdate={(event) => {
-            // Played on past the failure: a later failure there is a new one.
-            if (failedAt !== null && !event.currentTarget.paused && event.currentTarget.currentTime > failedAt + 1) failedAt = null;
-          }}
-          onError={() => void fail()}
-        >
-          {messages().videoUnsupported}
-        </video>
-      </Show>
+      <Switch fallback={<Placeholder class="k2b-video-player__fallback" state="loading" />}>
+        <Match when={props.error}>{(error) => <div class="k2b-video-player__fallback">{error()}</div>}</Match>
+        <Match when={failed()}>
+          <Placeholder
+            class="k2b-video-player__fallback"
+            state="error"
+            icon="ti ti-video-off"
+            title={messages().videoCannotPlay}
+            description={messages().videoCannotPlayDescription}
+            action={props.fallbackAction}
+          />
+        </Match>
+        <Match when={source()}>
+          <video
+            ref={video}
+            class="k2b-video-player__video"
+            src={videoSource()}
+            poster={props.poster}
+            crossOrigin={props.crossOrigin}
+            controls
+            playsinline
+            preload="metadata"
+            tabIndex={0}
+            aria-label={props.label}
+            onKeyDown={onKeyDown}
+            onKeyUp={onKeyUp}
+            onPlay={() => {
+              playing = true;
+            }}
+            onPause={(event) => {
+              // A video that stops because its source failed has not been paused by the viewer.
+              if (!event.currentTarget.error) playing = false;
+            }}
+            onEnded={() => {
+              playing = false;
+            }}
+            onLoadedMetadata={loaded}
+            onLoadedData={ready}
+            onSeeked={ready}
+            onCanPlay={ready}
+            onError={() => void fail()}
+          >
+            {messages().videoUnsupported}
+          </video>
+        </Match>
+      </Switch>
     </div>
   );
 }
