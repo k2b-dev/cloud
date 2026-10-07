@@ -2,6 +2,12 @@
 
 Use `cld assistant` for interactive access to the user's personal Cloud agent and for chat automation. Assistant is the CLI and GUI surface for personal conversations stored by Cloud AI Core; chats started from Mail or another application appear in the same history. The root command starts or continues a chat, while named management commands inspect chat state and files, resolve pending actions, manage personalization, and manage Projects.
 
+Before you configure the Assistant for someone, read
+[How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
+It explains whose permissions the Assistant uses, what Projects share and
+whether it is live, which Actions need approval, how scheduled tasks are
+authorized, and when to use instructions, Skills, memories, or knowledge.
+
 ## Interactive and print modes
 
 Start a line-oriented terminal session:
@@ -331,7 +337,7 @@ cld assistant personalization configure --use off --learning off
 
 ## Projects
 
-Projects combine shared instructions, knowledge, files, Cloud references, model defaults, and Cloud access grants. Chats created in a Project remain private.
+Projects combine shared instructions, knowledge, files, Cloud references, model defaults, and access grants that say who may use the Project. Chats created in a Project remain private. Knowledge and files are copies that every member can read; a reference is a live pointer that the Assistant reads with each member's own access and that grants nothing. Reference types are `<app>.<type>`, such as `notebooks.note`, `spaces.space`, `grids.base`, or `mail.mailbox`; see [How the Assistant works](how-it-works.md).
 
 ```bash
 cld assistant projects list
