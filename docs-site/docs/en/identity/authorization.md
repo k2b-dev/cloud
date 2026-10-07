@@ -511,3 +511,26 @@ shows a key icon and no label. A form that renders its own rows for
 
 On narrow screens the name and the label stay on one line. When both do not
 fit, each gets an equal share and the shorter one stays whole.
+
+### Show who a group grant reaches
+
+A group row shows how many people currently receive access through the group:
+its direct members and the members of nested groups, the same users that
+access resolution matches. Selecting the count expands the member list below
+the row, 20 people at a time; further pages load only when the viewer asks
+for them. The list pushes the rows below it down only after that selection,
+and the count replaces a plain “Members” label on the same line, so loading
+it moves nothing. The editor needs no extra props or server routes for this.
+
+The editor reads members from the Accounts entity search in the browser, with
+the viewer's own [directory visibility](#discover-principals-safely). Full
+user accounts see the count and the names. Guest accounts are refused member
+lists by the server, so their rows show no count and the expanded list says
+that their account cannot see the members. Applications cannot widen this
+from the client.
+
+For a directory (FreeIPA) group, the expanded list also says that local
+accounts, such as guests, cannot be members and need a direct grant. Cloud
+rejects local users in directory groups, so a person missing from the list
+is not covered by the group grant. Change the membership in the directory or
+grant the person directly.

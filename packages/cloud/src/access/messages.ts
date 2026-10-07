@@ -29,6 +29,19 @@ export const accessMessages = i18n.define({
       lastManager: ({ level }: { level: string }) =>
         `The last entry with “${level}” access can't be lowered or removed. Give another person or group “${level}” access first.`,
       lastManagerOption: ({ level }: { level: string }) => `Available once another person or group has “${level}” access`,
+      groupMembers: "Members",
+      groupMemberCount: ({ count }: { count: number }) => (count === 1 ? "1 member" : `${count.toLocaleString("en")} members`),
+      groupMemberCountOf: ({ count, name }: { count: number; name: string }) =>
+        `${count === 1 ? "1 member" : `${count.toLocaleString("en")} members`} of ${name}`,
+      groupMembersOf: ({ name }: { name: string }) => `Members of ${name}`,
+      groupMembersLoading: "Loading members…",
+      groupMembersHidden: "Your account can't see who belongs to this group.",
+      groupMembersEmpty: "No one receives access through this group right now.",
+      groupMembersFailed: "Members couldn't be loaded.",
+      retry: "Try again",
+      showMoreMembers: ({ count }: { count: number }) => `Show ${count.toLocaleString("en")} more`,
+      directoryGroupHint:
+        "This group comes from the directory. Local accounts such as guests can't be members, so give them access directly.",
       read: "Read",
       readDescription: "Read this resource through the app API.",
       write: "Write",
@@ -92,6 +105,18 @@ export const accessMessages = i18n.define({
       lastManager: ({ level }) =>
         `Der letzte Eintrag mit Zugriff „${level}“ kann nicht herabgestuft oder entfernt werden. Gib zuerst einer anderen Person oder Gruppe Zugriff „${level}“.`,
       lastManagerOption: ({ level }) => `Möglich, sobald eine weitere Person oder Gruppe Zugriff „${level}“ hat`,
+      groupMembers: "Mitglieder",
+      groupMemberCount: ({ count }) => (count === 1 ? "1 Mitglied" : `${count.toLocaleString("de")} Mitglieder`),
+      groupMemberCountOf: ({ count, name }) => `${count === 1 ? "1 Mitglied" : `${count.toLocaleString("de")} Mitglieder`} von ${name}`,
+      groupMembersOf: ({ name }) => `Mitglieder von ${name}`,
+      groupMembersLoading: "Mitglieder werden geladen…",
+      groupMembersHidden: "Dein Konto kann nicht sehen, wer zu dieser Gruppe gehört.",
+      groupMembersEmpty: "Über diese Gruppe erhält gerade niemand Zugriff.",
+      groupMembersFailed: "Die Mitglieder konnten nicht geladen werden.",
+      retry: "Erneut versuchen",
+      showMoreMembers: ({ count }) => `${count.toLocaleString("de")} weitere anzeigen`,
+      directoryGroupHint:
+        "Diese Gruppe stammt aus dem Verzeichnis. Lokale Konten wie Gäste können nicht Mitglied sein; gib ihnen direkt Zugriff.",
       read: "Lesen",
       readDescription: "Diese Ressource über die App-API lesen.",
       write: "Schreiben",

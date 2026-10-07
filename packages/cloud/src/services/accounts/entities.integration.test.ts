@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { createAccess, getEffectivePermissions } from "../../server/services/access";
 import { accountsAppService } from "./app";
 import type { AccountsActor } from "./authz";
 
@@ -155,6 +156,63 @@ suite("accounts entity visibility (integration)", () => {
       );
     } finally {
       await cleanup();
+    }
+  });
+
+  // The shared access editor counts and lists a group grant's reach with exactly this query.
+  test("lists a group's members as access resolution reaches them, and only for full accounts", async () => {
+    const suffix = crypto.randomUUID();
+    const directId = await insertUser(suffix, "direct", "guest");
+    const nestedId = await insertUser(suffix, "nested", "user");
+    const outsideId = await insertUser(suffix, "outside", "user");
+    const parentGroupId = await insertGroup(suffix, "granted");
+    const childGroupId = await insertGroup(suffix, "nested-team");
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${directId}::uuid, ${parentGroupId}::uuid)`;
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${nestedId}::uuid, ${childGroupId}::uuid)`;
+    await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${parentGroupId}::uuid, ${childGroupId}::uuid)`;
+    const grant = await createAccess({ principal: { type: "group", groupId: parentGroupId }, permission: "read" });
+    if (!grant.ok) throw new Error(grant.error.message);
+    const actor = (userId: string, profile: "user" | "guest"): AccountsActor => ({
+      userId,
+      uid: `entity-visibility-${profile}-${suffix}`,
+      roles: [profile, "local", `local/${profile}`],
+      provider: "local",
+    });
+
+    try {
+      const coverage = await accountsAppService.entity.list({
+        actor: actor(outsideId, "user"),
+        kinds: ["user"],
+        memberOfGroupId: parentGroupId,
+        recursive: true,
+        pagination: { page: 1, perPage: 20 },
+      });
+      const covered = coverage.items.map((item) => (item.kind === "user" ? item.user.id : null));
+      expect(coverage.total).toBe(2);
+      expect(covered).toEqual(expect.arrayContaining([directId, nestedId]));
+
+      const candidates = [directId, nestedId, outsideId];
+      const permissions = await getEffectivePermissions({
+        accessIds: [grant.data.id],
+        subjects: candidates.map((userId) => ({ type: "user", userId })),
+      });
+      expect(candidates.filter((_, index) => permissions[index] !== "none")).toEqual(
+        candidates.filter((userId) => covered.includes(userId)),
+      );
+
+      // A guest who belongs to the group still may not read who else does.
+      await expect(
+        accountsAppService.entity.list({
+          actor: actor(directId, "guest"),
+          kinds: ["user"],
+          memberOfGroupId: parentGroupId,
+          recursive: true,
+        }),
+      ).rejects.toThrow("Guest accounts cannot use entity relation filters");
+    } finally {
+      await sql`DELETE FROM auth.access WHERE id = ${grant.data.id}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id IN (${parentGroupId}::uuid, ${childGroupId}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id IN (${directId}::uuid, ${nestedId}::uuid, ${outsideId}::uuid)`;
     }
   });
 });

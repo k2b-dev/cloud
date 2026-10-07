@@ -74,13 +74,15 @@ Use `permissionOptions` to limit and explain the levels supported by the resourc
 
 Permission labels must describe capability, not color. Principal rows and destructive actions already use buttons; keep custom permission labels specific and short.
 
+A group row's member count is a disclosure button: `aria-expanded` reflects the list, `aria-controls` names it, and its accessible name starts with the visible count and adds the group name.
+
 The API-key creation flow must explain that the token is shown once.
 
 ## Runtime
 
 These components are interactive and require hydration.
 
-`PermissionEditor` and `EntitySearch` query Cloud identity in the browser. API-key creation and revocation call the application callbacks. Server-side authorization must run again in every callback target.
+`PermissionEditor` and `EntitySearch` query Cloud identity in the browser. A group row in `PermissionEditor` also loads its member count from Accounts, with the viewer's directory visibility, and expands to the member list on request. API-key creation and revocation call the application callbacks. Server-side authorization must run again in every callback target.
 
 ## Example
 

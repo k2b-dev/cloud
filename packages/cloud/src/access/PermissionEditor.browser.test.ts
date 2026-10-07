@@ -144,3 +144,64 @@ describe("PermissionEditor last manager in a browser", () => {
     }
   });
 });
+
+describe("PermissionEditor group coverage in a browser", () => {
+  const groupEntries: AccessEntry[] = [
+    {
+      id: "user",
+      principal: { type: "user", userId: "user" },
+      permission: "admin",
+      createdAt: "2026-10-07T00:00:00.000Z",
+      displayName: "Quentin Dorn",
+    },
+    {
+      id: "group",
+      principal: { type: "group", groupId: "33333333-3333-4333-8333-333333333333" },
+      permission: "read",
+      createdAt: "2026-10-07T00:00:00.000Z",
+      displayName: longName,
+    },
+  ];
+
+  test("the member count arrives without moving the row or its controls", async () => {
+    for (const [width, locale] of [
+      [320, "de"],
+      [1024, "en"],
+    ] as const) {
+      const tab = await open(width, locale, groupEntries);
+      try {
+        const layout = () =>
+          tab.evaluate(() => {
+            const rows = Array.from(document.querySelectorAll(".group\\/access-row"));
+            const rect = (element: Element | null) => {
+              const box = element!.getBoundingClientRect();
+              return { x: box.x, y: box.y, width: box.width, height: box.height };
+            };
+            const group = rows[1]!;
+            return {
+              heights: rows.map((row) => row.getBoundingClientRect().height),
+              entry: rect(group.parentElement),
+              level: rect(group.querySelector("[aria-haspopup=menu]")),
+              remove: rect(group.querySelector("button[aria-label]:not([aria-haspopup]):not([aria-controls])")),
+              overflow: group.children[1]!.scrollWidth - group.children[1]!.clientWidth,
+            };
+          });
+        const before = await layout();
+        // The server renders the plain label; the browser replaces it with the count once loaded.
+        const label = await tab.evaluate(() => document.querySelector("button[aria-controls]:not([aria-haspopup]) span")!.textContent);
+        expect(label).toBe(locale === "de" ? "Mitglieder" : "Members");
+        await tab.evaluate(() => {
+          document.querySelector("button[aria-controls]:not([aria-haspopup]) span")!.textContent = "1,234 members";
+        });
+        const after = await layout();
+        expect(before.heights[1]).toBe(before.heights[0]!);
+        // The collapsed member list takes no room.
+        expect(before.entry.height).toBe(before.heights[1]!);
+        expect(before.overflow).toBeLessThanOrEqual(0);
+        expect(after).toEqual(before);
+      } finally {
+        await tab.close();
+      }
+    }
+  });
+});

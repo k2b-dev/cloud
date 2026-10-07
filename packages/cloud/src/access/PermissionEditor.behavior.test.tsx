@@ -301,3 +301,159 @@ describe("PermissionEditor last manager", () => {
     }
   });
 });
+
+const directoryUser = (index: number) => ({
+  id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  uid: `member${index}`,
+  roles: ["user"],
+  provider: "ipa",
+  profile: "user",
+  givenname: "Member",
+  sn: String(index),
+  displayName: `Member ${index}`,
+  mail: null,
+  avatarHash: null,
+});
+
+describe("PermissionEditor group coverage", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  const groupId = "33333333-3333-4333-8333-333333333333";
+  const renderGroup = async (dom: DomTestHarness, respond: (url: URL) => Response) => {
+    const requests: URL[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = new URL(String(input instanceof Request ? input.url : input));
+        requests.push(url);
+        return respond(url);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["click"]);
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[
+            grant("owner", { type: "user", userId: "user-owner" }, "admin", "Owner"),
+            grant("venue-crew", { type: "group", groupId }, "read", "venue-crew"),
+          ]}
+          grantAccess={async () => {
+            throw new Error("Not used by this test.");
+          }}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    // The level menu trigger also controls a popup; the member toggle does not open one.
+    const toggle = () => dom.root.querySelector<HTMLButtonElement>("button[aria-controls]:not([aria-haspopup])")!;
+    const panel = () => dom.document.getElementById(toggle().getAttribute("aria-controls")!)!;
+    return {
+      requests,
+      toggle,
+      panel,
+      done: () => {
+        dispose();
+        globalThis.fetch = originalFetch;
+      },
+    };
+  };
+
+  test("counts the people a group grant reaches and lists them page by page on request", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    dom.document.documentElement.lang = "en";
+    const members = Array.from({ length: 23 }, (_, index) => directoryUser(index + 1));
+    const view = await renderGroup(dom, (url) => {
+      if (url.searchParams.has("group_ids"))
+        return Response.json({
+          items: [
+            {
+              kind: "group",
+              group: { id: groupId, provider: "ipa", name: "venue-crew", description: null, gidnumber: null, personalOwner: null },
+            },
+          ],
+          pagination: { page: 1, per_page: 1, total: 1, total_pages: 1, has_next: false },
+        });
+      const page = Number(url.searchParams.get("page"));
+      const perPage = Number(url.searchParams.get("per_page"));
+      return Response.json({
+        items: members.slice((page - 1) * perPage, page * perPage).map((user) => ({ kind: "user", user, relation: { direct: true } })),
+        pagination: { page, per_page: perPage, total: members.length, total_pages: 2, has_next: page * perPage < members.length },
+      });
+    });
+    try {
+      await waitFor(() => view.toggle().textContent === "23 members", "the member count");
+      // Coverage follows access resolution: direct and nested members, users only.
+      const memberRequest = view.requests.find((url) => url.searchParams.has("member_of_group_id"))!;
+      expect(Object.fromEntries(memberRequest.searchParams)).toEqual({
+        kinds: "user",
+        member_of_group_id: groupId,
+        recursive: "true",
+        page: "1",
+        per_page: "20",
+      });
+      expect(view.toggle().getAttribute("aria-label")).toBe("23 members of venue-crew");
+      expect(view.toggle().getAttribute("aria-expanded")).toBe("false");
+      expect(view.panel().hidden).toBe(true);
+
+      view.toggle().click();
+      expect(view.toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(view.panel().hidden).toBe(false);
+      expect(view.panel().textContent).toContain("Local accounts such as guests can't be members");
+      expect(view.panel().querySelector("ul")?.getAttribute("aria-label")).toBe("Members of venue-crew");
+      expect(view.panel().querySelectorAll("li")).toHaveLength(20);
+
+      const more = Array.from(view.panel().querySelectorAll("button")).find((button) => button.textContent === "Show 3 more")!;
+      more.click();
+      await waitFor(() => view.panel().querySelectorAll("li").length === 23, "the second page");
+      await waitFor(() => dom.document.activeElement === view.panel().querySelector("ul"), "focus in the completed list");
+      expect(Array.from(view.panel().querySelectorAll("button")).some((button) => button.textContent?.includes("more"))).toBe(false);
+
+      // Changing the group's level keeps its row, and with it the open list.
+      const groupRow = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
+        row.textContent?.includes("venue-crew"),
+      )!;
+      Array.from(groupRow.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        .find((item) => item.textContent?.startsWith("Edit"))!
+        .click();
+      await waitFor(() => groupRow.textContent?.includes("Edit") === true, "the new level");
+      expect(view.toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(view.panel().querySelectorAll("li")).toHaveLength(23);
+      expect(
+        view.requests.filter((url) => url.searchParams.get("page") === "1" && url.searchParams.has("member_of_group_id")),
+      ).toHaveLength(1);
+    } finally {
+      view.done();
+      dom.cleanup();
+    }
+  });
+
+  test("shows no member data when the directory withholds it", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    dom.document.documentElement.lang = "de";
+    const view = await renderGroup(dom, (url) =>
+      url.searchParams.has("member_of_group_id")
+        ? Response.json({ code: "FORBIDDEN", message: "Guest accounts cannot use entity relation filters" }, { status: 403 })
+        : Response.json({ items: [], pagination: { page: 1, per_page: 1, total: 0, total_pages: 0, has_next: false } }),
+    );
+    try {
+      view.toggle().click();
+      await waitFor(() => view.panel().textContent?.includes("Dein Konto kann nicht sehen") === true, "the withheld note");
+      expect(view.toggle().textContent).toBe("Mitglieder");
+      expect(view.toggle().getAttribute("aria-label")).toBe("Mitglieder von Venue-Crew");
+      expect(view.panel().querySelector("ul")).toBeNull();
+      expect(view.panel().textContent).not.toContain("Verzeichnis");
+    } finally {
+      view.done();
+      dom.cleanup();
+    }
+  });
+});
