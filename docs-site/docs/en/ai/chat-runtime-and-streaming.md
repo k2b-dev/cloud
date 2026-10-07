@@ -521,9 +521,11 @@ raw request object, and secret references appear only by name.
 Code Mode source and runtime tools do not require confirmation. Source Actions
 retain permission checks and idempotency. Browser execution claims resolve a
 public short turn ID to the authorized active turn's UUID before persistence.
-A duplicate claim cannot repeat an interaction. Host failures return
-`kind: "host"` with `retryable: false`; agents should report them rather than
-rewriting otherwise valid application source or retrying unchanged calls.
+A duplicate claim cannot repeat an interaction. A call that does not complete
+returns `CodeToolFailure` (`{failed: true, error, guidance?}`), and the
+server-run code tools report it to the agent as a tool error. Host failures
+carry guidance to report them rather than rewrite otherwise valid application
+source or repeat unchanged calls.
 
 The execution host belongs to one Assistant process. Run this alpha with one
 Assistant replica: temporary JavaScript state is not transferred between replicas

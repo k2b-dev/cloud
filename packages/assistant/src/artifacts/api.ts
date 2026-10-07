@@ -7,7 +7,7 @@ import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { ArtifactCompileError, actionValidator, sourceActions } from "./actions";
+import { ActionInputError, ArtifactCompileError, parseActionInput, sourceActions } from "./actions";
 import { adminIdentity, artifactAdmin } from "./admin";
 import { runCodeAi } from "./ai-service";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
@@ -92,7 +92,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     .onError((error, c) => {
       if (error instanceof AiQuotaError) return respond(c, { ok: false, code: error.code, status: 429, error: error.message });
       if (isAiSettingsError(error)) return respond(c, { ok: false, code: error.aiError.code, status: 403, error: error.aiError.message });
-      if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
+      if (error instanceof ArtifactCompileError || error instanceof ActionInputError || error instanceof AiFileWriteError)
         return respond(c, { ok: false, code: error.code, status: error.code === "CONFLICT" ? 409 : 400, error: error.message });
       if (error instanceof GotenbergRenderError) {
         const code =
@@ -395,7 +395,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
           throw new ArtifactError("CONFLICT");
         const action = sourceActions(bundle.source).find((action) => action.name === input.action);
         if (!action) throw new ArtifactError("NOT_FOUND");
-        actionValidator(action.inputSchema).parse(input.input);
+        parseActionInput(action, input.input);
         const compiled = await compileArtifact(bundle.source, { action: input.action, input: input.input });
         const current = await artifacts.get(input.id, identity(c), undefined, !draft);
         if (draft && current.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");

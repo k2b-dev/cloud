@@ -30,6 +30,28 @@ export class ArtifactCompileError extends Error {
   readonly code = "COMPILE_FAILED";
 }
 
+/** A call input that its action's schema rejects; the action did not run. */
+export class ActionInputError extends Error {
+  readonly code = "ACTION_INPUT_INVALID";
+}
+
+// anyOf/oneOf report one issue per alternative; expand them so the leaf fields stay named.
+const describeIssues = (issues: readonly z.core.$ZodIssue[], prefix: readonly PropertyKey[] = []): string[] =>
+  issues.map((issue) => {
+    const path = [...prefix, ...issue.path];
+    const field = path.length ? path.map(String).join(".") : "input";
+    if (issue.code !== "invalid_union" || !issue.errors.length) return `${field}: ${issue.message}`;
+    return `${field}: matches no alternative: ${issue.errors.map((branch) => `[${describeIssues(branch, path).join("; ")}]`).join(" or ")}`;
+  });
+
+export function parseActionInput(action: AppAction, input: unknown) {
+  const result = actionValidator(action.inputSchema).safeParse(input);
+  if (result.success) return result.data;
+  const issues = describeIssues(result.error.issues).join("; ");
+  // Same bound as manifest diagnostics; nested unions can multiply the listed alternatives.
+  throw new ActionInputError(`Input for ${action.name} does not match its inputSchema; the action did not run. ${issues}`.slice(0, 16000));
+}
+
 export function sourceActions(source: ArtifactSource): AppAction[] {
   try {
     return parseSourceActions(source);

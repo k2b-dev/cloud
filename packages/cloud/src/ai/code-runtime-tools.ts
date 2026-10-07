@@ -6,6 +6,7 @@ import type { RequestActor } from "../server";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
+import { CodeToolFailure } from "./browser-code-contracts";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
@@ -160,7 +161,12 @@ export async function waitForManagedCodeCall(
       seen.add(approval.id);
       if (approval.decision === null) await request({ id: approval.id, approved });
     }
-    if (state.status === "done") return z.json().parse(state.result);
+    if (state.status === "done") {
+      // Nessi records a thrown error as a failed tool result the model can act on.
+      const failure = CodeToolFailure.safeParse(state.result);
+      if (failure.success) throw new Error([failure.data.error, failure.data.guidance].filter(Boolean).join(" "));
+      return z.json().parse(state.result);
+    }
     if (state.status === "lost")
       throw new Error("The isolated code host was lost. The call was not replayed; inspect saved data before starting a new run.");
     await new Promise<void>((resolve, reject) => {

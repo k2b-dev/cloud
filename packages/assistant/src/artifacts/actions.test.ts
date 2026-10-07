@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ArtifactCompileError, actionValidator, sourceActions } from "./actions";
+import { ActionInputError, type AppAction, ArtifactCompileError, actionValidator, parseActionInput, sourceActions } from "./actions";
 import type { ArtifactSource } from "./contracts";
 import { compileArtifact, validateArtifact } from "./runtime/compile";
 
@@ -34,6 +34,36 @@ test("actions require unique names, existing local handlers and supported schema
   expect(() => actionValidator(action.inputSchema).parse({ value: "2" })).toThrow();
   expect(() => actionValidator(action.inputSchema).parse({ value: 2, extra: true })).toThrow();
   expect(actionValidator(action.outputSchema).parse(4)).toBe(4);
+});
+
+test("a rejected action input names every offending field", () => {
+  expect(parseActionInput(action, { value: 2 })).toEqual({ value: 2 });
+  const reject = () => parseActionInput(action, { value: "2", extra: true });
+  expect(reject).toThrow(ActionInputError);
+  expect(reject).toThrow(
+    'Input for double does not match its inputSchema; the action did not run. value: Invalid input: expected number, received string; input: Unrecognized key: "extra"',
+  );
+  expect(new ActionInputError("").code).toBe("ACTION_INPUT_INVALID");
+});
+
+test("a rejected input inside anyOf names the leaf fields of each alternative", () => {
+  const recipient: AppAction["inputSchema"] = {
+    anyOf: [
+      { type: "object", properties: { email: { type: "string" } }, required: ["email"] },
+      { type: "object", properties: { id: { type: "number" } }, required: ["id"] },
+    ],
+  };
+  const send = { ...action, name: "send", inputSchema: { type: "object", properties: { recipient }, required: ["recipient"] } };
+  expect(() => parseActionInput(send, { recipient: { email: 123 } })).toThrow(
+    "recipient: matches no alternative: [recipient.email: Invalid input: expected string, received number] or [recipient.id: Invalid input: expected number, received undefined]",
+  );
+});
+
+test("publication rejects actions whose input is not an object, while the saved source still compiles", async () => {
+  const scalar = source([{ ...action, inputSchema: { type: "number" } }]);
+  scalar.files.push({ path: "main.ts", content: "export default () => 42;" });
+  await compileArtifact(scalar);
+  await expect(validateArtifact(scalar)).rejects.toThrow('inputSchema must have type "object"');
 });
 
 test("headless apps compile without a fake GUI entry, and actions use their own handler", async () => {

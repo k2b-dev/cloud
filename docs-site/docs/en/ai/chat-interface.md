@@ -417,7 +417,10 @@ advertising a handler makes the tool discoverable, but the agent must call
 `load_tools` before using it. `createCloudAiCodeTools` supplies their definitions
 through the AI runtime tool exports. `CODE_RUNTIME_TOOL_NAMES`,
 `parseCodeToolInput`, and the internal `CodeRuntimeInput` envelope are exported
-from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations.
+from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations. A host
+returns a call that did not complete as `CodeToolFailure`
+(`{failed: true, error, guidance?}`, from `@k2b/cloud/ai/browser`); server-run
+code tools report it to the model as a tool error.
 
 `code_run` accepts the app `id` and optional chat `inputPaths`, takes a fixed
 snapshot of current source, and returns a run ID and compact state. There is no

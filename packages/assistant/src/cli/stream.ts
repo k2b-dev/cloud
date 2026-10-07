@@ -1,5 +1,5 @@
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, parseAiSse } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
@@ -138,7 +138,7 @@ export const streamAssistantTurn = async (input: {
           )
         ).call({ name: block.name, args: block.args, callId: block.callId, turnId: targetTurnId!, conversationId });
       } catch (error) {
-        result = { error: error instanceof Error ? error.message : String(error), kind: "host", retryable: false };
+        result = { failed: true, error: error instanceof Error ? error.message : String(error) } satisfies CodeToolFailure;
       }
       await ctx.readJson(
         await ctx.fetch(

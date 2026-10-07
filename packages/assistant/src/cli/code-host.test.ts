@@ -16,16 +16,16 @@ test("published actions execute in the isolated host and validate their returned
               title: "Double",
               description: "Double a number",
               entry: "double.ts",
-              inputSchema: { type: "number" },
+              inputSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
               outputSchema: { type: "number" },
             },
           ],
         }),
       },
-      { path: "double.ts", content: "export default (value: number) => value * 2;" },
+      { path: "double.ts", content: "export default ({ value }: { value: number }) => value * 2;" },
     ],
   };
-  const compiled = await compileArtifact(source, { action: "double", input: 3 });
+  const compiled = await compileArtifact(source, { action: "double", input: { value: 3 } });
   const bundle = await cliHostBundle();
   let outputSchema = { type: "number" };
   const host = await createCliCodeHost({
@@ -33,11 +33,14 @@ test("published actions execute in the isolated host and validate their returned
       const path = String(input);
       if (path.endsWith("host.js")) return new Response(bundle);
       if (path.includes("runtime/action")) {
-        expect(JSON.parse(await new Response(init?.body).text())).toEqual({
+        const body = JSON.parse(await new Response(init?.body).text());
+        if (typeof body.input.value === "string")
+          return Response.json({ code: "ACTION_INPUT_INVALID", message: "value: expected number, received string" }, { status: 400 });
+        expect(body).toEqual({
           id: "aBc234",
           action: "double",
           publishedVersion: 1,
-          input: 3,
+          input: { value: 3 },
         });
         return Response.json({ compiled, outputSchema, resource: { id: "aBc234", kind: "app", sourceRevision: 1 } });
       }
@@ -48,10 +51,14 @@ test("published actions execute in the isolated host and validate their returned
     name: "code_action",
     conversationId: crypto.randomUUID(),
     turnId: crypto.randomUUID(),
-    args: { id: "aBc234", action: "double", publishedVersion: 1, input: 3 },
+    args: { id: "aBc234", action: "double", publishedVersion: 1, input: { value: 3 } },
   };
   try {
     expect(await host.execute({ ...call, callId: "action" })).toMatchObject({ status: "ready", output: "6", nodes: [] });
+    expect(await host.execute({ ...call, callId: "invalid-input", args: { ...call.args, input: { value: "3" } } })).toEqual({
+      failed: true,
+      error: "ACTION_INPUT_INVALID: value: expected number, received string",
+    });
     outputSchema = { type: "string" };
     expect(await host.execute({ ...call, callId: "invalid-output" })).toMatchObject({
       runId: "invalid-output",
@@ -377,7 +384,7 @@ test("slow chat input crosses startup deadlines and invalid arguments remain inp
       callId: "invalid",
       args: { code: "export default()=>42", id: ids.conversationId },
     });
-    expect(invalid).toMatchObject({ kind: "input" });
+    expect(invalid).toMatchObject({ failed: true, guidance: expect.stringContaining("schema") });
     expect(reads).toBe(0);
     const result = await host.execute({
       ...ids,
@@ -424,7 +431,7 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
     expect(await host.execute({ ...ids, name: "code_inspect", callId: "work", args: { runId: "retained-work" } })).toMatchObject({
       work: { status: "running" },
     });
-    expect(await host.execute({ ...ids, name: "code_inspect", callId: "old", args: { runId: "probe-0" } })).toHaveProperty("error");
+    expect(await host.execute({ ...ids, name: "code_inspect", callId: "old", args: { runId: "probe-0" } })).toMatchObject({ failed: true });
     expect(await run("truncated", 'export default()=>"x".repeat(20000)')).toMatchObject({ outputTruncated: true });
   } finally {
     await host.close();
@@ -554,7 +561,7 @@ test("finance exports and resource-scoped one-offs use the existing worker and m
     expect(requests.some((path) => path.endsWith("/storage/manage"))).toBe(true);
     denied = true;
     const rejected = await host.execute({ name: "code_run", callId: "denied-context", conversationId: id, turnId: id, args });
-    expect(rejected).toMatchObject({ error: "Manage required" });
+    expect(rejected).toEqual({ failed: true, error: "ACCESS_DENIED: Manage required" });
   } finally {
     await host.close();
   }
@@ -680,7 +687,10 @@ test("CLI uses UI typed controls and bounded explorer inspection", async () => {
         ],
       },
     });
-    expect(failed).toHaveProperty("error");
+    expect(failed).toEqual({
+      failed: true,
+      error: expect.stringMatching(/^Step 2 of 3 failed after 1 completed step; later steps did not run\. .*Control does not exist/s),
+    });
     expect(await host.execute({ ...ids, name: "code_inspect", callId: "after-failure", args: { runId: "analytics" } })).toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "output", value: "Count: 10" })]),
     });
