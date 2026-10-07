@@ -1,4 +1,4 @@
-import { aiConversations, listAiConversationFiles, listAssistantAiModels } from "@k2b/cloud/ai";
+import { aiConversations, isAiWorkingFilePath, listAiConversationFiles, listAssistantAiModels } from "@k2b/cloud/ai";
 import { artifacts } from "./artifacts/service";
 
 /** Bounded, permission-aware details fetched only when a sidebar preview opens. */
@@ -15,7 +15,12 @@ export async function loadAssistantSidebarPreview(userId: string, chatId: string
   const apps = await artifacts.describe(ids, userId, conversation.id);
   return {
     model: turn ? (models.find((model) => model.id === turn.modelProfileId)?.label ?? turn.modelProfileId) : null,
-    files: files.map((file) => ({ path: file.path })),
+    // Working files below /temp/ come last, so the preview names what the user brought and received.
+    files: [...files.filter((file) => !isAiWorkingFilePath(file.path)), ...files.filter((file) => isAiWorkingFilePath(file.path))].map(
+      (file) => ({
+        path: file.path,
+      }),
+    ),
     apps: apps.map((app) => ({ id: app.id, title: app.title, icon: app.icon })),
     hasMoreSources: Boolean(sources.nextCursor),
   };

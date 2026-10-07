@@ -44,7 +44,7 @@ Scheduled tasks deliver a saved prompt back into one chat. If that chat belongs 
 
 One-time schedules use an exact local time in the Cloud application timezone. Recurring schedules use a five-field cron expression in that same timezone. Ask Assistant to list or read existing tasks, or manage them from the CLI with `cld assistant tasks`. Failed tasks move to **needs attention** and notify you. Deleting a chat also deletes its scheduled tasks and run history.
 
-Open Chat context and choose **View all** under Scheduled to create, edit, pause, resume, run, delete, or inspect the occurrence history of that chat's tasks.
+Open **Context** in the sidebar **In this chat** and select a scheduled task to edit, pause, resume, run, delete, or inspect the occurrence history of that chat's tasks.
 
 :::info When Assistant is unavailable
 If AI is disabled, misconfigured, or has no selectable streaming model, the composer is disabled and the page shows the current status error.

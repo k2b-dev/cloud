@@ -510,7 +510,14 @@ export type AiConversationResourceOccurrence = AiConversationResourceRef & {
   chat: Pick<AiConversation, "shortId" | "title" | "updatedAt">;
 };
 
-export type AiConversationSourceKind = "web" | "file" | "resource" | "activity";
+/**
+ * - `result`: something the assistant delivered with `present` (a file, `path` set), `code_open` (an app, `ref` set) or
+ *   `code_present` (a chat visualization, neither set; `sourceCallId` names it).
+ * - `web`: a page read with `web_extract`; `activity`: a web search, one entry per query.
+ * - `resource`: a Cloud resource a tool call read, or one indexed as Project context without a call.
+ * - `file`: a conversation file.
+ */
+export type AiConversationSourceKind = "result" | "web" | "file" | "resource" | "activity";
 
 export type AiConversationSource = {
   kind: AiConversationSourceKind;
@@ -528,15 +535,23 @@ export type AiConversationSource = {
   lastSeenAt: string;
   sourceTurnId: string | null;
   sourceCallId: string | null;
+  /**
+   * Chat position of the source: the assistant message that holds `sourceCallId`, otherwise the start of its turn.
+   * Use it as the `message` link target; null when the turn is gone.
+   */
+  sourceMessageSeq: number | null;
 };
 
 export type AiConversationSourceObservation = {
-  kind: "web" | "activity";
+  kind: "result" | "web" | "activity";
   key: string;
   title: string;
+  /** For `result`, the delivered description; a new delivery always replaces it, also with none. */
   preview?: string;
   icon?: string;
   href?: string;
+  /** The delivered Cloud resource of a `result`, for example an opened app. */
+  ref?: CloudResourceRef;
 };
 
 export type AiConversationFileSnapshotEntry = {
@@ -707,7 +722,11 @@ export type AiConversationService = {
     search?: string;
     before?: string;
     limit?: number;
-  }): Promise<{ sources: AiConversationSource[]; nextCursor?: string }>;
+    /** Only these kinds; all kinds when omitted. */
+    kinds?: readonly AiConversationSourceKind[];
+    /** Only resources a tool call read; leaves out resources indexed as Project context without a call. */
+    observed?: boolean;
+  }): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number }>;
   getCapabilityInvocationOrigin(input: { idempotencyKey: string; toolName: string }): Promise<{
     conversationId: string;
     conversationShortId: string;

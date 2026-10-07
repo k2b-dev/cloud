@@ -159,6 +159,7 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
   return (
     <ErrorBoundary fallback={(error) => <NoticeCard tone="danger" title={t().visualizationUnavailable} detail={String(error)} />}>
       <section
+        data-presentation-id={descriptor().success ? ChatPresentationResult.parse(props.result).presentationId : undefined}
         class="assistant-chat-presentation"
         aria-label={descriptor().success ? ChatPresentationResult.parse(props.result).title : t().visualization}
       >

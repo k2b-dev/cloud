@@ -40,7 +40,10 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
         </Show>
       }
     >
-      <div class="inline-flex min-h-7 max-w-full items-center gap-1.5 py-1 text-xs leading-none text-dimmed">
+      <div
+        data-call-id={props.block.callId}
+        class="inline-flex min-h-7 max-w-full items-center gap-1.5 py-1 text-xs leading-none text-dimmed"
+      >
         <i class={`ti ${icon()} shrink-0 text-base leading-none`} aria-hidden="true" />
         <Show
           when={actions.onOpenFile}

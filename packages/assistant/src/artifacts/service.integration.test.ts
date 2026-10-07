@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
-import { aiChatTasks, aiConversations, aiProjects, aiToolAudit } from "@k2b/cloud/ai";
+import { aiChatTasks, aiConversations, aiMemories, aiProjects, aiSkills, aiToolAudit } from "@k2b/cloud/ai";
 import * as capabilityClient from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
@@ -2209,42 +2209,52 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const lookup = spyOn(aiConversations, "getConversationByShortId").mockImplementation(async (request) =>
         aiConversations.getConversation({ conversationId, ownerUserId: request.ownerUserId }),
       );
-      const sources = spyOn(aiConversations, "listConversationSources").mockResolvedValue({
-        sources: [
-          {
-            kind: "resource",
-            key: resource.id,
-            title: "Old title",
-            preview: null,
-            icon: "ti ti-code",
-            href: null,
-            path: null,
-            mediaType: null,
-            size: null,
-            ref: { type: "assistant.artifact", id: resource.id },
-            occurrences: 1,
-            firstSeenAt: new Date().toISOString(),
-            lastSeenAt: new Date().toISOString(),
-            sourceTurnId: turnId,
-            sourceCallId: "run-import",
-          },
-        ],
-        nextCursor: undefined,
-      });
+      // The app is a result of this chat because code_open delivered it here.
+      const sources = spyOn(aiConversations, "listConversationSources").mockImplementation(async (request) => ({
+        sources: request.kinds?.includes("result")
+          ? [
+              {
+                kind: "result" as const,
+                key: `assistant.artifact:${resource.id}`,
+                title: "Studio app",
+                preview: null,
+                icon: "ti ti-app-window",
+                href: null,
+                path: null,
+                mediaType: null,
+                size: null,
+                ref: { type: "assistant.artifact", id: resource.id },
+                occurrences: 1,
+                firstSeenAt: new Date().toISOString(),
+                lastSeenAt: new Date().toISOString(),
+                sourceTurnId: turnId,
+                sourceCallId: "open-app",
+                sourceMessageSeq: 3,
+              },
+            ]
+          : [],
+        total: request.kinds?.includes("result") ? 1 : 0,
+      }));
       const tasks = spyOn(aiChatTasks, "list").mockResolvedValue([]);
+      // This database holds only the tables code needs; the sidebar's Context section is not under test here.
+      const skills = spyOn(aiSkills, "listConversationUses").mockResolvedValue([]);
+      const memories = spyOn(aiMemories, "listFromConversation").mockResolvedValue([]);
       try {
-        const snapshot = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", "de");
-        expect(snapshot?.sources[0]?.preview).toContain("R2 · Entwurf · Lauf erfolgreich");
+        const options = { timeZone: "Europe/Berlin" };
+        const snapshot = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        // The result shows the app under its current title, with the state of its last run of this revision.
+        expect(snapshot?.results[0]).toMatchObject({ kind: "app", title: resource.title, messageSeq: 3 });
+        expect(snapshot?.results[0]?.app).toMatchObject({ id: resource.id, href: `/app/assistant/apps/${resource.id}`, lastRun: "ready" });
         expect(snapshot?.runs.some((run) => run.id === call.callId && run.status === "ready")).toBe(true);
         await artifacts.writeFile(resource.id, "main.ts", "export default()=>43", owner);
-        expect((await loadAssistantChatContextSnapshot(owner.user.id, "abc234", "de"))?.sources[0]?.preview).toContain(
-          "R3 · Entwurf · Revision noch nicht ausgeführt",
-        );
-        expect(await loadAssistantChatContextSnapshot(stranger.user.id, "abc234", "de")).toBeNull();
+        expect((await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
+        expect(await loadAssistantChatContextSnapshot(stranger.user.id, "abc234", options)).toBeNull();
       } finally {
         lookup.mockRestore();
         sources.mockRestore();
         tasks.mockRestore();
+        skills.mockRestore();
+        memories.mockRestore();
       }
       let sent = 0;
       const http = spyOn(httpService, "execute").mockImplementation(async (_id, approved) => {

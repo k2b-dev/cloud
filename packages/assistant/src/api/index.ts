@@ -1,4 +1,4 @@
-import { type AuthContext, auth, err, fail, getLocale, ok, rateLimit, respond } from "@k2b/cloud/server";
+import { type AuthContext, auth, err, fail, getTimeZone, ok, rateLimit, respond } from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { artifactApi } from "../artifacts/api";
@@ -31,7 +31,7 @@ const app = new Hono<AuthContext>()
   .get("/workspace/conversations/:conversationId/context", async (c) => {
     const user = actorUser(c);
     if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
-    const snapshot = await loadAssistantChatContextSnapshot(user.id, c.req.param("conversationId")!, getLocale(c));
+    const snapshot = await loadAssistantChatContextSnapshot(user.id, c.req.param("conversationId")!, { timeZone: getTimeZone(c) });
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
   })
   .get("/workspace/projects/:projectId/context", async (c) => {

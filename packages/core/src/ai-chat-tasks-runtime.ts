@@ -1,5 +1,12 @@
 import { lazySync } from "@k2b/cloud";
-import { aiChatTasks, aiConversations, aiProjects, listAiConversationFiles, personalAiModelPolicy } from "@k2b/cloud/ai";
+import {
+  aiChatTasks,
+  aiConversationFileManifest,
+  aiConversations,
+  aiProjects,
+  listAiConversationFiles,
+  personalAiModelPolicy,
+} from "@k2b/cloud/ai";
 import { enqueueExistingAiTurn, prepareAiChatTurn } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings, logger } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
@@ -87,7 +94,7 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
       scheduledFor: occurrence.scheduledFor,
       grants: task.grants,
     }),
-    fileSnapshot: { attached: [], available: files, total: files.length },
+    fileSnapshot: { attached: [], ...aiConversationFileManifest(files) },
     actor: { kind: "user", user },
     modelPolicy: personalAiModelPolicy,
     requestedModelId: project?.defaultModelProfileId ?? undefined,

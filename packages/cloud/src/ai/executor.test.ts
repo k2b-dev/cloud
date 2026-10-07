@@ -556,7 +556,8 @@ test("web search sources retain the query above the activity description", async
       conversationId: "conversation",
       turnId: "turn",
       callId: "search",
-      source: { kind: "activity", key: "web_search", title: "Wetter Ulm", preview: "Searched the web", icon: "ti ti-world" },
+      // One entry per normalized query, so every search stays visible.
+      source: { kind: "activity", key: "web_search:wetter ulm", title: "Wetter Ulm", preview: "Searched the web", icon: "ti ti-world" },
     });
   } finally {
     index.mockRestore();

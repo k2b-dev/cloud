@@ -31,6 +31,13 @@ type FileRow = {
 type FileContentRow = FileRow & { bytes: Uint8Array };
 export type AiFileContent = AiFileStat & { bytes: Uint8Array };
 
+/** `LIKE` pattern for every path below a folder; the folder name itself matches literally. */
+const pathsBelow = (folder: string): string => `${folder.endsWith("/") ? folder : `${folder}/`}`.replace(/[\\%_]/gu, "\\$&") + "%";
+
+/** Working files of a conversation live below this folder; the assistant keeps intermediate steps there. */
+export const AI_WORKING_FILES_FOLDER = "/temp/";
+export const isAiWorkingFilePath = (path: string): boolean => path.startsWith(AI_WORKING_FILES_FOLDER);
+
 const iso = (value: Date | string): string => (value instanceof Date ? value.toISOString() : new Date(value).toISOString());
 
 const toStat = (row: FileRow): AiFileStat => ({
@@ -246,7 +253,7 @@ export const aiFileStore = {
     if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 1000))
       throw new Error("Invalid file page limit");
     const prefix = input.prefix ?? "/";
-    const pattern = `${prefix.endsWith("/") ? prefix : `${prefix}/`}%`;
+    const pattern = pathsBelow(prefix);
     const rows = await sql<FileRow[]>`
       SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
       FROM ai.files
@@ -468,7 +475,7 @@ export const aiFileStore = {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
       const path = await storedAiFilePath(tx, input.conversationId, input.path);
       if (input.recursive) {
-        const pattern = `${path.endsWith("/") ? path : `${path}/`}%`;
+        const pattern = pathsBelow(path);
         const rows = await tx<{ id: string }[]>`
           DELETE FROM ai.files
           WHERE conversation_id = ${input.conversationId} AND (path = ${path} OR path LIKE ${pattern})
@@ -498,6 +505,25 @@ export const aiFileStore = {
       `;
       if (target[0]) return "conflict" as const;
       await tx`UPDATE ai.files SET path = ${input.to}, updated_at = now(), version = version + 1 WHERE id = ${source[0].id}::uuid`;
+      // A delivered result is the file, not its old name. A result row left at the new name belonged to a file that
+      // is gone; the moved file's own delivery replaces it.
+      const moved = await tx<{ source_key: string }[]>`
+        SELECT source_key FROM ai.conversation_sources
+        WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${from}
+      `;
+      if (moved[0]) {
+        await tx`
+          DELETE FROM ai.conversation_sources
+          WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${input.to}
+        `;
+        // A title that was only the old file name follows the new one; a title the assistant chose stays.
+        await tx`
+          UPDATE ai.conversation_sources
+          SET source_key = ${input.to},
+              title = CASE WHEN title = ${from.slice(from.lastIndexOf("/") + 1)} THEN ${input.to.slice(input.to.lastIndexOf("/") + 1)} ELSE title END
+          WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${from}
+        `;
+      }
       return "renamed" as const;
     });
   },
@@ -532,6 +558,112 @@ export const aiFileStore = {
   async totalBytes(conversationId: string): Promise<number> {
     return aiConversationStoredBytes(sql, conversationId);
   },
+};
+
+export type AiConversationWorkingGroup = {
+  /** The first folder below `/temp/`; null for files directly in `/temp/`. */
+  folder: string | null;
+  count: number;
+  bytes: number;
+  updatedAt: string;
+  /** Number of files per media type. */
+  mediaTypes: Record<string, number>;
+};
+
+export type AiConversationFileOverview = {
+  /** Uploads and other files outside `/temp/`, newest first. */
+  files: AiFileStat[];
+  fileCount: number;
+  /** Working files below `/temp/`, one group per first subfolder, most recently changed first. */
+  groups: AiConversationWorkingGroup[];
+  groupCount: number;
+  /** Working files directly in `/temp/`, outside any group folder, newest first. */
+  looseWorkingFiles: AiFileStat[];
+  workingCount: number;
+  workingBytes: number;
+  /** Storage the conversation uses against its limit, dictation recordings included. */
+  usedBytes: number;
+  maxBytes: number;
+};
+
+/**
+ * A bounded view of a conversation's files for interfaces: files outside the working folder by name, working files
+ * as groups with counts. Load the files of a group with `listAiConversationFiles` and its folder as prefix.
+ * Authorized services may expose this after resolving the conversation owner.
+ */
+export const loadAiConversationFileOverview = async (
+  conversationId: string,
+  limits: { files: number; groups: number; looseWorkingFiles: number } = { files: 500, groups: 200, looseWorkingFiles: 100 },
+): Promise<AiConversationFileOverview> => {
+  const working = pathsBelow(AI_WORKING_FILES_FOLDER);
+  const [files, [counts], groups, looseWorkingFiles, usedBytes] = await Promise.all([
+    sql<FileRow[]>`
+      SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
+      FROM ai.files
+      WHERE conversation_id = ${conversationId} AND path NOT LIKE ${working}
+      ORDER BY updated_at DESC, path ASC
+      LIMIT ${limits.files}
+    `,
+    sql<{ files: number | string; working: number | string; working_bytes: number | string }[]>`
+      SELECT count(*) FILTER (WHERE path NOT LIKE ${working}) AS files,
+             count(*) FILTER (WHERE path LIKE ${working}) AS working,
+             COALESCE(sum(size) FILTER (WHERE path LIKE ${working}), 0) AS working_bytes
+      FROM ai.files
+      WHERE conversation_id = ${conversationId}
+    `,
+    sql<
+      {
+        folder: string | null;
+        count: number | string;
+        bytes: number | string;
+        updated_at: Date | string;
+        media_types: Record<string, number | string>;
+        group_count: number | string;
+      }[]
+    >`
+      WITH working AS (
+        SELECT CASE WHEN path ~ '^/temp/[^/]+/' THEN split_part(path, '/', 3) END AS folder, media_type, size, updated_at
+        FROM ai.files
+        WHERE conversation_id = ${conversationId} AND path LIKE ${working}
+      ),
+      by_type AS (
+        SELECT folder, media_type, count(*) AS files, sum(size) AS bytes, max(updated_at) AS updated_at
+        FROM working
+        GROUP BY folder, media_type
+      )
+      SELECT folder, sum(files) AS count, sum(bytes) AS bytes, max(updated_at) AS updated_at,
+             jsonb_object_agg(media_type, files) AS media_types, count(*) OVER () AS group_count
+      FROM by_type
+      GROUP BY folder
+      ORDER BY max(updated_at) DESC, folder ASC NULLS LAST
+      LIMIT ${limits.groups}
+    `,
+    sql<FileRow[]>`
+      SELECT path, size, media_type, origin, dictation_recorded_at, updated_at, version
+      FROM ai.files
+      WHERE conversation_id = ${conversationId} AND path LIKE ${working} AND path !~ '^/temp/[^/]+/'
+      ORDER BY updated_at DESC, path ASC
+      LIMIT ${limits.looseWorkingFiles}
+    `,
+    aiConversationStoredBytes(sql, conversationId),
+  ]);
+  return {
+    files: files.map(toStat),
+    fileCount: Number(counts?.files ?? 0),
+    groups: groups.map((group) => ({
+      folder: group.folder,
+      count: Number(group.count),
+      bytes: Number(group.bytes),
+      updatedAt: iso(group.updated_at),
+      mediaTypes: Object.fromEntries(Object.entries(group.media_types).map(([type, count]) => [type, Number(count)])),
+    })),
+    groupCount: Number(groups[0]?.group_count ?? 0),
+    looseWorkingFiles: looseWorkingFiles.map(toStat),
+    workingCount: Number(counts?.working ?? 0),
+    workingBytes: Number(counts?.working_bytes ?? 0),
+    usedBytes,
+    maxBytes: AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,
+  };
 };
 
 /** Authorized services may expose this read after resolving the conversation owner. */

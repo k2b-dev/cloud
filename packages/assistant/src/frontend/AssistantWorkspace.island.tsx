@@ -41,7 +41,8 @@ import {
   Button,
   Chat,
   type ChatMention,
-  Dropdown,
+  IconButton,
+  LocaleProvider,
   openSpotlightSearch,
   Placeholder,
   prompts,
@@ -62,7 +63,14 @@ import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
-import { AssistantChatContextContent, AssistantChatContextPanel, type ContextCategory, type ContextView } from "./AssistantChatContext";
+import {
+  AssistantChatContextContent,
+  assistantChatSidebarActions,
+  type ContextCategory,
+  type ContextView,
+  createAssistantChatContextState,
+} from "./AssistantChatContext";
+import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
@@ -71,6 +79,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { assistantTaskTitle } from "./AssistantTasksDialog";
+import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
   type AssistantLiveInvalidation,
@@ -84,6 +93,7 @@ import {
   assistantArtifactPathFromHref,
   assistantConversationHref,
   assistantConversationIdFromHref,
+  assistantMessageHref,
   assistantMessageSeqFromHref,
   assistantProjectHref,
   assistantProjectIdFromHref,
@@ -92,6 +102,8 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
+import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
+import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { assistantComposerCommands } from "./composer-commands";
 import { confirmComposerSave, editComposerSession, newComposerSession, observeComposerRevision } from "./composer-session";
 import { assistantMessageAnchorSeq } from "./message-anchor";
@@ -132,6 +144,8 @@ type Props = {
   initialWorkspaceHref?: string;
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
+  /** The person closed the chat sidebar's column before; the server renders it closed. */
+  initialContextClosed?: boolean;
   projects: AiProject[];
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
@@ -159,7 +173,6 @@ export default function AssistantWorkspace(props: Props) {
             ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
             : { ...view, kind: "view" },
     );
-  const [workspaceContext, setWorkspaceContext] = createSignal<AssistantChatContextSnapshot | null>(null);
   const openContextOverview = (category: ContextCategory, title: string) => {
     const chatId = chat.activeConversationId();
     if (!chatId) return;
@@ -175,21 +188,20 @@ export default function AssistantWorkspace(props: Props) {
           category={category}
           onOpenView={openContextView}
           onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
+          onJump={(target) => void jumpTo(target)}
+          onOpenSecrets={openChatSecrets}
         />
       ),
     });
   };
+  const openChatSecrets = () => {
+    const conversationId = chat.activeConversationId();
+    if (conversationId) void openSecretsDialog({ conversationId });
+  };
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
   const contextMenuItems = () => [
-    {
-      label: "Secrets",
-      icon: "ti ti-key",
-      action: () => {
-        const conversationId = chat.activeConversationId();
-        if (conversationId) void openSecretsDialog({ conversationId });
-      },
-    },
+    { label: "Secrets", icon: "ti ti-key", action: openChatSecrets },
     { label: artifactCopy().apps, icon: "ti ti-app-window", action: () => openContextOverview("apps", artifactCopy().apps) },
     { label: artifactCopy().files, icon: "ti ti-files", action: () => openContextOverview("files", artifactCopy().files) },
     { label: contextText("Sources"), icon: "ti ti-link", action: () => openContextOverview("sources", contextText("Sources")) },
@@ -202,7 +214,7 @@ export default function AssistantWorkspace(props: Props) {
           },
         ]
       : []),
-    ...(workspaceContext()?.chatId === chat.activeConversationId() && workspaceContext()?.tasks.length
+    ...(workspaceContext()?.tasks.length
       ? [
           {
             label: contextText("Scheduled tasks"),
@@ -340,7 +352,7 @@ export default function AssistantWorkspace(props: Props) {
   let scrollToMessageAnchor: ((anchorId: string | number) => boolean) | undefined;
 
   let revealRequest = 0;
-  const revealMessage = async (messageSeq: number) => {
+  const revealMessage = async (messageSeq: number, options: { highlight?: boolean } = {}) => {
     const request = ++revealRequest;
     const conversationId = chat.activeConversationId();
     const navigation = navigationRequest;
@@ -368,16 +380,40 @@ export default function AssistantWorkspace(props: Props) {
     }
     anchor.tabIndex = -1;
     anchor.focus({ preventScroll: true });
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      anchor.animate(
-        [
-          { outline: "2px solid var(--k2b-ai-accent)", outlineOffset: "2px" },
-          { outline: "2px solid transparent", outlineOffset: "6px" },
-        ],
-        { duration: 900, easing: "ease-out" },
-      );
-    }
+    if (options.highlight !== false) highlightChatElement(anchor);
     return true;
+  };
+  const highlightChatElement = (element: HTMLElement) => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    element.animate(
+      [
+        { outline: "2px solid var(--k2b-ai-accent)", outlineOffset: "2px" },
+        { outline: "2px solid transparent", outlineOffset: "6px" },
+      ],
+      { duration: 900, easing: "ease-out" },
+    );
+  };
+  /**
+   * Shows where a result came from: loads the history up to its message, scrolls to the delivering call (the present
+   * row or the visualization) and highlights it, or the turn when that element is not visible. The jump becomes a
+   * `?message=` history entry like a search hit.
+   */
+  const jumpTo = async (target: ChatSidebarJump) => {
+    const conversationId = chat.activeConversationId();
+    try {
+      if (!(await revealMessage(target.messageSeq, { highlight: false }))) return;
+    } catch (error) {
+      chat.setError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (conversationId !== chat.activeConversationId()) return;
+    const content = timelineContent();
+    const delivery = revealChatDelivery(content, target);
+    const marked = delivery ?? content?.querySelector<HTMLElement>(":focus");
+    if (marked) highlightChatElement(marked);
+    const href = assistantMessageHref(window.location.href, target.messageSeq);
+    if (href !== `${window.location.pathname}${window.location.search}${window.location.hash}`)
+      navigate(href, { scroll: "manual", viewTransition: false });
   };
 
   const canUseComposer = createMemo(() => props.status.ok && props.status.enabled && props.models.length > 0);
@@ -884,6 +920,54 @@ export default function AssistantWorkspace(props: Props) {
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
   };
   const emptyChat = () => !chat.loadingConversation() && chat.messages().length === 0 && !chat.activeTurn();
+
+  // The chat sidebar ("In this chat"): one live snapshot for the column, the drawer, the phone sheet, and the Files tab.
+  const contextState = createAssistantChatContextState(
+    {
+      get chatId() {
+        return chat.activeConversationId() ?? "";
+      },
+      get project() {
+        return activeConversationProject();
+      },
+      initial: props.initialContext,
+    },
+    liveHub,
+  );
+  const workspaceContext = () => contextState.snapshot();
+  const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
+  const sidebarActions = () =>
+    assistantChatSidebarActions({
+      chatId: chat.activeConversationId() ?? "",
+      project: activeConversationProject(),
+      copy: {
+        files: artifactCopy().files,
+        apps: artifactCopy().apps,
+        knowledge: contextText("Project knowledge"),
+        sources: contextText("Sources"),
+      },
+      onOpenView: openContextView,
+      onOpenApp: (id, title) => artifactWorkspace.open(appTab(id, title)),
+      onJump: (target) => void jumpTo(target),
+      onOpenSecrets: openChatSecrets,
+      onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
+    });
+  const contextHost = createChatSidebarHost({
+    initialClosed: props.initialContextClosed === true,
+    onSheet: () =>
+      void openAssistantChatSidebarSheet({
+        state: contextState,
+        actions: sidebarActions(),
+        project: activeConversationProject(),
+        runCount: contextState.snapshot()?.runCount,
+        wrap: (content) => (
+          <LocaleProvider locale={locale()}>
+            <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
+          </LocaleProvider>
+        ),
+      }),
+  });
+  createEffect(on(() => chat.activeConversationId(), contextHost.closeDrawer, { defer: true }));
   const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
   const [choosingProject, setChoosingProject] = createSignal(false);
   let emptyProjectConversationId: string | null = null;
@@ -1659,16 +1743,12 @@ export default function AssistantWorkspace(props: Props) {
                 when={projectView()}
                 fallback={
                   <Chat class="assistant-chat-shell min-h-0 flex-1">
-                    <Show when={activeConversation()}>
-                      <div class="assistant-context-open">
-                        <Dropdown.Root items={contextMenuItems()}>
-                          <Dropdown.Trigger iconOnly label={artifactCopy().open}>
-                            <i class="ti ti-plus" aria-hidden="true" />
-                          </Dropdown.Trigger>
-                        </Dropdown.Root>
-                      </div>
-                    </Show>
-                    <div class="assistant-chat-layout">
+                    <div
+                      ref={contextHost.layoutRef}
+                      class="assistant-chat-layout"
+                      data-context={contextHost.closed() ? "closed" : "auto"}
+                      data-drawer={contextHost.drawerOpen() ? "open" : undefined}
+                    >
                       <div class="contents">
                         <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
                           <Show
@@ -1715,15 +1795,10 @@ export default function AssistantWorkspace(props: Props) {
                                     void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                   onOpenFile: (path) => void openFiles(path),
                                   resolveFileLink: (href) => {
-                                    const context = workspaceContext() ?? props.initialContext;
+                                    const context = workspaceContext();
                                     const conversationId = chat.activeConversationId();
                                     return conversationId && context?.chatId === conversationId
-                                      ? resolveChatFileLink(
-                                          href,
-                                          window.location.href,
-                                          conversationId,
-                                          context.files.map((file) => file.path),
-                                        )
+                                      ? resolveChatFileLink(href, window.location.href, conversationId, assistantChatFilePaths(context))
                                       : null;
                                   },
                                   fileUrl: chat.fileContentUrl,
@@ -1757,20 +1832,28 @@ export default function AssistantWorkspace(props: Props) {
                           </div>
                         </Show>
                       </div>
-                      <Show when={activeConversation()}>
-                        {(conversation) => (
-                          <div class="contents">
-                            <AssistantChatContextPanel
-                              onOpenView={openContextView}
-                              onFileDeleted={(file) => artifactWorkspace.closeFile(file.conversationId, file.path)}
-                              onSnapshotChange={setWorkspaceContext}
-                              onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
-                              chatId={conversation().id}
-                              project={activeConversationProject()}
-                              initial={props.initialContext?.chatId === conversation().id ? props.initialContext : null}
-                            />
-                          </div>
-                        )}
+                      <Show when={activeConversation() && !emptyChat()}>
+                        <IconButton
+                          ref={contextHost.toggleRef}
+                          class="assistant-context-toggle"
+                          size="sm"
+                          variant="ghost"
+                          label={sidebarCopy().show}
+                          aria-expanded="false"
+                          aria-controls="assistant-chat-context"
+                          onClick={contextHost.open}
+                        >
+                          <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
+                        </IconButton>
+                        <AssistantChatSidebarPanel
+                          id="assistant-chat-context"
+                          state={contextState}
+                          actions={sidebarActions()}
+                          project={activeConversationProject()}
+                          runCount={contextState.snapshot()?.runCount}
+                          onClose={contextHost.close}
+                          headingRef={contextHost.headingRef}
+                        />
                       </Show>
                     </div>
                   </Chat>
@@ -1816,6 +1899,8 @@ export default function AssistantWorkspace(props: Props) {
                   userId={props.userId}
                   refreshKey={filesRefreshKey()}
                   menuItems={contextMenuItems()}
+                  onJump={(target) => void jumpTo(target)}
+                  onOpenSecrets={openChatSecrets}
                 />
               </Show>
             </AppWorkspace.MainPane>

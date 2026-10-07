@@ -44,7 +44,7 @@ Geplante Aufgaben senden eine gespeicherte Anfrage zurück in einen Chat. Gehör
 
 Einmalige Zeitpläne verwenden einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Wiederkehrende Zeitpläne verwenden einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, vorhandene Aufgaben aufzulisten oder zu lesen, oder verwalte sie über die CLI mit `cld assistant tasks`. Fehlgeschlagene Aufgaben wechseln in den Status **Eingriff erforderlich** und benachrichtigen dich. Beim Löschen eines Chats werden auch seine geplanten Aufgaben und deren Ausführungsverlauf gelöscht.
 
-Öffne den Chat-Kontext und wähle unter **Geplant** die Option **Alle anzeigen**, um Aufgaben dieses Chats zu erstellen, zu bearbeiten, zu pausieren, fortzusetzen, auszuführen oder zu löschen und ihren Ausführungsverlauf zu prüfen.
+Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine geplante Aufgabe, um Aufgaben dieses Chats zu bearbeiten, zu pausieren, fortzusetzen, auszuführen oder zu löschen und ihren Ausführungsverlauf zu prüfen.
 
 :::info Wenn der Assistent nicht verfügbar ist
 Wenn KI deaktiviert oder falsch konfiguriert ist oder kein auswählbares Streaming-Modell bereitsteht, ist das Eingabefeld deaktiviert und die Seite zeigt den aktuellen Statusfehler.

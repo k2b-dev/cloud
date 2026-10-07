@@ -562,7 +562,33 @@ async function linkedSkillProjects(skillId: string, subject: AccessSubject | nul
   return result;
 }
 
+export type AiConversationSkillUse = { name: string; description: string; turns: number; lastLoadedAt: string };
+
 export const aiSkills = {
+  /**
+   * Skills a chat loaded, from the revision snapshots its turns pinned, most recently loaded first. The caller resolves
+   * the chat for its owner first; this is the chat's own history and does not recheck current Skill access.
+   */
+  async listConversationUses(conversationId: string, limit = 50): Promise<AiConversationSkillUse[]> {
+    const rows = await sql<{ name: string; description: string; turns: number | string; last_loaded_at: Date | string }[]>`
+      SELECT snapshot.skill_name AS name,
+             (array_agg(snapshot.description ORDER BY snapshot.loaded_at DESC))[1] AS description,
+             count(*) AS turns, max(snapshot.loaded_at) AS last_loaded_at
+      FROM ai.turn_skill_snapshots snapshot
+      JOIN ai.turns turn ON turn.id = snapshot.turn_id
+      WHERE turn.conversation_id = ${conversationId}::uuid
+      GROUP BY snapshot.skill_name
+      ORDER BY max(snapshot.loaded_at) DESC, snapshot.skill_name ASC
+      LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 100)}
+    `;
+    return rows.map((row) => ({
+      name: row.name,
+      description: row.description,
+      turns: Number(row.turns),
+      lastLoadedAt: (row.last_loaded_at instanceof Date ? row.last_loaded_at : new Date(row.last_loaded_at)).toISOString(),
+    }));
+  },
+
   async seedOnce(template: AiSkillTemplate): Promise<void> {
     const { fields, hash } = validateTemplate(template);
     await sql.begin(async (tx) => {

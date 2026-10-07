@@ -15,13 +15,13 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { ContextStudio } from "../artifacts/ContextStudio";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
-import { AssistantChatContextSurface } from "./AssistantChatContextSurfaces";
+import { AssistantChatSidebarTab, type ChatSidebarActions, type ChatSidebarJump } from "./AssistantChatSidebar";
 import {
   type AssistantContextFile,
   AssistantContextRow,
@@ -54,7 +54,7 @@ import {
   useAssistantLive,
 } from "./assistant-live";
 import { formatDictationTimestamp } from "./dictation-files";
-import { assistantBrowserCopy, assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
+import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
@@ -76,17 +76,6 @@ type ContextNavigation = {
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
   category?: ContextCategory;
 };
-
-export const assistantChatContextHasContent = (snapshot: AssistantChatContextSnapshot): boolean =>
-  visibleAssistantReferences(snapshot.sources, snapshot.chatId, snapshot.tasks.find((task) => task.state !== "completed")?.id).some(
-    (source) => source.kind !== "file",
-  ) ||
-  snapshot.runs.length > 0 ||
-  snapshot.files.length > 0 ||
-  snapshot.tasks.some((task) => task.state !== "completed");
-
-export const assistantChatContextHasPanel = (snapshot: AssistantChatContextSnapshot, hasProject = false): boolean =>
-  hasProject || assistantChatContextHasContent(snapshot);
 
 const taskStatus = (task: AssistantChatTask, text: (value: string) => string) => {
   if (task.state === "active") return { label: text(task.schedule.kind === "once" ? "Pending" : "Active"), tone: "ok" as const };
@@ -113,12 +102,15 @@ type AssistantChatContextQueryProps = {
   initial?: AssistantChatContextSnapshot | null;
 };
 
-const createAssistantChatContextState = (props: AssistantChatContextQueryProps) => {
-  const live = useAssistantLive();
+/** Live changes within this window load one snapshot: an agent writing many files must not reload it per file. */
+const LIVE_COALESCE_MS = 500;
+
+/** The chat's context snapshot, kept current by live invalidations, shared by the sidebar, its sheet, and workspace tabs. */
+export const createAssistantChatContextState = (props: AssistantChatContextQueryProps, live: AssistantLiveHub = useAssistantLive()) => {
   const snapshot = query.create<string, AssistantChatContextSnapshot | null, AssistantLiveInvalidation>({
     source: () => props.chatId,
     initial: props.initial ? { source: props.initial.chatId, data: props.initial } : undefined,
-    load: (chatId, { abortSignal }) => assistantApi.loadChatContext(chatId, abortSignal),
+    load: (chatId, { abortSignal }) => (chatId ? assistantApi.loadChatContext(chatId, abortSignal) : Promise.resolve(null)),
   });
   const projectSnapshot = query.create<string | null, AssistantProjectContextSnapshot | null, AssistantLiveInvalidation>({
     source: () => props.project?.id ?? null,
@@ -127,13 +119,23 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
       return assistantApi.loadProjectContext(projectId, abortSignal);
     },
   });
+  let pending: AssistantLiveInvalidation | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const unregisterChat = live.register({
     matches: (invalidation) =>
       matchesAssistantInvalidation(["conversation-sources", "conversation-files", "conversation-tasks", "conversation-detail"])(
         invalidation,
       ) &&
       (!invalidation.conversationIds || invalidation.conversationIds.has(props.chatId)),
-    invalidate: (invalidation) => snapshot.invalidate(invalidation),
+    invalidate: async (invalidation) => {
+      pending = invalidation;
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        const next = pending;
+        pending = null;
+        if (next) void snapshot.invalidate(next);
+      }, LIVE_COALESCE_MS);
+    },
   });
   const unregisterProject = live.register({
     matches: (invalidation) =>
@@ -142,6 +144,7 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
     invalidate: (invalidation) => projectSnapshot.invalidate(invalidation),
   });
   onCleanup(() => {
+    if (timer) clearTimeout(timer);
     unregisterChat();
     unregisterProject();
   });
@@ -158,15 +161,11 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
   };
   return {
     snapshot: value,
+    projectContext: () => projectSnapshot.data() ?? null,
     context,
     error: () => snapshot.error() ?? projectSnapshot.error(),
     refresh: async () => {
       await Promise.all([snapshot.refresh(), props.project ? projectSnapshot.refresh() : Promise.resolve()]);
-    },
-    presence: () => {
-      const chat = value();
-      if (!chat) return props.project ? true : null;
-      return assistantChatContextHasPanel(chat, Boolean(props.project));
     },
   };
 };
@@ -725,50 +724,79 @@ function AssistantChatContextView(
   );
 }
 
+/** What the sidebar's rows do in the Assistant workspace: files and overviews open as workspace tabs. */
+export const assistantChatSidebarActions = (input: {
+  chatId: string;
+  project: AiProject | null;
+  copy: { files: string; apps: string; knowledge: string; sources: string };
+  onOpenView: (view: ContextView) => void;
+  onOpenApp: (id: string, title: string) => void;
+  onJump: (target: ChatSidebarJump) => void;
+  onOpenSecrets?: () => void;
+  onFileDeleted?: (file: { conversationId: string; path: string }) => void;
+}): ChatSidebarActions => {
+  const overview = (category: ContextCategory, title: string) =>
+    input.onOpenView({
+      context: { conversationId: input.chatId, category, project: input.project },
+      key: `${input.chatId}:${category}`,
+      title,
+      render: () => null,
+    });
+  return {
+    onOpenFile: (file) =>
+      input.onOpenView({
+        file: { conversationId: input.chatId, path: file.path },
+        key: `${input.chatId}:chat:${file.path}`,
+        title: file.title,
+        render: () => null,
+      }),
+    onOpenApp: input.onOpenApp,
+    onJump: input.onJump,
+    onOpenStudio: () => overview("apps", input.copy.apps),
+    onOpenKnowledge: () => overview("knowledge", input.copy.knowledge),
+    onOpenReferences: () => overview("sources", input.copy.sources),
+    onOpenTask: (task) =>
+      input.onOpenView({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null }),
+    onOpenProjectFile: input.project
+      ? (file) => {
+          const project = input.project!;
+          const source = assistantProjectFileSource(project.id, () => [file]);
+          input.onOpenView({
+            key: `${input.chatId}:project:${file.id}`,
+            title: file.path.replace(/^.*\//u, ""),
+            render: () => (
+              <FileView
+                previewPreferencesKey="assistant.csv-preview"
+                file={{ path: file.path }}
+                load={() => source.read(file.path)}
+                downloadHref={source.downloadHref?.(file.path)}
+              />
+            ),
+          });
+        }
+      : undefined,
+    onOpenSecrets: input.onOpenSecrets,
+    onFileDeleted: input.onFileDeleted,
+  };
+};
+
 export function AssistantChatContextContent(
   props: ContextNavigation & {
     chatId: string;
     project?: AiProject | null;
     initial?: AssistantChatContextSnapshot | null;
-    onPresenceChange?: (hasContent: boolean | null) => void;
-    onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
     onOpenApp?: (id: string, title: string, start?: boolean) => void;
+    /** Jumps to a message in the chat; the Files tab offers it for results. */
+    onJump?: (target: ChatSidebarJump) => void;
+    onOpenSecrets?: () => void;
   },
 ) {
   const state = createAssistantChatContextState(props);
-  createEffect(() => {
-    props.onPresenceChange?.(state.presence());
-    props.onSnapshotChange?.(state.snapshot() ?? null);
-  });
+  const text = useAssistantText();
   return (
-    <AssistantChatContextView
-      state={state}
-      onOpenApp={props.onOpenApp}
-      category={props.category}
-      onOpenView={props.onOpenView}
-      onFileDeleted={props.onFileDeleted}
-    />
-  );
-}
-
-export function AssistantChatContextPanel(
-  props: ContextNavigation & {
-    chatId: string;
-    project?: AiProject | null;
-    initial?: AssistantChatContextSnapshot | null;
-    onPresenceChange?: (hasContent: boolean | null) => void;
-    onSnapshotChange?: (snapshot: AssistantChatContextSnapshot | null) => void;
-    onOpenApp?: (id: string, title: string, start?: boolean) => void;
-  },
-) {
-  const state = createAssistantChatContextState(props);
-  createEffect(() => {
-    props.onPresenceChange?.(state.presence());
-    props.onSnapshotChange?.(state.snapshot() ?? null);
-  });
-  return (
-    <Show when={state.presence() === true}>
-      <AssistantChatContextSurface>
+    <Show
+      when={props.category === "files" && props.onOpenView}
+      fallback={
         <AssistantChatContextView
           state={state}
           onOpenApp={props.onOpenApp}
@@ -776,42 +804,25 @@ export function AssistantChatContextPanel(
           onOpenView={props.onOpenView}
           onFileDeleted={props.onFileDeleted}
         />
-      </AssistantChatContextSurface>
+      }
+    >
+      {(onOpenView) => (
+        <AssistantChatSidebarTab
+          state={state}
+          project={props.project}
+          runCount={state.snapshot()?.runCount}
+          actions={assistantChatSidebarActions({
+            chatId: props.chatId,
+            project: props.project ?? null,
+            copy: { files: text("Files"), apps: "Studio", knowledge: text("Project knowledge"), sources: text("Sources") },
+            onOpenView: onOpenView(),
+            onOpenApp: (id, title) => props.onOpenApp?.(id, title),
+            onJump: (target) => props.onJump?.(target),
+            onOpenSecrets: props.onOpenSecrets,
+            onFileDeleted: props.onFileDeleted,
+          })}
+        />
+      )}
     </Show>
   );
 }
-
-export const openAssistantChatContextDialog = (
-  chatId: string,
-  project: AiProject | null,
-  live: AssistantLiveHub,
-  onOpenApp?: (id: string, title: string, start?: boolean) => void,
-  onOpenView?: (view: ContextView) => void,
-) =>
-  prompts.dialog<void>(
-    (close) => (
-      <AssistantLiveProvider value={live}>
-        <AssistantChatContextContent
-          chatId={chatId}
-          project={project}
-          onOpenApp={
-            onOpenApp
-              ? (id, title, start) => {
-                  onOpenApp(id, title, start);
-                  close();
-                }
-              : undefined
-          }
-          onOpenView={
-            onOpenView
-              ? (view) => {
-                  onOpenView(view);
-                  close();
-                }
-              : undefined
-          }
-        />
-      </AssistantLiveProvider>
-    ),
-    { title: assistantBrowserText("Chat context"), icon: "ti ti-adjustments-horizontal", size: "medium" },
-  );

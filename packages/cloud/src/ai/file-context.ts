@@ -1,6 +1,6 @@
 import type { Message } from "@k2b/nessi";
 import { canonicalizeAiAttachmentMarkers, parseAiAttachmentMarkers } from "./attachments";
-import { aiFileStore } from "./files-store";
+import { type AiFileStat, aiFileStore, isAiWorkingFilePath } from "./files-store";
 import {
   AI_FILE_MANIFEST_MAX_ITEMS,
   AI_IMAGE_INPUT_MAX_BYTES,
@@ -52,8 +52,20 @@ export const snapshotAiConversationFiles = async (
     throw new Error("Attached images exceed the 40 MB total image input limit.");
   }
   if (all.length === 0 && attached.length === 0) return undefined;
-  return { attached, available: all.slice(0, AI_FILE_MANIFEST_MAX_ITEMS), total: all.length };
+  return { attached, ...aiConversationFileManifest(all) };
 };
+
+/**
+ * The chat files a turn lists for the model, at most `AI_FILE_MANIFEST_MAX_ITEMS`. Working files below `/temp/` come
+ * last, so intermediate steps never push uploads and results out of the list.
+ */
+export const aiConversationFileManifest = (files: readonly AiFileStat[]): { available: AiFileStat[]; total: number } => ({
+  available: [...files.filter((file) => !isAiWorkingFilePath(file.path)), ...files.filter((file) => isAiWorkingFilePath(file.path))].slice(
+    0,
+    AI_FILE_MANIFEST_MAX_ITEMS,
+  ),
+  total: files.length,
+});
 
 export const canonicalizeAiConversationAttachments = <T extends Message>(
   message: T,

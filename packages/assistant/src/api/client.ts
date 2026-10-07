@@ -297,12 +297,22 @@ export const assistantApi = {
     q?: string;
     cursor?: string;
     limit?: number;
+    /** Only these kinds; all kinds when omitted. */
+    kinds?: readonly AiConversationSource["kind"][];
+    /** Leave out resources indexed as Project context without a tool call. */
+    observed?: boolean;
     signal?: AbortSignal;
-  }): Promise<{ sources: AiConversationSource[]; nextCursor?: string }> => {
+  }): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number }> => {
     const response = await client.conversations[":conversationId"].sources.$get(
       {
         param: { conversationId: input.conversationId },
-        query: { q: input.q, cursor: input.cursor, limit: input.limit ? String(input.limit) : undefined },
+        query: {
+          q: input.q,
+          cursor: input.cursor,
+          limit: input.limit ? String(input.limit) : undefined,
+          kind: input.kinds?.length ? input.kinds.join(",") : undefined,
+          observed: input.observed ? "true" : undefined,
+        },
       },
       { init: { signal: input.signal } },
     );

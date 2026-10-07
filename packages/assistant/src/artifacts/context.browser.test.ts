@@ -36,19 +36,34 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         return Response.json({
           chatId: "chat-one",
           viewerUserId: "test",
-          apps: [app],
-          files: [],
-          tasks: [],
-          sources: [
+          now: new Date().toISOString(),
+          timeZone: "UTC",
+          results: [
             {
-              kind: "resource",
-              key: app.id,
+              key: `assistant.artifact:${app.id}`,
+              kind: "app",
               title: app.title,
-              preview: "App · R1 · Draft",
-              ref: { type: "assistant.artifact", id: app.id },
+              description: app.description,
               icon: app.icon,
+              deliveredAt: new Date().toISOString(),
+              turnId: "turn-1",
+              callId: "open-1",
+              messageSeq: 2,
+              app: { id: app.id, href: `/app/assistant/apps/${app.id}`, published: false, lastRun: null },
             },
           ],
+          resultsTruncated: false,
+          apps: [app],
+          files: [],
+          fileCount: 0,
+          working: { groups: [], groupCount: 0, looseFiles: [], count: 0, bytes: 0 },
+          storage: { usedBytes: 0, maxBytes: 262144000 },
+          tasks: [],
+          sources: [],
+          sourceCount: 0,
+          sourceCursor: null,
+          skills: [],
+          memories: [],
           runCount: 3,
           runs: [{ id: "run-1", status: "ready", createdAt: new Date().toISOString() }],
         });
@@ -72,9 +87,11 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href);
-    const context = page.locator('[data-assistant-context="compact"]');
-    expect(await context.getByRole("button", { name: /View all.*4/ }).count()).toBe(1);
-    await context.getByRole("button", { name: app.title, exact: false }).click();
+    const context = page.locator("#assistant-chat-context");
+    // One-off runs stay one level deeper, as a row under working files.
+    await context.getByRole("button", { name: /Working files/ }).click();
+    expect(await context.getByRole("button", { name: /Script runs · 3/ }).count()).toBe(1);
+    await context.getByRole("button", { name: `Open ${app.title}`, exact: true }).click();
     await page.getByRole("tab", { name: app.title, exact: true }).waitFor();
     expect(requests.some((path) => path.endsWith("/compiled"))).toBe(false);
     await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();

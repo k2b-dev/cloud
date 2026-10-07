@@ -168,10 +168,26 @@ const resourcesQuerySchema = (scope: "conversation" | "user") =>
     limit: z.coerce.number().int().min(1).max(100).optional(),
   });
 const ConversationResourcesQuerySchema = resourcesQuerySchema("conversation");
+const ConversationSourcesQuerySchema = ConversationResourcesQuerySchema.extend({
+  /** Kinds separated by commas, for example `web,activity,resource`. */
+  kind: z
+    .string()
+    .max(64)
+    .transform((value) => value.split(","))
+    .pipe(z.array(z.enum(["result", "web", "file", "resource", "activity"])).min(1))
+    .optional(),
+  observed: z.enum(["true", "false"]).optional(),
+});
 const UserResourcesQuerySchema = resourcesQuerySchema("user");
 
-const FilesListQuerySchema = z.object({ prefix: z.string().optional() });
+const FilesListQuerySchema = z.object({
+  prefix: z.string().optional(),
+  /** Pages by path: pass the last path of a page as `after`. Without `limit`, every file comes newest first. */
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+  after: z.string().max(4096).optional(),
+});
 const FilePathQuerySchema = z.object({ path: z.string().min(1) });
+const FileDeleteQuerySchema = FilePathQuerySchema.extend({ recursive: z.enum(["true", "false"]).optional() });
 const FileWriteSchema = z.object({
   path: z.string().min(1),
   content: z.string().max(12_000_000),
@@ -629,7 +645,7 @@ export const aiRoutes = (() => {
           ),
         );
       })
-      .get("/conversations/:conversationId/sources", v("query", ConversationResourcesQuerySchema), async (c) => {
+      .get("/conversations/:conversationId/sources", v("query", ConversationSourcesQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
@@ -643,6 +659,8 @@ export const aiRoutes = (() => {
               search: query.q,
               before: query.cursor,
               limit: query.limit,
+              kinds: query.kind,
+              observed: query.observed === "true",
             }),
           ),
         );
@@ -1127,7 +1145,12 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const files = await aiFileStore.list({ conversationId: conversation.id, prefix: c.req.valid("query").prefix ?? "/" });
+        const query = c.req.valid("query");
+        const files = await aiFileStore.list({
+          conversationId: conversation.id,
+          prefix: query.prefix ?? "/",
+          ...(query.limit ? { limit: query.limit, after: query.after } : {}),
+        });
         return respond(c, ok({ files, totalBytes: await aiFileStore.totalBytes(conversation.id) }));
       })
       .post("/conversations/:conversationId/dictations", bodyLimit({ maxSize: AI_AUDIO_MAX_BYTES + 65_536 }), async (c) => {
@@ -1307,14 +1330,18 @@ export const aiRoutes = (() => {
           "Cache-Control": "private, no-store",
         });
       })
-      .delete("/conversations/:conversationId/files", v("query", FilePathQuerySchema), async (c) => {
+      .delete("/conversations/:conversationId/files", v("query", FileDeleteQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const path = normalizeAiFilePath(c.req.valid("query").path);
+        const query = c.req.valid("query");
+        const path = normalizeAiFilePath(query.path);
         if (!path) return fileNotFound(c);
-        const removed = await aiFileStore.remove({ conversationId: conversation.id, path, recursive: false });
+        // A folder goes with everything below it, never the whole chat at once.
+        const recursive = query.recursive === "true";
+        if (recursive && path === "/") return respond(c, fail(err.badInput("Choose a folder below /.")));
+        const removed = await aiFileStore.remove({ conversationId: conversation.id, path, recursive });
         if (removed === 0) return fileNotFound(c);
         return respond(c, ok({ deleted: true }));
       })
