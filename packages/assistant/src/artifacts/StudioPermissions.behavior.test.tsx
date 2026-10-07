@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
-test("public sharing shows restrictions and a fixed Use badge, while managers keep role choices", async () => {
+test("an old public entry explains that public links are off and keeps a fixed Use badge, while managers keep role choices", async () => {
   const dom = createDomTestHarness();
   const { StudioPermissions } = await import("./StudioPermissions");
   const dispose = render(
@@ -33,8 +33,9 @@ test("public sharing shows restrictions and a fixed Use badge, while managers ke
     expect(dom.root.textContent).toContain("Access through projects");
     expect(dom.root.textContent).toContain("Finance team");
     expect(dom.root.textContent).toContain("Project without access to its details");
-    expect(dom.root.textContent).toContain("Public access is restricted");
-    expect(dom.root.textContent).toContain("server files or KV");
+    // PUBLIC_APP_SHARING is off: the entry stays listed so managers can remove it, and opens nothing.
+    expect(dom.root.textContent).toContain("Public links are switched off");
+    expect(dom.root.textContent).toContain("cannot open this app for now");
     const rows = dom.root.querySelectorAll(".group\\/access-row");
     expect(rows).toHaveLength(2);
     expect(rows[0]!.textContent).toContain("Use");

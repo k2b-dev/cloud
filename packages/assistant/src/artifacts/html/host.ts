@@ -14,8 +14,6 @@ export type MountEvent =
   /** An unhandled `cloud.*` failure the page should show outside the app. */
   | { type: "notice"; code: string; text: string }
   | { type: "ready"; height: number }
-  /** A Cloud confirmation for this app is open (true) or answered (false). */
-  | { type: "waiting"; value: boolean }
   | { type: "stopped"; reason: string };
 
 /**
@@ -111,7 +109,6 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
     if (asking) throw new CloudError("limit", "Another Cloud confirmation for this app is still open; wait for its answer.");
     asking = true;
     frame.inert = true;
-    emit({ type: "waiting", value: true });
     try {
       const answer = await ask();
       if (!approved(answer) && ++refusals >= FRAME_LIMITS.refusals)
@@ -120,7 +117,6 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
     } finally {
       asking = false;
       frame.inert = false;
-      emit({ type: "waiting", value: false });
     }
   };
   const call = createServiceCalls(options.services(confirm));
