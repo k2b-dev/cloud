@@ -4,6 +4,7 @@ import { Button, Dropdown, FileTree, FileView, NoticeCard, Placeholder, prompts,
 import { createEffect, createResource, createSignal, ErrorBoundary, For, onCleanup, Show } from "solid-js";
 import { openAssistantTaskRun } from "../frontend/AssistantActivitiesDialog";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
+import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
 import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
 import { useAssistantLive } from "../frontend/assistant-live";
 import { ArtifactPanel } from "./ArtifactPanel";
@@ -216,6 +217,9 @@ export function ArtifactWorkspace(props: {
   project?: AiProject | null;
   conversationId?: string | null;
   onOpenView?: (view: ContextView) => void;
+  /** Jumps to a message of the current chat, for results listed in its Files tab. */
+  onJump?: (target: ChatSidebarJump) => void;
+  onOpenSecrets?: () => void;
 }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
@@ -297,6 +301,8 @@ export function ArtifactWorkspace(props: {
                     onOpenView={props.onOpenView}
                     onFileDeleted={(file) => props.controller.closeFile(file.conversationId, file.path)}
                     onOpenApp={(id, title, start) => props.controller.open(appTab(id, title, start))}
+                    onJump={tab.conversationId === props.conversationId ? props.onJump : undefined}
+                    onOpenSecrets={tab.conversationId === props.conversationId ? props.onOpenSecrets : undefined}
                   />
                 ) : tab.kind === "view" ? (
                   tab.render()

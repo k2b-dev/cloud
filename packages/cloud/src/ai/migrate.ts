@@ -393,6 +393,12 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.messages(conversation_id, loop_id, seq ASC)
     WHERE compacted_at IS NULL AND loop_id IS NOT NULL
   `.simple();
+  // Chat positions of sources and results, also in turns that compaction archived; archived messages stay visible.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_loop_seq
+    ON ai.messages(conversation_id, loop_id, seq ASC)
+    WHERE loop_id IS NOT NULL
+  `.simple();
 
   // Optional pg_textsearch ranking. Native weighted FTS above is always the
   // correctness path; missing extension support must never block startup.
@@ -557,6 +563,13 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_conversation_sources_recent
     ON ai.conversation_sources(conversation_id, last_seen_at DESC, kind, source_key)
+  `.simple();
+
+  // A delivered result may be a Cloud resource, for example an app opened with code_open.
+  await sql`
+    ALTER TABLE ai.conversation_sources
+      ADD COLUMN IF NOT EXISTS resource_type TEXT,
+      ADD COLUMN IF NOT EXISTS resource_id TEXT
   `.simple();
 
   await sql`
@@ -1271,6 +1284,109 @@ export const migrateCloudAi = async (): Promise<void> => {
       END IF;
     END $$
   `.simple();
+
+  // Deliveries become `result` sources. The kind check widens once, and then the deliveries already stored in chat
+  // history are indexed once, so existing chats show their results from the start; this needs ai.files above. The
+  // widened check stays NOT VALID until that backfill committed: validating it marks the backfill done, and a start
+  // that stopped in between repeats it. The table is locked exclusively only while the check changes; the scan of the
+  // history leaves it readable.
+  const [kindCheck] = await sql<{ definition: string; validated: boolean }[]>`
+    SELECT pg_get_constraintdef(oid) AS definition, convalidated AS validated FROM pg_constraint
+    WHERE conname = 'ai_conversation_sources_kind_check' AND conrelid = 'ai.conversation_sources'::regclass
+  `;
+  const resultsAllowed = kindCheck?.definition.includes("'result'") === true;
+  if (!resultsAllowed)
+    await sql.begin(async (tx) => {
+      await tx`ALTER TABLE ai.conversation_sources DROP CONSTRAINT IF EXISTS ai_conversation_sources_kind_check`.simple();
+      await tx`
+        ALTER TABLE ai.conversation_sources
+        ADD CONSTRAINT ai_conversation_sources_kind_check CHECK (kind IN ('result', 'web', 'activity')) NOT VALID
+      `.simple();
+    });
+  if (!resultsAllowed || !kindCheck?.validated) {
+    await sql.begin(async (tx) => {
+      // History is not news: the backfill must not queue one live event per indexed row.
+      const liveTrigger = (state: "ENABLE" | "DISABLE") =>
+        tx.unsafe(`
+          DO $$ BEGIN
+            IF EXISTS (
+              SELECT 1 FROM pg_trigger
+              WHERE tgname = 'ai_live_conversation_sources_changed' AND tgrelid = 'ai.conversation_sources'::regclass
+            ) THEN
+              ALTER TABLE ai.conversation_sources ${state} TRIGGER ai_live_conversation_sources_changed;
+            END IF;
+          END $$
+        `);
+      await liveTrigger("DISABLE");
+      await tx`
+        WITH results AS (
+          SELECT message.conversation_id, message.loop_id, message.seq, message.created_at,
+                 CASE WHEN jsonb_typeof(message.message) = 'string' THEN (message.message #>> '{}')::jsonb ELSE message.message END AS payload
+          FROM ai.messages message
+          WHERE message.role = 'tool_result' AND message.kind = 'message'
+        ),
+        delivered AS (
+          SELECT result.*, result.payload ->> 'callId' AS call_id, result.payload ->> 'name' AS tool_name,
+                 result.payload -> 'result' AS output,
+                 (SELECT block -> 'args'
+                  FROM ai.messages call,
+                       jsonb_array_elements(CASE WHEN jsonb_typeof(call.message) = 'string' THEN (call.message #>> '{}')::jsonb ELSE call.message END -> 'content') block
+                  WHERE call.conversation_id = result.conversation_id AND call.loop_id = result.loop_id AND call.role = 'assistant'
+                    AND block ->> 'type' = 'tool_call' AND block ->> 'id' = result.payload ->> 'callId'
+                  LIMIT 1) AS args
+          FROM results result
+          WHERE result.payload ->> 'name' IN ('present', 'code_open', 'code_present')
+            AND COALESCE(result.payload ->> 'isError', 'false') <> 'true'
+            AND jsonb_typeof(result.payload -> 'result') = 'object'
+            -- Browser tools report a failure as a result with an error.
+            AND NOT (result.payload -> 'result' ? 'error')
+        ),
+        indexed AS (
+          SELECT DISTINCT ON (delivered.conversation_id, source_key)
+                 delivered.conversation_id, source_key, title, preview, icon, resource_type, resource_id,
+                 delivered.loop_id, delivered.call_id, delivered.created_at
+          FROM delivered,
+          LATERAL (
+            SELECT
+              CASE delivered.tool_name
+                WHEN 'present' THEN delivered.output ->> 'path'
+                WHEN 'code_open' THEN 'assistant.artifact:' || (delivered.args ->> 'id')
+                ELSE 'code_present:' || delivered.call_id
+              END AS source_key,
+              CASE delivered.tool_name
+                WHEN 'present' THEN COALESCE(NULLIF(btrim(delivered.args ->> 'title'), ''), regexp_replace(delivered.output ->> 'path', '^.*/', ''))
+                WHEN 'code_open' THEN 'Studio app'
+                ELSE COALESCE(NULLIF(btrim(delivered.args ->> 'title'), ''), NULLIF(btrim(delivered.output ->> 'title'), ''), 'Visualization')
+              END AS title,
+              CASE WHEN delivered.tool_name = 'present' THEN NULLIF(btrim(delivered.args ->> 'description'), '') END AS preview,
+              CASE delivered.tool_name WHEN 'present' THEN 'ti ti-file' WHEN 'code_open' THEN 'ti ti-app-window' ELSE 'ti ti-chart-dots' END AS icon,
+              CASE WHEN delivered.tool_name = 'code_open' THEN 'assistant.artifact' END AS resource_type,
+              CASE WHEN delivered.tool_name = 'code_open' THEN delivered.args ->> 'id' END AS resource_id
+          ) shape
+          WHERE (delivered.tool_name <> 'present' OR delivered.output ->> 'path' LIKE '/%')
+            -- A result is the file it delivered: a file deleted since then is not one, and its path may hold another.
+            AND (delivered.tool_name <> 'present' OR EXISTS (
+              SELECT 1 FROM ai.files file
+              WHERE file.conversation_id = delivered.conversation_id AND file.path = delivered.output ->> 'path'
+            ))
+            AND (delivered.tool_name <> 'code_open' OR NULLIF(delivered.args ->> 'id', '') IS NOT NULL)
+            AND (delivered.tool_name <> 'code_present' OR delivered.output ? 'presentationId')
+          ORDER BY delivered.conversation_id, source_key, delivered.seq DESC
+        )
+        INSERT INTO ai.conversation_sources (
+          conversation_id, kind, source_key, title, preview, icon, resource_type, resource_id,
+          source_turn_id, source_call_id, first_seen_at, last_seen_at
+        )
+        SELECT indexed.conversation_id, 'result', indexed.source_key, indexed.title, indexed.preview, indexed.icon,
+               indexed.resource_type, indexed.resource_id, turn.id, indexed.call_id, indexed.created_at, indexed.created_at
+        FROM indexed
+        LEFT JOIN ai.turns turn ON turn.id::text = indexed.loop_id AND turn.conversation_id = indexed.conversation_id
+        ON CONFLICT (conversation_id, kind, source_key) DO NOTHING
+      `.simple();
+      await liveTrigger("ENABLE");
+    });
+    await sql`ALTER TABLE ai.conversation_sources VALIDATE CONSTRAINT ai_conversation_sources_kind_check`.simple();
+  }
 
   // Inline image parts were an alpha transport detail. Move their bytes into
   // the authorized conversation file store and leave only stable references in

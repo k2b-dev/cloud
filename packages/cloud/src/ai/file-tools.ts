@@ -14,7 +14,7 @@ import {
   mountAiProjectFilePath,
   mountAiSkillFilePath,
 } from "./file-mount";
-import { aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
+import { aiFileStore, guessAiMediaType, isAiWorkingFilePath, normalizeAiFilePath } from "./files-store";
 import { defineAiTool } from "./tools";
 
 const FILE_READ_MAX_BYTES = 64 * 1024;
@@ -123,7 +123,7 @@ export const createCloudAiListFilesTool = () =>
   defineAiTool({
     name: "list_files",
     description:
-      "List persistent conversation files, shared Project files, and loaded skill files. Project files are read-only below /project; loaded skills are read-only below /skills/<name>. Files are ordered newest first.",
+      "List persistent conversation files, shared Project files, and loaded skill files. Project files are read-only below /project; loaded skills are read-only below /skills/<name>. Files are ordered newest first; working files below /temp follow all other files. List /temp to see only them.",
     inputSchema: CloudAiListFilesInputSchema,
     outputSchema: CloudAiListFilesOutputSchema,
     approval: "never",
@@ -150,7 +150,12 @@ export const createCloudAiListFilesTool = () =>
       ...skillFiles
         .filter((file) => projectPathMatchesPrefix(file.path, skillPrefix ?? ""))
         .map((file) => ({ ...file, path: mountAiSkillFilePath(file.path), origin: "skill" as const })),
-    ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.path.localeCompare(b.path));
+    ].sort(
+      (a, b) =>
+        Number(isAiWorkingFilePath(a.path)) - Number(isAiWorkingFilePath(b.path)) ||
+        b.updatedAt.localeCompare(a.updatedAt) ||
+        a.path.localeCompare(b.path),
+    );
     return { files: files.slice(0, 200), truncated: files.length > 200 };
   });
 
@@ -341,6 +346,15 @@ export const createCloudAiWriteFileTool = () =>
 export const CloudAiPresentInputSchema = z.object({
   path: z.string().trim().min(1).describe("Absolute conversation file path."),
   title: z.string().trim().min(1).max(120).optional(),
+  description: z
+    .string()
+    .trim()
+    .min(1)
+    .max(160)
+    .optional()
+    .describe(
+      "One sentence in the user's language that says what the file is and what it is for, without repeating its name. Shown next to the file in the chat's results.",
+    ),
 });
 export const CloudAiPresentOutputSchema = z.object({ path: z.string(), size: z.number(), mediaType: z.string() });
 

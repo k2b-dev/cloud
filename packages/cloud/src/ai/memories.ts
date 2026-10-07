@@ -206,6 +206,20 @@ export const formatAiMemories = (
 export const aiMemories = {
   list: search,
 
+  /** Active memories saved from one of the user's chats, newest first. */
+  async listFromConversation(userId: string, conversationId: string, limit = 50): Promise<AiMemory[]> {
+    const rows = await sql<MemoryRow[]>`
+      SELECT id, short_id, user_id, kind, content, priority, source, source_conversation_id, source_message_id,
+             resource_type, resource_id, created_at, updated_at
+      FROM ai.memories
+      WHERE user_id = ${userId}::uuid AND source_conversation_id = ${conversationId}::uuid
+        AND deleted_at IS NULL AND superseded_by_id IS NULL
+      ORDER BY updated_at DESC, id ASC
+      LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 100)}
+    `;
+    return rows.map(toMemory);
+  },
+
   async resolveSourceConversationShortIds(userId: string, conversationIds: string[]): Promise<Map<string, string>> {
     if (conversationIds.length === 0) return new Map();
     const rows = await sql<{ id: string; short_id: string }[]>`

@@ -5,7 +5,11 @@ import type { AssistantChatContextSnapshot } from "../chat-context";
 export const splitAssistantConversationSources = (items: AiConversationSource[]) => ({
   sources: items
     .filter((item) => item.kind === "web" || item.kind === "activity")
-    .map((item) => (item.kind === "activity" && item.key === "web_search" ? { ...item, icon: "ti ti-search" } : item)),
+    .map((item) =>
+      item.kind === "activity" && (item.key === "web_search" || item.key.startsWith("web_search:"))
+        ? { ...item, icon: "ti ti-search" }
+        : item,
+    ),
   references: items.filter((item) => item.kind === "resource"),
 });
 
@@ -25,6 +29,15 @@ export const assistantResourceTypeLabel = (ref: CloudResourceRef, text: (value: 
 
 export const assistantReferenceTitle = (source: AiConversationSource, text?: (value: string) => string): string =>
   source.ref && source.title === `${source.ref.type} ${source.ref.id}` ? assistantResourceTypeLabel(source.ref, text) : source.title;
+
+/** Chat files a link in an answer may name: files outside `temp/`, delivered results, and loose working files. */
+export const assistantChatFilePaths = (snapshot: AssistantChatContextSnapshot): string[] => [
+  ...new Set([
+    ...snapshot.files.map((file) => file.path),
+    ...snapshot.results.flatMap((result) => (result.file ? [result.file.path] : [])),
+    ...snapshot.working.looseFiles.map((file) => file.path),
+  ]),
+];
 
 export const assistantChatContextFor = (
   chatId: string,

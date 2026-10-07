@@ -49,6 +49,50 @@ The conversation owner can delete one file with
 `cld assistant files delete` and Assistant's file list. Reading or deleting a
 path that does not exist in the chat returns `404` with `File not found`.
 
+### Separate results from working files
+
+The assistant keeps intermediate steps below `/temp/` in the chat, one folder
+per purpose, for example `/temp/quarterly-report/`. A result is what it hands
+over: `present({ path, title?, description? })` for a file, `code_open` for a
+Studio app, and `code_present` for a visualization in the chat. The optional
+`description` is one sentence of at most 160 characters in the user's
+language; a new delivery of the same file replaces it, also with none.
+Assistant shows results first and working files one level deeper, grouped by
+folder.
+
+Cloud indexes every successful delivery as a conversation source of kind
+`result` with the turn and call that made it; `code_open` is indexed when the
+turn continues with the browser's report, and a report with an `error` delivers
+nothing. Starting this release indexes the deliveries already stored in chat
+history once, so existing chats show their results too; files deleted since are
+skipped. That first start reads every stored tool result once, so it takes
+longer on installations with a long chat history; meanwhile
+`ai.conversation_sources` stays readable, and writes to it wait. Renaming
+a delivered file keeps it a result. Deleting a file, also with its folder,
+removes its result, so a later file at the same path is not that result. A
+result counts only while its file, app, or visualization exists and the viewer
+may read it.
+
+`GET /conversations/:id/sources` accepts `kind` (comma-separated `result`,
+`web`, `activity`, `resource`, `file`) and `observed=true`, which leaves out
+resources indexed as Project context without a tool call, and returns `total`
+next to the page. Each source carries `sourceMessageSeq`, the chat position of
+the message that holds its call, for a `?message=` link. Each web search query
+is its own `activity` entry with the key `web_search:<normalized query>`.
+
+`GET /conversations/:id/files` pages by path with `limit` and `after`;
+`prefix` matches a folder literally, so `_` and `%` in a folder name match only
+themselves. `DELETE /conversations/:id/files?path=/temp/report&recursive=true`
+deletes a folder with everything below it, never `/` itself.
+`loadAiConversationFileOverview(conversationId)` returns the files outside
+`/temp/`, the working folders with counts, bytes, and file types, the loose
+working files directly in `/temp/`, and the storage used against the limit.
+Load one folder's files with the files route and the folder as `prefix`.
+
+The per-turn file inventory (`aiConversationFileManifest`) and `list_files`
+name files outside `/temp/` first, so working files never push uploads and
+results out of the bounded list.
+
 Every composer attachment is uploaded first. Messages and durable turn
 configuration keep file references instead of inline binary data. For each
 turn, Cloud snapshots the exact newly attached files and a bounded, newest-first

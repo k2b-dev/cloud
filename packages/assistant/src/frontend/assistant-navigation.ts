@@ -51,6 +51,13 @@ export const assistantArtifactHref = (currentHref: string, path: string | null):
 
 export const assistantArtifactPathFromHref = (href: string): string | null => new URL(href, URL_BASE).searchParams.get("artifact");
 
+/** The current chat at one message, for a jump that should survive reload and Back. */
+export const assistantMessageHref = (currentHref: string, messageSeq: number): string => {
+  const url = new URL(currentHref, URL_BASE);
+  url.searchParams.set("message", String(messageSeq));
+  return relativeHref(url);
+};
+
 /** Message sequence links remain valid across reloads and history navigation. */
 export const assistantMessageSeqFromHref = (href: string): number | null => {
   const value = new URL(href, URL_BASE).searchParams.get("message");

@@ -75,14 +75,20 @@ export {
   shouldApplyEnrichedTitle,
 } from "./enrich";
 export { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
+export { aiConversationFileManifest } from "./file-context";
 export { AiFileLocation, AiFileReference } from "./file-reference-contracts";
 export {
   AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,
   AI_FILES_MAX_FILE_BYTES_DEFAULT,
+  AI_WORKING_FILES_FOLDER,
+  type AiConversationFileOverview,
+  type AiConversationWorkingGroup,
   type AiFileStat,
   createAiConversationArtifact,
   guessAiMediaType,
+  isAiWorkingFilePath,
   listAiConversationFiles,
+  loadAiConversationFileOverview,
   normalizeAiFilePath,
   readAiConversationFile,
   writeAiConversationFile,
@@ -245,6 +251,7 @@ export {
   validateAiSkillReferences,
 } from "./skill-format";
 export {
+  type AiConversationSkillUse,
   type AiLoadedSkillSnapshot,
   type AiSkill,
   type AiSkillAccess,

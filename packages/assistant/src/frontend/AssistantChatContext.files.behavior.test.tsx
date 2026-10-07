@@ -4,6 +4,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
+import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
 const chatFile = (path: string, origin: AiFileStat["origin"]): AiFileStat => ({
@@ -14,16 +15,7 @@ const chatFile = (path: string, origin: AiFileStat["origin"]): AiFileStat => ({
   updatedAt: "2026-09-27T10:00:00.000Z",
   version: 1,
 });
-const chatSnapshot = (files: AiFileStat[]): AssistantChatContextSnapshot => ({
-  chatId: "Chat01",
-  sources: [],
-  files,
-  tasks: [],
-  viewerUserId: "user-1",
-  apps: [],
-  runCount: 0,
-  runs: [],
-});
+const chatSnapshot = (files: AiFileStat[]): AssistantChatContextSnapshot => emptySidebarSnapshot({ chatId: "Chat01", files });
 const project: AiProject = {
   id: "Proj01",
   shortId: "Proj01",
@@ -75,7 +67,7 @@ describe("Assistant chat files", () => {
     const { AssistantChatContextContent } = await import("./AssistantChatContext");
     const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
     const live = createAssistantLiveHub();
-    let files = options.files ?? [chatFile("/report.pdf", "assistant"), chatFile("/upload.pdf", "user")];
+    let files = options.files ?? [chatFile("/report.pdf", "user"), chatFile("/upload.pdf", "user")];
     const requests: { method: string; url: string }[] = [];
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -139,11 +131,10 @@ describe("Assistant chat files", () => {
 
   test("a confirmed trash action deletes the chat file, closes its tab and removes the row", async () => {
     const view = await mount({ confirm: true });
-    // Both assistant output and uploads are chat files; the shared Project file stays read-only here.
-    // Each trash button names its file, so a screen reader can tell them apart.
+    // Each trash button names its file, so a screen reader can tell them apart. The shared Project file is never
+    // deletable here; it is listed read-only under Context.
     expect(view.deleteButton("report.pdf")).not.toBeNull();
     expect(view.deleteButton("upload.pdf")).not.toBeNull();
-    expect(view.row("brief.pdf")).toBeDefined();
     expect(view.deleteButton("brief.pdf")).toBeNull();
 
     // The button sits in the row that reveals it on hover or keyboard focus.
@@ -180,14 +171,14 @@ describe("Assistant chat files", () => {
   });
 
   test("deleting the last file hands focus to the search field", async () => {
-    const view = await mount({ confirm: true, files: [chatFile("/report.pdf", "assistant")], project: null });
+    const view = await mount({ confirm: true, files: [chatFile("/report.pdf", "user")], project: null });
     view.deleteButton("report.pdf")!.focus();
     view.deleteButton("report.pdf")!.click();
     await tick();
     await tick();
 
     expect(view.row("report.pdf")).toBeUndefined();
-    expect(document.activeElement).toBe(document.querySelector('input[aria-label="Search"]'));
+    expect(document.activeElement).toBe(document.querySelector('input[aria-label="Search results, files, and sources in this chat"]'));
   });
 
   test("cancelling the confirmation keeps the file", async () => {
@@ -209,7 +200,7 @@ describe("Assistant chat files", () => {
     const { contextTab, fileTab } = await import("../artifacts/workspace-state");
     const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
     const live = createAssistantLiveHub();
-    let files = [chatFile("/report.pdf", "assistant"), chatFile("/upload.pdf", "user")];
+    let files = [chatFile("/report.pdf", "user"), chatFile("/upload.pdf", "user")];
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -229,7 +220,13 @@ describe("Assistant chat files", () => {
     const dispose = render(
       () => (
         <AssistantLiveProvider value={live}>
-          <ArtifactWorkspace controller={controller} userId="user-1" refreshKey="initial" onEditTask={() => undefined} />
+          <ArtifactWorkspace
+            controller={controller}
+            userId="user-1"
+            refreshKey="initial"
+            onEditTask={() => undefined}
+            onOpenView={() => undefined}
+          />
         </AssistantLiveProvider>
       ),
       dom.root,

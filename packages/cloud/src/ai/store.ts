@@ -348,6 +348,7 @@ const rowToConversationSource = (row: ConversationSourceRow): AiConversationSour
   lastSeenAt: iso(row.last_seen_at),
   sourceTurnId: row.source_turn_id,
   sourceCallId: row.source_call_id,
+  sourceMessageSeq: null,
 });
 
 const rowToInterChatMessage = (row: InterChatMessageRow): AiInterChatMessage => ({
@@ -1440,9 +1441,19 @@ export const aiConversations: AiConversationService = {
             preview = COALESCE(EXCLUDED.preview, ai.conversation_resource_refs.preview),
             icon = COALESCE(EXCLUDED.icon, ai.conversation_resource_refs.icon),
             href = COALESCE(EXCLUDED.href, ai.conversation_resource_refs.href),
-            source_turn_id = COALESCE(EXCLUDED.source_turn_id, ai.conversation_resource_refs.source_turn_id),
+            -- Project context is indexed on every turn without a call. It must not move a resource a tool call
+            -- read to the latest turn, or the chat would show it as read just now.
+            source_turn_id = CASE
+              WHEN EXCLUDED.source_call_id IS NULL AND ai.conversation_resource_refs.source_call_id IS NOT NULL
+                THEN ai.conversation_resource_refs.source_turn_id
+              ELSE COALESCE(EXCLUDED.source_turn_id, ai.conversation_resource_refs.source_turn_id)
+            END,
             source_call_id = COALESCE(EXCLUDED.source_call_id, ai.conversation_resource_refs.source_call_id),
-            last_seen_at = now()
+            last_seen_at = CASE
+              WHEN EXCLUDED.source_call_id IS NULL AND ai.conversation_resource_refs.source_call_id IS NOT NULL
+                THEN ai.conversation_resource_refs.last_seen_at
+              ELSE now()
+            END
         `;
       }
     });
@@ -1504,17 +1515,21 @@ export const aiConversations: AiConversationService = {
     const source = input.source;
     await sql`
       INSERT INTO ai.conversation_sources (
-        conversation_id, kind, source_key, title, preview, icon, href, source_turn_id, source_call_id
+        conversation_id, kind, source_key, title, preview, icon, href, resource_type, resource_id, source_turn_id, source_call_id
       ) VALUES (
         ${input.conversationId}::uuid, ${source.kind}, ${source.key}, ${source.title}, ${source.preview ?? null},
-        ${source.icon ?? null}, ${source.href ?? null}, ${input.turnId ?? null}::uuid, ${input.callId ?? null}
+        ${source.icon ?? null}, ${source.href ?? null}, ${source.ref?.type ?? null}, ${source.ref?.id ?? null},
+        ${input.turnId ?? null}::uuid, ${input.callId ?? null}
       )
       ON CONFLICT (conversation_id, kind, source_key)
       DO UPDATE SET
         title = EXCLUDED.title,
-        preview = COALESCE(EXCLUDED.preview, ai.conversation_sources.preview),
+        -- A new delivery describes the result anew; an old description must not outlive changed content.
+        preview = CASE WHEN EXCLUDED.kind = 'result' THEN EXCLUDED.preview ELSE COALESCE(EXCLUDED.preview, ai.conversation_sources.preview) END,
         icon = COALESCE(EXCLUDED.icon, ai.conversation_sources.icon),
         href = COALESCE(EXCLUDED.href, ai.conversation_sources.href),
+        resource_type = COALESCE(EXCLUDED.resource_type, ai.conversation_sources.resource_type),
+        resource_id = COALESCE(EXCLUDED.resource_id, ai.conversation_sources.resource_id),
         occurrences = ai.conversation_sources.occurrences +
           CASE WHEN ai.conversation_sources.source_call_id IS DISTINCT FROM EXCLUDED.source_call_id THEN 1 ELSE 0 END,
         source_turn_id = COALESCE(EXCLUDED.source_turn_id, ai.conversation_sources.source_turn_id),
@@ -1527,50 +1542,85 @@ export const aiConversations: AiConversationService = {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? 20), 1), 100);
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceCursor(input.before);
-    const rows = await sql<(ConversationSourceRow & { cursor_at: string })[]>`
-      SELECT source.*, to_char(source.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
-      FROM (
-        SELECT source.kind AS source_kind, source.source_key, source.title, source.preview,
-               source.icon, source.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
-               NULL::text AS resource_type, NULL::text AS resource_id, source.occurrences,
-               turn.short_id AS source_turn_id, source.source_call_id, source.first_seen_at, source.last_seen_at
-        FROM ai.conversation_sources source
-        LEFT JOIN ai.turns turn ON turn.id = source.source_turn_id
-        WHERE source.conversation_id = ${input.conversationId}::uuid
+    const kinds = input.kinds?.length ? toPgTextArray([...input.kinds]) : null;
+    const observed = input.observed === true;
+    const rows = await sql<(ConversationSourceRow & { total: number | string; source_message_seq: number | null; cursor_at: string })[]>`
+      WITH matched AS (
+        SELECT *
+        FROM (
+          SELECT source.kind AS source_kind, source.source_key, source.title, source.preview,
+                 source.icon, source.href, file.path, file.media_type, file.size,
+                 source.resource_type, source.resource_id, source.occurrences,
+                 turn.short_id AS source_turn_id, source.source_turn_id AS turn_uuid, source.source_call_id,
+                 source.first_seen_at, source.last_seen_at
+          FROM ai.conversation_sources source
+          LEFT JOIN ai.turns turn ON turn.id = source.source_turn_id
+          LEFT JOIN ai.files file
+            ON source.kind = 'result' AND file.conversation_id = source.conversation_id AND file.path = source.source_key
+          WHERE source.conversation_id = ${input.conversationId}::uuid
 
-        UNION ALL
+          UNION ALL
 
-        SELECT 'file' AS source_kind, file.path AS source_key,
-               regexp_replace(file.path, '^.*/', '') AS title, 'Attached to the conversation' AS preview,
-               CASE WHEN file.media_type LIKE 'image/%' THEN 'ti ti-photo' ELSE 'ti ti-file' END AS icon,
-               NULL::text AS href, file.path, file.media_type, file.size,
-               NULL::text AS resource_type, NULL::text AS resource_id, 1 AS occurrences,
-               NULL::text AS source_turn_id, NULL::text AS source_call_id,
-               file.updated_at AS first_seen_at, file.updated_at AS last_seen_at
-        FROM ai.files file
-        WHERE file.conversation_id = ${input.conversationId}::uuid
+          SELECT 'file' AS source_kind, file.path AS source_key,
+                 regexp_replace(file.path, '^.*/', '') AS title, 'Attached to the conversation' AS preview,
+                 CASE WHEN file.media_type LIKE 'image/%' THEN 'ti ti-photo' ELSE 'ti ti-file' END AS icon,
+                 NULL::text AS href, file.path, file.media_type, file.size,
+                 NULL::text AS resource_type, NULL::text AS resource_id, 1 AS occurrences,
+                 NULL::text AS source_turn_id, NULL::uuid AS turn_uuid, NULL::text AS source_call_id,
+                 file.updated_at AS first_seen_at, file.updated_at AS last_seen_at
+          FROM ai.files file
+          WHERE file.conversation_id = ${input.conversationId}::uuid
 
-        UNION ALL
+          UNION ALL
 
-        SELECT 'resource' AS source_kind, indexed.resource_type || ':' || indexed.resource_id AS source_key,
-               COALESCE(indexed.title, indexed.resource_type || ' ' || indexed.resource_id) AS title,
-               indexed.preview, indexed.icon, indexed.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
-               indexed.resource_type, indexed.resource_id, 1 AS occurrences,
-               turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at
-        FROM ai.conversation_resource_refs indexed
-        LEFT JOIN ai.turns turn ON turn.id = indexed.source_turn_id
-        WHERE indexed.conversation_id = ${input.conversationId}::uuid
-      ) source
-      WHERE (${pattern}::text IS NULL OR LOWER(source.title || ' ' || COALESCE(source.preview, '') || ' ' || source.source_key) LIKE ${pattern})
-        AND (${cursor?.at ?? null}::timestamptz IS NULL OR (source.last_seen_at, source.source_kind, source.source_key) <
-          (${cursor?.at ?? null}::timestamptz, ${cursor?.type ?? null}::text, ${cursor?.id ?? null}::text))
-      ORDER BY source.last_seen_at DESC, source.source_kind DESC, source.source_key DESC
-      LIMIT ${limit + 1}
+          SELECT 'resource' AS source_kind, indexed.resource_type || ':' || indexed.resource_id AS source_key,
+                 COALESCE(indexed.title, indexed.resource_type || ' ' || indexed.resource_id) AS title,
+                 indexed.preview, indexed.icon, indexed.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
+                 indexed.resource_type, indexed.resource_id, 1 AS occurrences,
+                 turn.short_id AS source_turn_id, indexed.source_turn_id AS turn_uuid, indexed.source_call_id,
+                 indexed.first_seen_at, indexed.last_seen_at
+          FROM ai.conversation_resource_refs indexed
+          LEFT JOIN ai.turns turn ON turn.id = indexed.source_turn_id
+          WHERE indexed.conversation_id = ${input.conversationId}::uuid
+        ) source
+        WHERE (${kinds}::text[] IS NULL OR source.source_kind = ANY(${kinds}::text[]))
+          AND (NOT ${observed} OR source.source_kind <> 'resource' OR source.source_call_id IS NOT NULL)
+          AND (${pattern}::text IS NULL OR LOWER(source.title || ' ' || COALESCE(source.preview, '') || ' ' || source.source_key) LIKE ${pattern})
+      ),
+      page AS (
+        SELECT *
+        FROM matched source
+        WHERE ${cursor?.at ?? null}::timestamptz IS NULL OR (source.last_seen_at, source.source_kind, source.source_key) <
+          (${cursor?.at ?? null}::timestamptz, ${cursor?.type ?? null}::text, ${cursor?.id ?? null}::text)
+        ORDER BY source.last_seen_at DESC, source.source_kind DESC, source.source_key DESC
+        LIMIT ${limit + 1}
+      )
+      SELECT page.*, to_char(page.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at, totals.total,
+             COALESCE(
+               (SELECT message.seq FROM ai.messages message
+                WHERE message.conversation_id = ${input.conversationId}::uuid AND message.loop_id = page.turn_uuid::text
+                  AND message.role = 'assistant' AND page.source_call_id IS NOT NULL
+                  AND (CASE WHEN jsonb_typeof(message.message) = 'string' THEN (message.message #>> '{}')::jsonb ELSE message.message END) -> 'content'
+                      @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', page.source_call_id))
+                ORDER BY message.seq ASC
+                LIMIT 1),
+               (SELECT min(message.seq) FROM ai.messages message
+                WHERE message.conversation_id = ${input.conversationId}::uuid AND message.loop_id = page.turn_uuid::text)
+             ) AS source_message_seq
+      FROM (SELECT count(*) AS total FROM matched) totals
+      LEFT JOIN page ON true
+      ORDER BY page.last_seen_at DESC, page.source_kind DESC, page.source_key DESC
     `;
-    const page = rows.slice(0, limit);
+    // One row carries the total even when the page is empty.
+    const total = Number(rows[0]?.total ?? 0);
+    const page = rows.filter((row) => row.source_kind !== null).slice(0, limit);
     return {
-      sources: page.map(rowToConversationSource),
+      sources: page.map((row) => ({
+        ...rowToConversationSource(row),
+        sourceMessageSeq: row.source_message_seq === null ? null : Number(row.source_message_seq),
+      })),
       ...(rows.length > limit && page.at(-1) ? { nextCursor: encodeSourceCursor(page.at(-1)!) } : {}),
+      total,
     };
   },
 

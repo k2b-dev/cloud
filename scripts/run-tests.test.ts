@@ -86,8 +86,9 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/pwa-auth src/status-bar.behavior.test.ts")?.command).toContain("--conditions=browser");
     expect(byName.has("@k2b/cloud-app-spaces src/frontend/[id]/_components/kanban/kanban-board.browser.test.ts")).toBeTrue();
     expect(suites.some((suite) => suite.name.includes("consent-browser.integration"))).toBeFalse();
-    // Assistant's artifact suites run nightly in Google Chrome, not through the shared launcher.
-    expect(suites.some((suite) => suite.name.startsWith("@k2b/cloud-app-assistant"))).toBeFalse();
+    // Assistant's artifact suites run nightly in Google Chrome, not through the shared launcher; its chat sidebar uses it.
+    expect(suites.some((suite) => suite.name.startsWith("@k2b/cloud-app-assistant src/artifacts/"))).toBeFalse();
+    expect(byName.has("@k2b/cloud-app-assistant src/frontend/AssistantChatSidebar.browser.test.ts")).toBeTrue();
   });
 
   test("browser mode fails instead of passing when it selects no test file", () => {

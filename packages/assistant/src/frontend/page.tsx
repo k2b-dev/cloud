@@ -9,15 +9,17 @@ import {
 } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
+import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import AssistantWorkspace from "./AssistantWorkspace.island";
+import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./chat-sidebar-layout";
 import { assistantMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
@@ -87,7 +89,7 @@ export default ssr<AuthContext>(async (c) => {
     ? await Promise.all([
         loadAiStreamState(activeConversation),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
-        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, getLocale(c)),
+        loadAssistantChatContextSnapshot(user.id, activeConversation.shortId, { timeZone: getTimeZone(c) }),
       ])
     : [null, [], null];
 
@@ -118,6 +120,7 @@ export default ssr<AuthContext>(async (c) => {
             : null
         }
         initialContext={initialContext}
+        initialContextClosed={assistantContextClosedFromCookie(getCookie(c, ASSISTANT_CONTEXT_COOKIE))}
         projects={projects}
         initialProject={activeProject}
         initialProjectChats={

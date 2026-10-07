@@ -118,6 +118,10 @@ const recordMemoryWorkflowEvidence = async (input: Parameters<typeof recordAiMem
   }
 };
 
+/**
+ * Indexes what a finished tool call read or delivered; never throws. A browser tool ends here too, once the turn
+ * continues with the result the browser reported.
+ */
 const indexConversationToolSource = async (input: {
   conversationId: string;
   turnId: string;
@@ -140,10 +144,45 @@ const indexConversationToolSource = async (input: {
         });
     }
     let source: Parameters<typeof aiConversations.indexConversationSource>[0]["source"] | null = null;
+    const args = typeof input.args === "object" && input.args !== null ? (input.args as Record<string, unknown>) : {};
+    const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+    const result = typeof input.result === "object" && input.result !== null ? (input.result as Record<string, unknown>) : {};
     if (input.name === "web_search") {
-      const args = input.args;
-      const query = typeof args === "object" && args !== null && "query" in args && typeof args.query === "string" ? args.query.trim() : "";
-      source = { kind: "activity", key: "web_search", title: query || "Web search", preview: "Searched the web", icon: "ti ti-world" };
+      const query = text(args.query);
+      // One entry per query: each search is something the user may want to see that the assistant looked up.
+      const key = query ? `web_search:${query.replace(/\s+/gu, " ").toLocaleLowerCase()}` : "web_search";
+      source = { kind: "activity", key, title: query || "Web search", preview: "Searched the web", icon: "ti ti-world" };
+    } else if (input.name === "present" && text(result.path)) {
+      const path = text(result.path);
+      source = {
+        kind: "result",
+        key: path,
+        title: text(args.title) || path.slice(path.lastIndexOf("/") + 1),
+        preview: text(args.description) || undefined,
+        icon: "ti ti-file",
+      };
+    } else if (
+      input.name === "code_open" &&
+      text(args.id) &&
+      typeof input.result === "object" &&
+      input.result !== null &&
+      !("error" in input.result)
+    ) {
+      // The browser reports a failure as a result with an error, which reaches this point without isError.
+      source = {
+        kind: "result",
+        key: `assistant.artifact:${text(args.id)}`,
+        title: "Studio app",
+        icon: "ti ti-app-window",
+        ref: { type: "assistant.artifact", id: text(args.id) },
+      };
+    } else if (input.name === "code_present" && text(result.presentationId)) {
+      source = {
+        kind: "result",
+        key: `code_present:${input.callId}`,
+        title: text(args.title) || text(result.title) || "Visualization",
+        icon: "ti ti-chart-dots",
+      };
     } else if (input.name === "web_extract" && typeof input.result === "object" && input.result !== null) {
       const result = input.result as Record<string, unknown>;
       if (typeof result.url === "string" && result.url.trim()) {

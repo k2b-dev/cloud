@@ -30,7 +30,14 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-export const conversationFileSource = (baseUrl: string, conversationId: string): FileSource & { listFiles(): Promise<AiFileStat[]> } => {
+export type ConversationFileSource = FileSource & {
+  /** Files below `prefix` (default `/`); with `page`, at most `page.limit` files by path after `page.after`. */
+  listFiles(prefix?: string, page?: { limit: number; after?: string }): Promise<AiFileStat[]>;
+  /** Delete a folder with everything below it. */
+  removeFolder(path: string): Promise<void>;
+};
+
+export const conversationFileSource = (baseUrl: string, conversationId: string): ConversationFileSource => {
   const filesUrl = (suffix = "", params?: Record<string, string>) => {
     const query = params ? `?${new URLSearchParams(params).toString()}` : "";
     return `${baseUrl}/conversations/${conversationId}/files${suffix}${query}`;
@@ -45,8 +52,14 @@ export const conversationFileSource = (baseUrl: string, conversationId: string):
     return (await response.json()) as T;
   };
 
-  const listFiles = async (): Promise<AiFileStat[]> =>
-    (await request<{ files: AiFileStat[] }>(filesUrl(), { method: "GET" }, "Failed to load files")).files;
+  const listFiles = async (prefix?: string, page?: { limit: number; after?: string }): Promise<AiFileStat[]> => {
+    const params: Record<string, string> = {
+      ...(prefix ? { prefix } : {}),
+      ...(page ? { limit: String(page.limit), ...(page.after ? { after: page.after } : {}) } : {}),
+    };
+    const url = Object.keys(params).length ? filesUrl("", params) : filesUrl();
+    return (await request<{ files: AiFileStat[] }>(url, { method: "GET" }, "Failed to load files")).files;
+  };
 
   return {
     previewPreferencesKey: "assistant.csv-preview",
@@ -78,6 +91,10 @@ export const conversationFileSource = (baseUrl: string, conversationId: string):
 
     async remove(path) {
       await request(filesUrl("", { path }), { method: "DELETE" }, "Failed to delete file");
+    },
+
+    async removeFolder(path) {
+      await request(filesUrl("", { path, recursive: "true" }), { method: "DELETE" }, "Failed to delete folder");
     },
 
     async rename(from, to) {

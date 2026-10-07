@@ -7,6 +7,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
@@ -26,9 +27,7 @@ afterAll(() => {
   if (createdSerovalLink) unlinkSync(serovalLink);
 });
 
-const { assistantChatContextHasContent, assistantChatContextHasPanel, AssistantChatContextContent, AssistantChatContextPanel } =
-  await import("./AssistantChatContext");
-const { AssistantChatContextSurface } = await import("./AssistantChatContextSurfaces");
+const { AssistantChatContextContent } = await import("./AssistantChatContext");
 const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
 
 const source = (kind: AiConversationSource["kind"], key: string): AiConversationSource => ({
@@ -47,6 +46,7 @@ const source = (kind: AiConversationSource["kind"], key: string): AiConversation
   lastSeenAt: "2026-08-12T08:00:00.000Z",
   sourceTurnId: null,
   sourceCallId: null,
+  sourceMessageSeq: null,
 });
 
 test("Assistant chat context never reuses the previous chat snapshot while a new chat loads", () => {
@@ -78,16 +78,7 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: {
-              chatId: "cHt234",
-              sources: [reference],
-              files: [],
-              tasks: [],
-              viewerUserId: "test",
-              apps: [],
-              runCount: 0,
-              runs: [],
-            },
+            initial: emptySidebarSnapshot({ chatId: "cHt234", sources: [reference], files: [] }),
           });
         },
       }),
@@ -107,73 +98,10 @@ describe("Assistant chat context", () => {
     ]);
 
     expect(split.sources.map((item) => item.key)).toEqual(["docs", "search"]);
+    // Each web search is its own entry and keeps the search icon.
+    const searches = splitAssistantConversationSources([source("activity", "web_search:umsatz q3"), source("activity", "web_search")]);
+    expect(searches.sources.map((item) => item.icon)).toEqual(["ti ti-search", "ti ti-search"]);
     expect(split.references.map((item) => item.key)).toEqual(["nb1234"]);
-  });
-
-  test("renders an accessible context surface without viewport breakpoints", () => {
-    const html = renderToString(() => createComponent(AssistantChatContextSurface, { children: "Loading context" }));
-
-    expect(html).toContain('data-assistant-context="compact"');
-    expect(html).toContain('class="k2b-paper');
-    expect(html).toContain('role="complementary"');
-    expect(html).not.toContain("lg:flex");
-    expect(html).toContain("shrink-0");
-    expect(html).not.toContain("absolute");
-    expect(html).toContain('aria-label="Chat context"');
-    expect(html).not.toContain("ti-adjustments-horizontal");
-    expect(html).not.toContain("<h2");
-    expect(html).toContain("Loading context");
-  });
-
-  test("omits the compact Paper after a successfully loaded empty context", () => {
-    const live = createAssistantLiveHub();
-    const renderPanel = (initial: AssistantChatContextSnapshot) =>
-      renderToString(() =>
-        createComponent(AssistantLiveProvider, {
-          value: live,
-          get children() {
-            return createComponent(AssistantChatContextPanel, {
-              chatId: initial.chatId,
-              initial,
-            });
-          },
-        }),
-      );
-
-    const empty = {
-      chatId: "cHt234",
-      sources: [],
-      files: [],
-      tasks: [],
-      viewerUserId: "test",
-      apps: [],
-      runCount: 0,
-      runs: [],
-    } satisfies AssistantChatContextSnapshot;
-    const populated = { ...empty, sources: [source("web", "docs")] } satisfies AssistantChatContextSnapshot;
-
-    expect(assistantChatContextHasContent(empty)).toBeFalse();
-    expect(assistantChatContextHasPanel(empty)).toBeFalse();
-    expect(assistantChatContextHasPanel(empty, true)).toBeTrue();
-    expect(assistantChatContextHasContent({ ...empty, sources: [source("file", "stale.pdf")] })).toBeFalse();
-    expect(renderPanel(empty)).not.toContain('data-assistant-context="compact"');
-    expect(assistantChatContextHasContent(populated)).toBeTrue();
-    expect(renderPanel(populated)).toContain('data-assistant-context="compact"');
-  });
-
-  test("keeps unknown non-Project context closed while it loads", () => {
-    const live = createAssistantLiveHub();
-    const html = renderToString(() =>
-      createComponent(AssistantLiveProvider, {
-        value: live,
-        get children() {
-          return createComponent(AssistantChatContextPanel, { chatId: "cHt234" });
-        },
-      }),
-    );
-
-    expect(html).not.toContain('data-assistant-context="compact"');
-    expect(html).not.toContain("Loading context");
   });
 
   test("renders only populated context sections", () => {
@@ -184,16 +112,7 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: {
-              chatId: "cHt234",
-              sources: [source("web", "Cloud docs")],
-              files: [],
-              tasks: [],
-              viewerUserId: "test",
-              apps: [],
-              runCount: 0,
-              runs: [],
-            },
+            initial: emptySidebarSnapshot({ chatId: "cHt234", sources: [source("web", "Cloud docs")], files: [] }),
           });
         },
       }),
@@ -231,7 +150,7 @@ describe("Assistant chat context", () => {
         get children() {
           return createComponent(AssistantChatContextContent, {
             chatId: "cHt234",
-            initial: {
+            initial: emptySidebarSnapshot({
               chatId: "cHt234",
               sources: [],
               files: [
@@ -244,12 +163,7 @@ describe("Assistant chat context", () => {
                 file("file-three.txt", "text/plain"),
                 file("file-four.txt", "text/plain"),
               ],
-              tasks: [],
-              viewerUserId: "test",
-              apps: [],
-              runCount: 0,
-              runs: [],
-            },
+            }),
           });
         },
       }),
@@ -299,18 +213,6 @@ test("hides only the current chat and the task already shown in Scheduled", () =
   ];
   expect(visibleAssistantReferences(refs, "cHt234", "tSk234").map((item) => item.key)).toEqual(["other-chat", "other-task"]);
   expect(visibleAssistantReferences(refs, "cHt234").map((item) => item.key)).toEqual(["other-chat", "visible-task", "other-task"]);
-  expect(
-    assistantChatContextHasContent({
-      chatId: "cHt234",
-      sources: refs.slice(0, 1),
-      files: [],
-      tasks: [],
-      viewerUserId: "test",
-      apps: [],
-      runCount: 0,
-      runs: [],
-    }),
-  ).toBe(false);
   expect(refs).toHaveLength(4);
 });
 

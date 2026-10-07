@@ -292,22 +292,33 @@ export const assistantApi = {
     return response.json();
   },
 
+  /** One page of a chat's sources, with apps as the viewer may see them: unreadable apps left out, current titles. */
   listConversationSources: async (input: {
     conversationId: string;
     q?: string;
     cursor?: string;
     limit?: number;
+    /** Only these kinds; all kinds when omitted. */
+    kinds?: readonly AiConversationSource["kind"][];
+    /** Leave out resources indexed as Project context without a tool call. */
+    observed?: boolean;
     signal?: AbortSignal;
-  }): Promise<{ sources: AiConversationSource[]; nextCursor?: string }> => {
-    const response = await client.conversations[":conversationId"].sources.$get(
+  }): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number }> => {
+    const response = await assistantClient.workspace.conversations[":conversationId"].sources.$get(
       {
         param: { conversationId: input.conversationId },
-        query: { q: input.q, cursor: input.cursor, limit: input.limit ? String(input.limit) : undefined },
+        query: {
+          q: input.q,
+          cursor: input.cursor,
+          limit: input.limit ? String(input.limit) : undefined,
+          kind: input.kinds?.length ? input.kinds.join(",") : undefined,
+          observed: input.observed ? "true" : undefined,
+        },
       },
       { init: { signal: input.signal } },
     );
     if (!response.ok) throw new Error(await readError(response, "Failed to load chat sources"));
-    return response.json();
+    return (await response.json()) as { sources: AiConversationSource[]; nextCursor?: string; total: number };
   },
 
   listConversationFiles: async (input: { conversationId: string; signal?: AbortSignal }): Promise<AiFileStat[]> => {
