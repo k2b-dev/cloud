@@ -1999,7 +1999,15 @@ async function openAiProfileDialog(input: {
     const storedHeaderNames = input.headerNames ?? [];
     const draftHeaders = input.profile?.requestHeaders ?? {};
     const [storedHeaders, setStoredHeaders] = createSignal(
-      storedHeaderNames.filter((name) => draftHeaders[name] !== null).map((name) => ({ name, value: draftHeaders[name] ?? "" })),
+      storedHeaderNames
+        .filter(
+          (name) =>
+            draftHeaders[name] !== null &&
+            !Object.entries(draftHeaders).some(
+              ([key, value]) => key !== name && key.toLowerCase() === name.toLowerCase() && typeof value === "string",
+            ),
+        )
+        .map((name) => ({ name, value: draftHeaders[name] ?? "" })),
     );
     const [newHeaders, setNewHeaders] = createSignal(
       Object.entries(draftHeaders)
@@ -2190,7 +2198,7 @@ async function openAiProfileDialog(input: {
       const headerPatch: Record<string, string | null> = {};
       if (!isAudio() && showHeaders()) {
         const seen = new Set<string>();
-        const validValue = (value: string) => value.length <= 4096 && !/[\r\n\0]/.test(value);
+        const validValue = (value: string) => value.length <= 4096 && !/[^\t\x20-\x7E]/.test(value);
         if (showStoredHeaders()) {
           for (const name of storedHeaderNames) if (!storedHeaders().some((header) => header.name === name)) headerPatch[name] = null;
           for (const header of storedHeaders()) {
@@ -2223,6 +2231,8 @@ async function openAiProfileDialog(input: {
             return;
           }
           seen.add(name.toLowerCase());
+          for (const key of Object.keys(headerPatch))
+            if (key.toLowerCase() === name.toLowerCase() && headerPatch[key] === null) delete headerPatch[key];
           headerPatch[name] = header.value;
         }
       }

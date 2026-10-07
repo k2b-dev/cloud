@@ -1,6 +1,31 @@
 import { expect, test } from "bun:test";
 import { AiExtraBodySchema } from "./ai-request-options";
 
+test("extra parameters reserve model selection, answer counts and normalized provider keys", () => {
+  for (const body of [
+    { models: ["other/model"] },
+    { route: "fallback" },
+    { n: 2 },
+    { generationConfig: { candidateCount: 2 } },
+    { generation_config: { max_output_tokens: 90000 } },
+    { generation_config: "x" },
+    { system_instruction: {} },
+    { tool_config: {} },
+    { Max_Tokens: 1 },
+    { generation_config: { response_mime_type: "text/plain" } },
+  ]) {
+    expect(AiExtraBodySchema.safeParse(body).success).toBeFalse();
+  }
+  for (const body of [
+    { generationConfig: { thinkingConfig: { thinkingBudget: 1024 } } },
+    { generation_config: { thinking_config: { thinking_budget: 0 } } },
+    { provider: { order: ["a"] } },
+    { chat_template_kwargs: { enable_thinking: false } },
+  ]) {
+    expect(AiExtraBodySchema.safeParse(body).success).toBeTrue();
+  }
+});
+
 test("extra parameters enforce the exact serialized UTF-8 limit", () => {
   const overhead = JSON.stringify({ custom: "" }).length;
   expect(AiExtraBodySchema.safeParse({ custom: "a".repeat(8192 - overhead) }).success).toBeTrue();

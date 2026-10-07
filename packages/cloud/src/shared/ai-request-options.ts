@@ -5,6 +5,8 @@ import { z } from "zod";
 // adapters so an escape hatch cannot replace Cloud's request or quota budget.
 export const AI_RESERVED_EXTRA_BODY_KEYS = [
   "model",
+  "models",
+  "route",
   "messages",
   "system",
   "contents",
@@ -19,17 +21,22 @@ export const AI_RESERVED_EXTRA_BODY_KEYS = [
   "structured_outputs",
   "format",
   "temperature",
+  "n",
   "max_tokens",
   "max_completion_tokens",
   "reasoning_effort",
   "reasoning",
 ] as const;
-const reserved = new Set<string>(AI_RESERVED_EXTRA_BODY_KEYS);
+const keyName = (key: string) => key.replace(/_/g, "").toLowerCase();
+const reserved = new Set(AI_RESERVED_EXTRA_BODY_KEYS.map(keyName));
 const unsafeKeys = new Set(["__proto__", "constructor", "prototype"]);
-const nestedReserved = new Map<string, readonly string[]>([
-  ["generationConfig", ["responseSchema", "responseJsonSchema", "responseMimeType", "temperature", "maxOutputTokens"]],
-  ["output_config", ["format"]],
-  ["options", ["temperature", "num_predict"]],
+const nestedReserved = new Map<string, ReadonlySet<string>>([
+  [
+    keyName("generationConfig"),
+    new Set(["responseSchema", "responseJsonSchema", "responseMimeType", "temperature", "maxOutputTokens", "candidateCount"].map(keyName)),
+  ],
+  [keyName("output_config"), new Set(["format"].map(keyName))],
+  [keyName("options"), new Set(["temperature", "num_predict"].map(keyName))],
 ]);
 const plainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null &&
@@ -90,25 +97,27 @@ export const AiExtraBodySchema = z
       return;
     }
     for (const key of Object.keys(body)) {
-      if (reserved.has(key))
+      const normalizedKey = keyName(key);
+      if (reserved.has(normalizedKey))
         ctx.addIssue({
           code: "custom",
           path: [key],
           message:
-            key === "reasoning" || key === "reasoning_effort"
+            normalizedKey === "reasoning" || normalizedKey === "reasoningeffort"
               ? "Use the thinking-level field (reasoningEffort) instead."
               : "This parameter is owned by Cloud; use the model profile fields instead.",
         });
       const nested = body[key];
-      if (nestedReserved.get(key) && !plainObject(nested))
+      const reservedChildren = nestedReserved.get(normalizedKey);
+      if (reservedChildren && !plainObject(nested))
         ctx.addIssue({
           code: "custom",
           path: [key],
           message: "This parameter must be a plain JSON object so Cloud can preserve its owned settings.",
         });
       if (plainObject(nested))
-        for (const child of nestedReserved.get(key) ?? []) {
-          if (Object.hasOwn(nested, child))
+        for (const child of Object.keys(nested)) {
+          if (reservedChildren?.has(keyName(child)))
             ctx.addIssue({
               code: "custom",
               path: [key, child],
@@ -138,11 +147,11 @@ export const AiRequestHeadersSchema = z
       if (names.has(lower)) ctx.addIssue({ code: "custom", path: [name], message: "Duplicate header names are case-insensitive." });
       names.add(lower);
       if (reservedHeaders.has(lower)) ctx.addIssue({ code: "custom", path: [name], message: "This HTTP header is reserved." });
-      if (value !== null && (typeof value !== "string" || value.length > 4096 || /[\r\n\0]/.test(value)))
+      if (value !== null && (typeof value !== "string" || value.length > 4096 || /[^\t\x20-\x7E]/.test(value)))
         ctx.addIssue({
           code: "custom",
           path: [name],
-          message: "Header values must be strings of at most 4096 characters without CR, LF or NUL, or null to remove.",
+          message: "Header values must be strings of at most 4096 printable ASCII characters, spaces or tabs, or null to remove.",
         });
     }
   })
@@ -150,7 +159,7 @@ export const AiRequestHeadersSchema = z
     type: "object",
     maxProperties: 32,
     propertyNames: { type: "string", maxLength: 128, pattern: "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" },
-    additionalProperties: { anyOf: [{ type: "string", maxLength: 4096 }, { type: "null" }] },
+    additionalProperties: { anyOf: [{ type: "string", maxLength: 4096, pattern: "^[\\t\\x20-\\x7E]*$" }, { type: "null" }] },
     writeOnly: true,
   });
 

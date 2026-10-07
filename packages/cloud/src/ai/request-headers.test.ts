@@ -49,6 +49,11 @@ describe("write-only request headers", () => {
       { "X-Key": "secret", "x-key": "secret" },
       { "X-Key": "secret\r\ninjected" },
       { "X-Key": "secret\0" },
+      { "X-Key": "private-token\u{1F600}" },
+      { "X-Key": "tok\u200Bsecret" },
+      { "X-Key": "caf☃-secret" },
+      { "X-Key": "secret\u0001" },
+      { "X-Key": "secreté" },
       { "X-Key": "x".repeat(4097) },
       { "X-Key": 123 },
       Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`X-${i}`, "secret"])),
@@ -59,7 +64,10 @@ describe("write-only request headers", () => {
       expect(parsed.success).toBeFalse();
       if (!parsed.success) expect(JSON.stringify(parsed.error.issues)).not.toContain("secret");
     }
-    expect(AiRequestHeadersSchema.safeParse({ Authorization: "Bearer custom", "X-Empty": "", "X-Delete": null }).success).toBeTrue();
+    expect(
+      AiRequestHeadersSchema.safeParse({ Authorization: "Bearer custom", "X-Tab": "custom\tvalue", "X-Empty": "", "X-Delete": null })
+        .success,
+    ).toBeTrue();
   });
 
   test("plans omission, deletion and provider changes like credentials, rejects unsupported submissions", () => {

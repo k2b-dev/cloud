@@ -214,7 +214,7 @@ export const aiSettingsMessages = i18n.define({
       outputLimitInvalid: "Enter a positive whole number for the output limit, or leave it empty.",
       thinkingLevel: "Thinking level",
       thinkingLevelDescription:
-        "Sent with chat and tool turns, for example low, medium or high. Supported values depend on the model and endpoint. Titles, summaries and compaction keep a low setting. Empty uses the model default.",
+        "Sent with chat and tool turns, for example low, medium or high. Supported values depend on the model and endpoint. Titles, summaries and compaction are not affected; they keep their reduced setting or the model default. Empty uses the model default.",
       thinkingLevelInvalid: "Use at most 32 lowercase letters, digits, hyphens or underscores for the thinking level, or leave it empty.",
       requestOptions: "Request options",
       requestOptionsSummary: ({ count }: { count: number }) => (count === 1 ? "1 option set" : `${count} options set`),
@@ -234,7 +234,8 @@ export const aiSettingsMessages = i18n.define({
         `"${name}" is not a valid header name. Use letters, digits and hyphens without spaces.`,
       headerDuplicate: ({ name }: { name: string }) => `The header ${name} is listed twice.`,
       headerValueRequired: ({ name }: { name: string }) => `Enter a value for the header ${name}.`,
-      headerValueInvalid: ({ name }: { name: string }) => `The value of ${name} must be at most 4096 characters on one line.`,
+      headerValueInvalid: ({ name }: { name: string }) =>
+        `The value of ${name} must be at most 4096 characters on one line and use only plain ASCII characters.`,
       contextWindow: "Context window",
       contextWindowDescription: "Optional maximum token context. Leave empty to use the provider default.",
       loadedToolLimit: "Loaded tool limit",
@@ -488,7 +489,7 @@ export const aiSettingsMessages = i18n.define({
       outputLimitInvalid: "Gib eine positive ganze Zahl für das Outputlimit ein oder lasse es leer.",
       thinkingLevel: "Denkstufe",
       thinkingLevelDescription:
-        "Wird bei Chat- und Werkzeugrunden mitgesendet, zum Beispiel low, medium oder high. Welche Werte gehen, hängt von Modell und Endpunkt ab. Titel, Zusammenfassungen und Kompaktierung bleiben bei einer niedrigen Stufe. Leer verwendet den Modellstandard.",
+        "Wird bei Chat- und Werkzeugrunden mitgesendet, zum Beispiel low, medium oder high. Welche Werte gehen, hängt von Modell und Endpunkt ab. Titel, Zusammenfassungen und Kompaktierung sind davon nicht betroffen; sie behalten ihre reduzierte Stufe oder den Modellstandard. Leer verwendet den Modellstandard.",
       thinkingLevelInvalid:
         "Verwende für die Denkstufe höchstens 32 Kleinbuchstaben, Ziffern, Bindestriche oder Unterstriche oder lasse sie leer.",
       requestOptions: "Anfrageoptionen",
@@ -509,7 +510,8 @@ export const aiSettingsMessages = i18n.define({
         `„${name}“ ist kein gültiger Header-Name. Verwende Buchstaben, Ziffern und Bindestriche ohne Leerzeichen.`,
       headerDuplicate: ({ name }: { name: string }) => `Der Header ${name} ist doppelt aufgeführt.`,
       headerValueRequired: ({ name }: { name: string }) => `Gib einen Wert für den Header ${name} ein.`,
-      headerValueInvalid: ({ name }: { name: string }) => `Der Wert von ${name} darf höchstens 4096 Zeichen in einer Zeile haben.`,
+      headerValueInvalid: ({ name }: { name: string }) =>
+        `Der Wert von ${name} darf höchstens 4096 Zeichen in einer Zeile haben und nur einfache ASCII-Zeichen enthalten.`,
       contextWindow: "Kontextfenster",
       contextWindowDescription: "Optionale maximale Token-Anzahl im Kontext. Leer verwendet den Anbieterstandard.",
       loadedToolLimit: "Limit geladener Werkzeuge",

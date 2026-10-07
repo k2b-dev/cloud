@@ -191,23 +191,26 @@ For a Gemini 2.5 model that accepts a thinking budget:
 
 Cloud rejects these top-level keys because it owns their meaning:
 
-- Content and model: `model`, `messages`, `system`, `contents`, `systemInstruction`.
+- Content and model: `model`, `messages`, `system`, `contents`, `systemInstruction`,
+  plus `models` and `route`, which select other models.
 - Tools and loop control: `tools`, `tool_choice`, `toolConfig`,
   `parallel_tool_calls`, `stream`, `stream_options`.
 - Structured output: `response_format`, `structured_outputs`, `format`.
 - Profile generation settings: `temperature`, `max_tokens`,
-  `max_completion_tokens`, `reasoning_effort`, `reasoning`.
+  `max_completion_tokens`, `reasoning_effort`, `reasoning` and `n` (number of answers).
 
 Use `reasoningEffort` for the thinking level. Nested provider options remain
 available, including `thinking`, `output_config`, `chat_template_kwargs`,
 `generationConfig`, `options` and `think`. Cloud also reserves
 `generationConfig.responseSchema`, `generationConfig.responseJsonSchema`,
 `generationConfig.responseMimeType`, `generationConfig.temperature`,
-`generationConfig.maxOutputTokens`, `output_config.format`,
-`options.temperature` and `options.num_predict`. The three containers
-`generationConfig`, `output_config` and `options` must be objects so they cannot
-replace Cloud's output schema or token limits. Keys named `__proto__`,
-`constructor` or `prototype` are rejected at every depth.
+`generationConfig.maxOutputTokens`, `generationConfig.candidateCount`,
+`output_config.format`, `options.temperature` and `options.num_predict`. The
+three containers `generationConfig`, `output_config` and `options` must be
+objects so they cannot replace Cloud's output schema or token limits. Keys named
+`__proto__`, `constructor` or `prototype` are rejected at every depth. Cloud
+compares parameter names without regard to case or underscores, so
+`generation_config.max_output_tokens` counts as `generationConfig.maxOutputTokens`.
 
 ## Add private endpoint headers
 
@@ -225,7 +228,7 @@ changing its provider discards them, consistently with provider credentials.
 Names are case-insensitive HTTP tokens of at most 128 characters. Duplicate names
 are rejected, as are `content-type`, `content-length`, `host`, `connection` and
 `transfer-encoding`. At most 32 headers may be configured; each value may contain
-at most 4,096 characters and no CR, LF or NUL.
+at most 4,096 printable ASCII characters, spaces or tabs.
 
 `Authorization` is allowed. When the profile has an API key, nessi replaces the
 custom Authorization header with `Bearer <API key>`. Use a protected JSON file

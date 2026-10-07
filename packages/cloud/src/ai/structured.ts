@@ -74,6 +74,20 @@ export type RunAiStructuredResult<TOutput extends z.ZodType> = {
   structuredMeta: StructuredMeta;
 };
 
+/** nessi wraps provider failures in direct structured mode; callers rely on the provider's original error. */
+export const structuredProviderFailure = (error: unknown): unknown => {
+  if (
+    error instanceof StructuredOutputError &&
+    (error.code === "loop_failed" || error.code === "aborted") &&
+    error.details !== null &&
+    typeof error.details === "object" &&
+    "cause" in error.details &&
+    Object.hasOwn(error.details, "cause")
+  )
+    return error.details.cause;
+  return error;
+};
+
 /**
  * One schema-valid background inference via nessi.structured, wrapped in a
  * trace span (events: model.resolved, llm.completed — metadata only, never
@@ -157,9 +171,10 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           structuredMeta: result.structuredMeta,
         };
       } catch (error) {
+        const failure = structuredProviderFailure(error);
         const details =
-          error instanceof StructuredOutputError
-            ? (error.details as { attempts?: number; aggregate?: LoopAggregate } | undefined)
+          failure instanceof StructuredOutputError
+            ? (failure.details as { attempts?: number; aggregate?: LoopAggregate } | undefined)
             : undefined;
         await safelyRecordStructuredRun({
           task: input.task,
@@ -172,10 +187,10 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           durationMs: Date.now() - startedAt,
           usage: details?.aggregate?.usage,
           attempts: details?.attempts,
-          errorCode: error instanceof StructuredOutputError ? error.code : error instanceof Error ? error.name : "unknown",
-          error: error instanceof Error ? error.message : String(error),
+          errorCode: failure instanceof StructuredOutputError ? failure.code : failure instanceof Error ? failure.name : "unknown",
+          error: failure instanceof Error ? failure.message : String(failure),
         });
-        throw error;
+        throw failure;
       }
     },
     {

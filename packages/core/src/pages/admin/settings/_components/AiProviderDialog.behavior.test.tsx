@@ -350,6 +350,82 @@ describe("Provider dialog", () => {
       ui.cleanup();
     }
   });
+  test("non-ASCII header values keep the dialog open without sending a save", async () => {
+    const ui = await setup({}, { ...profile, provider: "openai-compatible", baseURL: "https://llm.example.test/v1" });
+    try {
+      const options = ui.section("Advanced");
+      Array.from(options.querySelectorAll("section"))
+        .find((child) => child.querySelector("h3")?.textContent === "Request options")!
+        .querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!
+        .click();
+      ui.button("Add header").click();
+      await tick();
+      const name = ui.document.querySelector<HTMLInputElement>('input[aria-label="Header name"]:not([readonly])')!;
+      name.value = "X-Key";
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      const value = ui.document.querySelector<HTMLInputElement>('input[aria-label="Value"]')!;
+      value.value = "secret\u200B";
+      value.dispatchEvent(new Event("input", { bubbles: true }));
+      ui.button("Apply to draft").click();
+      await tick();
+      expect(ui.dialogCore.isOpen()).toBe(true);
+      expect(ui.document.body.textContent).toContain(
+        "The value of X-Key must be at most 4096 characters on one line and use only plain ASCII characters.",
+      );
+      expect(ui.requests).toHaveLength(0);
+    } finally {
+      ui.cleanup();
+    }
+  });
+  test("case-only header renames save one patch and survive reopening the draft", async () => {
+    const ui = await setup(
+      { aiRequestHeaderNames: { chat: ["X-Key"] } },
+      { ...profile, provider: "openai-compatible", baseURL: "https://llm.example.test/v1" },
+    );
+    try {
+      const options = ui.section("Advanced");
+      Array.from(options.querySelectorAll("section"))
+        .find((child) => child.querySelector("h3")?.textContent === "Request options")!
+        .querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!
+        .click();
+      ui.button("Remove header X-Key").click();
+      ui.button("Add header").click();
+      await tick();
+      const name = ui.document.querySelector<HTMLInputElement>('input[aria-label="Header name"]:not([readonly])')!;
+      name.value = "x-key";
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      const value = ui.document.querySelector<HTMLInputElement>('input[aria-label="Value"]')!;
+      value.value = "test-only-header-value";
+      value.dispatchEvent(new Event("input", { bubbles: true }));
+      ui.button("Apply to draft").click();
+      await tick();
+      expect(ui.dialogCore.isOpen()).toBe(false);
+      ui.button("Save changes").click();
+      await tick();
+      const [saved] = JSON.parse(JSON.parse(ui.requests[0]!)["ai.model_profiles_json"]);
+      expect(saved.requestHeaders).toEqual({ "x-key": "test-only-header-value" });
+
+      // The fake save returns HTTP 400; dismiss its error dialog before reopening.
+      ui.button("Close").click();
+      await tick();
+      ui.button("Edit profile").click();
+      await tick();
+      ui.section("Advanced");
+      const names = ui.document.querySelectorAll<HTMLInputElement>('input[aria-label="Header name"]');
+      expect(names).toHaveLength(1);
+      expect(names[0]!.value).toBe("x-key");
+      expect(names[0]!.readOnly).toBe(false);
+      ui.button("Apply to draft").click();
+      await tick();
+      expect(ui.dialogCore.isOpen()).toBe(false);
+      ui.button("Save changes").click();
+      await tick();
+      const [resaved] = JSON.parse(JSON.parse(ui.requests[1]!)["ai.model_profiles_json"]);
+      expect(resaved.requestHeaders).toEqual({ "x-key": "test-only-header-value" });
+    } finally {
+      ui.cleanup();
+    }
+  });
   test("a reopened access draft still names a granted agent by its kind", async () => {
     const agent = {
       id: crypto.randomUUID(),
