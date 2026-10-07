@@ -653,13 +653,14 @@ describe("AI capability catalog", () => {
     expect(load?.kind).toBe("server");
     if (!load || load.kind !== "server") throw new Error("load_tools missing");
     const result = await load.execute(
-      { names: ["contacts.list", "contacts__query__list"] },
+      { names: ["contacts.list", "contacts__query__list", "contacts.lists"] },
       { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
     );
+    // The provider name the model may have seen in an earlier call loads the same operation.
     expect(result).toEqual({
-      loaded: ["contacts.list"],
+      loaded: [{ name: "contacts.list", call: "contacts__query__list" }],
       alreadyLoaded: [],
-      missing: ["contacts__query__list"],
+      unavailable: [{ name: "contacts.lists", reason: "unknown" }],
       evicted: [],
       titles: { "contacts.list": "List items" },
     });
@@ -883,7 +884,7 @@ describe("AI capability catalog", () => {
     const first = await resolver();
     expect(first.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps", "contacts__query__list"]);
     expect(first.find((tool) => tool.def.name === "search_tools")?.def.description).not.toContain(
-      "Previously loaded tools currently absent",
+      "Previously loaded tools that are not available now",
     );
 
     loaded.push("spaces.create");
@@ -892,9 +893,25 @@ describe("AI capability catalog", () => {
     const second = await resolver();
     expect(second.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps", "spaces__action__create"]);
     const searchDescription = second.find((tool) => tool.def.name === "search_tools")?.def.description;
-    expect(searchDescription).toContain("Previously loaded tools currently absent from the live catalog: contacts.list");
-    expect(searchDescription).toContain("Treat them as temporarily unavailable");
+    expect(searchDescription).toContain("Previously loaded tools that are not available now: contacts.list");
+    expect(searchDescription).toContain("Do not search for them again in this turn");
+    expect(searchDescription).not.toContain("temporarily");
     expect(searchDescription).not.toContain("spaces.create");
+    const load = second.find((tool) => tool.def.name === "load_tools");
+    if (!load || load.kind !== "server") throw new Error("load_tools missing");
+    // The provider name the model called it by earlier names the offline operation, too.
+    expect(
+      await load.execute(
+        { names: ["contacts__query__list", "contacts.list"] },
+        { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).toMatchObject({
+      loaded: [],
+      unavailable: [
+        { name: "contacts__query__list", reason: "app_offline" },
+        { name: "contacts.list", reason: "app_offline" },
+      ],
+    });
   });
 
   test("restricted conversations cannot discover or load excluded tools, including persisted names", async () => {
@@ -904,6 +921,8 @@ describe("AI capability catalog", () => {
       actor,
       staticTools: [],
       allowedTools: ["contacts.list"],
+      // The executor passes the built-ins that the fixed scope removed.
+      unofferedTools: ["local_bash", "write_file"],
       store: {
         getLoadedTools: async () => persisted,
         loadTools: async ({ names }) => {
@@ -919,10 +938,20 @@ describe("AI capability catalog", () => {
     const load = tools.find((tool) => tool.def.name === "load_tools")!;
     expect(
       await load.execute(
-        { names: ["contacts.create", "spaces.create", "local_bash"] },
+        { names: ["contacts.create", "spaces.create", "contacts__action__create", "local_bash", "write_file", "made_up"] },
         { signal: AbortSignal.timeout(1_000), requestApproval: async () => false, requestClientTool: async <T>() => undefined as T },
       ),
-    ).toMatchObject({ missing: ["contacts.create", "spaces.create", "local_bash"], loaded: [] });
+    ).toMatchObject({
+      unavailable: [
+        { name: "contacts.create", reason: "not_allowed" },
+        { name: "spaces.create", reason: "not_allowed" },
+        { name: "contacts__action__create", reason: "not_allowed" },
+        { name: "local_bash", reason: "not_allowed" },
+        { name: "write_file", reason: "not_allowed" },
+        { name: "made_up", reason: "unknown" },
+      ],
+      loaded: [],
+    });
     expect((await resolver()).map((tool) => tool.def.name)).not.toContain("contacts__action__create");
   });
 
@@ -1103,9 +1132,59 @@ describe("AI capability catalog", () => {
     const unavailable = await resolver();
     expect(unavailable.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
     expect(unavailable.find((tool) => tool.def.name === "search_tools")?.def.description).toContain(
-      "No live capability apps are visible in this provider turn",
+      "No Cloud app publishes operations right now. Do not search for app operations again in this turn",
     );
     expect(failures).toHaveLength(1);
+    const load = unavailable.find((tool) => tool.def.name === "load_tools");
+    if (!load || load.kind !== "server") throw new Error("load_tools missing");
+    expect(
+      await load.execute(
+        { names: ["contacts.list", "made_up"] },
+        { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).toMatchObject({
+      loaded: [],
+      unavailable: [
+        { name: "contacts.list", reason: "app_offline" },
+        { name: "made_up", reason: "unknown" },
+      ],
+    });
+  });
+
+  test("says which tools exist but are not offered in this turn", async () => {
+    const resolver = createAiToolResolver({
+      conversationId: "conversation-1",
+      actor,
+      staticTools: [],
+      unofferedTools: ["code_open", "local_bash"],
+      store: {
+        getLoadedTools: async () => [],
+        loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
+      },
+    });
+
+    const tools = await resolver();
+    expect(tools.find((tool) => tool.def.name === "search_tools")?.def.description).toContain(
+      "App operations are not offered in this turn.",
+    );
+    const load = tools.find((tool) => tool.def.name === "load_tools");
+    if (!load || load.kind !== "server") throw new Error("load_tools missing");
+    expect(
+      await load.execute(
+        { names: ["code_open", "mail.conversation.list", "code_opne"] },
+        { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).toEqual({
+      loaded: [],
+      alreadyLoaded: [],
+      unavailable: [
+        { name: "code_open", reason: "not_offered_in_turn" },
+        { name: "mail.conversation.list", reason: "not_offered_in_turn" },
+        { name: "code_opne", reason: "unknown" },
+      ],
+      evicted: [],
+      titles: {},
+    });
   });
 
   test("persists automatic cleanup when a profile limit is reduced", async () => {

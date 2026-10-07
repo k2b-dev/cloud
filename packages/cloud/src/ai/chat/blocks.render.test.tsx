@@ -339,9 +339,9 @@ describe("capability tool presentation", () => {
       "load_tools",
       { names: ["mail.conversation.activity.list"] },
       {
-        loaded: ["mail.conversation.activity.list"],
+        loaded: [{ name: "mail.conversation.activity.list", call: "mail__query__conversation_dot_activity_dot_list" }],
         alreadyLoaded: [],
-        missing: [],
+        unavailable: [],
         evicted: [],
         titles: { "mail.conversation.activity.list": "List mail activity" },
       },
@@ -442,6 +442,68 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("k2b-content-structured-data");
     expect(hasOpenDetails(html)).toBe(name === "view_image");
     if (name === "load_tools") expect(html).not.toContain("mail.conversation.activity.list");
+  });
+
+  test("says why load_tools could not load a tool, in the inherited locale", () => {
+    const completed: AiTurnBlock = {
+      id: "load-call",
+      kind: "tool",
+      callId: "load-1",
+      name: "load_tools",
+      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up"] },
+      status: "completed",
+      result: {
+        loaded: [{ name: "code_run", call: "code_run" }],
+        alreadyLoaded: [],
+        unavailable: [
+          { name: "code_open", reason: "not_offered_in_turn" },
+          { name: "spaces.create", reason: "not_allowed" },
+          { name: "mail.old", reason: "app_offline" },
+          { name: "made_up", reason: "unknown" },
+        ],
+        evicted: [],
+        titles: { code_run: "Code Run" },
+      },
+    };
+
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" });
+        },
+      }),
+    );
+
+    expect(html).toContain("1 geladen");
+    for (const label of ["Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
+      expect(html).toContain(label);
+    }
+  });
+
+  test("still lists tools a load_tools result from before #528 did not find", () => {
+    const completed: AiTurnBlock = {
+      id: "load-call",
+      kind: "tool",
+      callId: "load-1",
+      name: "load_tools",
+      args: { names: ["contacts.list", "code_run"] },
+      status: "completed",
+      result: {
+        loaded: ["contacts.list"],
+        alreadyLoaded: [],
+        missing: ["code_run"],
+        evicted: [],
+        titles: { "contacts.list": "List contacts" },
+      },
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain("1 loaded");
+    expect(html).toContain("List contacts");
+    expect(html).toContain("code_run");
+    expect(html).toContain("Not found");
   });
 
   test("labels a created PDF in the inherited locale", () => {

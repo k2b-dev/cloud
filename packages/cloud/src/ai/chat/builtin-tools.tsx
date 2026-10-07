@@ -145,6 +145,12 @@ function ListAppsView(props: { block: ToolBlock }) {
   );
 }
 
+/** Entries are `{name}` records; turns stored before #528 hold plain names and a `missing` list. */
+const toolNames = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.flatMap((item) => (typeof item === "string" ? [item] : isRecord(item) && typeof item.name === "string" ? [item.name] : []))
+    : [];
+
 function LoadToolsView(props: { block: ToolBlock }) {
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const titles = (): Record<string, unknown> => {
@@ -152,31 +158,33 @@ function LoadToolsView(props: { block: ToolBlock }) {
     return isRecord(value) ? value : {};
   };
   const t = useMessages();
-  const groups = () =>
-    (
-      [
-        [t().toolsLoaded, result().loaded],
-        [t().toolsAlreadyLoaded, result().alreadyLoaded],
-        [t().toolsMissing, result().missing],
-        [t().toolsEvicted, result().evicted],
-      ] as const
-    ).flatMap(([label, value]) =>
-      Array.isArray(value) && value.length > 0 ? [{ label, names: value.filter((name): name is string => typeof name === "string") }] : [],
-    );
-  const loadedCount = () => {
-    const value = result().loaded;
-    return Array.isArray(value) ? value.length : 0;
-  };
+  const unavailableLabel = (reason: unknown) =>
+    reason === "not_offered_in_turn"
+      ? t().toolNotOffered
+      : reason === "not_allowed"
+        ? t().toolNotAllowed
+        : reason === "app_offline"
+          ? t().toolAppOffline
+          : t().toolUnknown;
+  const rows = () => [
+    ...toolNames(result().loaded).map((name) => ({ name, label: t().toolsLoaded })),
+    ...toolNames(result().alreadyLoaded).map((name) => ({ name, label: t().toolsAlreadyLoaded })),
+    ...records(result().unavailable).flatMap((item) =>
+      typeof item.name === "string" ? [{ name: item.name, label: unavailableLabel(item.reason) }] : [],
+    ),
+    ...toolNames(result().missing).map((name) => ({ name, label: t().toolUnknown })),
+    ...toolNames(result().evicted).map((name) => ({ name, label: t().toolsEvicted })),
+  ];
   return (
-    <CompletedActivity block={props.block} label={t().loadTools} description={t().loadedCount({ count: loadedCount() })}>
-      <Show when={groups().length > 0}>
+    <CompletedActivity
+      block={props.block}
+      label={t().loadTools}
+      description={t().loadedCount({ count: toolNames(result().loaded).length })}
+    >
+      <Show when={rows().length > 0}>
         <ResultList>
-          <For each={groups()}>
-            {(group) => (
-              <For each={group.names}>
-                {(name) => <ResultRow icon={aiToolIcon(name)} title={text(titles()[name]) || name} meta={group.label} />}
-              </For>
-            )}
+          <For each={rows()}>
+            {(row) => <ResultRow icon={aiToolIcon(row.name)} title={text(titles()[row.name]) || row.name} meta={row.label} />}
           </For>
         </ResultList>
       </Show>
