@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-08-23
+updated: 2026-10-07
 ---
 
 # Tools and approvals
@@ -243,7 +243,7 @@ AI Core treats capability operation kinds as the approval boundary:
 | Capability kind | AI Core behavior |
 | --- | --- |
 | Query | Execute without interactive approval |
-| Action without `approval` | Require fresh approval for that call |
+| Action without `approval` | Require fresh approval for that call; it cannot be granted to a scheduled task |
 | Action with `approval: "rememberable"` | Offer one-time approval or **Always approve** for the app-owned review scope |
 
 Capability manifests describe objective Action properties such as `openWorld`,
@@ -314,8 +314,10 @@ viewer without changing the persisted value. These hints never enable HTML or
 Markdown rendering, and semantic review links remain clickable same-origin
 links.
 
-Users can list and revoke their remembered choices in Assistant under
-**Personalization → Approvals**. Revocation is ownership-scoped and takes
+The owning app sets this policy in its manifest. Users and administrators
+cannot loosen it; a user can only remember an approval where the Action offers
+it. Users can list and revoke their remembered choices under
+**Assistant settings > Approvals**. Revocation is ownership-scoped and takes
 effect on the next matching call.
 
 See [Resource authorization](/en/docs/identity/authorization) for the domain

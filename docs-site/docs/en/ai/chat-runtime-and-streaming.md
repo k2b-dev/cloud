@@ -453,6 +453,24 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
+### Scheduled chat tasks
+
+A scheduled task belongs to one chat and runs as that chat's owner. Creating
+it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
+`grants` list names every capability the task may call. In a background run,
+every app capability needs a matching grant, Queries included, such as the
+reader Query behind a Project reference. A task without grants can use only
+built-in tools such as chat files. Fixed input values must
+match exactly, and the owner's current access still applies to each call.
+
+A background run cannot ask for approval. Remembered approvals from the chat
+do not apply, and an operation that needs an approval or a browser fails the
+run, which moves the task to `needs_attention`. Action grants are accepted only
+for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
+Actions that ask for every call cannot be scheduled. Before each run, Core
+checks that the owner is active, the chat is not archived, and the mandate is
+confirmed and unchanged.
+
 ### Scheduled Code Mode
 
 Scheduled turns can run Code Mode without a user tab. Core binds each call and

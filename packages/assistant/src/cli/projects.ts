@@ -165,6 +165,7 @@ export const assistantProjectCommands = [
       const project = await resolveProject(ctx, args.project);
       const content = await readText(flags.content, "Project knowledge", true);
       printValue(ctx, await readProjectsApi(ctx, path(project.shortId, "/knowledge"), jsonRequest("POST", { title: args.title, content })));
+      ctx.error("Knowledge is a copy: it does not follow its source, and every Project member can read it.");
     },
   }),
   command("projects knowledge update", {
@@ -302,6 +303,7 @@ export const assistantProjectCommands = [
           }),
         ),
       );
+      ctx.error("The Assistant reads this resource live with each member's own access; the reference grants no access.");
     },
   }),
   command("projects references delete", {
