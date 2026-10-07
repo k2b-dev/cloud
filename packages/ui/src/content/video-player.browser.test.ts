@@ -25,7 +25,7 @@ setDefaultTimeout(30_000);
 
 const entry = resolve(import.meta.dir, "video-player.fixture.ts");
 const fixtureSource = `
-import { createSignal } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import { createComponent, insert, render } from "solid-js/web";
 import { LocaleProvider, VideoPlayer } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
@@ -66,6 +66,8 @@ render(
         const host = document.createElement("div");
         host.id = "host";
         host.setAttribute("style", current.host);
+        // A host that sets the address on mount does so before the player's own effects first run.
+        if (current.srcOnMount) onMount(() => setSrc(current.srcOnMount));
         insert(
           host,
           () =>
@@ -184,13 +186,14 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-type MountOptions = { src: string | null; host: string; ratio?: number; renew?: string; locale?: "en" | "de" };
+type MountOptions = { src: string | null; srcOnMount?: string; host: string; ratio?: number; renew?: string; locale?: "en" | "de" };
 const open = async (options: MountOptions, viewport = { width: 1024, height: 768 }, touch = false): Promise<Page> => {
   const page = await browser.newPage({ viewport, ...(touch ? { isMobile: true, hasTouch: true } : {}) });
   await page.goto(server.url.href);
   await page.evaluate((next) => (window as unknown as { mount: (options: MountOptions) => void }).mount(next), {
     ...options,
     src: options.src && new URL(options.src, server.url).href,
+    srcOnMount: options.srcOnMount && new URL(options.srcOnMount, server.url).href,
     renew: options.renew && new URL(options.renew, server.url).href,
   });
   await page.waitForSelector(".k2b-video-player");
@@ -253,6 +256,17 @@ describe(`VideoPlayer (${browserName})`, () => {
       );
       await metadata(page);
       expect(await box(page, ".k2b-video-player")).toEqual(frame);
+      expect(await page.$(".k2b-video-player__fallback")).toBeNull();
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an address the host sets on mount plays", async () => {
+    const page = await open({ src: null, srcOnMount: "/video/portrait.webm", host: "width:640px;height:360px" });
+    try {
+      await metadata(page);
+      expect((await state(page)).src).toContain("/video/portrait.webm");
       expect(await page.$(".k2b-video-player__fallback")).toBeNull();
     } finally {
       await page.close();

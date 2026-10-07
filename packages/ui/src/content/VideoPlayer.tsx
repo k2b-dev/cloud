@@ -6,7 +6,7 @@
  * nothing moves while the video loads.
  */
 
-import { createEffect, createSignal, type JSX, Match, on, Switch } from "solid-js";
+import { createEffect, createSignal, type JSX, Match, Switch } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 
@@ -72,19 +72,18 @@ export function VideoPlayer(props: VideoPlayerProps) {
   /** Playing as the viewer meant it; a failing source may stop without a pause event. */
   let playing = false;
 
-  // A new address from the host is another video: start over without resuming.
-  createEffect(
-    on(
-      () => props.src,
-      (src) => {
-        renewal = null;
-        playing = false;
-        setFailed(false);
-        setSource(src);
-      },
-      { defer: true },
-    ),
-  );
+  // A new address from the host is another video: start over without resuming. It counts as new against the address
+  // the player started with, because the host may change it before this effect first runs, for example on mount.
+  let hostSrc = props.src;
+  createEffect(() => {
+    const src = props.src;
+    if (src === hostSrc) return;
+    hostSrc = src;
+    renewal = null;
+    playing = false;
+    setFailed(false);
+    setSource(src);
+  });
 
   const videoSource = () => {
     const src = source();
