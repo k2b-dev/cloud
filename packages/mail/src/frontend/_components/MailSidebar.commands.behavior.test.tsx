@@ -31,6 +31,8 @@ if (!isServer) {
           canAdmin={false}
           managementOpening={null}
           settingsOpening={false}
+          detailsOpening={false}
+          onOpenDetails={() => {}}
           onOpenHealth={() => {}}
           onOpenSharedLinks={() => {}}
           onOpenRemoteContent={() => {}}
@@ -90,6 +92,8 @@ if (!isServer) {
           canAdmin={true}
           managementOpening={null}
           settingsOpening={false}
+          detailsOpening={false}
+          onOpenDetails={() => {}}
           onOpenHealth={() => {}}
           onOpenSharedLinks={() => {}}
           onOpenRemoteContent={() => {}}

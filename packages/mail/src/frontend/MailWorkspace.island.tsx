@@ -20,6 +20,7 @@ import type { MailboxPageData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { openMailAttachmentLinksDialog } from "./_components/MailAttachmentLinksDialog";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
+import { openMailboxDetailsDialog } from "./_components/MailboxDetailsDialog";
 import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
 import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailConversationList from "./_components/MailConversationList";
@@ -128,6 +129,7 @@ function MailWorkspaceView(props: {
     participants: [],
   });
   const [settingsOpening, setSettingsOpening] = createSignal(false);
+  const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
   const activeSearch = createMemo(() => resolveMailSearchRoute(mailRouteUrl(requestPath())));
@@ -546,6 +548,39 @@ function MailWorkspaceView(props: {
     } finally {
       if (!disposed) setSettingsOpening(false);
     }
+  };
+
+  /** Loads the details first, so the dialog opens complete instead of growing as they arrive. */
+  const openDetails = async () => {
+    if (disposed || detailsOpening()) return;
+    setDetailsOpening(true);
+    let details: Awaited<ReturnType<typeof loadDetails>>;
+    try {
+      details = await loadDetails();
+    } catch (error) {
+      retryToast(error instanceof Error ? error.message : String(error), {
+        title: t().mailboxDetailsFailed,
+        retryLabel: t().tryAgain,
+        retry: openDetails,
+      });
+      return;
+    } finally {
+      if (!disposed) setDetailsOpening(false);
+    }
+    if (disposed) return;
+    const result = await openMailboxDetailsDialog({
+      mailbox: data.mailbox,
+      identities: data.identities,
+      folderCount: data.folders.length,
+      details,
+      dateConfig: props.dateConfig,
+    });
+    if (result === "manage-access" && !disposed) await openSettings("access");
+  };
+  const loadDetails = async () => {
+    const response = await apiClient.mailboxes[":mailboxId"].details.$get({ param: { mailboxId: data.mailbox.id } });
+    if (!response.ok) throw new Error(await readApiError(response, t().mailboxDetailsFailed));
+    return response.json();
   };
 
   const openHealth = async () => {
@@ -1549,6 +1584,8 @@ function MailWorkspaceView(props: {
         canAdmin={canAdmin()}
         managementOpening={managementOpening()}
         settingsOpening={settingsOpening()}
+        detailsOpening={detailsOpening()}
+        onOpenDetails={() => void openDetails()}
         onOpenHealth={() => void openHealth()}
         onOpenSharedLinks={() => void openSharedLinks()}
         onOpenRemoteContent={() => void openRemoteContent()}

@@ -110,6 +110,7 @@ export const mailWorkspaceMessages = i18n.define({
       failureUnclear: "It is unclear whether the mail server made the change. Check the conversation.",
       failureNotApplied: "The mail server did not make the change.",
       tryAgain: "Try again",
+      mailboxDetailsFailed: "Could not load the mailbox details",
     },
     de: {
       selectConversationActivity: "Wähle eine Unterhaltung aus, um ihre Aktivitäten zu laden",
@@ -216,6 +217,7 @@ export const mailWorkspaceMessages = i18n.define({
       failureUnclear: "Es ist unklar, ob der Mailserver die Änderung vorgenommen hat. Prüfe die Unterhaltung.",
       failureNotApplied: "Der Mailserver hat die Änderung nicht vorgenommen.",
       tryAgain: "Erneut versuchen",
+      mailboxDetailsFailed: "Die Postfachdetails konnten nicht geladen werden",
     },
   },
 });

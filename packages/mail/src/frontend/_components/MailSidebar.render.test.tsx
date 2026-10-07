@@ -45,6 +45,8 @@ const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {
       canAdmin: true,
       managementOpening: null,
       settingsOpening: false,
+      detailsOpening: false,
+      onOpenDetails: () => {},
       onOpenHealth: () => {},
       onOpenSharedLinks: () => {},
       onOpenRemoteContent: () => {},
@@ -196,5 +198,34 @@ describe("Mail sidebar", () => {
       "folder:Fold03": null,
       "folder:Fold04": null,
     });
+  });
+
+  test("puts the mailbox details beside Compose, and gives readers them too", () => {
+    type Entry = { id: string; label: string; action?: string; inlineActions?: Entry[] };
+    const phoneItems = (html: string) =>
+      (JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1] ?? "{}") as { items: Entry[] }).items;
+    const actionsRow = (html: string) => {
+      const desktop = html.slice(html.indexOf('class="k2b-app-workspace__sidebar-desktop'));
+      return desktop.slice(desktop.indexOf("mail-sidebar-actions"), desktop.indexOf("k2b-app-workspace__sidebar-body"));
+    };
+
+    const writer = renderSidebar();
+    const writerRow = actionsRow(writer);
+    expect(writerRow.indexOf("mail-compose-action")).toBeLessThan(writerRow.indexOf("mail-details-action"));
+    expect(writerRow).toContain('aria-label="Mailbox details"');
+    expect(writerRow).toContain("ti ti-info-circle");
+    // On phones the details share Compose's row in the app menu.
+    const [compose] = phoneItems(writer);
+    expect(compose?.id).toBe("compose");
+    expect(compose?.inlineActions?.map((action) => [action.id, action.label, action.action])).toEqual([
+      ["details", "Mailbox details", "details"],
+    ]);
+
+    const reader = renderSidebar({ canWrite: false, canAdmin: false });
+    const readerRow = actionsRow(reader);
+    expect(readerRow).not.toContain("mail-compose-action");
+    expect(readerRow).toContain('aria-label="Mailbox details"');
+    const [details] = phoneItems(reader);
+    expect([details?.id, details?.action]).toEqual(["details", "details"]);
   });
 });

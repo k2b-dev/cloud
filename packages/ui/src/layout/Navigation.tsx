@@ -1,5 +1,6 @@
 import { documentNavigate, Link } from "@k2b/ssr/nav";
 import { createSignal, For, Show } from "solid-js";
+import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
 import { useUiMessages } from "../intl/messages";
 import type { NavigationController, NavigationItem } from "./navigation-model";
@@ -110,6 +111,26 @@ export default function Navigation(props: NavigationProps) {
                     <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
                   </button>
                 </Show>
+                {/* Keyed by id like the rows, so a button keeps its identity and focus when the model updates. */}
+                <For each={(item().inlineActions ?? []).map((action) => action.id)}>
+                  {(actionId) => {
+                    const action = () => item().inlineActions?.find((entry) => entry.id === actionId);
+                    return (
+                      <Show when={action()}>
+                        {(current) => (
+                          <IconButton
+                            class="k2b-navigation__inline-action"
+                            label={current().label}
+                            disabled={disabled() || current().disabled}
+                            onClick={() => void activate(actionId)}
+                          >
+                            <i class={current().icon} aria-hidden="true" />
+                          </IconButton>
+                        )}
+                      </Show>
+                    );
+                  }}
+                </For>
                 <Show when={item().actions?.length}>
                   <Dropdown.Root
                     items={(item().actions ?? []).map((action) => ({

@@ -127,6 +127,7 @@ import {
   listSubscriptions,
   type MailRequestContext,
   mailboxAccess,
+  mailboxDetails,
   mailboxes,
   messageInspector,
   messages,
@@ -994,6 +995,9 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .get("/mailboxes/:mailboxId/settings-context", v("param", mailboxParamSchema), async (c) =>
     respondAggregate(c, settingsContext.loadMailboxSettingsContext(requestContext(c), internalMailboxId(c))),
+  )
+  .get("/mailboxes/:mailboxId/details", v("param", mailboxParamSchema), async (c) =>
+    respondPublic(c, mailboxDetails.getMailboxDetails(requestContext(c), internalMailboxId(c))),
   )
   .get(
     "/mailboxes/:mailboxId/calendar-destinations",

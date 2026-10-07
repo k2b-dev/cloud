@@ -263,14 +263,8 @@ const authorizeAccessManagement = async (
   return (await isCurrentPlatformAdmin(context)) ? ok() : fail(err.forbidden("Cloud administration access is required"));
 };
 
-const listMailboxAccessWithAuthority = async (
-  context: MailRequestContext,
-  mailboxId: string,
-  authority: AccessAuthority,
-): Promise<Result<AccessEntry[]>> => {
-  const allowed = await authorizeAccessManagement(context, mailboxId, authority);
-  if (!allowed.ok) return allowed;
-
+/** Every grant on the mailbox with display names, managers first. Callers authorize before they read it. */
+export const loadMailboxAccessEntries = async (mailboxId: string): Promise<AccessEntry[]> => {
   const rows = await sql<DbAccess[]>`
     SELECT a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at
     FROM mail.mailbox_access ma
@@ -283,7 +277,17 @@ const listMailboxAccessWithAuthority = async (
       ELSE 0
     END DESC, a.created_at, a.id
   `;
-  return ok(await resolveDisplayNames(rows.map(mapAccess)));
+  return resolveDisplayNames(rows.map(mapAccess));
+};
+
+const listMailboxAccessWithAuthority = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  authority: AccessAuthority,
+): Promise<Result<AccessEntry[]>> => {
+  const allowed = await authorizeAccessManagement(context, mailboxId, authority);
+  if (!allowed.ok) return allowed;
+  return ok(await loadMailboxAccessEntries(mailboxId));
 };
 
 const grantMailboxAccessWithAuthority = async (params: {
