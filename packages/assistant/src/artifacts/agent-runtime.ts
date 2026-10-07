@@ -1,4 +1,4 @@
-import { CODE_RUNTIME_TOOL_NAMES, type CodeRuntimeInput, parseCodeToolInput } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, type CodeRuntimeInput, type CodeToolFailure, parseCodeToolInput } from "@k2b/cloud/ai/browser";
 import { type AiFrontendToolHandler, conversationFileSource } from "@k2b/cloud/ai/solid";
 import { onCleanup } from "solid-js";
 import { z } from "zod";
@@ -32,6 +32,15 @@ type Entry = {
 };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const text = (value: string, max = 1000) => (value.length > max ? `${value.slice(0, max)}…` : value);
+const failure = (error: unknown, guidance?: string): CodeToolFailure => {
+  // Coded API rejections keep their stable code in front, like the source tools.
+  const code = error instanceof Error && "code" in error && typeof error.code === "string" ? `${error.code}: ` : "";
+  return {
+    failed: true,
+    error: text(code + (error instanceof Error ? error.message : String(error)), 6000),
+    ...(guidance ? { guidance } : {}),
+  };
+};
 
 function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset: number; limit: number } = { offset: 0, limit: 20 }) {
   const state = entry.session.snapshot();
@@ -374,11 +383,7 @@ export function createArtifactAgentRuntime(
       input = parseCodeToolInput(name, args);
     } catch (error) {
       if (!(error instanceof z.ZodError)) throw error;
-      return {
-        kind: "input",
-        error: text(error.message, 6000),
-        guidance: "Correct the tool arguments using its schema. The app source was not executed.",
-      };
+      return failure(error, "Correct the tool arguments using its schema. The app source was not executed.");
     }
     const call = { input, callId, turnId, conversationId, clientId };
     if (execution === "chat-tool") {
@@ -389,9 +394,9 @@ export function createArtifactAgentRuntime(
       }
       if (claim.status === "done") return claim.result;
       if (claim.status !== "execute")
-        return {
-          error: "Browser execution was interrupted. No action was replayed. Inspect effects before deliberately starting another run.",
-        };
+        return failure(
+          "Browser execution was interrupted. No action was replayed. Inspect effects before deliberately starting another run.",
+        );
     }
     let result: unknown;
     const callAbort = new AbortController();
@@ -439,20 +444,18 @@ export function createArtifactAgentRuntime(
         }),
       ]);
     } catch (error) {
-      result = { error: error instanceof Error ? error.message : String(error) };
+      result = failure(error);
     } finally {
       clearInterval(timer);
       clearInterval(heartbeat);
     }
     // The model receives only bounded JSON, never Blob or Solid proxy objects.
     const encoded = JSON.stringify(result);
+    const runId = ["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : null;
     const bounded: unknown =
       new TextEncoder().encode(encoded).byteLength <= 256 * 1024
         ? JSON.parse(encoded)
-        : {
-            runId: ["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : null,
-            error: "Inspection exceeds 256 KiB. Use inspect with a nodeId and smaller limit.",
-          };
+        : failure(`Inspection${runId ? ` of run ${runId}` : ""} exceeds 256 KiB. Use code_inspect with a nodeId and a smaller limit.`);
     if (execution === "chat-tool") await request("complete", { ...call, result: bounded });
     return bounded;
   };
@@ -460,13 +463,10 @@ export function createArtifactAgentRuntime(
     try {
       return await handler(call);
     } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : String(error),
-        kind: "host",
-        retryable: false,
-        guidance:
-          "The browser host could not complete this call. Do not rewrite app source or repeat this unchanged call. Report the host error.",
-      };
+      return failure(
+        error,
+        "The browser host could not complete this call. Do not rewrite app source or repeat this unchanged call. Report the host error.",
+      );
     }
   };
   return Object.fromEntries(CODE_RUNTIME_TOOL_NAMES.map((name) => [name, guarded]));

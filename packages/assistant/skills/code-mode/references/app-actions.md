@@ -7,7 +7,10 @@ each action has `name`, `title`, `description`, `entry`, `inputSchema` and
 `outputSchema`. Discovery does not execute source code.
 
 Call `code_action({id,action,publishedVersion,input})` using the exact discovered
-name and publication. Input must match its JSON Schema. The result is the normal
+name and publication. `input` is the JSON object itself, never JSON text, and
+must match the action's `inputSchema`; omit it for an action without inputs. A
+mismatch returns `ACTION_INPUT_INVALID` naming each rejected field, for example
+`value: Invalid input: expected number, received string`. The result is the normal
 run snapshot: `runId`, `status`, `output` (JSON text), `outputTruncated`, `logs`,
 `files`, `work` and optional error or modal. Output is checked against the
 published output schema when execution completes. Use `code_inspect` for a
@@ -17,6 +20,9 @@ A pending modal follows the normal `code_interact` contract.
 Use access is enough for a published action. It gives no draft, publication, or
 administration rights. A changed or withdrawn publication rejects the call;
 rediscover before deciding whether to retry. A rejected input has not executed.
+A call that does not complete (rejected input, timeout, unavailable run or host
+failure) returns a tool error with its reason and next step. A run whose code
+fails still returns the snapshot with `status: "error"` and its `error`.
 An execution error, timeout, or invalid output can follow successful effects:
 inspect saved state rather than blindly replaying a mutation. Actions use normal
 capability and HTTP approvals. They cannot approve those calls themselves.
@@ -56,7 +62,9 @@ export default ({ value }) => value * 2;
 
 Names match `[a-z][a-zA-Z0-9_]*` (maximum 80 characters) and are unique. Each
 handler is a relative `.js` or `.ts` file that default-exports a function accepting
-one input argument. Titles are 1–120 characters; descriptions 1–2000 characters.
+one input object. Every `inputSchema` has `"type": "object"`, also for an action
+without inputs; publication rejects other input schemas.
+Titles are 1–120 characters; descriptions 1–2000 characters.
 The manifest accepts 1–64 actions and no other fields. Schemas use the same JSON
 Schema support as Cloud capabilities; unsupported features reject publication.
 The normal source byte and file budgets also include the manifest.

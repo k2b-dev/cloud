@@ -57,6 +57,9 @@ rerun. Inspect saved data before deliberately starting a replacement run.
 The host retains temporary runs while the conversation is active and for two
 idle minutes after it finishes. Saved source and exported files remain durable.
 The server admits eight hosts; a full host pool returns an availability error.
+A call that does not complete (rejected arguments, a timeout, an unavailable
+run, a lost host) is a tool error with its reason and next step. A run whose
+code fails completes the call: its snapshot has `status: "error"` and `error`.
 
 The deadlines protect different boundaries:
 

@@ -138,3 +138,64 @@ test("managed code rejects incomplete background authority before contacting a h
     config.mockRestore();
   }
 });
+
+test("a failed code call reaches the model as a tool error, while a failed run stays a snapshot", async () => {
+  const results = {
+    failed: { failed: true, error: "Browser operation timed out.", guidance: "Inspect effects before retrying." },
+    snapshot: { runId: "run", status: "error", error: "Script threw" },
+  };
+  const tool = defineTool({
+    name: "code_run",
+    description: "Run",
+    inputSchema: z.object({ case: z.enum(["failed", "snapshot"]) }),
+  }).server(async (input, context) =>
+    waitForManagedCodeCall(async () => ({ status: "done", result: results[input.case], approvals: [] }), context),
+  );
+  let requests = 0;
+  const provider: Provider = {
+    name: "fixture",
+    family: "openai-compatible",
+    model: "fixture",
+    capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+    async complete() {
+      throw new Error("Unexpected completion");
+    },
+    async *stream() {
+      requests++;
+      if (requests === 1) {
+        for (const [index, name] of ["failed", "snapshot"].entries()) {
+          yield { type: "block_start", blockId: name, index, kind: "tool_call", callId: name, name: "code_run" };
+          yield { type: "block_end", blockId: name, index, block: { type: "tool_call", id: name, name: "code_run", args: { case: name } } };
+        }
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+      } else {
+        yield { type: "block_start", blockId: "done", index: 0, kind: "text" };
+        yield { type: "block_end", blockId: "done", index: 0, block: { type: "text", text: "Done" } };
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+      }
+    },
+  };
+  const entries: StoreEntry[] = [];
+  const store = {
+    load: async () => entries,
+    append: async (message: StoreEntry["message"]) => {
+      entries.push({ seq: entries.length + 1, kind: "message", message });
+    },
+  };
+  const ended: Array<{ callId: string; result: unknown; isError?: boolean }> = [];
+  for await (const event of nessi({ provider, systemPrompt: "", tools: [tool], maxTurns: 3, input: "Run", store })) {
+    if (event.type === "tool_execution_end") ended.push({ callId: event.callId, result: event.result, isError: event.isError });
+  }
+  expect(ended.find((event) => event.callId === "failed")).toEqual({
+    callId: "failed",
+    result: "Browser operation timed out. Inspect effects before retrying.",
+    isError: true,
+  });
+  expect(ended.find((event) => event.callId === "snapshot")).toEqual({ callId: "snapshot", result: results.snapshot, isError: undefined });
+  expect(
+    entries.flatMap(({ message }) => (message.role === "tool_result" ? [{ callId: message.callId, isError: message.isError }] : [])),
+  ).toEqual([
+    { callId: "failed", isError: true },
+    { callId: "snapshot", isError: false },
+  ]);
+});

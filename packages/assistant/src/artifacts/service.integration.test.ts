@@ -146,7 +146,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       title: "Double",
       description: "Double a number",
       entry: "double.ts",
-      inputSchema: { type: "number" },
+      inputSchema: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
       outputSchema: { type: "number" },
     };
     const resource = await artifacts.create(
@@ -156,7 +156,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           entry: "main.ts",
           files: [
             { path: "app.actions.json", content: JSON.stringify({ actions: [action] }) },
-            { path: "double.ts", content: "export default (value: number) => value * 2;" },
+            { path: "double.ts", content: "export default ({ value }: { value: number }) => value * 2;" },
           ],
         },
       },
@@ -186,13 +186,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           await api.request("/runtime/action", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: resource.id, action: "double", revision: 1, input: 3 }),
+            body: JSON.stringify({ id: resource.id, action: "double", revision: 1, input: { value: 3 } }),
           })
         ).status,
       ).toBe(403);
-      expect((await call("wrong type")).status).toBe(400);
-      expect((await call(3)).status).toBe(200);
-      await artifacts.writeFile(resource.id, "double.ts", "export default (value: number) => value * 3;", owner);
+      expect((await call('{"value":3}')).status).toBe(400);
+      const rejected = await call({ value: "3" });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toMatchObject({ code: "ACTION_INPUT_INVALID", message: expect.stringContaining("value: ") });
+      expect((await call({ value: 3 })).status).toBe(200);
+      await artifacts.writeFile(resource.id, "double.ts", "export default ({ value }: { value: number }) => value * 3;", owner);
       const context = { ...owner, locale: "en", signal: new AbortController().signal };
       expect(await artifactCodeHandlers.code_actions({ id: resource.id, draft: false }, context)).toMatchObject({
         ok: true,
@@ -206,12 +209,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         data: { data: { revision: 2 } },
       });
       // A draft update does not change the published action.
-      expect((await call(3)).status).toBe(200);
+      expect((await call({ value: 3 })).status).toBe(200);
       await artifacts.publish(resource.id, 2, owner, "Triple now");
-      expect((await call(3)).status).toBe(409);
-      expect((await call(3, 2)).status).toBe(200);
+      expect((await call({ value: 3 })).status).toBe(409);
+      expect((await call({ value: 3 }, 2)).status).toBe(200);
       await artifacts.unpublish(resource.id, owner);
-      expect((await call(3, 2)).status).toBe(404);
+      expect((await call({ value: 3 }, 2)).status).toBe(404);
     } finally {
       await artifacts.remove(resource.id, owner);
     }
@@ -2072,7 +2075,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       >`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid`;
       expect(count!.count).toBe(3);
       const syntax = await wait({ ...call, callId: "syntax-error", args: { code: "export default () => { const broken = ; }" } });
-      expect(syntax).toMatchObject({ status: "done", result: { error: expect.stringContaining("Unexpected") } });
+      expect(syntax).toMatchObject({ status: "done", result: { failed: true, error: expect.stringContaining("Unexpected") } });
       expect(JSON.stringify(syntax)).not.toContain("artifact request failed");
       await expect(agentHost.call({ ...call, args: { code: "export default ()=>43" } }, context)).rejects.toThrow("input changed");
       await expect(agentHost.call(call, { ...context, ...stranger })).rejects.toThrow();

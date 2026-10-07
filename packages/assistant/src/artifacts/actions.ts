@@ -30,6 +30,18 @@ export class ArtifactCompileError extends Error {
   readonly code = "COMPILE_FAILED";
 }
 
+/** A call input that its action's schema rejects; the action did not run. */
+export class ActionInputError extends Error {
+  readonly code = "ACTION_INPUT_INVALID";
+}
+
+export function parseActionInput(action: AppAction, input: unknown) {
+  const result = actionValidator(action.inputSchema).safeParse(input);
+  if (result.success) return result.data;
+  const issues = result.error.issues.map((issue) => `${issue.path.length ? issue.path.join(".") : "input"}: ${issue.message}`);
+  throw new ActionInputError(`Input for ${action.name} does not match its inputSchema; the action did not run. ${issues.join("; ")}`);
+}
+
 export function sourceActions(source: ArtifactSource): AppAction[] {
   try {
     return parseSourceActions(source);
