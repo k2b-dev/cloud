@@ -104,9 +104,7 @@ export function createArtifactSession(
           throw new CloudError("not_found", "Input file not found; use the script context files first");
         const path = args[0];
         const file = await waiting(false, async () =>
-          options.readInput
-            ? options.readInput(path, signal)
-            : inputs.find((file) => (file.webkitRelativePath || file.name) === path),
+          options.readInput ? options.readInput(path, signal) : inputs.find((file) => (file.webkitRelativePath || file.name) === path),
         );
         if (!file) throw new CloudError("not_found", "Input file not found");
         return { file, path: file.webkitRelativePath || file.name };

@@ -5,8 +5,8 @@ import { LIMITS } from "../contracts";
 import { CloudError, cloudError } from "../runtime/errors";
 import { APPROVAL_METHODS, createServiceCalls, type RuntimeServices } from "../runtime/services";
 import { type AppFiles, type ComposeOptions, composeApp, type LintIssue } from "./compose";
-import { sanitizeSnapshot } from "./snapshot";
 import { FRAME_METHODS, type FrameLogLevel, type FrameToHost, type HostToFrame } from "./protocol";
+import { sanitizeSnapshot } from "./snapshot";
 
 export type MountEvent =
   | { type: "log"; level: FrameLogLevel; text: string }
@@ -189,7 +189,11 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
         void openLink(message.url);
         return;
       case "log":
-        emit({ type: "log", level: ["log", "info", "warn", "error"].includes(message.level) ? message.level : "log", text: text(message.text) });
+        emit({
+          type: "log",
+          level: ["log", "info", "warn", "error"].includes(message.level) ? message.level : "log",
+          text: text(message.text),
+        });
         return;
       case "error":
         emit({ type: "error", text: text(message.text), where: typeof message.where === "string" ? text(message.where) : undefined });
@@ -215,7 +219,13 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
       return;
     }
     try {
-      if (await confirm(() => options.confirmOpen(url.href), (ok) => ok)) open(url.href, "_blank", "noopener,noreferrer");
+      if (
+        await confirm(
+          () => options.confirmOpen(url.href),
+          (ok) => ok,
+        )
+      )
+        open(url.href, "_blank", "noopener,noreferrer");
     } catch (error) {
       emit({ type: "log", level: "warn", text: error instanceof Error ? error.message : String(error) });
     }

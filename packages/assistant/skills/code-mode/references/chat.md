@@ -1,52 +1,46 @@
-# Interactive visualizations in chat
+# Chat apps
 
-Use one-off code for a chart, calculator, report or dashboard that belongs to
-this answer. Sliders, buttons, tables and charts use the same `ui` API as Apps.
+Use `code_present` to show an HTML app as a card in this chat: a chart, a
+calculator, a small dashboard or report that belongs to this answer. The card
+has a fixed height and starts on a click; it never runs while someone scrolls
+past it. Read [HTML apps](apps.md) for the files, styles and sandbox rules.
 
-1. Load `code_run`, `code_inspect`, `code_interact` and `code_present`.
-2. Run the source and inspect its real values. Exercise relevant controls.
-3. Wait for ready, error-free UI with no pending work or modal.
-4. Call `code_present({runId,title})`. Only successful presentation delivers
-   visible content. You may stop the test run afterwards.
+- **One-off:** `code_present({ title, files: [{ path: "index.html", content }, …] })`.
+  The files are stored with the chat. A one-off app has no database, `cloud.kv`
+  or `cloud.files`; those calls reject with `unavailable`. Put the data it shows
+  into the files, for example as `export const rows = [...]` in `data.js`.
+- **Saved app:** `code_present({ id })` shows an existing app with its data and
+  current source, under its title unless you pass one. The card offers Open to
+  show it beside the chat.
 
 ```js
-// code_run({code: "..."}) entry:
-export default () => {
-  const total = ui.stat({label: "Total", value: 20});
-  ui.slider({id: "quantity", label: "Quantity", min: 1, max: 20, value: 2,
-    onChange: value => total.setValue(value * 10)});
-};
+// code_present files: index.html
+// <main><h1>Quarter</h1><figure id="chart"></figure></main>
+// app.js
+import { months } from "./data.js";
+document.querySelector("#chart").innerHTML = cloud.chart({
+  kind: "bar",
+  title: "Revenue per month",
+  data: months.map((month) => ({ label: month.label, value: month.revenue })),
+});
 ```
 
-Use the actual API examples in the UI reference for callbacks and updates.
-`code_present` takes the returned runId and a concise title. It accepts one-off
-code without a saved App id or resourceId. Use `code_open` for saved Apps.
+Compute the numbers first: run a script with `code_run` over the chat files,
+check the totals, and write the result into `data.js`. Never retype truncated
+tool output into a data file; export it with `cloud.download` and `code_export`
+and read the exported file.
 
-Presentation saves source, full UI preview and copies of the selected input
-versions in the conversation. Each presentation is immutable. Changing the
-original input file does not change this saved input. If an input changed before
-presentation, start and verify a fresh run. Keep large source data in explicit
-inputPaths rather than retyping truncated tool output. The per-chat presentation
-budget is 250 MiB including source, previews and input copies; ordinary per-file
-and runtime message limits apply.
+Before saving anything, `code_present` checks the files and refuses errors such
+as CDN scripts, missing imports, inline handlers or network URLs; fix them and
+call it again. Warnings come back with the result. Presenting does not run the
+app for you, so mention what the person can do with it.
 
-Opening chat history only shows the saved preview. Interaction is detected from
-the saved UI: controls, file pickers, selectable charts, tables and explorers
-can be activated. Text, statistics and charts without selectable marks stay
-static and never start a worker. Do not add a dummy control to enable interaction;
-add an explicit refresh button only when refreshing data is useful. No extra
-`code_present` argument is needed. For interactive views, the user chooses Interact
-to start the program from its entry point; previous slider values and execution
-state are not restored. Put external actions in explicit callbacks, never in
-initialization. Startup should build the useful default view from retained data.
-Cloud capabilities and HTTP calls keep their normal permission and approval
-checks. Chat visualizations have no App database or shared storage.
+The card's download menu saves a static copy of the app as it is shown, as HTML
+or PDF. The copy runs no scripts. A download does not create a chat file; to
+hand a file to the agent or another tool, create it with `cloud.download` in a
+script and `code_export` it.
 
-The Downloads menu offers the current view as PDF or static HTML, and individual
-charts as SVG. Interactive views place it beside Interact/Stop; static views show
-only the download icon. Exports preserve filter values, sources and data timestamps, omit action
-buttons, and render complete current tables. A download does not create a chat
-file. If the agent must hand off an actual file, use the existing file workflow.
-
-Name the delivered visualization and state whether the data is a retained
-snapshot or explicitly loaded live. Do not invent a retrieval timestamp.
+Each presentation is immutable and stays with its chat; a corrected app is a new
+`code_present` call. Presentations of a chat share a 250 MiB budget. Cloud
+capabilities and HTTP calls from a card keep their normal permission checks and
+ask the person each time.

@@ -288,7 +288,12 @@ test("CLI worker chains capabilities through host approvals and keeps denial out
 test("chat inputs load on demand for one-off and saved scripts, and only selected inputs are readable", async () => {
   const scriptSource = await compileArtifact({
     entry: "main.ts",
-    files: [{ path: "main.ts", content: "export default async (_input, {files}) => ({ name: files[0].path, text: await (await files[0].file()).text() })" }],
+    files: [
+      {
+        path: "main.ts",
+        content: "export default async (_input, {files}) => ({ name: files[0].path, text: await (await files[0].file()).text() })",
+      },
+    ],
   });
   const bundle = await cliHostBundle();
   let reads = 0;
@@ -687,7 +692,10 @@ test("code_present saves one-off HTML apps only after their static checks pass",
     })) as { failed: boolean; error: string };
     expect(rejected.failed).toBe(true);
     for (const problem of ["example.com/x.png", '"lodash"', "localStorage"]) expect(rejected.error).toContain(problem);
-    expect(await present("no-interface", { id: "aBc234" })).toMatchObject({ failed: true, error: expect.stringContaining("no index.html") });
+    expect(await present("no-interface", { id: "aBc234" })).toMatchObject({
+      failed: true,
+      error: expect.stringContaining("no index.html"),
+    });
     expect(posted).toEqual([]);
     expect(
       await present("ok", {

@@ -221,7 +221,7 @@ order:
    stays there, including results and actions, so input and output remain
    reachable. Failed steps say "failed" in muted text; a rejected approval says
    "rejected".
-2. **Results.** Presented files, `code_present` visualizations, cards, and
+2. **Results.** Presented files, `code_present` apps, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
    `code_present`, replaces the earlier one at its place. A running delivery
@@ -334,7 +334,7 @@ result is pending, so the preview does not grow twice, and keep the view's
 state when the result arrives; the same view stays mounted when the turn
 becomes history. The host owns validation, authorized loading, durable storage,
 and sandbox lifecycle. It must not execute saved code automatically when
-rendering the preview. Without this action, `code_present` calls stay in the
+rendering the preview: Assistant's card starts its HTML app only on a click. Without this action, `code_present` calls stay in the
 work line.
 
 Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown link
@@ -501,8 +501,8 @@ runtime monitoring and production checks.
 ## Advertise connected client tools
 
 Every turn with the default tool source offers the server-run code tools
-`code_run`, `code_action`, `code_inspect`, `code_interact`, `code_stop`,
-`code_export`, and `code_present`, whichever client submits it: the web app,
+`code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`, and
+`code_present`, whichever client submits it: the web app,
 `cld assistant` with or without `--detach`, an API client, or a scheduled task.
 Cloud runs them in an Assistant-owned host, so they need no client.
 
@@ -535,15 +535,12 @@ returns a call that did not complete as `CodeToolFailure`
 (`{failed: true, error, guidance?}`, from `@k2b/cloud/ai/browser`); server-run
 code tools report it to the model as a tool error.
 
-`code_run` accepts the app `id` and optional chat `inputPaths`, takes a fixed
-snapshot of current source, and returns a run ID and compact state. There is no
-required source revision. `code_interact` accepts a control ID or the pending
-modal ID. Controls receive an `event` object; modal responses use `answer`.
-For example, use `event: {type: "view", value: "table"}` for an Explorer and
-`answer: null` to cancel a modal. Inspection includes ready-to-use interaction
-examples. A `steps` array runs up to three sequential interactions and returns
-one snapshot with `completedSteps` and `nextStep`; errors, modals, and background
-work stop the sequence. Do not combine `steps` with a top-level interaction.
+`code_run` accepts a saved script `id` or one-off `code` and optional chat
+`inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
+compact state. There is no required source revision. An app whose interface is
+`index.html` does not run there; `code_open` and `code_present` show it.
+`code_inspect` returns status, progress, logs, output and captured files, and can
+wait for background work with `waitMs`.
 Inspection also reports the tested source revision. `code_open` never starts the visible
 app. `code_export` copies a captured file into the originating chat.
 
@@ -684,21 +681,13 @@ Publishing selects a runnable version; it does not grant public access.
 
 **Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
 latest publication, even for managers. It loads no Assistant sidebar, chat list,
-chat updates, code editor or database console. Private apps require sign-in and
-app access. Public visitors see the app without the Cloud navigation shell.
+chat updates, code editor or database console. Apps require sign-in and app
+access. The app starts on its own for people who manage it; everyone else
+selects **Start**.
 
-To share publicly, publish the app and add **Public** in **Manage access**.
-Only **Use** is available; public **Manage** is rejected through every interface.
-The dialog explains the limits: public visitors can compute locally, select
-files through the transitional UI filePicker and download results. Browser-local
-runtime storage is removed. Public access never grants
-the app database, server files/KV, personal secrets, server HTTP/PDF or protected
-Cloud actions. Signed-in visitors still need a separate explicit app grant for
-server features. Existing apps that require these features may not work publicly.
-Published code and embedded data are visible to visitors; keep secrets out of source.
-
-Remove the public entry or unpublish the app to prevent new loads. Code already
-downloaded cannot be recalled. Drafts, history and management remain private.
+Public links are switched off for now: **Manage access** does not offer
+**Public**, and an existing public entry opens nothing until public sharing
+returns. See [Assistant](/en/apps/assistant#standalone-apps-and-public-links).
 
 Cloud administrators can add this URL as a **Link** in the navigation settings,
 with a title, icon and audience. The shortcut's audience controls visibility,
@@ -756,9 +745,6 @@ of business correctness. Recent one-off runs are a separate compact list (latest
 20), and exported files remain in Files. Forbidden resources are filtered again
 when the context snapshot is loaded.
 
-Code Mode `ui.stat({label,value,format?,trend?})` uses the shared `StatCell`
-component. Values remain numeric or null for inspection; formatting occurs in
-the host locale. Its handle supports `setValue`, `setOptions`, and `setLoading`.
 Managed execution reports starting, working, and approval phases in the active
 tool row. Startup is bounded to 45 seconds; the server also checks the browser
 event loop with a 10-second heartbeat deadline. A dead host is reported without

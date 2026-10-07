@@ -407,7 +407,9 @@ export const artifactCodeHandlers = {
           icon,
           source: {
             entry: "index.html",
-            files: [{ path: "index.html", content: `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n` }],
+            files: [
+              { path: "index.html", content: `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n` },
+            ],
           },
         },
         context,

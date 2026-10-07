@@ -42,7 +42,10 @@ const failure = (error: unknown, guidance?: string): CodeToolFailure => {
 function inspect(runId: string, entry: Entry) {
   const state = entry.session.snapshot();
   const invalidOutput =
-    entry.outputSchema && state.status === "ready" && state.work?.status !== "running" && !entry.outputSchema.safeParse(state.output).success;
+    entry.outputSchema &&
+    state.status === "ready" &&
+    state.work?.status !== "running" &&
+    !entry.outputSchema.safeParse(state.output).success;
   const output = state.output === undefined ? null : JSON.stringify(state.output);
   return {
     userVisible: false,
@@ -107,9 +110,15 @@ export function createArtifactAgentRuntime(
     }
   }
   /** Saves an HTML app card after the static checks pass; the person starts it with a click. */
-  async function present(input: Extract<CodeRuntimeInput, { operation: "present" }>, conversationId: string, callId: string, signal: AbortSignal) {
+  async function present(
+    input: Extract<CodeRuntimeInput, { operation: "present" }>,
+    conversationId: string,
+    callId: string,
+    signal: AbortSignal,
+  ) {
     const app = input.id ? await artifactClient.get(input.id, false, undefined, conversationId) : undefined;
-    if (app && !hasInterface(app.source)) throw new Error("This app has no index.html interface. Write one with code_write, or run a script with code_run.");
+    if (app && !hasInterface(app.source))
+      throw new Error("This app has no index.html interface. Write one with code_write, or run a script with code_run.");
     const files = input.files ?? app!.source.files;
     const issues = lintApp(Object.fromEntries(files.map((file) => [file.path, file.content])));
     const errors = issues.filter((issue) => issue.severity === "error");
@@ -391,7 +400,9 @@ export function createArtifactAgentRuntime(
     const bounded: unknown =
       new TextEncoder().encode(encoded).byteLength <= 256 * 1024
         ? JSON.parse(encoded)
-        : failure(`Inspection${runId ? ` of run ${runId}` : ""} exceeds 256 KiB. Return a smaller output and hand out large results as files with cloud.download.`);
+        : failure(
+            `Inspection${runId ? ` of run ${runId}` : ""} exceeds 256 KiB. Return a smaller output and hand out large results as files with cloud.download.`,
+          );
     if (execution === "chat-tool") await request("complete", { ...call, result: bounded });
     return bounded;
   };

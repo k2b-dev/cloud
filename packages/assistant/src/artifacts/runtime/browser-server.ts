@@ -16,14 +16,25 @@ export function browserServerOptions(id: string, confirm: Confirm): RuntimeServi
         name,
         input,
         { artifactId: id },
-        (request, signal) => confirm(() => approveInModal(request, signal), (decision) => decision.approved),
+        (request, signal) =>
+          confirm(
+            () => approveInModal(request, signal),
+            (decision) => decision.approved,
+          ),
         signal,
       ),
     http: (request, signal) =>
       runHttp(
         request,
         { resourceId: id },
-        { ...browserHttpHost, approve: (review, signal) => confirm(() => browserHttpHost.approve(review, signal), (approved) => approved) },
+        {
+          ...browserHttpHost,
+          approve: (review, signal) =>
+            confirm(
+              () => browserHttpHost.approve(review, signal),
+              (approved) => approved,
+            ),
+        },
         signal,
       ),
     pdf: (request, signal) => artifactClient.pdf(request, { resourceId: id }, signal),

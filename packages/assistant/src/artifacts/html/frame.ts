@@ -2,7 +2,7 @@
 // realm, installs `cloud`, loads the app's modules from blob URLs, relays
 // errors, logs, readiness and the URL hash to the host, and turns natural
 // browser code that cannot work here into clear errors. Bundled to an IIFE.
-import { z } from "zod";
+import "./no-eval";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { createCloud } from "../runtime/cloud";
@@ -10,9 +10,6 @@ import { CloudError } from "../runtime/errors";
 import { chartOptions, chartSvg } from "../runtime/lib";
 import { ensureRandomUuid } from "../runtime/random-uuid";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
-
-// The app CSP allows no eval. Without this, zod probes `new Function` once, and every app would log a sandbox violation.
-z.config({ jitless: true });
 
 for (const key of [
   "RTCPeerConnection",
@@ -118,7 +115,8 @@ addEventListener("message", (event: MessageEvent) => {
   if (message?.type === "result") bridge.result(message);
   else if (message?.type === "theme") document.documentElement.dataset.theme = message.value === "dark" ? "dark" : "light";
   else if (message?.type === "hash" && typeof message.value === "string" && location.hash !== message.value) location.hash = message.value;
-  else if (message?.type === "snapshot") send({ type: "snapshot", id: message.id, html: `<!doctype html>${document.documentElement.outerHTML}` });
+  else if (message?.type === "snapshot")
+    send({ type: "snapshot", id: message.id, html: `<!doctype html>${document.documentElement.outerHTML}` });
 });
 const cloud = createCloud(rpc, config.context);
 Object.defineProperty(self, "cloud", { value: cloud, enumerable: true });

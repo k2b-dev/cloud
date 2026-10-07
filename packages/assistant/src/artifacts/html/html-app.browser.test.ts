@@ -27,12 +27,14 @@ beforeAll(async () => {
   const [prelude, baseCss, harness] = await Promise.all([
     buildPrelude(),
     buildBaseCss(),
-    Bun.build({ entrypoints: [new URL("./html-app-browser-harness.ts", import.meta.url).pathname], target: "browser", format: "iife" }).then(
-      async (build) => {
-        if (!build.success) throw new AggregateError(build.logs, "harness build failed");
-        return build.outputs[0]!.text();
-      },
-    ),
+    Bun.build({
+      entrypoints: [new URL("./html-app-browser-harness.ts", import.meta.url).pathname],
+      target: "browser",
+      format: "iife",
+    }).then(async (build) => {
+      if (!build.success) throw new AggregateError(build.logs, "harness build failed");
+      return build.outputs[0]!.text();
+    }),
   ]);
   const preludeHash = `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`;
   const assets = `globalThis.assets=${JSON.stringify({ prelude, preludeHash, baseCss })};`;
@@ -69,7 +71,8 @@ async function open(files: AppFiles, options: { hash?: string; answers?: boolean
   await page.evaluate(([files, options]) => globalThis.harness.mount(files, options), [files, options] as const);
   return { page, close: () => context.close() };
 }
-const events = (page: Page) => page.evaluate(() => JSON.parse(JSON.stringify(globalThis.harness.events)) as { type: string; [key: string]: unknown }[]);
+const events = (page: Page) =>
+  page.evaluate(() => JSON.parse(JSON.stringify(globalThis.harness.events)) as { type: string; [key: string]: unknown }[]);
 const ready = (page: Page) =>
   page.waitForFunction(() => globalThis.harness.events.some((event) => event.type === "ready"), undefined, { timeout: 10_000 });
 const app = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
@@ -180,7 +183,12 @@ addEventListener("hashchange", () => (document.querySelector("#late").dataset.ha
     expect(await app(page).locator("#late").getAttribute("data-twice")).toBe("42");
     expect(await app(page).locator("#late").getAttribute("data-initial-hash")).toBe("#tab=2");
     await page.evaluate(() => globalThis.harness.hashToApp("#tab=3"));
-    expect(await eventually(() => app(page).locator("#late").getAttribute("data-hash"), (value) => value === "#tab=3")).toBe("#tab=3");
+    expect(
+      await eventually(
+        () => app(page).locator("#late").getAttribute("data-hash"),
+        (value) => value === "#tab=3",
+      ),
+    ).toBe("#tab=3");
     expect(await page.evaluate(() => globalThis.harness.hash)).toBe("#tab=3");
     // Neither the app nor the prelude trips the sandbox (for example a library probing eval).
     const errors = (await events(page)).filter((event) => event.type === "error" || (event.type === "log" && event.level === "error"));
@@ -212,7 +220,12 @@ test("the theme follows Cloud live", async () => {
     await ready(page);
     expect(await app(page).locator("html").getAttribute("data-theme")).toBe("light");
     await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
-    expect(await eventually(() => app(page).locator("html").getAttribute("data-theme"), (value) => value === "dark")).toBe("dark");
+    expect(
+      await eventually(
+        () => app(page).locator("html").getAttribute("data-theme"),
+        (value) => value === "dark",
+      ),
+    ).toBe("dark");
   } finally {
     await close();
   }
@@ -246,7 +259,7 @@ document.querySelector("#evil").addEventListener("click", () => cloud.download("
 test("a Cloud confirmation makes the app inert, allows one at a time, and three refusals stop the app", async () => {
   const { page, close } = await open(
     {
-      "index.html": '<main><h1>Asks</h1><button id=ask type=button>Ask</button><output id=out></output></main>',
+      "index.html": "<main><h1>Asks</h1><button id=ask type=button>Ask</button><output id=out></output></main>",
       "app.js": `const out = document.querySelector("#out");
 document.querySelector("#ask").addEventListener("click", async () => {
   const both = await Promise.allSettled([cloud.capabilities.run("grids.rows.list", {}), cloud.capabilities.run("grids.rows.list", {})]);
@@ -259,12 +272,27 @@ document.querySelector("#ask").addEventListener("click", async () => {
     await ready(page);
     await app(page).locator("#ask").click();
     await page.waitForFunction(() => globalThis.harness.inert(), undefined, { timeout: 5000 });
-    expect(await eventually(() => text(page, "#out"), (value) => value === "ok,limit")).toBe("ok,limit");
+    expect(
+      await eventually(
+        () => text(page, "#out"),
+        (value) => value === "ok,limit",
+      ),
+    ).toBe("ok,limit");
     expect(await page.evaluate(() => globalThis.harness.inert())).toBe(false);
     await app(page).locator("#ask").click();
-    expect(await eventually(() => text(page, "#out"), (value) => value === "denied,limit")).toBe("denied,limit");
+    expect(
+      await eventually(
+        () => text(page, "#out"),
+        (value) => value === "denied,limit",
+      ),
+    ).toBe("denied,limit");
     await app(page).locator("#ask").click();
-    expect(await eventually(() => text(page, "#out"), (value) => value === "denied,limit")).toBe("denied,limit");
+    expect(
+      await eventually(
+        () => text(page, "#out"),
+        (value) => value === "denied,limit",
+      ),
+    ).toBe("denied,limit");
     await app(page).locator("#ask").click();
     const stopped = () => events(page).then((list) => list.find((event) => event.type === "stopped")?.reason);
     expect(await eventually(stopped, (reason) => reason !== undefined)).toBe("The app was stopped after three declined confirmations.");
@@ -283,7 +311,12 @@ test("messages from other windows are ignored, and a flood stops the app", async
   });
   try {
     await ready(page);
-    await page.evaluate(() => window.postMessage({ type: "rpc", id: 1, method: "storage", args: [{ scope: "shared", area: "kv", operation: "write", key: "x", value: 1 }] }, "*"));
+    await page.evaluate(() =>
+      window.postMessage(
+        { type: "rpc", id: 1, method: "storage", args: [{ scope: "shared", area: "kv", operation: "write", key: "x", value: 1 }] },
+        "*",
+      ),
+    );
     await page.waitForTimeout(200);
     expect(await page.evaluate(() => globalThis.harness.calls)).toEqual([]);
     await app(page).locator("#go").click();
@@ -296,7 +329,8 @@ test("messages from other windows are ignored, and a flood stops the app", async
 
 test("charts redraw at their real width, lazy libraries load through the host, and a snapshot runs nothing", async () => {
   const { page, close } = await open({
-    "index.html": '<main><h1 onclick="steal()">Report</h1><figure id=chart></figure><p id=rows></p><a id=bad href="javascript:alert(1)">x</a></main>',
+    "index.html":
+      '<main><h1 onclick="steal()">Report</h1><figure id=chart></figure><p id=rows></p><a id=bad href="javascript:alert(1)">x</a></main>',
     "app.js": `document.querySelector("#chart").innerHTML = cloud.chart({ kind: "bar", title: "Umsatz", data: [{ label: "Jan", value: 1200 }, { label: "Feb", value: 900 }] });
 const rows = await cloud.sheet.parseCsv("Name;Betrag\\nMüller;1.234,56");
 document.querySelector("#rows").textContent = rows[0].Name + " " + rows[0].Betrag;`,

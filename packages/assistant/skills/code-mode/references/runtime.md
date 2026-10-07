@@ -1,9 +1,9 @@
 # Runtime and input files
 
-Read [cloud contract](cloud.md) first. Code runs in an isolated, terminable worker
-with one frozen global `cloud`, no DOM, and no native network access. The
-transitional `ui` tree remains available until HTML apps replace it. Imports may reference only the
-resource’s own JavaScript, TypeScript, JSON, CSV, TSV, or text source files.
+Read [cloud contract](cloud.md) first. A script runs in an isolated, terminable
+worker with one frozen global `cloud`, no DOM, and no native network access. It
+has no interface; interfaces are [HTML apps](apps.md). Imports may reference only
+the resource’s own JavaScript, TypeScript, JSON, CSV, TSV, or text source files.
 
 A script or app action default-exports a function:
 
@@ -36,7 +36,7 @@ and database operations. Flat `cloud.db` operations `list`, `get`, `insert`, `up
 Runtime calls need no `connect` grant; `code_database` `tables.create` provisions the database under its `tables.create` grant.
 Scheduled hosts use the same library and permissions.
 
-Return JSON or nothing; do not return UI handles, functions, or class instances.
+Return JSON or nothing; do not return functions or class instances.
 Logs appear in diagnostics. A script download is captured for `code_export`;
 an interactive app download is handed to the viewer.
 

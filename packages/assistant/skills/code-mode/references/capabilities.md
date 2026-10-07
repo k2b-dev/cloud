@@ -28,8 +28,8 @@ The current user's Cloud permissions still apply. Read queries and actions
 configured without approval run directly. Other actions request real user
 approval through the chat or app host. An eligible action can offer “always
 allow” for its defined scope. Existing remembered approvals are reused.
-Scripts cannot approve their own requests; `code_interact` is not an approval
-mechanism. Declined calls throw. Respect the decision and do not retry through
+Scripts and apps cannot approve their own requests. While Cloud asks, an app is
+greyed out and cannot be used. Declined calls reject with `denied`. Respect the decision and do not retry through
 another route. A chat's allowed-tools restriction also applies to calls from
 its scripts.
 

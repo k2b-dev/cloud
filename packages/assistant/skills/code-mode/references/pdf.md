@@ -68,7 +68,7 @@ await cloud.files.write("reports/with-details.pdf", result);
 ```
 
 The source PDF and attachments are ordinary `Blob`s. Their origin does not
-matter: explicit picker selections, authorized chat inputs, or app storage use
+matter: files a person selects in an app, authorized chat inputs, or app storage use
 the same API. `relationship` defaults to `Unspecified`; alternatives are
 `Source`, `Data`, `Alternative`, and `Supplement`. MIME type comes from the Blob
 and defaults to `application/octet-stream` if empty. Provide at least one attachment. Names within the request

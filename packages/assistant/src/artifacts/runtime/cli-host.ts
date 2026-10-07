@@ -17,18 +17,8 @@ createRoot(() => {
   const httpHost = {
     approve: async (request: import("../http-host").HttpApproval) => (await window.assistantCodeApprove(request)).approved,
   };
-  const handlers = createArtifactAgentRuntime(
-    null,
-    (request) => window.assistantCodeApprove(request),
-    "chat-tool",
-    httpHost,
-  );
-  const standalone = createArtifactAgentRuntime(
-    null,
-    (request) => window.assistantCodeApprove(request),
-    "standalone",
-    httpHost,
-  );
+  const handlers = createArtifactAgentRuntime(null, (request) => window.assistantCodeApprove(request), "chat-tool", httpHost);
+  const standalone = createArtifactAgentRuntime(null, (request) => window.assistantCodeApprove(request), "standalone", httpHost);
   window.assistantCodeExecute = (call) => {
     const handler = standalone[call.name];
     if (!handler) throw new Error("Unknown code runtime operation");

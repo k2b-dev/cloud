@@ -100,7 +100,9 @@ const AppFilePath = z
   .refine((path) => path.split("/").every((part) => part !== "." && part !== ".."), "Expected a relative path without . or ..");
 export const CodePresentInput = z
   .object({
-    id: id.optional().describe("Saved app with an index.html interface; the card runs it live with its data. Omit title to use the app title."),
+    id: id
+      .optional()
+      .describe("Saved app with an index.html interface; the card runs it live with its data. Omit title to use the app title."),
     files: z
       .array(z.object({ path: AppFilePath, content: z.string().max(1024 * 1024) }).strict())
       .min(1)

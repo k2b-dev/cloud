@@ -38,7 +38,8 @@ type Running = {
 };
 const RUNTIME = "/api/assistant/artifacts/runtime";
 const RUNNER = "/api/assistant/runner";
-const filesOf = (source: Pick<ArtifactSource, "files">): AppFiles => Object.fromEntries(source.files.map((file) => [file.path, file.content]));
+const filesOf = (source: Pick<ArtifactSource, "files">): AppFiles =>
+  Object.fromEntries(source.files.map((file) => [file.path, file.content]));
 /** Set while an app starts and cleared once it is ready: a start that hung the tab does not repeat after a reload. */
 const startMarker = (id: string, revision: number) => `assistant-app-starting:${id}:${revision}`;
 
@@ -107,7 +108,8 @@ export function ArtifactPanel(props: {
   let runs = 0;
   createEffect(on(error, (failure) => failure && setConsoleOpen(true)));
 
-  const log = (level: string, text: string) => setLogs((current) => [...current, { time: new Date().toISOString(), level, text }].slice(-LIMITS.logs));
+  const log = (level: string, text: string) =>
+    setLogs((current) => [...current, { time: new Date().toISOString(), level, text }].slice(-LIMITS.logs));
   const clearMarker = () => {
     if (marker) sessionStorage.removeItem(marker);
     marker = undefined;
@@ -324,7 +326,9 @@ export function ArtifactPanel(props: {
               services={app.services}
               hash={props.mirrorHash ? location.hash : undefined}
               onHash={
-                props.mirrorHash ? (hash) => history.replaceState(history.state, "", hash || location.pathname + location.search) : undefined
+                props.mirrorHash
+                  ? (hash) => history.replaceState(history.state, "", hash || location.pathname + location.search)
+                  : undefined
               }
               onEvent={event}
               onMount={(created) => {
@@ -423,7 +427,9 @@ export function ArtifactPanel(props: {
                     <StatusBadge
                       class="artifact-console__level"
                       icon={null}
-                      tone={entry.level === "error" ? "error" : entry.level === "warn" ? "warning" : entry.level === "info" ? "info" : "neutral"}
+                      tone={
+                        entry.level === "error" ? "error" : entry.level === "warn" ? "warning" : entry.level === "info" ? "info" : "neutral"
+                      }
                       label={{ error: t().logError, warn: t().logWarning, info: t().logInfo }[entry.level] ?? "Log"}
                     />
                     <span class="artifact-console__message">{entry.text}</span>

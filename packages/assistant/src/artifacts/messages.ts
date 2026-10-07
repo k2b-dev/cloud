@@ -197,7 +197,8 @@ export const artifactMessages = i18n.define({
       visualizationLoadFailed: "Visualisierung konnte nicht geladen werden.",
       visualizationDownloads: "Downloads",
       PUBLIC_READ_ONLY: "Öffentlicher Zugriff erlaubt nur das Ausführen der veröffentlichten App. Verwalten kann nicht öffentlich sein.",
-      PUBLIC_SHARING_OFF: "Öffentliche Links zu Studio-Apps sind vorerst abgeschaltet. Teile die App stattdessen mit Personen oder Gruppen.",
+      PUBLIC_SHARING_OFF:
+        "Öffentliche Links zu Studio-Apps sind vorerst abgeschaltet. Teile die App stattdessen mit Personen oder Gruppen.",
       publicSharingOffTitle: "Öffentliche Links sind abgeschaltet",
       publicSharingOffHelp:
         "Personen ohne Konto können diese App vorerst nicht öffnen. Behalte den öffentlichen Eintrag, damit der Link wieder funktioniert, sobald öffentliche Freigaben zurückkommen, oder entferne ihn.",

@@ -1,16 +1,16 @@
 ---
 name: assistant-data-analysis
-description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or interactive dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; a simple chart only needs the Code Mode charts reference.
+description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or HTML dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; a simple chart only needs the Code Mode charts reference.
 ---
 
 # Analyze data and deliver an inspectable result
 
 Start with the question the reader needs to answer. Choose a direct answer,
-an interactive visualization in this chat, an exported file, or a reusable Studio app accordingly.
-For a one-time visual analysis, prefer a chat visualization; filters and buttons
-do not by themselves require a Studio App.
-Load `assistant-code-mode` for execution and read its `references/analytics.md`
-for the built-in UI. Loading this skill does not install a library or grant access.
+an app shown in this chat, an exported file, or a reusable Studio app accordingly.
+For a one-time visual analysis, prefer a chat app; filters and buttons do not by
+themselves require a Studio App. Load `assistant-code-mode` for execution and read
+its `references/apps.md` and `references/charts.md` for interfaces and charts.
+Loading this skill does not install a library or grant access.
 
 ## Keep a working plan
 
@@ -45,9 +45,9 @@ retrieval timestamp, without credentials or credential-bearing URLs.
 ## Build one consistent analysis
 
 Derive charts, metrics, and tables from the same reviewed data. Aggregate large
-inputs before crossing the UI bridge. Chart Explorer rows identify selectable
-entities with stable string keys; derived bins and groups need explicit mark
-mappings. Shared keys across charts mean the same entity, not equal values.
+inputs in a script before they reach an app; an app shows aggregates, not raw
+exports. Give exact values a table, for example in a `<details>` element under
+the chart.
 
 Choose the simplest chart that answers the question. Use tables for exact
 records, bars for category comparisons, lines for ordered trends, and distributions
@@ -60,37 +60,40 @@ breakdowns. Use shared filters only when they affect all claimed views. Keep the
 initial view useful without interaction. Avoid unrelated metrics added merely to
 fill a grid.
 
-Attach source context to Explorer data: `mode`, `asOf`, `sources`, and relevant
-`status`/`note`. A timestamp records when the data was retrieved; it does not prove
-that the upstream source is complete. Label partial or fixture data visibly.
+Show the source context in the app: whether it is a snapshot, when the data was
+retrieved, its sources, and relevant notes. A timestamp records when the data
+was retrieved; it does not prove that the upstream source is complete. Label
+partial or fixture data visibly.
 
 ## Validate before delivery
 
-Run the actual source with `code_run`. Inspect the result; use `code_interact`
-with structured UI events to test filters, chart/table switching, selection,
-empty results, and recovery from a failed load. Reconcile displayed values with
-the reviewed totals and check that filters describe the data actually displayed.
-A successful schema validation does not establish analytical correctness.
+Compute in a script with `code_run` and inspect the result. Put the filter and
+aggregation logic of an app into a module the script can import too
+(`lib/totals.js`), and test it there with filters, empty results and failed
+loads. Reconcile the values the app will show with the reviewed totals and check
+that filters describe the data actually displayed. A successful schema
+validation does not establish analytical correctness. Apps are not rendered in
+a test yet; read the static findings of `code_write` and `code_present`, and say
+what the person should check.
 
-Validate the actual presented source (the saved revision for Apps), rather than pasting its formulas into a
+Validate the logic the app actually uses, rather than pasting its formulas into a
 second test script. Keep an independent expectation from the input data: row
 counts, unmatched joins, totals and representative boundary cases. For targets,
 state their grain (for example month × region) and aggregate each target once;
 multiple selected regions must sum their distinct targets. Compare inspected raw
 KPI values and plotted series with independent expectations. A formatted value
-matching after rounding does not validate the raw ratio. Never round fractions
-before passing them to percent-formatted controls. Preserve precision
+matching after rounding does not validate the raw ratio. Never round fractions before formatting them as percent. Preserve precision
 until display formatting. Test reset, one/multiple/all selections, empty results,
 and complete versus partial periods. A newly generated timestamp is not source
 freshness: keep the real retrieval or file-snapshot timestamp stable.
 
 For a Studio App data snapshot, export the validated dataset with `cloud.download` and
-`code_export`, then copy its exact path/version into the resource with
-`code_write({id,expectedRevision,files:[{path:"data.json",fromFile:reference}]})`.
-Obtain the exact reference with `code_file_stat`; importing private files into
-App source receives fresh review.
-Import that file in the app. Never rebuild a truncated dataset by copying tool
-output. Keep transformations and source identity alongside the snapshot.
+`code_export`, then copy its exact path/version into the App's files with
+`code_file_copy` (see the Code Mode file transfers reference); importing private
+files into an App receives fresh review. Read it in the app with
+`JSON.parse(await (await cloud.files.read("data.json")).text())`. Never rebuild a
+truncated dataset by copying tool output. Keep transformations and source
+identity alongside the snapshot.
 
 Human approval and uncertain HTTP outcomes follow the Code Mode HTTP contract.
 Do not replay an external mutation to refresh a chart. Separate local filtering
@@ -98,12 +101,12 @@ from external loading; an Apply button can avoid a request for every slider move
 
 ## Save, share, and hand off
 
-For chat visualizations, test `code_run` and relevant `code_interact` controls,
-then deliver with `code_present({runId,title})`. A successful run alone is not
-visible to the user. Retain source identity, reviewed input data and their real
-retrieval timestamp. Put writes and external reloads behind explicit buttons;
-opening an old result must not repeat earlier actions. The user can download the
-current view as PDF/HTML or an individual chart as SVG.
+For chat apps, test the numbers with `code_run`, then deliver with
+`code_present({title, files})`. A successful run alone is not visible to the
+user. Retain source identity, reviewed input data and their real retrieval
+timestamp. Put writes and external reloads behind explicit buttons; opening an
+old result must not repeat earlier actions. The user can download the current
+view as PDF or static HTML.
 
 For reusable Studio Apps, reuse one Cloud resource for later revisions of the same report or dashboard.
 Save its source, test that revision, and use the normal Code Mode publication
@@ -117,7 +120,7 @@ output file. A live app must implement its loader and display the retrieval time
 loading once is not continuous monitoring. No background refresh exists unless
 implemented through an appropriate supported workflow.
 
-Present the chat visualization, resource link or exported file, the data timestamp, and material
+Present the chat app, resource link or exported file, the data timestamp, and material
 coverage limitations. Say whether it is a snapshot or reloads from its sources.
 If publication fails, retain the tested resource and report the failed stage;
 do not claim success or create a different public destination. Sites-specific

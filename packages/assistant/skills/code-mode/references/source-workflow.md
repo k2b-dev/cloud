@@ -15,7 +15,7 @@ schema with Manage before publishing; normal Use-level runs work with existing
 rows. Separate Apps have separate data. One-off scripts stay scoped to the chat;
 `code_run({code,resourceId})` explicitly requires Manage for App maintenance.
 
-For a display-only dashboard, expose maintenance actions separately from its GUI.
+For a display-only dashboard, expose maintenance actions separately from its interface.
 The user sees results while the agent operates the published handlers. A Skill can
 explain when to use those handlers without duplicating their code. Skill and App
 access remain separate; never assume sharing one also shares the other.
@@ -33,29 +33,37 @@ small input schema; there is no app prefix or capability name to translate.
 | `code_history` | `id`, optional `page` | List old saved versions for recovery |
 
 `id` means the saved resource ID. A one-off `code_run` supplies `code` instead
-and creates no saved resource. `code_open` is for GUI apps. `runId`
-identifies a particular execution. The resource reader follows Cloud's standard
-`id` contract. Source file paths are relative, such as `main.ts` or `lib/math.ts`.
+and creates no saved resource. `code_open` and `code_present` show apps with an
+interface. `runId` identifies a particular execution. The resource reader follows
+Cloud's standard `id` contract. Source file paths are relative, such as
+`index.html`, `app.js` or `lib/math.js`.
 
-Create returns a minimal `main.ts` entry. Replace it with the requested program.
-The entry default-exports a function, not its returned object. Local imports may
-omit `.ts` or `.js` when exactly one matching file exists; use the exact extension
-when both exist. Package imports and paths outside the resource are unavailable.
-Use the same ID for all related files, tests, and subsequent repairs. Creation
-does not start code or share the app.
+Create returns a minimal `index.html` entry: an app with an interface. Write its
+`index.html`, `style.css` and `app.js` as [HTML apps](apps.md) describes; app
+JavaScript imports only other app `.js` files, with relative paths and the
+extension. For a saved script that `code_run` executes instead, write the script
+and pass it as `entry`; it default-exports a function. Script imports may omit
+`.ts` or `.js` when exactly one matching file exists, and may import `.json`,
+`.csv`, `.tsv` and `.txt` files. Package imports and paths outside the resource
+are unavailable. Use the same ID for all related files and subsequent repairs.
+Creation does not start code or share the app.
 
 ```json
 {
   "id": "ID returned by code_create",
   "expectedRevision": 1,
-  "files": [{ "path": "main.ts", "content": "export default () => ({ answer: 42 });" }]
+  "files": [
+    { "path": "index.html", "content": "<main><h1>Tips</h1><output id=\"tip\"></output></main>" },
+    { "path": "app.js", "content": "document.querySelector('#tip').textContent = cloud.money.format(cloud.money.fromDecimal('4.20', { currency: 'EUR' }));" }
+  ]
 }
 ```
 
 Source tools return `{ok:true,data,...}` or `{ok:false,error}`. Read IDs,
 `revision`, file windows and diagnostics from `data`. A successful write returns
-`data.saved: true`. Diagnostics describe compilation
-problems in the saved source; they do not mean the file was rejected. Save related files in one batch. Missing imports
+`data.saved: true`. Diagnostics describe problems in the saved source: compiler
+messages for scripts and actions, and for an HTML app the static findings in its
+JavaScript and CSS. They do not mean the file was rejected. Save related files in one batch. Missing imports
 or syntax errors prevent execution, not intermediate saves. Invalid paths,
 permissions, or storage limits still reject the write.
 
@@ -93,10 +101,10 @@ the save fails atomically with STORAGE_FULL. An independent copy starts with
 fresh source history, but also without the original's data or access grants;
 explain that tradeoff before proposing it as recovery.
 
-For Apps intended to be started by a person, show a short readable
-summary with `ui.text({value, markdown:true})` or a compact `ui.table` and offer detailed results
-with `cloud.download`. Keep structured return values for agent inspection. Read the
-UI reference only for the presentation controls you need; a full app is optional.
+For Apps intended to be used by a person, show a short readable summary in the
+page and offer detailed results with `cloud.download`. Keep structured return
+values of scripts and actions for agent inspection. An interface is optional; an
+App may only offer actions.
 
 Before editing source while the user is also using the editor, announce the
 change. Saves reject stale revisions rather than overwriting either draft. The
@@ -107,9 +115,8 @@ Studio or through the reviewed tools in [Management](management.md).
 Studio's Advanced menu offers a manual multi-file editor for resource managers.
 It is optional: continue doing normal work with `code_read` and `code_write`.
 Save stores the draft without starting or publishing it. Start in the adjacent
-app panel runs the saved source as a normal user run, with normal local storage
-and file selection. Publish creates a release from saved changes. Agent test
-runs still support isolated picker fixtures through `code_run.inputPaths`.
+preview runs the files in the editor, saved or not, with the app's real data.
+Publish creates a release from saved changes.
 If a person edits at the same time, read the latest source before your next
 write; do not overwrite changes you have not inspected.
 
@@ -129,10 +136,12 @@ Read [File transfers](files.md) to obtain the exact reference with `code_file_st
 Imports receive fresh review because the bytes become source that can be shared
 or published. Export validated data with `code_export`, then inspect it, and avoid
 printing/retyping large datasets. A stale revision or file version fails without
-saving any files; re-read before reconciling. Source imports support `.json`
+saving any files; re-read before reconciling. Script imports support `.json`
 objects and `.csv`, `.tsv`, `.txt` strings; pass CSV strings to `cloud.sheet.parseCsv`.
+An HTML app reads data files from `cloud.files` or from a `.js` module that
+exports them.
 Imported text must be UTF-8; decode older encodings in a script before exporting.
 Each source/data file is limited to 1 MiB and the bundle to 2 MiB. Use resource
 storage or its database for larger datasets. Keep full numeric precision in
-stored data and format only at display time. Always rerun the saved revision;
-a copied scratch script is not a test of the saved app.
+stored data and format only at display time. Always rerun a saved script's
+saved revision; a copied scratch script is not a test of the saved resource.

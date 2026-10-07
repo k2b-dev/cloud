@@ -50,8 +50,10 @@ beforeAll(async () => {
       if (path === "/bundle.js") return new Response(bundle, { headers: { "content-type": "application/javascript" } });
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       if (path === "/app.css") return new Response(appCss, { headers: { "content-type": "text/css" } });
-      if (path === "/api/assistant/artifacts/runtime/app-assets") return new Response(assets, { headers: { "content-type": "application/json" } });
-      if (path === "/api/assistant/artifacts/runtime/context") return Response.json({ locale: "de-DE", timeZone: "Europe/Berlin", user: null });
+      if (path === "/api/assistant/artifacts/runtime/app-assets")
+        return new Response(assets, { headers: { "content-type": "application/json" } });
+      if (path === "/api/assistant/artifacts/runtime/context")
+        return Response.json({ locale: "de-DE", timeZone: "Europe/Berlin", user: null });
       if (path === "/api/assistant/artifacts/runtime/pdf") {
         const form = await req.formData();
         pdfHtml = JSON.parse(String(form.get("request"))).html;

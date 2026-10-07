@@ -134,9 +134,16 @@ to Studio Apps or external resources mentioned in their instructions.
 Studio opens the standalone runner for users with **Use** access. App managers
 enter the management view and select **Open fullscreen** in the header or action menu. The
 runner offers **Manage** and a personal action menu beside **Restart** and
-**Stop** in the bottom toolbar. The app content scrolls independently with
-scroll-edge fades. Restarting shows progress in the button without adding a status row. This distinction uses app permissions,
-not the global Cloud administrator role.
+**Stop** in the bottom toolbar. The app fills the page and scrolls inside its
+own frame. Restarting shows progress in the button without adding a status row
+or moving the app. This distinction uses app permissions, not the global Cloud
+administrator role.
+
+An app starts on its own only for people who manage it. Everyone else sees the
+app's name and **Start**, so code someone else wrote never runs just because a
+page opened. If an app's last start in this browser tab never finished, for
+example because of an endless loop, it does not start on its own again; the page
+explains this and offers **Start**.
 
 App managers see a **Draft** or **Published** badge beside the runtime controls.
 Select it for a short explanation and a **Publish** button for saved drafts.
@@ -150,20 +157,16 @@ no personal storage or server features.
 
 **Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
 latest publication, even for managers. It loads no Assistant sidebar, chat list,
-chat updates, code editor or database console. Private apps require sign-in and
-app access. Anonymous visitors see the app without the Cloud navigation shell.
+chat updates, code editor or database console. Apps require sign-in and app
+access.
 
-To share publicly, publish the app and add **Public** in **Manage access**.
-Only **Use** is available; public **Manage** is rejected through every interface.
-The dialog explains the limits: public visitors can compute locally, select
-files through the transitional UI picker and download results. Public access never grants
-the app database, server files/KV, personal secrets, server HTTP/PDF or protected
-Cloud actions. Signed-in visitors still need a separate explicit app grant for
-server features. Existing apps that require these features may not work publicly.
-Published code and embedded data are visible to visitors; keep secrets out of source.
-
-Remove the public entry or unpublish the app to prevent new loads. Code already
-downloaded cannot be recalled. Drafts, history and management remain private.
+Public links are switched off for now. **Manage access** no longer offers
+**Public**, and a public grant is refused with `PUBLIC_SHARING_OFF` through every
+interface. A public entry created earlier stays listed with a note, so managers
+can remove it, but it opens nothing: visitors without an account are asked to
+sign in. Public links return once apps run on a domain of their own, where an
+app's page cannot pose as a Cloud page. Until then, share apps with people,
+groups or all signed-in users.
 
 Cloud administrators can add this URL as a **Link** in the navigation settings,
 with a title, icon and audience. The shortcut's audience controls visibility,
@@ -446,8 +449,8 @@ Renaming rewrites parsed relative imports. Invalid syntax must be fixed before
 renaming. A conflicting save keeps your draft; download it before explicitly
 loading the latest source. Saving does not publish or run code.
 
-**Start** in the adjacent app panel runs the saved source with normal user
-storage and file selection. Use the file split-button to switch files and open
+**Start** in the adjacent preview runs the files in the editor, saved or not,
+with the app's real data; **Restart** picks up the next edits. Use the file split-button to switch files and open
 file actions, including downloading the current source draft. **Publish** on
 the right creates a release from saved changes and is disabled until changes
 are saved or when the saved revision is already published. On narrow screens,
@@ -479,14 +482,14 @@ Global rsql credentials remain restricted to AI administration.
 
 Code Mode uses direct Assistant tools named `code_*`, loaded individually when
 needed. They are not Cloud capabilities and cannot be called through
-`cloud.capabilities.run`. Source operations and SQL execute on the server; code runs
-and UI interaction use the isolated server or CLI host. The GUI, tools, and
-CLI use the same permission-aware resource services.
+`cloud.capabilities.run`. Source operations and SQL execute on the server; script
+runs use the isolated server or CLI host. Studio, tools, and CLI use the same
+permission-aware resource services.
 
 Ask for an analysis, calculation, or file conversion directly in the chat. Code
 mode can run a one-off script and return findings or output files without
-creating an App. All reusable programs are Apps: GUI, agent actions, or both,
-with optional persistence. One-off scripts stay scoped to their chat and cannot
+creating an App. All reusable programs are Apps: an HTML interface, agent
+actions, or both, with optional persistence. One-off scripts stay scoped to their chat and cannot
 be published or shared. Existing saved scripts are migrated to Apps without
 changing their IDs, source, publications, grants, Project links or shared data.
 
@@ -505,7 +508,7 @@ accepting the action input, which is always a JSON object: publication rejects a
 scalar or array input cannot be called until its App is published again with an
 object schema; see
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#code-tool-failures-are-tool-errors-and-app-action-inputs-are-objects).
-An action-only App needs no GUI entry.
+An action-only App needs no `index.html`.
 Publication compiles every handler without executing source. Discovery uses
 static metadata.
 
@@ -518,11 +521,50 @@ rights remain separate. Runtime approvals still apply; a failed output check or
 timeout does not undo effects. The CLI equivalents are `assistant code actions`
 and `assistant code action --chat CHAT --input-file call.json`.
 
+### Build apps as HTML
+
+An app's interface is plain HTML, CSS and JavaScript: `index.html`, optional
+`style.css` and `app.js`, and further JavaScript modules that `app.js` imports
+with relative paths. There are no frameworks, build steps, CDNs or npm packages.
+Cloud adds the document head, the viewer's language and theme, and a base
+stylesheet, so headings, lists, tables, forms, buttons, `<details>` and
+`<dialog>` look like Cloud in light and dark without writing CSS. The app's own
+CSS always wins. The theme follows Cloud while the app runs.
+
+Each app runs in a locked frame inside a second frame without script. It cannot
+read the Cloud page, cookies or browser storage, reach the network, navigate
+the page or open windows. Everything it needs goes through `cloud.*`: data,
+files, AI, PDFs, HTTP through Cloud and other apps' capabilities. Natural
+browser code that cannot work there fails with a clear message: `fetch`,
+`alert`, `confirm`, `prompt`, `print`, `localStorage`, and inline `on…`
+handlers. Forms never navigate. A link to an `https` address opens in a new tab
+after the person confirms the full address; other links are ignored. Files the
+app hands out, with `cloud.download` or a download link, are saved as files and
+never opened on the Cloud domain. The address bar keeps the app's `#hash`, so a
+reload returns to the same view.
+
+Whenever Cloud asks the person something for an app, an HTTP request, a
+capability or a link, the app is greyed out and cannot be clicked until they
+answer, and the confirm button becomes active only after half a second. One
+question is open at a time per app; after three refusals Cloud stops the app. An
+app that floods Cloud with messages is stopped as well.
+
+An app appears once its modules, including top-level `await`, have run, its
+fonts are loaded, and no `cloud.*` call is pending, at most after a few seconds;
+until then a loading state holds its place. Errors, `console` output and the
+static findings of the composer appear in the app's console. A failed `cloud.*`
+call that the app did not handle also shows a notice outside the app.
+
+`code_write` reports static problems in an app's JavaScript and CSS, and
+`code_present` refuses an app with errors such as CDN scripts, missing imports
+or inline handlers. Apps do not run in `code_run`; a rendered self-check of an
+app is not available yet.
+
 ### Store data and combine Cloud actions
 
-Code Mode exposes one frozen global `cloud` in scripts, app actions, Studio,
-CLI, and scheduled hosts. The code-mode skill includes the self-contained
-`cloud.md` contract reference. The transitional `ui` tree remains available until HTML apps replace it.
+Code Mode exposes one frozen global `cloud` in HTML apps, scripts, app actions,
+Studio, CLI, and scheduled hosts. The code-mode skill includes the self-contained
+`cloud.md` contract reference.
 
 Choose storage by who owns the data: `cloud.kv.user` for personal preferences
 and todos across devices, `cloud.kv` for small shared app settings, `cloud.db`
@@ -534,8 +576,8 @@ by app and signed-in user; anonymous visitors receive `denied`.
 Runtime file writes accept Blob or string, at most 16 MiB. File reads return
 File or null. Operator settings still bound shared file storage and binary CLI
 transfers; lowering a quota preserves existing data. Browser-local storage,
-OPFS, personal file storage, and runtime file-picker methods are removed.
-The transitional UI filePicker node remains until HTML apps replace the UI tree.
+OPFS, personal file storage, and runtime file-picker methods are removed; an
+app reads a person's files with `<input type="file">`.
 
 Schema belongs to the Manage-only `code_database` tools. Table creation connects
 the database when needed; the operator must configure rsql. Runtime code uses
@@ -716,23 +758,20 @@ for the same user and chat or app before using the CLI.
 
 ## Explore data with Code Mode
 
-Code Mode offers object-based controls, numeric and date-range inputs, multiple
-selection, responsive grids, and Chart Explorer views. An Explorer combines a
-chart, sortable table, copy action, and selection details from the same rows.
-Multiple Explorers can share filters, comparison state, selection, and a line
-cursor. New data replaces all linked charts together; stale responses are ignored
-and failed loads retain the previous visible data.
-
-The `assistant-data-analysis` Skill guides source inspection, metric definitions,
-reconciliation, chart choice, and delivery. The API is available without loading
-the Skill. Source context shows the retrieval timestamp and whether data is a
-snapshot, partial, or a fixture. A live loader is explicit; publishing source does
-not create a frozen data snapshot or a continuously refreshing dashboard.
+Assistant computes with scripts and shows the result as an HTML app: key
+figures, tables and charts from `cloud.chart`, which draws in Cloud colors and
+redraws at the real width, so axes fit phones. Filters, tabs and forms are
+ordinary HTML controls. The `assistant-data-analysis` Skill guides source
+inspection, metric definitions, reconciliation, chart choice, and delivery. The
+API is available without loading the Skill. An app states when its data was
+retrieved and whether it is a snapshot, partial, or a fixture. A live loader is
+explicit; publishing source does not create a frozen data snapshot or a
+continuously refreshing dashboard.
 
 Shared access and published source versions use the normal Studio lifecycle.
 Personal secrets remain personal. External loads still follow HTTP approval and
-uncertain-outcome rules. The canonical Code Mode analytics reference contains
-executable examples, formatting rules, limits, and structured interaction events.
+uncertain-outcome rules. The Code Mode references for HTML apps and charts
+contain complete examples.
 
 
 ### Generate PDFs and read financial formats
@@ -840,8 +879,8 @@ suite runs their published handlers in the isolated Studio runtime.
 | Find Apps, inspect source and revisions | `code_list`, `code_read`, `code_history` |
 | Change working title, description or icon; make a private copy | `code_update`, `code_fork` |
 | Create, edit or remove source files | `code_create`, `code_write`, `code_remove` |
-| Test, inspect, interact, export results or stop | `code_run`, `code_action`, `code_inspect`, `code_interact`, `code_export`, `code_stop` |
-| Open GUI, publish, withdraw or restore a publication | Existing `code_open`, `code_publish`, `code_unpublish`, `code_restore` |
+| Run scripts and actions, inspect, export results or stop | `code_run`, `code_action`, `code_inspect`, `code_export`, `code_stop` |
+| Open an app, show it in chat, publish, withdraw or restore a publication | `code_open`, `code_present`, `code_publish`, `code_unpublish`, `code_restore` |
 | Read and change grants | `code_access_read`, reviewed `code_access_change` |
 | Inspect/copy chat, Project or App files | `code_files`, `code_file_stat`, reviewed `code_file_copy` |
 | Read/write shared JSON or files | Documented runtime storage APIs in a Manage-authorized maintenance run |
@@ -868,10 +907,9 @@ current authorization and version checks.
 A server-run code call (every runtime tool except `code_open` and `code_secret`)
 that does not complete (rejected arguments or action input, a timeout, an
 unavailable run, a lost host) reaches the agent as a tool error with its reason
-and next step, and the chat shows the step as failed. In `code_interact`, a
-step that fails, such as an unknown control or a throwing callback, is a tool
-error too; in a batch, the error names the failed step, and earlier steps have
-run. A `code_run` or `code_action` whose code fails still completes the call;
+and next step, and the chat shows the step as failed. A `code_present` call with
+static errors is a tool error that lists them; nothing is saved. A `code_run` or
+`code_action` whose code fails still completes the call;
 its snapshot reports `status: "error"`. `code_open` and `code_secret` run in the
 user's client, which cannot mark a tool error: a failed `code_open` returns
 `{failed: true, error}` as its result, and a failed `code_secret` surfaces as an
@@ -907,36 +945,31 @@ they belong to a shared Project. Search results do not advertise a resource read
 
 Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a chat. Cmd/Ctrl+Alt+N creates a chat in the current project; D toggles done when the chat is idle and focus is outside an input. Search actions update the open palette in place. Actions for the selected object appear before page actions.
 
-### Interactive results in chat
+### Apps in chat
 
-A one-off Code Mode run can be delivered with `code_present({runId,title})`.
-It appears in the conversation without creating a Studio App or a chat file.
-The frame reserves 45% of the viewport height, capped at 600 pixels, while
-loading. Its title, actions and content scroll together inside the frame,
-keeping the surrounding chat in place.
-A test run alone remains agent inspection, not a delivered visualization.
+`code_present` shows an HTML app as a card in the conversation. It takes either
+one-off files, which are stored with the chat and have no database, `cloud.kv`
+or `cloud.files`, or a saved Studio app, which the card runs with its current
+source and data under the viewer's access. Presenting creates no Studio App and
+no chat file. Before anything is saved, the call checks the files and refuses
+static errors.
 
-The chat retains source, a UI preview and copies of selected input versions.
-Opening history displays the saved data with the same layout and theme as the
-interactive view, without executing code. Controls stay disabled until activation.
-Views with controls, selectable charts, tables or explorers offer **Interact**.
-Static views show only a download menu and never start a worker. Choose **Interact**
-to start the saved program with its default controls; **Stop** releases its
-worker. Leaving the chat also stops it. Interactive state is temporary. Put
-external writes in explicit buttons, not program initialization. Existing
-capability permissions and approvals still apply.
+The card shows the app's title, **Studio app**, and its actions. It keeps a
+fixed height, 45% of the viewport and at most 600 pixels, from the moment the
+call starts, so nothing in the chat moves. An app in the chat starts only when
+the person selects **Start**, never while scrolling past; **Stop** and leaving
+the chat end it, and the card keeps its place through the end of the turn. A
+saved app also offers **Open**, which shows it beside the chat.
 
-Open the **Downloads** menu beside **Interact** (or the download icon in static
-views) for **PDF**, **HTML** and individual chart **SVG** exports.
-Document exports include filter values and source context, omit action controls,
-and render the complete current table. These downloads need no chat-file entry.
-Saved Apps and runs with App data context continue to use Studio. Chat results
-have a 250 MiB per-conversation storage budget, including retained inputs.
-
+While the app runs, the download menu saves a static copy as it is shown, as
+**HTML** or **PDF**. The copy keeps text and styles but no scripts, event
+handlers, frames or script links, and it is saved as a file, never opened on the
+Cloud domain. These downloads need no chat-file entry. Presentations of a chat
+share a 250 MiB storage budget.
 
 ### AI inside Code Mode
 
-Scripts, interactive chat presentations and authenticated Studio apps can use
+Scripts, apps in chat and authenticated Studio apps can use
 `cloud.ai.text`, `cloud.ai.classify` (including multiple choices), and `cloud.ai.extract`.
 These server-backed calculations return ordinary values and do not load chat
 history, files, memories or tools automatically. Supply the intended input.

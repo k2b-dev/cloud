@@ -22,15 +22,16 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 59 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 60 });
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
     expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")).toMatchObject({
       key: "assistant:data-analysis",
-      version: 7,
+      version: 8,
     });
     expect(codeMode?.instructions).toContain("todo_write");
     expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
-    expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/analytics.md");
+    expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/apps.md");
+    expect(codeMode?.references?.map((reference) => reference.path)).not.toContain("references/analytics.md");
     expect(inputs.some((candidate) => candidate.name === "cloud-kit")).toBeFalse();
     const input = inputs.find((candidate) => candidate.name === "skill-creator");
     expect(input).toMatchObject({ key: "core:skill-creator", name: "skill-creator" });

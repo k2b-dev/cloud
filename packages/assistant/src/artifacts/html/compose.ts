@@ -143,7 +143,11 @@ function prepare(files: AppFiles) {
     } else if (src !== null) {
       const path = clean(src);
       if (!isLocal(src) || modules[path] === undefined)
-        lint.push({ severity: "error", kind: "network", message: `<script src="${src}"> was removed: only app files load (no CDNs, no npm)` });
+        lint.push({
+          severity: "error",
+          kind: "network",
+          message: `<script src="${src}"> was removed: only app files load (no CDNs, no npm)`,
+        });
       else if (!entries.includes(path)) entries.push(path);
       script.remove();
     } else if (SCRIPT_TYPES.has(type)) {
@@ -218,13 +222,22 @@ export function composeApp(files: AppFiles, options: ComposeOptions) {
   };
   const csp = ["default-src 'none'", `script-src ${options.preludeHash} blob:`, "style-src 'unsafe-inline'", NETWORK].join("; ");
   const head = doc.head;
-  head.insertAdjacentHTML(
-    "afterbegin",
-    `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${attr(csp)}"><meta http-equiv="x-dns-prefetch-control" content="off"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="cloud-base"></style><script type="application/json" id="cloud-config"></script><script id="cloud-prelude"></script>`,
+  const element = (tag: string, attributes: Record<string, string>, text?: string) => {
+    const node = doc.createElement(tag);
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  // The CSP comes first, before any script or style of the document.
+  head.prepend(
+    element("meta", { charset: "utf-8" }),
+    element("meta", { "http-equiv": "Content-Security-Policy", content: csp }),
+    element("meta", { "http-equiv": "x-dns-prefetch-control", content: "off" }),
+    element("meta", { name: "viewport", content: "width=device-width,initial-scale=1" }),
+    element("style", { id: "cloud-base" }, options.baseCss),
+    element("script", { type: "application/json", id: "cloud-config" }, json(config)),
+    element("script", { id: "cloud-prelude" }, options.prelude),
   );
-  head.querySelector("#cloud-base")!.textContent = options.baseCss;
-  head.querySelector("#cloud-config")!.textContent = json(config);
-  head.querySelector("#cloud-prelude")!.textContent = options.prelude;
   for (const [path, source] of Object.entries(files))
     if (path.endsWith(".css") && !usedStyles.has(path)) {
       const style = doc.createElement("style");

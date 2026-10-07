@@ -28,7 +28,7 @@ test("real opaque worker returns data, reads inputs, captures downloads and rema
   const harness = await Bun.file(output).text();
   await rm(directory, { recursive: true });
   const compile = (content: string) => compileArtifact({ entry: "main.js", files: [{ path: "main.js", content }] });
-  const uiSource = await compile('export default () => typeof ui;');
+  const uiSource = await compile("export default () => typeof ui;");
   const invalidEntrySource = await compile("export default { answer: 42 };");
   const undefinedOutputSource = await compile("export default () => ({missingColumn:undefined});");
   const headlessSource = await compile("export default () => ({ answer: 42 });");

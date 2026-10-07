@@ -84,7 +84,10 @@ globalThis.runArtifactAgentScenario = async (source) => {
     });
     const presented = await call("code_present", "present", {
       title: "Overview",
-      files: [{ path: "index.html", content: "<h1>Overview</h1>" }, { path: "app.js", content: "console.log(cloud.locale);" }],
+      files: [
+        { path: "index.html", content: "<h1>Overview</h1>" },
+        { path: "app.js", content: "console.log(cloud.locale);" },
+      ],
     });
     return [start, current, stop, opened, rejected, presented, posted];
   } finally {

@@ -9,8 +9,8 @@ import type { AppFiles } from "./html/compose";
 import { type Confirm, type Mount, saveDownload } from "./html/host";
 import { type HttpHost, runHttp } from "./http-host";
 import { artifactMessages } from "./messages";
-import type { RuntimeContext } from "./runtime/cloud";
 import { runCapability } from "./runtime/capabilities";
+import type { RuntimeContext } from "./runtime/cloud";
 import type { RuntimeServices } from "./runtime/services";
 
 type Running = {
@@ -110,14 +110,25 @@ export function ChatPresentation(props: {
                     name,
                     input,
                     scope,
-                    (request, signal) => confirm(() => approveInModal(request, signal), (decision) => decision.approved),
+                    (request, signal) =>
+                      confirm(
+                        () => approveInModal(request, signal),
+                        (decision) => decision.approved,
+                      ),
                     signal,
                   ),
                 http: (request, signal) =>
                   runHttp(
                     request,
                     scope,
-                    { ...props.httpHost, approve: (review, signal) => confirm(() => props.httpHost.approve(review, signal), (ok) => ok) },
+                    {
+                      ...props.httpHost,
+                      approve: (review, signal) =>
+                        confirm(
+                          () => props.httpHost.approve(review, signal),
+                          (ok) => ok,
+                        ),
+                    },
                     signal,
                   ),
               },
