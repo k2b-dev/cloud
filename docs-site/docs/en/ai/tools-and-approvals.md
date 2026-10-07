@@ -202,7 +202,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
 
   | Reason | Meaning |
   | --- | --- |
-  | `unknown` | No tool has this exact name |
+  | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
   | `not_allowed` | The conversation's fixed tool scope excludes it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
@@ -238,9 +238,12 @@ replays the user's browser cookie, bearer token, resource API key, or service
 account credential for this path. An unavailable app or denied resource fails
 that tool call without granting fallback access.
 
-The chat stores qualified capability IDs and stable built-in names, not
-provider-encoded function names, credentials, or private contracts. Cloud
-generates a provider-safe callable name only when preparing a model request.
+Loaded-tool state and remembered approvals store qualified capability IDs and
+stable built-in names, never credentials or private contracts. Cloud generates
+a provider-safe callable name when preparing a model request. Model message
+history stores each call under its provider-safe name, and the `call` field of
+a `load_tools` result carries that name. Code that reads stored tool calls
+accepts both the capability ID and the provider name.
 When a result contains a semantic `open` or `edit` link, clients use
 that exact path instead of inferring a route from a resource ref.
 

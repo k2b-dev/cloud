@@ -428,8 +428,11 @@ Only tools that a client must run wait for that client. A frontend handler alone
 does not advertise them to the model. Pass `clientToolIds` to
 `createAiChatController` and register matching `frontendTools`. The controller
 forwards only IDs that have a handler. The client-run tools are `code_open` and
-`code_secret`, which need the web app, and `local_bash`, which needs
-`cld assistant --allow-bash`. Scheduled tasks never get `code_open` or
+`code_secret`, which need a client with a code host: the web app, or
+`cld assistant` while it watches the turn. Entering a secret through
+`code_secret` still needs the web app; in the CLI the call fails with that
+hint. `local_bash` needs `cld assistant --allow-bash`. Detached CLI turns, API
+clients without a code host, and scheduled tasks never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect; duplicates and arbitrary tool names are rejected. Clients
 without an execution host should omit this option.
