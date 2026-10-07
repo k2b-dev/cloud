@@ -471,6 +471,31 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     }
   }, 20_000);
 
+  test("a focused control that disappears, like Load more after the last page, does not keep holding the sidebar", async () => {
+    const page = await clientPage(1280);
+    try {
+      const sidebar = page.locator("#assistant-chat-context");
+      const box = (await sidebar.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + 300);
+      // WebKit moves focus to the body without a focusout when the focused element leaves the document.
+      await page.evaluate(() => {
+        const control = document.createElement("button");
+        document.getElementById("assistant-chat-context")!.append(control);
+        control.focus();
+        control.remove();
+      });
+      await page.mouse.move(100, 400);
+      const next = sidebarSnapshot();
+      next.files = [upload("/neu-hochgeladen.csv", SIDEBAR_NOW), ...next.files];
+      next.fileCount += 1;
+      await push(page, next);
+      await frames(page);
+      expect(await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
   test("sources bundled into few rows still lead to all of them, and loaded pages start over with a new first page", async () => {
     const mails = Array.from({ length: 100 }, (_, index) =>
       source("resource", `mail.message:M${index}`, `Mail ${index}`, minutesAgo(10 + index), {

@@ -1519,12 +1519,23 @@ const createReadingFreeze = () => {
   const [pointer, setPointer] = createSignal(false);
   const [focus, setFocus] = createSignal(false);
   let host: HTMLElement | undefined;
+  /**
+   * Reads focus from the document. WebKit moves focus to the body without a focusout when the focused control leaves
+   * the document, as "Load more" does after the last page, so the last focus event alone can hold the sidebar forever.
+   */
+  const syncFocus = () => setFocus(Boolean(host?.contains(document.activeElement)));
   onMount(() => {
     const outside = (event: PointerEvent) => {
-      if (!(event.target instanceof Node && host?.contains(event.target))) setPointer(false);
+      if (event.target instanceof Node && host?.contains(event.target)) return;
+      setPointer(false);
+      syncFocus();
     };
     document.addEventListener("pointerdown", outside, true);
-    onCleanup(() => document.removeEventListener("pointerdown", outside, true));
+    document.addEventListener("focusin", syncFocus, true);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", syncFocus, true);
+    });
   });
   return {
     frozen: () => pointer() || focus(),
@@ -1539,9 +1550,14 @@ const createReadingFreeze = () => {
         setPointer(true);
       },
       onPointerLeave: (event: PointerEvent) => {
-        if (event.pointerType !== "touch") setPointer(false);
+        if (event.pointerType === "touch") return;
+        setPointer(false);
+        syncFocus();
       },
-      onFocusIn: () => setFocus(true),
+      onFocusIn: (event: FocusEvent & { currentTarget: HTMLElement }) => {
+        host = event.currentTarget;
+        setFocus(true);
+      },
       onFocusOut: (event: FocusEvent & { currentTarget: HTMLElement }) => {
         if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setFocus(false);
       },
