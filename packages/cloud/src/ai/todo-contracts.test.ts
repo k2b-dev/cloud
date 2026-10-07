@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
+import { aiTurnErrorText } from "./chat/turn-error";
 import { AiRunTimeout } from "./run-timeout";
 import { AiTodoPlanSchema, parseAiTodoPlan } from "./todo-contracts";
 
@@ -20,6 +21,7 @@ test("admin budget defaults to 30 and accepts explicit unlimited but not invalid
   expect(validateSettingValue(setting, Infinity).ok).toBe(false);
 });
 test("deadline messages name the actual budget and continuation", () => {
-  expect(new AiRunTimeout(30 * 60_000).messageFor("de")).toContain("30 Minuten");
-  expect(new AiRunTimeout(60_000).messageFor("en")).toContain("new message");
+  expect(aiTurnErrorText(new AiRunTimeout(30 * 60_000).turnError(), "de")).toContain("30 Minuten");
+  expect(aiTurnErrorText(new AiRunTimeout(60_000).turnError(), "en")).toContain("new message");
+  expect(new AiRunTimeout(null).turnError()).toEqual({ code: "time_limit" });
 });

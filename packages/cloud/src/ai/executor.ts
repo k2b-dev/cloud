@@ -18,6 +18,7 @@ import { isAssistantChatTurn } from "./assistant-models";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
+import { aiTurnErrorText } from "./chat/turn-error";
 import { aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
 import { createCloudAiCodeTools, createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
@@ -26,6 +27,7 @@ import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
+import { answerOpenToolCalls } from "./open-tool-calls";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -57,6 +59,14 @@ import { aiToolAudit } from "./tool-audit";
 import { acceptCanonicalToolNames } from "./tool-call-names";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import {
+  AiTurnFailure,
+  type AiTurnFailureInfo,
+  aiTurnErrorFromProviderIssue,
+  aiTurnErrorFromThrown,
+  aiTurnFailureFromThrown,
+  rememberProviderErrors,
+} from "./turn-failure";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
@@ -67,6 +77,7 @@ import type {
   AiStoredMessage,
   AiToolPresentation,
   AiTurnClaim,
+  AiTurnError,
   AiTurnFinalizedEvent,
   AiTurnRunConfig,
   AiTurnSteer,
@@ -564,7 +575,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
 // ---------------------------------------------------------------------------
 
 type AttemptOutcome =
-  | { kind: "finished"; status: "completed" | "failed" | "aborted"; error: string | null; timing?: LoopAggregate["timing"] }
+  | { kind: "finished"; status: "completed" | "failed" | "aborted"; failure: AiTurnFailureInfo | null; timing?: LoopAggregate["timing"] }
   | { kind: "suspended" };
 
 export class AiTurnExecutor {
@@ -587,7 +598,14 @@ export class AiTurnExecutor {
       pipeline.seedBaseline(claim.liveBlocks ?? []);
       await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
       await pipeline.emitBaseline();
-      await this.finalize(conversationId, turnId, pipeline, "failed", "AI turn is missing its run configuration.", null);
+      await this.finalize(
+        conversationId,
+        turnId,
+        pipeline,
+        "failed",
+        { error: { code: "failed" }, detail: "AI turn is missing its run configuration." },
+        null,
+      );
       return;
     }
 
@@ -611,8 +629,9 @@ export class AiTurnExecutor {
         turnId,
         pipeline,
         "failed",
-        error instanceof Error ? error.message : "AI turn state could not be loaded.",
+        aiTurnFailureFromThrown(error, "AI turn state could not be loaded."),
         "chat",
+        claim.runConfig?.kind === "chat" ? claim.runConfig.locale : undefined,
       );
       return;
     }
@@ -622,16 +641,33 @@ export class AiTurnExecutor {
     await this.runChat(conversationId, turnId, claim, runConfig, pipeline, signal, false, attemptState);
   }
 
+  /**
+   * Ends the turn. A failure stores its reason twice: as a code on the turn's last message, which the chat words in
+   * the reader's language, and as text in the turn's language for readers without the chat view. The raw cause, such
+   * as a provider's own message, goes only to the log.
+   */
   private async finalize(
     conversationId: string,
     turnId: string,
     pipeline: StreamPipeline,
     status: "completed" | "failed" | "aborted",
-    error: string | null,
+    failure: AiTurnFailureInfo | null,
     kind: AiTurnRunConfig["kind"] | null,
+    locale?: string,
   ) {
-    if (status === "failed" && error) log.error("AI turn failed", { conversationId, turnId, error });
-    const finalized = await aiConversations.completeTurn({ conversationId, turnId, status, error, leaseOwner: this.config.leaseOwner });
+    const failed = status === "failed" ? (failure ?? { error: { code: "failed" as const }, detail: "AI turn failed" }) : null;
+    if (failed) log.error("AI turn failed", { conversationId, turnId, code: failed.error.code, error: failed.detail });
+    const error = failed
+      ? (failed.message ?? aiTurnErrorText(failed.error, normalizeLocale(locale ?? (await coreSettings.get<string>("app.locale")))))
+      : null;
+    const finalized = await aiConversations.completeTurn({
+      conversationId,
+      turnId,
+      status,
+      error,
+      turnError: failed?.error ?? null,
+      leaseOwner: this.config.leaseOwner,
+    });
     if (finalized === "completed") await pipeline.emitTurnFinished(status, error);
     await pipeline.flush().catch(() => undefined);
     if (finalized === "completed" && this.config.onTurnFinalized) {
@@ -686,7 +722,7 @@ export class AiTurnExecutor {
         const subject = accessSubjectForActor(material.actor);
         const project = subject ? await aiProjects.getByShortId(config.project.id, subject, "read") : null;
         if (!project) {
-          throw new Error("Project access is no longer available.");
+          throw new AiTurnFailure("not_allowed", "Project access is no longer available.");
         }
         resolvedProjectId = project.id;
       }
@@ -709,7 +745,15 @@ export class AiTurnExecutor {
       }
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
-      await this.finalize(conversationId, turnId, pipeline, "failed", error instanceof Error ? error.message : "AI turn failed", "chat");
+      await this.finalize(
+        conversationId,
+        turnId,
+        pipeline,
+        "failed",
+        aiTurnFailureFromThrown(error, "AI turn failed"),
+        "chat",
+        config.locale,
+      );
       return;
     }
     const { settings, resolved } = validated;
@@ -732,8 +776,12 @@ export class AiTurnExecutor {
         turnId,
         pipeline,
         "failed",
-        error instanceof Error ? error.message : "Cloud capability actor resolution failed",
+        {
+          error: { code: "not_allowed" },
+          detail: error instanceof Error ? error.message : "Cloud capability actor resolution failed",
+        },
         "chat",
+        config.locale,
       );
       return;
     }
@@ -865,8 +913,9 @@ export class AiTurnExecutor {
         turnId,
         pipeline,
         "failed",
-        error instanceof Error ? error.message : "Image preparation failed",
+        aiTurnFailureFromThrown(error, "Image preparation failed"),
         "chat",
+        promptLocale,
       );
       return;
     }
@@ -1088,10 +1137,18 @@ export class AiTurnExecutor {
     const priorToolRounds = toolRoundState(turnMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
+    // The reason a failed turn names: the one the current model call or the turn's own checks gave.
+    const failureReason: { current: AiTurnError | null } = { current: null };
+    const remember = (reason: AiTurnError) => {
+      failureReason.current = reason;
+    };
     const turnPolicy = applyAiTurnPolicy({
       provider: acceptCanonicalToolNames(
         retryTransientProviderErrors(
-          assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
+          rememberProviderErrors(
+            answerOpenToolCalls(assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId)),
+            remember,
+          ),
           {
             deadline,
             delaysMs: this.config.providerRetryDelaysMs,
@@ -1136,7 +1193,14 @@ export class AiTurnExecutor {
         turnPolicy.noteSteering();
         return steers.map((steer) => steer.text);
       },
-      tools: turnPolicy.tools,
+      tools: async () => {
+        try {
+          return await turnPolicy.tools();
+        } catch (error) {
+          remember(aiTurnErrorFromThrown(error));
+          throw error;
+        }
+      },
       ...(turnPolicy.maxTurns === undefined ? {} : { maxTurns: turnPolicy.maxTurns }),
       temperature: resolved.profile.temperature,
       maxOutputTokens: resolved.profile.maxOutputTokens,
@@ -1177,6 +1241,7 @@ export class AiTurnExecutor {
       appliedSteers,
       noteToolRound: turnPolicy.noteToolRound,
       noteToolCall: turnPolicy.noteToolCall,
+      failureReason,
       onBackgroundBlocked: (message) => {
         backgroundError = message;
       },
@@ -1201,15 +1266,17 @@ export class AiTurnExecutor {
           : null;
     if (timeout) {
       outcome.status = "failed";
-      outcome.error = timeout.messageFor(promptLocale);
+      outcome.failure = { error: timeout.turnError(), detail: "Run time limit reached." };
     }
     const finalized = await this.finalize(
       conversationId,
       turnId,
       pipeline,
       backgroundError ? "failed" : outcome.status,
-      backgroundError ?? outcome.error,
+      // A background run keeps Cloud's own words for what its mandate blocked.
+      backgroundError ? { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError } : outcome.failure,
       "chat",
+      promptLocale,
     );
     if (finalized === "pending_steering" && outcome.status === "completed" && !signal.aborted) {
       await this.runChat(conversationId, turnId, claim, config, pipeline, signal, true);
@@ -1243,6 +1310,11 @@ export class AiTurnExecutor {
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
+    /**
+     * Why the turn would fail now, as a model call or the turn's own checks said. A new model call starts without one,
+     * so a context overflow that compaction resolved never names a later failure.
+     */
+    failureReason: { current: AiTurnError | null };
     onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
@@ -1259,6 +1331,7 @@ export class AiTurnExecutor {
       appliedSteers,
       noteToolRound,
       noteToolCall,
+      failureReason,
     } = input;
     const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
     let lastIssueMessage: string | null = null;
@@ -1334,8 +1407,11 @@ export class AiTurnExecutor {
           });
         } else if (event.type === "turn_end" && event.message.content.some((block) => block.type === "tool_call")) {
           noteToolRound();
+        } else if (event.type === "turn_start") {
+          failureReason.current = null;
         } else if (event.type === "issue") {
           lastIssueMessage = event.issue.message;
+          failureReason.current = aiTurnErrorFromProviderIssue(event.issue) ?? failureReason.current;
           log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
         } else if (event.type === "loop_end") {
           const aggregate = await withDurableTurnTiming(turnId, event.aggregate);
@@ -1345,25 +1421,24 @@ export class AiTurnExecutor {
               .catch(() => undefined);
           }
           const timing = aggregate.timing;
-          if (event.reason === "aborted") return { kind: "finished", status: "aborted", error: null, timing };
-          if (event.reason === "stop") return { kind: "finished", status: "completed", error: null, timing };
-          if (event.reason === "max_turns") {
-            return {
-              kind: "finished",
-              status: "failed",
-              error: "The model did not produce a final answer within its tool-round limit.",
-              timing,
-            };
-          }
-          return { kind: "finished", status: "failed", error: lastIssueMessage ?? `AI turn ended: ${event.reason}`, timing };
+          if (event.reason === "aborted") return { kind: "finished", status: "aborted", failure: null, timing };
+          if (event.reason === "stop") return { kind: "finished", status: "completed", failure: null, timing };
+          const detail = lastIssueMessage ?? `AI turn ended: ${event.reason}`;
+          const error: AiTurnError =
+            event.reason === "max_turns"
+              ? { code: "step_limit" }
+              : event.reason === "context_overflow"
+                ? { code: "context_full" }
+                : event.reason === "no_credits"
+                  ? { code: "quota_exhausted" }
+                  : (failureReason.current ?? { code: "failed" });
+          return { kind: "finished", status: "failed", failure: { error, detail }, timing };
         }
       }
-      return { kind: "finished", status: abortController.signal.aborted ? "aborted" : "completed", error: null };
+      return { kind: "finished", status: abortController.signal.aborted ? "aborted" : "completed", failure: null };
     } catch (error) {
-      if (abortController.signal.aborted) return { kind: "finished", status: "aborted", error: null };
-      const message = error instanceof Error ? error.message : "AI turn failed";
-      await pipeline.emitError(message).catch(() => undefined);
-      return { kind: "finished", status: "failed", error: message };
+      if (abortController.signal.aborted) return { kind: "finished", status: "aborted", failure: null };
+      return { kind: "finished", status: "failed", failure: aiTurnFailureFromThrown(error, "AI turn failed") };
     } finally {
       stopHeartbeat();
       await pipeline.flush().catch(() => undefined);
@@ -1555,14 +1630,7 @@ export class AiTurnExecutor {
       });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
-      await this.finalize(
-        conversationId,
-        turnId,
-        pipeline,
-        "failed",
-        error instanceof Error ? error.message : "AI compaction failed",
-        "compact",
-      );
+      await this.finalize(conversationId, turnId, pipeline, "failed", aiTurnFailureFromThrown(error, "AI compaction failed"), "compact");
       return;
     }
     const { settings, resolved } = validated;
@@ -1602,12 +1670,13 @@ export class AiTurnExecutor {
 
     const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
     let status: "completed" | "failed" | "aborted" = "failed";
-    let error: string | null = null;
+    let failure: AiTurnFailureInfo | null = null;
     try {
       for await (const event of loop as AsyncIterable<CompactEvent>) {
         if (event.type === "compaction_start") await pipeline.applyCompaction("running");
         else if (event.type === "compaction_end") await pipeline.applyCompaction("completed");
-        else if (event.type === "issue") error = event.issue.message;
+        else if (event.type === "issue")
+          failure = { error: aiTurnErrorFromProviderIssue(event.issue) ?? { code: "failed" }, detail: event.issue.message };
         else if (event.type === "loop_end") {
           status = event.reason === "stop" ? "completed" : event.reason === "aborted" ? "aborted" : "failed";
           await pipeline.applyCompaction(status === "failed" ? "failed" : "completed", event.result);
@@ -1618,8 +1687,7 @@ export class AiTurnExecutor {
         status = "aborted";
       } else {
         status = "failed";
-        error = err instanceof Error ? err.message : "AI compaction failed";
-        await pipeline.emitError(error).catch(() => undefined);
+        failure = aiTurnFailureFromThrown(err, "AI compaction failed");
       }
     } finally {
       stopHeartbeat();
@@ -1628,9 +1696,9 @@ export class AiTurnExecutor {
 
     if (abortController.signal.reason instanceof AiRunTimeout) {
       status = "failed";
-      error = abortController.signal.reason.messageFor();
+      failure = { error: abortController.signal.reason.turnError(), detail: "Run time limit reached." };
     }
-    await this.finalize(conversationId, turnId, pipeline, status, error, "compact");
+    await this.finalize(conversationId, turnId, pipeline, status, failure, "compact");
   }
 }
 
@@ -1835,14 +1903,6 @@ class StreamPipeline {
         .catch(() => undefined),
     );
     await this.saving;
-  }
-
-  async emitError(message: string): Promise<void> {
-    const seq = this.nextSeq();
-    const block: AiTurnBlock = { id: `error-${this.attempt}-${seq}`, kind: "text", text: `⚠️ ${message}` };
-    const event = this.envelope({ type: "block_set" as const, seq, block }) as AiWireEvent;
-    this.blocks = applyWireEventToBlocks(this.blocks, event);
-    await this.publish(event);
   }
 
   /** Transient: says a model call is waiting to be retried. Snapshots never carry it. */

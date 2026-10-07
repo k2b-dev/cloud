@@ -17,7 +17,7 @@ test("spans the message width for turns with work, live and in history", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
   const cloudStyles = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
 
-  expect(presentationSource.match(/class: isWideLayout\(layout\) \? "ai-chat-message-wide" : undefined/g)).toHaveLength(2);
+  expect(presentationSource.match(/class: isWideLayout\(layout(, error)?\) \? "ai-chat-message-wide" : undefined/g)).toHaveLength(2);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{\s*width:\s*100%;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{[^}]*max-width:\s*none;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s+:where\([^}]+min-width:\s*0;/);

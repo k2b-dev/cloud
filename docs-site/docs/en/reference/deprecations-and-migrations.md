@@ -10,6 +10,34 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Failed Assistant turns say why and how to go on
+
+A failed Assistant turn now stays visible in the chat with a notice that says
+why it failed and what comes next, and offers **Continue** when a new turn can
+finish the work. The server records the reason as a stable code in
+`meta.turnError` on the turn's last message; see
+[Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns).
+
+`AiTurn.error`, `AiConversation.runError`, and the `error` of `turn_finished`
+no longer carry the provider's own message or other internal text, but the
+worded reason, for example "The model service did not answer. The results so
+far are kept. Send a new message to continue." Code that matched those texts
+reads `meta.turnError.code` instead. Operators find the raw cause in the error
+log entry `AI turn failed` under `ai:executor`. A failed turn no longer streams
+a temporary "⚠️" text block. The chat controller's `error()` no longer repeats
+a failure the turn's notice shows.
+
+Applications that host the chat timeline add
+`AiChatActions.onContinueTurn(message)` and send `message` through their
+normal send path to offer **Continue**; without it, the notice shows the
+reason only. See [Failed turns](/en/docs/ai/chat-interface#failed-turns).
+
+Turns that failed before the upgrade keep "Worked 4 min · interrupted" and
+show no notice. A chat whose earlier turn left a call without a result, such
+as a stop while an approval waited, no longer fails its next turn at providers
+that reject such a history. No setting changes. Core and Assistant can update
+in either order; Assistant shows **Continue** once both run this release.
+
 ## Assistant offers Skills for recurring work
 
 In chats a person follows, Assistant now recognizes recurring work and may

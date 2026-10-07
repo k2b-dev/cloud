@@ -3,7 +3,7 @@ import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { AI_TURN_LEASE_MS, type AiStreamSseEvent, type AiTurnBlock, type AiTurnSnapshot } from "../protocol";
-import type { AiConversation } from "../types";
+import type { AiConversation, AiStoredMessage } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
 import type { AiChatProjection } from "./projection";
 import type { AiConversationStreamTransport } from "./transport";
@@ -14,6 +14,7 @@ const {
   failSteerBlock,
   isActiveConversationLoading,
   isCurrentStreamSession,
+  newestTurnShowsError,
   projectionForConversationOpen,
   reconcileSteerBlocks,
   runErrorFromEvent,
@@ -972,6 +973,32 @@ describe("AI controller turn failures", () => {
     expect(runErrorFromEvent(failed, "turn-1")).toBe("Unauthorized");
     expect(runErrorFromEvent(failed, "older-turn")).toBeUndefined();
     expect(runErrorFromEvent({ ...failed, status: "completed", error: null }, "turn-1")).toBeNull();
+  });
+
+  test("a failure the newest turn shows in its notice stays out of the composer", () => {
+    const message = (seq: number, loopId: string | null, meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
+      id: `m${seq}`,
+      shortId: `m${seq}`,
+      conversationId: "chat",
+      seq,
+      kind: "message",
+      message: { role: "user", content: [{ type: "text", text: "Hi" }] },
+      loopId,
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta,
+      createdAt: "2026-10-07T10:00:00.000Z",
+    });
+    const failed = message(1, "turn-1", { turnError: { code: "model_unavailable" } });
+    expect(newestTurnShowsError([failed])).toBe(true);
+    // An older notice does not cover a newer failure, such as a turn from an earlier release without a reason.
+    expect(newestTurnShowsError([failed, message(2, "turn-2")])).toBe(false);
+    expect(newestTurnShowsError([])).toBe(false);
   });
 
   test("falls back to stable user-facing copy when no error was persisted", () => {

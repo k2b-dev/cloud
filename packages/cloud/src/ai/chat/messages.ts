@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+import type { AiTurnError } from "../types";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -21,6 +22,24 @@ const messages = i18n.define({
       thinking: "Thinking",
       showReasoning: "Show reasoning",
       reconnecting: "Reconnecting",
+      turnErrorTitle: "The answer was interrupted.",
+      turnErrorReason: ({ code, limitMinutes }: AiTurnError) => {
+        if (code === "model_unavailable") return "The model service did not answer.";
+        if (code === "quota_exhausted") return "Your AI usage limit for this period is reached. You can continue once it resets.";
+        if (code === "context_full") return "This chat is too long for the model. Start a new chat to continue; this one stays as it is.";
+        if (code === "time_limit")
+          return limitMinutes ? `The run time limit of ${limitMinutes} minutes was reached.` : "The run time limit was reached.";
+        if (code === "step_limit") return "The model reached its step limit for one answer.";
+        if (code === "wait_expired") return "The approval or answer did not arrive in time.";
+        if (code === "interrupted") return "The work was interrupted several times and could not be resumed.";
+        if (code === "not_allowed")
+          return "This chat may no longer use its model, project, or apps. Choose another model or ask your administrator.";
+        return "Something went wrong.";
+      },
+      turnErrorKept: "The results so far are kept.",
+      turnErrorContinueHint: "Send a new message to continue.",
+      continueTurn: "Continue",
+      continueTurnMessage: "Continue where you left off.",
       byteRange: ({ start, end }: { start: string; end: string }) => `Bytes ${start}–${end}`,
       worked: "Worked",
       workedFor: ({ duration }: { duration: string }) => `Worked ${duration}`,
@@ -207,6 +226,26 @@ const messages = i18n.define({
       thinking: "Denkt nach",
       showReasoning: "Denkprozess anzeigen",
       reconnecting: "Verbindung wird wiederhergestellt",
+      turnErrorTitle: "Die Antwort wurde abgebrochen.",
+      turnErrorReason: ({ code, limitMinutes }) => {
+        if (code === "model_unavailable") return "Der KI-Dienst hat nicht geantwortet.";
+        if (code === "quota_exhausted")
+          return "Dein KI-Kontingent für diesen Zeitraum ist aufgebraucht. Du kannst weiterarbeiten, sobald es sich erneuert.";
+        if (code === "context_full")
+          return "Dieser Chat ist zu lang für das Modell. Starte einen neuen Chat, um weiterzuarbeiten; dieser bleibt erhalten.";
+        if (code === "time_limit")
+          return limitMinutes ? `Das Laufzeitlimit von ${limitMinutes} Minuten ist erreicht.` : "Das Laufzeitlimit ist erreicht.";
+        if (code === "step_limit") return "Das Modell hat sein Schrittlimit für eine Antwort erreicht.";
+        if (code === "wait_expired") return "Die Freigabe oder Antwort kam nicht rechtzeitig.";
+        if (code === "interrupted") return "Die Arbeit wurde mehrmals unterbrochen und konnte nicht fortgesetzt werden.";
+        if (code === "not_allowed")
+          return "Dieser Chat darf sein Modell, sein Projekt oder seine Apps nicht mehr nutzen. Wähle ein anderes Modell oder wende dich an deine Administration.";
+        return "Etwas ist schiefgelaufen.";
+      },
+      turnErrorKept: "Die bisherigen Ergebnisse bleiben erhalten.",
+      turnErrorContinueHint: "Mit einer neuen Nachricht geht es weiter.",
+      continueTurn: "Weiterarbeiten",
+      continueTurnMessage: "Mach an der Stelle weiter, an der du aufgehört hast.",
       byteRange: ({ start, end }) => `Bytes ${start}–${end}`,
       worked: "Gearbeitet",
       workedFor: ({ duration }) => `${duration} gearbeitet`,

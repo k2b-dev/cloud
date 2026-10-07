@@ -15,7 +15,7 @@ import {
 import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
-import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
+import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
@@ -108,8 +108,9 @@ const storedPhase = (entries: readonly AiStoredMessage[]): AiTurnPhase => {
   return reason === "aborted" ? "stopped" : "failed";
 };
 
-/** Responses with a work line or rich places span the message column so their right edges align. */
-const isWideLayout = (layout: AiTurnLayout) => layout.showWork || layout.results.length > 0 || layout.actions.length > 0;
+/** Responses with a work line, rich places, or a failure notice span the message column so their right edges align. */
+const isWideLayout = (layout: AiTurnLayout, error?: AiTurnError) =>
+  layout.showWork || layout.results.length > 0 || layout.actions.length > 0 || Boolean(error);
 
 const isEmptyLayout = (layout: AiTurnLayout) => !isWideLayout(layout) && layout.text.length === 0;
 
@@ -162,12 +163,22 @@ const storedItems = (
   actions: AiChatActions,
   views: TurnViews,
   locale: string,
+  idle: boolean,
 ): ChatTimelineItem[] => {
   const timeline = buildAiMessageTimeline([...messages]);
   const lastItemOfLoop = new Map<string, number>();
+  // A failed turn's notice ends its last item, which is its user message when the model never answered.
+  const lastEntryOfLoop = new Map<string, number>();
   timeline.forEach((item, index) => {
-    if (item.type === "assistant" && item.loopId) lastItemOfLoop.set(item.loopId, index);
+    const loopId = item.type === "summary" ? null : item.type === "user" ? item.entry.loopId : item.loopId;
+    if (!loopId) return;
+    lastEntryOfLoop.set(loopId, index);
+    if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
+  const turnErrors = new Map<string, AiTurnError>();
+  for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
+  // Only the chat's newest turn can be continued, and only while no other turn runs.
+  const newestLoop = idle ? (messages.at(-1)?.loopId ?? null) : null;
   const segmentId = createSegmentIds();
   return timeline.flatMap((item, itemIndex): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
@@ -209,7 +220,7 @@ const storedItems = (
           anchorId: item.entry.seq,
         };
       }
-      return {
+      const userItem: ChatTimelineItem = {
         kind: "message",
         id: item.id,
         role: "user",
@@ -220,6 +231,31 @@ const storedItems = (
         actionDisplay: "menu",
         anchorId: item.entry.seq,
       };
+      const loopId = item.entry.loopId;
+      const error = loopId && lastEntryOfLoop.get(loopId) === itemIndex ? turnErrors.get(loopId) : undefined;
+      if (!loopId || !error) return userItem;
+      // The model never answered: the notice stands where the live turn showed its progress, under the same id.
+      const id = segmentId(loopId, "start");
+      return [
+        userItem,
+        {
+          kind: "message",
+          id,
+          role: "assistant",
+          createdAt: item.entry.createdAt,
+          class: "ai-chat-message-wide",
+          content: views.content({
+            id,
+            turnId: loopId,
+            phase: "failed",
+            layout: layoutAiTurn([], { phase: "failed" }),
+            earlier: false,
+            duration: () => null,
+            error,
+            continuable: newestLoop === loopId,
+          }),
+        },
+      ];
     }
 
     if (item.type === "summary") {
@@ -245,7 +281,8 @@ const storedItems = (
 
     const actionEntry = item.actionEntry?.compactedAt ? null : item.actionEntry;
     const lastOfLoop = !item.loopId || lastItemOfLoop.get(item.loopId) === itemIndex;
-    const phase = lastOfLoop ? storedPhase(item.entries) : "completed";
+    const turnError = item.loopId && lastOfLoop ? turnErrors.get(item.loopId) : undefined;
+    const phase = turnError ? "failed" : lastOfLoop ? storedPhase(item.entries) : "completed";
     const segments = splitSurveyResults(item.blocks);
     if (segments.length === 0) segments.push({ type: "assistant", blocks: [] });
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
@@ -268,7 +305,8 @@ const storedItems = (
           : undefined;
       const task = firstSegment ? scheduledTask : null;
       firstSegment = false;
-      if (isEmptyLayout(layout) && !messageActions && !task) return [];
+      const error = last ? turnError : undefined;
+      if (isEmptyLayout(layout) && !messageActions && !task && !error) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
         {
@@ -276,7 +314,7 @@ const storedItems = (
           id,
           role: "assistant",
           createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
-          class: isWideLayout(layout) ? "ai-chat-message-wide" : undefined,
+          class: isWideLayout(layout, error) ? "ai-chat-message-wide" : undefined,
           content: views.content({
             id,
             turnId,
@@ -285,6 +323,8 @@ const storedItems = (
             earlier: !last,
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
+            error,
+            continuable: Boolean(error) && newestLoop === item.loopId,
           }),
           actions: messageActions,
           actionDisplay: "inline",
@@ -449,7 +489,8 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   // While the stream reconnects or a model call waits for its retry, the live turn says so and its clock stands.
   const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
   const clock = createActiveTurnClock(source, reconnecting);
-  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale()));
+  const idle = createMemo(() => source.activeTurn() === null);
+  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), idle()));
   const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting()));
   return createMemo(() => {
     const items = [...stored(), ...active()];

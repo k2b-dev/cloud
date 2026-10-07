@@ -97,6 +97,16 @@ const DEFAULT_RUN_ERROR = "Assistant response failed.";
 const conversationRunError = (conversation: AiConversation | null | undefined): string | null =>
   conversation?.runStatus === "failed" ? conversation.runError?.trim() || DEFAULT_RUN_ERROR : null;
 
+/**
+ * Whether the chat's newest turn shows its failure itself: its last message carries the reason, and the timeline words
+ * it in a notice at the turn's end. The run error then stays out of `error()`, so it does not appear twice. A turn
+ * without a recorded reason, such as a failed compaction or a turn from an earlier release, still reports it there.
+ */
+const newestTurnShowsError = (messages: readonly AiStoredMessage[]): boolean => {
+  const loopId = messages.findLast((message) => message.loopId)?.loopId;
+  return Boolean(loopId) && messages.some((message) => message.loopId === loopId && message.meta?.turnError);
+};
+
 const runErrorFromEvent = (event: AiStreamEvent, activeTurnId: string | null | undefined): string | null | undefined => {
   if (event.type === "state") return conversationRunError(event.conversation);
   if (event.type !== "turn_finished" || event.turnId !== activeTurnId) return undefined;
@@ -250,7 +260,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const conversationId = activeConversationId();
     if (conversationId) openStream(conversationId);
   };
-  const error = () => globalError() ?? runError();
+  const error = () => globalError() ?? (newestTurnShowsError(state.messages) ? null : runError());
 
   const activeTurn = () => state.activeTurn;
   const messages = createMemo(() => messagesWithPendingSend(visibleMessages(state), pendingSends()[activeConversationId() ?? ""]));
@@ -1415,6 +1425,7 @@ export const __aiControllerTest = {
   completeFrontendToolBlock,
   conversationRunError,
   failSteerBlock,
+  newestTurnShowsError,
   projectionForConversationOpen,
   reconcileSteerBlocks,
   runErrorFromEvent,

@@ -1796,6 +1796,13 @@ export default function AssistantWorkspace(props: Props) {
                                   onRetrySteer: async (block) => {
                                     if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
                                   },
+                                  onContinueTurn: async (message) => {
+                                    const target = chat.activeConversationId();
+                                    if (!target || !(await send({ message }))) return;
+                                    // Sending consumed the saved draft; keep what the person was writing in the composer.
+                                    if (composerDraft(target).trim() || composerAttachmentsFor(target).length > 0)
+                                      await saveComposer(target, target);
+                                  },
                                   onOpenScheduledTaskRun: (taskId, occurrenceId) =>
                                     void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                   onOpenFile: (path) => void openFiles(path),

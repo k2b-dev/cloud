@@ -345,6 +345,8 @@ export type {
   AiToolPresentation,
   AiToolRuntime,
   AiTurn,
+  AiTurnError,
+  AiTurnErrorCode,
   AiTurnFinalizedEvent,
   AiTurnStatus,
   AiTurnToolSource,
