@@ -600,22 +600,28 @@ for two patterns that rarely lead anywhere:
   working step that completed.
 
 The first time a pattern appears, the next model call gets a short hint to
-change its approach or tell the user what blocks it. When the same pattern
-appears again after its hint, the next model call gets no tools and is asked
-to answer with what the turn has, say what blocked it, and what the user can
-do. The turn then completes with that answer. A rejected approval is the
-user's decision and does not count as a failure.
+change its approach or tell the user what blocks it. When either pattern
+appears again after its hint, also with another tool or input, the next model
+call gets no tools and is asked to answer with what the turn has, say what
+blocked it, and what the user can do. The turn then completes with that
+answer. A rejected approval is the user's decision and does not count as a
+failure. After the search hint, loading a tool that a search found is still
+allowed; another search, or a load that adds no tool, continues the pattern.
 
-The counts belong to the turn. When a turn resumes after an approval or on
-another worker, its finished calls count again, but a hint given before is
-not remembered, so the pattern gets one more hint. A steering message that
-arrives while the final answer streams starts these checks again: the turn
-continues with tools unless it is in the last tenth of its run time.
+The counts belong to the turn since its start or its latest steering message.
+When a turn resumes after an approval or on another worker, its finished calls
+count again, including rounds that compaction archived, but a hint given
+before is not remembered, so the pattern gets one more hint. A steering
+message starts these checks over: the turn continues with tools, also after a
+loop's final answer, unless it is in the last tenth of its run time or has
+used up the model profile's `maxToolRounds`.
+
 The model profile's `maxToolRounds` ends tool use the same way; see
-[Models and providers](/en/docs/ai/models-and-providers). Each hint logs the
-warning `AI turn got a loop hint` and each switch to the final answer logs
-`AI turn answers without further tools`, both under `ai:executor` with the
-conversation and turn IDs.
+[Models and providers](/en/docs/ai/models-and-providers). If the model still
+calls a tool in a model call without tools, the turn ends as failed instead of
+continuing without them. Each hint logs the warning `AI turn got a loop hint`
+and each switch to the final answer logs `AI turn answers without further
+tools`, both under `ai:executor` with the conversation and turn IDs.
 
 ### Transient provider failures
 

@@ -152,7 +152,9 @@ and `AI turn answers without further tools`; the `reason` is `run_time`,
 `loop`, or `tool_rounds`. Frequent `run_time` reasons point to a run time limit
 too short for the work, or to slow tools. Frequent `loop` reasons point to a
 model that does not follow the tool hints, or to tools that are missing in
-these turns.
+these turns. A turn that fails with `The model did not produce a final answer
+without tools.` used a model or provider that still emits tool calls when the
+request offers none.
 
 See [Loops within a turn](/en/docs/ai/chat-runtime-and-streaming#loops-within-a-turn).
 

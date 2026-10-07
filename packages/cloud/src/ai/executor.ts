@@ -1029,7 +1029,10 @@ export class AiTurnExecutor {
       timeZone,
       locale: promptLocale,
     });
-    const priorToolRounds = toolRoundState(loopMessages);
+    // The turn policy counts the whole turn, including rounds that compaction archived.
+    const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
+    const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const priorToolRounds = toolRoundState(turnMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
     const turnPolicy = applyAiTurnPolicy({
@@ -1050,7 +1053,9 @@ export class AiTurnExecutor {
       completedToolRounds: priorToolRounds.completed,
       deadline,
       runBudgetMs: claim.turn.runBudgetMs ?? null,
-      finishedToolCalls: pipeline.blocks.flatMap((block) => (block.kind === "tool" ? [block] : [])),
+      finishedToolCalls: turnBlocks
+        .slice(turnBlocks.findLastIndex((block) => block.kind === "steer_applied") + 1)
+        .flatMap((block) => (block.kind === "tool" ? [block] : [])),
       onDecision: (decision) =>
         decision.kind === "hint"
           ? log.warn("AI turn got a loop hint", { conversationId, turnId, hints: decision.hints })
@@ -1071,7 +1076,9 @@ export class AiTurnExecutor {
           leaseOwner: this.config.leaseOwner,
         });
         appliedSteers.push(...steers);
-        return steers.length > 0 ? steers.map((steer) => steer.text) : undefined;
+        if (steers.length === 0) return undefined;
+        turnPolicy.noteSteering();
+        return steers.map((steer) => steer.text);
       },
       tools: turnPolicy.tools,
       ...(turnPolicy.maxTurns === undefined ? {} : { maxTurns: turnPolicy.maxTurns }),
@@ -1254,7 +1261,12 @@ export class AiTurnExecutor {
             .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
-          noteToolCall(toolBlock?.kind === "tool" ? toolBlock : { name: event.name, status: event.isError ? "failed" : "completed" });
+          // The policy keys calls by the name the model called, as the persisted calls it seeds from.
+          noteToolCall(
+            toolBlock?.kind === "tool"
+              ? { ...toolBlock, name: event.name }
+              : { name: event.name, status: event.isError ? "failed" : "completed", result: event.result },
+          );
           await indexConversationToolSource({
             conversationId,
             turnId,

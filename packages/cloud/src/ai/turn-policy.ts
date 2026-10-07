@@ -12,8 +12,8 @@ export type AiTurnFinalReason = "tool_rounds" | "run_time" | "loop";
 export type AiTurnHint = "repeated_failure" | "discovery_loop";
 export type AiTurnPolicyDecision = { kind: "hint"; hints: AiTurnHint[] } | { kind: "final_answer"; reason: AiTurnFinalReason };
 
-/** A finished tool call as the turn's tool block records it. */
-export type AiTurnPolicyToolCall = { name: string; args?: unknown; status: AiToolBlockStatus };
+/** A finished tool call under the name the model called it by. */
+export type AiTurnPolicyToolCall = { name: string; args?: unknown; status: AiToolBlockStatus; result?: unknown };
 
 const FINAL_ANSWER_CAUSE: Record<AiTurnFinalReason, string> = {
   tool_rounds: "The configured tool-round budget has been reached, so no more tools are available in this turn.",
@@ -31,18 +31,36 @@ const finalAnswerPrompt = (reason: AiTurnFinalReason) =>
   `# Final response
 ${FINAL_ANSWER_CAUSE[reason]} Answer the user's request now with the best result supported by the evidence already gathered. State any material uncertainty or incomplete part clearly.${FINAL_ANSWER_CLOSE[reason]}`;
 
-const hintPrompt = (hints: { repeatedFailures: string[]; discoveryStreak: number | null }) =>
+const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
+
+/** Names a hint may repeat: only tools the model was offered, never a name it made up. */
+const offeredNames = (names: readonly string[], offered: ReadonlySet<string>) => {
+  const known = names.filter((name) => offered.has(name));
+  return listFormat.format(known.length < names.length ? [...known, "a tool that is not available"] : known);
+};
+
+const hintPrompt = (hints: { repeatedFailures: string[]; discoveryStreak: number | null }, offered: ReadonlySet<string>) =>
   [
     "# Turn check",
     hints.repeatedFailures.length > 0
-      ? `These calls failed twice with the same input: ${hints.repeatedFailures.join(", ")}. Do not repeat them with that input. Change your approach, or tell the user what blocks you.`
+      ? `Calls to ${offeredNames(hints.repeatedFailures, offered)} failed twice with the same input. Do not repeat them with that input. Change your approach, or tell the user what blocks you.`
       : undefined,
     hints.discoveryStreak !== null
-      ? `You searched for or loaded tools ${hints.discoveryStreak} times in a row without completing another step. Stop searching. Use the tools you already have, or tell the user what is not available in this turn.`
+      ? `You searched for or loaded tools ${hints.discoveryStreak} times in a row without completing another step. Stop searching. Use the tools you already have, load the ones a search found, or tell the user what is not available in this turn.`
       : undefined,
   ]
     .filter(Boolean)
     .join("\n");
+
+/** A completed load_tools call that made at least one more tool callable. */
+const loadedTools = ({ name, status, result }: AiTurnPolicyToolCall) =>
+  name === "load_tools" &&
+  status === "completed" &&
+  typeof result === "object" &&
+  result !== null &&
+  "loaded" in result &&
+  Array.isArray(result.loaded) &&
+  result.loaded.length > 0;
 
 const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -65,14 +83,17 @@ const withPrompt = (systemPrompt: string | undefined, suffix: string | null) =>
  * - the same call (tool name and input) failing twice, or six discovery calls
  *   in a row without a completed working step, adds a one-time hint to the next
  *   model call;
- * - the same pattern after its hint, a positive `maxToolRounds` that is used up,
+ * - either pattern after its hint, a positive `maxToolRounds` that is used up,
  *   or the last tenth of the run time limit ends tool use: the next model call
- *   gets no tools and a prompt to answer with what the turn has.
+ *   gets no tools and a prompt to answer with what the turn has. If that call
+ *   still asks for tools, the turn fails instead of looping without them.
  *
- * Rejected approvals are user decisions, not failures. The deadline abort stays
- * as the backstop when a single model or tool call outlasts the reserve.
- * Calls a resumed attempt already finished seed the counts without a hint of
- * their own; a hint the earlier attempt gave is not remembered.
+ * Rejected approvals are user decisions, not failures, and loading tools a
+ * search found does not continue a discovery loop. A steering message starts
+ * the loop checks over. The deadline abort stays as the backstop when a single
+ * model or tool call outlasts the reserve. Calls a resumed attempt already
+ * finished seed the counts without a hint of their own; a hint the earlier
+ * attempt gave is not remembered.
  */
 export const applyAiTurnPolicy = (input: {
   provider: Provider;
@@ -83,7 +104,7 @@ export const applyAiTurnPolicy = (input: {
   /** Epoch milliseconds when the run time limit ends; null without a limit. */
   deadline: number | null;
   runBudgetMs: number | null;
-  /** Tool calls this turn finished before this attempt, oldest first. */
+  /** Tool calls this turn finished before this attempt and after its last steering message, oldest first. */
   finishedToolCalls?: readonly AiTurnPolicyToolCall[];
   onDecision?: (decision: AiTurnPolicyDecision) => void;
   now?: () => number;
@@ -93,6 +114,7 @@ export const applyAiTurnPolicy = (input: {
   maxTurns?: number;
   noteToolRound: () => void;
   noteToolCall: (call: AiTurnPolicyToolCall) => void;
+  noteSteering: () => void;
 } => {
   const now = input.now ?? Date.now;
   const limit = Math.floor(input.maxToolRounds ?? 0);
@@ -105,12 +127,16 @@ export const applyAiTurnPolicy = (input: {
   const failures = new Map<string, number>();
   let repeatedFailures = new Set<string>();
   let discoveryStreak = 0;
+  // A discovery call since the last check that made no new tool callable.
   let discoveredSinceCheck = false;
   const hinted = new Set<AiTurnHint>();
   let finalReason: AiTurnFinalReason | null = null;
+  let completedAtFinal = 0;
   let pendingHint: string | null = null;
+  let offered = new Set<string>();
 
-  const noteToolCall = ({ name, args, status }: AiTurnPolicyToolCall) => {
+  const noteToolCall = (call: AiTurnPolicyToolCall) => {
+    const { name, args, status } = call;
     if (status !== "completed" && status !== "failed") return;
     if (status === "failed") {
       const key = `${name}\u0000${canonicalJson(args)}`;
@@ -120,7 +146,7 @@ export const applyAiTurnPolicy = (input: {
     }
     if (DISCOVERY_TOOL_NAMES.has(name)) {
       discoveryStreak += 1;
-      discoveredSinceCheck = true;
+      if (!loadedTools(call)) discoveredSinceCheck = true;
     } else if (status === "completed") {
       discoveryStreak = 0;
     }
@@ -129,37 +155,49 @@ export const applyAiTurnPolicy = (input: {
   repeatedFailures = new Set();
   discoveredSinceCheck = false;
 
+  const reserveReached = () => input.deadline !== null && reserveMs > 0 && input.deadline - now() <= reserveMs;
+  const endToolUse = (reason: AiTurnFinalReason) => {
+    finalReason = reason;
+    completedAtFinal = completed;
+    pendingHint = null;
+    input.onDecision?.({ kind: "final_answer", reason });
+  };
+
   const check = () => {
     if (finalReason) return;
-    if (limit > 0 && completed >= limit) finalReason = "tool_rounds";
-    else if (input.deadline !== null && reserveMs > 0 && input.deadline - now() <= reserveMs) finalReason = "run_time";
+    if (limit > 0 && completed >= limit) endToolUse("tool_rounds");
+    else if (reserveReached()) endToolUse("run_time");
     else {
       const triggered: AiTurnHint[] = [];
       if (repeatedFailures.size > 0) triggered.push("repeated_failure");
       if (discoveredSinceCheck && discoveryStreak >= DISCOVERY_STREAK_LIMIT) triggered.push("discovery_loop");
-      if (triggered.some((hint) => hinted.has(hint))) finalReason = "loop";
+      if (triggered.some((hint) => hinted.has(hint))) endToolUse("loop");
       else if (triggered.length > 0) {
         for (const hint of triggered) hinted.add(hint);
-        pendingHint = hintPrompt({
-          repeatedFailures: triggered.includes("repeated_failure") ? [...repeatedFailures] : [],
-          discoveryStreak: triggered.includes("discovery_loop") ? discoveryStreak : null,
-        });
+        pendingHint = hintPrompt(
+          {
+            repeatedFailures: triggered.includes("repeated_failure") ? [...repeatedFailures] : [],
+            discoveryStreak: triggered.includes("discovery_loop") ? discoveryStreak : null,
+          },
+          offered,
+        );
         input.onDecision?.({ kind: "hint", hints: triggered });
       }
     }
     repeatedFailures = new Set();
     discoveredSinceCheck = false;
-    if (finalReason) {
-      pendingHint = null;
-      input.onDecision?.({ kind: "final_answer", reason: finalReason });
-    }
   };
 
   const tools: ToolResolver = async () => {
     if (resumingRound) resumingRound = false;
     else check();
-    if (finalReason) return [];
-    return typeof input.tools === "function" ? input.tools() : input.tools;
+    if (finalReason) {
+      if (completed > completedAtFinal) throw new Error("The model did not produce a final answer without tools.");
+      return [];
+    }
+    const resolved = typeof input.tools === "function" ? await input.tools() : input.tools;
+    offered = new Set(resolved.map((tool) => tool.def.name));
+    return resolved;
   };
   const provider: Provider = {
     name: input.provider.name,
@@ -169,9 +207,19 @@ export const applyAiTurnPolicy = (input: {
     capabilities: input.provider.capabilities,
     complete: (request) => input.provider.complete(request),
     stream: async function* (request) {
-      const suffix = finalReason ? finalAnswerPrompt(finalReason) : pendingHint;
-      pendingHint = null;
-      yield* input.provider.stream({ ...request, systemPrompt: withPrompt(request.systemPrompt, suffix) });
+      // Compaction may run between the tool check and this call; the reserve still holds.
+      if (!finalReason && reserveReached()) endToolUse("run_time");
+      let overflowed = false;
+      for await (const event of input.provider.stream({
+        ...request,
+        tools: finalReason ? [] : request.tools,
+        systemPrompt: withPrompt(request.systemPrompt, finalReason ? finalAnswerPrompt(finalReason) : pendingHint),
+      })) {
+        if (event.type === "issue" && event.issue.kind === "provider_error" && event.issue.contextOverflow) overflowed = true;
+        yield event;
+      }
+      // nessi compacts an overflowed request and sends it again; the hint goes with it.
+      if (!overflowed) pendingHint = null;
     },
   };
 
@@ -185,5 +233,15 @@ export const applyAiTurnPolicy = (input: {
       completed += 1;
     },
     noteToolCall,
+    noteSteering: () => {
+      // New user input: the loop checks start over, and a loop's final answer may use tools again.
+      failures.clear();
+      repeatedFailures = new Set();
+      discoveryStreak = 0;
+      discoveredSinceCheck = false;
+      hinted.clear();
+      pendingHint = null;
+      finalReason = null;
+    },
   };
 };

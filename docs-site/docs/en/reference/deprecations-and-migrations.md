@@ -21,7 +21,8 @@ and answers in three cases where it used to go on until it failed:
   what is still open.
 - When the same tool call fails twice with the same input, or after six tool
   searches in a row without a completed step, the model first gets a hint;
-  when the pattern repeats, the turn answers without tools.
+  when either pattern appears again, the turn answers without tools. A
+  steering message gives the turn its tools back.
 
 No setting changes. Operators who want turns to keep their full run time for
 tools raise `ai.turn_timeout_minutes`. See
