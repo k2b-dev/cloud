@@ -1,6 +1,8 @@
 // A Studio app in the chat: reserved height, start on click, live app, sanitized exports,
 // stop and unmount, and the open action of a saved app.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import type { Browser } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
 import { appAssetsJson } from "./html/test-assets";
@@ -115,7 +117,11 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
     const html = page.waitForEvent("download");
     await card.getByRole("button", { name: "Downloads", exact: true }).click();
     await page.getByRole("menuitem", { name: "HTML", exact: true }).click();
-    const exported = await Bun.file((await (await html).path())!).text();
+    // saveAs works with a local and a remote (run-server) browser alike.
+    const copy = `${tmpdir()}/chat-app-${crypto.randomUUID()}.html`;
+    await (await html).saveAs(copy);
+    const exported = await Bun.file(copy).text();
+    await rm(copy, { force: true });
     expect(exported).toContain(">30<");
     expect(exported).not.toMatch(/<script/i);
     expect(exported).toContain("default-src 'none'");
