@@ -49,6 +49,8 @@ let completionRequestCount = 0;
 const mockProfile = (): AiModelProfile => ({
   id: MODEL_ID,
   label: "Mock",
+  reasoningEffort: "low",
+  extraBody: { chat_template_kwargs: { enable_thinking: false } },
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
@@ -572,6 +574,10 @@ suite("AI executor integration", () => {
 
     try {
       nextCompletion = textCompletion("Hello from the mock model");
+      const requestBodies: unknown[] = [];
+      onCompletionRequest = (body) => {
+        requestBodies.push(body);
+      };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
@@ -618,6 +624,7 @@ suite("AI executor integration", () => {
       const assistantText =
         messages[1]?.message.role === "assistant" ? messages[1].message.content.map((b) => (b.type === "text" ? b.text : "")).join("") : "";
       expect(assistantText).toContain("Hello from the mock model");
+      expect(requestBodies[0]).toMatchObject({ reasoning_effort: "low", chat_template_kwargs: { enable_thinking: false } });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;

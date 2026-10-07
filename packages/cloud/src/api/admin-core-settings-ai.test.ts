@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import * as credentials from "../ai/credentials";
+import * as requestHeaders from "../ai/request-headers";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
 import * as settings from "../services/settings";
@@ -35,6 +36,7 @@ beforeEach(() => {
     spyOn(settings, "get").mockImplementation((async (key: string) => stored[key]) as typeof settings.get),
     spyOn(settings, "set").mockRejectedValue(new Error("test must not write settings")),
     spyOn(credentials, "listAiCredentialProfileIds").mockResolvedValue([]),
+    spyOn(requestHeaders, "listAiRequestHeaderNames").mockResolvedValue({}),
   );
 });
 afterEach(() => {

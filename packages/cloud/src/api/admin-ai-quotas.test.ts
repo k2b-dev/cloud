@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import * as requestSettings from "../ai/model-request-settings";
 import { aiQuotas } from "../ai/quotas";
 import * as settings from "../ai/settings";
 import type { AiModelProfile } from "../ai/types";
@@ -13,6 +14,8 @@ test("all quota reads and mutations require administrator authentication", async
     ["/", "PUT"],
     ["/models", "GET"],
     ["/models/chat/pricing", "PUT"],
+    ["/models/chat/settings", "GET"],
+    ["/models/chat/settings", "PUT"],
     ["/background", "GET"],
     ["/background/release", "POST"],
     ["/users", "GET"],
@@ -113,6 +116,40 @@ test("new scopes require active billable chat models while existing scopes stay 
   } finally {
     read.mockRestore();
     current.mockRestore();
+    save.mockRestore();
+  }
+});
+
+test("admin request settings reads are masked and invalid secret submissions return metadata-only errors", async () => {
+  const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
+  const app = createAdminAiQuotaRoutes(async (c, next) => {
+    c.set("user", user);
+    await next();
+  });
+  const masked = { id: "chat", reasoningEffort: "low", extraBody: { custom: true }, requestHeaderNames: ["X-Key"], revision: "revision" };
+  const read = spyOn(requestSettings, "getAiModelRequestSettings").mockResolvedValue(masked);
+  const save = spyOn(requestSettings, "setAiModelRequestSettings").mockResolvedValue(masked);
+  try {
+    expect(await (await app.request("/models/chat/settings")).json()).toEqual(masked);
+    const valid = await app.request("/models/chat/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected: "revision", reasoningEffort: "low" }),
+    });
+    expect(valid.status).toBe(200);
+    expect(save).toHaveBeenCalledWith("chat", { expected: "revision", reasoningEffort: "low" }, user.id);
+    for (const change of [{ requestHeaders: { "X-Key": "hidden-value\r\n" } }, { extraBody: { model: "override" } }]) {
+      const response = await app.request("/models/chat/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expected: "revision", ...change }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.text()).not.toContain("hidden-value");
+    }
+    expect(save).toHaveBeenCalledTimes(1);
+  } finally {
+    read.mockRestore();
     save.mockRestore();
   }
 });

@@ -86,6 +86,9 @@ A locked policy needs `modelId`. A selectable policy may set
 | `contextWindow` | Optional context limit |
 | `temperature` | Optional profile default |
 | `maxOutputTokens` | Optional output limit |
+| `reasoningEffort` | Optional thinking level passed unchanged to chat and tool loops; empty means the model default |
+| `extraBody` | Non-secret JSON object of extra provider parameters, at most 8 KiB of UTF-8 JSON; applies to every call on the profile |
+| `requestHeaders` | Write-only header patch (`name: string` sets, `name: null` removes); vLLM and OpenAI-compatible chat endpoints only |
 | `pricing` | Optional paired `inputPerMillion` / `outputPerMillion` reference prices |
 | `maxLoadedTools` | Deferred tool names retained per conversation; missing, `0`, or negative is unlimited, while a positive value keeps the newest names and evicts the oldest |
 | `maxToolRounds` | Tool-using model rounds allowed per chat turn; missing, `0`, or negative is unlimited, while a positive value reserves one additional tool-free model round for the final answer |
@@ -143,6 +146,115 @@ An OpenAI-compatible profile must set `baseURL`. Reasoning models behind such
 endpoints stream their thinking as `reasoning`, `reasoning_content`, or
 `reasoning_details`; Cloud shows all three as thinking blocks, so a long
 reasoning phase is visible progress rather than an idle turn.
+
+## Set the thinking level
+
+In the model profile dialog, set **Thinking level** under **Advanced**, or set
+`reasoningEffort` with `cld admin ai models settings set`. The level is a free string of 1–32 lowercase letters, digits, underscores or
+hyphens, such as `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`.
+Cloud passes it unchanged; the provider decides which values the model accepts.
+Omitting it or clearing it preserves the model's default behavior.
+
+| Provider | Request field |
+| --- | --- |
+| OpenAI, Mistral, vLLM, OpenAI-compatible | `reasoning_effort` |
+| OpenRouter | `reasoning.effort` |
+| Anthropic | `output_config.effort` with adaptive thinking; `none` disables thinking |
+| Gemini | `generationConfig.thinkingConfig.thinkingLevel`; `none` sets a zero thinking budget |
+| Ollama | `think`; `none` maps to `false` |
+
+The profile level applies to chat and tool loops, including background agents,
+scheduled chat tasks and workflow chat actions. Structured calls, including
+titles, summaries and workflow calculations, and context compaction retain their
+existing low or disabled reasoning request: `low` for OpenAI-compatible adapters
+and zero thinking budget for Gemini. The legacy disable flag remains a no-op for
+Anthropic, Mistral and Ollama; those models keep their own defaults.
+
+## Add provider parameters
+
+The profile dialog edits extra parameters and headers under **Advanced** →
+**Request options**. Use `extraBody` for provider features outside Cloud's profile fields. It must be
+a plain JSON object with at most 8,192 bytes when serialized as UTF-8 JSON.
+It applies to **every call** on the profile, including structured output, titles,
+summaries and compaction. Provider parameters merge last and may override the
+helper calls' reasoning behavior. For example:
+
+```json
+{"chat_template_kwargs":{"enable_thinking":false}}
+```
+
+For a Gemini 2.5 model that accepts a thinking budget:
+
+```json
+{"generationConfig":{"thinkingConfig":{"thinkingBudget":1024}}}
+```
+
+Cloud rejects these top-level keys because it owns their meaning:
+
+- Content and model: `model`, `messages`, `system`, `contents`, `systemInstruction`.
+- Tools and loop control: `tools`, `tool_choice`, `toolConfig`,
+  `parallel_tool_calls`, `stream`, `stream_options`.
+- Structured output: `response_format`, `structured_outputs`, `format`.
+- Profile generation settings: `temperature`, `max_tokens`,
+  `max_completion_tokens`, `reasoning_effort`, `reasoning`.
+
+Use `reasoningEffort` for the thinking level. Nested provider options remain
+available, including `thinking`, `output_config`, `chat_template_kwargs`,
+`generationConfig`, `options` and `think`. Cloud also reserves
+`generationConfig.responseSchema`, `generationConfig.responseJsonSchema`,
+`generationConfig.responseMimeType`, `generationConfig.temperature`,
+`generationConfig.maxOutputTokens`, `output_config.format`,
+`options.temperature` and `options.num_predict`. The three containers
+`generationConfig`, `output_config` and `options` must be objects so they cannot
+replace Cloud's output schema or token limits. Keys named `__proto__`,
+`constructor` or `prototype` are rejected at every depth.
+
+## Add private endpoint headers
+
+Extra HTTP headers are supported only for vLLM and OpenAI-compatible chat
+profiles. They are encrypted using the installation's settings encryption key
+and remain server-side. Admin reads return `requestHeaderNames`; header values
+never return to the browser or CLI.
+
+Submit `requestHeaders` as a patch: a string sets or replaces a header, `null`
+removes it, and omitted names keep their stored values. Saving a profile without
+`requestHeaders` keeps all its headers. `--clear-headers` removes every stored
+header before applying any supplied patch. Deleting a profile prunes its headers;
+changing its provider discards them, consistently with provider credentials.
+
+Names are case-insensitive HTTP tokens of at most 128 characters. Duplicate names
+are rejected, as are `content-type`, `content-length`, `host`, `connection` and
+`transfer-encoding`. At most 32 headers may be configured; each value may contain
+at most 4,096 characters and no CR, LF or NUL.
+
+`Authorization` is allowed. When the profile has an API key, nessi replaces the
+custom Authorization header with `Bearer <API key>`. Use a protected JSON file
+or standard input to avoid putting header secrets in shell history:
+
+```bash
+cld admin ai models settings get --id MODEL_ID --json
+cld admin ai models settings set --id MODEL_ID --thinking-level low --yes --json
+cld admin ai models settings set --id MODEL_ID --extra-body-file parameters.json --yes --json
+cld admin ai models settings set --id MODEL_ID --headers-file headers.json --yes --json
+cld admin ai models settings set --id MODEL_ID --headers-stdin --yes --json < headers.json
+cld admin ai models settings set --id MODEL_ID --clear-thinking-level --clear-extra-body --clear-headers --yes --json
+```
+
+`headers.json` is an object of names to string values or `null`, for example
+`{"X-Endpoint-Token":"secret","X-Obsolete":null}`. `parameters.json` contains the
+extra parameters object. `--stdin` reads extra parameters; `--headers-stdin`
+reads a header patch. These separate flags let one command take both inputs.
+Commands read the current revision before writing and report a conflict when
+another administrator changed the configuration; read it again before retrying.
+
+Administrators can also use `GET` and `PUT`
+`/api/admin/core/ai-quotas/models/{id}/settings`. GET returns
+`{id, reasoningEffort, extraBody, requestHeaderNames, revision}`. PUT requires
+`expected: revision` and accepts any of `reasoningEffort` (string or `null`),
+`extraBody` (object or `null`), `requestHeaders` (patch) and
+`clearRequestHeaders: true`. Omitted fields keep their values. Validation errors
+return 400; stale revisions return 409. Transcription profiles reject thinking
+levels, extra parameters and extra headers.
 
 ## Handle configuration errors
 

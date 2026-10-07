@@ -54,8 +54,8 @@ export function inferenceProvider(
             ctx,
             inputTokens,
             request.maxOutputTokens ?? profile.maxOutputTokens,
-            // Nessi's Anthropic adapter defaults to 1024; other adapters use the model default.
-            provider.family === "anthropic" ? 1024 : provider.contextWindow,
+            // Nessi's Anthropic adapter defaults to 8192; other adapters use the model default.
+            provider.family === "anthropic" ? 8192 : provider.contextWindow,
           );
         } catch (error) {
           if (!(error instanceof AiBackgroundAdmissionError) || !error.retryable || Date.now() >= deadline) throw error;

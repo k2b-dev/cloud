@@ -29,7 +29,7 @@ const load = async () => {
 };
 const modules = isServer ? undefined : await load();
 
-async function setup(extra: Record<string, unknown> = {}) {
+async function setup(extra: Record<string, unknown> = {}, stored: Record<string, unknown> = profile) {
   const dom = createDomTestHarness();
   const { Form, dialogCore } = modules!;
   const requests: string[] = [];
@@ -57,7 +57,7 @@ async function setup(extra: Record<string, unknown> = {}) {
             label: "Models",
             description: "",
             kind: "text",
-            value: JSON.stringify([profile]),
+            value: JSON.stringify([stored]),
             default: "[]",
             resetValue: "[]",
             valueSource: "custom",
@@ -275,6 +275,77 @@ describe("Provider dialog", () => {
       expect(ui.document.body.textContent).toContain("No key stored yet.");
       expect(ui.document.body.textContent).not.toContain("New key in draft · not saved yet.");
       expect(ui.requests).toHaveLength(0);
+    } finally {
+      ui.cleanup();
+    }
+  });
+  test("thinking level and extra parameters round-trip through the draft and reach the save", async () => {
+    const ui = await setup();
+    try {
+      ui.section("Advanced");
+      expect(ui.input("Thinking level").placeholder).toBe("Provider default");
+      ui.fill("Thinking level", " High ");
+      ui.section("Advanced").querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
+      ui.fill("Extra parameters (JSON)", "[1]");
+      ui.button("Apply to draft").click();
+      await tick();
+      expect(ui.dialogCore.isOpen()).toBe(true);
+      expect(ui.document.body.textContent).toContain("Enter a JSON object for the extra parameters");
+      ui.fill("Extra parameters (JSON)", '{"chat_template_kwargs":{"enable_thinking":false}}');
+      ui.button("Apply to draft").click();
+      await tick();
+      expect(ui.dialogCore.isOpen()).toBe(false);
+      ui.button("Edit profile").click();
+      await tick();
+      ui.section("Advanced");
+      expect(ui.input("Thinking level").value).toBe("high");
+      ui.button("Apply to draft").click();
+      await tick();
+      ui.button("Save changes").click();
+      await tick();
+      const [saved] = JSON.parse(JSON.parse(ui.requests[0]!)["ai.model_profiles_json"]);
+      expect(saved.reasoningEffort).toBe("high");
+      expect(saved.extraBody).toEqual({ chat_template_kwargs: { enable_thinking: false } });
+      // OpenAI profiles cannot carry headers, so the dialog neither offers nor sends them.
+      expect(ui.document.body.textContent).not.toContain("Extra headers");
+      expect(saved.requestHeaders).toBeUndefined();
+    } finally {
+      ui.cleanup();
+    }
+  });
+  test("stored header values stay server-side; the save sends only a patch", async () => {
+    const ui = await setup(
+      { aiRequestHeaderNames: { chat: ["X-Old", "X-Keep"] } },
+      { ...profile, provider: "openai-compatible", baseURL: "https://llm.example.test/v1" },
+    );
+    try {
+      const options = ui.section("Advanced");
+      Array.from(options.querySelectorAll("section"))
+        .find((child) => child.querySelector("h3")?.textContent === "Request options")!
+        .querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!
+        .click();
+      await tick();
+      expect(ui.document.body.textContent).toContain("Extra headers");
+      const storedNames = Array.from(ui.document.querySelectorAll<HTMLInputElement>('input[aria-label="Header name"][readonly]')).map(
+        (field) => field.value,
+      );
+      expect(storedNames).toEqual(["X-Old", "X-Keep"]);
+      ui.button("Remove header X-Old").click();
+      ui.button("Add header").click();
+      await tick();
+      const name = ui.document.querySelector<HTMLInputElement>('input[aria-label="Header name"]:not([readonly])')!;
+      name.value = "X-New";
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      const value = ui.document.querySelector<HTMLInputElement>('input[aria-label="Value"]')!;
+      value.value = "test-only-header-value";
+      value.dispatchEvent(new Event("input", { bubbles: true }));
+      ui.button("Apply to draft").click();
+      await tick();
+      expect(ui.dialogCore.isOpen()).toBe(false);
+      ui.button("Save changes").click();
+      await tick();
+      const [saved] = JSON.parse(JSON.parse(ui.requests[0]!)["ai.model_profiles_json"]);
+      expect(saved.requestHeaders).toEqual({ "X-Old": null, "X-New": "test-only-header-value" });
     } finally {
       ui.cleanup();
     }

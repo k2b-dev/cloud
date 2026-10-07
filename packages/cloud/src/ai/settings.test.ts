@@ -384,3 +384,102 @@ describe("AI settings admin invariants", () => {
     ).toEqual([]);
   });
 });
+
+describe("per-profile request settings", () => {
+  test("round-trips free thinking levels and nested extra parameters", () => {
+    const parsed = parseAiModelProfiles(
+      profilesJson([{ reasoningEffort: " custom-level ", extraBody: { chat_template_kwargs: { enable_thinking: false } } }]),
+    );
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.profiles[0]).toMatchObject({
+      reasoningEffort: "custom-level",
+      extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    });
+    expect(parseAiModelProfiles(JSON.stringify(parsed.profiles)).profiles).toEqual(parsed.profiles);
+    expect(parseAiModelProfiles(profilesJson([{ reasoningEffort: "  " }])).profiles[0]?.reasoningEffort).toBeUndefined();
+  });
+
+  test("rejects malformed thinking levels and transcription request settings", () => {
+    for (const reasoningEffort of ["HIGH", "bad level", "a".repeat(33), 1, null]) {
+      expect(parseAiModelProfiles(profilesJson([{ reasoningEffort }])).error).toBeDefined();
+    }
+    for (const settings of [{ reasoningEffort: "low" }, { extraBody: {} }]) {
+      expect(
+        parseAiModelProfiles(profilesJson([{ provider: "openai", capabilities: ["transcription"], ...settings }])).error,
+      ).toBeDefined();
+    }
+  });
+
+  test("rejects owned request keys, prototype keys, oversized UTF-8 and non-object parameters", () => {
+    for (const extraBody of [
+      [],
+      null,
+      "body",
+      1,
+      ...[
+        "model",
+        "messages",
+        "system",
+        "contents",
+        "systemInstruction",
+        "tools",
+        "tool_choice",
+        "toolConfig",
+        "parallel_tool_calls",
+        "stream",
+        "stream_options",
+        "response_format",
+        "structured_outputs",
+        "format",
+        "temperature",
+        "max_tokens",
+        "max_completion_tokens",
+        "reasoning_effort",
+        "reasoning",
+      ].map((key) => ({ [key]: "override" })),
+      { generationConfig: { responseJsonSchema: {} } },
+      { generationConfig: { responseSchema: {} } },
+      { generationConfig: { responseMimeType: "text/plain" } },
+      { output_config: { format: {} } },
+      { options: { num_predict: -1 } },
+      { nested: [{ constructor: "unsafe" }] },
+      JSON.parse('{"nested":{"__proto__":{}}}'),
+      { prototype: {} },
+      { constructor: {} },
+      JSON.parse('{"__proto__":{}}'),
+      { generationConfig: null },
+      { output_config: "override" },
+      { options: [] },
+      { custom: "ä".repeat(4096) },
+    ]) {
+      const result = parseAiModelProfiles(profilesJson([{ extraBody }]));
+      expect(result.error).toBeDefined();
+      expect(result.error?.fields?.["ai.model_profiles_json"]).toContain("extraBody");
+    }
+    for (const extraBody of [
+      { generationConfig: { thinkingConfig: { thinkingBudget: 1024 } } },
+      { thinking: { type: "enabled", budget_tokens: 1024 } },
+      { options: { top_k: 20 }, think: true },
+    ]) {
+      expect(parseAiModelProfiles(profilesJson([{ extraBody }])).error).toBeUndefined();
+    }
+  });
+});
+
+test("profile header validation rejects incompatible providers and never exposes values", () => {
+  for (const input of [
+    { requestHeaders: { "X-Key": "hidden-value" } },
+    { provider: "vllm", requestHeaders: { "Content-Type": "hidden-value" } },
+    { provider: "vllm", requestHeaders: { "X-Key": "hidden-value\r\n" } },
+    { provider: "vllm", requestHeaders: { "X-Key": "hidden-value", "x-key": "hidden-value" } },
+    { provider: "openai-compatible", baseURL: "http://test/v1", capabilities: ["transcription"], requestHeaders: {} },
+  ]) {
+    const result = parseAiModelProfiles(profilesJson([input]));
+    expect(result.error).toBeDefined();
+    expect(JSON.stringify(result)).not.toContain("hidden-value");
+    expect(result.error?.fields?.["ai.model_profiles_json"]).toContain("requestHeaders");
+  }
+  const parsed = parseAiModelProfiles(profilesJson([{ provider: "vllm", requestHeaders: { "X-Key": "hidden-value" } }]));
+  expect(parsed.error).toBeUndefined();
+  expect(JSON.stringify(parsed.profiles)).not.toContain("hidden-value");
+});

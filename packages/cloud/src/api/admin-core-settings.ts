@@ -19,6 +19,7 @@ import {
   aiModelAccess,
   splitAiModelAccess,
 } from "../ai/model-access";
+import { listAiRequestHeaderNames, planAiProfileRequestHeaders, storeAiRequestHeaderPlan } from "../ai/request-headers";
 import { parseAiModelProfiles, planAiProfileCredentials, validateAiSettingsConfiguration } from "../ai/settings";
 import { type AiSettingsIssueWithMessage, aiSettingsNotSavedMessage, describeAiSettingsIssues } from "../ai/settings-messages";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
@@ -101,6 +102,7 @@ type AiSettingsMutationPlan = {
   /** Structured validation issues with stable codes; `errors` carries the same messages keyed by setting. */
   issues?: AiSettingsIssueWithMessage[];
   keepCredentialProfileIds?: string[];
+  headerPlan?: ReturnType<typeof planAiProfileRequestHeaders>;
   modelProfileIds?: string[];
 };
 
@@ -168,6 +170,17 @@ const prepareAiSettingsMutation = async (
     keepCredentialProfileIds = credentialPlan.keepCredentialProfileIds;
   }
 
+  const headerPlan =
+    profilesUpdated || profilesReset
+      ? planAiProfileRequestHeaders({
+          currentProfiles: currentParsed.profiles,
+          nextProfiles: nextParsed.profiles,
+          existingNames: profilesUpdated ? await listAiRequestHeaderNames() : {},
+          submitted: aiSplit?.requestHeaders ?? [],
+        })
+      : undefined;
+  if (headerPlan?.error) return { errors: { [AI_PROFILES_KEY]: headerPlan.error } };
+
   const issues = validateAiSettingsConfiguration({
     enabled: nextEnabled,
     defaultModelId: String(valueAfterMutation(AI_DEFAULT_MODEL_KEY, currentDefaultModelId ?? "", updates, resets)),
@@ -183,6 +196,7 @@ const prepareAiSettingsMutation = async (
   return {
     errors: described.errors,
     issues: described.issues,
+    headerPlan,
     keepCredentialProfileIds,
     modelProfileIds: profilesUpdated || profilesReset ? nextParsed.profiles.map((profile) => profile.id) : undefined,
   };
@@ -463,6 +477,7 @@ const app = new Hono<AuthContext>()
         } else if (aiPlan.keepCredentialProfileIds) {
           await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
         }
+        if (aiPlan.headerPlan) await storeAiRequestHeaderPlan(aiPlan.headerPlan, tx);
         if (aiPlan.modelProfileIds) {
           await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, accessChanges, tx);
         }
@@ -524,6 +539,7 @@ const app = new Hono<AuthContext>()
         if (aiPlan.keepCredentialProfileIds) {
           await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
         }
+        if (aiPlan.headerPlan) await storeAiRequestHeaderPlan(aiPlan.headerPlan, tx);
         if (aiPlan.modelProfileIds) {
           await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, [], tx);
         }

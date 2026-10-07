@@ -2325,6 +2325,15 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.model_request_headers (
+      profile_id TEXT PRIMARY KEY,
+      secret TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+
   // One-time move of keys that were stored inside the profiles setting. Once
   // the blob holds no apiKey the split yields nothing and this is a no-op, so
   // it is safe to re-run. Dynamic imports keep the module free of store deps.

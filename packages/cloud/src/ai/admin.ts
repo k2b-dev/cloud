@@ -1,5 +1,6 @@
 export { quotaAdminConfig, quotaReport } from "./quota-report";
 export { AiQuotaError, aiQuotas } from "./quotas";
+export { listAiRequestHeaderNames } from "./request-headers";
 /** Server-only AI administration and usage accounting. */
 
 export { type AiModelAccessDraft, type AiModelAccessMap, type AiModelAccessState, aiModelAccess } from "./model-access";

@@ -1,9 +1,17 @@
 import { z } from "zod";
 import { coreSettings } from "../services";
 import { AiModelPricingSchema } from "../shared/ai-costs";
+import {
+  AI_REQUEST_HEADERS_PROVIDER_ERROR,
+  AiExtraBodySchema,
+  AiReasoningEffortSchema,
+  AiRequestHeadersSchema,
+  providerSupportsRequestHeaders,
+} from "../shared/ai-request-options";
 import { getAiCredential, listAiCredentialProfileIds } from "./credentials";
 import { AI_FIRECRAWL_API_KEY_SETTING_KEY } from "./firecrawl-tools";
 import { createAiProvider } from "./provider";
+import { getAiRequestHeaders } from "./request-headers";
 import {
   AI_DATA_BOUNDARIES,
   AI_MODEL_CAPABILITIES,
@@ -93,12 +101,20 @@ const ModelProfileSchema = z
     contextWindow: z.number().int().positive().optional(),
     temperature: z.number().min(0).max(2).optional(),
     maxOutputTokens: z.number().int().positive().optional(),
+    reasoningEffort: AiReasoningEffortSchema,
+    extraBody: AiExtraBodySchema.optional(),
+    requestHeaders: AiRequestHeadersSchema.optional(),
     maxLoadedTools: z.number().int().optional(),
     maxToolRounds: z.number().int().optional(),
     pricing: AiModelPricingSchema.optional(),
   })
   .superRefine((profile, ctx) => {
+    if (profile.requestHeaders !== undefined && !providerSupportsRequestHeaders(profile.provider))
+      ctx.addIssue({ code: "custom", path: ["requestHeaders"], message: AI_REQUEST_HEADERS_PROVIDER_ERROR });
     if (profile.capabilities?.includes("transcription")) {
+      for (const key of ["reasoningEffort", "extraBody", "requestHeaders"] as const)
+        if (profile[key] !== undefined)
+          ctx.addIssue({ code: "custom", path: [key], message: "Request settings are not supported on transcription profiles." });
       if (profile.pricing) ctx.addIssue({ code: "custom", path: ["pricing"], message: "Audio pricing is not supported." });
       if (profile.capabilities.some((capability) => capability !== "transcription")) {
         ctx.addIssue({ code: "custom", path: ["capabilities"], message: "Audio transcription cannot be combined with chat capabilities." });
@@ -128,7 +144,7 @@ const profileToPublic = (profile: AiModelProfile): AiPublicModelProfile => ({
 });
 
 const normalizeProfile = (raw: z.infer<typeof ModelProfileSchema>): AiModelProfile => {
-  const { capabilities, dataBoundary, dataPolicy: legacyDataPolicy, tags: _legacyTags, ...profile } = raw;
+  const { requestHeaders: _requestHeaders, capabilities, dataBoundary, dataPolicy: legacyDataPolicy, tags: _legacyTags, ...profile } = raw;
   return {
     ...profile,
     capabilities: normalizeCapabilities(capabilities),
@@ -522,7 +538,8 @@ export const resolveAiModelFromState = async (
     });
   }
 
-  return { profile, provider: createAiProvider(profile, credential?.trim() || undefined) };
+  const headers = providerSupportsRequestHeaders(profile.provider) ? await getAiRequestHeaders(profile.id) : {};
+  return { profile, provider: createAiProvider(profile, credential?.trim() || undefined, headers) };
 };
 
 const isUsableProfile = (profile: AiModelProfile, credentialProfileIds: ReadonlySet<string>): boolean =>
