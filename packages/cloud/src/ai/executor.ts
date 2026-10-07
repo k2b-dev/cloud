@@ -1,4 +1,4 @@
-import type { CompactEvent, LoopAggregate, NessiLoop, OutboundEvent, Provider, Tool, ToolResolver } from "@k2b/nessi";
+import type { CompactEvent, LoopAggregate, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
@@ -54,6 +54,7 @@ import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
   AiChatTurnRunConfig,
@@ -77,8 +78,6 @@ const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
 const AI_SNAPSHOT_INTERVAL_MS = 1_000;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
-const AI_FINAL_TOOL_ROUND_PROMPT = `# Final response
-The configured tool-round budget has been reached, so no more tools are available in this turn. Answer the user's request now with the best result supported by the evidence already gathered. State any material uncertainty or incomplete part clearly.`;
 
 const toolRoundState = (messages: AiStoredMessage[]): { issued: number; completed: number } => {
   const completedCallIds = new Set(messages.flatMap(({ message }) => (message.role === "tool_result" ? [message.callId] : [])));
@@ -90,50 +89,6 @@ const toolRoundState = (messages: AiStoredMessage[]): { issued: number; complete
   return {
     issued: rounds.length,
     completed: rounds.filter((callIds) => callIds.every((callId) => completedCallIds.has(callId))).length,
-  };
-};
-
-const applyToolRoundPolicy = (input: {
-  provider: Provider;
-  tools: Tool[] | ToolResolver;
-  maxToolRounds?: number;
-  issuedToolRounds: number;
-  completedToolRounds: number;
-}): { provider: Provider; tools: Tool[] | ToolResolver; maxTurns?: number; noteToolRound: () => void } => {
-  const limit = Math.floor(input.maxToolRounds ?? 0);
-  if (limit <= 0) return { provider: input.provider, tools: input.tools, noteToolRound: () => undefined };
-
-  const issuedAtStart = Math.max(0, Math.floor(input.issuedToolRounds));
-  let completed = Math.max(0, Math.floor(input.completedToolRounds));
-  let finalSynthesis = completed >= limit;
-  const tools: ToolResolver = async () => {
-    finalSynthesis = completed >= limit;
-    if (finalSynthesis) return [];
-    return typeof input.tools === "function" ? input.tools() : input.tools;
-  };
-  const provider: Provider = {
-    name: input.provider.name,
-    family: input.provider.family,
-    model: input.provider.model,
-    contextWindow: input.provider.contextWindow,
-    capabilities: input.provider.capabilities,
-    complete: (request) => input.provider.complete(request),
-    stream: async function* (request) {
-      yield* input.provider.stream(
-        finalSynthesis ? { ...request, systemPrompt: `${request.systemPrompt ?? ""}\n\n${AI_FINAL_TOOL_ROUND_PROMPT}`.trim() } : request,
-      );
-    },
-  };
-
-  // Nessi checks this before provider calls. The extra round is the tool-free
-  // synthesis call after the last allowed tool-using round.
-  return {
-    provider,
-    tools,
-    maxTurns: Math.max(1, limit - issuedAtStart + 1),
-    noteToolRound: () => {
-      completed += 1;
-    },
   };
 };
 
@@ -1077,7 +1032,7 @@ export class AiTurnExecutor {
     const priorToolRounds = toolRoundState(loopMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
-    const toolRoundPolicy = applyToolRoundPolicy({
+    const turnPolicy = applyAiTurnPolicy({
       provider: retryTransientProviderErrors(
         assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
         {
@@ -1093,12 +1048,19 @@ export class AiTurnExecutor {
       maxToolRounds: resolved.profile.maxToolRounds,
       issuedToolRounds: priorToolRounds.issued,
       completedToolRounds: priorToolRounds.completed,
+      deadline,
+      runBudgetMs: claim.turn.runBudgetMs ?? null,
+      finishedToolCalls: pipeline.blocks.flatMap((block) => (block.kind === "tool" ? [block] : [])),
+      onDecision: (decision) =>
+        decision.kind === "hint"
+          ? log.warn("AI turn got a loop hint", { conversationId, turnId, hints: decision.hints })
+          : log.info("AI turn answers without further tools", { conversationId, turnId, reason: decision.reason }),
     });
     const loop = nessi({
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: toolRoundPolicy.provider,
+      provider: turnPolicy.provider,
       systemPrompt,
       store,
       steering: async ({ signal: steeringSignal }) => {
@@ -1111,8 +1073,8 @@ export class AiTurnExecutor {
         appliedSteers.push(...steers);
         return steers.length > 0 ? steers.map((steer) => steer.text) : undefined;
       },
-      tools: toolRoundPolicy.tools,
-      ...(toolRoundPolicy.maxTurns === undefined ? {} : { maxTurns: toolRoundPolicy.maxTurns }),
+      tools: turnPolicy.tools,
+      ...(turnPolicy.maxTurns === undefined ? {} : { maxTurns: turnPolicy.maxTurns }),
       temperature: resolved.profile.temperature,
       maxOutputTokens: resolved.profile.maxOutputTokens,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
@@ -1150,7 +1112,8 @@ export class AiTurnExecutor {
       rememberableCapabilityApprovals,
       capabilityActionReviews,
       appliedSteers,
-      noteToolRound: toolRoundPolicy.noteToolRound,
+      noteToolRound: turnPolicy.noteToolRound,
+      noteToolCall: turnPolicy.noteToolCall,
       onBackgroundBlocked: (message) => {
         backgroundError = message;
       },
@@ -1216,6 +1179,7 @@ export class AiTurnExecutor {
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
     appliedSteers: AiTurnSteer[];
     noteToolRound: () => void;
+    noteToolCall: (call: AiTurnPolicyToolCall) => void;
     onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
@@ -1231,6 +1195,7 @@ export class AiTurnExecutor {
       capabilityActionReviews,
       appliedSteers,
       noteToolRound,
+      noteToolCall,
     } = input;
     const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
     let lastIssueMessage: string | null = null;
@@ -1289,6 +1254,7 @@ export class AiTurnExecutor {
             .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
+          noteToolCall(toolBlock?.kind === "tool" ? toolBlock : { name: event.name, status: event.isError ? "failed" : "completed" });
           await indexConversationToolSource({
             conversationId,
             turnId,
@@ -1816,7 +1782,6 @@ class StreamPipeline {
 export const __aiExecutorTest = {
   indexConversationToolSource,
   StreamPipeline,
-  applyToolRoundPolicy,
   createEventMapper,
   rebuildAttemptBaseline,
   rebuildBlocksFromMessages,

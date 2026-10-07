@@ -579,9 +579,43 @@ lease recovery. Resuming after a human interaction uses that same configured
 budget for its new running phase. Individual provider and tool timeouts and
 worker leases remain independent, even with an unlimited turn budget.
 
-An expired execution deadline ends the turn as failed with a time-limit message
-and an instruction to continue with a new message. It is distinct from a user's
+The last tenth of the run time is kept for the answer: a model call that starts
+in it gets no tools and is asked to answer with what the turn has done, to say
+what is still open, and to tell the user that a new message continues the task.
+With the default of 30 minutes, tool use ends after 27 minutes. The turn then
+completes normally with that answer.
+
+An expired execution deadline still ends the turn as failed with a time-limit
+message and an instruction to continue with a new message, for example when a
+single model or tool call outlasts the reserve. It is distinct from a user's
 Stop action. Continuing does not automatically replay uncertain external calls.
+
+### Loops within a turn
+
+A chat turn, including one that runs scheduled or in the background, watches
+for two patterns that rarely lead anywhere:
+
+- the same tool called with the same input fails twice;
+- six calls in a row to `search_tools`, `list_apps`, or `load_tools` without a
+  working step that completed.
+
+The first time a pattern appears, the next model call gets a short hint to
+change its approach or tell the user what blocks it. When the same pattern
+appears again after its hint, the next model call gets no tools and is asked
+to answer with what the turn has, say what blocked it, and what the user can
+do. The turn then completes with that answer. A rejected approval is the
+user's decision and does not count as a failure.
+
+The counts belong to the turn. When a turn resumes after an approval or on
+another worker, its finished calls count again, but a hint given before is
+not remembered, so the pattern gets one more hint. A steering message that
+arrives while the final answer streams starts these checks again: the turn
+continues with tools unless it is in the last tenth of its run time.
+The model profile's `maxToolRounds` ends tool use the same way; see
+[Models and providers](/en/docs/ai/models-and-providers). Each hint logs the
+warning `AI turn got a loop hint` and each switch to the final answer logs
+`AI turn answers without further tools`, both under `ai:executor` with the
+conversation and turn IDs.
 
 ### Transient provider failures
 

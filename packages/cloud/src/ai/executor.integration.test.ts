@@ -1375,4 +1375,122 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+
+  test("a call that keeps failing with the same input gets one hint, then the turn answers without tools", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: { messages: { role: string; content: unknown }[]; tools?: unknown[] }[] = [];
+    try {
+      completionQueue = [
+        toolCallCompletion("call-1", "missing_tool", { path: "/report.csv" }),
+        toolCallCompletion("call-2", "missing_tool", { path: "/report.csv" }),
+        toolCallCompletion("call-3", "missing_tool", { path: "/report.csv" }),
+        textCompletion("The report tool is not available here."),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body as (typeof requests)[number]);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Summarize the report",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Summarize the report"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "loop-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("loop-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+
+      const system = requests.map((request) => JSON.stringify(request.messages.find((message) => message.role === "system")));
+      expect(requests).toHaveLength(4);
+      expect(system[1]).not.toContain("# Turn check");
+      expect(system[2]).toContain("These calls failed twice with the same input: missing_tool.");
+      expect(requests[2]?.tools?.length).toBeGreaterThan(0);
+      expect(requests[3]?.tools ?? []).toEqual([]);
+      expect(system[3]).toContain("kept repeating steps that made no progress");
+      expect(system[3]).not.toContain("# Turn check");
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: "completed",
+        error: null,
+      });
+      const last = (await aiConversations.listMessages({ conversationId: conversation.id })).at(-1)?.message;
+      expect(last?.role === "assistant" ? last.content : []).toContainEqual({
+        type: "text",
+        text: "The report tool is not available here.",
+      });
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a turn in the last tenth of its run time limit answers without tools instead of timing out", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: { messages: { role: string; content: unknown }[]; tools?: unknown[] }[] = [];
+    try {
+      nextCompletion = textCompletion("Here is what I found so far.");
+      onCompletionRequest = (body) => {
+        requests.push(body as (typeof requests)[number]);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Continue the analysis",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Continue the analysis"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "deadline-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60 * 60_000,
+      });
+      // A recovered lease keeps the original deadline: here five of 60 minutes remain.
+      const late = { ...claim!, turn: { ...claim!.turn, deadline: new Date(Date.now() + 5 * 60_000).toISOString() } };
+      await createExecutor("deadline-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: late,
+        signal: new AbortController().signal,
+      });
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.tools ?? []).toEqual([]);
+      expect(JSON.stringify(requests[0]?.messages[0])).toContain("The run time limit of this turn is almost reached");
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: "completed",
+        error: null,
+      });
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
 });

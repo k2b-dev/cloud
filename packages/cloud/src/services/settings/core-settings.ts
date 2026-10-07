@@ -292,7 +292,7 @@ export const CORE_SETTINGS = {
     default: 30,
     min: 0,
     description:
-      "Maximum running time per AI turn. Zero or an empty field disables this limit. Existing turns keep their original budget; request and tool timeouts still apply.",
+      "Maximum running time per AI turn. In the last tenth, the Assistant stops using tools and answers. Zero or an empty field disables this limit. Existing turns keep their original budget; request and tool timeouts still apply.",
   },
   "ai.max_tool_result_chars": {
     kind: "number",

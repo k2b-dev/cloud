@@ -10,6 +10,23 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Assistant turns end loops and long runs with an answer
+
+A chat turn, including scheduled and background ones, now stops using tools
+and answers in three cases where it used to go on until it failed:
+
+- In the last tenth of the run time limit (`ai.turn_timeout_minutes`, default
+  30), so with the default after 27 minutes. A turn that used to fail with
+  "Run time limit reached" now usually completes with what it has done and
+  what is still open.
+- When the same tool call fails twice with the same input, or after six tool
+  searches in a row without a completed step, the model first gets a hint;
+  when the pattern repeats, the turn answers without tools.
+
+No setting changes. Operators who want turns to keep their full run time for
+tools raise `ai.turn_timeout_minutes`. See
+[Loops within a turn](/en/docs/ai/chat-runtime-and-streaming#loops-within-a-turn).
+
 ## Code tool failures are tool errors, and App action inputs are objects
 
 Assistant's server-run code tools now report a call that does not complete as a
