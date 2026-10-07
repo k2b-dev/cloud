@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  attachmentMediaType,
   CalendarQuerySchema,
   CreateItemSchema,
   CreateSpaceSchema,
   CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
   ItemFilterSchema,
+  isPlayableVideoType,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
   MoveItemSchema,
   OverlapQuerySchema,
@@ -162,5 +164,23 @@ describe("Spaces wormhole contracts", () => {
     expect(ReorderColumnsSchema.safeParse({ columnIds: [...fullBoard, columnId] }).success).toBe(false);
     expect(ReorderColumnsSchema.safeParse({ columnIds: ["stalled"] }).success).toBe(false);
     expect(ReorderWormholesSchema.safeParse({ wormholeIds: Array.from({ length: 101 }, () => wormholeId) }).success).toBe(false);
+  });
+});
+
+describe("attachment media types", () => {
+  test("a video without a declared type gets the type of its extension", () => {
+    expect(attachmentMediaType("Reel.MOV", "")).toBe("video/quicktime");
+    expect(attachmentMediaType("Reel.m4v", "application/octet-stream")).toBe("video/x-m4v");
+    expect(attachmentMediaType("Reel.webm", "video/webm")).toBe("video/webm");
+    expect(attachmentMediaType("notes.pdf", "application/pdf")).toBe("application/pdf");
+    expect(isPlayableVideoType("video/mp4; codecs=avc1")).toBe(true);
+    expect(isPlayableVideoType("video/x-matroska")).toBe(false);
+  });
+
+  test("an extension named like an object member stays an unknown file", () => {
+    for (const extension of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(attachmentMediaType(`notes.${extension}`, "application/octet-stream")).toBe("application/octet-stream");
+      expect(attachmentMediaType(`notes.${extension}`, "")).toBe("application/octet-stream");
+    }
   });
 });

@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
+import { spacesService } from "../service";
 import spacesApi from ".";
 
 const suite = databaseSuite();
@@ -84,6 +85,34 @@ suite("Spaces task attachment content", () => {
       const outside = await content(`bytes=${reel.length}-`);
       expect(outside.status).toBe(416);
       expect(outside.headers.get("content-range")).toBe(`bytes */${reel.length}`);
+      // A header that is not one byte range is ignored, so the whole file answers.
+      for (const ignored of ["bytes=0-1,5-6", "items=0-1"]) {
+        const whole = await content(ignored);
+        expect(whole.status).toBe(200);
+        expect(new Uint8Array(await whole.arrayBuffer())).toEqual(reel);
+      }
+
+      // Larger than the slices the content leaves the database in: an open range streams every byte in order, and a
+      // range across a slice boundary gets exactly its bytes.
+      const large = new Uint8Array(600 * 1024).map((_, index) => (index * 7) % 251);
+      const longForm = new FormData();
+      longForm.set("file", new File([large], "Long take.webm", { type: "video/webm" }));
+      const longTake = (await (await spacesApi.request(base, { method: "POST", headers: { authorization }, body: longForm })).json()) as {
+        id: string;
+      };
+      const readLong = (range: string) => spacesApi.request(`${base}/${longTake.id}/content`, { headers: { authorization, range } });
+      const open = await readLong("bytes=0-");
+      expect(open.status).toBe(206);
+      expect(open.headers.get("content-range")).toBe(`bytes 0-${large.length - 1}/${large.length}`);
+      expect(new Uint8Array(await open.arrayBuffer())).toEqual(large);
+      // A player that stops reading after its first bytes cost one slice from the database, not the rest it asked for.
+      const stream = await spacesService.item.attachments.streamContent({ shortId: longTake.id, start: 0, endExclusive: large.length });
+      const reader = stream!.getReader();
+      expect((await reader.read()).value?.byteLength).toBe(256 * 1024);
+      await reader.cancel();
+      const across = await readLong("bytes=262000-524500");
+      expect(across.headers.get("content-length")).toBe(String(524501 - 262000));
+      expect(new Uint8Array(await across.arrayBuffer())).toEqual(large.subarray(262000, 524501));
 
       const download = await content(undefined, "?download=true");
       expect(download.headers.get("content-type")).toBe("application/octet-stream");

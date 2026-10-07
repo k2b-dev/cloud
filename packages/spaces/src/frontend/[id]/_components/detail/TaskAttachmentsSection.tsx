@@ -73,9 +73,13 @@ export default function TaskAttachmentsSection(props: {
     return img.toFile(`${base}.webp`, "webp", 0.85)(resized);
   };
 
-  /** A video uploads as it is, without transcoding, within the attachment size limit; an image is downscaled first. */
+  /**
+   * A video uploads as it is, without transcoding, within the attachment size limit; an image is downscaled first. The
+   * picker offers every video, so one that cannot play here says so instead of failing as an image.
+   */
   const prepareUpload = async (source: File): Promise<File> => {
     const type = attachmentMediaType(source.name, source.type);
+    if (type.startsWith("video/") && !isPlayableVideoType(type)) throw new Error(t.videoTypeUnsupported);
     if (!isPlayableVideoType(type)) return transformImage(source);
     if (source.size > MAX_TASK_ATTACHMENT_SIZE_BYTES)
       throw new Error(t.videoTooLarge({ megabytes: Math.round(MAX_TASK_ATTACHMENT_SIZE_BYTES / 1024 / 1024) }));

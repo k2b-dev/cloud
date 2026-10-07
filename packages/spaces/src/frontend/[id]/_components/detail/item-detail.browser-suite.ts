@@ -75,12 +75,22 @@ const dependency = (id: string, title: string, completedAt: string | null = null
 /** A 9:16 reel and an image attached to the task, served with range support like the real content route. */
 const media = {
   Reel01: { bytes: readFileSync(resolve(import.meta.dir, "../../../../../../ui/test/media/portrait-180x320.webm")), type: "video/webm" },
+  Broken: { bytes: Buffer.from("This is no video at all."), type: "video/quicktime" },
 };
 const reelAttachment: SpaceItemAttachment = {
   id: "Reel01",
   filename: "Reel for approval.webm",
   mimeType: "video/webm",
   sizeBytes: media.Reel01.bytes.length,
+  kind: "file",
+  createdAt: now,
+};
+/** A video attachment that no browser can play. */
+const brokenAttachment: SpaceItemAttachment = {
+  id: "Broken",
+  filename: "Broken.mov",
+  mimeType: "video/quicktime",
+  sizeBytes: media.Broken.bytes.length,
   kind: "file",
   createdAt: now,
 };
@@ -499,6 +509,40 @@ describe("Spaces item detail in a browser", () => {
         expect(rangeRequests.some((range) => range !== null)).toBe(true);
         await page.keyboard.press("Escape");
         await page.waitForSelector(".spaces-video-dialog", { state: "detached" });
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+
+  test("a video the browser cannot play announces its fallback and keeps focus in the dialog", async () => {
+    const page = await open(desktop, { locale: "en", attachments: [brokenAttachment] });
+    try {
+      await page.getByRole("button", { name: "Play Broken.mov" }).click();
+      await page.waitForSelector(".spaces-video-dialog .k2b-video-player__fallback[role=alert]");
+      expect(await page.locator(".spaces-video-dialog .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
+      // Focus started on the video, which the fallback replaced; it must not drop to the page behind the dialog.
+      expect(await page.evaluate(() => document.querySelector(".spaces-video-dialog")!.contains(document.activeElement))).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  for (const [locale, message] of [
+    ["en", "Could not add clip.mkv: This video format cannot be added. Use MP4, MOV, M4V, WebM, or OGV."],
+    [
+      "de",
+      "clip.mkv konnte nicht hinzugefügt werden: Dieses Videoformat kann nicht hinzugefügt werden. Verwende MP4, MOV, M4V, WebM oder OGV.",
+    ],
+  ] as const)
+    test(`${locale}: a video in a format Spaces cannot play says so instead of failing as an image`, async () => {
+      const page = await open(desktop, { locale });
+      try {
+        writes.length = 0;
+        const chooser = page.waitForEvent("filechooser");
+        await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
+        await (await chooser).setFiles({ name: "clip.mkv", mimeType: "video/x-matroska", buffer: Buffer.from("A Matroska video") });
+        await page.locator(".k2b-toast", { hasText: message }).waitFor();
+        expect(writes.filter((write) => write.path.endsWith("/attachments"))).toEqual([]);
       } finally {
         await page.context().close();
       }

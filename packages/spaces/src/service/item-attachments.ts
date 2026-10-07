@@ -106,14 +106,53 @@ export const getByShortId = async (params: { shortId: string }): Promise<StoredS
   return row ? { ...mapAttachment(row), itemId: row.item_id } : null;
 };
 
-/** Reads only the requested bytes, so a video that plays by range never loads whole for every request. */
-export const readContent = async (params: { shortId: string; start: number; length: number }): Promise<Uint8Array<ArrayBuffer> | null> => {
+/**
+ * Content leaves the database in slices of this size, read while the client keeps reading. A client that stops early,
+ * as a video tile does once it has its first frame, costs one or two slices instead of the whole attachment, and an
+ * answer holds no more than this in memory.
+ */
+const CONTENT_SLICE_BYTES = 256 * 1024;
+
+const readSlice = async (shortId: string, start: number, length: number): Promise<Uint8Array<ArrayBuffer> | null> => {
   const [row] = await sql<{ content: Uint8Array }[]>`
-    SELECT substring(content FROM ${params.start + 1}::int FOR ${params.length}::int) AS content
+    SELECT substring(content FROM ${start + 1}::int FOR ${length}::int) AS content
     FROM spaces.item_attachments
-    WHERE short_id = ${params.shortId}
+    WHERE short_id = ${shortId}
   `;
   return row ? new Uint8Array(row.content) : null;
+};
+
+/**
+ * Streams the content from `start` to `endExclusive` in slices; null when the attachment does not exist. An
+ * attachment deleted while it streams ends the stream with an error, so the client sees a broken answer instead of a
+ * short one.
+ */
+export const streamContent = async (params: {
+  shortId: string;
+  start: number;
+  endExclusive: number;
+}): Promise<ReadableStream<Uint8Array<ArrayBuffer>> | null> => {
+  const slice = (offset: number) => readSlice(params.shortId, offset, Math.min(CONTENT_SLICE_BYTES, params.endExclusive - offset));
+  const first = await slice(params.start);
+  if (!first) return null;
+  let offset = params.start + first.byteLength;
+  return new ReadableStream<Uint8Array<ArrayBuffer>>(
+    {
+      start(controller) {
+        if (first.byteLength > 0) controller.enqueue(first);
+        if (offset >= params.endExclusive) controller.close();
+      },
+      async pull(controller) {
+        const next = await slice(offset);
+        if (!next?.byteLength) return controller.error(new Error("The attachment was deleted while it was read"));
+        offset += next.byteLength;
+        controller.enqueue(next);
+        if (offset >= params.endExclusive) controller.close();
+      },
+    },
+    // Read the next slice only once the client has taken the last one.
+    { highWaterMark: 0 },
+  );
 };
 
 export const remove = async (params: { shortId: string; itemId: string; spaceId: string }): Promise<MutationResult<void>> => {

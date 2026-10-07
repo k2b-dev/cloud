@@ -1070,14 +1070,12 @@ const app = new Hono<AuthContext>()
         headers.set("Content-Range", `bytes */${attachment.sizeBytes}`);
         return new Response(null, { status: 416, headers });
       }
+      // A player opens with an open range, `bytes=0-`, and stops reading once it has what it needs, so the content
+      // streams in slices instead of loading the whole rest first.
       const selected = range ?? { start: 0, endExclusive: attachment.sizeBytes };
-      const content = await spacesService.item.attachments.readContent({
-        shortId,
-        start: selected.start,
-        length: selected.endExclusive - selected.start,
-      });
+      const content = await spacesService.item.attachments.streamContent({ shortId, ...selected });
       if (!content) return respond(c, fail(err.notFound("Attachment")));
-      headers.set("Content-Length", String(content.byteLength));
+      headers.set("Content-Length", String(selected.endExclusive - selected.start));
       if (range) headers.set("Content-Range", `bytes ${range.start}-${range.endExclusive - 1}/${attachment.sizeBytes}`);
       return new Response(content, { status: range ? 206 : 200, headers });
     },

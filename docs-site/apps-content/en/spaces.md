@@ -110,13 +110,17 @@ them.
 Task attachments hold images and videos, at most 20 per task and 10 MB per
 file. **Add image or video** downscales large images before uploading them and
 uploads videos (`.mp4`, `.m4v`, `.mov`, `.webm`, `.ogv`) unchanged, without
-transcoding. A video tile shows its first frame; selecting it plays the video in
-a dialog with the browser's own controls and **Download**. The dialog fits the
-whole picture, so a vertical reel shows at full height, and fills the screen on
-a phone. Whether a video plays depends on its codec and the browser; one that
-cannot play offers its download instead. The content route answers range
-requests with `206 Partial Content`, which browsers need to play and seek, and
-serves images and playable videos inline. Every other file type downloads.
+transcoding. A video in another format, such as MKV, is not added, and Spaces
+names the formats it accepts. A video tile shows its first frame; selecting it
+plays the video in a dialog with the browser's own controls and **Download**.
+The dialog fits the whole picture, so a vertical reel shows at full height, and
+fills the screen on a phone. Whether a video plays depends on its codec and the
+browser; one that cannot play offers its download instead. The content route
+answers a single byte range with `206 Partial Content`, which browsers need to
+play and seek, and ignores any other `Range` header by answering the whole
+file. It streams the content from the database in slices, so a player that
+stops after the first frame does not make Spaces read the rest. Images and
+playable videos are served inline; every other file type downloads.
 
 In list and table views, search updates results without reloading the page or
 moving focus out of the search field. The URL follows the displayed results,
