@@ -144,8 +144,9 @@ instead of parsing a shortened preview. Pending input downloads pause startup
 and readiness watchdogs, but still count toward the tool call's 45-second outer
 budget. Capability approval waits pause that outer budget. At host capacity,
 finished one-offs without UI, exports, pending requests, or running jobs are
-reclaimed automatically. Invalid tool arguments return `kind: "input"` before
-source execution.
+reclaimed automatically. Invalid tool arguments fail the command before source
+execution. A started call that does not complete fails the command with
+`{failed: true, error, guidance?}`.
 
 For long work, use `work.run`, cooperative checkpoints, and progress.
 `code_inspect` accepts `waitMs` up to 30000. After explicit steps, the CLI keeps

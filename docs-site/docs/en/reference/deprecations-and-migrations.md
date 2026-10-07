@@ -10,6 +10,47 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Code tool failures are tool errors, and App action inputs are objects
+
+Assistant's server-run code tools now report a call that does not complete as a
+tool error, and the chat shows that step as failed. The code host returns such a
+call as `CodeToolFailure` (`{failed: true, error, guidance?}`, exported from
+`@k2b/cloud/ai/browser`). The earlier `{error}` results and the `kind: "input"`,
+`kind: "host"`, and `retryable` fields are gone. A run whose code fails still
+returns its snapshot with `status: "error"`. `cld assistant code run` and
+`cld assistant code action` fail as before when a started call does not
+complete; the error they report is now the `CodeToolFailure` object.
+
+`code_action` takes its `input` as a JSON object and defaults to `{}`. JSON
+text, numbers, arrays, and `null` are rejected, and a value that does not match
+the action's schema returns `ACTION_INPUT_INVALID` naming each rejected field.
+Publication rejects an action whose `inputSchema` does not have
+`"type": "object"`; saved revisions keep compiling.
+
+Studio Apps published earlier can still list an action with a scalar or array
+`inputSchema`. That action can no longer be called: its author must change the
+schema to an object, read the value from that object in the handler, and
+publish again. To list the current publications whose action input is not an
+object schema, run:
+
+```sql
+SELECT artifact.short_id, artifact.published_title, action->>'name' AS action
+FROM assistant.artifacts artifact
+JOIN assistant.artifact_revisions revision
+  ON revision.artifact_id = artifact.id AND revision.revision = artifact.published_revision
+CROSS JOIN LATERAL jsonb_array_elements(revision.source->'files') AS file
+CROSS JOIN LATERAL jsonb_array_elements((file->>'content')::jsonb->'actions') AS action
+WHERE file->>'path' = 'app.actions.json'
+  AND action->'inputSchema'->>'type' IS DISTINCT FROM 'object';
+```
+
+An action without a `type` in its input schema stays callable with an object,
+but its App cannot be published again until the schema says `"type": "object"`.
+
+Update Core and Assistant together. While their versions differ, and when a
+turn resumes a call that an earlier release completed, a failed call can still
+reach the agent as a successful result, as in earlier releases.
+
 ## Conversation streams announce provider retries
 
 The conversation stream now sends a `provider_retry` event while a model call

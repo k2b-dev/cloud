@@ -561,7 +561,7 @@ test("finance exports and resource-scoped one-offs use the existing worker and m
     expect(requests.some((path) => path.endsWith("/storage/manage"))).toBe(true);
     denied = true;
     const rejected = await host.execute({ name: "code_run", callId: "denied-context", conversationId: id, turnId: id, args });
-    expect(rejected).toMatchObject({ error: "Manage required" });
+    expect(rejected).toEqual({ failed: true, error: "ACCESS_DENIED: Manage required" });
   } finally {
     await host.close();
   }
@@ -687,7 +687,10 @@ test("CLI uses UI typed controls and bounded explorer inspection", async () => {
         ],
       },
     });
-    expect(failed).toMatchObject({ failed: true });
+    expect(failed).toEqual({
+      failed: true,
+      error: expect.stringMatching(/^Step 2 of 3 failed after 1 completed step; later steps did not run\. .*Control does not exist/s),
+    });
     expect(await host.execute({ ...ids, name: "code_inspect", callId: "after-failure", args: { runId: "analytics" } })).toMatchObject({
       nodes: expect.arrayContaining([expect.objectContaining({ id: "output", value: "Count: 10" })]),
     });

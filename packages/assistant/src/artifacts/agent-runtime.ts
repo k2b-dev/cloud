@@ -295,38 +295,47 @@ export function createArtifactAgentRuntime(
       const steps = input.steps ?? [{ id: input.id, event: input.event, answer: input.answer }];
       let completedSteps = 0;
       for (const step of steps) {
-        if (!step.id) throw new Error("Interaction requires a control or modal ID");
-        const state = entry.session.snapshot();
-        if (state.modal && step.id === state.modalId) {
-          if (step.event !== undefined || step.answer === undefined)
-            throw new Error("This is a modal. Supply answer with the requested value, or null to cancel.");
-          entry.session.respond(step.answer);
-          await waitFor(entry, () => {
-            const current = entry.session.snapshot();
-            return (
-              (current.status === "waiting" && current.modalId !== state.modalId) ||
-              (!["starting", "waiting"].includes(current.status) && !current.busy)
+        try {
+          if (!step.id) throw new Error("Interaction requires a control or modal ID");
+          const state = entry.session.snapshot();
+          if (state.modal && step.id === state.modalId) {
+            if (step.event !== undefined || step.answer === undefined)
+              throw new Error("This is a modal. Supply answer with the requested value, or null to cancel.");
+            entry.session.respond(step.answer);
+            await waitFor(entry, () => {
+              const current = entry.session.snapshot();
+              return (
+                (current.status === "waiting" && current.modalId !== state.modalId) ||
+                (!["starting", "waiting"].includes(current.status) && !current.busy)
+              );
+            });
+          } else {
+            if (step.answer !== undefined)
+              throw new Error("This is a control. Supply event as an object, or omit it to activate a button.");
+            const event = AnalyticsEvent.parse(step.event ?? { type: "change", value: null });
+            let settled = false,
+              failure: unknown;
+            void entry.session.event({ id: step.id, event }).then(
+              () => {
+                settled = true;
+              },
+              (error) => {
+                failure = error;
+                settled = true;
+              },
             );
-          });
-        } else {
-          if (step.answer !== undefined) throw new Error("This is a control. Supply event as an object, or omit it to activate a button.");
-          const event = AnalyticsEvent.parse(step.event ?? { type: "change", value: null });
-          let settled = false,
-            failure: unknown;
-          void entry.session.event({ id: step.id, event }).then(
-            () => {
-              settled = true;
-            },
-            (error) => {
-              failure = error;
-              settled = true;
-            },
+            await waitFor(
+              entry,
+              () => settled || entry.session.snapshot().status === "waiting" || entry.session.snapshot().work?.status === "running",
+            );
+            if (failure) throw failure;
+          }
+        } catch (error) {
+          if (!completedSteps) throw error;
+          // The tool error replaces the snapshot, so it carries what completedSteps would have said.
+          throw new Error(
+            `Step ${completedSteps + 1} of ${steps.length} failed after ${completedSteps} completed step${completedSteps === 1 ? "" : "s"}; later steps did not run. ${error instanceof Error ? error.message : String(error)}`,
           );
-          await waitFor(
-            entry,
-            () => settled || entry.session.snapshot().status === "waiting" || entry.session.snapshot().work?.status === "running",
-          );
-          if (failure) throw failure;
         }
         completedSteps++;
         const current = entry.session.snapshot();

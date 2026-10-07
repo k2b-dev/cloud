@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ActionInputError, ArtifactCompileError, actionValidator, parseActionInput, sourceActions } from "./actions";
+import { ActionInputError, type AppAction, ArtifactCompileError, actionValidator, parseActionInput, sourceActions } from "./actions";
 import type { ArtifactSource } from "./contracts";
 import { compileArtifact, validateArtifact } from "./runtime/compile";
 
@@ -44,6 +44,19 @@ test("a rejected action input names every offending field", () => {
     'Input for double does not match its inputSchema; the action did not run. value: Invalid input: expected number, received string; input: Unrecognized key: "extra"',
   );
   expect(new ActionInputError("").code).toBe("ACTION_INPUT_INVALID");
+});
+
+test("a rejected input inside anyOf names the leaf fields of each alternative", () => {
+  const recipient: AppAction["inputSchema"] = {
+    anyOf: [
+      { type: "object", properties: { email: { type: "string" } }, required: ["email"] },
+      { type: "object", properties: { id: { type: "number" } }, required: ["id"] },
+    ],
+  };
+  const send = { ...action, name: "send", inputSchema: { type: "object", properties: { recipient }, required: ["recipient"] } };
+  expect(() => parseActionInput(send, { recipient: { email: 123 } })).toThrow(
+    "recipient: matches no alternative: [recipient.email: Invalid input: expected string, received number] or [recipient.id: Invalid input: expected number, received undefined]",
+  );
 });
 
 test("publication rejects actions whose input is not an object, while the saved source still compiles", async () => {

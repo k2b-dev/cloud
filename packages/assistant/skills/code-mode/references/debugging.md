@@ -57,9 +57,13 @@ rerun. Inspect saved data before deliberately starting a replacement run.
 The host retains temporary runs while the conversation is active and for two
 idle minutes after it finishes. Saved source and exported files remain durable.
 The server admits eight hosts; a full host pool returns an availability error.
-A call that does not complete (rejected arguments, a timeout, an unavailable
-run, a lost host) is a tool error with its reason and next step. A run whose
-code fails completes the call: its snapshot has `status: "error"` and `error`.
+A server-run call that does not complete (rejected arguments, a timeout, an
+unavailable run, a lost host) is a tool error with its reason and next step.
+A `code_interact` step that fails (an unknown control, a throwing callback) is
+a tool error too; in a batch it names the failed step, and earlier steps ran, so
+inspect the run before repeating any of them. A `code_run` or `code_action`
+whose code fails completes the call: its snapshot has `status: "error"` and
+`error`. A failed `code_open` returns `{failed: true, error}` as its result.
 
 The deadlines protect different boundaries:
 

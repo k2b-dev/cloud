@@ -10,7 +10,9 @@ Call `code_action({id,action,publishedVersion,input})` using the exact discovere
 name and publication. `input` is the JSON object itself, never JSON text, and
 must match the action's `inputSchema`; omit it for an action without inputs. A
 mismatch returns `ACTION_INPUT_INVALID` naming each rejected field, for example
-`value: Invalid input: expected number, received string`. The result is the normal
+`value: Invalid input: expected number, received string`. An older publication
+whose `inputSchema` is not an object cannot be called; tell the user that its
+App must be published again with an object schema. The result is the normal
 run snapshot: `runId`, `status`, `output` (JSON text), `outputTruncated`, `logs`,
 `files`, `work` and optional error or modal. Output is checked against the
 published output schema when execution completes. Use `code_inspect` for a

@@ -503,7 +503,11 @@ Apps declare optional actions in `app.actions.json`, saved and published with
 source. Each action has a unique `name`, `title`, `description`, relative handler
 `entry`, `inputSchema` and `outputSchema`. The handler default-exports a function
 accepting the action input, which is always a JSON object: publication rejects an
-`inputSchema` without `"type": "object"`. An action-only App needs no GUI entry.
+`inputSchema` without `"type": "object"`. An action published earlier with a
+scalar or array input cannot be called until its App is published again with an
+object schema; see
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#code-tool-failures-are-tool-errors-and-app-action-inputs-are-objects).
+An action-only App needs no GUI entry.
 Publication compiles every handler without executing source. Discovery uses
 static metadata.
 
@@ -643,7 +647,8 @@ Finished one-off runs without UI, exports, pending requests, or running jobs are
 reclaimed automatically when the host reaches its 32-run limit. Saved resources
 and retained runs require explicit stopping. Snapshot output previews are capped
 at 16,000 characters and include `outputTruncated`; use file export for complete
-results. Invalid tool arguments return `kind: "input"` before source execution.
+results. Invalid tool arguments are rejected as a tool error before source
+execution.
 
 ### Consent and resource cleanup
 
@@ -882,10 +887,17 @@ current authorization and version checks.
 
 ### Agent error recovery
 
-A code runtime call that does not complete (rejected arguments or action input,
-a timeout, an unavailable run, a lost host) reaches the agent as a tool error
-with its reason and next step, and the chat shows the step as failed. A run whose
-code fails still completes the call; its snapshot reports `status: "error"`.
+A server-run code call (every runtime tool except `code_open` and `code_secret`)
+that does not complete (rejected arguments or action input, a timeout, an
+unavailable run, a lost host) reaches the agent as a tool error with its reason
+and next step, and the chat shows the step as failed. In `code_interact`, a
+step that fails, such as an unknown control or a throwing callback, is a tool
+error too; in a batch, the error names the failed step, and earlier steps have
+run. A `code_run` or `code_action` whose code fails still completes the call;
+its snapshot reports `status: "error"`. `code_open` and `code_secret` run in the
+user's client, which cannot mark a tool error: a failed `code_open` returns
+`{failed: true, error}` as its result, and a failed `code_secret` surfaces as an
+output validation error.
 Invalid App manifests or handler code return `COMPILE_FAILED` with source
 diagnostics. File collisions return `CONFLICT`; file/storage byte limits return
 `STORAGE_FULL`. These known rejections do not imply an uncertain write. Access
