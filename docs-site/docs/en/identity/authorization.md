@@ -514,20 +514,23 @@ fit, each gets an equal share and the shorter one stays whole.
 
 ### Show who a group grant reaches
 
-A group row shows how many people currently receive access through the group:
+A group row has a “Members” toggle beside the group name. It expands a list
+below the row of the people who currently receive access through the group:
 its direct members and the members of nested groups, the same users that
-access resolution matches. Selecting the count expands the member list below
-the row, 20 people at a time; further pages load only when the viewer asks
-for them. The list pushes the rows below it down only after that selection,
-and the count replaces a plain “Members” label on the same line, so loading
-it moves nothing. The editor needs no extra props or server routes for this.
+access resolution matches. The list starts with how many people that is and
+shows 20 of them at a time; further pages load only when the viewer asks for
+them. The editor needs no extra props or server routes for this.
+
+The first page loads when the row appears, so the list usually opens
+complete. The row itself never changes when it arrives: the toggle keeps its
+label and stays whole on narrow screens, and the group name truncates
+instead. Only the viewer's own selection pushes the rows below down.
 
 The editor reads members from the Accounts entity search in the browser, with
 the viewer's own [directory visibility](#discover-principals-safely). Full
 user accounts see the count and the names. Guest accounts are refused member
-lists by the server, so their rows show no count and the expanded list says
-that their account cannot see the members. Applications cannot widen this
-from the client.
+lists by the server, so the expanded list says that their account cannot see
+the members. Applications cannot widen this from the client.
 
 For a directory (FreeIPA) group, the expanded list also says that local
 accounts, such as guests, cannot be members and need a direct grant. Cloud

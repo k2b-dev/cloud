@@ -30,13 +30,15 @@ export const accessMessages = i18n.define({
         `The last entry with “${level}” access can't be lowered or removed. Give another person or group “${level}” access first.`,
       lastManagerOption: ({ level }: { level: string }) => `Available once another person or group has “${level}” access`,
       groupMembers: "Members",
-      groupMemberCount: ({ count }: { count: number }) => (count === 1 ? "1 member" : `${count.toLocaleString("en")} members`),
-      groupMemberCountOf: ({ count, name }: { count: number; name: string }) =>
-        `${count === 1 ? "1 member" : `${count.toLocaleString("en")} members`} of ${name}`,
       groupMembersOf: ({ name }: { name: string }) => `Members of ${name}`,
+      groupMemberCount: ({ count }: { count: number }) =>
+        count === 0
+          ? "No one receives access through this group right now."
+          : count === 1
+            ? "1 person receives access through this group right now."
+            : `${count.toLocaleString("en")} people receive access through this group right now.`,
       groupMembersLoading: "Loading members…",
       groupMembersHidden: "Your account can't see who belongs to this group.",
-      groupMembersEmpty: "No one receives access through this group right now.",
       groupMembersFailed: "Members couldn't be loaded.",
       retry: "Try again",
       showMoreMembers: ({ count }: { count: number }) => `Show ${count.toLocaleString("en")} more`,
@@ -106,12 +108,15 @@ export const accessMessages = i18n.define({
         `Der letzte Eintrag mit Zugriff „${level}“ kann nicht herabgestuft oder entfernt werden. Gib zuerst einer anderen Person oder Gruppe Zugriff „${level}“.`,
       lastManagerOption: ({ level }) => `Möglich, sobald eine weitere Person oder Gruppe Zugriff „${level}“ hat`,
       groupMembers: "Mitglieder",
-      groupMemberCount: ({ count }) => (count === 1 ? "1 Mitglied" : `${count.toLocaleString("de")} Mitglieder`),
-      groupMemberCountOf: ({ count, name }) => `${count === 1 ? "1 Mitglied" : `${count.toLocaleString("de")} Mitglieder`} von ${name}`,
       groupMembersOf: ({ name }) => `Mitglieder von ${name}`,
+      groupMemberCount: ({ count }) =>
+        count === 0
+          ? "Über diese Gruppe erhält gerade niemand Zugriff."
+          : count === 1
+            ? "Über diese Gruppe erhält gerade 1 Person Zugriff."
+            : `Über diese Gruppe erhalten gerade ${count.toLocaleString("de")} Personen Zugriff.`,
       groupMembersLoading: "Mitglieder werden geladen…",
       groupMembersHidden: "Dein Konto kann nicht sehen, wer zu dieser Gruppe gehört.",
-      groupMembersEmpty: "Über diese Gruppe erhält gerade niemand Zugriff.",
       groupMembersFailed: "Die Mitglieder konnten nicht geladen werden.",
       retry: "Erneut versuchen",
       showMoreMembers: ({ count }) => `${count.toLocaleString("de")} weitere anzeigen`,

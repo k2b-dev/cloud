@@ -156,8 +156,9 @@ const getPrincipalIcon = (entry: AccessEntry, t: ReturnType<typeof accessMessage
 export default function PermissionEditor(props: PermissionEditorProps) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  // A store keeps each row's identity across level changes, so an expanded member list stays open.
-  const [entries, setEntries] = createStore<AccessEntry[]>([...props.initialEntries]);
+  // A store keeps each row's identity across level changes, so an expanded member list stays open. It holds
+  // copies: store writes go into the objects themselves, and the caller's entries are not the editor's to change.
+  const [entries, setEntries] = createStore<AccessEntry[]>(props.initialEntries.map((entry) => ({ ...entry })));
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
@@ -181,7 +182,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       display: { displayName: string; serviceAccountKind?: ServiceAccountKind };
     }) => props.grantAccess(data.principal, data.permission, data.display),
     onSuccess: (newEntry) => {
-      setEntries(entries.length, newEntry as AccessEntry);
+      setEntries(entries.length, { ...newEntry });
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -336,8 +337,12 @@ function AccessEntryRow(props: {
         </Show>
 
         {/* Display name. Name and label share one line so every row keeps its height on phones:
-          when both do not fit, each gets an equal share and the shorter one stays whole. */}
-        <div class="grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1">
+          when both do not fit, each gets an equal share and the shorter one stays whole. A group's
+          members toggle always stays whole; the name takes the rest. */}
+        <div
+          class="grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1"
+          classList={{ "grid-cols-[minmax(0,max-content)_max-content]": props.coverage !== undefined }}
+        >
           <span class="truncate text-sm">{displayName()}</span>
           <Show when={props.entry.principal.type === "public"}>
             <span class="truncate text-xs text-dimmed">({t().anyoneWithLink})</span>

@@ -92,6 +92,7 @@ describe("PermissionEditor service accounts", () => {
       const rowOf = (name: string) =>
         Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name));
       const granted: { principal: Principal; kind?: ServiceAccountKind }[] = [];
+      const returned: AccessEntry[] = [];
       const dispose = render(
         () => (
           <PermissionEditor
@@ -101,7 +102,9 @@ describe("PermissionEditor service accounts", () => {
             // A deferred draft builds its entry from the display metadata the picker hands over.
             grantAccess={async (principal, permission, display) => {
               granted.push({ principal, kind: display?.serviceAccountKind });
-              return { id: "access-new", principal, permission, createdAt: "2026-09-30T00:00:00.000Z", ...display };
+              const entry: AccessEntry = { id: "access-new", principal, permission, createdAt: "2026-09-30T00:00:00.000Z", ...display };
+              returned.push(entry);
+              return entry;
             }}
             updateAccess={async () => {}}
             revokeAccess={async () => {}}
@@ -140,6 +143,14 @@ describe("PermissionEditor service accounts", () => {
         const added = rowOf("Found agent")!;
         expect(added.querySelector("i.ti-robot")).not.toBeNull();
         expect(added.textContent).toContain(`(${labels[locale].agent})`);
+
+        // The editor changes its own copy; the entry the caller returned stays as the caller made it.
+        const edit = locale === "de" ? "Bearbeiten" : "Edit";
+        Array.from(added.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+          .find((item) => item.textContent?.startsWith(edit))!
+          .click();
+        await waitFor(() => rowOf("Found agent")?.textContent?.includes(edit) === true, "the new level");
+        expect(returned.map((entry) => entry.permission)).toEqual(["read"]);
       } finally {
         dispose();
         globalThis.fetch = originalFetch;
@@ -237,20 +248,21 @@ describe("PermissionEditor last manager", () => {
     const { default: PermissionEditor } = await import("./PermissionEditor");
     delegateEvents(["click"]);
     const updates: { accessId: string; permission: string }[] = [];
+    const initialEntries: AccessEntry[] = [
+      grant("qdt", { type: "user", userId: "user-qdt" }, "admin", "Quentin Dorn"),
+      grant("lym", { type: "user", userId: "user-lym" }, "read", "Lya Meyer"),
+      // A resource-bound key never stands in for the last person who can manage.
+      {
+        ...grant("key", { type: "service_account", serviceAccountId: "key" }, "admin", "Import key"),
+        serviceAccountKind: "resource_bound",
+      },
+      // The server's English audience name gives way to the localized label.
+      grant("all", { type: "authenticated" }, "read", "All users (incl. guests)"),
+    ];
     const dispose = render(
       () => (
         <PermissionEditor
-          initialEntries={[
-            grant("qdt", { type: "user", userId: "user-qdt" }, "admin", "Quentin Dorn"),
-            grant("lym", { type: "user", userId: "user-lym" }, "read", "Lya Meyer"),
-            // A resource-bound key never stands in for the last person who can manage.
-            {
-              ...grant("key", { type: "service_account", serviceAccountId: "key" }, "admin", "Import key"),
-              serviceAccountKind: "resource_bound",
-            },
-            // The server's English audience name gives way to the localized label.
-            grant("all", { type: "authenticated" }, "read", "All users (incl. guests)"),
-          ]}
+          initialEntries={initialEntries}
           allowServiceAccounts
           grantAccess={async () => {
             throw new Error("Not used by this test.");
@@ -295,6 +307,8 @@ describe("PermissionEditor last manager", () => {
       expect(removeButton("Quentin Dorn").hasAttribute("aria-description")).toBe(false);
       expect(updates).toEqual([{ accessId: "lym", permission: "admin" }]);
       expect(removeButton("Lya Meyer").disabled).toBe(false);
+      // The caller's entries keep what was stored; the editor changed only its own copy.
+      expect(initialEntries.map((entry) => entry.permission)).toEqual(["admin", "read", "admin", "read"]);
     } finally {
       dispose();
       dom.cleanup();
@@ -322,6 +336,34 @@ describe("PermissionEditor group coverage", () => {
   }
 
   const groupId = "33333333-3333-4333-8333-333333333333";
+  const directoryGroup = {
+    items: [
+      {
+        kind: "group",
+        group: { id: groupId, provider: "ipa", name: "venue-crew", description: null, gidnumber: null, personalOwner: null },
+      },
+    ],
+    pagination: { page: 1, per_page: 1, total: 1, total_pages: 1, has_next: false },
+  };
+  /** Answers member pages from `members`; `fail` decides which page requests fail. */
+  const memberPages =
+    (members: ReturnType<typeof directoryUser>[], fail: (page: number) => boolean = () => false) =>
+    (url: URL) => {
+      if (url.searchParams.has("group_ids")) return Response.json(directoryGroup);
+      const page = Number(url.searchParams.get("page"));
+      const perPage = Number(url.searchParams.get("per_page"));
+      if (fail(page)) return Response.json({ code: "INTERNAL", message: "Unavailable" }, { status: 500 });
+      return Response.json({
+        items: members.slice((page - 1) * perPage, page * perPage).map((user) => ({ kind: "user", user, relation: { direct: true } })),
+        pagination: {
+          page,
+          per_page: perPage,
+          total: members.length,
+          total_pages: Math.ceil(members.length / perPage),
+          has_next: page * perPage < members.length,
+        },
+      });
+    };
   const renderGroup = async (dom: DomTestHarness, respond: (url: URL) => Response) => {
     const requests: URL[] = [];
     const originalFetch = globalThis.fetch;
@@ -353,11 +395,17 @@ describe("PermissionEditor group coverage", () => {
     );
     // The level menu trigger also controls a popup; the member toggle does not open one.
     const toggle = () => dom.root.querySelector<HTMLButtonElement>("button[aria-controls]:not([aria-haspopup])")!;
+    const groupRow = () => toggle().closest<HTMLElement>(".group\\/access-row")!;
     const panel = () => dom.document.getElementById(toggle().getAttribute("aria-controls")!)!;
+    const button = (label: string) => Array.from(panel().querySelectorAll("button")).find((element) => element.textContent === label);
     return {
       requests,
+      groupRow,
+      // Captured before any request can answer: the row as it first renders.
+      initialRow: groupRow().outerHTML,
       toggle,
       panel,
+      button,
       done: () => {
         dispose();
         globalThis.fetch = originalFetch;
@@ -365,31 +413,14 @@ describe("PermissionEditor group coverage", () => {
     };
   };
 
-  test("counts the people a group grant reaches and lists them page by page on request", async () => {
+  test("lists the people a group grant reaches page by page, without changing the row", async () => {
     const dom = createDomTestHarness();
     installPopoverApi(dom);
     dom.document.documentElement.lang = "en";
-    const members = Array.from({ length: 23 }, (_, index) => directoryUser(index + 1));
-    const view = await renderGroup(dom, (url) => {
-      if (url.searchParams.has("group_ids"))
-        return Response.json({
-          items: [
-            {
-              kind: "group",
-              group: { id: groupId, provider: "ipa", name: "venue-crew", description: null, gidnumber: null, personalOwner: null },
-            },
-          ],
-          pagination: { page: 1, per_page: 1, total: 1, total_pages: 1, has_next: false },
-        });
-      const page = Number(url.searchParams.get("page"));
-      const perPage = Number(url.searchParams.get("per_page"));
-      return Response.json({
-        items: members.slice((page - 1) * perPage, page * perPage).map((user) => ({ kind: "user", user, relation: { direct: true } })),
-        pagination: { page, per_page: perPage, total: members.length, total_pages: 2, has_next: page * perPage < members.length },
-      });
-    });
+    const view = await renderGroup(dom, memberPages(Array.from({ length: 23 }, (_, index) => directoryUser(index + 1))));
     try {
-      await waitFor(() => view.toggle().textContent === "23 members", "the member count");
+      expect(view.panel().textContent).toContain("Loading members…");
+      await waitFor(() => view.panel().querySelectorAll("li").length === 20, "the first page");
       // Coverage follows access resolution: direct and nested members, users only.
       const memberRequest = view.requests.find((url) => url.searchParams.has("member_of_group_id"))!;
       expect(Object.fromEntries(memberRequest.searchParams)).toEqual({
@@ -399,36 +430,81 @@ describe("PermissionEditor group coverage", () => {
         page: "1",
         per_page: "20",
       });
-      expect(view.toggle().getAttribute("aria-label")).toBe("23 members of venue-crew");
+      // Loading changes nothing in the row, so nothing in it can move.
+      expect(view.groupRow().outerHTML).toBe(view.initialRow);
+      expect(view.toggle().textContent).toBe("Members");
+      expect(view.toggle().getAttribute("aria-label")).toBe("Members of venue-crew");
       expect(view.toggle().getAttribute("aria-expanded")).toBe("false");
       expect(view.panel().hidden).toBe(true);
 
       view.toggle().click();
       expect(view.toggle().getAttribute("aria-expanded")).toBe("true");
       expect(view.panel().hidden).toBe(false);
-      expect(view.panel().textContent).toContain("Local accounts such as guests can't be members");
+      // The count leads the list, then the directory hint.
+      expect(Array.from(view.panel().children, (child) => child.textContent)).toEqual([
+        "23 people receive access through this group right now.",
+        "This group comes from the directory. Local accounts such as guests can't be members, so give them access directly.",
+        expect.stringContaining("Member 1"),
+        "Show 3 more",
+      ]);
       expect(view.panel().querySelector("ul")?.getAttribute("aria-label")).toBe("Members of venue-crew");
-      expect(view.panel().querySelectorAll("li")).toHaveLength(20);
 
-      const more = Array.from(view.panel().querySelectorAll("button")).find((button) => button.textContent === "Show 3 more")!;
+      const more = view.button("Show 3 more")!;
+      more.focus();
       more.click();
       await waitFor(() => view.panel().querySelectorAll("li").length === 23, "the second page");
+      // The button leaves once everything is shown; keyboard focus stays in the list.
       await waitFor(() => dom.document.activeElement === view.panel().querySelector("ul"), "focus in the completed list");
-      expect(Array.from(view.panel().querySelectorAll("button")).some((button) => button.textContent?.includes("more"))).toBe(false);
+      expect(Array.from(view.panel().querySelectorAll("button")).some((element) => element.textContent?.includes("more"))).toBe(false);
 
       // Changing the group's level keeps its row, and with it the open list.
-      const groupRow = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
-        row.textContent?.includes("venue-crew"),
-      )!;
-      Array.from(groupRow.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+      Array.from(view.groupRow().querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
         .find((item) => item.textContent?.startsWith("Edit"))!
         .click();
-      await waitFor(() => groupRow.textContent?.includes("Edit") === true, "the new level");
+      await waitFor(() => view.groupRow().textContent?.includes("Edit") === true, "the new level");
       expect(view.toggle().getAttribute("aria-expanded")).toBe("true");
       expect(view.panel().querySelectorAll("li")).toHaveLength(23);
       expect(
         view.requests.filter((url) => url.searchParams.get("page") === "1" && url.searchParams.has("member_of_group_id")),
       ).toHaveLength(1);
+    } finally {
+      view.done();
+      dom.cleanup();
+    }
+  });
+
+  test("keeps keyboard focus where the viewer can continue when a page fails", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    dom.document.documentElement.lang = "en";
+    let failures = 1;
+    const view = await renderGroup(
+      dom,
+      memberPages(
+        Array.from({ length: 45 }, (_, index) => directoryUser(index + 1)),
+        (page) => page === 3 && failures-- > 0,
+      ),
+    );
+    try {
+      await waitFor(() => view.button("Show 20 more") !== undefined, "the first page");
+      view.toggle().click();
+
+      // A page that loads keeps focus on the button for the rest.
+      view.button("Show 20 more")!.focus();
+      view.button("Show 20 more")!.click();
+      await waitFor(() => view.panel().querySelectorAll("li").length === 40, "the second page");
+      await waitFor(() => dom.document.activeElement === view.button("Show 5 more"), "focus on the next page button");
+
+      // A failed page removes the button; focus moves to the retry, and the failure is announced.
+      view.button("Show 5 more")!.click();
+      await waitFor(() => view.panel().querySelector("[role=alert]") !== null, "the failure");
+      expect(view.panel().querySelector("[role=alert]")?.textContent).toBe("Members couldn't be loaded. Try again");
+      await waitFor(() => dom.document.activeElement === view.button("Try again"), "focus on the retry");
+
+      view.button("Try again")!.click();
+      await waitFor(() => dom.document.activeElement === view.button("Show 5 more"), "focus back on the page button");
+      expect(view.panel().querySelector("[role=alert]")).toBeNull();
+      expect(view.panel().querySelectorAll("li")).toHaveLength(40);
     } finally {
       view.done();
       dom.cleanup();
@@ -445,11 +521,14 @@ describe("PermissionEditor group coverage", () => {
         : Response.json({ items: [], pagination: { page: 1, per_page: 1, total: 0, total_pages: 0, has_next: false } }),
     );
     try {
-      view.toggle().click();
       await waitFor(() => view.panel().textContent?.includes("Dein Konto kann nicht sehen") === true, "the withheld note");
+      expect(view.groupRow().outerHTML).toBe(view.initialRow);
+      view.toggle().click();
+      expect(view.panel().hidden).toBe(false);
       expect(view.toggle().textContent).toBe("Mitglieder");
       expect(view.toggle().getAttribute("aria-label")).toBe("Mitglieder von Venue-Crew");
       expect(view.panel().querySelector("ul")).toBeNull();
+      expect(view.panel().textContent).not.toContain("Über diese Gruppe");
       expect(view.panel().textContent).not.toContain("Verzeichnis");
     } finally {
       view.done();

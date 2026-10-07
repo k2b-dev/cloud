@@ -27,8 +27,8 @@ const listEntities = async (params: Record<string, string>, signal: AbortSignal)
 /**
  * Who currently receives access through a group grant: direct members and
  * members of nested groups, as access resolution counts them. Loading starts
- * when the row mounts in the browser, so the count is there before the viewer
- * expands the list.
+ * when the row mounts in the browser, so the list usually opens complete
+ * instead of growing after the viewer expands it.
  */
 export const createGroupCoverage = (groupId: string) => {
   const [open, setOpen] = createSignal(false);
@@ -64,30 +64,25 @@ export type GroupCoverage = ReturnType<typeof createGroupCoverage>;
 
 const firstPage = (coverage: GroupCoverage) => coverage.members.pages()[0];
 
-/** The member count beside the group name; it expands the member list below the row. */
+/**
+ * The members toggle beside the group name. Its label never changes, so
+ * loading the members moves nothing in the row; the count leads the list.
+ */
 export function GroupCoverageToggle(props: { coverage: GroupCoverage; groupName: string }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  const count = () => {
-    const page = firstPage(props.coverage);
-    return page?.visible ? page.total : null;
-  };
   return (
     <button
       type="button"
       aria-expanded={props.coverage.open()}
       aria-controls={props.coverage.panelId}
-      // The visible count starts the accessible name; the group name tells several group rows apart.
-      aria-label={
-        count() === null
-          ? t().groupMembersOf({ name: props.groupName })
-          : t().groupMemberCountOf({ count: count()!, name: props.groupName })
-      }
+      // The group name tells several group rows apart.
+      aria-label={t().groupMembersOf({ name: props.groupName })}
       onClick={() => props.coverage.setOpen(!props.coverage.open())}
       // The size sits on the children: the scoped button normalization resets the button's own font.
-      class="focus-ui flex min-w-0 items-center gap-0.5 self-center rounded text-dimmed transition-colors hover:text-secondary"
+      class="focus-ui flex items-center gap-0.5 self-center rounded text-dimmed transition-colors hover:text-secondary"
     >
-      <span class="truncate text-xs">{count() === null ? t().groupMembers : t().groupMemberCount({ count: count()! })}</span>
+      <span class="text-xs">{t().groupMembers}</span>
       <i
         class="ti ti-chevron-down shrink-0 text-[10px] transition-transform motion-reduce:transition-none"
         classList={{ "rotate-180": props.coverage.open() }}
@@ -106,31 +101,46 @@ export function GroupCoveragePanel(props: { coverage: GroupCoverage; groupName: 
     members()
       .pages()
       .flatMap((page) => (page.visible ? page.members : []));
-  const remaining = () => {
+  const total = () => {
     const page = firstPage(props.coverage);
-    return page?.visible ? Math.max(page.total - shown().length, 0) : 0;
+    return page?.visible ? page.total : null;
   };
+  const remaining = () => Math.max((total() ?? 0) - shown().length, 0);
+  let panel: HTMLDivElement | undefined;
   let list: HTMLUListElement | undefined;
+  let more: HTMLButtonElement | undefined;
+  let retry: HTMLButtonElement | undefined;
+  // A loading button is disabled, which drops keyboard focus, and the buttons leave on a failure or once
+  // everything is shown. Unless the viewer has moved on, focus continues where they can act next.
+  const settleFocus = () => {
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected && !panel?.contains(active)) return;
+    const next = members().error() ? retry : members().hasMore() ? more : list;
+    if (next?.isConnected) next.focus();
+  };
   const showMore = async () => {
     await members().loadMore();
-    // The button leaves once everything is shown; keep keyboard focus in the list.
-    if (!members().hasMore() && !members().error()) list?.focus();
+    settleFocus();
+  };
+  const tryAgain = async () => {
+    await members().refresh();
+    settleFocus();
   };
 
   return (
     // Indented to the name column: avatar (1.75rem) plus the row gap (0.5rem).
-    <div id={props.coverage.panelId} hidden={!props.coverage.open()} class="flex flex-col gap-2 pb-2 pl-9">
-      <Show when={firstPage(props.coverage)?.directoryGroup}>
-        <InlineGuidance icon="ti ti-info-circle">{t().directoryGroupHint}</InlineGuidance>
-      </Show>
+    <div ref={panel} id={props.coverage.panelId} hidden={!props.coverage.open()} class="flex flex-col gap-2 pb-2 pl-9">
       <Show when={members().pages().length === 0 && !members().error()}>
         <InlineGuidance loading>{t().groupMembersLoading}</InlineGuidance>
       </Show>
       <Show when={firstPage(props.coverage)?.visible === false}>
         <InlineGuidance icon="ti ti-eye-off">{t().groupMembersHidden}</InlineGuidance>
       </Show>
-      <Show when={firstPage(props.coverage)?.visible && shown().length === 0}>
-        <p class="text-sm text-dimmed">{t().groupMembersEmpty}</p>
+      <Show when={total() !== null}>
+        <p class="text-sm text-dimmed">{t().groupMemberCount({ count: total() ?? 0 })}</p>
+      </Show>
+      <Show when={firstPage(props.coverage)?.directoryGroup}>
+        <InlineGuidance icon="ti ti-info-circle">{t().directoryGroupHint}</InlineGuidance>
       </Show>
       <Show when={shown().length > 0}>
         <ul ref={list} tabindex="-1" aria-label={t().groupMembersOf({ name: props.groupName })} class="flex flex-col gap-1 outline-none">
@@ -148,15 +158,15 @@ export function GroupCoveragePanel(props: { coverage: GroupCoverage; groupName: 
         </ul>
       </Show>
       <Show when={members().error()}>
-        <InlineGuidance tone="danger" icon="ti ti-alert-circle">
+        <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
           <span>{t().groupMembersFailed}</span>{" "}
-          <Button variant="text" size="xs" onClick={() => void members().refresh()}>
+          <Button ref={retry} variant="text" size="xs" onClick={() => void tryAgain()}>
             {t().retry}
           </Button>
         </InlineGuidance>
       </Show>
       <Show when={members().hasMore() && !members().error()}>
-        <Button variant="text" size="xs" class="self-start" loading={members().loadingMore()} onClick={() => void showMore()}>
+        <Button ref={more} variant="text" size="xs" class="self-start" loading={members().loadingMore()} onClick={() => void showMore()}>
           {t().showMoreMembers({ count: Math.min(remaining(), PAGE_SIZE) })}
         </Button>
       </Show>
