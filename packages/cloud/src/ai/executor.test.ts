@@ -435,6 +435,70 @@ describe("nessi block event mapping", () => {
     ).toMatchObject({ type: "block_set", block: { status: "rejected", isError: true } });
   });
 
+  test("marks approved calls, including the parent of a custom approval, so their receipt survives", () => {
+    const mapper = createEventMapper(3, []);
+    mapper.setApprovedCallIds(new Set(["call-1"]));
+    const end = mapper.translate({
+      ...turn,
+      type: "tool_execution_end",
+      callId: "call-1",
+      name: "danger",
+      result: { done: true },
+    } as OutboundEvent);
+    expect(end[0]).toMatchObject({ type: "block_set", block: { status: "completed", approved: true } });
+    const other = mapper.translate({
+      ...turn,
+      type: "tool_execution_start",
+      callId: "call-2",
+      name: "read_file",
+      args: {},
+    } as OutboundEvent);
+    expect(other[0]).toMatchObject({ type: "block_set", block: { callId: "call-2" } });
+    expect((other[0] as { block: { approved?: boolean } }).block.approved).toBeUndefined();
+  });
+
+  test("rebuilds a resolved approval as approved before its result is saved", () => {
+    const blocks = rebuildAttemptBaseline({
+      loopMessages: [
+        {
+          id: "m1",
+          shortId: "m1",
+          conversationId: "c",
+          seq: 1,
+          kind: "message",
+          message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "danger", args: {} }] },
+          loopId: "turn-1",
+          modelProfileId: null,
+          providerModel: null,
+          usage: null,
+          stopReason: null,
+          loopAggregate: null,
+          loopDoneReason: null,
+          compactedAt: null,
+          meta: null,
+          createdAt: "2026-10-07T10:00:00.000Z",
+        },
+      ],
+      pendingRecords: [],
+      resolvedRecords: [
+        {
+          turnId: "turn-1",
+          conversationId: "c",
+          callId: "call-1",
+          kind: "approval",
+          status: "resolved",
+          name: "danger",
+          args: {},
+          approvalScope: "danger",
+          allowAlways: false,
+          resolvedEvent: { type: "approval_response", callId: "call-1", approved: true },
+        },
+      ],
+      turnSteers: [],
+    });
+    expect(blocks[0]).toMatchObject({ kind: "tool", status: "running", approved: true });
+  });
+
   test("loop lifecycle and usage events map to nothing", () => {
     const mapper = createEventMapper(1, []);
     expect(mapper.translate({ type: "loop_start", agentId: "cloud", loopId: "turn-1" } as OutboundEvent)).toEqual([]);

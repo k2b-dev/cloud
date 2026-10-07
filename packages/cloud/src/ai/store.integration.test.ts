@@ -18,6 +18,7 @@ import { aiCapabilityToolName } from "./capabilities";
 import { aiFileStore, readAiConversationFile } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
+import { buildBlocksFromMessages } from "./protocol";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 import { loadAiStreamState } from "./stream";
@@ -1231,6 +1232,241 @@ suite("AI conversation store integration", () => {
     }
   });
 
+  test("snapshots carry the time spent waiting, and a stop while an approval waits is recorded in history", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("send the offer"),
+      });
+      await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "worker-a",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const session = aiConversations.createSessionStore({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        turnId: turn.id,
+        leaseOwner: "worker-a",
+      });
+      await session.append({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "send-1", name: "mail__action__send", args: { to: "jana@example.com" } }],
+        stopReason: "tool_use",
+      });
+      const action = (callId: string) => ({
+        turnId: turn.id,
+        conversationId: conversation.id,
+        callId,
+        kind: "approval" as const,
+        status: "pending" as const,
+        name: "mail__action__send",
+        args: {},
+        approvalScope: "mail",
+        allowAlways: false,
+        resolvedEvent: null,
+      });
+      // One answered approval of 90 s, and one that has waited 30 s so far. A gap keeps them two waits: touching waits
+      // count as one, and the two statements below can share a millisecond.
+      await aiConversations.savePendingTurnAction(action("earlier"));
+      await aiConversations.savePendingTurnAction(action("send-1"));
+      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '130 seconds', status = 'resolved', resolved_at = now() - interval '40 seconds' WHERE turn_id = ${turn.id} AND call_id = 'earlier'`;
+      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '30 seconds' WHERE turn_id = ${turn.id} AND call_id = 'send-1'`;
+      await aiConversations.suspendTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "worker-a",
+        blocks: [],
+        seq: 3,
+        waitingBudgetMs: 60 * 60_000,
+      });
+
+      const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
+      expect(active?.actionWaitMs).toBeGreaterThanOrEqual(89_000);
+      expect(active?.actionWaitMs).toBeLessThanOrEqual(91_000);
+      const waitingFor = Date.now() - Date.parse(active!.waitingSince!);
+      expect(waitingFor).toBeGreaterThanOrEqual(25_000);
+      expect(waitingFor).toBeLessThanOrEqual(40_000);
+      const snapshot = (await loadAiStreamState(conversation)).activeTurn;
+      expect(snapshot).toMatchObject({ actionWaitMs: active!.actionWaitMs, waitingSince: active!.waitingSince });
+
+      // The user stops while the approval waits: no loop runs, so the server records the stop on the message.
+      expect(await aiConversations.requestTurnAbort({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        found: true,
+        ownerless: true,
+      });
+      expect(await aiConversations.completeTurn({ conversationId: conversation.id, turnId: turn.id, status: "aborted" })).toBe("completed");
+      const [message] = (await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id })).filter(
+        (entry) => entry.message.role === "assistant",
+      );
+      expect(message?.loopDoneReason).toBe("aborted");
+      expect(await aiConversations.getActiveTurn({ conversationId: conversation.id })).toBeNull();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
+  test("a turn that ends without its own loop end records how it ended and which approved calls never ran", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    const startTurn = async (leaseOwner: string, content: Extract<Message, { role: "assistant" }>["content"]) => {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("go"),
+      });
+      await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 50,
+        runBudgetMs: 600_000,
+      });
+      const session = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.id, leaseOwner });
+      await session.append({ role: "assistant", content, stopReason: "tool_use" });
+      return { turn: { conversationId: conversation.id, turnId: turn.id }, session };
+    };
+    const lastAssistant = async (turn: { conversationId: string; turnId: string }) =>
+      (await aiConversations.listTurnMessages({ conversationId: turn.conversationId, loopId: turn.turnId })).findLast(
+        (entry) => entry.message.role === "assistant",
+      );
+    const approval = (turn: { conversationId: string; turnId: string }, callId: string, kind: "approval" | "custom_approval") =>
+      aiConversations.savePendingTurnAction({
+        turnId: turn.turnId,
+        conversationId: turn.conversationId,
+        callId,
+        kind,
+        status: "pending",
+        name: "code_run",
+        args: {},
+        approvalScope: "code_run",
+        allowAlways: false,
+        resolvedEvent: null,
+      });
+
+    try {
+      // Approved, then stopped before the call returned; a second approved call did return.
+      const { turn: stopped, session: stoppedSession } = await startTurn("worker-stop", [
+        { type: "tool_call", id: "run-1", name: "code_run", args: {} },
+        { type: "tool_call", id: "send-1", name: "mail__action__send", args: {} },
+      ]);
+      await approval(stopped, "run-1-approval-1", "custom_approval");
+      await approval(stopped, "send-1", "approval");
+      for (const callId of ["run-1-approval-1", "send-1"])
+        await aiConversations.resolvePendingTurnAction({
+          conversationId: stopped.conversationId,
+          turnId: stopped.turnId,
+          callId,
+          event: { type: "approval_response", callId, approved: true },
+        });
+      await stoppedSession.append({
+        role: "tool_result",
+        callId: "send-1",
+        name: "mail__action__send",
+        result: { ok: true },
+        isError: false,
+      });
+      expect(await aiConversations.completeTurn({ ...stopped, leaseOwner: "worker-stop", status: "aborted" })).toBe("completed");
+      const stoppedMessage = await lastAssistant(stopped);
+      expect(stoppedMessage?.loopDoneReason).toBe("aborted");
+      expect(stoppedMessage?.meta?.toolOutcomes).toEqual({ "run-1": "approved" });
+      const history = buildBlocksFromMessages(
+        (await aiConversations.listTurnMessages({ conversationId: stopped.conversationId, loopId: stopped.turnId })).filter(
+          (entry) => entry.message.role !== "user",
+        ),
+      );
+      expect(history.find((block) => block.id === "tool-run-1")).toMatchObject({ status: "running", approved: true });
+
+      // A loop cut off by its run time limit recorded `aborted`; the failed turn must not read as a user stop.
+      const { turn: timedOut } = await startTurn("worker-timeout", [{ type: "tool_call", id: "run-2", name: "code_run", args: {} }]);
+      await sql`UPDATE ai.messages SET loop_done_reason = 'aborted' WHERE loop_id = ${timedOut.turnId}::text AND role = 'assistant'`;
+      expect(await aiConversations.completeTurn({ ...timedOut, leaseOwner: "worker-timeout", status: "failed" })).toBe("completed");
+      expect((await lastAssistant(timedOut))?.loopDoneReason).toBe("error");
+
+      // The sweep: an approval that waited past its deadline is not a stop; a stop the worker never finished is.
+      const { turn: expired } = await startTurn("worker-expired", [{ type: "tool_call", id: "run-3", name: "code_run", args: {} }]);
+      await approval(expired, "run-3", "approval");
+      await aiConversations.suspendTurn({ ...expired, leaseOwner: "worker-expired", blocks: [], seq: 2, waitingBudgetMs: 60_000 });
+      await sql`UPDATE ai.turns SET deadline = now() - interval '1 second' WHERE id = ${expired.turnId}`;
+      const { turn: cancelled } = await startTurn("worker-cancelled", [{ type: "tool_call", id: "run-4", name: "code_run", args: {} }]);
+      await aiConversations.requestTurnAbort({ conversationId: cancelled.conversationId, turnId: cancelled.turnId });
+      await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${cancelled.turnId}`;
+      const sweep = await aiConversations.sweepTurns({ maxAttempts: 50 });
+      expect(sweep.aborted.map((turn) => turn.turnId)).toEqual(expect.arrayContaining([expired.turnId, cancelled.turnId]));
+      expect((await lastAssistant(expired))?.loopDoneReason).toBe("error");
+      expect((await lastAssistant(cancelled))?.loopDoneReason).toBe("aborted");
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
+  test("a running turn's snapshot counts waits like its durable timing", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("run it"),
+      });
+      const action = (callId: string, kind: "approval" | "client_tool", name: string) =>
+        aiConversations.savePendingTurnAction({
+          turnId: turn.id,
+          conversationId: conversation.id,
+          callId,
+          kind,
+          status: "pending",
+          name,
+          args: {},
+          approvalScope: name,
+          allowAlways: false,
+          resolvedEvent: null,
+        });
+      // Two approvals waited at the same time for 60 s: they count once.
+      await action("a", "approval", "mail_send");
+      await action("b", "approval", "mail_send");
+      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '300 seconds', status = 'resolved', resolved_at = now() - interval '240 seconds'
+        WHERE turn_id = ${turn.id} AND call_id IN ('a', 'b')`;
+      // A browser run that waited 5 s to start and then ran for 100 s is work after its start.
+      await action("run", "client_tool", "code_run");
+      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '200 seconds', status = 'resolved', resolved_at = now() - interval '95 seconds'
+        WHERE turn_id = ${turn.id} AND call_id = 'run'`;
+      await sql`INSERT INTO ai.tool_calls (turn_id, conversation_id, call_id, tool_name, location, status, started_at)
+        VALUES (${turn.id}, ${conversation.id}, 'run', 'code_run', 'client', 'completed', now() - interval '195 seconds')`;
+      // A secret prompt the browser claimed still waits for its answer.
+      await action("secret", "client_tool", "code_secret");
+      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '20 seconds' WHERE turn_id = ${turn.id} AND call_id = 'secret'`;
+      await sql`INSERT INTO ai.tool_calls (turn_id, conversation_id, call_id, tool_name, location, status, started_at)
+        VALUES (${turn.id}, ${conversation.id}, 'secret', 'code_secret', 'client', 'running', now() - interval '19 seconds')`;
+
+      const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
+      expect(active?.actionWaitMs).toBeGreaterThanOrEqual(64_000);
+      expect(active?.actionWaitMs).toBeLessThanOrEqual(66_000);
+      const waitingFor = Date.now() - Date.parse(active!.waitingSince!);
+      expect(waitingFor).toBeGreaterThanOrEqual(19_000);
+      expect(waitingFor).toBeLessThanOrEqual(25_000);
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [conversation.id] });
+    }
+  });
+
   test("sweepTurns requeues crashed turns and finalizes over-budget or cancelled ones", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];
@@ -1432,6 +1668,7 @@ suite("AI conversation store integration", () => {
           ],
         ]),
         rejectedToolCallIds,
+        approvedToolCallIds: new Set(["call-2"]),
       });
 
       // nessi re-appends the input on legacy paths — the session store must ignore it.
@@ -1477,6 +1714,16 @@ suite("AI conversation store integration", () => {
       });
       const persisted = await aiConversations.listMessages({ conversationId: conversation.id });
       expect(persisted[0]?.message).toEqual(userMessage("session"));
+
+      // The result of a call the user approved records the decision, so history keeps the approval receipt.
+      await session.append({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "call-2", name: "code_run", args: {} }],
+        stopReason: "tool_use",
+      });
+      await session.append({ role: "tool_result", callId: "call-2", name: "code_run", result: { ok: true }, isError: false });
+      const approved = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(approved.at(-1)?.meta?.toolOutcomes?.["call-2"]).toBe("approved");
     } finally {
       await cleanupFixture({ userId, conversationIds });
     }

@@ -30,7 +30,7 @@ describe("AI chat primitives", () => {
     expect(blocksSource).toContain("<AiToolActivity");
     expect(blocksSource).toContain("busy");
     expect(fileSource).toContain("<Chat.Activity");
-    expect(presentationSource).toContain("<AiTurnBlockList");
+    expect(readFileSync(resolve(import.meta.dir, "turn-view.tsx"), "utf8")).toContain("<AiToolActivity");
     expect(blocksSource).toContain("bodyInset={false}");
     expect(webSource).toContain("<Chat.Activity");
     expect(webSource).toContain('leading={<Favicon url={url()} fallbackIcon="ti ti-world-download" />}');
@@ -50,12 +50,12 @@ describe("AI chat primitives", () => {
     expect(actionsSource).not.toContain("invisible flex h-7");
     expect(presentationSource).not.toContain("MarkdownView");
     expect(presentationSource).not.toContain("assistantDraftMessage");
-    expect(blocksSource).toContain('props.compact ? "gap-1" : "gap-2"');
-    expect(presentationSource).toContain("turnId={turnId()} disclosureState={props.disclosureState}");
     // The unified render stack renders persisted messages and the live turn through
-    // one block list; no separate draft/detached-block merge remains.
+    // one layout and one view; no separate draft/detached-block merge remains.
     expect(presentationSource).not.toContain("buildAssistantRenderBlocks");
-    expect(presentationSource).toContain("AiTurnBlockList");
+    expect(presentationSource).toContain("layoutAiTurn(segment.blocks");
+    expect(presentationSource).toContain("<AiTurnView");
+    expect(blocksSource).not.toContain("AiTurnBlockList");
     expect(effectsSource).toContain(".assistant-markdown-block :where(*)");
     expect(effectsSource).toContain("margin-block: 0");
   });

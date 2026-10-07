@@ -1678,7 +1678,7 @@ export default function AssistantWorkspace(props: Props) {
                                 actions={{
                                   renderCodePresentation: (result) => (
                                     <ChatPresentation
-                                      result={result}
+                                      result={result()}
                                       conversationId={chat.activeConversationId()!}
                                       httpHost={browserHttpHost}
                                     />

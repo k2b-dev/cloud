@@ -199,6 +199,7 @@ const ChatDemo = () => {
           }}
           onSubmit={({ text }) => {
             if (!text) return false;
+            const reply = `demo-reply-${messages().length}`;
             setMessages((current) => [
               ...current,
               {
@@ -208,7 +209,24 @@ const ChatDemo = () => {
                 content: <p>{text}</p>,
                 timeLabel: "now",
               },
+              { kind: "message", id: reply, role: "assistant", status: "streaming", content: <p>Reading the message.</p> },
             ]);
+            // A record with the same id updates its row in place: the reply keeps its element when it completes.
+            setTimeout(() => {
+              setMessages((current) =>
+                current.map((item) =>
+                  item.id === reply
+                    ? {
+                        kind: "message",
+                        id: reply,
+                        role: "assistant",
+                        content: <p>Noted. The host owns what happens next.</p>,
+                        actions: [{ id: "copy", label: "Copy", icon: "ti ti-copy", copyText: "Noted. The host owns what happens next." }],
+                      }
+                    : item,
+                ),
+              );
+            }, 1200);
           }}
         />
       </Chat>

@@ -14,6 +14,7 @@ import { analyticsInteractions } from "./runtime/analytics-inspect";
 import { runCapability } from "./runtime/capabilities";
 import { type ArtifactSession, createArtifactSession, type RunSnapshot } from "./runtime/session";
 
+/** A saved chat visualization. `result` is undefined while its `code_present` call runs; the frame is reserved meanwhile. */
 export function ChatPresentation(props: { result: unknown; conversationId: string; httpHost: HttpHost }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
@@ -161,6 +162,7 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
       <section
         class="assistant-chat-presentation"
         aria-label={descriptor().success ? ChatPresentationResult.parse(props.result).title : t().visualization}
+        aria-busy={props.result === undefined ? "true" : undefined}
       >
         <div ref={container} />
         <ScrollArea class="assistant-chat-presentation__body" scrollFade>
@@ -168,7 +170,11 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
             when={data()}
             fallback={
               <p role="status">
-                {!descriptor().success ? t().visualizationInvalid : data.error ? String(data.error) : t().visualizationLoading}
+                {props.result !== undefined && !descriptor().success
+                  ? t().visualizationInvalid
+                  : data.error
+                    ? String(data.error)
+                    : t().visualizationLoading}
               </p>
             }
           >

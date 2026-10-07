@@ -8284,7 +8284,7 @@
   overflow: hidden;
   color: var(--k2b-text-secondary);
   font-size: inherit;
-  font-weight: 600;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8320,7 +8320,7 @@
 .k2b-ui .k2b-chat-activity__copy small {
   overflow: hidden;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

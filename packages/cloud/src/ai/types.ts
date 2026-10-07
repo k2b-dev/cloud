@@ -296,7 +296,7 @@ export type AiStoredMessage = {
       trigger: "scheduled" | "manual";
     };
     toolPresentations?: Record<string, AiToolPresentation>;
-    toolOutcomes?: Record<string, "rejected">;
+    toolOutcomes?: Record<string, "rejected" | "approved">;
   } | null;
   /** Private owner feedback for this rendered assistant response. Never enters model context. */
   feedback?: AiMessageFeedback | null;
@@ -864,7 +864,15 @@ export type AiConversationService = {
   getLatestTurn(input: { conversationId: string }): Promise<AiTurn | null>;
   getTurn(input: { conversationId: string; turnId: string }): Promise<AiTurn | null>;
   getTurnByShortId(input: { conversationId: string; shortId: string }): Promise<AiTurn | null>;
-  getActiveTurn(input: { conversationId: string }): Promise<{ turn: AiTurn; liveBlocks: AiTurnBlock[]; liveSeq: number } | null>;
+  getActiveTurn(input: { conversationId: string }): Promise<{
+    turn: AiTurn;
+    liveBlocks: AiTurnBlock[];
+    liveSeq: number;
+    /** Time spent waiting for answered user actions. */
+    actionWaitMs: number;
+    /** Start of the oldest unanswered user action, if the turn waits now. */
+    waitingSince: string | null;
+  } | null>;
   /**
    * Claim a turn attempt. Increments attempt and takes the lease atomically.
    * `from: "queue"` claims queued or lease-expired running turns; `from: "waiting"`
@@ -944,6 +952,8 @@ export type AiConversationService = {
     toolPresentations?: ReadonlyMap<string, AiToolPresentation>;
     /** Mutable call-id set read only when a rejected tool result is persisted. */
     rejectedToolCallIds?: ReadonlySet<string>;
+    /** Mutable call-id set read only when the result of a call the user approved is persisted. */
+    approvedToolCallIds?: ReadonlySet<string>;
   }): SessionStore;
 };
 

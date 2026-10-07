@@ -114,6 +114,8 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
+        // The work line shows a ticking clock; a fixed time keeps its text comparable between measurements.
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
         const label = theme === "dark" ? "Verbindung wird wiederhergestellt" : "Reconnecting";
         await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
@@ -150,15 +152,13 @@ for (const view of [
         expect(row.box[1]).toBeGreaterThanOrEqual(Math.max(...before.nodes.map(({ box }) => box[1]! + box[3]!)));
         expect(waiting.overflowX).toBeLessThanOrEqual(0);
 
-        // The answer takes the row's place; nothing above it moves.
+        // The row goes; the newest text takes the status's place in the same element and nothing moves.
         await emit(page, { ...base, seq: 5, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Here is the summary." });
         const resumed = await layout(page);
-        // The finished step stops its sweep once it is no longer the latest; its box stays.
-        const boxes = (nodes: typeof before.nodes) => nodes.map(({ text, box }) => ({ text, box }));
-        expect(boxes(resumed.nodes.slice(0, before.nodes.length))).toEqual(boxes(before.nodes));
+        const boxes = (nodes: typeof before.nodes) => nodes.map(({ box }) => box);
+        expect(boxes(resumed.nodes)).toEqual(boxes(before.nodes));
         expect(resumed.nodes.map(({ text }) => text)).not.toContain(label);
         expect(resumed.nodes.at(-1)).toMatchObject({ text: "Here is the summary." });
-        expect(resumed.nodes.at(-1)!.box[1]).toBe(row.box[1]!);
       } finally {
         await context.close();
       }
@@ -178,6 +178,8 @@ for (const view of [
       });
       try {
         const page = await context.newPage();
+        // The work line shows a ticking clock; a fixed time keeps its text comparable between measurements.
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${theme === "dark" ? "de" : "en"}&theme=${theme}`);
         const label = theme === "dark" ? "Verbindung wird wiederhergestellt" : "Reconnecting";
         await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
