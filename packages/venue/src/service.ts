@@ -1357,8 +1357,15 @@ const signupTemplate = async (
 
     const startTime = toTime(template.start_time) ?? "00:00";
     const endTime = toTime(template.end_time) ?? "00:00";
-    if (!templateOccursOn(mapTemplate(template), input.date)) {
-      return fail(err.badInput("The selected date does not match this shift's weekday"));
+    const mapped = mapTemplate(template);
+    if (!templateOccursOn(mapped, input.date)) {
+      return fail(
+        err.badInput(
+          mapped.date !== null
+            ? `This one-off shift takes place only on ${mapped.date}`
+            : "The selected date does not match this shift's weekday",
+        ),
+      );
     }
     const start = instantFor(input.date, startTime, venue.timezone);
     const end = endInstantFor(input.date, startTime, endTime, venue.timezone);
@@ -1412,12 +1419,9 @@ const signupTemplateWeeks = async (
   user: UserLike,
 ): Promise<Result<ShiftAssignment[]>> => {
   const template = await getTemplate(templateId);
-  if (template && template.date !== null) {
-    const result = await signupTemplate(venue, templateId, { date }, user);
-    return result.ok ? ok([result.data]) : result;
-  }
+  const count = template && template.date !== null ? 1 : weeks;
   const created: ShiftAssignment[] = [];
-  for (let week = 0; week < weeks; week++) {
+  for (let week = 0; week < count; week++) {
     const nextDate = dates.formatDateKey(new Date(instantFor(date, "12:00", venue.timezone).getTime() + week * 7 * 86_400_000), {
       timeZone: venue.timezone,
     });

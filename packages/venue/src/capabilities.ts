@@ -228,7 +228,7 @@ const runShiftList = async (input: z.infer<typeof ShiftListInputSchema>, context
   const venue = await requireVenue(input.venueId, scope.data, "read");
   if (!venue.ok) return venue;
   const templates = await venueService.templates.listRange(venue.data, { startDate: input.startDate, days: input.days, limit: 101 });
-  if (templates.length > 100) return fail(err.badInput("This Venue has too many active shift templates"));
+  if (templates.length > 100) return fail(err.badInput("This Venue has more than 100 active shifts in this range; request fewer days"));
   const internalSlots = await venueService.shifts.listSummary(venue.data, {
     startDate: input.startDate,
     days: input.days,
@@ -583,7 +583,7 @@ export const venueCapabilities = defineCapabilities({
         const templateId = await venueService.publicResources.resolveOwned("templates", actor.data.venue.id, input.templateId);
         if (!templateId) return fail(err.notFound("Shift"));
         const templates = await venueService.templates.listRange(actor.data.venue, { startDate: input.date, days: 1, limit: 101 });
-        if (templates.length > 100) return fail(err.badInput("This Venue has too many active shift templates"));
+        if (templates.length > 100) return fail(err.badInput("This Venue has more than 100 active shifts on this date"));
         const internalShifts = await venueService.shifts.listSummary(actor.data.venue, {
           startDate: input.date,
           days: 1,

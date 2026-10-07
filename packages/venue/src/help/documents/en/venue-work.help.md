@@ -41,13 +41,13 @@ All times use the venue's time zone and a 24-hour clock, wherever you open the v
 :::reference
 - **General:** Edit name, slug, description, icon, theme color, logo, banner, and feedback activation, and the schedule rules:
   - **Public opening logic** decides whether regular hours, staffed shifts, or both open the venue.
-  - **Sign-up** decides whether staff take the recurring **Shifts**, add their own **Free time**, or **Both**.
+  - **Sign-up** decides whether staff take the **Shifts**, add their own **Free time**, or **Both**.
   - **Time zone** sets the zone of every venue time. Existing opening hours, opening-hour exceptions, and shifts keep their clock times: 09:00 stays 09:00 in the new zone.
   - **Public page on** switches the public page and its monitor display on or off. While it is off, the link shows only that the venue is not available.
 
   Changes in **General** wait for **Save**. Only admins see and open the settings.
 - **Schedule:** Manage regular hours, opening-hour exceptions, and shifts. Every change here saves at once.
-  - **New exception** under **Opening-hour exceptions** chooses between **Closed** for the whole day and **Special opening** with a start and end time; a special opening replaces the day's regular hours and shows the venue as open during its times, whatever the opening logic. Opening-hour exceptions change only the hours, not the shifts. They read like **Sat, 10/17/2026 · Special opening 18:00–23:00 · Long night**; past ones are folded under **Past opening-hour exceptions**.
+  - **New opening-hour exception** under **Opening-hour exceptions** chooses between **Closed** for the whole day and **Special opening** with a start and end time; a special opening replaces the day's regular hours and shows the venue as open during its times, whatever the opening logic. Opening-hour exceptions change only the hours, not the shifts. They read like **Sat, 10/17/2026 · Special opening 18:00–23:00 · Long night**; past ones are folded under **Past opening-hour exceptions**.
   - **New shift** with **Every week** can pick several weekdays at once and creates one shift per weekday in a single step: either all of them or, when something is wrong, none. With **Once**, it plans a one-off shift on one date from today up to a year ahead, for example an extra shift for a special opening. A one-off shift appears in the schedule on its date only, and people take, leave, and get notified about it like any other shift. The list groups weekly shifts by weekday and shows upcoming one-off shifts under **One-off shifts** with their date; each shift is edited on its own and keeps its kind.
   - The switch next to a shift pauses or resumes it at once. A paused shift keeps its settings and reads **Paused**, but the schedule plans no slots for it, nobody can take it, and it does not open the venue. Deleting a shift removes it for good; past sign-ups keep its name.
   - Times take a 24-hour clock time such as 09:30; typing `9` becomes 09:00. An end time of 24:00 means until midnight. Fields say what is missing or wrong, and a dialog stays open with your input until the save succeeds.

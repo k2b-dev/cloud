@@ -106,7 +106,7 @@ export function SignupDialog(props: {
           templateId: slot.template.id,
           date: slot.date,
           // This shift and the same shift in each of the following weeks.
-          weeks: followingWeeks() ? FOLLOWING_WEEKS + 1 : undefined,
+          weeks: slot.template.date === null && followingWeeks() ? FOLLOWING_WEEKS + 1 : undefined,
         },
         signal,
         t(),

@@ -150,7 +150,7 @@ suite("Venue one-off shifts", () => {
     const wrong = await send("POST", signup, staff.cookie, { date: afterDays(tomorrow, 7) });
     const wrongBody = await wrong.text();
     expect(wrong.status).toBe(400);
-    expect(wrongBody).toContain("The selected date does not match this shift's weekday");
+    expect(wrongBody).toContain(`This one-off shift takes place only on ${tomorrow}`);
     const assignment = ShiftAssignmentSchema.parse(await json(await send("POST", signup, staff.cookie, { date: tomorrow }), 201));
     expect(assignment.templateId).toBe(oneOff.id);
     const calendar = await venueService.ical.generateUser(staff.user.id, "https://cloud.example.test", "en");
@@ -172,6 +172,11 @@ suite("Venue one-off shifts", () => {
       weeks: 4,
     });
     expect(ShiftAssignmentSchema.array().parse(await json(multiple, 201))).toHaveLength(1);
+    const again = await send("POST", `/api/venue/venues/${venue.id}/templates/${oneOff.id}/signup-weeks`, staff.cookie, {
+      date: tomorrow,
+      weeks: 4,
+    });
+    expect(ShiftAssignmentSchema.array().parse(await json(again, 201))).toEqual([]);
   });
 
   test("capability list/read/review/signup use short IDs and the same dated occurrence", async () => {
@@ -301,7 +306,10 @@ suite("Venue one-off shifts", () => {
     if (!past.ok) throw new Error(past.error.message);
     expect(ShiftListDataSchema.parse(past.data.data).map((entry) => [entry.date, entry.recurring])).toEqual([[historicalDate, false]]);
     // The cap still rejects ranges that really contain more than 100 active shifts.
-    expect((await list.run(list.input.parse({ venueId: venue.id, startDate: oldDate, days: 1 }), context)).ok).toBeFalse();
+    const capped = await list.run(list.input.parse({ venueId: venue.id, startDate: oldDate, days: 1 }), context);
+    expect(capped.ok).toBeFalse();
+    if (capped.ok) throw new Error("Expected the active shift cap to reject the range");
+    expect(capped.error.message).toContain("request fewer days");
     const read = venueCapabilities.queries["shift.read"];
     const historical = await read.run(read.input.parse({ venueId: venue.id, templateId: oldTemplateId, date: oldDate }), context);
     expect(historical.ok).toBeTrue();

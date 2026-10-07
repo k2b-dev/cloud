@@ -291,6 +291,50 @@ describe("Venue clarity behavior", () => {
     }
   });
 
+  test("taking a one-off shift uses plain signup even with the following weeks selected", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const oneOff = slot(addDays(today, 1), "Special event");
+    oneOff.template.date = oneOff.date;
+    const posts: { path: string; body: unknown }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      if (method === "POST") {
+        posts.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
+        return Response.json(assignment(oneOff, "user-1", "Alex Example"), { status: 201 });
+      }
+      return Response.json({ ...dashboard, templates: [oneOff.template], slots: [oneOff] });
+    }) as typeof fetch;
+
+    const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
+    const closes: boolean[] = [];
+    const dispose = render(
+      () => <SignupDialog dashboard={dashboard} userId="user-1" close={(changed) => closes.push(changed)} />,
+      dom.root,
+    );
+    try {
+      await flush();
+      const weeks = [...dom.root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) =>
+        input.closest("label")?.textContent?.includes("Also the next 4 weeks"),
+      );
+      expect(weeks).toBeDefined();
+      weeks!.click();
+      expect(weeks!.checked).toBe(true);
+      buttonNamed(dom.root, "Take shift").click();
+      await flush();
+      expect(posts).toEqual([
+        { path: `/api/venue/venues/${venue.id}/templates/${oneOff.template.id}/signup`, body: { date: oneOff.date } },
+      ]);
+      expect(closes).toEqual([true]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test("free time starts on a quarter hour and adds itself from the dialog footer", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;

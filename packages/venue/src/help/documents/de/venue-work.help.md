@@ -41,7 +41,7 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 :::reference
 - **Allgemein:** Name, Kurzname, Beschreibung, Symbol, Akzentfarbe, Logo, Banner und Feedback-Funktion bearbeiten, dazu die Zeitplan-Regeln:
   - **Logik für den Öffnungsstatus** legt fest, ob regelmäßige Öffnungszeiten, besetzte Schichten oder beides den Standort öffnen.
-  - **Eintragen** legt fest, ob Mitarbeitende die wiederkehrenden Schichten übernehmen (**Schichten**), eigene freie Zeiträume eintragen (**Freier Zeitraum**) oder **Beides**.
+  - **Eintragen** legt fest, ob Mitarbeitende die Schichten übernehmen (**Schichten**), eigene freie Zeiträume eintragen (**Freier Zeitraum**) oder **Beides**.
   - **Zeitzone** bestimmt die Zeitzone aller Zeiten des Standorts. Bestehende regelmäßige und abweichende Öffnungszeiten sowie Schichten behalten ihre Uhrzeit: 09:00 bleibt 09:00 in der neuen Zeitzone.
   - **Öffentliche Seite an** schaltet die öffentliche Seite samt Monitor-Anzeige ein oder aus. Solange sie aus ist, zeigt der Link nur, dass der Standort nicht verfügbar ist.
 

@@ -135,7 +135,7 @@ describe("Venue settings: Schedule", () => {
     expect(html).toContain("Sat, 10/19/2030");
     expect(html).toContain("Special opening 18:00–23:00 · Long night");
     expect(html).toContain("Past opening-hour exceptions (1)");
-    expect(html).toContain("New exception");
+    expect(html).toContain("New opening-hour exception");
     expect(html).not.toMatch(/<details[^>]*open/);
 
     const german = render("admin", { locale: "de", tab: "schedule", data: { overrides } });

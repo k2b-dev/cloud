@@ -387,7 +387,7 @@ describe("Venue setup behavior", () => {
     try {
       await flush();
       // A new exception starts on today, which already has one.
-      buttonNamed(dom.root, "New exception").click();
+      buttonNamed(dom.root, "New opening-hour exception").click();
       await flush();
       const dialog = () => [...dom.document.querySelectorAll<HTMLElement>("dialog")].at(-1)!;
       buttonNamed(dialog(), "Add").click();
