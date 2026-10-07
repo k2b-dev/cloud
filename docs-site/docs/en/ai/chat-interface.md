@@ -202,7 +202,8 @@ order:
    on phones the count appears once the turn is finished. While an approval or
    answer is pending it says what the turn waits for and since when. Finished,
    it reads "Worked 3 min" with the step count, "Worked 1 min · stopped" after
-   a stop. Expanding it shows intermediate texts as quiet paragraphs and the
+   a stop, and "Worked 4 min · interrupted" when the turn failed or its wait
+   expired. Expanding it shows intermediate texts as quiet paragraphs and the
    steps between them as groups, with reasoning inside its group. Every step
    stays there, including results and actions, so input and output remain
    reachable. Failed steps say "failed" in muted text; a rejected approval says
@@ -210,7 +211,11 @@ order:
 2. **Results.** Presented files, `code_present` visualizations, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
-   `code_present`, replaces the earlier one at its place.
+   `code_present`, replaces the earlier one at its place. A running delivery
+   takes a place once its arguments have arrived, so a new version never shows
+   a frame of its own first. A capability table shows the summary and links of
+   its result above it. An approved call or a Cloud action that returns a table
+   shows the table here and its receipt in place 4.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
    and the place keeps its height until the turn ends. Finished, it is the final
@@ -224,7 +229,9 @@ order:
    stopped" when the turn ended before the call ran. A decided card turns into
    its receipt in place. If the decision was made in that card, focus stays on
    its place without scrolling. An approved call carries `approved: true` on its
-   tool block, live and in history, so its receipt survives a reload.
+   tool block, live and in history, so its receipt survives a reload, also when
+   the turn ended before the call returned. Links without a title read "Open",
+   "Edit", or "Download" in the reader's language.
 
 A turn without tool calls or compaction, such as a plain answer, a steering
 marker, or an answer with only reasoning, has no work line. Its texts form the
@@ -233,7 +240,9 @@ segment has its own places, and only the last one shows the duration.
 
 The work time is wall time minus time spent waiting for approvals and other
 user actions. History uses the loop's durable timing; the live clock stands
-while the turn waits and continues from the same value afterwards.
+while the turn waits for an approval or an answer and continues from the same
+value afterwards. A tool the browser runs by itself, such as a Studio code run,
+counts as work, live and in history.
 
 Screen readers do not hear the work line's ticking clock or a status while it
 streams: both sit outside the conversation log's live announcements. A status
@@ -243,10 +252,12 @@ work as "Answer ready". A plain answer without tools streams into the log as
 before.
 
 The live turn and its history share one layout function and the same timeline
-item ids, `ai-turn:<turn id>:<segment>`. Results and actions are keyed by their
-call. When the turn ends, the work line changes its text and the message
-actions appear; nothing else moves, and host views such as a running Studio
-session keep their state. Copy copies only the final message.
+item ids, `ai-turn:<turn id>:<segment>`. A segment is named by what opened it:
+`start`, `steer:<steer id>`, or `survey:<call id>`. Consecutive steering
+messages open one segment, and loading older history renames none. Results and
+actions are keyed by their call. When the turn ends, the work line changes its
+text and the message actions appear; nothing else moves, and host views such as
+a running Studio session keep their state. Copy copies only the final message.
 
 Turns with a work line, results, or actions span the full message column, so
 disclosure chevrons share one right edge. Plain prose keeps the reading width.

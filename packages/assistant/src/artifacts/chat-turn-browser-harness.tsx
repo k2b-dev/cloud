@@ -68,6 +68,7 @@ const csv = tool("csv", "present", {
   result: { path: "/orders-joined.csv", size: 1_800_000, mediaType: "text/csv" },
 });
 const view = tool("view", "code_present", { args: { runId: "run", title: "Inventory" } });
+const revision = tool("view2", "code_present", { args: { runId: "run2", title: "Inventory" } });
 const texts = {
   first: "I read the four files first.",
   second: "The data is clean. Now I build the dashboard.",
@@ -139,6 +140,9 @@ const steps: Record<string, () => void> = {
     emit({ ...next(), type: "block_set", block: { ...view, status: "running", result: undefined } });
   },
   present: () => emit({ ...next(), type: "block_set", block: { ...view, result: presentation } }),
+  // A new version of the same view: the call starts before its arguments arrive.
+  revise: () => emit({ ...next(), type: "block_set", block: { ...revision, status: "running", args: undefined, result: undefined } }),
+  reviseArgs: () => emit({ ...next(), type: "block_set", block: { ...revision, status: "running", result: undefined } }),
   approval: () =>
     emit({
       ...next(),

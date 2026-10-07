@@ -187,6 +187,28 @@ for (const viewport of [
   }, 60_000);
 }
 
+test("a new version of a view takes the earlier place without a frame of its own first", async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  try {
+    await page.goto(server.url.href);
+    await page.getByText("Build an inventory dashboard").waitFor();
+    await step(page, "start");
+    await step(page, "present");
+    await page.getByRole("button", { name: "Interagieren", exact: true }).waitFor();
+    const frames = page.locator(".assistant-chat-presentation");
+    const before = await measure(page);
+    for (const name of ["revise", "reviseArgs"]) {
+      await step(page, name);
+      expect(await frames.count()).toBe(1);
+      const now = await measure(page);
+      expect(now.view).toEqual(before.view);
+      expect(now.text).toEqual(before.text);
+    }
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 test("a stop while an approval waits leaves a not-run receipt at the card's place", async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   try {

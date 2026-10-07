@@ -25,8 +25,11 @@ const messages = i18n.define({
       worked: "Worked",
       workedFor: ({ duration }: { duration: string }) => `Worked ${duration}`,
       workedStopped: ({ duration }: { duration: string }) => (duration ? `Worked ${duration} · stopped` : "Stopped"),
-      workedLabel: ({ duration, steps, stopped }: { duration: string; steps: string; stopped: boolean }) =>
-        [duration ? `Worked ${duration}` : "Worked", stopped ? "stopped" : "", steps].filter(Boolean).join(", "),
+      workedInterrupted: ({ duration }: { duration: string }) => (duration ? `Worked ${duration} · interrupted` : "Interrupted"),
+      workedLabel: ({ duration, steps, ending }: { duration: string; steps: string; ending: "stopped" | "failed" | null }) =>
+        [duration ? `Worked ${duration}` : "Worked", ending === "stopped" ? "stopped" : ending === "failed" ? "interrupted" : "", steps]
+          .filter(Boolean)
+          .join(", "),
       steps: ({ count }: { count: number }) => (count === 1 ? "1 step" : `${count} steps`),
       waitingForApproval: "Waiting for your approval",
       waitingForAnswer: "Waiting for your answer",
@@ -205,8 +208,15 @@ const messages = i18n.define({
       worked: "Gearbeitet",
       workedFor: ({ duration }) => `${duration} gearbeitet`,
       workedStopped: ({ duration }) => (duration ? `${duration} gearbeitet · gestoppt` : "Gestoppt"),
-      workedLabel: ({ duration, steps, stopped }) =>
-        [duration ? `${duration} gearbeitet` : "Gearbeitet", stopped ? "gestoppt" : "", steps].filter(Boolean).join(", "),
+      workedInterrupted: ({ duration }) => (duration ? `${duration} gearbeitet · abgebrochen` : "Abgebrochen"),
+      workedLabel: ({ duration, steps, ending }) =>
+        [
+          duration ? `${duration} gearbeitet` : "Gearbeitet",
+          ending === "stopped" ? "gestoppt" : ending === "failed" ? "abgebrochen" : "",
+          steps,
+        ]
+          .filter(Boolean)
+          .join(", "),
       steps: ({ count }) => (count === 1 ? "1 Schritt" : `${count} Schritte`),
       waitingForApproval: "Wartet auf deine Freigabe",
       waitingForAnswer: "Wartet auf deine Antwort",

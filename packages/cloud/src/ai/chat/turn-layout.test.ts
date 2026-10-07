@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
-import { hasCompleteSentence, layoutAiTurn } from "./turn-layout";
+import { hasCompleteSentence, layoutAiTurn, waitsForUser } from "./turn-layout";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -122,8 +122,30 @@ describe("turn layout", () => {
       { phase: "completed" },
     );
     expect(layout.results).toEqual([]);
-    // While the turn runs, a running delivery reserves its place.
-    expect(ids(layoutAiTurn([tool("late", "present", { status: "running" })], { phase: "running" }).results)).toEqual(["tool-late"]);
+    // While the turn runs, a running delivery reserves its place once its arguments arrived.
+    const late = tool("late", "present", { status: "running", args: { path: "/late.pdf" } });
+    expect(ids(layoutAiTurn([late], { phase: "running" }).results)).toEqual(["tool-late"]);
+  });
+
+  test("a new version streams into the earlier place without taking a place of its own first", () => {
+    const v1 = tool("v1", "code_present", { args: { title: "Inventory" } });
+    // The call starts before its arguments arrive.
+    const streaming = layoutAiTurn([v1, tool("v2", "code_present", { status: "running", args: undefined, result: undefined })], {
+      phase: "running",
+      codePresentations: true,
+    });
+    expect(streaming.results.map((result) => [result.id, result.block.callId])).toEqual([["tool-v1", "v1"]]);
+    const running = layoutAiTurn([v1, tool("v2", "code_present", { status: "running", args: { title: "Inventory" }, result: undefined })], {
+      phase: "running",
+      codePresentations: true,
+    });
+    expect(running.results.map((result) => [result.id, result.block.callId])).toEqual([["tool-v1", "v2"]]);
+    // A new target reserves its own place as soon as its arguments are known.
+    const other = layoutAiTurn([v1, tool("v3", "code_present", { status: "running", args: { title: "Orders" }, result: undefined })], {
+      phase: "running",
+      codePresentations: true,
+    });
+    expect(ids(other.results)).toEqual(["tool-v1", "tool-v3"]);
   });
 
   test("approvals stay at their place: open card, then receipt, or not run after a stop", () => {
@@ -150,6 +172,35 @@ describe("turn layout", () => {
     expect(states({ status: "running", result: undefined }, "stopped")).toEqual([["tool-run", "not_run"]]);
     // Without a decision, the same call is an ordinary step.
     expect(layoutAiTurn([tool("run", "code_run")], { phase: "completed" }).actions).toEqual([]);
+  });
+
+  test("an approved call or a Cloud action that returns a table keeps its receipt and shows its table", () => {
+    const table = {
+      data: { rows: [{ name: "Jana" }] },
+      presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] },
+    };
+    const approved = layoutAiTurn([tool("lookup", "crm_lookup", { approved: true, result: table })], { phase: "completed" });
+    expect(approved.actions.map((action) => [action.id, action.state])).toEqual([["tool-lookup", "done"]]);
+    expect(ids(approved.results)).toEqual(["tool-lookup"]);
+    const action = layoutAiTurn([capability("export", "action", { result: table })], { phase: "completed" });
+    expect(ids(action.actions)).toEqual(["tool-export"]);
+    expect(ids(action.results)).toEqual(["tool-export"]);
+  });
+
+  test("an approved code run that reports an error gets a failed receipt", () => {
+    const layout = layoutAiTurn([tool("run", "code_run", { approved: true, result: { status: "error", error: "boom" } })], {
+      phase: "completed",
+    });
+    expect(layout.actions.map((action) => action.state)).toEqual(["failed"]);
+  });
+
+  test("only approvals and answers wait for the person; a tool the browser runs is work", () => {
+    expect(waitsForUser(tool("send", "mail_send", { status: "awaiting_approval" }))).toBe(true);
+    expect(waitsForUser(tool("survey", "survey", { status: "awaiting_client" }))).toBe(true);
+    expect(waitsForUser(tool("secret", "code_secret", { status: "awaiting_client" }))).toBe(true);
+    expect(waitsForUser(tool("run", "code_run", { status: "awaiting_client" }))).toBe(false);
+    expect(waitsForUser(tool("bash", "local_bash", { status: "awaiting_client" }))).toBe(false);
+    expect(layoutAiTurn([tool("run", "code_run", { status: "awaiting_client" })], { phase: "waiting" }).waitingFor).toBeNull();
   });
 
   test("a rejected ordinary tool is a decision receipt, not a failure", () => {

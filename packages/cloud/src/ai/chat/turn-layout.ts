@@ -1,6 +1,7 @@
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import { hasCapabilityTable } from "./capability-result";
 import { isCardToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
+import { isFailedTool } from "./tool-groups";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type TextBlock = Extract<AiTurnBlock, { kind: "text" }>;
@@ -43,7 +44,14 @@ export type AiTurnLayout = {
 
 const live = (phase: AiTurnPhase) => phase === "running" || phase === "waiting";
 
-const failed = (block: ToolBlock) => block.isError === true || block.status === "failed";
+const isInteraction = (name: string) => isSurveyToolName(name) || isTextEditorToolName(name) || name === "code_secret";
+
+/**
+ * A call that waits for the person: an approval, or an answer in a survey, an editor, or a secret prompt. Only this time
+ * stops the work clock; a tool the browser runs by itself is work.
+ */
+export const waitsForUser = (block: AiTurnBlock): boolean =>
+  block.kind === "tool" && (block.status === "awaiting_approval" || (block.status === "awaiting_client" && isInteraction(block.name)));
 
 /** A streamed status replaces the previous one only after its first sentence, so a reader never loses a sentence. */
 export const hasCompleteSentence = (text: string): boolean => /[.!?…:;](?:\s|$)|\n/.test(text);
@@ -56,8 +64,10 @@ const resultTarget = (block: ToolBlock): string | null => {
 };
 
 const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean): boolean => {
-  if (failed(block) || block.status === "rejected" || block.status === "awaiting_approval") return false;
-  const delivered = block.status === "completed" || (live(phase) && block.status === "running");
+  if (isFailedTool(block) || block.status === "rejected" || block.status === "awaiting_approval") return false;
+  // A running delivery reserves its place once its arguments arrived: a new version of an earlier result must find the
+  // earlier place before it takes one of its own.
+  const delivered = block.status === "completed" || (live(phase) && block.status === "running" && block.args !== undefined);
   if (block.name === "present" || isCardToolName(block.name)) return delivered;
   if (block.name === "code_present") return codePresentations && delivered;
   return hasCapabilityTable(block);
@@ -66,13 +76,13 @@ const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boole
 const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | null => {
   if (block.status === "awaiting_approval") return "open";
   if (block.status === "rejected") return "rejected";
-  if (isSurveyToolName(block.name) || isTextEditorToolName(block.name)) return failed(block) ? null : "interaction";
+  if (isSurveyToolName(block.name) || isTextEditorToolName(block.name)) return isFailedTool(block) ? null : "interaction";
   if (block.name === "code_secret") return block.status === "awaiting_client" ? "interaction" : null;
   // Effects in Cloud and decided approvals stay visible as receipts, whether or not the model mentions them.
   const capabilityAction = block.presentation?.kind === "capability" && block.presentation.capabilityKind === "action";
   if (!capabilityAction && !block.approved) return null;
   if (block.status === "running" || block.status === "awaiting_client") return live(phase) ? "running" : "not_run";
-  return failed(block) ? "failed" : "done";
+  return isFailedTool(block) ? "failed" : "done";
 };
 
 /**
@@ -89,10 +99,8 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
   const actions: AiTurnAction[] = [];
   for (const block of tools) {
     const state = actionState(block, options.phase);
-    if (state) {
-      actions.push({ id: block.id, block, state });
-      continue;
-    }
+    if (state) actions.push({ id: block.id, block, state });
+    // An approved tool or a Cloud action can deliver a result too: it keeps its receipt and shows its result.
     if (!isResult(block, options.phase, options.codePresentations ?? false)) continue;
     const target = resultTarget(block);
     const index = target ? resultIndex.get(target) : undefined;
@@ -117,12 +125,8 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
   const visible = new Set(text);
   const work = blocks.filter((block) => !visible.has(block as TextBlock));
 
-  const open = actions.filter((action) => action.state === "open" || action.state === "interaction");
-  const waitingFor = open.some((action) => action.block.status === "awaiting_approval")
-    ? "approval"
-    : open.some((action) => action.block.status === "awaiting_client")
-      ? "answer"
-      : null;
+  const waits = tools.filter(waitsForUser);
+  const waitingFor = waits.some((block) => block.status === "awaiting_approval") ? "approval" : waits.length > 0 ? "answer" : null;
 
   return {
     work,

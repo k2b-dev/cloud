@@ -26,12 +26,16 @@ treat `undefined` as "still running".
 The server records two facts it did not record before:
 
 - A turn that ends without a loop end of its own, such as a stop while an
-  approval waits, stores `aborted`, or `error` when it failed, as the loop end
-  of its last assistant message. Turns stopped this way before the upgrade show
-  as finished.
+  approval waits or a turn the sweep finalizes, stores `aborted` after a stop,
+  or `error` when it failed or its wait expired, as the loop end of its last
+  assistant message. Turns that ended this way before the upgrade show as
+  finished.
 - The stored result of a call the user approved carries the decision, so the
-  approval stays visible as a receipt. Approvals decided before the upgrade
+  approval stays visible as a receipt; a call that never returned keeps the
+  decision on the message that holds it. Approvals decided before the upgrade
   show as ordinary steps, except Cloud actions, which always get a receipt.
+- The time a secret prompt in Studio waits for its answer now counts as
+  waiting instead of work, as approvals and survey answers do.
 
 The live turn snapshot carries `actionWaitMs` and `waitingSince`, so a client
 that reconnects shows the same work time. Both fields are optional: Core and

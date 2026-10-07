@@ -80,6 +80,36 @@ export function createTurnTimingRecorder(turnId: string, db = sql) {
   };
 }
 
+/**
+ * Time a turn waited for the person: approvals and answers until they were given. A tool the browser runs by itself
+ * waits only until it starts; a secret prompt waits for its answer even though the browser claimed it. An open wait
+ * ends now.
+ */
+const actionWaits = (turnId: string, db: typeof sql) =>
+  db<{ start: Date; end: Date; open: boolean }[]>`SELECT a.created_at AS start,
+    COALESCE(w.end, now()) AS end, w.end IS NULL AS open
+    FROM ai.pending_actions a LEFT JOIN ai.tool_calls t ON t.turn_id=a.turn_id AND t.call_id=a.call_id
+    CROSS JOIN LATERAL (SELECT CASE WHEN a.kind='client_tool' AND a.tool_name<>'code_secret' THEN LEAST(t.started_at,a.resolved_at)
+      ELSE a.resolved_at END AS end) w
+    WHERE a.turn_id=${turnId}::uuid`;
+
+/**
+ * Waits of a running turn by the same rules as its durable timing: `actionWaitMs` is the time already waited, and
+ * `waitingSince` the start of the wait that is still open, overlapping waits counted once.
+ */
+export async function activeTurnWaits(turnId: string, db = sql): Promise<{ actionWaitMs: number; waitingSince: string | null }> {
+  const rows = await actionWaits(turnId, db);
+  const waits = union(rows.map((x) => ({ start: new Date(x.start).getTime(), end: new Date(x.end).getTime() })));
+  const opens = rows.filter((x) => x.open).map((x) => new Date(x.start).getTime());
+  const openStart = opens.length > 0 ? Math.min(...opens) : null;
+  // An open wait reaches until now, so the merged wait that holds it is the last one.
+  const current = openStart === null ? undefined : waits.find((x) => x.start <= openStart && openStart <= x.end);
+  return {
+    actionWaitMs: duration(waits.filter((x) => x !== current)),
+    waitingSince: current ? new Date(current.start).toISOString() : null,
+  };
+}
+
 export async function withDurableTurnTiming(turnId: string, aggregate: LoopAggregate, db = sql): Promise<LoopAggregate> {
   const [turn] = await db<
     { start: Date; end: Date }[]
@@ -95,9 +125,7 @@ export async function withDurableTurnTiming(turnId: string, aggregate: LoopAggre
   const tools = await db<
     { start: Date; end: Date }[]
   >`SELECT started_at AS start,COALESCE(completed_at,now()) AS end FROM ai.tool_calls WHERE turn_id=${turnId}::uuid AND started_at IS NOT NULL`;
-  const waits = await db<{ start: Date; end: Date }[]>`SELECT a.created_at AS start,
-    CASE WHEN a.kind='client_tool' THEN LEAST(COALESCE(t.started_at,a.resolved_at,now()),COALESCE(a.resolved_at,now())) ELSE COALESCE(a.resolved_at,now()) END AS end
-    FROM ai.pending_actions a LEFT JOIN ai.tool_calls t ON t.turn_id=a.turn_id AND t.call_id=a.call_id WHERE a.turn_id=${turnId}::uuid`;
+  const waits = await actionWaits(turnId, db);
   const intervals = (rows: { start: Date; end: Date | null }[]) =>
     rows.flatMap((x) => (x.end ? [{ start: new Date(x.start).getTime(), end: new Date(x.end).getTime() }] : []));
   return {

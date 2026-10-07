@@ -128,15 +128,17 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = worked();
     const short = duration === null ? "" : formatWorkDuration(duration, t());
     if (segment().phase === "stopped") return t().workedStopped({ duration: short });
+    if (segment().phase === "failed") return t().workedInterrupted({ duration: short });
     return short ? t().workedFor({ duration: short }) : t().worked;
   };
   const ariaLabel = () => {
-    if (isLive(segment().phase)) return undefined;
+    const phase = segment().phase;
+    if (isLive(phase)) return undefined;
     const duration = worked();
     return t().workedLabel({
       duration: duration === null ? "" : formatWorkDuration(duration, t(), true),
       steps: layout().steps ? steps() : "",
-      stopped: segment().phase === "stopped",
+      ending: phase === "stopped" || phase === "failed" ? phase : null,
     });
   };
   const trailing = () => {
@@ -277,7 +279,68 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
   );
 }
 
-function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined> }) {
+const resultRecord = (block: ToolBlock) => (isRecord(block.result) ? block.result : null);
+
+/** The application's own short summary of a result, if it fits on one line. */
+const resultSummary = (block: ToolBlock): string => {
+  const value = resultRecord(block)?.summary;
+  return typeof value === "string" && value.trim().length <= 500 ? value.trim() : "";
+};
+
+/** Links a result offers, limited to paths inside this Cloud. */
+const resultLinks = (block: ToolBlock): Record<string, unknown>[] => {
+  const value = resultRecord(block)?.links;
+  return Array.isArray(value)
+    ? value.filter(
+        (link): link is Record<string, unknown> =>
+          isRecord(link) && typeof link.href === "string" && /^\/(?![\\/])[^\\\u0000-\u001f\u007f]*$/.test(link.href),
+      )
+    : [];
+};
+
+function ResultLinks(props: { links: Record<string, unknown>[] }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const label = (link: Record<string, unknown>) =>
+    typeof link.title === "string" ? link.title : link.rel === "edit" ? t().edit : link.rel === "download" ? t().download : t().open;
+  return (
+    <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
+      <For each={props.links}>
+        {(link) => (
+          <ButtonLink
+            class="ai-chat-result-link"
+            href={String(link.href)}
+            target="_blank"
+            rel="noopener noreferrer"
+            size="xs"
+            variant="ghost"
+          >
+            {label(link)}
+          </ButtonLink>
+        )}
+      </For>
+    </span>
+  );
+}
+
+/** The summary and links of a table result, unless its receipt in place 4 already shows them. */
+function CapabilityResultRow(props: { block: ToolBlock }) {
+  const block = () => props.block;
+  const summary = () => resultSummary(block());
+  const links = () => resultLinks(block());
+  return (
+    <Show when={summary() || links().length > 0}>
+      <Chat.Activity
+        icon={aiToolIcon(block().name, block().presentation?.appIcon)}
+        accent={block().presentation?.appAccent}
+        label={summary() || (block().presentation?.title ?? displayToolName(block().name))}
+        trailing={links().length > 0 ? <ResultLinks links={links()} /> : undefined}
+      />
+    </Show>
+  );
+}
+
+function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; receipt: Accessor<boolean> }) {
   const actions = useAiChatActions();
   const block = () => props.result()?.block;
   return (
@@ -304,6 +367,9 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined> })
             <CloudCardBlock args={current().args} />
           </Match>
           <Match when={true}>
+            <Show when={!props.receipt()}>
+              <CapabilityResultRow block={current()} />
+            </Show>
             <CapabilityTablePreview result={current().result} label={current().presentation?.title ?? displayToolName(current().name)} />
           </Match>
         </Switch>
@@ -317,21 +383,12 @@ function AiReceipt(props: { action: AiTurnAction; stopped: boolean }) {
   const t = () => aiChatMessages(locale());
   const block = () => props.action.block;
   const title = () => block().presentation?.title ?? displayToolName(block().name);
-  const result = () => (isRecord(block().result) ? (block().result as Record<string, unknown>) : null);
-  const summary = () => {
-    const value = result()?.summary;
-    return typeof value === "string" && value.trim().length <= 500 ? value.trim() : "";
-  };
-  const links = () => {
-    const value = result()?.links;
-    return Array.isArray(value)
-      ? value.filter((link) => isRecord(link) && typeof link.href === "string" && /^\/(?![\\/])[^\\\u0000-\u001f\u007f]*$/.test(link.href))
-      : [];
-  };
+  const links = () => (props.action.state === "done" ? resultLinks(block()) : []);
   const label = () => {
     const state = props.action.state;
     if (state === "done") {
-      if (summary()) return summary();
+      const summary = resultSummary(block());
+      if (summary) return summary;
       // A tool that is not a Cloud action has no effect of its own to report; the receipt records the decision.
       return block().presentation?.kind === "capability" ? t().receiptDone({ title: title() }) : t().receiptApproved({ title: title() });
     }
@@ -346,32 +403,7 @@ function AiReceipt(props: { action: AiTurnAction; stopped: boolean }) {
       accent={block().presentation?.appAccent}
       label={label()}
       description={props.action.state === "failed" ? capabilityErrorDescription(block().result) : undefined}
-      trailing={
-        props.action.state === "done" && links().length > 0 ? (
-          <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
-            <For each={links()}>
-              {(link) => (
-                <ButtonLink
-                  class="ai-chat-result-link"
-                  href={String(link.href)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  size="xs"
-                  variant="ghost"
-                >
-                  {typeof link.title === "string"
-                    ? link.title
-                    : link.rel === "edit"
-                      ? "Edit"
-                      : link.rel === "download"
-                        ? "Download"
-                        : "Open"}
-                </ButtonLink>
-              )}
-            </For>
-          </span>
-        ) : undefined
-      }
+      trailing={links().length > 0 ? <ResultLinks links={links()} /> : undefined}
     />
   );
 }
@@ -558,7 +590,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             <AiWorkLine segment={props.segment} />
           </div>
         </Show>
-        <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} />}</For>
+        <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
         <Show when={layout().text.length > 0}>
           <AiTurnText blocks={() => layout().text} live={live} folding={() => layout().steps > 0} earlier={() => props.segment().earlier} />
         </Show>

@@ -20,7 +20,7 @@ import { type AiChatActions, AiChatActionsProvider, createAssistantMessageAction
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
-import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn } from "./turn-layout";
+import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
@@ -74,10 +74,33 @@ const surveyItem = (block: SurveyResultBlock, turnId: string): ChatTimelineItem 
 });
 
 /**
- * Timeline id of an assistant segment: its turn and its position among the turn's assistant segments. A live turn and
- * its history produce the same ids, so the timeline keeps the same elements when the turn ends.
+ * Timeline ids of a turn's assistant segments. A segment is named by what opened it: `start`, the steering message, or
+ * the accepted survey answer before it. A live turn and its history produce the same ids, also for consecutive steering
+ * messages, and loading older history does not rename a segment, so the timeline keeps the same elements.
  */
-const turnSegmentId = (turnId: string, index: number) => `ai-turn:${turnId}:${index}`;
+const createSegmentIds = () => {
+  const used = new Map<string, number>();
+  return (turnId: string, opener: string) => {
+    const base = `ai-turn:${turnId}:${opener}`;
+    // A turn that was compacted while it ran is split in history; its later part continues the same name.
+    const count = used.get(base) ?? 0;
+    used.set(base, count + 1);
+    return count === 0 ? base : `${base}:${count}`;
+  };
+};
+
+const steerOpener = (steerId: string) => `steer:${steerId}`;
+const surveyOpener = (callId: string) => `survey:${callId}`;
+
+/** History stores consecutive steering messages before the blocks they steered; the last one opened the segment. */
+const leadingSteerOpener = (blocks: readonly AssistantBlock[]): string | null => {
+  let opener: string | null = null;
+  for (const block of blocks) {
+    if (block.kind !== "steer_applied") break;
+    opener = steerOpener(block.steerId);
+  }
+  return opener;
+};
 
 /** History phase of a finished loop, from how its loop ended. */
 const storedPhase = (entries: readonly AiStoredMessage[]): AiTurnPhase => {
@@ -146,7 +169,7 @@ const storedItems = (
   timeline.forEach((item, index) => {
     if (item.type === "assistant" && item.loopId) lastItemOfLoop.set(item.loopId, index);
   });
-  const segmentsOfLoop = new Map<string, number>();
+  const segmentId = createSegmentIds();
   return timeline.flatMap((item, itemIndex): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
@@ -229,11 +252,14 @@ const storedItems = (
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
     const scheduledTask = item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask ?? null;
     let firstSegment = true;
+    let opener = leadingSteerOpener(item.blocks) ?? "start";
     return segments.flatMap((segment, index): ChatTimelineItem[] => {
       const turnId = item.loopId ?? item.id;
-      if (segment.type === "survey") return [surveyItem(segment.block, turnId)];
-      const ordinal = item.loopId ? (segmentsOfLoop.get(item.loopId) ?? 0) : index;
-      if (item.loopId) segmentsOfLoop.set(item.loopId, ordinal + 1);
+      if (segment.type === "survey") {
+        opener = surveyOpener(segment.block.callId);
+        return [surveyItem(segment.block, turnId)];
+      }
+      const segmentOpener = opener;
       const last = lastOfLoop && index === lastAssistant;
       const segmentPhase = last ? phase : "completed";
       const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
@@ -244,7 +270,7 @@ const storedItems = (
       const task = firstSegment ? scheduledTask : null;
       firstSegment = false;
       if (isEmptyLayout(layout) && !messageActions && !task) return [];
-      const id = item.loopId ? turnSegmentId(item.loopId, ordinal) : `${item.id}:${index}`;
+      const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
         {
           kind: "message",
@@ -284,12 +310,17 @@ const activeItems = (
   if (segments.length === 0 || (turn.status === "running" && segments.at(-1)?.type === "survey"))
     segments.push({ type: "assistant", blocks: [] });
   const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
-  let ordinal = 0;
+  const segmentId = createSegmentIds();
+  let opener = "start";
 
-  const items = segments.map((segment, index): ChatTimelineItem => {
-    if (segment.type === "survey") return surveyItem(segment.block, turn.turnId);
+  const items = segments.flatMap((segment, index): ChatTimelineItem | ChatTimelineItem[] => {
+    if (segment.type === "survey") {
+      opener = surveyOpener(segment.block.callId);
+      return surveyItem(segment.block, turn.turnId);
+    }
     if (segment.type === "steer") {
       const block = segment.block;
+      opener = steerOpener(block.steerId);
       return {
         kind: "message",
         id: `${turn.turnId}-steer-${block.id}`,
@@ -305,7 +336,10 @@ const activeItems = (
     const last = index === lastAssistant;
     const phase: AiTurnPhase = !last ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
     const layout = layoutAiTurn(segment.blocks, { phase, codePresentations: Boolean(actions.renderCodePresentation) });
-    const id = turnSegmentId(turn.turnId, ordinal++);
+    // Consecutive steering messages leave empty segments between them; history has none. The last segment stays, since
+    // it carries the progress indicator.
+    if (!last && isEmptyLayout(layout)) return [];
+    const id = segmentId(turn.turnId, opener);
     return {
       kind: "message",
       id,
@@ -324,7 +358,8 @@ const activeItems = (
 
 /**
  * Work time of the active turn: wall time minus time spent waiting for the user. A state snapshot seeds it after a
- * reconnect; the clock stands while the turn waits and continues from the same value afterwards.
+ * reconnect; the clock stands while the turn waits for an approval or an answer and continues from the same value
+ * afterwards.
  */
 const createActiveTurnClock = (source: AiChatTimelineSource): Accessor<AiTurnDuration | null> => {
   const [now, setNow] = createSignal(Date.now());
@@ -356,7 +391,8 @@ const createActiveTurnClock = (source: AiChatTimelineSource): Accessor<AiTurnDur
         waitingSince: Number.isFinite(waitingSince) ? Math.min(waitingSince, time) : null,
       };
     }
-    const waiting = turn.status === "waiting_for_action";
+    // A tool the browser runs by itself is work; only an approval or an answer the person owes stops the clock.
+    const waiting = turn.blocks.some(waitsForUser);
     if (waiting && state.waitingSince === null) state.waitingSince = time;
     if (!waiting && state.waitingSince !== null) {
       state.waitMs += time - state.waitingSince;

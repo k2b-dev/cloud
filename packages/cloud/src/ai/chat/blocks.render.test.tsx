@@ -1343,3 +1343,110 @@ describe("assistant activity width", () => {
     expect(renderTurn([{ ...pdfTool, status: "completed" }, reasoning], "en")).toContain("Thinking");
   });
 });
+
+describe("turn places in the reader's language", () => {
+  const renderPlaces = (blocks: AiTurnBlock[], options: { locale?: string; phase?: AiTurnPhase; workedMs?: number } = {}) => {
+    const phase = options.phase ?? "completed";
+    return renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: options.locale ?? "en",
+        get children() {
+          return createComponent(AiTurnView, {
+            segment: () => ({
+              id: "ai-turn:turn-1:start",
+              turnId: "turn-1",
+              phase,
+              layout: layoutAiTurn(blocks, { phase }),
+              earlier: false,
+              duration: () => (options.workedMs === undefined ? null : { workedMs: options.workedMs, waitingMs: null }),
+            }),
+            disclosureState: createAiToolDisclosureState(),
+          });
+        },
+      }),
+    );
+  };
+  const mail = (result: unknown): AiTurnBlock => ({
+    id: "tool-send",
+    kind: "tool",
+    callId: "send",
+    name: "mail__action__send",
+    status: "completed",
+    result,
+    presentation: {
+      kind: "capability",
+      appId: "mail",
+      appName: "E-Mail",
+      appIcon: "ti ti-mail",
+      title: "E-Mail senden",
+      capabilityKind: "action",
+    },
+  });
+  const table = (summary: string) => ({
+    data: { rows: [{ name: "Inventar" }] },
+    presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] },
+    summary,
+    links: [{ rel: "open", href: "/app/grids/query?id=q1" }],
+  });
+
+  test("labels receipt links without a title in the reader's language", () => {
+    const result = {
+      summary: "E-Mail an Jana Berger gesendet",
+      links: [
+        { rel: "open", href: "/app/mail/MbA123?conversation=c1" },
+        { rel: "edit", href: "/app/mail/MbA123/drafts/d1" },
+        { rel: "download", href: "/app/mail/MbA123/attachments/a1" },
+      ],
+    };
+    const german = renderPlaces([mail(result)], { locale: "de" });
+    expect(german).toContain("E-Mail an Jana Berger gesendet");
+    for (const label of ["Öffnen", "Bearbeiten", "Herunterladen"]) expect(german).toContain(`>${label}</span>`);
+    expect(german).not.toMatch(/>(Open|Edit|Download)<\/span>/);
+    expect(renderPlaces([mail(result)], { locale: "en" })).toContain(">Open</span>");
+  });
+
+  test("keeps the summary and links of a query table above it, and shows them once for an action", () => {
+    const query: AiTurnBlock = {
+      id: "tool-query",
+      kind: "tool",
+      callId: "query",
+      name: "grids__query__gql_dot_execute",
+      status: "completed",
+      result: table("3 Zeilen aus Inventar"),
+      presentation: {
+        kind: "capability",
+        appId: "grids",
+        appName: "Grids",
+        appIcon: "ti ti-table",
+        title: "Abfrage ausführen",
+        capabilityKind: "query",
+      },
+    };
+    const html = renderPlaces([query], { locale: "de" });
+    expect(html).toContain("3 Zeilen aus Inventar");
+    expect(html).toContain('href="/app/grids/query?id=q1"');
+    expect(html).toContain(">Öffnen</span>");
+    expect(html).toContain("<table");
+    expect(html.indexOf("3 Zeilen aus Inventar")).toBeLessThan(html.indexOf("<table"));
+
+    // An action that returns a table shows its summary and links in its receipt, not twice.
+    const action = renderPlaces([mail(table("Export erstellt"))], { locale: "de" });
+    expect(action.split("Export erstellt").length).toBe(2);
+    expect(action.split('href="/app/grids/query?id=q1"').length).toBe(2);
+    expect(action).toContain("<table");
+  });
+
+  test("a failed turn says that it was interrupted", () => {
+    const blocks: AiTurnBlock[] = [
+      { id: "text-1", kind: "text", text: "Now I build the dashboard." },
+      { id: "tool-run", kind: "tool", callId: "run", name: "code_run", status: "completed", result: {} },
+    ];
+    const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
+    expect(english).toContain("Worked 4 min · interrupted");
+    expect(english).toContain('aria-label="Worked 4 minutes, interrupted, 1 step"');
+    expect(english).not.toContain("Now I build the dashboard.");
+    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toContain("4 Min. gearbeitet · abgebrochen");
+    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toContain("Worked 4 min · stopped");
+    expect(renderPlaces(blocks, { workedMs: 240_000 })).not.toMatch(/interrupted|stopped/);
+  });
+});

@@ -209,6 +209,8 @@ export const buildBlocksFromMessages = (
             args: block.args,
             status: "running",
             presentation: meta?.toolPresentations?.[block.id],
+            // A turn that ended before an approved call returned records the approval on the call's message.
+            ...(meta?.toolOutcomes?.[block.id] === "approved" ? { approved: true } : {}),
           });
         }
       });

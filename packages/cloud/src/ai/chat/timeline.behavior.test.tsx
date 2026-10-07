@@ -4,13 +4,13 @@ import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } from "../client/projection";
-import type { AiStreamEvent, AiTurnBlock, AiWireEvent } from "../protocol";
+import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
 
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
   // The expanded work line shows every folded text; the newest stays below it.
-  window.sessionStorage.setItem("cloud.ai.tool-disclosure:work:ai-turn:turn:0", "open");
+  window.sessionStorage.setItem("cloud.ai.tool-disclosure:work:ai-turn:turn:start", "open");
   const { Chat } = await import("@k2b/ui");
   const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
   const [state, setState] = createStore(emptyProjection());
@@ -283,6 +283,140 @@ import type { AiStoredMessage } from "../types";
     await settle();
     expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
     expect(dom.root.textContent).toContain("Using the newer file.");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+const storedMessage = (seq: number, message: AiStoredMessage["message"], patch: Partial<AiStoredMessage> = {}): AiStoredMessage => ({
+  id: `m${seq}`,
+  shortId: `m${seq}`,
+  conversationId: "chat",
+  seq,
+  kind: "message",
+  message,
+  loopId: "turn",
+  modelProfileId: null,
+  providerModel: null,
+  usage: null,
+  stopReason: null,
+  loopAggregate: null,
+  loopDoneReason: null,
+  compactedAt: null,
+  meta: null,
+  createdAt: "2026-10-06T10:00:00.000Z",
+  ...patch,
+});
+const presentationResult = { presentationId: "00000000-0000-4000-8000-000000000002", title: "Inventory" };
+const viewArgs = { runId: "r", title: "Inventory" };
+/** A turn steered twice at one boundary, with a Studio view after the steering, as the server stores it. */
+const steeredHistory = [
+  storedMessage(10, { role: "user", content: [{ type: "text", text: "Build it" }] }),
+  storedMessage(11, {
+    role: "assistant",
+    content: [
+      { type: "text", text: "I read the data first." },
+      { type: "tool_call", id: "read", name: "read_file", args: { path: "/a.csv" } },
+    ],
+  }),
+  storedMessage(12, { role: "tool_result", callId: "read", name: "read_file", result: "a", isError: false }),
+  storedMessage(13, { role: "user", content: [{ type: "text", text: "Use Q3." }] }, { meta: { steerId: "s1" } }),
+  storedMessage(14, { role: "user", content: [{ type: "text", text: "And Q4." }] }, { meta: { steerId: "s2" } }),
+  storedMessage(15, { role: "assistant", content: [{ type: "tool_call", id: "view", name: "code_present", args: viewArgs }] }),
+  storedMessage(16, { role: "tool_result", callId: "view", name: "code_present", result: presentationResult, isError: false }),
+  storedMessage(17, { role: "assistant", content: [{ type: "text", text: "Inventory is ready." }] }, { loopDoneReason: "stop" }),
+];
+
+const renderTimeline = async (
+  dom: ReturnType<typeof createDomTestHarness>,
+  source: { messages: () => readonly AiStoredMessage[]; activeTurn: () => ReturnType<typeof emptyProjection>["activeTurn"] },
+) => {
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  return render(
+    () => (
+      <AiChatActionsProvider
+        actions={{
+          renderCodePresentation: (result) => (
+            <section class="host-view">
+              {String((result() as { presentationId?: string } | undefined)?.presentationId ?? "pending")}
+            </section>
+          ),
+        }}
+      >
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(source.messages), activeTurn: source.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+};
+
+(isServer ? test.skip : test)("two steering messages at one boundary keep the steered segment when the turn ends", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderTimeline(dom, { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn });
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  let seq = 0;
+  const set = (block: AiTurnBlock) => emit({ ...base, seq: ++seq, type: "block_set", block });
+  try {
+    emit({ ...base, seq: ++seq, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: ++seq, type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: "I read the data first." });
+    set({ id: "tool-read", kind: "tool", callId: "read", name: "read_file", args: { path: "/a.csv" }, status: "completed", result: "a" });
+    for (const [steerId, text] of [
+      ["s1", "Use Q3."],
+      ["s2", "And Q4."],
+    ] as const) {
+      set({ id: steerMessageBlockId(steerId), kind: "steer_message", steerId, text, status: "consumed" });
+      set({ id: steerAppliedBlockId(steerId), kind: "steer_applied", steerId });
+    }
+    set({
+      id: "tool-view",
+      kind: "tool",
+      callId: "view",
+      name: "code_present",
+      args: viewArgs,
+      status: "completed",
+      result: presentationResult,
+    });
+    emit({ ...base, seq: ++seq, type: "block_delta", blockId: "a1-t2-0", blockKind: "text", delta: "Inventory is ready." });
+    await tick();
+    // The steering messages follow each other without an empty response between them.
+    const articles = () => [...dom.root.querySelectorAll("article")].map((article) => article.textContent ?? "");
+    expect(articles().filter((text) => text.trim() === "")).toEqual([]);
+    const host = dom.root.querySelector(".host-view");
+    expect(host?.textContent).toBe(presentationResult.presentationId);
+
+    emit({ ...base, seq: ++seq, type: "turn_finished", status: "completed", error: null, messages: steeredHistory });
+    await tick();
+    expect(state.activeTurn).toBeNull();
+    expect(dom.root.querySelector(".host-view")).toBe(host);
+    expect(articles().filter((text) => text.trim() === "")).toEqual([]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("loading older history keeps the segments of a turn that started before the window", async () => {
+  const dom = createDomTestHarness();
+  // The first window starts at the steering messages, in the middle of the turn.
+  const [messages, setMessages] = createSignal<readonly AiStoredMessage[]>(steeredHistory.slice(3));
+  const dispose = await renderTimeline(dom, { messages, activeTurn: () => null });
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    await tick();
+    const host = dom.root.querySelector(".host-view");
+    expect(host?.textContent).toBe(presentationResult.presentationId);
+    setMessages(steeredHistory);
+    await tick();
+    expect(dom.root.textContent).toContain("Build it");
+    expect(dom.root.querySelector(".host-view")).toBe(host);
   } finally {
     dispose();
     dom.cleanup();

@@ -8,6 +8,7 @@ import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
+import { activeTurnWaits } from "./turn-timing";
 import type {
   AiConversation,
   AiConversationDraft,
@@ -775,6 +776,76 @@ const messageSearchText = (message: Message): string => {
     .join("\n")
     .trim();
   return text.slice(0, SEARCH_TEXT_MAX_CHARS);
+};
+
+/**
+ * Record how a turn ended on its messages when its loop could not record it: a stop while an approval waits, a run
+ * time limit, or a turn the sweep finalizes. History reads the ending from the last assistant message, so such a turn
+ * never looks finished. A failure replaces the `aborted` that a loop cut off by its run time limit recorded, so the
+ * limit never looks like a user stop. A call the user approved that never returned keeps its approval in history.
+ */
+const recordTurnEnd = async (
+  db: typeof sql,
+  input: { conversationId: string; turnId: string; reason: "aborted" | "error" },
+): Promise<void> => {
+  const replaces = input.reason === "error" ? "aborted" : null;
+  for (const table of ["ai.messages", "ai.task_messages"]) {
+    await db`
+      UPDATE ${db(table)}
+      SET loop_done_reason = ${input.reason}
+      WHERE id = (
+        SELECT id
+        FROM ${db(table)}
+        WHERE conversation_id = ${input.conversationId}
+          AND loop_id = ${input.turnId}::text
+          AND compacted_at IS NULL
+          AND kind = 'message'
+          AND role = 'assistant'
+        ORDER BY seq DESC
+        LIMIT 1
+      )
+        AND (loop_done_reason IS NULL OR loop_done_reason = ${replaces}::text)
+    `;
+    // An approved call without a result keeps the decision on the message that holds the call. A decision on a custom
+    // approval belongs to the call that asked for it.
+    await db`
+      UPDATE ${db(table)} target
+      SET meta = jsonb_set(
+        COALESCE(target.meta, '{}'::jsonb),
+        '{toolOutcomes}',
+        COALESCE(target.meta->'toolOutcomes', '{}'::jsonb) || outcomes.value
+      )
+      FROM (
+        SELECT message.id, jsonb_object_agg(approved.call_id, 'approved'::text) AS value
+        FROM (
+          SELECT DISTINCT
+            CASE
+              WHEN action.kind = 'custom_approval' THEN COALESCE(substring(action.call_id FROM '^(.*)-approval-[0-9]+$'), action.call_id)
+              ELSE action.call_id
+            END AS call_id
+          FROM ai.pending_actions action
+          WHERE action.turn_id = ${input.turnId}
+            AND action.resolved_event->>'type' = 'approval_response'
+            AND action.resolved_event->>'approved' = 'true'
+        ) approved
+        JOIN ${db(table)} message
+          ON message.conversation_id = ${input.conversationId}
+          AND message.loop_id = ${input.turnId}::text
+          AND message.role = 'assistant'
+          AND message.message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', approved.call_id))
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM ${db(table)} result
+          WHERE result.conversation_id = ${input.conversationId}
+            AND result.loop_id = ${input.turnId}::text
+            AND result.role = 'tool_result'
+            AND result.message->>'callId' = approved.call_id
+        )
+        GROUP BY message.id
+      ) outcomes
+      WHERE target.id = outcomes.id
+    `;
+  }
 };
 
 /** Insert a message inside an open conversation-lock transaction and bump the conversation. */
@@ -2612,33 +2683,24 @@ export const aiConversations: AiConversationService = {
   },
 
   getActiveTurn: async (input) => {
-    // The wait sums let a reconnecting client show work time without time spent waiting for the user.
-    const rows = await sql<(TurnRow & { action_wait_ms: number | string | null; waiting_since: Date | string | null })[]>`
-      SELECT turn.*,
-        (
-          SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (action.resolved_at - action.created_at)) * 1000), 0)
-          FROM ai.pending_actions action
-          WHERE action.turn_id = turn.id AND action.status <> 'pending' AND action.resolved_at IS NOT NULL
-        ) AS action_wait_ms,
-        (
-          SELECT MIN(action.created_at)
-          FROM ai.pending_actions action
-          WHERE action.turn_id = turn.id AND action.status = 'pending'
-        ) AS waiting_since
-      FROM ai.turns turn
-      WHERE turn.conversation_id = ${input.conversationId}
-        AND NOT COALESCE(turn.run_config ? 'background', false)
-        AND turn.status IN ('queued', 'running', 'waiting_for_action')
-      ORDER BY turn.created_at DESC
+    const rows = await sql<TurnRow[]>`
+      SELECT *
+      FROM ai.turns
+      WHERE conversation_id = ${input.conversationId}
+        AND NOT COALESCE(run_config ? 'background', false)
+        AND status IN ('queued', 'running', 'waiting_for_action')
+      ORDER BY created_at DESC
       LIMIT 1
     `;
     if (!rows[0]) return null;
+    // The waits let a reconnecting client show work time without time spent waiting for the user.
+    const waits = await activeTurnWaits(rows[0].id);
     return {
       turn: rowToTurn(rows[0]),
       liveBlocks: rowToLiveBlocks(rows[0]),
       liveSeq: Number(rows[0].live_seq ?? 0),
-      actionWaitMs: Math.max(0, Math.round(Number(rows[0].action_wait_ms ?? 0))),
-      waitingSince: rows[0].waiting_since ? iso(rows[0].waiting_since) : null,
+      actionWaitMs: Math.max(0, Math.round(waits.actionWaitMs)),
+      waitingSince: waits.waitingSince,
     };
   },
 
@@ -2839,27 +2901,11 @@ export const aiConversations: AiConversationService = {
           AND status = 'pending'
       `;
       if (input.status !== "completed") {
-        // A turn that ends without its own loop end, such as a stop while it waits for an approval, still records
-        // how it ended, so history shows it as stopped or failed instead of finished.
-        const doneReason = input.status === "aborted" ? "aborted" : "error";
-        for (const table of ["ai.messages", "ai.task_messages"]) {
-          await tx`
-            UPDATE ${tx(table)}
-            SET loop_done_reason = ${doneReason}
-            WHERE id = (
-              SELECT id
-              FROM ${tx(table)}
-              WHERE conversation_id = ${input.conversationId}
-                AND loop_id = ${input.turnId}::text
-                AND compacted_at IS NULL
-                AND kind = 'message'
-                AND role = 'assistant'
-              ORDER BY seq DESC
-              LIMIT 1
-            )
-              AND loop_done_reason IS NULL
-          `;
-        }
+        await recordTurnEnd(tx, {
+          conversationId: input.conversationId,
+          turnId: input.turnId,
+          reason: input.status === "aborted" ? "aborted" : "error",
+        });
         await tx`
           UPDATE ai.turn_steers
           SET status = 'discarded', consumed_at = COALESCE(consumed_at, now())
@@ -2960,7 +3006,7 @@ export const aiConversations: AiConversationService = {
     }));
 
     // 3) Finalize aborts: cancel-requested turns without a live lease, and expired waits.
-    const abortedRows = await sql<{ id: string; conversation_id: string; attempt: number; live_seq: number | string }[]>`
+    const abortedRows = await sql<{ id: string; conversation_id: string; attempt: number; live_seq: number | string; stopped: boolean }[]>`
       UPDATE ai.turns
       SET status = 'aborted',
           completed_at = now(),
@@ -2977,7 +3023,7 @@ export const aiConversations: AiConversationService = {
           )
         LIMIT ${limit}
       )
-      RETURNING id, conversation_id, attempt, live_seq
+      RETURNING id, conversation_id, attempt, live_seq, cancel_requested_at IS NOT NULL AS stopped
     `;
     result.aborted = abortedRows.map((row) => ({
       conversationId: row.conversation_id,
@@ -2986,7 +3032,14 @@ export const aiConversations: AiConversationService = {
       seq: Number(row.live_seq) + 1,
     }));
 
+    // History tells a stop from a turn that failed or whose wait expired, as it does for turns that end on their own.
+    const stopped = new Set(abortedRows.filter((row) => row.stopped).map((row) => row.id));
     for (const finalized of [...result.failed, ...result.aborted]) {
+      await recordTurnEnd(sql, {
+        conversationId: finalized.conversationId,
+        turnId: finalized.turnId,
+        reason: stopped.has(finalized.turnId) ? "aborted" : "error",
+      });
       await sql`
         UPDATE ai.pending_actions
         SET status = 'aborted', resolved_at = COALESCE(resolved_at, now())
