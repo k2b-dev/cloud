@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { type Browser, chromium, type Page } from "playwright";
 import { compileArtifact } from "./runtime/compile";
 
 // Where things stand when a long turn ends needs a real layout engine. The harness scripts one live turn with a Studio
@@ -68,7 +67,8 @@ beforeAll(async () => {
       );
     },
   });
-  browser = await launchBrowser();
+  // Like the other artifact browser suites, this runs nightly in Google Chrome rather than through the shared launcher.
+  browser = await chromium.launch({ channel: "chrome", headless: true });
 }, 60_000);
 
 afterAll(async () => {
@@ -179,7 +179,7 @@ for (const viewport of [
       expect(await page.locator(".ai-turn-work > summary").textContent()).toBe("3 Min. gearbeitet6 Schritte");
       expect(await page.locator(".ai-turn").textContent()).not.toContain("Now I build the dashboard.");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
-      await page.screenshot({ path: `/tmp/assistant-turn-${browserName}-${viewport.width}.png`, fullPage: false });
+      await page.screenshot({ path: `/tmp/assistant-turn-${viewport.width}.png`, fullPage: false });
       expect(errors).toEqual([]);
     } finally {
       await page.close();
