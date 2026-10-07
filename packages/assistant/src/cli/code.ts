@@ -20,11 +20,11 @@ const inputFlag = () => flag.input({ description: "JSON input; use --input-file 
 
 const runtimeCommand = (name: "run" | "action") =>
   command(`code ${name}`, {
-    summary: "Execute code in an isolated CLI worker, optionally with UI interactions and output exports",
+    summary: "Execute a script in an isolated CLI worker, optionally with inspections and output exports",
     flags: {
       chat: flag.string({ description: "Existing chat ID for authorized inputs, outputs and Project context" }),
       input: inputFlag(),
-      steps: flag.input({ description: "Optional JSON array of {name,args} steps: code_interact, code_inspect, code_export" }),
+      steps: flag.input({ description: "Optional JSON array of {name,args} steps: code_inspect, code_export" }),
       approve: flag.stringList({ description: "Approve an exact capability name or http.fetch:https://origin for this run" }),
     },
     async run({ ctx, flags }) {
@@ -33,7 +33,7 @@ const runtimeCommand = (name: "run" | "action") =>
       parseCodeToolInput(name === "action" ? "code_action" : "code_run", input);
       const stepsText = await readCliInput(flags.steps, { label: "Run steps" });
       const steps = z
-        .array(z.object({ name: z.enum(["code_interact", "code_inspect", "code_export"]), args: z.record(z.string(), z.json()) }).strict())
+        .array(z.object({ name: z.enum(["code_inspect", "code_export"]), args: z.record(z.string(), z.json()) }).strict())
         .parse(stepsText ? parseJson(stepsText, "run steps") : []);
       const conversation = await resolveConversation(ctx, { conversationId: flags.chat });
       const host = await createCliCodeHost(ctx, async (request) => {
@@ -56,8 +56,7 @@ const runtimeCommand = (name: "run" | "action") =>
           results.push(result);
           if (result && typeof result === "object" && "error" in result && result.error) throw new Error(JSON.stringify(result));
         }
-        // Keep the CLI host alive for a background job, including jobs started by
-        // the last interaction. Intermediate snapshots are not completed results.
+        // Keep the CLI host alive for a background job. Intermediate snapshots are not completed results.
         const running = (value: unknown) =>
           value &&
           typeof value === "object" &&
@@ -71,8 +70,6 @@ const runtimeCommand = (name: "run" | "action") =>
           do {
             latest = await host.execute({ ...base, callId: crypto.randomUUID(), name: "code_inspect", args: { runId, waitMs: 30000 } });
             if (latest && typeof latest === "object" && "error" in latest && latest.error) throw new Error(JSON.stringify(latest));
-            if (latest && typeof latest === "object" && "modal" in latest && latest.modal)
-              throw new Error("Background job is waiting for a dialog. Supply a code_interact step to answer it.");
           } while (running(latest));
           results.push(latest);
         }

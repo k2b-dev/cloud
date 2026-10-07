@@ -57,7 +57,7 @@ test("published actions execute in the isolated host and validate their returned
     args: { id: "aBc234", action: "double", publishedVersion: 1, input: { value: 3 } },
   };
   try {
-    expect(await host.execute({ ...call, callId: "action" })).toMatchObject({ status: "ready", output: "6", nodes: [] });
+    expect(await host.execute({ ...call, callId: "action" })).toMatchObject({ status: "ready", output: "6" });
     expect(await host.execute({ ...call, callId: "invalid-input", args: { ...call.args, input: { value: "3" } } })).toEqual({
       failed: true,
       error: "ACTION_INPUT_INVALID: value: expected number, received string",
@@ -285,9 +285,11 @@ test("CLI worker chains capabilities through host approvals and keeps denial out
   }
 }, 90000);
 
-test("chat inputs load on demand and app fixtures are visible only to the picker", async () => {
-  const appCode = `export default async (_input, {files,signal,progress}) =>{const hidden=files;ui.filePicker({id:"pick",label:"Pick inputs",multiple:true,onChange:async picked=>ui.text({id:"result",value:JSON.stringify({hidden:hidden.length,name:picked[0].name,text:await picked[0].text()})})});}`;
-  const appSource = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: appCode }] });
+test("chat inputs load on demand for one-off and saved scripts, and only selected inputs are readable", async () => {
+  const scriptSource = await compileArtifact({
+    entry: "main.ts",
+    files: [{ path: "main.ts", content: "export default async (_input, {files}) => ({ name: files[0].path, text: await (await files[0].file()).text() })" }],
+  });
   const bundle = await cliHostBundle();
   let reads = 0;
   const host = await createCliCodeHost({
@@ -302,7 +304,7 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
         return new Response("hello", { headers: { "content-type": "text/plain" } });
       }
       if (path.endsWith("/files")) return Response.json({ files: [{ path: "/folder/report.csv", size: 5, mediaType: "text/plain" }] });
-      if (path.includes("/compiled")) return Response.json({ ...appSource, revision: 1 });
+      if (path.includes("/compiled")) return Response.json({ ...scriptSource, revision: 1 });
       if (path.includes("/artifacts/")) return Response.json({ id: "aBc234", kind: "app", revision: 1, sourceRevision: 1 });
       throw new Error(`Unexpected request ${path}`);
     },
@@ -320,19 +322,13 @@ test("chat inputs load on demand and app fixtures are visible only to the picker
     });
     expect(listed).toMatchObject({ output: '{"count":1}' });
     expect(reads).toBe(0);
-    const picked = await host.execute({
+    const saved = await host.execute({
       ...ids,
       name: "code_run",
-      callId: "picker",
+      callId: "saved",
       args: { id: "aBc234", inputPaths: ["/folder/report.csv"] },
     });
-    expect(picked).toMatchObject({ status: "ready" });
-    const selection = await host.execute({ ...ids, name: "code_interact", callId: "select", args: { runId: "picker", id: "pick" } });
-    expect(selection).toMatchObject({
-      nodes: expect.arrayContaining([
-        expect.objectContaining({ id: "result", value: JSON.stringify({ hidden: 0, name: "report.csv", text: "hello" }) }),
-      ]),
-    });
+    expect(saved).toMatchObject({ status: "ready", output: JSON.stringify({ name: "/folder/report.csv", text: "hello" }) });
     expect(reads).toBe(1);
     const denied = await host.execute({
       ...ids,
@@ -425,7 +421,7 @@ test("slow chat input crosses startup deadlines and invalid arguments remain inp
   }
 }, 35000);
 
-test("scratchpad pressure preserves exports and interactive runs while reclaiming old results", async () => {
+test("scratchpad pressure preserves exports and running work while reclaiming old results", async () => {
   const bundle = await cliHostBundle();
   const host = await createCliCodeHost({
     fetch: async (input, init) => {
@@ -444,7 +440,6 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
       "retained",
       'export default async (_input, {files,signal,progress}) =>{await cloud.download("result.csv", "important");return 1;}',
     );
-    await run("interactive", 'export default()=>{ui.button({label:"Keep",onClick:()=>{},id:"keep"});}');
     await run(
       "retained-work",
       "export default async (_input,{signal,progress})=>{for(let i=0;!signal.aborted;i++){progress(i);await new Promise(r=>setTimeout(r,1000));}}",
@@ -452,9 +447,6 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
     for (let i = 0; i < 32; i++) expect(await run(`probe-${i}`, `export default()=>${i}`)).toMatchObject({ status: "ready" });
     expect(await host.execute({ ...ids, name: "code_inspect", callId: "files", args: { runId: "retained" } })).toMatchObject({
       files: [{ name: "result.csv" }],
-    });
-    expect(await host.execute({ ...ids, name: "code_inspect", callId: "ui", args: { runId: "interactive" } })).toMatchObject({
-      nodes: [{ id: "keep" }],
     });
     expect(await host.execute({ ...ids, name: "code_inspect", callId: "work", args: { runId: "retained-work" } })).toMatchObject({
       work: { status: "running" },
@@ -466,10 +458,10 @@ test("scratchpad pressure preserves exports and interactive runs while reclaimin
   }
 }, 60000);
 
-test("slow database and shared storage calls do not consume the short callback deadline", async () => {
+test("slow database and shared storage calls do not consume the start deadline", async () => {
   const id = "aBc234";
   const code =
-    'export default()=>{ui.button({label:"Import",onClick:async()=>{await cloud.db.list("records",{}, {limit:1});await cloud.kv.set("done",true);ui.text({value:"Finished"});},id:"import"});}';
+    'export default async () => { await cloud.db.list("records", {}, { limit: 1 }); await cloud.kv.set("done", true); return "Finished"; }';
   const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
   const bundle = await cliHostBundle();
   const host = await createCliCodeHost({
@@ -493,10 +485,11 @@ test("slow database and shared storage calls do not consume the short callback d
   });
   try {
     const ids = { conversationId: id, turnId: id };
-    expect(await host.execute({ ...ids, name: "code_run", callId: "slow-io", args: { id } })).toMatchObject({ status: "ready" });
-    expect(await host.execute({ ...ids, name: "code_interact", callId: "import", args: { runId: "slow-io", id: "import" } })).toMatchObject(
-      { status: "ready", nodes: [{ id: "import" }, { type: "text", value: "Finished" }] },
-    );
+    // 34 seconds of host waits: longer than the 15-second start watchdog and the 20-second start wait, shorter than the call budget.
+    expect(await host.execute({ ...ids, name: "code_run", callId: "slow-io", args: { id } })).toMatchObject({
+      status: "ready",
+      output: '"Finished"',
+    });
   } finally {
     await host.close();
   }
@@ -666,148 +659,50 @@ test("HTTP crosses the real CLI worker bridge as secret references and waits for
   }
 }, 60000);
 
-test("CLI uses UI typed controls and bounded explorer inspection", async () => {
-  const code = `export default()=>{
-    const output=ui.text({id:"output",value:"Before"});
-    ui.number({id:"count",label:"Count",value:1,onChange(value){output.setValue("Count: "+value);}});
-    ui.chartExplorer({id:"chart",label:"Chart",columns:[{key:"value",label:"Value"}],data:{rowKey:"id",rows:[{id:"a",value:4}],chart:{kind:"bar",category:"id",value:"value"}}});
-  };`;
+test("code_present saves one-off HTML apps only after their static checks pass", async () => {
   const bundle = await cliHostBundle();
-  const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
+  const posted: unknown[] = [];
   const host = await createCliCodeHost({
-    fetch: async (input) => {
+    fetch: async (input, init) => {
       const path = String(input);
-      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
-      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
       if (path.endsWith("host.js")) return new Response(bundle);
-      if (path.endsWith("/compile")) return Response.json(compiled);
-      if (path.includes("/files")) return Response.json({ files: [] });
+      if (path.endsWith("/presentations")) {
+        posted.push(JSON.parse(await new Response(init?.body).text()));
+        return Response.json({ presentationId: "00000000-0000-4000-8000-000000000009", title: "Overview" });
+      }
+      if (path.includes("/artifacts/aBc234"))
+        return Response.json({ id: "aBc234", title: "Ledger", source: { entry: "main.ts", files: [{ path: "main.ts", content: "" }] } });
       throw new Error(`Unexpected request ${path}`);
     },
   });
   const ids = { conversationId: "00000000-0000-4000-8000-000000000001", turnId: "00000000-0000-4000-8000-000000000001" };
+  const present = (callId: string, args: unknown) => host.execute({ ...ids, name: "code_present", callId, args });
   try {
-    expect(await host.execute({ ...ids, name: "code_run", callId: "analytics", args: { code } })).toMatchObject({ status: "ready" });
+    const rejected = (await present("broken", {
+      title: "Broken",
+      files: [
+        { path: "index.html", content: '<h1>Hi</h1><img src="https://example.com/x.png">' },
+        { path: "app.js", content: 'import _ from "lodash";\nlocalStorage.setItem("a", "b");' },
+      ],
+    })) as { failed: boolean; error: string };
+    expect(rejected.failed).toBe(true);
+    for (const problem of ["example.com/x.png", '"lodash"', "localStorage"]) expect(rejected.error).toContain(problem);
+    expect(await present("no-interface", { id: "aBc234" })).toMatchObject({ failed: true, error: expect.stringContaining("no index.html") });
+    expect(posted).toEqual([]);
     expect(
-      await host.execute({
-        ...ids,
-        name: "code_interact",
-        callId: "change",
-        args: { runId: "analytics", id: "count", event: { type: "change", value: 7 } },
-      }),
-    ).toMatchObject({ status: "ready", nodes: expect.arrayContaining([expect.objectContaining({ id: "output", value: "Count: 7" })]) });
-    expect(
-      await host.execute({ ...ids, name: "code_inspect", callId: "inspect", args: { runId: "analytics", nodeId: "chart", limit: 1 } }),
-    ).toMatchObject({ nodes: [expect.objectContaining({ rows: [{ id: "a", value: 4 }], totalRows: 1 })] });
-    expect(
-      await host.execute({
-        ...ids,
-        name: "code_interact",
-        callId: "batch",
-        args: {
-          runId: "analytics",
-          steps: [
-            { id: "count", event: { type: "change", value: 8 } },
-            { id: "chart", event: { type: "view", value: "table" } },
-            { id: "count", event: { type: "change", value: 9 } },
-          ],
-        },
-      }),
-    ).toMatchObject({
-      completedSteps: 3,
-      nextStep: null,
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "output", value: "Count: 9" })]),
-    });
-    const failed = await host.execute({
-      ...ids,
-      name: "code_interact",
-      callId: "batch-failure",
-      args: {
-        runId: "analytics",
-        steps: [
-          { id: "count", event: { type: "change", value: 10 } },
-          { id: "missing" },
-          { id: "count", event: { type: "change", value: 11 } },
+      await present("ok", {
+        title: "Overview",
+        files: [
+          { path: "index.html", content: "<main><h1>Overview</h1><button>One</button><button>Two</button></main>" },
+          { path: "style.css", content: "@media (prefers-color-scheme: dark) { h1 { color: white } }" },
         ],
-      },
-    });
-    expect(failed).toEqual({
-      failed: true,
-      error: expect.stringMatching(/^Step 2 of 3 failed after 1 completed step; later steps did not run\. .*Control does not exist/s),
-    });
-    expect(await host.execute({ ...ids, name: "code_inspect", callId: "after-failure", args: { runId: "analytics" } })).toMatchObject({
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "output", value: "Count: 10" })]),
-    });
+      }),
+    ).toMatchObject({ userVisible: true, title: "Overview", warnings: [expect.objectContaining({ kind: "theme" })] });
+    expect(posted).toHaveLength(1);
   } finally {
     await host.close();
   }
-}, 60000);
-
-test("documented CSV dashboard uses numeric KPIs and survives real filter/reset interactions", async () => {
-  const reference = await Bun.file(new URL("../../skills/code-mode/references/examples.md", import.meta.url)).text();
-  const section = reference.split("## CSV dashboard with a KPI")[1]!;
-  const code = section.match(/```js\n([\s\S]*?)```/)?.[1];
-  const csv = section.match(/```csv\n([\s\S]*?)```/)?.[1];
-  if (!code || !csv) throw new Error("Missing runnable dashboard example");
-  const compiled = await compileArtifact({
-    entry: "main.ts",
-    files: [
-      { path: "main.ts", content: code },
-      { path: "sales.csv", content: csv },
-    ],
-  });
-  const bundle = await cliHostBundle();
-  const host = await createCliCodeHost({
-    fetch: async (input) => {
-      const path = String(input);
-      const chunk = ChunkName.safeParse(path.split("/chunks/")[1]);
-      if (chunk.success) return new Response(await chunkSource(chunk.data), { headers: { "Content-Type": "text/javascript" } });
-      if (path.endsWith("host.js")) return new Response(bundle);
-      if (path.includes("/compiled")) return Response.json({ ...compiled, revision: 7 });
-      if (path.includes("/files")) return Response.json({ files: [] });
-      if (path.includes("/artifacts/")) return Response.json({ id: "aBc234", kind: "app", revision: 7, sourceRevision: 7 });
-      throw new Error(`Unexpected request: ${path}`);
-    },
-  });
-  const identity = { conversationId: crypto.randomUUID(), turnId: crypto.randomUUID() };
-  const run = async (name: string, callId: string, args: unknown) => host.execute({ ...identity, name, callId, args });
-  try {
-    expect(await run("code_run", "demo", { id: "aBc234" })).toMatchObject({
-      status: "ready",
-      revision: 7,
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "revenue", type: "stat", value: 600 })]),
-    });
-    expect(
-      await run("code_interact", "filter", {
-        runId: "demo",
-        steps: [
-          { id: "regions", event: { type: "change", value: ["North"] } },
-          { id: "dates", event: { type: "change", value: { start: "2026-02-01", end: "2026-02-28" } } },
-        ],
-      }),
-    ).toMatchObject({
-      status: "ready",
-      completedSteps: 2,
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "revenue", value: 300 })]),
-    });
-    expect(
-      await run("code_interact", "reset", {
-        runId: "demo",
-        steps: [{ id: "reset" }, { id: "monthly", event: { type: "view", value: "table" } }],
-      }),
-    ).toMatchObject({
-      status: "ready",
-      completedSteps: 2,
-      nodes: expect.arrayContaining([
-        expect.objectContaining({ id: "revenue", value: 600 }),
-        expect.objectContaining({ id: "monthly", view: "table", totalRows: 2 }),
-      ]),
-    });
-    await host.health();
-  } finally {
-    await host.close();
-  }
-}, 60000);
+}, 30000);
 
 test("shared files cross the CLI/browser host as binary above the JSON budget", async () => {
   const bundle = await cliHostBundle();
@@ -932,7 +827,7 @@ test("native host transport reads and writes a 50 MiB binary file without IPC bo
   }
 }, 60000);
 
-test("unattended code runs without a tab, keeps hosts isolated and rejects user dialogs", async () => {
+test("code hosts run without a tab and keep their globals isolated", async () => {
   const bundle = await cliHostBundle();
   const fetchHost = async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input);
@@ -943,11 +838,11 @@ test("unattended code runs without a tab, keeps hosts isolated and rejects user 
     if (path.includes("/files")) return Response.json({ files: [] });
     throw new Error(`Unexpected unattended request ${path}`);
   };
-  const first = await createCliCodeHost({ fetch: fetchHost }, undefined, { unattended: true });
+  const first = await createCliCodeHost({ fetch: fetchHost });
   let second: Awaited<ReturnType<typeof createCliCodeHost>> | undefined;
   const ids = { conversationId: crypto.randomUUID(), turnId: crypto.randomUUID() };
   try {
-    second = await createCliCodeHost({ fetch: fetchHost }, undefined, { unattended: true });
+    second = await createCliCodeHost({ fetch: fetchHost });
     const call = {
       ...ids,
       name: "code_run",
@@ -958,17 +853,10 @@ test("unattended code runs without a tab, keeps hosts isolated and rejects user 
     expect(
       await second.execute({ ...call, turnId: crypto.randomUUID(), args: { code: "export default () => typeof globalThis.marker;" } }),
     ).toMatchObject({ status: "ready", output: '"undefined"' });
-    expect(
-      await first.execute({
-        ...call,
-        callId: "dialog",
-        args: {
-          code: 'export default async (_input, {files,signal,progress}) => await ui.modal.confirm({title:"Confirm",message:"Continue?"});',
-        },
-      }),
-    ).toMatchObject({
-      status: "error",
-      error: expect.stringContaining("Background"),
+    // Scripts have no UI tree; interfaces are HTML apps.
+    expect(await first.execute({ ...call, callId: "ui", args: { code: "export default () => typeof ui;" } })).toMatchObject({
+      status: "ready",
+      output: '"undefined"',
     });
   } finally {
     await first.close();

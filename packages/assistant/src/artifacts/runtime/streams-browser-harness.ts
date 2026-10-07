@@ -21,7 +21,6 @@ globalThis.runStreamScenario = async (source) => {
     { preconnect: original.preconnect },
   );
   const run = createArtifactSession(document.body, source, {
-    mode: "test",
     capability: async (name) => ({
       data: {},
       stream: {

@@ -12,11 +12,9 @@ test("progress watchdog pauses during host approval and resumes with an actionab
     dom.root,
     { runtime: "", code: "" },
     {
-      ui: () => {},
       log: () => {},
       error: (message) => errors.push(message),
       output: () => {},
-      busy: () => {},
       ready: () => {},
       request: () => effect.promise,
     },
@@ -50,23 +48,39 @@ test("progress watchdog pauses during host approval and resumes with an actionab
   }
 });
 
-test("host stop cancels pending interactions and rejects later interactions as cancelled", async () => {
+test("host stop aborts pending host requests", async () => {
   const dom = createDomTestHarness();
   dom.window.happyDOM.settings.disableJavaScriptEvaluation = true;
   jest.useFakeTimers();
+  const aborted = Promise.withResolvers<boolean>();
   const run = startArtifactRun(
     dom.root,
     { runtime: "", code: "" },
-    { ui() {}, log() {}, error() {}, output() {}, busy() {}, ready() {}, request: async () => null },
+    {
+      log() {},
+      error() {},
+      output() {},
+      ready() {},
+      request: (_method, _args, signal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => {
+            aborted.resolve(true);
+            reject(new Error("aborted"));
+          }),
+        ),
+    },
   );
+  const frame = dom.window.document.querySelector("iframe")!;
+  const event = new dom.window.MessageEvent("message", { data: { type: "rpc", id: 0, method: "database", args: [] } });
+  Object.defineProperty(event, "source", { value: frame.contentWindow });
   try {
-    const pending = run.event({ id: "button" });
-    const rejection = pending.catch((error: unknown) => error);
+    dom.window.dispatchEvent(event);
+    await Promise.resolve();
     const stopping = run.stop();
     jest.advanceTimersByTime(50);
+    expect(await aborted.promise).toBe(true);
     await stopping;
-    expect(await rejection).toMatchObject({ name: "CloudError", code: "cancelled" });
-    await expect(run.event({ id: "button" })).rejects.toMatchObject({ name: "CloudError", code: "cancelled" });
+    expect(run.stopped).toBe(true);
   } finally {
     jest.useRealTimers();
     dom.cleanup();

@@ -9,7 +9,6 @@ globalThis.runAiScenario = async (source, cancel) => {
   let output: unknown;
   let aborted = false;
   const session = createArtifactSession(document.body, source, {
-    mode: "test",
     ai: async (request, signal) => {
       requested.resolve();
       signal.addEventListener(

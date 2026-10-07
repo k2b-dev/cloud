@@ -124,8 +124,10 @@ cld assistant code access <resource-id>
 cld assistant studio-admin list --json
 ```
 
-All reusable programs are Apps (GUI, agent actions, or both), with optional
-persistent data. One-off code belongs to its chat and cannot be shared.
+All reusable programs are Apps: an `index.html` interface, agent actions, or
+both, with optional persistent data. One-off code belongs to its chat and
+cannot be shared. Interfaces run in the browser; `code run` and `code action`
+run scripts and refuse an `index.html` entry.
 `code actions` reads the published `app.actions.json` contract without running
 code. `action.json` contains `{id,action,publishedVersion,input}`; copy the exact
 name and version from discovery and follow its JSON input schema. Use access
@@ -136,19 +138,17 @@ including invalid output, do not undo effects. The `code action` command uses
 the same isolated host, approval flags, and optional steps as `code run`.
 
 `run.json` contains either `{"code":"export default () => 42"}` for a one-off,
-or `{"id":"<resource-id>"}` for saved code. Add `inputPaths` for explicitly
-selected files of the current chat. Scripts read those inputs on demand. In
-explicit GUI test runs, the same paths supply isolated picker fixtures;
-The script context input files remain empty for apps. User apps use
-their own local picker and receive no implicit chat files. One-offs create no Studio resource. Optional
-`--steps-file` accepts an array of `{name,args}` steps using `code_interact`,
-`code_inspect`, or `code_export`; the CLI supplies the run ID. An export returns
+or `{"id":"<resource-id>"}` for a saved script. Add `inputPaths` for explicitly
+selected files of the current chat; the script reads them on demand from its
+context `files`. Actions and HTML apps receive no chat files. One-offs create no
+Studio resource. Optional `--steps-file` accepts an array of `{name,args}` steps
+using `code_inspect` or `code_export`; the CLI supplies the run ID. An export returns
 an absolute chat-file path for `assistant files download` or a later run's
 `inputPaths`. Snapshot output includes `outputTruncated`; export full results
 instead of parsing a shortened preview. Pending input downloads pause startup
 and readiness watchdogs, but still count toward the tool call's 45-second outer
 budget. Capability approval waits pause that outer budget. At host capacity,
-finished one-offs without UI, exports, pending requests, or running jobs are
+finished one-offs without exports, pending requests, or running jobs are
 reclaimed automatically. Invalid tool arguments fail the command before source
 execution. A started call that does not complete fails the command with
 `{failed: true, error, guidance?}`.
@@ -156,7 +156,7 @@ execution. A started call that does not complete fails the command with
 For long work, use the script context signal and progress; yield between batches.
 `code_inspect` accepts `waitMs` up to 30000. After explicit steps, the CLI keeps
 its host alive until active background work finishes. Closing the CLI interrupts
-the worker. An unresolved modal requires an explicit interaction step.
+the worker.
 
 Lazy `cloud.pdf.read` reads PDF pages/text/positions; `cloud.sheet.read` detects
 XLSX/ODS bytes and reads cached formula values. `cloud.sheet.toOds` exports

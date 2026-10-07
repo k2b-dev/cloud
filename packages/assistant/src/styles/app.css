@@ -601,6 +601,7 @@
 .assistant-chat-presentation__body > .k2b-placeholder { flex: 1; }
 .assistant-chat-presentation__notice { position: absolute; inset-inline: .75rem; inset-block-end: .75rem; }
 @media (max-width: 640px) { .assistant-chat-presentation__header { padding-inline-start: 1rem; } }
+@media (max-width: 480px) { .assistant-chat-presentation__header > small { display: none; } }
 
 /* Task rows fill the shared Button label; the chevron owns the trailing edge. */
 .k2b-ui .assistant-task-row { width: 100%; justify-content: flex-start; text-align: left; }

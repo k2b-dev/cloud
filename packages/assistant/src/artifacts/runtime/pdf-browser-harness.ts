@@ -8,7 +8,6 @@ globalThis.runPdfScenario = async (source) => {
   const ready = Promise.withResolvers<void>();
   let output: unknown;
   const session = createArtifactSession(document.body, source, {
-    mode: "test",
     pdf: async (request, signal) => {
       const response = await fetch("/pdf", { method: "POST", body: encodePdfRequest(request), signal });
       if (!response.ok) throw new Error(await response.text());

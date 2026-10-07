@@ -1,4 +1,4 @@
-import { Button, Dropdown, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButton, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createResource, createSignal, ErrorBoundary, on, onCleanup, Show } from "solid-js";
 import { approveInModal } from "./CapabilityApproval";
 import { ChatPresentationResult, ChatPresentation as PresentationSchema } from "./chat-presentation-contracts";
@@ -172,10 +172,9 @@ export function ChatPresentation(props: {
                   <i class="ti ti-download" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
-              <Button size="sm" variant="ghost" onClick={stop}>
+              <IconButton size="sm" label={t().stop} onClick={stop}>
                 <i class="ti ti-player-stop" aria-hidden="true" />
-                {t().stop}
-              </Button>
+              </IconButton>
             </Show>
             <Show when={props.openApp && data()?.artifactId}>
               {(id) => (

@@ -3,10 +3,10 @@ import AssistantEmptyChat from "../frontend/AssistantEmptyChat";
 import Apps from "./Apps.island";
 
 const source = {
-  entry: "main.ts",
+  entry: "index.html",
   files: [
-    { path: "main.ts", content: 'export default () => { ui.text({value:"Hello"}); };' },
-    { path: "other.ts", content: "export const amount = 10;" },
+    { path: "index.html", content: "<main><p>Hello</p></main>" },
+    { path: "other.js", content: "export const amount = 10;" },
   ],
 };
 const id = "00000000-0000-4000-8000-000000000001";

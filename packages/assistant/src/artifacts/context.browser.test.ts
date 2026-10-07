@@ -71,9 +71,9 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         return Response.json({
           ...app,
           sourceRevision: 1,
-          source: { entry: "main.ts", files: [{ path: "main.ts", content: "export default () => 1" }] },
+          source: { entry: "index.html", files: [{ path: "index.html", content: "<main><p>Fixture</p></main>" }] },
         });
-      if (path.endsWith("/compiled")) return Response.json({ message: "Fixture stops at execution boundary" }, { status: 500 });
+      if (path.endsWith("/app-assets")) return Response.json({ message: "Fixture stops at execution boundary" }, { status: 500 });
       return new Response(
         '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root"></div><script src="/bundle.js"></script>',
         { headers: { "content-type": "text/html" } },
@@ -93,7 +93,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     expect(await context.getByRole("button", { name: /Script runs · 3/ }).count()).toBe(1);
     await context.getByRole("button", { name: `Open ${app.title}`, exact: true }).click();
     await page.getByRole("tab", { name: app.title, exact: true }).waitFor();
-    expect(requests.some((path) => path.endsWith("/compiled"))).toBe(false);
+    expect(requests.some((path) => path.endsWith("/app-assets"))).toBe(false);
     await page.locator(".artifact-workspace__tabs").getByRole("button", { name: "Open", exact: true }).click();
     await page.getByRole("menuitem", { name: "Studio", exact: true }).click();
     expect(await context.getByText("Recent one-off runs").count()).toBe(0);
@@ -101,13 +101,13 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     expect(await page.locator(".assistant-studio-card").count()).toBe(1);
     expect(await page.locator(".artifact-workspace").getByRole("heading", { name: "Studio", exact: true }).count()).toBe(0);
     expect(await page.getByRole("table").getByText("Succeeded").count()).toBe(1);
-    expect(requests.some((path) => path.endsWith("/compiled"))).toBe(false);
+    expect(requests.some((path) => path.endsWith("/app-assets"))).toBe(false);
     const card = page.locator(".assistant-studio-card");
     await card.getByRole("button", { name: /Actions/ }).click();
     await page.getByRole("menuitem", { name: "Manage access", exact: true }).waitFor();
     await page.keyboard.press("Escape");
     expect(await card.getByRole("link", { name: "Open in new tab" }).getAttribute("target")).toBe("_blank");
-    const compiling = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/compiled"));
+    const compiling = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/app-assets"));
     await card.getByRole("button", { name: "Start", exact: true }).click();
     await compiling;
     expect(await page.getByRole("tab", { name: app.title, exact: true }).count()).toBe(1);

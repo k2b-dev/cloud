@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
-import { compileArtifact } from "./runtime/compile";
+import { chromium, type Page } from "playwright";
+import { appRuntimeRoute, htmlApp } from "./html/test-assets";
 
+const frame = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
+/** The revision whose source the running app shows. */
+const running = async (page: Page) => {
+  await frame(page).getByText("Published calculator", { exact: true }).waitFor();
+  return frame(page).locator("#revision").textContent();
+};
 test("Studio lists open details with all management actions; publication and versions remain usable", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./apps-browser-harness.tsx"], {
     stdout: "pipe",
@@ -9,18 +15,13 @@ test("Studio lists open details with all management actions; publication and ver
   });
   const code = await new Response(build.stdout).text();
   if (await build.exited) throw new Error(await new Response(build.stderr).text());
-  const compiled = await compileArtifact({
-    entry: "main.js",
-    files: [{ path: "main.js", content: 'export default () => { ui.text({value:"Published calculator"}); };' }],
-  });
   let publishedRevision: number | null = 1;
   let emptyHistory = false;
   let listRequests = 0;
   let longCatalog = false;
   let removed = false;
   const publicationNotes: string[] = [];
-  const mutations: string[] = [],
-    compiledVersions: string[] = [];
+  const mutations: string[] = [];
   const item = {
     id: "00000000-0000-4000-8000-000000000001",
     title: "Tip calculator",
@@ -63,7 +64,7 @@ test("Studio lists open details with all management actions; publication and ver
           publishedRevision: 3,
           publishedVersion: 3,
           sourceRevision: 3,
-          source: { entry: "main.js", files: [] },
+          source: htmlApp('<p>Published calculator</p><p id="revision">3</p>'),
         });
       }
       if (path.endsWith("/versions"))
@@ -75,10 +76,8 @@ test("Studio lists open details with all management actions; publication and ver
           hasNext: false,
         });
       if (path.endsWith("/access")) return Response.json([]);
-      if (path.endsWith("/compiled")) {
-        compiledVersions.push(url.searchParams.get("revision")!);
-        return Response.json({ ...compiled, revision: Number(url.searchParams.get("revision")) });
-      }
+      const runtime = await appRuntimeRoute(path);
+      if (runtime) return runtime;
       if (path === "/api/assistant/artifacts") {
         listRequests++;
         return Response.json({
@@ -95,18 +94,20 @@ test("Studio lists open details with all management actions; publication and ver
         removed = true;
         return Response.json({ ok: true });
       }
-      if (path.startsWith("/api/assistant/artifacts/"))
+      if (path.startsWith("/api/assistant/artifacts/")) {
+        const sourceRevision = url.searchParams.has("version")
+          ? Number(url.searchParams.get("version"))
+          : url.searchParams.has("published")
+            ? publishedRevision
+            : 2;
         return Response.json({
           ...item,
           permission: request.headers.get("referer")?.includes("/reader") ? "read" : item.permission,
           publishedRevision,
-          sourceRevision: url.searchParams.has("version")
-            ? Number(url.searchParams.get("version"))
-            : url.searchParams.has("published")
-              ? publishedRevision
-              : 2,
-          source: { entry: "main.js", files: [] },
+          sourceRevision,
+          source: htmlApp(`<p>Published calculator</p><p id="revision">${sourceRevision}</p>`),
         });
+      }
       return new Response(
         '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
@@ -120,10 +121,9 @@ test("Studio lists open details with all management actions; publication and ver
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href);
-    await page.getByText("Published calculator", { exact: true }).waitFor();
+    expect(await running(page)).toBe("1");
     expect(await page.locator(".assistant-studio-card").count()).toBe(0);
     expect(listRequests).toBe(0);
-    expect(compiledVersions).toEqual(["1"]);
     longCatalog = true;
     await page.getByRole("button", { name: "Studio", exact: true }).first().click();
     const popup = page.getByRole("dialog", { name: "Studio", exact: true });
@@ -142,7 +142,7 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("button", { name: "Studio", exact: true }).first().click();
     await popup.getByRole("link", { name: /Tip calculator/ }).click();
     await page.waitForURL("**/app/assistant/apps/*");
-    await page.getByText("Published calculator", { exact: true }).waitFor();
+    await running(page);
     expect(await page.getByRole("button", { name: "Open fullscreen", exact: true }).count()).toBe(1);
     await page.getByRole("button", { name: "Published", exact: true }).click();
     await page.getByText("Access stays unchanged", { exact: false }).waitFor();
@@ -187,27 +187,23 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     await page.waitForURL("**/edited");
-    // The edited page runs the app too; wait for its compile so it cannot land after the reset.
-    await page.getByText("Published calculator", { exact: true }).waitFor();
-    compiledVersions.length = 0;
     await page.goto(new URL("/view", server.url).href);
-    await page.getByText("Published calculator", { exact: true }).waitFor();
-    expect(compiledVersions).toEqual(["2"]);
+    expect(await running(page)).toBe("2");
     await page.getByRole("button", { name: "Versions", exact: true }).click();
     await page.getByText("Initial calculator", { exact: true }).waitFor();
     await page.getByRole("dialog").getByRole("button", { name: "Start", exact: true }).click();
-    await page.getByText("Published calculator", { exact: true }).waitFor();
-    expect(compiledVersions).toEqual(["2", "1"]);
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    expect(await running(page)).toBe("1");
     expect<number | null>(publishedRevision).toBe(2);
     expect(await page.getByRole("button", { name: "Publish", exact: true }).count()).toBe(0);
     await page.getByRole("button", { name: "Versions", exact: true }).click();
-    await Promise.all([
-      page.waitForResponse((response) => response.url().includes("/compiled") && response.url().includes("revision=3")),
-      page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click(),
-    ]);
-    await page.getByText("Published calculator", { exact: true }).waitFor();
+    await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
+    await page.waitForFunction(() => {
+      const app = document.querySelector<HTMLIFrameElement>("iframe.studio-app-frame");
+      return app && !document.querySelector(".studio-app[aria-busy]");
+    });
+    await frame(page).getByText("3", { exact: true }).waitFor();
     expect(publishedRevision).toBe(3);
-    expect(compiledVersions).toEqual(["2", "1", "3"]);
     expect(mutations).toEqual(["publish", "edit-chat", "restore"]);
     emptyHistory = true;
     await page.getByRole("button", { name: "Versions", exact: true }).click();
@@ -244,7 +240,9 @@ test("Studio lists open details with all management actions; publication and ver
     expect(await page.getByRole("menuitem", { name: "Unpublish", exact: true }).count()).toBe(0);
     publishedRevision = 2;
     await page.goto(new URL("/reader", server.url).href);
-    await page.getByText("Published calculator", { exact: true }).waitFor();
+    // People who only use the app start it themselves.
+    await page.locator(".artifact-panel__preview").getByRole("button", { name: "Start", exact: true }).click();
+    await running(page);
     expect(await page.getByRole("button", { name: "Published", exact: true }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Draft", exact: true }).count()).toBe(0);
     await page.getByRole("button", { name: "Actions", exact: true }).click();

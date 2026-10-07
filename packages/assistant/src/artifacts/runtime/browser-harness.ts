@@ -2,25 +2,18 @@ import { createRoot } from "solid-js";
 import { createArtifactAgentRuntime } from "../agent-runtime";
 import { CloudError } from "./errors";
 import { startArtifactRun } from "./host";
-import type { RuntimeEvent, UiNode } from "./protocol";
 import { createArtifactSession, type RunSnapshot } from "./session";
 
-type Scenario = { source: { code: string; runtime: string }; events?: RuntimeEvent[]; stopAfterMs?: number };
-type Observation = { nodes: UiNode[]; output: unknown; errors: string[]; responsive: boolean; stopped: boolean };
+type Scenario = { source: { code: string; runtime: string }; stopAfterMs?: number };
+type Observation = { output: unknown; errors: string[]; responsive: boolean; stopped: boolean };
 declare global {
   var runArtifactScenario: (scenario: Scenario) => Promise<Observation>;
 }
 declare global {
-  var runArtifactSessionScenario: (source: {
-    code: string;
-    runtime: string;
-  }) => Promise<{ state: RunSnapshot; content: string; invalidRejected: boolean }>;
+  var runArtifactSessionScenario: (source: { code: string; runtime: string }) => Promise<{ state: RunSnapshot; content: string }>;
 }
 declare global {
   var runArtifactAgentScenario: (source: { code: string; runtime: string }) => Promise<unknown[]>;
-}
-declare global {
-  var runArtifactRecoveryScenario: (source: { code: string; runtime: string }) => Promise<{ failed: RunSnapshot; recovered: RunSnapshot }>;
 }
 
 declare global {
@@ -29,14 +22,10 @@ declare global {
 globalThis.runArtifactCsvScenario = async (source) => {
   const ready = Promise.withResolvers<void>();
   const run = createArtifactSession(document.body, source, {
-    mode: "test",
     inputs: [new File(["name,amount\nAlice,12\nBob,8"], "one.csv"), new File(["name,amount\nAlice,5"], "two.csv")],
     changed: (state) => {
       if (state.status === "ready") ready.resolve();
       if (state.status === "error") ready.reject(new Error(state.error));
-    },
-    save: async () => {
-      throw new Error("Headless run must not download");
     },
   });
   const timer = setTimeout(() => ready.reject(new Error("CSV run timed out")), 10000);
@@ -49,30 +38,10 @@ globalThis.runArtifactCsvScenario = async (source) => {
   }
 };
 
-globalThis.runArtifactRecoveryScenario = async (source) => {
-  const ready = Promise.withResolvers<void>();
-  const run = createArtifactSession(document.body, source, {
-    mode: "test",
-    changed: (state) => {
-      if (state.status === "ready") ready.resolve();
-    },
-  });
-  const timer = setTimeout(() => ready.reject(new Error("Recovery scenario timed out")), 10000);
-  try {
-    await ready.promise;
-    await run.event({ id: "retry" }).catch(() => {});
-    const failed = run.snapshot();
-    await run.event({ id: "retry" });
-    return { failed, recovered: run.snapshot() };
-  } finally {
-    clearTimeout(timer);
-    await run.stop();
-  }
-};
-
 globalThis.runArtifactAgentScenario = async (source) => {
   const originalFetch = window.fetch;
   const results = new Map<string, unknown>();
+  const posted: unknown[] = [];
   const id = "aBc234";
   window.fetch = Object.assign(
     async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -87,6 +56,10 @@ globalThis.runArtifactAgentScenario = async (source) => {
         return Response.json({ saved: true });
       }
       if (path.includes("/compiled")) return Response.json({ ...source, revision: 1 });
+      if (path.endsWith("/presentations")) {
+        posted.push(JSON.parse(String(init?.body)));
+        return Response.json({ presentationId: crypto.randomUUID(), title: "Overview" });
+      }
       if (path.includes("/files")) return Response.json({ files: [] });
       if (path.includes("/artifacts/")) return Response.json({ kind: "app", id, title: "Test", revision: 1 });
       return originalFetch(url, init);
@@ -102,14 +75,18 @@ globalThis.runArtifactAgentScenario = async (source) => {
   const call = (name: string, callId: string, args: unknown) => handlers[name]!({ name, callId, args, turnId: id, conversationId: id });
   try {
     const start = await call("code_run", "start", { id });
-    const pending = await call("code_interact", "click", { runId: "start", id: "add" });
-    const answer = await call("code_interact", "answer", { runId: "start", id: "@modal:1", answer: "Example" });
-    const duplicate = await call("code_interact", "answer", { runId: "start", id: "@modal:1", answer: "Example" });
-    const secondAnswer = await call("code_interact", "second-answer", { runId: "start", id: "@modal:2", answer: true });
-    const current = await call("code_inspect", "inspect", { runId: "start", nodeId: "tasks" });
+    const current = await call("code_inspect", "inspect", { runId: "start", waitMs: 2000 });
     const stop = await call("code_stop", "stop", { runId: "start" });
     await call("code_open", "open", { id });
-    return [start, pending, answer, duplicate, current, stop, opened, secondAnswer];
+    const rejected = await call("code_present", "broken", {
+      title: "Broken",
+      files: [{ path: "index.html", content: '<h1 onclick="go()">Hi</h1><script src="https://cdn.example.com/x.js"></script>' }],
+    });
+    const presented = await call("code_present", "present", {
+      title: "Overview",
+      files: [{ path: "index.html", content: "<h1>Overview</h1>" }, { path: "app.js", content: "console.log(cloud.locale);" }],
+    });
+    return [start, current, stop, opened, rejected, presented, posted];
   } finally {
     dispose();
     window.fetch = originalFetch;
@@ -119,26 +96,13 @@ globalThis.runArtifactAgentScenario = async (source) => {
 globalThis.runArtifactSessionScenario = async (source) => {
   const personal = new Map<string, unknown>();
   const ready = Promise.withResolvers<void>();
-  let invalidRejected = false;
   const run = createArtifactSession(document.body, source, {
-    mode: "test",
     inputs: [new File(["name\nAlice"], "input.csv", { type: "text/csv" })],
     changed: (state) => {
       if (state.status === "error") ready.reject(new Error(state.error));
       if (state.status === "ready") ready.resolve();
-      if (state.modal)
-        queueMicrotask(() => {
-          try {
-            run.respond({ count: -1 });
-          } catch {
-            invalidRejected = true;
-          }
-          run.respond({ count: 3 });
-        });
     },
-    storage: async (_method, args) => {
-      const { RuntimeStorage } = await import("./shared-storage");
-      const request = RuntimeStorage.parse(args[0]);
+    storage: async (request) => {
       if (request.scope !== "user") throw new Error("Wrong scope");
       if (request.operation === "write") {
         personal.set(request.key!, request.value);
@@ -146,17 +110,11 @@ globalThis.runArtifactSessionScenario = async (source) => {
       }
       return personal.get(request.key!) ?? null;
     },
-    pick: async () => {
-      throw new Error("Test run opened a user file picker");
-    },
-    save: async () => {
-      throw new Error("Test run downloaded a user file");
-    },
   });
   const timer = setTimeout(() => ready.reject(new Error("Session scenario timed out")), 10000);
   try {
     await ready.promise;
-    return { state: run.snapshot(), content: await run.files()[0]!.text(), invalidRejected };
+    return { state: run.snapshot(), content: await run.files()[0]!.text() };
   } finally {
     clearTimeout(timer);
     await run.stop();
@@ -164,20 +122,15 @@ globalThis.runArtifactSessionScenario = async (source) => {
 };
 
 globalThis.runArtifactScenario = async (scenario) => {
-  let nodes: UiNode[] = [],
-    output: unknown = null,
+  let output: unknown = null,
     responsive = false;
   const errors: string[] = [];
   const ready = Promise.withResolvers<void>();
   const run = startArtifactRun(document.body, scenario.source, {
-    ui: (value) => {
-      nodes = value;
-    },
     output: (value) => {
       output = value;
     },
     log: () => {},
-    busy: () => {},
     ready: () => ready.resolve(),
     error: (error) => {
       errors.push(error);
@@ -204,52 +157,13 @@ globalThis.runArtifactScenario = async (scenario) => {
       );
     } else {
       await ready.promise;
-      for (const event of scenario.events ?? []) {
-        await run.event(event);
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
       responsive = true;
     }
   } finally {
     clearTimeout(watchdog);
     await run.stop();
   }
-  return { nodes, output, errors, responsive, stopped: run.stopped };
-};
-
-declare global {
-  var runArtifactFolderScenario: (source: { code: string; runtime: string }, mode: "user" | "test") => Promise<RunSnapshot>;
-}
-globalThis.runArtifactFolderScenario = async (source, mode) => {
-  const ready = Promise.withResolvers<void>();
-  const files = Array.from({ length: 3000 }, (_, index) => {
-    const file = new File(["x".repeat(8192)], `folder-${index}/ledger.csv`);
-    Object.defineProperty(file, "webkitRelativePath", { value: `folder-${index}/ledger.csv` });
-    return file;
-  });
-  const run = createArtifactSession(document.body, source, {
-    mode,
-    inputs: [],
-    pickerInputs: files,
-    pick: async () => files,
-    save: async () => {},
-    changed: (state) => {
-      if (state.status === "ready") ready.resolve();
-      if (state.status === "error") ready.reject(new Error(state.error));
-    },
-  });
-  const timer = setTimeout(() => ready.reject(new Error("Folder scenario timed out")), 20000);
-  try {
-    await ready.promise;
-    await run.event({ id: "pick" });
-    const state = run.snapshot();
-    const result = state.nodes.find((node) => node.id === "result");
-    if (result?.type !== "text") throw new Error("Missing selection result");
-    return { ...state, output: JSON.parse(result.value) };
-  } finally {
-    clearTimeout(timer);
-    await run.stop();
-  }
+  return { output, errors, responsive, stopped: run.stopped };
 };
 
 declare global {
@@ -263,12 +177,12 @@ globalThis.runArtifactWorkScenario = async (source) => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   };
-  const first = createArtifactSession(document.body, source, { mode: "test", changed: () => {} });
+  const first = createArtifactSession(document.body, source, { changed: () => {} });
   let second: ReturnType<typeof createArtifactSession> | undefined;
   try {
     await wait(() => first.snapshot().status === "ready" || first.snapshot().status === "error");
     const finished = first.snapshot();
-    second = createArtifactSession(document.body, source, { mode: "test", changed: () => {} });
+    second = createArtifactSession(document.body, source, { changed: () => {} });
     await wait(() => second!.snapshot().work?.status === "running");
     await second.stop();
     return { finished, cancelled: second.snapshot() };
@@ -317,31 +231,4 @@ globalThis.runArtifactStoragePages = async () => {
   } finally {
     window.fetch = original;
   }
-};
-
-declare global {
-  var prepareLocalScriptPicker: (source: { runtime: string; code: string }) => void;
-  var localScriptPickerResult: RunSnapshot | undefined;
-}
-globalThis.prepareLocalScriptPicker = (source) => {
-  const button = document.createElement("button");
-  button.id = "start-local-script";
-  button.textContent = "Start script";
-  button.onclick = async () => {
-    const { pickFiles } = await import("../ArtifactPanel");
-    let picked = false;
-    const run = createArtifactSession(document.body, source, {
-      mode: "user",
-      pick: pickFiles,
-      changed: (state) => {
-        globalThis.localScriptPickerResult = state;
-        if (!picked && state.status === "ready") {
-          picked = true;
-          queueMicrotask(() => void run.event({ id: "pick" }));
-        }
-      },
-    });
-    // Host cleanup is the page lifetime in this focused picker scenario.
-  };
-  document.body.append(button);
 };
