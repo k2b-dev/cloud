@@ -48,7 +48,8 @@ function responsive(svg: string): string {
     const y = tag.match(/\by="(-?[\d.]+)"/)?.[1];
     if (x === undefined || y === undefined) return tag;
     const rotation = tag.match(/\btransform="rotate\((-?[\d.]+) [^"]+\)"/)?.[1];
-    return tag.replace(">", ` style="transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}">`);
+    // The match ends at the tag's only ">"; insert the style before it.
+    return `${tag.slice(0, -1)} style="transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}">`;
   });
 }
 
