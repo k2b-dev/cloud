@@ -502,6 +502,55 @@ describe("projection reducer", () => {
     expect(reconciled.blocks[1]).toMatchObject({ status: "running", approval: undefined });
   });
 
+  test("a provider retry marks the active turn until its next event or snapshot", () => {
+    const started = [
+      { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,
+      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 1, seq: 2, type: "provider_retry" }),
+    ];
+    const waiting = feed(started);
+    expect(waiting.activeTurn).toMatchObject({ seq: 2, providerRetry: true, blocks: [] });
+    // Stale and foreign events neither set nor clear it.
+    expect(
+      reduceProjection(
+        waiting,
+        wire({ turnId: "turn-1", attempt: 1, seq: 2, type: "block_set", block: { id: "x", kind: "text", text: "x" } }),
+      ),
+    ).toBe(waiting);
+    expect(
+      reduceProjection(feed(started.slice(0, 2)), wire({ turnId: "turn-2", attempt: 1, seq: 3, type: "provider_retry" })).activeTurn,
+    ).not.toHaveProperty("providerRetry");
+
+    const resumed = reduceProjection(
+      waiting,
+      wire({ turnId: "turn-1", attempt: 1, seq: 3, type: "block_delta", blockId: "s1-1", blockKind: "text", delta: "Hi" }),
+    );
+    expect(resumed.activeTurn).not.toHaveProperty("providerRetry");
+    expect(resumed.activeTurn?.blocks).toEqual([{ id: "s1-1", kind: "text", text: "Hi" }]);
+
+    const saved = reduceProjection(
+      waiting,
+      wire({ turnId: "turn-1", attempt: 1, seq: 3, type: "message_saved", message: storedMessage({ id: "a1", seq: 2 }) }),
+    );
+    expect(saved.activeTurn).not.toHaveProperty("providerRetry");
+
+    const snapshot = reduceProjection(waiting, {
+      type: "state",
+      conversation,
+      messages: [],
+      activeTurn: {
+        turnId: "turn-1",
+        attempt: 1,
+        status: "running",
+        seq: 2,
+        blocks: [],
+        modelProfileId: "m",
+        createdAt: conversation.createdAt,
+      },
+    });
+    expect(snapshot.activeTurn).not.toHaveProperty("providerRetry");
+  });
+
   test("turn_finished for a different turn is ignored", () => {
     const state = feed([
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,

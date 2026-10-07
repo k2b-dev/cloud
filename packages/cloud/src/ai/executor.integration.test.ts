@@ -39,6 +39,8 @@ let mockServer: ReturnType<typeof Bun.serve> | null = null;
 let nextCompletion: string[] = [];
 let nextJsonCompletion: string | null = null;
 let completionQueue: string[][] = [];
+/** HTTP failures answered before the next queued completions. */
+let rejectionQueue: (() => Response)[] = [];
 let onCompletionRequest: ((body: unknown, index: number) => void | Promise<void>) | null = null;
 let completionRequestCount = 0;
 
@@ -190,6 +192,8 @@ beforeAll(() => {
         const requestBody = await req.json().catch(() => null);
         const requestIndex = completionRequestCount++;
         await onCompletionRequest?.(requestBody, requestIndex);
+        const rejection = rejectionQueue.shift();
+        if (rejection) return rejection();
         if (!(requestBody as { stream?: boolean } | null)?.stream) {
           return Response.json({
             choices: [{ message: { role: "assistant", content: nextJsonCompletion ?? "{}" }, finish_reason: "stop" }],
@@ -280,6 +284,8 @@ const createExecutor = (
     enqueueContinuation: async () => {},
     validateTurn,
     onTurnFinalized,
+    // Transient provider failures retry at once.
+    providerRetryDelaysMs: [1, 1],
   });
 
 suite("AI executor integration", () => {
@@ -1217,6 +1223,60 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+  test("a rate-limited model call is retried within the turn and charged once", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      rejectionQueue = [
+        () => Response.json({ error: { message: "Rate limit reached" } }, { status: 429, headers: { "retry-after-ms": "5" } }),
+      ];
+      nextCompletion = textCompletion("Recovered answer");
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
+        userMessage: userMessage("Hi"),
+      });
+      const collecting = collectWire(conversation.id, (event) => event.type === "turn_finished");
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "retry-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor("retry-exec").run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+
+      const types = (await collecting).map((event) => event.type);
+      expect(types.indexOf("provider_retry")).toBeGreaterThan(types.indexOf("turn_started"));
+      expect(types.indexOf("provider_retry")).toBeLessThan(types.findIndex((type) => type === "block_set" || type === "block_delta"));
+      expect(types.at(-1)).toBe("turn_finished");
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: "completed",
+        error: null,
+      });
+      const messages = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(messages.map((message) => message.message.role)).toEqual(["user", "assistant"]);
+      const calls = await sql<{ status: string; input: number | null; output: number | null; estimated: boolean; error: string | null }[]>`
+        SELECT status,input::int AS input,output::int AS output,estimated,error FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid ORDER BY started_at`;
+      expect(calls).toEqual([
+        { status: "failed", input: 0, output: 0, estimated: false, error: expect.stringContaining("Rate limit reached") },
+        { status: "ok", input: 5, output: 3, estimated: false, error: null },
+      ]);
+    } finally {
+      rejectionQueue = [];
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("a provider first-byte timeout is stored as the turn's and the call's redacted error", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -1237,7 +1297,9 @@ suite("AI executor integration", () => {
         maxAttempts: 5,
         runBudgetMs: 60_000,
       });
+      let attempts = 0;
       const provider = syntheticProvider(async function* () {
+        attempts++;
         yield { type: "issue", issue: { kind: "timeout", scope: "provider_first_byte", message, retryable: true } };
       });
       await createExecutor("timeout-exec", undefined, fakeValidateWithProvider(provider)).run({
@@ -1246,17 +1308,21 @@ suite("AI executor integration", () => {
         claim: claim!,
         signal: new AbortController().signal,
       });
+      // Two retries, then the last timeout ends the turn.
+      expect(attempts).toBe(3);
       const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
       expect(finalTurn).toMatchObject({ status: "failed", error: message });
-      const [call] = await sql<
+      const calls = await sql<
         { id: string; kind: "chat" | "background" }[]
       >`SELECT id,kind FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
-      expect(await aiUsage.detail(call!.kind, call!.id)).toMatchObject({
-        status: "failed",
-        error: message,
-        cancelled: false,
-        errorCode: "ai_provider_call_failed",
-      });
+      expect(calls).toHaveLength(3);
+      for (const call of calls)
+        expect(await aiUsage.detail(call.kind, call.id)).toMatchObject({
+          status: "failed",
+          error: message,
+          cancelled: false,
+          errorCode: "ai_provider_call_failed",
+        });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;

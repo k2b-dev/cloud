@@ -243,6 +243,30 @@ describe("assistant CLI", () => {
     });
   }
 
+  for (const output of ["text", "jsonl"] as const) {
+    test(`a provider retry and unknown events keep following the turn in ${output} output`, async () => {
+      const { ctx, stdout, stderr } = createContext([], async () => json({}), output);
+      const messages = [
+        { id: "msg-1", loopId: "turn-1", kind: "message", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } },
+      ];
+      const result = await streamAssistantTurn({
+        ctx,
+        conversationId: "chat-1",
+        turnId: "turn-1",
+        initialResponse: sse(
+          { type: "state", conversation: { id: "chat-1" }, messages: [], activeTurn: { turnId: "turn-1", blocks: [] } },
+          { type: "provider_retry", turnId: "turn-1" },
+          { type: "added_by_a_newer_server", turnId: "turn-1" },
+          { type: "block_set", turnId: "turn-1", block: { id: "text-1", kind: "text", text: "Done" } },
+          { type: "turn_finished", turnId: "turn-1", status: "completed", error: null, messages },
+        ),
+      });
+      expect(result).toMatchObject({ status: "completed", text: "Done" });
+      if (output === "text") expect(stderr.join("")).toContain("model: reconnecting");
+      else expect(stdout.map((line) => JSON.parse(line).type)).toEqual(["provider_retry", "text_delta", "turn_finished"]);
+    });
+  }
+
   test("completed snapshot renders stored tool results when no live blocks remain", async () => {
     const { ctx } = createContext([], async () => json({}));
     let tables = 0;

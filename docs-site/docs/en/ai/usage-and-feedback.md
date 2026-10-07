@@ -5,7 +5,7 @@ section: AI
 order: 1065
 description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-09-30
+updated: 2026-10-07
 ---
 
 # Usage and feedback
@@ -93,7 +93,14 @@ if token counts are unavailable. Interrupted streams without final usage use a
 labelled estimate based on request text, instructions, tool schemas and streamed
 output (roughly four characters per token). Binary file data is excluded.
 Reported usage takes precedence. Successful calls without usable usage, and
-calls orphaned by a process crash, retain unknown costs.
+calls orphaned by a process crash, retain unknown costs. A call records zero
+tokens when the provider did not process it: the request never reached the
+provider because the connection was refused or the host was unknown, or the
+provider refused it before any output with HTTP 4xx, 503, or 529. Other server
+errors, such as a gateway's 502 or 504, a dropped connection, and a timeout keep
+the estimate, because the provider may have processed the request. When a turn
+[retries a transient failure](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures),
+each attempt is its own call in the report.
 
 Accounting survives retry/edit truncation and chat deletion. Deleting a user
 clears the user reference; workflow names, application, and version are captured

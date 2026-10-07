@@ -5,7 +5,7 @@ section: Operations
 order: 1180
 description: Diagnose common application registration, request, data, and runtime failures.
 tags: [troubleshooting, health, diagnostics]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Troubleshooting
@@ -121,6 +121,27 @@ active, and whether the latest trace is failed or stuck.
 Confirm that the process calls the matching lifecycle start method.
 
 See [Lifecycle background work](/en/docs/automation/lifecycle-background-work).
+
+## AI turns end with a provider error
+
+A chat turn, including one that runs scheduled or in the background, repeats a
+model call that failed transiently before any output, at most twice. Each
+retry logs the warning `AI provider call retried` under `ai:executor`.
+Frequent retry warnings point to a rate-limited or unstable model provider. A
+turn still fails when:
+
+- the error persisted through both retries;
+- the error was permanent, such as an invalid key;
+- the call failed after it streamed output;
+- the provider asked for a wait over 60 seconds;
+- the wait would have ended after the turn's run time limit.
+
+See [Transient provider failures](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures).
+
+If `cld assistant` stops following a turn that keeps running in Assistant, the
+profile still uses an `assistant` CLI plugin from an earlier release. Run
+`cld plugins update assistant` for that profile; see
+[Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
 
 ## Shutdown hangs
 

@@ -67,6 +67,8 @@ export type AiWireEvent =
   | (AiWireEventBase & { type: "message_saved"; message: AiStoredMessage })
   | (AiWireEventBase & { type: "block_set"; block: AiTurnBlock })
   | (AiWireEventBase & { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string })
+  /** A model call failed transiently and waits for its retry. Transient: the next event of the turn ends it. */
+  | (AiWireEventBase & { type: "provider_retry" })
   | (AiWireEventBase & {
       type: "turn_finished";
       status: AiTurnFinishedStatus;

@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-05
+updated: 2026-10-07
 ---
 
 # Chat runtime and streaming
@@ -264,10 +264,11 @@ completeness limits instead of repeating rows, unless the user requests them.
 
 The conversation protocol is transport-neutral. Every subscription receives a
 full authorized state snapshot and then ordered updates for messages, text,
-tools, approvals, and turn completion. The runtime captures the retained-topic
-cursor before loading the snapshot, so work that arrives while the snapshot is
-loading remains in the ordered tail. Attempt and sequence numbers make replay
-idempotent.
+tools, approvals, provider retries, and turn completion. The runtime captures the
+retained-topic cursor before loading the snapshot, so work that arrives while the
+snapshot is loading remains in the ordered tail. Attempt and sequence numbers
+make replay idempotent. Only `turn_finished` ends a turn; a low-level client
+ignores event types it does not know.
 
 Each execution attempt starts with one atomic, server-ordered block baseline.
 Resuming after an approval or frontend-tool response therefore keeps every
@@ -542,6 +543,33 @@ worker leases remain independent, even with an unlimited turn budget.
 An expired execution deadline ends the turn as failed with a time-limit message
 and an instruction to continue with a new message. It is distinct from a user's
 Stop action. Continuing does not automatically replay uncertain external calls.
+
+### Transient provider failures
+
+A chat turn, including one that runs scheduled or in the background, repeats a
+model call that failed before the model produced any output because of HTTP
+408, 409, 425, 429 or 5xx, a lost connection, or a provider first-byte or idle
+timeout. It retries at most twice. The wait follows the provider's
+`retry-after-ms` or `Retry-After` header, otherwise 1 and then 4 seconds. A
+requested wait over 60 seconds, or one that would end after the turn's run time
+limit, is not started; the turn then fails with the provider's message. Stop
+ends a wait at once.
+
+A failure after the call streamed text, reasoning, or a tool call still ends
+the turn, because streamed output cannot be taken back. Context overflow goes
+to compaction, and other errors fail the turn without a retry. Each attempt is a
+separate provider call with its own admission, quota check and
+[usage record](/en/docs/ai/usage-and-feedback#read-the-report).
+
+While a call waits, the stream sends `provider_retry`. The controller marks the
+active turn with `providerRetry: true` until its next event; a state snapshot
+never carries it. Meanwhile the chat timeline of `@k2b/cloud/ai/ui` ends the
+live turn with **Reconnecting**, and `cld assistant` prints `model: reconnecting`
+to standard error or writes a `provider_retry` JSONL line. An `assistant` CLI
+plugin from an earlier release stops following the turn at this event; see
+[Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
+Each retry logs the warning `AI provider call retried` under `ai:executor` with
+the retry number, the wait, and the failure kind and message.
 
 ### Conversation completion
 
