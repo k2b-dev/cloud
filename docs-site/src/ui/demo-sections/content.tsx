@@ -32,6 +32,7 @@ import {
   Pagination,
   PanelDialog,
   PdfPreview,
+  Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
   StatusBadge,
@@ -44,11 +45,12 @@ import {
   Toolbar,
   toast,
   useLocale,
+  VideoPlayer,
   VirtualFeed,
   type VirtualFeedController,
   ZoomPanViewport,
 } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
 import { ChartDemo } from "./charts";
@@ -867,6 +869,56 @@ const MediaDemo = () => {
   );
 };
 
+const VideoDemo = () => {
+  // Set after hydration, so the player sees the decode error and shows its fallback.
+  const [unplayable, setUnplayable] = createSignal<string | null>(null);
+  onMount(() => setUnplayable("data:video/mp4;base64,AAAA"));
+  const download = () => void toast("The application supplies the download.");
+  return (
+    <DemoCard
+      id="video-player"
+      chip={{ kind: "component", name: "VideoPlayer", from: "@k2b/ui" }}
+      description="Frames of the same size while the address loads, when the browser cannot play the video, and when the host could not fetch the address."
+      code={`<VideoPlayer
+  src={leaseUrl()}
+  label={file.name}
+  crossOrigin="anonymous"
+  renew={async () => (await issueLease(file.path)).url}
+  fallbackAction={<a href={downloadUrl} download={file.name}>Download</a>}
+  error={leaseFailed() ? <Placeholder state="error" description="Could not load the video." action={retry} /> : undefined}
+/>`}
+    >
+      <div class="ui-video-demo">
+        <VideoPlayer src={null} label="Product reel.mp4" />
+        <VideoPlayer
+          src={unplayable()}
+          label="Interview.mov"
+          fallbackAction={
+            <Button variant="secondary" size="sm" onClick={download}>
+              Download
+            </Button>
+          }
+        />
+        <VideoPlayer
+          src={null}
+          label="Launch.webm"
+          error={
+            <Placeholder
+              state="error"
+              description="Could not load the video."
+              action={
+                <Button variant="secondary" size="sm" onClick={() => void toast("The application requests a fresh address.")}>
+                  Retry
+                </Button>
+              }
+            />
+          }
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
 const demoDiagram = () => (
   <svg viewBox="0 0 480 160" width="480" height="160" role="img" aria-label="Request flow" style={{ color: "var(--k2b-text)" }}>
     <g fill="none" stroke="currentColor" stroke-width="1.5">
@@ -1300,6 +1352,7 @@ const demos: DemoSection = {
   media: () => (
     <DemoGrid columns="one">
       <MediaDemo />
+      <VideoDemo />
       <ZoomPanDemo />
     </DemoGrid>
   ),

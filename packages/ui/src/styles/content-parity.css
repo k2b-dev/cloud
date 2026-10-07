@@ -1503,10 +1503,6 @@
   @apply min-h-48 p-6;
 }
 
-.k2b-ui .k2b-content-file-view__media[data-kind="video"] {
-  background: #000;
-}
-
 .k2b-ui .k2b-content-file-view__media audio {
   @apply w-full max-w-2xl;
 }
@@ -1529,11 +1525,45 @@
   padding: 0.5rem 0.75rem;
 }
 
-.k2b-ui .k2b-content-file-view :is(img, video) {
+.k2b-ui .k2b-content-file-view img {
   @apply rounded-md;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* The video's own size never reaches layout. The frame takes the height its host gives it; where the host leaves the
+   height open, `height: 100%` falls back to auto and the inline aspect ratio sizes the frame. The picture fits inside
+   uncropped on an inset surface, so a portrait reel and a wide recording both show whole, and nothing moves while the
+   video loads, fails, or reports its size. */
+.k2b-ui .k2b-video-player {
+  @apply relative size-full overflow-hidden rounded-md;
+  min-width: 0;
+  min-height: 0;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-video-player__video {
+  @apply absolute inset-0 block size-full;
+  object-fit: contain;
+  background: transparent;
+}
+
+/* The frame clips, so it draws the ring of the focused video around itself. */
+.k2b-ui .k2b-video-player:has(> .k2b-video-player__video:focus-visible) {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 0px);
+}
+
+.k2b-ui .k2b-video-player__video:focus-visible {
+  outline: none;
+}
+
+.k2b-ui .k2b-video-player > .k2b-video-player__fallback {
+  @apply absolute inset-0 overflow-auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .k2b-ui .k2b-content-file-view :is(audio, iframe) {

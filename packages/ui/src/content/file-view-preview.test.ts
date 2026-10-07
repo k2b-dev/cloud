@@ -8,6 +8,9 @@ describe("file preview capability", () => {
     expect(getFileViewPreviewKind({ path: "notes.md" })).toBe("markdown");
     expect(getFileViewPreviewKind({ path: "data.tsv" })).toBe("delimited-text");
     expect(getFileViewPreviewKind({ path: "diagram.svg", mediaType: "image/svg+xml" })).toBe("image");
+    for (const path of ["reel.mov", "reel.MP4", "reel.m4v", "reel.webm", "reel.ogv"])
+      expect(getFileViewPreviewKind({ path })).toBe("video");
+    expect(getFileViewPreviewKind({ path: "reel", mediaType: "video/quicktime" })).toBe("video");
   });
 
   test("stays conservative for unsupported and oversized files", () => {

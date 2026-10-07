@@ -86,6 +86,10 @@ editing for compatible text renderers.
 
 `previewHref` is an authenticated URL that answers inline. With it, images,
 PDF, audio, and video render natively from that URL and `load` is not called.
+Video plays in [`VideoPlayer`](/en/ui/content/media#video): the browser fetches
+it by range from `previewHref`, so serve that URL with `206` answers to `Range`
+requests. A video the browser cannot decode shows the player's fallback with a
+download link to `downloadHref`.
 `downloadHref` only adds download actions; it is never a preview source,
 because browsers do not show an attachment response inline. Without
 `previewHref`, a PDF renders from the bytes `load` returns, through
@@ -115,6 +119,7 @@ type FileViewContent = {
 
 `getFileViewPreviewKind` returns the inferred `FileViewPreviewKind`.
 Both helpers apply the built-in size limits when `size` is supplied: 2 MiB for text, Markdown, JSON and delimited text; 25 MiB for images; 50 MiB for PDF, audio, and video. Unsupported or oversized files return `null` from `getFileViewPreviewKind` and `false` from `canPreviewFile`.
+Video means MP4, M4V, QuickTime (`.mov`), WebM, and Ogg video, by media type or extension. Whether a browser decodes one depends on its codec. A host that streams video by range can omit `size` to preview it at any size.
 `formatFileViewSize` produces the compact size label used by the preview.
 
 Pass `renderers` to `FileView` or `FileBrowserPanel` to add
@@ -328,8 +333,9 @@ Escape clears a selection. With nothing selected, it is left to the host, so
 Escape inside a dialog closes the dialog.
 
 For signed native media URLs, `FileView.crossOrigin="anonymous"` omits credentials
-on cross-origin media requests. `onPreviewError` reports native image/audio/video
-load errors so the host can request a fresh URL and offer retry. These options
+on cross-origin media requests. `onPreviewError` reports native image and audio
+load errors, and a video that falls back, so the host can request a fresh URL
+and offer retry. These options
 leave existing media behavior unchanged when omitted. PDF and text content can
 instead be fetched by the host with an abort signal and explicit byte limit.
 
@@ -365,7 +371,8 @@ lines" action lines up with the content.
 A host that bounds its height can stretch a plain preview to fill it, for
 example with `flex: 1 1 auto; min-height: 0`. Images and video then fit that
 height, and a table scrolls inside the preview, so its header row and the
-preview actions stay in view.
+preview actions stay in view. Without a bounded height, a video keeps a 16:9
+frame.
 
 ## Document title
 

@@ -25,16 +25,17 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type {
-  SpaceColumn,
-  SpaceItem,
-  SpaceItemAssignee,
-  SpaceItemClaim,
-  SpaceTag,
-  SpaceTaskDependency,
-  SpaceTaskDependent,
-  SpaceWormhole,
-  WormholeTransferResult,
+import {
+  isPlayableVideoType,
+  type SpaceColumn,
+  type SpaceItem,
+  type SpaceItemAssignee,
+  type SpaceItemClaim,
+  type SpaceTag,
+  type SpaceTaskDependency,
+  type SpaceTaskDependent,
+  type SpaceWormhole,
+  type WormholeTransferResult,
 } from "@/contracts";
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
@@ -727,7 +728,8 @@ export default function ItemDetailPanel(props: Props) {
     return `${url.pathname}${url.search}`;
   };
   const hasLinks = () => linkedResources().length > 0 || (props.links?.length ?? 0) > 0;
-  const hasImages = () => props.attachments?.some((attachment) => attachment.kind === "image") ?? false;
+  const hasMedia = () =>
+    props.attachments?.some((attachment) => attachment.kind === "image" || isPlayableVideoType(attachment.mimeType)) ?? false;
   const hasChecklist = () => (props.checklist?.length ?? 0) > 0;
   const linksSection = () => (
     <Show when={canEditItem() || hasLinks()}>
@@ -1136,7 +1138,7 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <Show when={props.item.description || (!isEvent() && (canEditItem() || hasChecklist() || hasImages()))}>
+          <Show when={props.item.description || (!isEvent() && (canEditItem() || hasChecklist() || hasMedia()))}>
             <DetailPanel.Group label={t.content}>
               <Show when={props.item.description}>
                 <DetailPanel.Section
@@ -1174,7 +1176,7 @@ export default function ItemDetailPanel(props: Props) {
                   />
                 </DetailPanel.Section>
               </Show>
-              <Show when={!isEvent() && (canEditItem() || hasImages())}>
+              <Show when={!isEvent() && (canEditItem() || hasMedia())}>
                 <TaskAttachmentsSection
                   spaceId={props.spaceId}
                   itemId={props.item.id}

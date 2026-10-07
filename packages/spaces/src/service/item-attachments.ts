@@ -1,5 +1,11 @@
 import { sql } from "bun";
-import { MAX_TASK_ATTACHMENT_SIZE_BYTES, MAX_TASK_ATTACHMENTS, type MutationResult, type SpaceItemAttachment } from "@/contracts";
+import {
+  attachmentMediaType,
+  MAX_TASK_ATTACHMENT_SIZE_BYTES,
+  MAX_TASK_ATTACHMENTS,
+  type MutationResult,
+  type SpaceItemAttachment,
+} from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { publishSpaceChange, spacesLive } from "./live";
 
@@ -15,7 +21,7 @@ type AttachmentRow = {
   created_at: Date;
 };
 
-export type SpaceItemAttachmentContent = SpaceItemAttachment & { itemId: string; content: Uint8Array };
+export type StoredSpaceItemAttachment = SpaceItemAttachment & { itemId: string };
 
 const mapAttachment = (row: AttachmentRow): SpaceItemAttachment => ({
   id: row.short_id,
@@ -45,7 +51,7 @@ export const upload = async (params: {
   userId: string | null;
 }): Promise<MutationResult<SpaceItemAttachment>> => {
   const filename = params.filename.trim();
-  const mimeType = params.mimeType.trim() || "application/octet-stream";
+  const mimeType = attachmentMediaType(filename, params.mimeType);
   if (!filename || filename.length > 255 || mimeType.length > 255) {
     return { ok: false, error: "Attachment metadata is invalid", status: 400 };
   }
@@ -91,13 +97,62 @@ export const upload = async (params: {
   return { ok: true, data: mapAttachment(result.data) };
 };
 
-export const getContentByShortId = async (params: { shortId: string }): Promise<SpaceItemAttachmentContent | null> => {
-  const [row] = await sql<(AttachmentRow & { content: Uint8Array })[]>`
-    SELECT short_id, item_id, filename, mime_type, size_bytes, kind, created_at, content
+export const getByShortId = async (params: { shortId: string }): Promise<StoredSpaceItemAttachment | null> => {
+  const [row] = await sql<AttachmentRow[]>`
+    SELECT short_id, item_id, filename, mime_type, size_bytes, kind, created_at
     FROM spaces.item_attachments
     WHERE short_id = ${params.shortId}
   `;
-  return row ? { ...mapAttachment(row), itemId: row.item_id, content: row.content } : null;
+  return row ? { ...mapAttachment(row), itemId: row.item_id } : null;
+};
+
+/**
+ * Content leaves the database in slices of this size, read while the client keeps reading. A client that stops early,
+ * as a video tile does once it has its first frame, costs one or two slices instead of the whole attachment, and an
+ * answer holds no more than this in memory.
+ */
+const CONTENT_SLICE_BYTES = 256 * 1024;
+
+const readSlice = async (shortId: string, start: number, length: number): Promise<Uint8Array<ArrayBuffer> | null> => {
+  const [row] = await sql<{ content: Uint8Array }[]>`
+    SELECT substring(content FROM ${start + 1}::int FOR ${length}::int) AS content
+    FROM spaces.item_attachments
+    WHERE short_id = ${shortId}
+  `;
+  return row ? new Uint8Array(row.content) : null;
+};
+
+/**
+ * Streams the content from `start` to `endExclusive` in slices; null when the attachment does not exist. An
+ * attachment deleted while it streams ends the stream with an error, so the client sees a broken answer instead of a
+ * short one.
+ */
+export const streamContent = async (params: {
+  shortId: string;
+  start: number;
+  endExclusive: number;
+}): Promise<ReadableStream<Uint8Array<ArrayBuffer>> | null> => {
+  const slice = (offset: number) => readSlice(params.shortId, offset, Math.min(CONTENT_SLICE_BYTES, params.endExclusive - offset));
+  const first = await slice(params.start);
+  if (!first) return null;
+  let offset = params.start + first.byteLength;
+  return new ReadableStream<Uint8Array<ArrayBuffer>>(
+    {
+      start(controller) {
+        if (first.byteLength > 0) controller.enqueue(first);
+        if (offset >= params.endExclusive) controller.close();
+      },
+      async pull(controller) {
+        const next = await slice(offset);
+        if (!next?.byteLength) return controller.error(new Error("The attachment was deleted while it was read"));
+        offset += next.byteLength;
+        controller.enqueue(next);
+        if (offset >= params.endExclusive) controller.close();
+      },
+    },
+    // Read the next slice only once the client has taken the last one.
+    { highWaterMark: 0 },
+  );
 };
 
 export const remove = async (params: { shortId: string; itemId: string; spaceId: string }): Promise<MutationResult<void>> => {

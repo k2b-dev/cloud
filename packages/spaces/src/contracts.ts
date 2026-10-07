@@ -279,6 +279,30 @@ export const SpaceItemAttachmentSchema = z
   .strict();
 export type SpaceItemAttachment = z.infer<typeof SpaceItemAttachmentSchema>;
 
+/**
+ * Video types that play in a task, by extension: their content answers inline, with its own type and by range. A map,
+ * so an extension such as `constructor` finds nothing instead of an object's own members.
+ */
+const PLAYABLE_VIDEO_TYPES = new Map([
+  ["m4v", "video/x-m4v"],
+  ["mov", "video/quicktime"],
+  ["mp4", "video/mp4"],
+  ["ogv", "video/ogg"],
+  ["webm", "video/webm"],
+]);
+const playableVideoTypes = new Set(PLAYABLE_VIDEO_TYPES.values());
+
+export const isPlayableVideoType = (mimeType: string): boolean => playableVideoTypes.has(mimeType.split(";", 1)[0]!.trim().toLowerCase());
+
+/** The stored type of an upload: a video the browser sent without a type gets the type of its extension. */
+export const attachmentMediaType = (filename: string, mimeType: string): string => {
+  const declared = mimeType.trim();
+  if (declared && declared !== "application/octet-stream") return declared;
+  const dot = filename.lastIndexOf(".");
+  const video = dot > 0 ? PLAYABLE_VIDEO_TYPES.get(filename.slice(dot + 1).toLowerCase()) : undefined;
+  return video ?? (declared || "application/octet-stream");
+};
+
 export const SpaceCommentSchema = z.object({
   id: ResourceShortIdSchema.describe("Comment ID"),
   itemId: ResourceShortIdSchema.describe("Parent item ID"),

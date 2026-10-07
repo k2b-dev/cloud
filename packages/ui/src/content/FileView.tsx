@@ -42,6 +42,7 @@ import MarkdownView from "./MarkdownView";
 import { leadingMarkdownTitle } from "./markdown-title";
 import PdfPreview from "./PdfPreview";
 import StructuredDataPreview, { type StructuredDataValue } from "./StructuredDataPreview";
+import VideoPlayer from "./VideoPlayer";
 
 export type { FileViewFile, FileViewPreviewKind } from "./file-view-preview";
 export { canPreviewFile, getFileViewPreviewKind } from "./file-view-preview";
@@ -648,20 +649,26 @@ function AudioRenderer(props: FileViewRendererProps) {
 
 function VideoRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
+  const name = () => props.file.path.slice(props.file.path.lastIndexOf("/") + 1);
   return (
     <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="video">
-        <video
-          crossOrigin={props.crossOrigin}
-          onError={props.onPreviewError}
-          controls
-          preload="metadata"
-          playsinline
+        <VideoPlayer
           src={mediaSource(props)}
-          aria-label={props.file.path}
-        >
-          {messages().videoUnsupported}
-        </video>
+          label={name()}
+          crossOrigin={props.crossOrigin}
+          onFallback={props.onPreviewError}
+          fallbackAction={
+            <Show when={props.downloadHref}>
+              {(href) => (
+                <a class="k2b-button" data-variant="secondary" data-size="sm" href={href()} download={name()}>
+                  <i class="ti ti-download" aria-hidden="true" />
+                  {messages().download}
+                </a>
+              )}
+            </Show>
+          }
+        />
       </div>
     </OverlayPanel>
   );

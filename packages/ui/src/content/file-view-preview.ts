@@ -40,12 +40,12 @@ const audioMediaTypes = new Set([
   "audio/webm",
   "audio/x-wav",
 ]);
-const videoMediaTypes = new Set(["video/mp4", "video/ogg", "video/webm"]);
+const videoMediaTypes = new Set(["video/mp4", "video/ogg", "video/quicktime", "video/webm", "video/x-m4v"]);
 
 const markdownExtensions = new Set(["md", "markdown"]);
 const imageExtensions = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
 const audioExtensions = new Set(["aac", "flac", "m4a", "mp3", "oga", "ogg", "wav", "weba"]);
-const videoExtensions = new Set(["m4v", "mp4", "ogv", "webm"]);
+const videoExtensions = new Set(["m4v", "mov", "mp4", "ogv", "webm"]);
 const textExtensions = new Set([
   "c",
   "conf",

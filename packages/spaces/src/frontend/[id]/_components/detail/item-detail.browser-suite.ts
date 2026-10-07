@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
@@ -72,14 +72,37 @@ const task: SpaceItem = {
   },
 };
 const dependency = (id: string, title: string, completedAt: string | null = null) => ({ id, spaceId, title, completedAt });
-const detail = (item: SpaceItem): SpaceItemDetail => ({
+/** A 9:16 reel and an image attached to the task, served with range support like the real content route. */
+const media = {
+  Reel01: { bytes: readFileSync(resolve(import.meta.dir, "../../../../../../ui/test/media/portrait-180x320.webm")), type: "video/webm" },
+  Broken: { bytes: Buffer.from("This is no video at all."), type: "video/quicktime" },
+};
+const reelAttachment: SpaceItemAttachment = {
+  id: "Reel01",
+  filename: "Reel for approval.webm",
+  mimeType: "video/webm",
+  sizeBytes: media.Reel01.bytes.length,
+  kind: "file",
+  createdAt: now,
+};
+/** A video attachment that no browser can play. */
+const brokenAttachment: SpaceItemAttachment = {
+  id: "Broken",
+  filename: "Broken.mov",
+  mimeType: "video/quicktime",
+  sizeBytes: media.Broken.bytes.length,
+  kind: "file",
+  createdAt: now,
+};
+const rangeRequests: (string | null)[] = [];
+const detail = (item: SpaceItem, attachments: SpaceItemAttachment[] = []): SpaceItemDetail => ({
   item,
   comments: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
   commentTarget: { itemId: item.id, recurrenceId: null },
   recurringContext: null,
   references: [],
   links: [],
-  attachments: [],
+  attachments,
   checklist: [],
   blockedBy: [
     { blocker: dependency("Itm002", "Rename the computers"), createdAt: now },
@@ -91,7 +114,7 @@ const detail = (item: SpaceItem): SpaceItemDetail => ({
   ],
 });
 
-type Scenario = { locale: "en" | "de"; canWrite?: boolean; item?: SpaceItem };
+type Scenario = { locale: "en" | "de"; canWrite?: boolean; item?: SpaceItem; attachments?: SpaceItemAttachment[] };
 const serverBody = (scenario: Scenario) =>
   renderToString(() =>
     createComponent(DetailFixture, {
@@ -102,7 +125,7 @@ const serverBody = (scenario: Scenario) =>
       columns,
       tags,
       wormholes: [],
-      initialDetail: detail(scenario.item ?? task),
+      initialDetail: detail(scenario.item ?? task, scenario.attachments),
       dateConfig: { locale: scenario.locale, timeZone: "Europe/Berlin" },
       canWrite: scenario.canWrite ?? true,
       isAdmin: false,
@@ -142,6 +165,20 @@ beforeAll(async () => {
         });
       if (url.pathname === `/api/spaces/${spaceId}/items/Item01/detail`) return Response.json(detail(stored));
       if (url.pathname === `/api/spaces/${spaceId}/items/Item01/comments/page`) return Response.json(detail(stored).comments);
+      const content = /^\/api\/spaces\/Space1\/items\/Item01\/attachments\/(\w+)\/content$/.exec(url.pathname);
+      const file = content ? media[content[1] as keyof typeof media] : undefined;
+      if (file) {
+        const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.get("range") ?? "");
+        rangeRequests.push(range?.[0] ?? null);
+        const headers = { "content-type": file.type, "accept-ranges": "bytes" };
+        if (!range) return new Response(file.bytes, { headers });
+        const start = Number(range[1]);
+        const end = Math.min(range[2] ? Number(range[2]) : file.bytes.length - 1, file.bytes.length - 1);
+        return new Response(file.bytes.subarray(start, end + 1), {
+          status: 206,
+          headers: { ...headers, "content-range": `bytes ${start}-${end}/${file.bytes.length}` },
+        });
+      }
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
@@ -431,4 +468,83 @@ describe("Spaces item detail in a browser", () => {
       await page.context().close();
     }
   }, 60_000);
+  for (const [name, view, locale] of [
+    ["desktop", desktop, "en"],
+    ["phone", phone, "de"],
+  ] as const)
+    test(`${name}: a video attachment shows its first frame and plays in a dialog that fits the whole reel`, async () => {
+      rangeRequests.length = 0;
+      const page = await open(view, { locale, attachments: [reelAttachment] });
+      try {
+        const label = locale === "de" ? "Reel for approval.webm abspielen" : "Play Reel for approval.webm";
+        const tile = page.getByRole("button", { name: label });
+        await tile.scrollIntoViewIfNeeded();
+        await page.waitForFunction(() => (document.querySelector(".k2b-detail-panel video") as HTMLVideoElement | null)?.readyState! >= 1);
+        // The tile keeps its square, whatever the video's shape.
+        const square = (await tile.boundingBox())!;
+        expect([Math.round(square.width), Math.round(square.height)]).toEqual([80, 80]);
+        expect(
+          await page
+            .locator(".k2b-detail-panel")
+            .getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video")
+            .count(),
+        ).toBe(1);
+
+        await tile.click();
+        await page.waitForSelector(".spaces-video-dialog[open] .k2b-video-player__video");
+        await page.waitForFunction(() => (document.querySelector(".spaces-video-dialog video") as HTMLVideoElement).readyState >= 1);
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reel for approval.webm");
+        const body = (await page.locator(".spaces-video-dialog .k2b-panel-dialog__body").boundingBox())!;
+        const frame = (await page.locator(".spaces-video-dialog .k2b-video-player").boundingBox())!;
+        // The player fills the body: a portrait reel shows at the body's full height, uncropped.
+        expect(frame.width).toBeGreaterThan(body.width - 2 * 24 - 2);
+        expect(frame.height).toBeGreaterThan(body.height - 24 - 4 - 2);
+        expect(frame.y + frame.height).toBeLessThanOrEqual(body.y + body.height);
+        if (view === phone) {
+          const dialog = (await page.locator(".spaces-video-dialog").boundingBox())!;
+          expect([dialog.x, dialog.y, dialog.width, dialog.height]).toEqual([0, 0, 390, 844]);
+        }
+        const download = page.locator(".spaces-video-dialog .k2b-panel-dialog__actions a");
+        expect(await download.getAttribute("href")).toBe("/api/spaces/Space1/items/Item01/attachments/Reel01/content?download=true");
+        expect(rangeRequests.some((range) => range !== null)).toBe(true);
+        await page.keyboard.press("Escape");
+        await page.waitForSelector(".spaces-video-dialog", { state: "detached" });
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+
+  test("a video the browser cannot play announces its fallback and keeps focus in the dialog", async () => {
+    const page = await open(desktop, { locale: "en", attachments: [brokenAttachment] });
+    try {
+      await page.getByRole("button", { name: "Play Broken.mov" }).click();
+      await page.waitForSelector(".spaces-video-dialog .k2b-video-player__fallback[role=alert]");
+      expect(await page.locator(".spaces-video-dialog .k2b-video-player__fallback").innerText()).toContain("This video cannot play here");
+      // Focus started on the video, which the fallback replaced; it must not drop to the page behind the dialog.
+      expect(await page.evaluate(() => document.querySelector(".spaces-video-dialog")!.contains(document.activeElement))).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  for (const [locale, message] of [
+    ["en", "Could not add clip.mkv: This video format cannot be added. Use MP4, MOV, M4V, WebM, or OGV."],
+    [
+      "de",
+      "clip.mkv konnte nicht hinzugefügt werden: Dieses Videoformat kann nicht hinzugefügt werden. Verwende MP4, MOV, M4V, WebM oder OGV.",
+    ],
+  ] as const)
+    test(`${locale}: a video in a format Spaces cannot play says so instead of failing as an image`, async () => {
+      const page = await open(desktop, { locale });
+      try {
+        writes.length = 0;
+        const chooser = page.waitForEvent("filechooser");
+        await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
+        await (await chooser).setFiles({ name: "clip.mkv", mimeType: "video/x-matroska", buffer: Buffer.from("A Matroska video") });
+        await page.locator(".k2b-toast", { hasText: message }).waitFor();
+        expect(writes.filter((write) => write.path.endsWith("/attachments"))).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
 });

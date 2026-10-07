@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, FileView, PdfPreview, Placeholder } from "@k2b/ui";
+import { Button, FileView, PdfPreview, Placeholder, VideoPlayer } from "@k2b/ui";
 import { createEffect, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
 import { hasPdfSignature, PDF_HEADER_WINDOW } from "../pdf-body";
@@ -71,6 +71,17 @@ function RevisionPreview(props: PreviewProps) {
       {f().download}
     </Button>
   );
+  const previewFailed = () => (
+    <Placeholder
+      state="error"
+      description={t().previewFailed}
+      action={
+        <Button size="sm" onClick={retry}>
+          {t().retry}
+        </Button>
+      }
+    />
+  );
   return (
     <div class="filesv2-preview">
       <Switch>
@@ -87,17 +98,21 @@ function RevisionPreview(props: PreviewProps) {
             {(parts) => <div class="filesv2-preview__pdf">{parts.content}</div>}
           </PdfPreview>
         </Match>
-        <Match when={failed() || (media() && lease.error())}>
-          <Placeholder
-            state="error"
-            description={t().previewFailed}
-            action={
-              <Button size="sm" onClick={retry}>
-                {t().retry}
-              </Button>
-            }
+        {/* A video keeps its frame from the start, also when its lease fails, and asks for a fresh lease itself when
+            one expires during playback; the browser fetches it by range, so it never loads into memory. The details
+            panel shows it in a square, which suits portrait reels and wide recordings alike. */}
+        <Match when={kind() === "video"}>
+          <VideoPlayer
+            src={url() ?? null}
+            label={props.entry.name}
+            ratio={props.previewLines === undefined ? undefined : 1}
+            crossOrigin="anonymous"
+            renew={async () => (await contentLease(props.baseId, props.entry.path, abort.signal, t().previewFailed)).url}
+            fallbackAction={download}
+            error={lease.error() ? previewFailed() : undefined}
           />
         </Match>
+        <Match when={failed() || (media() && lease.error())}>{previewFailed()}</Match>
         <Match when={media() && !url()}>
           <Placeholder state="loading" description={t().loadingDetails} />
         </Match>

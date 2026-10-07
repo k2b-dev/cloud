@@ -98,7 +98,7 @@ import {
 } from "./capability-work-contracts";
 import { boundedWorkPage, runEventAgenda, runTaskFocus } from "./capability-work-queries";
 import { SpaceComposeInputSchema, SpaceInvitationInputSchema } from "./commands";
-import type { MutationResult, SpaceComment, SpaceItem, SpaceItemAttachment } from "./contracts";
+import { isPlayableVideoType, type MutationResult, type SpaceComment, type SpaceItem, type SpaceItemAttachment } from "./contracts";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
@@ -390,7 +390,7 @@ const mapAttachment = (item: SpaceItem, attachment: SpaceItemAttachment) => {
   return {
     ...attachment,
     links: [
-      ...(attachment.kind === "image" ? [{ rel: "preview" as const, href: contentHref }] : []),
+      ...(attachment.kind === "image" || isPlayableVideoType(attachment.mimeType) ? [{ rel: "preview" as const, href: contentHref }] : []),
       { rel: "download" as const, href: `${contentHref}?download=true` },
     ],
   };
