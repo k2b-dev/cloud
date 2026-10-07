@@ -24,11 +24,28 @@ const navigation = createNavigation({
 
 Items use stable, unique `id` values, a `label`, and either `href`, an `action`
 key, or `children`. Optional fields are `icon`, `badge` (string or number),
-`description`, `active`, `disabled`, `color`, and secondary `actions`. Everything
-in the item tree is serializable; functions remain in the controller.
+`description`, `active`, `disabled`, `color`, secondary `actions`, and
+`inlineActions`. Everything in the item tree is serializable; functions remain
+in the controller.
 
 Secondary `actions` open from the row's menu button with their `label`, `icon`,
 `description`, and `disabled` state, so a disabled action can say why.
+
+`inlineActions` sit directly in the row, after the destination and before the
+menu button, as square 44 px icon buttons. Use them for one or two actions that
+belong beside the destination on every screen, such as mailbox details next to
+Compose. Each needs an `icon`; its `label` is the button's accessible name and
+tooltip. They take an `action` key or an `href` like any item and follow the
+row's and their own `disabled` state. Keep longer lists in `actions`.
+
+```tsx
+{
+  id: "compose",
+  label: "Compose",
+  href: "/compose",
+  inlineActions: [{ id: "details", label: "Mailbox details", icon: "ti ti-info-circle", action: "details" }],
+}
+```
 
 A group without its own action toggles its children when selected and shows a
 chevron. Set `defaultExpanded: false` to start a group collapsed; omitted groups

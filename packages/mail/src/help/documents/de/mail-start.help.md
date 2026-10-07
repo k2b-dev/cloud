@@ -52,6 +52,7 @@ Nach der Einrichtung erkennt Mail die Ordner des Anbieters und beginnt mit der S
 
 Die linke Navigation enthält:
 
+- **Verfassen** ganz oben, wenn du senden darfst, und daneben die Schaltfläche **Postfachdetails** (i). Auf dem Smartphone stehen beide in der ersten Zeile des App-Menüs; wer nur lesen darf und nicht verfassen kann, findet die Postfachdetails dort als eigene Zeile.
 - **Nachverfolgung** mit Handlungsbedarf, Wartet auf Antwort, Später und Erledigt.
 - **Zuordnung** mit Mir zugewiesen und Nicht zugewiesen.
 - **Mail** mit Posteingang, Entwürfe, Geplant, Gesendet und einer ausklappbaren Mehr-Gruppe.
@@ -61,6 +62,8 @@ Die linke Navigation enthält:
 - **Mehr** mit Alle E-Mails, Letzte Aktivität, Archiv, Papierkorb und Junk. Alle E-Mails umfasst das gesamte Postfach außer Papierkorb und Junk. Mehr öffnet sich automatisch, wenn eines dieser Ziele aktiv ist.
 - **Postfachwerkzeuge** für Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, geteilte Links und den Umgang des Browsers mit E-Mail-Links. Die verfügbaren Werkzeuge richten sich nach deiner Berechtigung.
 - **Einstellungen** am unteren Rand, sofern deine Berechtigung den Zugriff erlaubt.
+
+**Postfachdetails** zeigt allen, die das Postfach lesen dürfen, denselben Überblick: seine Adressen, jeweils mit einer Schaltfläche zum Kopieren, die Verbindung und wann Mail zuletzt synchronisiert hat, die Zahl der Ordner, deinen eigenen Zugriff und wer welchen Zugriff hat. Bei Gruppen siehst du, welche Personen die Gruppe erreicht, soweit dein Konto sie sehen darf. Der Dialog ändert nichts; Personen mit Postfach-Adminrechten wählen **Zugriff verwalten** und machen unter **Einstellungen > Zugriff** weiter.
 
 Die mittlere Liste zeigt eine Zeile pro Unterhaltung. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung und ordnet aussagekräftige Änderungen an Status, Zuständigkeit, Tags, Zusammenfassung und Workflow zeitlich ein. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus. Über **Unterhaltungsdetails** öffnest du Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die ausführlichere Liste der letzten Aktivitäten. Wenn du mehr Platz zum Lesen brauchst, kannst du die Unterhaltungsliste ausblenden.
 

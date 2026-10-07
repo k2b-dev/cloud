@@ -143,6 +143,8 @@ if (!isServer) {
             canAdmin={false}
             managementOpening={null}
             settingsOpening={false}
+            detailsOpening={false}
+            onOpenDetails={() => {}}
             onOpenHealth={() => {}}
             onOpenSharedLinks={() => {}}
             onOpenRemoteContent={() => {}}

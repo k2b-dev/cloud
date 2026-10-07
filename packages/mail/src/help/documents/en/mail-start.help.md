@@ -52,6 +52,7 @@ Open **Settings > Accounts & identities > Sending identities**. An identity grou
 
 The left navigation contains:
 
+- **Compose** at the top when you may send, with the **Mailbox details** button (i) beside it. On a phone, both are in the first row of the app menu; readers, who cannot compose, find Mailbox details there on its own.
 - **Follow-up** for Needs action, Waiting for reply, Later, and Done.
 - **Assignment** for Assigned to me and Unassigned.
 - **Mail** for Inbox, Drafts, Scheduled, Sent, and an expandable More group.
@@ -61,6 +62,8 @@ The left navigation contains:
 - **More** for All mail, Recent activity, Archive, Trash, and Junk. All mail combines the mailbox except Trash and Junk. More opens automatically when one of these destinations is active.
 - **Mailbox tools** for synchronization, health, automations, mailing lists, remote images, shared links, and browser email-link handling. Available tools depend on your permission.
 - **Settings** at the bottom when your permission allows it.
+
+**Mailbox details** shows everyone who can read the mailbox the same overview: its addresses, each with a copy button, the connection and when Mail last synchronized, the number of folders, your own access, and who has which access. Group rows list the people the group reaches, as far as your account may see them. The dialog changes nothing; mailbox administrators select **Manage access** to continue in **Settings > Access**.
 
 The center list shows one row per conversation. The reader groups the messages in that conversation and quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow. Use the **Conversation details** button to open team context, local tags, ownership, comments, reminders, and the broader recent activity list. You can hide the conversation list when you need more reading space.
 

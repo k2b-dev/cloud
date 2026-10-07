@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mailComposerMessages } from "./_components/mail-composer-messages";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
+import { mailMailboxDetailsMessages } from "./_components/mail-mailbox-details-messages";
 import { mailMessageMessages } from "./_components/mail-message-messages";
 import { mailRemainingMessages } from "./_components/mail-remaining-messages";
 import { mailSettingsMessages } from "./_components/mail-settings-messages";
@@ -14,6 +15,7 @@ const catalogs = [
   mailAutomationPageMessages,
   mailOverviewMessages,
   mailSidebarMessages,
+  mailMailboxDetailsMessages,
   mailConversationListMessages,
   mailMessageMessages,
   mailConversationUiMessages,

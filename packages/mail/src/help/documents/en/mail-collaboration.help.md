@@ -33,7 +33,7 @@ When live presence is available, **Here now** shows collaborators currently view
 
 ## Understand permissions {icon="shield-lock"}
 
-Mailbox access is granted in **Settings > Access**.
+Mailbox access is granted in **Settings > Access**. Everyone who can read the mailbox sees who has which access under **Mailbox details**, the (i) button beside **Compose**.
 
 | Permission | What it allows |
 | --- | --- |

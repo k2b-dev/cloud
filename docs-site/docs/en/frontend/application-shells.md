@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-04
+updated: 2026-10-07
 ---
 
 # Application shells
@@ -149,7 +149,8 @@ const navigation = createNavigation({
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
 cleanup. Links remain usable before the application island loads. Until the
-owner is ready, action-only entries remain disabled and `expanded` items only
+owner is ready, action-only entries, also in `actions` and `inlineActions`,
+remain disabled and `expanded` items only
 set where their disclosure starts, then toggle locally. Do not register embedded
 inspectors, reference windows, or builder previews as the Cloud workspace.
 They keep local content controls.
