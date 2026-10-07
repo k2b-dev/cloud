@@ -16,8 +16,11 @@ type NavigationEntry = {
   /** Owner-held disclosure state. The renderer shows it and reports toggles through `onExpandedChange`. */
   expanded?: boolean;
   actions?: readonly NavigationItem[];
-  /** Actions shown directly in the row as square icon buttons, before the `actions` menu. Each needs an `icon`. */
-  inlineActions?: readonly NavigationItem[];
+  /**
+   * Square icon buttons in the row, before the `actions` menu. They run an `action`; a destination belongs in a row,
+   * where its link keeps modified clicks and new tabs.
+   */
+  inlineActions?: readonly { id: string; label: string; icon: string; action: string; disabled?: boolean }[];
 };
 
 /** Serializable presentation. Functions stay with the controller's owning island. */

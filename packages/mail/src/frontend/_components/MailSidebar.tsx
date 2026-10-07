@@ -508,7 +508,8 @@ export default function MailSidebar(props: {
       ? { ...common, href: `/app/mail/${props.mailboxId}?folder=${folder.id}`, navigation: "enhanced", scroll: "preserve" }
       : common;
   };
-  const details = (): NavigationItem => ({
+  // Used as a row and as an inline action, so its type stays inferred and fits both.
+  const details = () => ({
     id: "details",
     label: messages().mailboxDetails,
     icon: "ti ti-info-circle",

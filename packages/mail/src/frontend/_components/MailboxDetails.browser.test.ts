@@ -52,7 +52,7 @@ const identity = (fromAddress: string, displayName: string, isDefault = false) =
 const identities = [identity("support@example.test", "Support Team", true), identity("billing@example.test", "Billing")];
 
 const user = (id: string, displayName: string) => ({ id, uid: displayName.toLowerCase(), displayName, mail: null, avatarHash: null });
-const details: MailboxDetails = {
+const details: Omit<MailboxDetails, "permission"> = {
   access: [
     {
       id: "00000000-0000-4000-8000-000000000001",
@@ -78,7 +78,8 @@ const details: MailboxDetails = {
       serviceAccountKind: "agent",
     },
   ],
-  account: { email: "support@example.test", server: "imap.example.test", status: "active", lastVerifiedAt: null },
+  hiddenAccessCount: 0,
+  account: { email: "support@example.test", server: "imap.example.test" },
   lastSyncAt: new Date(Date.now() - 5 * 60_000).toISOString(),
 };
 
@@ -86,8 +87,10 @@ const harness = await buildHarness();
 const css =
   (await buildCss(resolve(import.meta.dir, "../../../../../styles.css"))) +
   (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
-/** How long the server takes to answer the details request. */
-let detailsDelayMs = 0;
+/** The viewer's access the details request reports. */
+let detailsPermission: MailboxDetails["permission"] = "write";
+/** Holds the details response until the test releases it, so the loading state stays put while it is checked. */
+let detailsGate: Promise<void> | undefined;
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -96,8 +99,8 @@ const server = Bun.serve({
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (url.pathname === "/api/mail/mailboxes/Box001/details") {
-      await Bun.sleep(detailsDelayMs);
-      return Response.json(details);
+      await detailsGate;
+      return Response.json({ ...details, permission: detailsPermission } satisfies MailboxDetails);
     }
     if (url.pathname === "/api/accounts/entities") {
       if (url.searchParams.get("kinds") === "group") return Response.json({ items: [], pagination: { total: 0, has_next: false } });
@@ -132,9 +135,9 @@ const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } 
 const phone: BrowserContextOptions = { viewport: { width: 375, height: 740 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
 
 const load = async (
-  options: Partial<MailboxDetailsHarnessOptions> & { context?: BrowserContextOptions; theme?: "light" | "dark"; delayMs?: number } = {},
+  options: Partial<MailboxDetailsHarnessOptions> & { context?: BrowserContextOptions; theme?: "light" | "dark" } = {},
 ) => {
-  detailsDelayMs = options.delayMs ?? 0;
+  detailsPermission = options.permission ?? "write";
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   page.setDefaultTimeout(10_000);
   const errors: string[] = [];
@@ -182,7 +185,9 @@ const openDialog = async (page: Page, label = "Mailbox details") => {
 describe("Mailbox details", () => {
   for (const theme of ["light", "dark"] as const) {
     test(`sits square beside Compose and keeps its place while loading in ${theme} mode`, async () => {
-      const page = await load({ theme, locale: theme === "dark" ? "de" : "en", delayMs: 400 });
+      const page = await load({ theme, locale: theme === "dark" ? "de" : "en" });
+      const response = Promise.withResolvers<void>();
+      detailsGate = response.promise;
       try {
         const label = theme === "dark" ? "Postfachdetails" : "Mailbox details";
         await page.waitForSelector(".mail-details-action");
@@ -202,6 +207,7 @@ describe("Mailbox details", () => {
         // The button keeps focus while the details load, so focus can return to it.
         expect(await page.evaluate(() => document.activeElement?.classList.contains("mail-details-action"))).toBe(true);
 
+        response.resolve();
         const dialog = page.getByRole("dialog");
         await dialog.waitFor();
         expect(await page.evaluate(() => document.activeElement?.closest("dialog") !== null)).toBe(true);
@@ -210,6 +216,8 @@ describe("Mailbox details", () => {
         await page.waitForFunction(() => document.activeElement?.classList.contains("mail-details-action"));
         expect(page.errors).toEqual([]);
       } finally {
+        response.resolve();
+        detailsGate = undefined;
         await close(page);
       }
     }, 30_000);
@@ -251,6 +259,8 @@ describe("Mailbox details", () => {
       const dialog = await openDialog(page);
       await dialog.getByRole("button", { name: "Manage access" }).click();
       await dialog.waitFor({ state: "hidden" });
+      // The dialog resolves its result after it hides.
+      await page.waitForFunction(() => window.detailsResults.length > 0);
       expect(await page.evaluate(() => window.detailsResults)).toEqual(["manage-access"]);
     } finally {
       await close(page);

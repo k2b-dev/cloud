@@ -63,7 +63,8 @@ export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined 
         ...(item.expanded !== undefined ? { expanded: undefined, defaultExpanded: item.expanded } : {}),
         ...(item.children ? { children: links(item.children) } : {}),
         ...(item.actions ? { actions: links(item.actions) } : {}),
-        ...(item.inlineActions ? { inlineActions: links(item.inlineActions) } : {}),
+        // Inline actions only run actions, so each waits for the owner.
+        ...(item.inlineActions ? { inlineActions: item.inlineActions.map((action) => ({ ...action, disabled: true })) } : {}),
       }));
     const items = links(value.items);
     return {

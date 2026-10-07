@@ -18,7 +18,6 @@ import { mailMailboxDetailsMessages } from "./mail-mailbox-details-messages";
 
 export type MailboxDetailsDialogProps = {
   mailbox: Pick<Mailbox, "name" | "description" | "health" | "healthReason">;
-  permission: "read" | "write" | "admin";
   identities: readonly SenderIdentity[];
   folderCount: number;
   details: MailboxDetails;
@@ -62,7 +61,8 @@ export function MailboxDetailsDialog(props: MailboxDetailsDialogProps & { close:
     const health: Record<MailboxHealth, { tone: StatusTone; label: string }> = {
       active: { tone: "ok", label: t().connected },
       paused: { tone: "warning", label: t().paused },
-      degraded: { tone: "warning", label: t().notSynchronizing },
+      // The latest attempt failed; Mail keeps retrying on its own.
+      degraded: { tone: "warning", label: t().couldNotSynchronize },
       auth_required: { tone: "warning", label: t().signInRequired },
       connection_required: { tone: "warning", label: t().notConnected },
       disconnected: { tone: "warning", label: t().notConnected },
@@ -73,7 +73,9 @@ export function MailboxDetailsDialog(props: MailboxDetailsDialogProps & { close:
     return health[props.mailbox.health];
   });
   const lastSync = () => props.details.lastSyncAt;
-  const permissionLabel = () => ({ read: t().view, write: t().edit, admin: t().manage })[props.permission];
+  // The access resolved with the details, not the page's: a change made while the page stayed open shows here.
+  const permission = () => props.details.permission;
+  const permissionLabel = () => ({ read: t().view, write: t().edit, admin: t().manage })[permission()];
   // The editor only shows entries here; it never calls these.
   const readOnly = () => Promise.reject(new Error("read-only"));
 
@@ -141,7 +143,7 @@ export function MailboxDetailsDialog(props: MailboxDetailsDialogProps & { close:
           title={t().access}
           subtitle={t().accessDescription}
           actions={
-            props.permission === "admin" ? (
+            permission() === "admin" ? (
               <Button variant="secondary" size="sm" type="button" onClick={() => props.close("manage-access")}>
                 <i class="ti ti-shield" aria-hidden="true" />
                 {t().manageAccess}
@@ -156,6 +158,9 @@ export function MailboxDetailsDialog(props: MailboxDetailsDialogProps & { close:
             updateAccess={readOnly}
             revokeAccess={readOnly}
           />
+          <Show when={props.details.hiddenAccessCount > 0}>
+            <p class="text-sm text-dimmed">{t().hiddenAccess({ count: props.details.hiddenAccessCount })}</p>
+          </Show>
         </PanelDialog.Section>
       </PanelDialog.Body>
     </PanelDialog>
@@ -164,4 +169,4 @@ export function MailboxDetailsDialog(props: MailboxDetailsDialogProps & { close:
 
 /** Resolves to `"manage-access"` when a manager continues to the access settings. */
 export const openMailboxDetailsDialog = (props: MailboxDetailsDialogProps) =>
-  dialogCore.open<"manage-access">((close) => <MailboxDetailsDialog {...props} close={close} />, { ...panelDialogOptions, history: true });
+  dialogCore.open<"manage-access">((close) => <MailboxDetailsDialog {...props} close={close} />, panelDialogOptions);

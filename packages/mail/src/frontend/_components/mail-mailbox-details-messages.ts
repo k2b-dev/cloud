@@ -4,7 +4,6 @@ export const mailMailboxDetailsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      mailboxDetails: "Mailbox details",
       closeDetails: "Close mailbox details",
       addresses: "Addresses",
       addressesDescription: "Where this mailbox receives mail and which addresses it sends from.",
@@ -20,7 +19,7 @@ export const mailMailboxDetailsMessages = i18n.define({
       connection: "Connection",
       connected: "Connected",
       paused: "Paused",
-      notSynchronizing: "Not synchronizing",
+      couldNotSynchronize: "Could not synchronize",
       signInRequired: "Sign-in required",
       notConnected: "Not connected",
       checking: "Checking",
@@ -33,9 +32,10 @@ export const mailMailboxDetailsMessages = i18n.define({
       access: "Access",
       accessDescription: "Who can open this mailbox and what they may do.",
       manageAccess: "Manage access",
+      hiddenAccess: ({ count }: { count: number }) =>
+        `${count} more ${count === 1 ? "entry is" : "entries are"} not visible to your account.`,
     },
     de: {
-      mailboxDetails: "Postfachdetails",
       closeDetails: "Postfachdetails schließen",
       addresses: "Adressen",
       addressesDescription: "Wo dieses Postfach E-Mails empfängt und von welchen Adressen es sendet.",
@@ -51,7 +51,7 @@ export const mailMailboxDetailsMessages = i18n.define({
       connection: "Verbindung",
       connected: "Verbunden",
       paused: "Pausiert",
-      notSynchronizing: "Synchronisiert nicht",
+      couldNotSynchronize: "Konnte nicht synchronisieren",
       signInRequired: "Anmeldung erforderlich",
       notConnected: "Nicht verbunden",
       checking: "Wird geprüft",
@@ -64,6 +64,8 @@ export const mailMailboxDetailsMessages = i18n.define({
       access: "Zugriff",
       accessDescription: "Wer dieses Postfach öffnen kann und mit welchen Rechten.",
       manageAccess: "Zugriff verwalten",
+      hiddenAccess: ({ count }) =>
+        `${count} ${count === 1 ? "weiterer Eintrag ist" : "weitere Einträge sind"} für dein Konto nicht sichtbar.`,
     },
   },
 });

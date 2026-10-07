@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import type { Principal } from "@k2b/cloud/contracts";
 import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -14,17 +15,19 @@ const suite = suiteFor("database", "nats");
 suite("mail mailbox details", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
+  const groupIds: string[] = [];
   let mailboxId = "";
   let owner: MailRequestContext;
   let reader: MailRequestContext;
+  let guest: MailRequestContext;
   let outsider: MailRequestContext;
   let readerId = "";
 
-  const createUser = async (label: string, displayName: string) => {
+  const createUser = async (label: string, displayName: string, profile: "user" | "guest" = "user") => {
     const uid = `mail-details-${label}-${suffix}`;
     const [row] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
-      VALUES (${uid}, 'local', 'user', ${displayName}, false)
+      VALUES (${uid}, 'local', ${profile}, ${displayName}, false)
       RETURNING id
     `;
     userIds.push(row!.id);
@@ -35,12 +38,12 @@ suite("mail mailbox details", () => {
           id: row!.id,
           uid,
           provider: "local",
-          profile: "user",
+          profile,
           displayName,
           givenName: "Mail",
           sn: "Details",
           mail: `${uid}@example.test`,
-          roles: ["user"],
+          roles: profile === "user" ? ["user"] : ["guest", "local/guest"],
           memberofGroupIds: [],
           memberofGroups: [],
         } as never,
@@ -49,6 +52,17 @@ suite("mail mailbox details", () => {
       requestId: `mail-details-${suffix}`,
     };
     return { id: row!.id, context };
+  };
+
+  const createGroup = async (name: string) => {
+    const [row] = await sql<{ id: string }[]>`INSERT INTO auth.groups (cn, provider, name) VALUES (${name}, 'local', ${name}) RETURNING id`;
+    groupIds.push(row!.id);
+    return row!.id;
+  };
+
+  const grant = async (principal: Principal, permission: "read" | "write") => {
+    const granted = await grantMailboxAccess({ context: owner, mailboxId, principal, permission });
+    if (!granted.ok) throw new Error(granted.error.message);
   };
 
   const addConnection = async (email: string, status: "active" | "revoked") => {
@@ -73,17 +87,20 @@ suite("mail mailbox details", () => {
     reader = readerUser.context;
     readerId = readerUser.id;
     outsider = (await createUser("outsider", `Outsider ${suffix}`)).context;
+    const guestUser = await createUser("guest", `Guest ${suffix}`, "guest");
+    guest = guestUser.context;
+    const guestTeam = await createGroup(`mail-details-guests-${suffix}`);
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${guestUser.id}::uuid, ${guestTeam}::uuid)`;
+    const staff = await createGroup(`mail-details-staff-${suffix}`);
 
     const mailbox = await createMailbox(owner, { name: `Details ${suffix}`, description: null });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
-    const granted = await grantMailboxAccess({
-      context: owner,
-      mailboxId,
-      principal: { type: "user", userId: readerId },
-      permission: "read",
-    });
-    if (!granted.ok) throw new Error(granted.error.message);
+    await grant({ type: "user", userId: readerId }, "read");
+    await grant({ type: "group", groupId: staff }, "write");
+    // The guest reads directly and through a group they belong to.
+    await grant({ type: "group", groupId: guestTeam }, "read");
+    await grant({ type: "user", userId: guestUser.id }, "read");
     await addConnection("old@example.test", "revoked");
     await addConnection("support@example.test", "active");
     await sql`
@@ -101,32 +118,43 @@ suite("mail mailbox details", () => {
         await sql`DELETE FROM auth.access WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${access.map((row) => row.access_id)}::jsonb))`;
       }
     }
+    if (groupIds.length > 0) {
+      await sql`DELETE FROM auth.groups WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${groupIds}::jsonb))`;
+    }
     if (userIds.length > 0) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
     }
   });
 
-  test("a reader sees every grant, the connected account, and the last sync", async () => {
+  test("a full account that reads sees every grant, the connected account, and the last sync", async () => {
     const details = await getMailboxDetails(reader, mailboxId);
     if (!details.ok) throw new Error(details.error.message);
 
+    expect(details.data.permission).toBe("read");
     // Managers first, each with the name the permission editor shows.
     expect(details.data.access.map((entry) => [entry.displayName, entry.permission])).toEqual([
       [`Owner ${suffix}`, "admin"],
+      [`mail-details-staff-${suffix}`, "write"],
       [`Reader ${suffix}`, "read"],
+      [`mail-details-guests-${suffix}`, "read"],
+      [`Guest ${suffix}`, "read"],
     ]);
+    expect(details.data.hiddenAccessCount).toBe(0);
     // A revoked connection is history, not the mailbox's account; the login name and credentials stay with administrators.
-    expect(details.data.account).toEqual({
-      email: "support@example.test",
-      server: "imap.example.test",
-      status: "active",
-      lastVerifiedAt: "2026-10-07T08:00:00.000Z",
-    });
+    expect(details.data.account).toEqual({ email: "support@example.test", server: "imap.example.test" });
     expect(details.data.lastSyncAt).toBe("2026-10-07T09:30:00.000Z");
 
     // Reading the grants does not make them manageable: the management list stays with administrators.
     const managed = await listMailboxAccess(reader, mailboxId);
     expect(managed.ok).toBe(false);
+  });
+
+  test("a guest sees only the grants the directory shows them: their own and their groups'", async () => {
+    const details = await getMailboxDetails(guest, mailboxId);
+    if (!details.ok) throw new Error(details.error.message);
+    expect(details.data.permission).toBe("read");
+    expect(details.data.access.map((entry) => entry.displayName)).toEqual([`mail-details-guests-${suffix}`, `Guest ${suffix}`]);
+    expect(details.data.hiddenAccessCount).toBe(3);
   });
 
   test("someone without access learns nothing about the mailbox", async () => {

@@ -21,12 +21,14 @@ const [{ MailboxDetailsDialog, mailboxAddresses }, { LocaleProvider }] = await P
 const identity = (fromAddress: string, displayName: string, isDefault = false): SenderIdentity =>
   ({ id: `Id${fromAddress.length}`, fromAddress, displayName, label: displayName, isDefault, status: "verified" }) as SenderIdentity;
 
-const props = (permission: MailboxDetailsDialogProps["permission"]): MailboxDetailsDialogProps => ({
+type Permission = MailboxDetailsDialogProps["details"]["permission"];
+
+const props = (permission: Permission): MailboxDetailsDialogProps => ({
   mailbox: { name: "Support", description: "Customer conversations", health: "active", healthReason: null },
-  permission,
   identities: [identity("Support@Example.test", "Support Team", true), identity("billing@example.test", "Billing")],
   folderCount: 12,
   details: {
+    permission,
     access: [
       {
         id: "00000000-0000-4000-8000-000000000001",
@@ -51,18 +53,19 @@ const props = (permission: MailboxDetailsDialogProps["permission"]): MailboxDeta
         serviceAccountKind: "agent",
       },
     ],
-    account: { email: "support@example.test", server: "imap.example.test", status: "active", lastVerifiedAt: null },
+    hiddenAccessCount: 0,
+    account: { email: "support@example.test", server: "imap.example.test" },
     lastSyncAt: "2026-10-07T09:30:00.000Z",
   },
   dateConfig: { locale: "en", timeZone: "UTC" },
 });
 
-const render = (permission: MailboxDetailsDialogProps["permission"], locale = "en") =>
+const render = (permission: Permission, locale = "en", overrides: Partial<MailboxDetailsDialogProps> = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(MailboxDetailsDialog, { ...props(permission), close: () => {} });
+        return createComponent(MailboxDetailsDialog, { ...props(permission), ...overrides, close: () => {} });
       },
     }),
   );
@@ -96,19 +99,27 @@ describe("Mailbox details", () => {
     expect(html).toContain("imap.example.test");
     expect(html).toContain('datetime="2026-10-07T09:30:00.000Z"');
     expect(html).toContain(">12<");
+    expect(html).not.toContain("not visible to your account");
+  });
+
+  test("tells a guest how many grants their account cannot see", () => {
+    const { details } = props("read");
+    const html = render("read", "en", { details: { ...details, access: details.access.slice(0, 1), hiddenAccessCount: 2 } });
+    expect(html).toContain("Ada Admin");
+    expect(html).not.toContain("Triage agent");
+    expect(html).toContain("2 more entries are not visible to your account.");
+    expect(render("read", "de", { details: { ...details, hiddenAccessCount: 1 } })).toContain(
+      "1 weiterer Eintrag ist für dein Konto nicht sichtbar.",
+    );
   });
 
   test("names the connection state instead of asking readers to act", () => {
-    const html = renderToString(() =>
-      createComponent(MailboxDetailsDialog, {
-        ...props("read"),
-        mailbox: { ...props("read").mailbox, health: "auth_required" },
-        close: () => {},
-      }),
-    );
+    const html = render("read", "en", { mailbox: { ...props("read").mailbox, health: "auth_required" } });
     expect(html).toContain("Sign-in required");
     expect(html).toContain('data-tone="warning"');
     expect(html).not.toContain("sign in again");
+    // A failed attempt, which Mail retries on its own, not a stopped synchronization.
+    expect(render("read", "en", { mailbox: { ...props("read").mailbox, health: "degraded" } })).toContain("Could not synchronize");
   });
 
   test("gives managers the way into the access settings", () => {

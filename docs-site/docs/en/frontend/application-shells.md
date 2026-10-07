@@ -149,9 +149,9 @@ const navigation = createNavigation({
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
 cleanup. Links remain usable before the application island loads. Until the
-owner is ready, action-only entries, also in `actions` and `inlineActions`,
-remain disabled and `expanded` items only
-set where their disclosure starts, then toggle locally. Do not register embedded
+owner is ready, action-only entries, also in `actions`, and every inline action
+remain disabled, and `expanded` items only set where their disclosure starts,
+then toggle locally. Do not register embedded
 inspectors, reference windows, or builder previews as the Cloud workspace.
 They keep local content controls.
 

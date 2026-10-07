@@ -34,9 +34,11 @@ Secondary `actions` open from the row's menu button with their `label`, `icon`,
 `inlineActions` sit directly in the row, after the destination and before the
 menu button, as square 44 px icon buttons. Use them for one or two actions that
 belong beside the destination on every screen, such as mailbox details next to
-Compose. Each needs an `icon`; its `label` is the button's accessible name and
-tooltip. They take an `action` key or an `href` like any item and follow the
-row's and their own `disabled` state. Keep longer lists in `actions`.
+Compose. Each takes an `id`, a `label` as the button's accessible name and
+tooltip, an `icon`, and an `action` key, and follows the row's and its own
+`disabled` state. Inline actions do not navigate: a destination belongs in a
+row, where its link keeps modified clicks and new tabs. Keep longer lists in
+`actions`.
 
 ```tsx
 {

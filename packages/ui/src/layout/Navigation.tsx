@@ -122,14 +122,7 @@ export default function Navigation(props: NavigationProps) {
                             class="k2b-navigation__inline-action"
                             label={current().label}
                             disabled={disabled() || current().disabled}
-                            onClick={() => {
-                              const href = current().href;
-                              if (href)
-                                void ready().then((allowed) => {
-                                  if (allowed) documentNavigate(href);
-                                });
-                              else void activate(actionId);
-                            }}
+                            onClick={() => void activate(actionId)}
                           >
                             <i class={current().icon} aria-hidden="true" />
                           </IconButton>

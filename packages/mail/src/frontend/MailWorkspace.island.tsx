@@ -570,7 +570,6 @@ function MailWorkspaceView(props: {
     if (disposed) return;
     const result = await openMailboxDetailsDialog({
       mailbox: data.mailbox,
-      permission: data.permission,
       identities: data.identities,
       folderCount: data.folders.length,
       details,

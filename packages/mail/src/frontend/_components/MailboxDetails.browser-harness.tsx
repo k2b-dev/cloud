@@ -44,7 +44,6 @@ window.mountMailboxDetails = (options) => {
     if (!response.ok) throw new Error(`Details failed with ${response.status}`);
     const result = await openMailboxDetailsDialog({
       mailbox,
-      permission: options.permission,
       identities: options.identities,
       folderCount: 12,
       details: await response.json(),
