@@ -94,6 +94,8 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   blocks: [...active.liveBlocks],
   modelProfileId: active.turn.modelProfileId,
   createdAt: active.turn.createdAt,
+  actionWaitMs: active.actionWaitMs,
+  waitingSince: active.waitingSince,
 });
 
 /** Initial history window; older messages load on demand while scrolling up. */

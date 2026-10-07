@@ -7,17 +7,19 @@ import { type Accessor, createComponent, createRoot, createSignal } from "solid-
 import { renderToString } from "solid-js/web";
 import type { AiActiveTurn } from "../client/projection";
 import type { AiTurnBlock } from "../protocol";
-import type { AiAssistantTimelineItem } from "../timeline";
 import type { AiStoredMessage } from "../types";
+import type { AiTurnPhase } from "./turn-layout";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-capability-block-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { AiTurnBlockList, AiTurnBlockView } = await import("./blocks");
+const { AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
-const { AiAssistantContent, createAiChatTimeline } = await import("./presentation");
+const { createAiChatTimeline } = await import("./presentation");
+const { AiTurnView } = await import("./turn-view");
+const { layoutAiTurn } = await import("./turn-layout");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 const { Chat, LocaleProvider } = await import("@k2b/ui");
@@ -28,6 +30,26 @@ const hasOpenDetailsContaining = (html: string, text: string): boolean => {
   const detailsIndex = html.lastIndexOf("<details", textIndex);
   const tagEnd = html.indexOf(">", detailsIndex);
   return detailsIndex >= 0 && tagEnd > detailsIndex && /\sopen(?:=""|(?=[\s>]))/.test(html.slice(detailsIndex, tagEnd + 1));
+};
+
+const renderSegment = (
+  blocks: AiTurnBlock[],
+  options: { phase?: AiTurnPhase; disclosureState?: ReturnType<typeof createAiToolDisclosureState>; workedMs?: number } = {},
+) => {
+  const phase = options.phase ?? "completed";
+  return renderToString(() =>
+    createComponent(AiTurnView, {
+      segment: () => ({
+        id: "ai-turn:turn-1:0",
+        turnId: "turn-1",
+        phase,
+        layout: layoutAiTurn(blocks, { phase }),
+        earlier: false,
+        duration: () => (options.workedMs === undefined ? null : { workedMs: options.workedMs, waitingMs: null }),
+      }),
+      disclosureState: options.disclosureState ?? createAiToolDisclosureState(),
+    }),
+  );
 };
 
 const block = (status: "running" | "awaiting_approval" | "completed" | "failed"): AiTurnBlock => ({
@@ -534,9 +556,9 @@ describe("capability tool presentation", () => {
     expect(html).not.toMatch(/<a[^>]*hover:underline/);
   });
 
-  test("collapses intermediate text and tools after completion while keeping rich results and the final text visible", () => {
+  test("folds intermediate text and tools into one work line while results and the final text stay visible", () => {
     const blocks: AiTurnBlock[] = [
-      { id: "text-before", kind: "text", text: "Before tool" },
+      { id: "text-before", kind: "text", text: "Before tool." },
       {
         id: "tool-middle",
         kind: "tool",
@@ -563,74 +585,65 @@ describe("capability tool presentation", () => {
         status: "completed",
         result: { path: "/report.pdf", size: 12, mediaType: "application/pdf" },
       },
-      { id: "text-after", kind: "text", text: "After tool" },
+      { id: "text-after", kind: "text", text: "After tool." },
     ];
-    const item: AiAssistantTimelineItem = {
-      type: "assistant",
-      id: "stored-1",
-      loopId: "turn-1",
-      entries: [],
-      blocks,
-      actionEntry: null,
-      workedMs: 1_000,
-    };
-    const storedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
-    const liveHtml = renderToString(() => createComponent(AiTurnBlockList, { blocks, turnId: "turn-1" }));
+    const storedHtml = renderSegment(blocks, { workedMs: 190_000 });
+    const liveHtml = renderSegment(blocks, { phase: "running" });
 
-    expect(storedHtml).toContain("Worked for 1s");
+    expect(storedHtml).toContain("Worked 3 min");
+    expect(storedHtml).toContain("3 steps");
+    expect(storedHtml).toContain('aria-label="Worked 3 minutes, 3 steps"');
     expect(hasOpenDetails(storedHtml)).toBe(false);
-    expect(storedHtml.indexOf("Worked for 1s")).toBeLessThan(storedHtml.indexOf("Before tool"));
-    expect(storedHtml.indexOf("Before tool")).toBeLessThan(storedHtml.indexOf("Unknown tool"));
-    expect(storedHtml.indexOf("Unknown tool")).toBeLessThan(storedHtml.indexOf("Useful card"));
-    expect(storedHtml.indexOf("Useful card")).toBeLessThan(storedHtml.indexOf("Useful report"));
-    expect(storedHtml.indexOf("Useful report")).toBeLessThan(storedHtml.indexOf("After tool"));
-    expect(storedHtml).not.toContain("unknown_tool");
-
-    expect(liveHtml.indexOf("Before tool")).toBeLessThan(liveHtml.indexOf("Unknown tool"));
-    expect(liveHtml.indexOf("Unknown tool")).toBeLessThan(liveHtml.indexOf("Useful card"));
-    expect(liveHtml.indexOf("Useful card")).toBeLessThan(liveHtml.indexOf("Useful report"));
-    expect(liveHtml.indexOf("Useful report")).toBeLessThan(liveHtml.indexOf("After tool"));
-    expect(liveHtml).not.toContain("Worked for");
-  });
-
-  test("does not leave an empty block-list item in the chat layout", () => {
-    const html = renderToString(() => createComponent(AiTurnBlockList, { blocks: [], turnId: "turn-empty" }));
-
-    expect(html).not.toContain("flex flex-col");
-  });
-
-  test("keeps failed tool details collapsed and preserves an explicit tool disclosure choice", () => {
-    const item: AiAssistantTimelineItem = {
-      type: "assistant",
-      id: "stored-failure",
-      loopId: "turn-failure",
-      entries: [],
-      blocks: [
-        {
-          id: "failed-tool",
-          kind: "tool",
-          callId: "failed-1",
-          name: "unknown_tool",
-          status: "failed",
-          result: { code: "VALIDATION_FAILED", message: "Mailbox is required" },
-          isError: true,
-        },
-        { id: "final-text", kind: "text", text: "I could not finish that." },
-      ],
-      actionEntry: null,
-      workedMs: 2_000,
-    };
-
-    const failedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
-    expect(hasOpenDetailsContaining(failedHtml, "Unknown tool")).toBe(false);
-    expect(failedHtml).toContain('data-tone="danger"');
-    expect(failedHtml).not.toContain("Mailbox is required");
+    for (const html of [storedHtml, liveHtml]) {
+      expect(html).not.toContain("Before tool");
+      expect(html).not.toContain("Unknown tool");
+      expect(html.indexOf("Useful card")).toBeLessThan(html.indexOf("Useful report"));
+      expect(html.indexOf("Useful report")).toBeLessThan(html.indexOf("After tool"));
+    }
+    expect(liveHtml).not.toContain("Worked");
 
     const disclosureState = createAiToolDisclosureState();
-    disclosureState.set("group:failed-tool", true);
-    const collapsedHtml = renderToString(() => createComponent(AiAssistantContent, { item: { ...item }, disclosureState }));
-    expect(hasOpenDetailsContaining(collapsedHtml, "Unknown tool")).toBe(true);
-    expect(collapsedHtml).toContain("Mailbox is required");
+    disclosureState.set("work:ai-turn:turn-1:0", true);
+    const expanded = renderSegment(blocks, { disclosureState });
+    expect(expanded.indexOf("Before tool")).toBeLessThan(expanded.indexOf("Useful card"));
+    expect(expanded).toContain("Delivered results");
+  });
+
+  test("does not leave empty places in the chat layout", () => {
+    const html = renderSegment([]);
+
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("assistant-markdown-block");
+  });
+
+  test("keeps failed steps folded and quiet, and preserves an explicit disclosure choice", () => {
+    const blocks: AiTurnBlock[] = [
+      {
+        id: "failed-tool",
+        kind: "tool",
+        callId: "failed-1",
+        name: "unknown_tool",
+        status: "failed",
+        result: { code: "VALIDATION_FAILED", message: "Mailbox is required" },
+        isError: true,
+      },
+      { id: "final-text", kind: "text", text: "I could not finish that." },
+    ];
+
+    const folded = renderSegment(blocks, { workedMs: 2_000 });
+    expect(hasOpenDetails(folded)).toBe(false);
+    expect(folded).not.toContain('data-tone="danger"');
+    expect(folded).not.toContain("Mailbox is required");
+    expect(folded).toContain("I could not finish that.");
+
+    const disclosureState = createAiToolDisclosureState();
+    disclosureState.set("work:ai-turn:turn-1:0", true);
+    disclosureState.set("failed-tool", true);
+    const expanded = renderSegment(blocks, { disclosureState });
+    expect(hasOpenDetailsContaining(expanded, "Unknown tool")).toBe(true);
+    expect(expanded).toContain("failed");
+    expect(expanded).not.toContain('data-tone="danger"');
+    expect(expanded).toContain("Mailbox is required");
   });
 
   test("shows categorized fetch_file failures as a clear danger activity", () => {
@@ -880,7 +893,7 @@ describe("capability tool presentation", () => {
 });
 
 describe("live tool disclosure stability", () => {
-  test("keeps a user disclosure override across a remounted loop block", () => {
+  test("keeps a user disclosure override across a remounted turn", () => {
     const disclosureState = createAiToolDisclosureState();
     const completed: AiTurnBlock = {
       id: "tool-stable",
@@ -891,19 +904,11 @@ describe("live tool disclosure stability", () => {
       result: { step: 1 },
     };
 
-    const initialHtml = renderToString(() =>
-      createComponent(AiTurnBlockList, { blocks: [completed], turnId: "turn-stable", disclosureState }),
-    );
+    const initialHtml = renderSegment([completed], { phase: "running", disclosureState });
     expect(hasOpenDetails(initialHtml)).toBe(false);
 
-    disclosureState.set(`group:${completed.id}`, true);
-    const nextHtml = renderToString(() =>
-      createComponent(AiTurnBlockList, {
-        blocks: [{ ...completed, result: { step: 2 } }],
-        turnId: "turn-stable",
-        disclosureState,
-      }),
-    );
+    disclosureState.set("work:ai-turn:turn-1:0", true);
+    const nextHtml = renderSegment([{ ...completed, result: { step: 2 } }], { disclosureState });
     expect(hasOpenDetails(nextHtml)).toBe(true);
   });
 
@@ -1138,8 +1143,7 @@ describe("survey answer timeline", () => {
     const accepted = snapshot([], turn([survey]));
     expect(accepted.map((item) => item.kind === "message" && item.role)).toEqual(["user", "assistant"]);
     expect(accepted[1]).toMatchObject({ status: "streaming" });
-    // Only the hydration marker of the provider-retry slot; no visible content.
-    expect(accepted[1]!.html).toBe("<!--!$-->");
+    expect(accepted[1]!.html).toBe('<div class="ai-turn"></div>');
   });
 
   test("keeps empty answers and zero ratings readable and IDs scoped to their turn", () => {
@@ -1320,26 +1324,22 @@ describe("assistant activity width", () => {
   const renderTurn = (blocks: AiTurnBlock[], locale = "en") => renderChat(locale, [], blocks);
   const messageClass = (html: string) => html.match(/<article class="(k2b-chat-message[^"]*)"/)?.[1]?.trim();
 
-  test("gives a lone reasoning row the same full width as several activity rows", () => {
-    const oneRow = renderTurn([reasoning]);
-    const twoRows = renderTurn([reasoning, pdfTool]);
+  test("spans the column for a turn with work and keeps the reading width for prose and reasoning", () => {
+    const withWork = renderTurn([reasoning, pdfTool]);
 
-    expect(oneRow).toContain("Show reasoning");
-    expect(twoRows).toContain("Markdown to pdf");
-    expect(messageClass(oneRow)).toBe("k2b-chat-message ai-chat-message-wide");
-    expect(messageClass(oneRow)).toBe(messageClass(twoRows));
-    expect(messageClass(renderChat("en", [persistedReasoning]))).toBe(messageClass(twoRows));
-    const compactionRow = renderTurn([compaction]);
-    expect(compactionRow).toContain("Show compaction");
-    expect(messageClass(compactionRow)).toBe(messageClass(twoRows));
-    // Prose alone and reasoning that renders no row keep the default reading width.
+    expect(withWork).toContain("Creating a PDF");
+    expect(messageClass(withWork)).toBe("k2b-chat-message ai-chat-message-wide");
+    expect(messageClass(renderTurn([compaction]))).toBe(messageClass(withWork));
+    // Prose and reasoning without tools have no work line.
     expect(messageClass(renderTurn([answer]))).toBe("k2b-chat-message");
-    expect(messageClass(renderTurn([{ ...reasoning, text: " " }, answer]))).toBe("k2b-chat-message");
+    expect(messageClass(renderTurn([reasoning, answer]))).toBe("k2b-chat-message");
+    expect(messageClass(renderChat("en", [persistedReasoning]))).toBe("k2b-chat-message");
+    expect(renderChat("en", [persistedReasoning])).not.toContain("Convert the Markdown first.");
   });
 
-  test("labels reasoning rows in the request locale", () => {
-    expect(renderTurn([reasoning], "de")).toContain("Denkprozess anzeigen");
-    expect(renderTurn([{ ...reasoning, text: "" }], "de")).toContain("Denkt nach");
-    expect(renderTurn([{ ...reasoning, text: "" }], "en")).toContain("Thinking");
+  test("names the current step in the request locale", () => {
+    expect(renderTurn([reasoning, pdfTool], "de")).toContain("Erstellt ein PDF");
+    expect(renderTurn([{ ...pdfTool, status: "completed" }, reasoning], "de")).toContain("Denkt nach");
+    expect(renderTurn([{ ...pdfTool, status: "completed" }, reasoning], "en")).toContain("Thinking");
   });
 });

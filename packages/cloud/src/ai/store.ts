@@ -925,9 +925,13 @@ const toolMessageMeta = (
   message: Message,
   presentations: ReadonlyMap<string, AiToolPresentation> | undefined,
   rejectedToolCallIds: ReadonlySet<string> | undefined,
+  approvedToolCallIds?: ReadonlySet<string>,
 ): AiStoredMessage["meta"] => {
   if (message.role === "tool_result" && rejectedToolCallIds?.has(message.callId)) {
     return { toolOutcomes: { [message.callId]: "rejected" } };
+  }
+  if (message.role === "tool_result" && approvedToolCallIds?.has(message.callId)) {
+    return { toolOutcomes: { [message.callId]: "approved" } };
   }
   if (message.role !== "assistant" || !presentations || presentations.size === 0) return null;
   const toolPresentations = Object.fromEntries(
@@ -2608,13 +2612,24 @@ export const aiConversations: AiConversationService = {
   },
 
   getActiveTurn: async (input) => {
-    const rows = await sql<TurnRow[]>`
-      SELECT *
-      FROM ai.turns
-      WHERE conversation_id = ${input.conversationId}
-        AND NOT COALESCE(run_config ? 'background', false)
-        AND status IN ('queued', 'running', 'waiting_for_action')
-      ORDER BY created_at DESC
+    // The wait sums let a reconnecting client show work time without time spent waiting for the user.
+    const rows = await sql<(TurnRow & { action_wait_ms: number | string | null; waiting_since: Date | string | null })[]>`
+      SELECT turn.*,
+        (
+          SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (action.resolved_at - action.created_at)) * 1000), 0)
+          FROM ai.pending_actions action
+          WHERE action.turn_id = turn.id AND action.status <> 'pending' AND action.resolved_at IS NOT NULL
+        ) AS action_wait_ms,
+        (
+          SELECT MIN(action.created_at)
+          FROM ai.pending_actions action
+          WHERE action.turn_id = turn.id AND action.status = 'pending'
+        ) AS waiting_since
+      FROM ai.turns turn
+      WHERE turn.conversation_id = ${input.conversationId}
+        AND NOT COALESCE(turn.run_config ? 'background', false)
+        AND turn.status IN ('queued', 'running', 'waiting_for_action')
+      ORDER BY turn.created_at DESC
       LIMIT 1
     `;
     if (!rows[0]) return null;
@@ -2622,6 +2637,8 @@ export const aiConversations: AiConversationService = {
       turn: rowToTurn(rows[0]),
       liveBlocks: rowToLiveBlocks(rows[0]),
       liveSeq: Number(rows[0].live_seq ?? 0),
+      actionWaitMs: Math.max(0, Math.round(Number(rows[0].action_wait_ms ?? 0))),
+      waitingSince: rows[0].waiting_since ? iso(rows[0].waiting_since) : null,
     };
   },
 
@@ -2822,6 +2839,27 @@ export const aiConversations: AiConversationService = {
           AND status = 'pending'
       `;
       if (input.status !== "completed") {
+        // A turn that ends without its own loop end, such as a stop while it waits for an approval, still records
+        // how it ended, so history shows it as stopped or failed instead of finished.
+        const doneReason = input.status === "aborted" ? "aborted" : "error";
+        for (const table of ["ai.messages", "ai.task_messages"]) {
+          await tx`
+            UPDATE ${tx(table)}
+            SET loop_done_reason = ${doneReason}
+            WHERE id = (
+              SELECT id
+              FROM ${tx(table)}
+              WHERE conversation_id = ${input.conversationId}
+                AND loop_id = ${input.turnId}::text
+                AND compacted_at IS NULL
+                AND kind = 'message'
+                AND role = 'assistant'
+              ORDER BY seq DESC
+              LIMIT 1
+            )
+              AND loop_done_reason IS NULL
+          `;
+        }
         await tx`
           UPDATE ai.turn_steers
           SET status = 'discarded', consumed_at = COALESCE(consumed_at, now())
@@ -3300,7 +3338,7 @@ export const aiConversations: AiConversationService = {
     append: async (message, opts) => {
       // Initial input and durable steering are already persisted transactionally before Nessi appends them.
       if (message.role === "user") return;
-      const meta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds);
+      const meta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds, input.approvedToolCallIds);
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({

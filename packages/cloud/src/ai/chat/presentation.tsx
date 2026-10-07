@@ -1,16 +1,29 @@
-import { Button, Chat, type ChatTimelineItem, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
+import type { ChatTimelineItem } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  getOwner,
+  type JSX,
+  onCleanup,
+  type Setter,
+  Show,
+} from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, splitActiveTurnBlocks } from "../protocol";
-import { type AiAssistantTimelineItem, buildAiMessageTimeline, copyTextFromAssistantEntries } from "../timeline";
+import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timeline";
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
-import { AiTurnBlockList } from "./blocks";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
-import { formatWorkedDuration, isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
+import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
+import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
+import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
   aiSteerMessageText,
   aiUserMessageAttachments,
@@ -28,14 +41,6 @@ export type AiChatTimelineSession = {
 export { type AiChatActions, AiChatActionsProvider };
 
 type AssistantBlock = AiAssistantTimelineItem["blocks"][number];
-
-// Activity blocks span the full message column so disclosure chevrons share one
-// right edge. Tool and compaction blocks count even while busy; reasoning counts
-// only once it has text, because empty reasoning renders at most a busy row and
-// must not widen a prose-only reply.
-const isWideBlock = (block: AssistantBlock) =>
-  block.kind === "tool" || block.kind === "compaction" || (block.kind === "thinking" && block.text.trim().length > 0);
-
 type SurveyResultBlock = Extract<AssistantBlock, { kind: "tool" }>;
 type SurveySegment = { type: "assistant"; blocks: AssistantBlock[] } | { type: "survey"; block: SurveyResultBlock };
 
@@ -68,31 +73,81 @@ const surveyItem = (block: SurveyResultBlock, turnId: string): ChatTimelineItem 
   content: <CloudSurveyResultBlock args={block.args} result={block.result} />,
 });
 
-export function AiAssistantContent(props: {
-  item: AiAssistantTimelineItem;
-  disclosureState?: AiToolDisclosureState;
-  segmentId?: string;
-}): JSX.Element {
-  const locale = useLocale();
-  const turnId = () => props.item.loopId ?? props.item.id;
-  return (
-    <div class="flex flex-col gap-2">
-      <Chat.Activity
-        icon="ti ti-route"
-        label={`${locale().startsWith("de") ? "Gearbeitet für" : "Worked for"} ${formatWorkedDuration(props.item.workedMs)}`}
-      />
-      <AiTurnBlockList blocks={props.item.blocks} turnId={turnId()} disclosureState={props.disclosureState} />
-    </div>
-  );
-}
+/**
+ * Timeline id of an assistant segment: its turn and its position among the turn's assistant segments. A live turn and
+ * its history produce the same ids, so the timeline keeps the same elements when the turn ends.
+ */
+const turnSegmentId = (turnId: string, index: number) => `ai-turn:${turnId}:${index}`;
+
+/** History phase of a finished loop, from how its loop ended. */
+const storedPhase = (entries: readonly AiStoredMessage[]): AiTurnPhase => {
+  const reason = entries.findLast((entry) => entry.loopDoneReason)?.loopDoneReason;
+  if (!reason || reason === "stop") return "completed";
+  return reason === "aborted" ? "stopped" : "failed";
+};
+
+/** Responses with a work line or rich places span the message column so their right edges align. */
+const isWideLayout = (layout: AiTurnLayout) => layout.showWork || layout.results.length > 0 || layout.actions.length > 0;
+
+const isEmptyLayout = (layout: AiTurnLayout) => !isWideLayout(layout) && layout.text.length === 0;
+
+/**
+ * Turn views live in their own roots, keyed by timeline id. A changed segment updates its view instead of
+ * replacing it, so host state inside a turn, such as a running Studio session, survives every update.
+ */
+const createTurnViews = (disclosureState: AiToolDisclosureState) => {
+  const owner = getOwner();
+  const views = new Map<string, { set: Setter<AiTurnSegment>; content: JSX.Element; dispose: () => void }>();
+  onCleanup(() => {
+    for (const view of views.values()) view.dispose();
+    views.clear();
+  });
+  return {
+    content(segment: AiTurnSegment): JSX.Element {
+      const existing = views.get(segment.id);
+      if (existing) {
+        existing.set(() => segment);
+        return existing.content;
+      }
+      return createRoot((dispose) => {
+        const [current, set] = createSignal(segment);
+        const content = <AiTurnView segment={current} disclosureState={disclosureState} />;
+        views.set(segment.id, { set, content, dispose });
+        return content;
+      }, owner);
+    },
+    retain(ids: ReadonlySet<string>) {
+      for (const [id, view] of views) {
+        if (ids.has(id)) continue;
+        view.dispose();
+        views.delete(id);
+      }
+    },
+  };
+};
+
+type TurnViews = ReturnType<typeof createTurnViews>;
+
+/** A segment's final text is what Copy copies; intermediate texts stay in the work line. */
+const finalText = (layout: AiTurnLayout) =>
+  layout.text
+    .map((block) => block.text)
+    .join("\n\n")
+    .trim();
 
 const storedItems = (
   messages: readonly AiStoredMessage[],
   actions: AiChatActions,
-  disclosureState: AiToolDisclosureState,
+  views: TurnViews,
   locale: string,
-): ChatTimelineItem[] =>
-  buildAiMessageTimeline([...messages]).flatMap((item): ChatTimelineItem | ChatTimelineItem[] => {
+): ChatTimelineItem[] => {
+  const timeline = buildAiMessageTimeline([...messages]);
+  const lastItemOfLoop = new Map<string, number>();
+  timeline.forEach((item, index) => {
+    if (item.type === "assistant" && item.loopId) lastItemOfLoop.set(item.loopId, index);
+  });
+  const segmentsOfLoop = new Map<string, number>();
+  return timeline.flatMap((item, itemIndex): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
       const agentMessage = item.entry.meta?.agentMessage;
@@ -167,77 +222,71 @@ const storedItems = (
     }
 
     const actionEntry = item.actionEntry?.compactedAt ? null : item.actionEntry;
-    const copyText = copyTextFromAssistantEntries(item.entries);
+    const lastOfLoop = !item.loopId || lastItemOfLoop.get(item.loopId) === itemIndex;
+    const phase = lastOfLoop ? storedPhase(item.entries) : "completed";
     const segments = splitSurveyResults(item.blocks);
     if (segments.length === 0) segments.push({ type: "assistant", blocks: [] });
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
-    return segments.map((segment, index): ChatTimelineItem => {
-      if (segment.type === "survey") return surveyItem(segment.block, item.loopId ?? item.id);
-      return {
-        kind: "message",
-        id: index === 0 ? item.id : `${item.id}:${segment.blocks[0]!.id}`,
-        role: "assistant",
-        createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
-        class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
-        content: (
-          <>
-            <Show when={index === 0 && item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask}>
-              {(task) => (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="mb-2"
-                  onClick={() => actions.onOpenScheduledTaskRun?.(task().taskId, task().occurrenceId)}
-                  disabled={!actions.onOpenScheduledTaskRun}
-                >
-                  <i class="ti ti-calendar-time" aria-hidden="true" /> {aiChatMessages(locale).backgroundRun}
-                </Button>
-              )}
-            </Show>
-            <AiAssistantContent
-              item={{ ...item, blocks: segment.blocks }}
-              segmentId={segments.length > 1 ? `${item.id}:${index}` : undefined}
-              disclosureState={disclosureState}
-            />
-          </>
-        ),
-        actions:
-          actionEntry && index === lastAssistant
-            ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText, actions })
-            : undefined,
-        actionDisplay: "inline",
-      };
+    const scheduledTask = item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask ?? null;
+    let firstSegment = true;
+    return segments.flatMap((segment, index): ChatTimelineItem[] => {
+      const turnId = item.loopId ?? item.id;
+      if (segment.type === "survey") return [surveyItem(segment.block, turnId)];
+      const ordinal = item.loopId ? (segmentsOfLoop.get(item.loopId) ?? 0) : index;
+      if (item.loopId) segmentsOfLoop.set(item.loopId, ordinal + 1);
+      const last = lastOfLoop && index === lastAssistant;
+      const segmentPhase = last ? phase : "completed";
+      const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
+      const messageActions =
+        actionEntry && index === lastAssistant
+          ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText: finalText(layout), actions })
+          : undefined;
+      const task = firstSegment ? scheduledTask : null;
+      firstSegment = false;
+      if (isEmptyLayout(layout) && !messageActions && !task) return [];
+      const id = item.loopId ? turnSegmentId(item.loopId, ordinal) : `${item.id}:${index}`;
+      return [
+        {
+          kind: "message",
+          id,
+          role: "assistant",
+          createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
+          class: isWideLayout(layout) ? "ai-chat-message-wide" : undefined,
+          content: views.content({
+            id,
+            turnId,
+            phase: segmentPhase,
+            layout,
+            earlier: !last,
+            duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
+            scheduledTask: task,
+          }),
+          actions: messageActions,
+          actionDisplay: "inline",
+        },
+      ];
     });
   });
+};
 
-// Calm by design: no busy sweep while the model call waits for its retry.
-function ProviderRetryActivity() {
-  const locale = useLocale();
-  return <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />;
-}
-
-const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosureState: AiToolDisclosureState): ChatTimelineItem[] => {
+const activeItems = (
+  turn: AiActiveTurn | null,
+  actions: AiChatActions,
+  views: TurnViews,
+  duration: Accessor<AiTurnDuration | null>,
+  locale: string,
+): ChatTimelineItem[] => {
   if (!turn) return [];
   const segments = splitActiveTurnBlocks(turn.blocks).flatMap((segment): (AiActiveTurnSegment | SurveySegment)[] =>
     segment.type === "steer" ? [segment] : splitSurveyResults(segment.blocks),
   );
-  // A running turn ends with an assistant item, so its progress indicator and a retry wait stay visible after an accepted answer or a pending steer.
-  const tail = segments.at(-1)?.type;
-  if (turn.status === "running" && (tail === "survey" || tail === "steer")) segments.push({ type: "assistant", blocks: [] });
-  if (segments.length === 0) {
-    return [
-      {
-        kind: "message",
-        id: `${turn.turnId}-pending`,
-        role: "assistant",
-        status: "streaming",
-        content: turn.providerRetry ? <ProviderRetryActivity /> : undefined,
-        anchorId: turn.seq,
-      },
-    ];
-  }
+  // Keep the shared assistant progress indicator after the accepted answer, and before the first model block.
+  if (segments.length === 0 || (turn.status === "running" && segments.at(-1)?.type === "survey"))
+    segments.push({ type: "assistant", blocks: [] });
+  const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
+  let ordinal = 0;
 
-  return segments.map((segment, index): ChatTimelineItem => {
+  const items = segments.map((segment, index): ChatTimelineItem => {
     if (segment.type === "survey") return surveyItem(segment.block, turn.turnId);
     if (segment.type === "steer") {
       const block = segment.block;
@@ -253,31 +302,69 @@ const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosu
       };
     }
 
-    const blocks = segment.blocks;
-    const last = index === segments.length - 1;
+    const last = index === lastAssistant;
+    const phase: AiTurnPhase = !last ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
+    const layout = layoutAiTurn(segment.blocks, { phase, codePresentations: Boolean(actions.renderCodePresentation) });
+    const id = turnSegmentId(turn.turnId, ordinal++);
     return {
       kind: "message",
-      id: `${turn.turnId}-assistant-${index}`,
+      id,
       role: "assistant",
       status: turn.status === "running" && last ? "streaming" : "complete",
-      class: blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
-      content: (
-        <>
-          <AiTurnBlockList
-            blocks={blocks}
-            turnId={turn.turnId}
-            streaming={turn.status === "running" && last}
-            active={last}
-            disclosureState={disclosureState}
-          />
-          {/* Reactive, so the wait neither rebuilds nor moves the rows above it. */}
-          <Show when={last && turn.providerRetry}>
-            <div class={blocks.length > 0 ? "mt-2" : undefined}>
-              <ProviderRetryActivity />
-            </div>
-          </Show>
-        </>
-      ),
+      class: isWideLayout(layout) ? "ai-chat-message-wide" : undefined,
+      content: views.content({ id, turnId: turn.turnId, phase, layout, earlier: !last, duration: last ? duration : () => null }),
+    };
+  });
+  // The live timeline ends with the wait for a retried model call, below a pending steer too, so no earlier row moves.
+  // Calm by design: no busy sweep while the call waits.
+  if (turn.providerRetry)
+    items.push({ kind: "activity", id: `${turn.turnId}-provider-retry`, label: aiChatMessages(locale).reconnecting, icon: "ti ti-refresh" });
+  return items;
+};
+
+/**
+ * Work time of the active turn: wall time minus time spent waiting for the user. A state snapshot seeds it after a
+ * reconnect; the clock stands while the turn waits and continues from the same value afterwards.
+ */
+const createActiveTurnClock = (source: AiChatTimelineSource): Accessor<AiTurnDuration | null> => {
+  const [now, setNow] = createSignal(Date.now());
+  const running = createMemo(() => source.activeTurn() !== null);
+  createEffect(() => {
+    if (!running() || typeof window === "undefined") return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+  let state: { turnId: string; seed: string; startedAt: number; waitMs: number; waitingSince: number | null } | null = null;
+  return createMemo(() => {
+    const turn = source.activeTurn();
+    const time = now();
+    if (!turn) {
+      state = null;
+      return null;
+    }
+    const seed = `${turn.createdAt}|${turn.actionWaitMs}|${turn.waitingSince}`;
+    if (!state || state.turnId !== turn.turnId || state.seed !== seed) {
+      const userMessage = source.messages().find((message) => message.loopId === turn.turnId && message.message.role === "user");
+      const started = Date.parse(turn.createdAt ?? userMessage?.createdAt ?? "");
+      const waitingSince = turn.waitingSince ? Date.parse(turn.waitingSince) : Number.NaN;
+      state = {
+        turnId: turn.turnId,
+        seed,
+        startedAt: Number.isFinite(started) ? Math.min(started, time) : state?.turnId === turn.turnId ? state.startedAt : time,
+        waitMs: turn.actionWaitMs ?? (state?.turnId === turn.turnId ? state.waitMs : 0),
+        waitingSince: Number.isFinite(waitingSince) ? Math.min(waitingSince, time) : null,
+      };
+    }
+    const waiting = turn.status === "waiting_for_action";
+    if (waiting && state.waitingSince === null) state.waitingSince = time;
+    if (!waiting && state.waitingSince !== null) {
+      state.waitMs += time - state.waitingSince;
+      state.waitingSince = null;
+    }
+    return {
+      workedMs: Math.max(0, (state.waitingSince ?? time) - state.startedAt - state.waitMs),
+      waitingMs: state.waitingSince === null ? null : Math.max(0, time - state.waitingSince),
     };
   });
 };
@@ -296,9 +383,15 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   const actions = useAiChatActions();
   const locale = useLocale();
   const disclosureState = createAiToolDisclosureState();
-  const stored = createMemo(() => storedItems(source.messages(), actions, disclosureState, locale()));
-  const active = createMemo(() => activeItems(source.activeTurn(), actions, disclosureState));
-  return createMemo(() => [...stored(), ...active()]);
+  const views = createTurnViews(disclosureState);
+  const clock = createActiveTurnClock(source);
+  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale()));
+  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, locale()));
+  return createMemo(() => {
+    const items = [...stored(), ...active()];
+    views.retain(new Set(items.map((item) => item.id)));
+    return items;
+  });
 }
 
 export type AiChatTurnNavigatorProps = {

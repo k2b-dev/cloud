@@ -317,6 +317,9 @@ re-enqueues its continuation; a conflicting response for an already resolved
 call is rejected. On reconnect, the state snapshot reconciles durable action
 responses before rendering, so resolved approval controls do not reappear and
 plain browser tools are not executed again merely because the page reloaded.
+A call the user approved keeps `approved: true` on its tool block, and its
+stored result records the decision, as a rejection does, so history can show
+the decision after a reload.
 
 Do not maintain a second client-side chat state machine.
 
@@ -526,7 +529,17 @@ records its generation interval before tool execution; these measurements surviv
 client actions and executor resumption. Tool execution and approval/browser waits
 use their durable audit timestamps. Overlapping phases are counted once. An older
 or incomplete trace has no aggregate timing or token-rate estimate; the chat can
-still display elapsed time from persisted messages. Live `message_saved` events
+still display elapsed time from persisted messages. The chat shows a turn's work
+time: wall time minus time spent waiting for approvals and other user actions.
+While a turn runs, its state snapshot carries `actionWaitMs`, the time already
+spent on answered waits, and `waitingSince`, the start of the wait that is still
+open, so a client that reconnects continues the same clock. Older servers omit
+both fields.
+
+A turn that is finished without a loop end of its own, such as a stop while an
+approval waits, records `aborted`, or `error` when it failed, as
+`loopDoneReason` on its last assistant message. History then shows it as stopped or failed, and a
+call that never ran as not run. Live `message_saved` events
 carry usage after each model response, before its tools finish, without rendering
 a second copy of the active response.
 

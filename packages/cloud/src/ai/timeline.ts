@@ -12,9 +12,9 @@ export type AiAssistantTimelineItem = {
   /** The entry whose message-actions row (copy/retry/fork) is shown. */
   actionEntry: AiStoredMessage | null;
   /**
-   * Active work duration of the loop (nessi timing: generation + tool
-   * execution, excluding approval/client waits); legacy fallback is user
-   * message submitted → last message persisted. Retained for response metrics.
+   * Work time of the loop: wall time minus time spent waiting for user actions,
+   * from the loop's durable timing. Without timing, the time from the user
+   * message to the last persisted message.
    */
   workedMs: number;
 };
@@ -31,13 +31,6 @@ export const assistantVisibleTextFromMessage = (message: Message): string => {
     .join("")
     .trim();
 };
-
-export const copyTextFromAssistantEntries = (entries: AiStoredMessage[]): string =>
-  entries
-    .map((entry) => assistantVisibleTextFromMessage(entry.message))
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
 
 const isAssistantPart = (entry: AiStoredMessage): boolean =>
   entry.kind === "message" && (entry.message.role === "assistant" || entry.message.role === "tool_result");
@@ -123,7 +116,12 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
     const startedAt =
       loopId && lastUserEntry?.loopId === loopId ? timestampMs(lastUserEntry.createdAt) : timestampMs(entries[0]?.createdAt);
     const finishedAt = timestampMs(entries.at(-1)?.createdAt);
-    const workedMs = startedAt !== null && finishedAt !== null ? Math.max(0, finishedAt - startedAt) : 0;
+    const timing = entries.findLast((stored) => stored.loopAggregate?.timing)?.loopAggregate?.timing;
+    const workedMs = timing
+      ? Math.max(0, timing.wallMs - timing.actionWaitMs)
+      : startedAt !== null && finishedAt !== null
+        ? Math.max(0, finishedAt - startedAt)
+        : 0;
 
     const blocks = [
       ...steerBlocks,

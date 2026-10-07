@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
-import { buildAiMessageTimeline, copyTextFromAssistantEntries } from "./timeline";
+import { buildAiMessageTimeline } from "./timeline";
 import type { AiStoredMessage } from "./types";
 
 const stored = (input: {
@@ -212,21 +212,33 @@ describe("AI message timeline", () => {
     expect(timeline[1]).toMatchObject({ type: "user" });
   });
 
-  test("copyTextFromAssistantEntries joins visible assistant text", () => {
-    const entries = [
+  test("workedMs is the loop's wall time minus its waits for user actions when durable timing exists", () => {
+    const timing = { wallMs: 300_000, totalElapsedMs: 300_000, generationMs: 60_000, actionWaitMs: 120_000, toolExecutionMs: 90_000 };
+    const timeline = buildAiMessageTimeline([
+      stored({ id: "u1", seq: 1, message: { role: "user", content: [{ type: "text", text: "go" }] }, loopId: "loop-1" }),
       stored({
         id: "a1",
-        seq: 1,
-        message: { role: "assistant", content: [{ type: "text", text: "one" }], stopReason: "stop" },
-        loopId: "loop-1",
-      }),
-      stored({
-        id: "a2",
         seq: 2,
-        message: { role: "assistant", content: [{ type: "text", text: "two" }], stopReason: "stop" },
+        message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" },
         loopId: "loop-1",
+        loopAggregate: {
+          turns: [],
+          timing,
+          issueCount: 0,
+          issues: [],
+          toolCallCount: 0,
+          toolErrorCount: 0,
+          toolIssueCount: 0,
+          toolMalformedCount: 0,
+          toolCancelledCount: 0,
+          toolIssues: [],
+          assistantMessageCount: 1,
+        },
+        createdAt: "2026-07-09T10:30:00.000Z",
       }),
-    ];
-    expect(copyTextFromAssistantEntries(entries)).toBe("one\n\ntwo");
+    ]);
+    const group = timeline[1];
+    if (group?.type !== "assistant") throw new Error("expected assistant group");
+    expect(group.workedMs).toBe(180_000);
   });
 });

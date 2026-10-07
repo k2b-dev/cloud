@@ -190,16 +190,66 @@ Keep the Stop action available until the server accepts the abort.
 
 Render tool input and output as data. Do not inject model text as HTML.
 
-Ordinary tools render as single-line activities with compact gray metadata.
-Consecutive calls form one group until Markdown, a visible result, or an
-interactive decision creates a boundary. During execution the group shows its
-latest tool; afterward it summarizes the kinds of work performed, including a
-failure count. Expanding the group reveals its individual tools. Expanding a
-tool reveals input and output inside a bounded, scrollable region; payloads are
-rendered lazily. No tool group hides intervening Markdown or user controls.
-A response with a tool, reasoning, or compaction disclosure spans the full
-message column, so disclosure chevrons share one right edge whether the
-response shows one row or several.
+### Four places per turn
+
+`createAiChatTimeline` shows every assistant turn in four fixed places, in this
+order:
+
+1. **Work line.** One row for everything the reader no longer needs once the
+   turn ends: intermediate text, reasoning, ordinary tool steps, image
+   inspections (`view_image`), and compaction. While the turn runs, it names the
+   current step, such as "Reading orders.csv", with a clock and the step count;
+   on phones the count appears once the turn is finished. While an approval or
+   answer is pending it says what the turn waits for and since when. Finished,
+   it reads "Worked 3 min" with the step count, "Worked 1 min · stopped" after
+   a stop. Expanding it shows intermediate texts as quiet paragraphs and the
+   steps between them as groups, with reasoning inside its group. Every step
+   stays there, including results and actions, so input and output remain
+   reachable. Failed steps say "failed" in muted text; a rejected approval says
+   "rejected".
+2. **Results.** Presented files, `code_present` visualizations, cards, and
+   capability tables in the order they were made. A later result with the same
+   target, the same file path for `present` or the same title for
+   `code_present`, replaces the earlier one at its place.
+3. **Newest text.** While the turn runs this is a status: a new text replaces
+   the previous one in the same element once its first sentence has streamed,
+   and the place keeps its height until the turn ends. Finished, it is the final
+   message: the turn's last text, even if a tool call followed it. A stopped or
+   failed turn has no final message; its texts stay in the work line.
+4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
+   receipts for capability actions and for every approval the user decided:
+   "Email to Jana Berger sent" from the action's summary with its links,
+   "Approved: Run code" for an approved tool that is not a Cloud action,
+   "Rejected: Send email", "Failed: Send email", or "Not run: Send email ·
+   stopped" when the turn ended before the call ran. A decided card turns into
+   its receipt in place. If the decision was made in that card, focus stays on
+   its place without scrolling. An approved call carries `approved: true` on its
+   tool block, live and in history, so its receipt survives a reload.
+
+A turn without tool calls or compaction, such as a plain answer, a steering
+marker, or an answer with only reasoning, has no work line. Its texts form the
+message. Steering and accepted survey answers split a turn into segments; each
+segment has its own places, and only the last one shows the duration.
+
+The work time is wall time minus time spent waiting for approvals and other
+user actions. History uses the loop's durable timing; the live clock stands
+while the turn waits and continues from the same value afterwards.
+
+Screen readers do not hear the work line's ticking clock or a status while it
+streams: both sit outside the conversation log's live announcements. A status
+is announced once it is complete, a waiting approval as one short line such as
+"Approval needed: Send email" without moving focus, and the end of a turn with
+work as "Answer ready". A plain answer without tools streams into the log as
+before.
+
+The live turn and its history share one layout function and the same timeline
+item ids, `ai-turn:<turn id>:<segment>`. Results and actions are keyed by their
+call. When the turn ends, the work line changes its text and the message
+actions appear; nothing else moves, and host views such as a running Studio
+session keep their state. Copy copies only the final message.
+
+Turns with a work line, results, or actions span the full message column, so
+disclosure chevrons share one right edge. Plain prose keeps the reading width.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
@@ -214,10 +264,16 @@ the previous block content without duplicating its table. Results without table
 presentation remain compact; errors and approval requests retain their own UI.
 
 `AiChatActions.renderCodePresentation(result)` lets the application render a
-completed `code_present` result inline. The host owns validation, authorized
-loading, durable storage, and sandbox lifecycle. It must not execute saved code
-automatically when rendering the preview. These results remain outside ordinary
-tool disclosures.
+`code_present` result inline. Cloud calls it once per call, from the call's
+first event, with an accessor: `result()` is `undefined` while the call runs and
+the saved result once it completed. Hosts written for the earlier contract,
+which passed the completed result as a value, read `result()` instead. Reserve the preview's final frame while the
+result is pending, so the preview does not grow twice, and keep the view's
+state when the result arrives; the same view stays mounted when the turn
+becomes history. The host owns validation, authorized loading, durable storage,
+and sandbox lifecycle. It must not execute saved code automatically when
+rendering the preview. Without this action, `code_present` calls stay in the
+work line.
 
 Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown link
 against the current conversation file manifest. Return `{path, href}` with a
@@ -239,10 +295,9 @@ Markdown link to the file becomes an ordinary link, opening a presented file
 reports `File not found`, and an image attachment shows its icon instead of the
 thumbnail.
 
-Completed turns preserve the same ordered timeline and show their elapsed
-wall-clock duration. They do not move earlier Markdown into a second outer
-work disclosure. Explicit disclosure choices survive streaming updates and a
-reload in the same browser tab when session storage is available.
+The work line and groups never open by themselves. Explicit disclosure choices
+survive streaming updates, the end of the turn, and a reload in the same browser
+tab when session storage is available.
 
 Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search
@@ -252,20 +307,22 @@ shell. Use `defaultOpen` for the initial disclosure policy; hosts that must
 preserve a person's choice across a remount can control it with `open` and
 `onOpenChange`.
 
-An active response always ends with the shared streaming state of
-`Chat.Message`, including before the first model block arrives and after a
-steering message that waits for the next model call. It renders the minimal
+The live segment of an active response always uses the shared streaming state
+of `Chat.Message`, including before the first model block arrives and while a
+steering message below it waits for the next model call. It renders the minimal
 three-dot progress indicator; do not add a separate generating activity or
-label. Active tool rows set `busy` on `Chat.Activity`, which moves a quiet
-text-color-to-transparency shimmer across the tool icon and title instead of
-adding another loader or pulsing the accent color. Reduced-motion clients keep
-the same text static.
+label. The live work line sets `busy` on `Chat.Activity`, which moves a quiet
+text-color-to-transparency shimmer across its icon and label instead of adding
+another loader or pulsing the accent color. Reduced-motion clients keep the
+same text static.
 
 While a model call waits for its
 [retry](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures),
 the live turn ends with one **Reconnecting** activity row (German: **Verbindung
-wird wiederhergestellt**) without the shimmer. Earlier rows keep their place,
-and the next turn event replaces the row with the model's output.
+wird wiederhergestellt**) without the shimmer, below a steering message that
+waits for the next model call too. Earlier rows keep their place, and the next
+turn event removes the row while the model's output continues in the turn's
+places.
 
 Approval prompts span the available message column and lead with the owning
 application's name and icon. The primary control names the concrete action;
@@ -306,7 +363,7 @@ view is present. After the server accepts a survey answer, replace the form
 with a normal user message: show each question as small context above its answer. Use option
 labels for choices and retain free-text line breaks. These messages stay in
 chronological order between the assistant's outputs, remain visible outside
-**Worked for ...**, and render the same way after reloading the conversation.
+the work line, and render the same way after reloading the conversation.
 The answer remains a tool result in storage and in the model protocol; the
 presentation does not create another user turn or expose message retry/edit
 controls for that answer.

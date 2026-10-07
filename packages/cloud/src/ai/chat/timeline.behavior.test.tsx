@@ -4,10 +4,13 @@ import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } from "../client/projection";
-import type { AiTurnBlock, AiWireEvent } from "../protocol";
+import type { AiStreamEvent, AiTurnBlock, AiWireEvent } from "../protocol";
+import type { AiStoredMessage } from "../types";
 
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
+  // The expanded work line shows every folded text; the newest stays below it.
+  window.sessionStorage.setItem("cloud.ai.tool-disclosure:work:ai-turn:turn:0", "open");
   const { Chat } = await import("@k2b/ui");
   const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
   const [state, setState] = createStore(emptyProjection());
@@ -63,6 +66,110 @@ import type { AiTurnBlock, AiWireEvent } from "../protocol";
     setState("activeTurn", reconcile(mergeActiveTurn(state.activeTurn, old)));
     await new Promise((resolve) => setTimeout(resolve, 0));
     for (let index = 0; index < 10; index++) expect(dom.root.textContent?.split(`Unique message ${index}.`).length).toBe(2);
+  } finally {
+    dispose();
+    window.sessionStorage.clear();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a finished turn keeps its elements and host views when it becomes history", async () => {
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const presentations: (() => unknown)[] = [];
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider
+        actions={{
+          renderCodePresentation: (result) => {
+            presentations.push(result);
+            return (
+              <section class="host-view">
+                {String((result() as { presentationId?: string } | undefined)?.presentationId ?? "pending")}
+              </section>
+            );
+          },
+        }}
+      >
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const stored = (seq: number, message: AiStoredMessage["message"], patch: Partial<AiStoredMessage> = {}): AiStoredMessage => ({
+    id: `m${seq}`,
+    shortId: `m${seq}`,
+    conversationId: "chat",
+    seq,
+    kind: "message",
+    message,
+    loopId: "turn",
+    modelProfileId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    meta: null,
+    createdAt: "2026-10-06T10:00:00.000Z",
+    ...patch,
+  });
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: "I build the dashboard." });
+    const running = {
+      id: "tool-view",
+      kind: "tool" as const,
+      callId: "view",
+      name: "code_present",
+      args: { runId: "r", title: "Dashboard" },
+    };
+    emit({ ...base, seq: 3, type: "block_set", block: { ...running, status: "running" } });
+    await tick();
+    const turn = dom.root.querySelector(".ai-turn");
+    const host = dom.root.querySelector(".host-view");
+    expect(host?.textContent).toBe("pending");
+    const result = { presentationId: "00000000-0000-4000-8000-000000000001", title: "Dashboard" };
+    emit({ ...base, seq: 4, type: "block_set", block: { ...running, status: "completed", result } });
+    emit({ ...base, seq: 5, type: "block_delta", blockId: "a1-t1-0", blockKind: "text", delta: "Revenue grew by 8 %." });
+    await tick();
+    expect(dom.root.querySelector(".host-view")).toBe(host);
+    emit({
+      ...base,
+      seq: 6,
+      type: "turn_finished",
+      status: "completed",
+      error: null,
+      messages: [
+        stored(10, { role: "user", content: [{ type: "text", text: "Build it" }] }),
+        stored(11, {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I build the dashboard." },
+            { type: "tool_call", id: "view", name: "code_present", args: running.args },
+          ],
+        }),
+        stored(12, { role: "tool_result", callId: "view", name: "code_present", result, isError: false }),
+        stored(13, { role: "assistant", content: [{ type: "text", text: "Revenue grew by 8 %." }] }, { loopDoneReason: "stop" }),
+      ],
+    });
+    await tick();
+    expect(state.activeTurn).toBeNull();
+    expect(dom.root.querySelector(".ai-turn")).toBe(turn);
+    expect(dom.root.querySelector(".host-view")).toBe(host);
+    expect(host?.textContent).toBe(result.presentationId);
+    expect(presentations).toHaveLength(1);
+    expect(dom.root.textContent?.split("Revenue grew by 8 %.").length).toBe(2);
+    expect(dom.root.textContent).not.toContain("I build the dashboard.");
   } finally {
     dispose();
     dom.cleanup();

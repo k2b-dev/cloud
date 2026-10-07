@@ -39,6 +39,8 @@ export type AiTurnBlock =
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: { message?: string; review?: CapabilityActionReview; allowAlways: boolean };
+      /** The user approved this call in the chat; the decided approval stays visible as a receipt. */
+      approved?: boolean;
       /** Present for frontend tools. */
       frontendMode?: AiFrontendToolMode;
       /** Saved Cloud-owned display snapshot for capability calls. */
@@ -87,6 +89,10 @@ export type AiTurnSnapshot = {
   blocks: AiTurnBlock[];
   modelProfileId: string | null;
   createdAt: string;
+  /** Time the turn already waited for answered user actions such as approvals. Absent from older servers. */
+  actionWaitMs?: number;
+  /** Start of the user action the turn waits for now, or null while it works. Absent from older servers. */
+  waitingSince?: string | null;
 };
 
 /** Full projection seed sent as the first SSE event on every (re)connect. */
@@ -153,7 +159,12 @@ export const reconcileResolvedTurnActions = (
     const event = resolvedByCallId.get(block.callId);
     if (!event || event.callId !== block.callId) return block;
     if (block.status === "awaiting_approval" && event.type === "approval_response") {
-      return { ...block, status: event.approved ? "running" : "rejected", approval: undefined };
+      return {
+        ...block,
+        status: event.approved ? "running" : "rejected",
+        approval: undefined,
+        ...(event.approved ? { approved: true } : {}),
+      };
     }
     if (block.status === "awaiting_client" && event.type === "tool_result") {
       return { ...block, status: "completed", result: event.result, isError: false };
@@ -174,7 +185,7 @@ export const buildBlocksFromMessages = (
     meta?: {
       steerId?: string;
       toolPresentations?: Record<string, AiToolPresentation>;
-      toolOutcomes?: Record<string, "rejected">;
+      toolOutcomes?: Record<string, "rejected" | "approved">;
     } | null;
   }[],
 ): AiTurnBlock[] => {
@@ -214,12 +225,13 @@ export const buildBlocksFromMessages = (
       const at = toolIndex.get(message.callId);
       const existing = at !== undefined ? blocks[at] : undefined;
       if (existing?.kind === "tool") {
-        const rejected = meta?.toolOutcomes?.[message.callId] === "rejected";
+        const outcome = meta?.toolOutcomes?.[message.callId];
         blocks[at!] = {
           ...existing,
-          status: rejected ? "rejected" : message.isError ? "failed" : "completed",
+          status: outcome === "rejected" ? "rejected" : message.isError ? "failed" : "completed",
           result: message.result,
           isError: message.isError,
+          ...(outcome === "approved" ? { approved: true } : {}),
         };
       }
     }
