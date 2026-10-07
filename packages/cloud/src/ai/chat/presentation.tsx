@@ -18,7 +18,6 @@ import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timelin
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
-import { aiChatMessages } from "./messages";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -300,20 +299,25 @@ const activeItems = (
   actions: AiChatActions,
   views: TurnViews,
   duration: Accessor<AiTurnDuration | null>,
-  locale: string,
 ): ChatTimelineItem[] => {
   if (!turn) return [];
   const segments = splitActiveTurnBlocks(turn.blocks).flatMap((segment): (AiActiveTurnSegment | SurveySegment)[] =>
     segment.type === "steer" ? [segment] : splitSurveyResults(segment.blocks),
   );
-  // Keep the shared assistant progress indicator after the accepted answer, and before the first model block.
-  if (segments.length === 0 || (turn.status === "running" && segments.at(-1)?.type === "survey"))
+  // A running turn ends with an assistant item, so its progress indicator and a retry wait stay at the end: before the
+  // first model block, after an accepted answer, and below a steering message that waits for the next model call.
+  const tail = segments.at(-1)?.type;
+  const steerTail = turn.status === "running" && tail === "steer";
+  if (segments.length === 0 || steerTail || (turn.status === "running" && tail === "survey"))
     segments.push({ type: "assistant", blocks: [] });
   const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
+  // Until the model takes up the steering message, the segment above it is still the one at work.
+  const above = steerTail ? segments.findLastIndex((segment, index) => segment.type === "assistant" && index < lastAssistant) : -1;
+  const working = above >= 0 ? above : lastAssistant;
   const segmentId = createSegmentIds();
   let opener = "start";
 
-  const items = segments.flatMap((segment, index): ChatTimelineItem | ChatTimelineItem[] => {
+  return segments.flatMap((segment, index): ChatTimelineItem | ChatTimelineItem[] => {
     if (segment.type === "survey") {
       opener = surveyOpener(segment.block.callId);
       return surveyItem(segment.block, turn.turnId);
@@ -334,7 +338,8 @@ const activeItems = (
     }
 
     const last = index === lastAssistant;
-    const phase: AiTurnPhase = !last ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
+    const live = index === working;
+    const phase: AiTurnPhase = !live ? "completed" : turn.status === "waiting_for_action" ? "waiting" : "running";
     const layout = layoutAiTurn(segment.blocks, { phase, codePresentations: Boolean(actions.renderCodePresentation) });
     // Consecutive steering messages leave empty segments between them; history has none. The last segment stays, since
     // it carries the progress indicator.
@@ -346,14 +351,17 @@ const activeItems = (
       role: "assistant",
       status: turn.status === "running" && last ? "streaming" : "complete",
       class: isWideLayout(layout) ? "ai-chat-message-wide" : undefined,
-      content: views.content({ id, turnId: turn.turnId, phase, layout, earlier: !last, duration: last ? duration : () => null }),
+      content: views.content({
+        id,
+        turnId: turn.turnId,
+        phase,
+        layout,
+        earlier: !live,
+        duration: live ? duration : () => null,
+        retrying: last && turn.providerRetry === true,
+      }),
     };
   });
-  // The live timeline ends with the wait for a retried model call, below a pending steer too, so no earlier row moves.
-  // Calm by design: no busy sweep while the call waits.
-  if (turn.providerRetry)
-    items.push({ kind: "activity", id: `${turn.turnId}-provider-retry`, label: aiChatMessages(locale).reconnecting, icon: "ti ti-refresh" });
-  return items;
 };
 
 /**
@@ -422,7 +430,7 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   const views = createTurnViews(disclosureState);
   const clock = createActiveTurnClock(source);
   const stored = createMemo(() => storedItems(source.messages(), actions, views, locale()));
-  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, locale()));
+  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock));
   return createMemo(() => {
     const items = [...stored(), ...active()];
     views.retain(new Set(items.map((item) => item.id)));

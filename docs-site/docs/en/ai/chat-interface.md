@@ -318,22 +318,22 @@ shell. Use `defaultOpen` for the initial disclosure policy; hosts that must
 preserve a person's choice across a remount can control it with `open` and
 `onOpenChange`.
 
-The live segment of an active response always uses the shared streaming state
-of `Chat.Message`, including before the first model block arrives and while a
-steering message below it waits for the next model call. It renders the minimal
-three-dot progress indicator; do not add a separate generating activity or
-label. The live work line sets `busy` on `Chat.Activity`, which moves a quiet
-text-color-to-transparency shimmer across its icon and label instead of adding
-another loader or pulsing the accent color. Reduced-motion clients keep the
-same text static.
+An active response always ends with the shared streaming state of
+`Chat.Message`, including before the first model block arrives and after a
+steering message that waits for the next model call. Until the model takes up
+that message, the segment above it keeps its live work line. The streaming
+state renders the minimal three-dot progress indicator; do not add a separate
+generating activity or label. The live work line sets `busy` on
+`Chat.Activity`, which moves a quiet text-color-to-transparency shimmer across
+its icon and label instead of adding another loader or pulsing the accent
+color. Reduced-motion clients keep the same text static.
 
 While a model call waits for its
 [retry](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures),
 the live turn ends with one **Reconnecting** activity row (German: **Verbindung
-wird wiederhergestellt**) without the shimmer, below a steering message that
-waits for the next model call too. Earlier rows keep their place, and the next
-turn event removes the row while the model's output continues in the turn's
-places.
+wird wiederhergestellt**) without the shimmer. Earlier rows keep their place,
+and the next turn event removes the row while the model's output continues in
+the turn's places.
 
 Approval prompts span the available message column and lead with the owning
 application's name and icon. The primary control names the concrete action;

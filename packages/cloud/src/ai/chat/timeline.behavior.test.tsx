@@ -289,6 +289,66 @@ import type { AiStoredMessage } from "../types";
   }
 });
 
+(isServer ? test.skip : test)("the segment above a waiting steer keeps working while the progress indicator moves below it", async () => {
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const work = () => dom.root.querySelector(".ai-turn-work");
+  const messages = () => Array.from(dom.root.querySelectorAll(".k2b-chat-message"));
+  const tool = {
+    id: "tool-1",
+    kind: "tool" as const,
+    callId: "call-1",
+    name: "code_run",
+    args: { title: "report" },
+    status: "running" as const,
+  };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_set", block: tool });
+    await settle();
+    const working = work();
+    expect(working?.getAttribute("data-busy")).toBe("true");
+
+    setState("activeTurn", "blocks", (blocks): AiTurnBlock[] => [
+      ...blocks,
+      { id: "steer-request-1", kind: "steer_message", steerId: "1", text: "Use the newer file", status: "pending" },
+    ]);
+    await settle();
+    // The running call still belongs to the segment above the steer; only the progress indicator ends the turn.
+    expect(work()).toBe(working);
+    expect(work()?.getAttribute("data-busy")).toBe("true");
+    expect(messages().map((message) => [message.getAttribute("data-role"), message.getAttribute("data-status")])).toEqual([
+      ["assistant", "complete"],
+      ["user", "pending"],
+      ["assistant", "streaming"],
+    ]);
+
+    emit({ ...base, seq: 3, type: "block_set", block: { ...tool, status: "completed", result: {} } });
+    await settle();
+    expect(work()).toBe(working);
+    expect(work()?.textContent).toContain("Thinking");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 const storedMessage = (seq: number, message: AiStoredMessage["message"], patch: Partial<AiStoredMessage> = {}): AiStoredMessage => ({
   id: `m${seq}`,
   shortId: `m${seq}`,

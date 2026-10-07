@@ -47,6 +47,8 @@ export type AiTurnSegment = {
   duration: () => AiTurnDuration | null;
   /** Shown above the work of a delivered scheduled result. */
   scheduledTask?: { taskId: string; occurrenceId: string } | null;
+  /** A model call of the live turn waits for its retry. Set on the turn's last segment, so the wait ends the turn. */
+  retrying?: boolean;
 };
 
 const isLive = (phase: AiTurnPhase) => phase === "running" || phase === "waiting";
@@ -597,6 +599,10 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}
         </For>
+        <Show when={props.segment().retrying}>
+          {/* Calm by design: no busy sweep while the model call waits for its retry. */}
+          <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
+        </Show>
       </div>
     </AiToolDisclosureProvider>
   );
