@@ -103,7 +103,7 @@ describe("renderAiPlatformPrompt", () => {
   it("tells a followed turn what stays visible and how rarely to offer more", () => {
     const prompt = renderAiPlatformPrompt({ user });
     expect(prompt).toContain("Skip filler and generic closing offers.");
-    expect(prompt).toContain("never repeat a failed call with unchanged input");
+    expect(prompt).toContain("never repeat a failed call with unchanged input unless its error says the condition is temporary.");
     expect(prompt.indexOf("# Workflow")).toBeLessThan(prompt.indexOf("# What the user sees"));
     expect(prompt.indexOf("# What the user sees")).toBeLessThan(prompt.indexOf("# Suggestions"));
 
@@ -139,6 +139,9 @@ describe("renderAiPlatformPrompt", () => {
     expect(prompt).toContain("# Files");
     expect(prompt).toContain("Keep intermediate and scratch files below /temp/, in one folder named after the result they serve");
     expect(prompt).toContain("Save deliverables outside /temp/.");
+    expect(prompt).toContain(
+      "A PDF conversion writes the PDF beside its source, so write the .md or .html source of a PDF deliverable where the PDF belongs",
+    );
     expect(prompt).not.toContain("under /files");
     expect(renderAiPlatformPrompt({ user })).not.toContain("/temp/");
   });

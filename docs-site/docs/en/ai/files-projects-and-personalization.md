@@ -63,8 +63,11 @@ folder.
 The platform prompt asks the agent for this split: intermediate and scratch
 files go below `/temp/`, in one folder named after the result they serve, such
 as `/temp/sales-report/` for `/sales-report.pdf`, and deliverables go outside
-`/temp/`. The folder has no special storage rules: its files count toward the
-chat's limit and are forked and deleted with the chat like any other file.
+`/temp/`. `markdown_to_pdf` and `html_to_pdf` write the PDF beside its source,
+so the `.md` or `.html` source of a delivered PDF stays outside `/temp/` too,
+such as `/sales-report.md`. The folder has no special storage rules: its files
+count toward the chat's limit and are forked and deleted with the chat like any
+other file.
 
 Cloud indexes every successful delivery as a conversation source of kind
 `result` with the turn and call that made it; `code_open` is indexed when the
@@ -508,9 +511,11 @@ tool execution boundaries.
 
 Every turn except a scheduled task run (`background` in the turn's run
 configuration) renders two extra platform sections, controlled by the Liquid
-flag `interactive`. `cld assistant` turns count as followed turns, and the
-preview in **Assistant settings > System prompt** and
-`cld assistant prefs system-prompt` shows them.
+flag `interactive`. `cld assistant` turns count as followed turns; the CLI
+names each delivered file on standard error, such as
+`present: completed /sales-report.pdf`, so the final message need not list it
+there either. The preview in **Assistant settings > System prompt** and
+`cld assistant prefs system-prompt` shows both sections.
 
 - **What the user sees** matches the
   [four places per turn](/en/docs/ai/chat-interface#four-places-per-turn): text

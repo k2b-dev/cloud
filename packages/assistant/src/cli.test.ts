@@ -267,6 +267,43 @@ describe("assistant CLI", () => {
     });
   }
 
+  test("text output names each delivered file once, live or from the stored turn", async () => {
+    const { ctx, stderr } = createContext([], async () => json({}));
+    const presented = (callId: string, path: string) => ({
+      id: `msg-${callId}`,
+      loopId: "turn-1",
+      kind: "message",
+      message: { role: "tool_result", callId, name: "present", result: { path, size: 1, mediaType: "application/pdf" } },
+    });
+    const block = {
+      id: "block-1",
+      kind: "tool",
+      callId: "call-1",
+      name: "present",
+      status: "completed",
+      args: { path: "/sales-report.pdf" },
+      result: { path: "/sales-report.pdf", size: 1, mediaType: "application/pdf" },
+    };
+    await streamAssistantTurn({
+      ctx,
+      conversationId: "chat-1",
+      turnId: "turn-1",
+      initialResponse: sse(
+        { type: "state", conversation: { id: "chat-1" }, messages: [], activeTurn: { turnId: "turn-1", blocks: [] } },
+        { type: "block_set", turnId: "turn-1", block: { ...block, status: "running", result: undefined } },
+        { type: "block_set", turnId: "turn-1", block },
+        {
+          type: "turn_finished",
+          turnId: "turn-1",
+          status: "completed",
+          error: null,
+          messages: [presented("call-1", "/sales-report.pdf"), presented("call-2", "/notes\u001b[2J.md")],
+        },
+      ),
+    });
+    expect(stderr).toEqual(["present: running", "present: completed /sales-report.pdf", "present: completed /notes\\u001b[2J.md"]);
+  });
+
   test("completed snapshot renders stored tool results when no live blocks remain", async () => {
     const { ctx } = createContext([], async () => json({}));
     let tables = 0;

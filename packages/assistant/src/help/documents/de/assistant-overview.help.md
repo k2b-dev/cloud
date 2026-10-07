@@ -37,7 +37,7 @@ Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Ag
 - **Im Chat suchen:** Nutze `/search`, um sichtbare Nachrichten zu finden oder die strukturierten Cloud-Ressourcen zu prüfen, die in diesem oder anderen aktiven Chats verwendet wurden.
 - **Künftige Arbeit planen:** Bitte den Assistenten, einen Chat einmalig zu einem bestimmten lokalen Datum und Zeitpunkt oder nach einem wiederkehrenden Zeitplan fortzusetzen. Vor dem Erstellen oder Ändern der Aufgabe zeigt der Assistent eine Aktion zur Freigabe an.
 - **Nächste Schritte:** Wenn ein konkreter nächster Schritt dir Arbeit spart, beendet der Assistent seine Antwort manchmal mit einem Angebot, etwa einen Antwortentwurf zu schreiben. Antworte mit Ja, um es anzunehmen. Möchtest du keine solchen Angebote, sag es dem Assistenten.
-- **Arbeitsdateien:** Zwischenstände legt der Assistent im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon.
+- **Arbeitsdateien:** Zwischenstände legt der Assistent im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon, zusammen mit der Markdown- oder HTML-Quelle, aus der ein PDF entstanden ist.
 :::
 
 ## Geplante Chat-Aufgaben {icon="clock"}

@@ -5,6 +5,7 @@ import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capa
 import { printCapabilityTable } from "./capability-table";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { AI_API, jsonRequest } from "./shared";
+import { terminalSafeText } from "./terminal";
 
 export type AssistantTurnStreamResult = {
   conversationId: string;
@@ -26,6 +27,12 @@ const assistantText = (messages: AiStoredMessage[]): string => {
   }
   return text;
 };
+
+/** The chat path of a file that `present` delivered; the CLI names it because the terminal shows no file card. */
+const presentedPath = (name: string, result: unknown): string | null =>
+  name === "present" && typeof result === "object" && result !== null && "path" in result && typeof result.path === "string"
+    ? result.path
+    : null;
 
 const isTerminalStatus = (status: string): status is "completed" | "failed" | "aborted" =>
   status === "completed" || status === "failed" || status === "aborted";
@@ -57,6 +64,7 @@ export const streamAssistantTurn = async (input: {
   const blocks = new Map<string, AiTurnBlock>();
   const emittedByBlock = new Map<string, string>();
   const renderedTables = new Set<string>();
+  const namedFiles = new Set<string>();
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
@@ -77,7 +85,13 @@ export const streamAssistantTurn = async (input: {
   };
   const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
     for (const stored of result.messages) {
-      if (stored.message.role === "tool_result") emitTable(stored.message.callId, stored.message.result);
+      if (stored.message.role !== "tool_result") continue;
+      emitTable(stored.message.callId, stored.message.result);
+      const path = stored.message.isError ? null : presentedPath(stored.message.name, stored.message.result);
+      if (path && ctx.options.output === "text" && !namedFiles.has(stored.message.callId)) {
+        namedFiles.add(stored.message.callId);
+        ctx.error(`present: completed ${terminalSafeText(path)}`);
+      }
     }
     const text = result.text;
     if (ctx.options.output === "text") {
@@ -98,7 +112,11 @@ export const streamAssistantTurn = async (input: {
     if (previous?.kind !== "tool" || previous.status !== block.status) {
       input.onToolBlock?.(block);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
-      if (ctx.options.output === "text") ctx.error(`${block.name}: ${block.status.replaceAll("_", " ")}`);
+      if (ctx.options.output === "text") {
+        const path = block.status === "completed" ? presentedPath(block.name, block.result) : null;
+        if (path) namedFiles.add(block.callId);
+        ctx.error(`${block.name}: ${block.status.replaceAll("_", " ")}${path ? ` ${terminalSafeText(path)}` : ""}`);
+      }
     }
     if (block.status === "awaiting_approval") {
       if (approvedTools.has(block.name) && !approvedCalls.has(block.callId)) {

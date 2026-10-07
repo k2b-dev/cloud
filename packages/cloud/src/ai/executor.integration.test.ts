@@ -1304,7 +1304,7 @@ suite("AI executor integration", () => {
       onCompletionRequest = (body) => {
         prompts.set(label, JSON.stringify(body));
       };
-      await createExecutor(`${label}-exec`).run({
+      await createExecutor(`${label}-exec`, undefined, fakeValidateToolTurn).run({
         conversationId: conversation.id,
         turnId,
         claim: claim!,
@@ -1337,7 +1337,12 @@ suite("AI executor integration", () => {
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
         modelProfileId: MODEL_ID,
-        runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+        runConfig: {
+          kind: "chat",
+          input: task.prompt,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
         userMessage: userMessage(task.prompt),
         expectedRevision: task.revision,
       });
@@ -1347,6 +1352,9 @@ suite("AI executor integration", () => {
       const interactive = prompts.get("interactive") ?? "";
       const background = prompts.get("background") ?? "";
       expect(background).toContain("# Workflow");
+      // A scheduled run with file tools still keeps its working files apart from what it delivers.
+      expect(background).toContain("# Files");
+      expect(background).toContain("Save deliverables outside /temp/.");
       for (const section of ["# What the user sees", "# Suggestions", "Most replies need no offer."]) {
         expect(interactive).toContain(section);
         expect(background).not.toContain(section);
