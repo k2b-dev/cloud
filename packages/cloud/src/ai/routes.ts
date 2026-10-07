@@ -425,6 +425,7 @@ export const aiRoutes = (() => {
           memory: memory?.text,
           timeZone,
           locale: promptLocale,
+          skillCreatorAvailable: availableSkills.some((skill) => skill.name === "skill-creator"),
         });
         return respond(c, ok({ prompt, renderedAt: new Date().toISOString() }));
       })

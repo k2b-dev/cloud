@@ -350,9 +350,12 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
-  test("offers to keep recurring work as a Skill only in chats a person follows", async () => {
+  test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
+    // The integration bootstrap seeds the built-in Skills; every signed-in user can read skill-creator.
+    const creator = (await aiSkills.list(owner)).find((candidate) => candidate.name === "skill-creator");
+    if (!creator?.enabled) throw new Error("Expected the seeded skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
       subject: owner,
       name: `weekly-report-${crypto.randomUUID().slice(0, 8)}`,
@@ -430,6 +433,20 @@ suite("AI executor integration", () => {
       expect(interactive).toContain("Recurring work: a request is likely to recur");
       expect(interactive).toContain("load skill-creator and draft from this conversation");
       expect(background).not.toContain("Recurring work:");
+
+      // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
+      expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
+      const { turn: withoutCreator } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig,
+        userMessage: userMessage("Weekly report"),
+      });
+      await runTurn("without-creator", withoutCreator.id);
+      const withoutCreatorPrompt = prompts.get("without-creator") ?? "";
+      expect(withoutCreatorPrompt).toContain("# Skills");
+      expect(withoutCreatorPrompt).toContain(skill.name);
+      expect(withoutCreatorPrompt).not.toContain("Recurring work:");
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
