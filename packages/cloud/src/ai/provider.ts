@@ -11,9 +11,10 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
   contextWindow: profile.contextWindow,
   temperature: profile.temperature,
   timeouts: PROVIDER_TIMEOUTS,
+  extraBody: profile.extraBody,
 });
 
-export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Provider => {
+export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   if (profile.capabilities.includes("transcription")) throw new Error("Transcription profiles cannot be used for chat generation.");
   switch (profile.provider) {
     case "openai":
@@ -32,6 +33,7 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Prov
         contextWindow: profile.contextWindow,
         temperature: profile.temperature,
         timeouts: PROVIDER_TIMEOUTS,
+        extraBody: profile.extraBody,
       });
     case "vllm":
       return openAICompatible({
@@ -39,9 +41,11 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Prov
         model: profile.model,
         baseURL: profile.baseURL ?? "http://localhost:8000/v1",
         apiKey,
+        headers,
         contextWindow: profile.contextWindow,
         temperature: profile.temperature,
         timeouts: PROVIDER_TIMEOUTS,
+        extraBody: profile.extraBody,
         compat: {
           toolCallIdPolicy: "passthrough",
           supportsUsageInStreaming: true,
@@ -58,9 +62,11 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string): Prov
         model: profile.model,
         baseURL: profile.baseURL,
         apiKey,
+        headers,
         contextWindow: profile.contextWindow,
         temperature: profile.temperature,
         timeouts: PROVIDER_TIMEOUTS,
+        extraBody: profile.extraBody,
       });
   }
 };

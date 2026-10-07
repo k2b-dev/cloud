@@ -39,6 +39,7 @@ export default defineCliCommands({
     ai: "Manage AI models, quotas, Skills, and usage.",
     "ai models": "Manage AI model configuration.",
     "ai models pricing": "Manage model reference prices.",
+    "ai models settings": "Manage model thinking levels, extra parameters, and extra headers.",
     "ai quotas background": "Inspect and release the background emergency stop.",
     "ai skills": "Inspect Assistant Skills and trusted templates.",
     "ai usage": "Inspect AI runs and usage facets.",

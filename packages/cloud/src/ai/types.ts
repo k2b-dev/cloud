@@ -45,6 +45,8 @@ export type AiModelProfile = {
   contextWindow?: number;
   temperature?: number;
   maxOutputTokens?: number;
+  reasoningEffort?: string;
+  extraBody?: Record<string, unknown>;
   /** Maximum deferred tools retained per conversation. Missing or <= 0 keeps all loaded tools. */
   maxLoadedTools?: number;
   /** Tool-using model rounds per chat turn. Missing or <= 0 is unlimited. */

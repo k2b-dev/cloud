@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import { toPgTextArray } from "../services/postgres";
 import { decryptValue, encryptValue } from "../services/settings/crypto";
+import type { AiRequestHeaderPatch } from "./request-headers";
 
 type SqlClient = typeof sql;
 
@@ -90,7 +91,12 @@ export const pruneAiCredentials = async (keepProfileIds: readonly string[], db: 
  */
 export const splitAiProfileCredentials = (
   rawValue: unknown,
-): { profilesJson: string; credentials: Array<{ profileId: string; secret: string }>; profileIds: string[] } | null => {
+): {
+  profilesJson: string;
+  credentials: Array<{ profileId: string; secret: string }>;
+  profileIds: string[];
+  requestHeaders: AiRequestHeaderPatch[];
+} | null => {
   if (typeof rawValue !== "string") return null;
   const text = rawValue;
   let parsed: unknown;
@@ -104,21 +110,29 @@ export const splitAiProfileCredentials = (
   const profiles: unknown[] = [];
   const credentials: Array<{ profileId: string; secret: string }> = [];
   const profileIds: string[] = [];
+  const requestHeaders: AiRequestHeaderPatch[] = [];
 
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object") {
       profiles.push(entry);
       continue;
     }
-    const { apiKey, credentialSetting: _legacy, ...profile } = entry as Record<string, unknown>;
+    const {
+      apiKey,
+      requestHeaders: headerPatch,
+      requestHeaderNames: _headerNames,
+      credentialSetting: _legacy,
+      ...profile
+    } = entry as Record<string, unknown>;
     const profileId = typeof profile.id === "string" ? profile.id.trim() : "";
     if (profileId) {
       profile.id = profileId;
       profileIds.push(profileId);
+      if (headerPatch !== undefined) requestHeaders.push({ profileId, patch: headerPatch });
       if (typeof apiKey === "string" && apiKey.trim()) credentials.push({ profileId, secret: apiKey.trim() });
     }
     profiles.push(profile);
   }
 
-  return { profilesJson: JSON.stringify(profiles), credentials, profileIds };
+  return { profilesJson: JSON.stringify(profiles), credentials, profileIds, requestHeaders };
 };

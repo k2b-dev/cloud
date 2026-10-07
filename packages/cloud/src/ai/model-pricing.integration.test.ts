@@ -29,6 +29,8 @@ suite("model reference price persistence", () => {
       baseURL: "https://example.test/v1",
       contextWindow: 12345,
       temperature: 0.4,
+      reasoningEffort: "low",
+      extraBody: { chat_template_kwargs: { enable_thinking: false } },
       maxOutputTokens: 777,
       maxLoadedTools: 3,
       maxToolRounds: 9,

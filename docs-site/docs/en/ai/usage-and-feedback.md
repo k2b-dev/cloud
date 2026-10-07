@@ -227,6 +227,8 @@ Assistant calls remain unaffected.
 All administration uses the same APIs and authorization as the GUI:
 
 ```bash
+cld admin ai models settings get --id MODEL_ID --json
+cld admin ai models settings set --id MODEL_ID --thinking-level low --yes --json
 cld admin ai models pricing get --json
 cld admin ai models pricing set --id MODEL_ID --pricing-file prices.json --yes --json
 cld admin ai quotas config get --json > quotas.json

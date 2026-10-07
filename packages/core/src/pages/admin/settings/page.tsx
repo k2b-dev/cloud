@@ -17,6 +17,7 @@ import {
   aiModelAccess,
   aiQuotas,
   aiUsage,
+  listAiRequestHeaderNames,
   quotaAdminConfig,
   quotaReport,
 } from "@k2b/cloud/ai/admin";
@@ -243,6 +244,7 @@ export default ssr<AuthContext>(async (c) => {
   // Which profiles have a stored provider key. The keys themselves never leave
   // the server, so the form shows presence instead of a value.
   let aiCredentialProfileIds: string[] = [];
+  let aiRequestHeaderNames: Record<string, string[]> = {};
   let aiAccountingUnit: string | undefined;
   let modelAccess: AiModelAccessMap = {};
   let aiProjectItems: AiProjectAdminListItem[] = [];
@@ -278,12 +280,14 @@ export default ssr<AuthContext>(async (c) => {
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
     if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
     if (tab.id === "ai-providers") {
-      const [credentials, access, costConfig] = await Promise.all([
+      const [credentials, access, costConfig, headerNames] = await Promise.all([
         listAiCredentialProfileIds(),
         aiModelAccess.listForAdmin(),
         aiQuotas.config(),
+        listAiRequestHeaderNames(),
       ]);
       aiCredentialProfileIds = credentials;
+      aiRequestHeaderNames = headerNames;
       modelAccess = access;
       aiAccountingUnit = costConfig.unit;
     }
@@ -357,6 +361,7 @@ export default ssr<AuthContext>(async (c) => {
             aiEnrichmentOverview={aiEnrichmentOverview}
             backgroundTaskPrompts={tab.id === "ai-jobs" ? AI_BACKGROUND_TASK_PROMPTS : undefined}
             aiCredentialProfileIds={aiCredentialProfileIds}
+            aiRequestHeaderNames={aiRequestHeaderNames}
             aiModelAccess={modelAccess}
             aiAccountingUnit={aiAccountingUnit}
             aiSection={aiSection}

@@ -1,5 +1,10 @@
 import { type AiModelPricing, AiModelPricingSchema } from "../../shared/ai-costs";
 import {
+  type AiModelRequestSettings,
+  AiModelRequestSettingsSchema,
+  AiModelRequestSettingsUpdateSchema,
+} from "../../shared/ai-model-request-settings";
+import {
   type AiQuotaConfig,
   AiQuotaConfigSchema,
   type AiQuotaIdentity,
@@ -7,7 +12,7 @@ import {
   AiQuotaReportQuerySchema,
   AiQuotaResetSchema,
 } from "../../shared/ai-quotas";
-import { type CloudCliContext, cliText, command, confirmFlag, flag, printRows, printStructured } from "../index";
+import { type CloudCliContext, cliText, command, confirmFlag, flag, printRows, printStructured, readCliInput } from "../index";
 import { apiGet, apiJson, queryString, readJsonInput } from "./shared";
 
 const path = "/api/admin/core/ai-quotas";
@@ -23,6 +28,70 @@ const confirm = (ctx: CloudCliContext, yes: boolean) => {
 };
 
 export const aiQuotaCommands = [
+  command("ai models settings get", {
+    summary: "Read model thinking level, extra parameters and configured header names",
+    flags: { id: flag.string({ required: true, description: "Model profile ID" }) },
+    async run({ ctx, flags }) {
+      print(ctx, AiModelRequestSettingsSchema.parse(await apiGet(ctx, `${path}/models/${encodeURIComponent(flags.id!)}/settings`)));
+    },
+  }),
+  command("ai models settings set", {
+    summary: "Patch one model's request settings; header values are write-only",
+    flags: {
+      id: flag.string({ required: true, description: "Model profile ID" }),
+      thinkingLevel: flag.string({ name: "thinking-level", description: "Provider-specific thinking level" }),
+      clearThinkingLevel: flag.boolean({ name: "clear-thinking-level", description: "Use the model's default thinking level" }),
+      extraBody: flag.input({ name: "extra-body", description: "Extra parameters JSON: --extra-body, --extra-body-file or --stdin" }),
+      clearExtraBody: flag.boolean({ name: "clear-extra-body", description: "Remove extra parameters" }),
+      headers: flag.input({
+        stdinName: "headers-stdin",
+        description: "Header patch JSON; use --headers-file or --headers-stdin for secrets",
+      }),
+      clearHeaders: flag.boolean({ name: "clear-headers", description: "Remove all configured extra headers before applying the patch" }),
+      yes: confirmFlag("Confirm model request settings change"),
+    },
+    async run({ ctx, flags }) {
+      if (!flags.yes) throw new Error("Model request settings changes require --yes.");
+      if (flags.thinkingLevel !== undefined && flags.clearThinkingLevel)
+        throw new Error("Choose --thinking-level or --clear-thinking-level.");
+      if (flags.extraBody.provided && flags.clearExtraBody) throw new Error("Choose --extra-body or --clear-extra-body.");
+      if (
+        !flags.extraBody.provided &&
+        !flags.headers.provided &&
+        flags.thinkingLevel === undefined &&
+        !flags.clearThinkingLevel &&
+        !flags.clearExtraBody &&
+        !flags.clearHeaders
+      )
+        throw new Error("Select at least one model request setting to change.");
+      if (flags.extraBody.source === "stdin" && flags.headers.source === "stdin")
+        throw new Error("Read one JSON input from stdin and supply the other from a file.");
+      const parseInput = async (input: typeof flags.headers, label: string): Promise<unknown> => {
+        const raw = await readCliInput(input, { required: true, label });
+        try {
+          return JSON.parse(raw!);
+        } catch {
+          throw new Error(`Invalid ${label} JSON.`);
+        }
+      };
+      const patch: Record<string, unknown> = {};
+      if (flags.thinkingLevel !== undefined || flags.clearThinkingLevel)
+        patch.reasoningEffort = flags.clearThinkingLevel ? null : flags.thinkingLevel;
+      if (flags.extraBody.provided || flags.clearExtraBody)
+        patch.extraBody = flags.clearExtraBody ? null : await parseInput(flags.extraBody, "extra parameters");
+      if (flags.headers.provided) patch.requestHeaders = await parseInput(flags.headers, "extra headers");
+      if (flags.clearHeaders) patch.clearRequestHeaders = true;
+      // Validate locally before reading the current revision or sending secrets.
+      const valid = AiModelRequestSettingsUpdateSchema.parse({ ...patch, expected: "pending" });
+      const current = await apiGet<AiModelRequestSettings>(ctx, `${path}/models/${encodeURIComponent(flags.id!)}/settings`);
+      print(
+        ctx,
+        AiModelRequestSettingsSchema.parse(
+          await apiJson(ctx, "PUT", `${path}/models/${encodeURIComponent(flags.id!)}/settings`, { ...valid, expected: current.revision }),
+        ),
+      );
+    },
+  }),
   command("ai models pricing get", {
     summary: "List configured model input/output reference prices per million tokens",
     async run({ ctx }) {

@@ -212,6 +212,30 @@ export const aiSettingsMessages = i18n.define({
       outputLimitDescription:
         "Maximum response size unless a task specifies its own limit. Also bounds budget reservations. Empty uses the provider default.",
       outputLimitInvalid: "Enter a positive whole number for the output limit, or leave it empty.",
+      thinkingLevel: "Thinking level",
+      thinkingLevelDescription:
+        "Sent with chat and tool turns, for example low, medium or high. Supported values depend on the model and endpoint. Titles, summaries and compaction are not affected; they keep their reduced setting or the model default. Empty uses the model default.",
+      thinkingLevelInvalid: "Use at most 32 lowercase letters, digits, hyphens or underscores for the thinking level, or leave it empty.",
+      requestOptions: "Request options",
+      requestOptionsSummary: ({ count }: { count: number }) => (count === 1 ? "1 option set" : `${count} options set`),
+      extraBody: "Extra parameters (JSON)",
+      extraBodyDescription:
+        "Merged into every request for this model, including titles and summaries. Fields Cloud sets itself, such as model, messages, tools, stream or the thinking level, are rejected.",
+      extraBodyInvalid: "Enter a JSON object for the extra parameters, or leave them empty.",
+      extraHeaders: "Extra headers",
+      extraHeadersDescription:
+        "Sent with every request to this endpoint. Values are stored encrypted and are never shown again. An API key replaces an Authorization header.",
+      headerName: "Header name",
+      headerValue: "Value",
+      keepStoredValue: "Leave empty to keep the stored value",
+      addHeader: "Add header",
+      removeHeader: ({ name }: { name: string }) => `Remove header ${name}`,
+      headerNameInvalid: ({ name }: { name: string }) =>
+        `"${name}" is not a valid header name. Use letters, digits and hyphens without spaces.`,
+      headerDuplicate: ({ name }: { name: string }) => `The header ${name} is listed twice.`,
+      headerValueRequired: ({ name }: { name: string }) => `Enter a value for the header ${name}.`,
+      headerValueInvalid: ({ name }: { name: string }) =>
+        `The value of ${name} must be at most 4096 characters on one line and use only plain ASCII characters.`,
       contextWindow: "Context window",
       contextWindowDescription: "Optional maximum token context. Leave empty to use the provider default.",
       loadedToolLimit: "Loaded tool limit",
@@ -463,6 +487,31 @@ export const aiSettingsMessages = i18n.define({
       outputLimitDescription:
         "Maximale Antwortlänge, sofern die Aufgabe kein eigenes Limit setzt. Begrenzt auch Budgetreservierungen. Leer verwendet den Anbieterstandard.",
       outputLimitInvalid: "Gib eine positive ganze Zahl für das Outputlimit ein oder lasse es leer.",
+      thinkingLevel: "Denkstufe",
+      thinkingLevelDescription:
+        "Wird bei Chat- und Werkzeugrunden mitgesendet, zum Beispiel low, medium oder high. Welche Werte gehen, hängt von Modell und Endpunkt ab. Titel, Zusammenfassungen und Kompaktierung sind davon nicht betroffen; sie behalten ihre reduzierte Stufe oder den Modellstandard. Leer verwendet den Modellstandard.",
+      thinkingLevelInvalid:
+        "Verwende für die Denkstufe höchstens 32 Kleinbuchstaben, Ziffern, Bindestriche oder Unterstriche oder lasse sie leer.",
+      requestOptions: "Anfrageoptionen",
+      requestOptionsSummary: ({ count }: { count: number }) => (count === 1 ? "1 Option gesetzt" : `${count} Optionen gesetzt`),
+      extraBody: "Zusätzliche Parameter (JSON)",
+      extraBodyDescription:
+        "Wird in jede Anfrage an dieses Modell übernommen, auch für Titel und Zusammenfassungen. Felder, die Cloud selbst setzt, etwa model, messages, tools, stream oder die Denkstufe, werden abgelehnt.",
+      extraBodyInvalid: "Gib für die zusätzlichen Parameter ein JSON-Objekt ein oder lasse sie leer.",
+      extraHeaders: "Zusätzliche Header",
+      extraHeadersDescription:
+        "Werden bei jeder Anfrage an diesen Endpunkt mitgesendet. Die Werte werden verschlüsselt gespeichert und nie wieder angezeigt. Ein API-Schlüssel ersetzt einen Authorization-Header.",
+      headerName: "Header-Name",
+      headerValue: "Wert",
+      keepStoredValue: "Leer lassen, um den gespeicherten Wert zu behalten",
+      addHeader: "Header hinzufügen",
+      removeHeader: ({ name }: { name: string }) => `Header ${name} entfernen`,
+      headerNameInvalid: ({ name }: { name: string }) =>
+        `„${name}“ ist kein gültiger Header-Name. Verwende Buchstaben, Ziffern und Bindestriche ohne Leerzeichen.`,
+      headerDuplicate: ({ name }: { name: string }) => `Der Header ${name} ist doppelt aufgeführt.`,
+      headerValueRequired: ({ name }: { name: string }) => `Gib einen Wert für den Header ${name} ein.`,
+      headerValueInvalid: ({ name }: { name: string }) =>
+        `Der Wert von ${name} darf höchstens 4096 Zeichen in einer Zeile haben und nur einfache ASCII-Zeichen enthalten.`,
       contextWindow: "Kontextfenster",
       contextWindowDescription: "Optionale maximale Token-Anzahl im Kontext. Leer verwendet den Anbieterstandard.",
       loadedToolLimit: "Limit geladener Werkzeuge",
