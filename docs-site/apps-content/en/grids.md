@@ -912,7 +912,7 @@ binary stream. Supply the public document `id` and optionally an `artifactKey`
 from `document.read`; omission selects the primary artifact. The result contains
 artifact metadata and a stream, without rendering or issuing a new document.
 Permissions are checked again when downloading. In Assistant code mode, use
-`capabilities.streams.read` with the stream returned by the current run to obtain
+`cloud.capabilities.streams.read` with the stream returned by the current run to obtain
 a `File`. This does not extract PDF text. Code mode permits 50 MiB per payload
 and 250 MiB across transfers; Grids advertises its existing 100 MiB artifact
 budget for HTTP/CLI consumers. References expire after one hour and are not

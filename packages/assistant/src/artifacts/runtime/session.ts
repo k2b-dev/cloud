@@ -1,10 +1,11 @@
 import { LIMITS } from "../contracts";
-import { startArtifactRun } from "./host";
+import type { RuntimeContext } from "./cloud";
+import { CloudError } from "./errors";
+import { startArtifactRun, timeLimitMessage } from "./host";
 import { validateModalResponse } from "./modal-response";
 import { ModalRequest } from "./modal-schema";
 import type { RuntimeEvent, UiNode } from "./protocol";
-import { localStorageCall, RuntimeStorage } from "./shared-storage";
-import { StoragePage } from "./storage";
+import { RuntimeStorage } from "./shared-storage";
 import { RuntimeStream, runStream } from "./streams";
 import type { WorkState } from "./work";
 
@@ -25,6 +26,8 @@ export type RunSnapshot = {
   files: { name: string; size: number; type: string }[];
 };
 export type SessionOptions = {
+  context?: RuntimeContext;
+  chunk?: (name: string, signal: AbortSignal) => Promise<string>;
   unattended?: boolean;
   mode: "user" | "test";
   changed: (snapshot: RunSnapshot) => void;
@@ -44,7 +47,11 @@ export type SessionOptions = {
 };
 
 /** One run owns its effects and state. Test runs never reach a user's local storage or file picker. */
-export function createArtifactSession(container: HTMLElement, source: { runtime: string; code: string }, options: SessionOptions) {
+export function createArtifactSession(
+  container: HTMLElement,
+  source: { runtime: string; code: string; context?: RuntimeContext },
+  options: SessionOptions,
+) {
   let state: RunSnapshot = { status: "starting", busy: false, nodes: [], logs: [], files: [] };
   const inputs = options.inputs ?? [];
   const inputFiles =
@@ -58,8 +65,6 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
   if (new Set(inputFiles.map((file) => file.name)).size !== inputFiles.length) throw new Error("Input paths must be unique");
   const wrap = (file: File) => ({ file, path: file.webkitRelativePath || file.name });
   const outputFiles = new Map<string, File>();
-  const memory = new Map<string, unknown>();
-  const memoryBytes = new Map<string, number>();
   let modalSequence = 0;
   let capabilityRequests = 0;
   const capabilityStreams = new Map<string, RuntimeStream>();
@@ -78,11 +83,13 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
     clearTimeout(watchdog);
     if (state.work?.status === "running" || streamRequests > 0 || capabilityRequests > 0) return;
     watchdog = setTimeout(() => {
-      emit({ status: "error", error: "Run timed out before becoming ready", busy: false });
+      emit({ status: "error", error: timeLimitMessage(15000), busy: false });
       void run.stop();
     }, 15000);
   };
   const run = startArtifactRun(container, source, {
+    context: source.context ?? options.context,
+    files: inputFiles.map(({ name, ...file }) => ({ path: name, ...file })),
     ui: (nodes) => emit({ nodes }),
     pending: (pendingRequests) => emit({ pendingRequests }),
     work: (work) => {
@@ -106,6 +113,18 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
       emit({ status: "ready" });
     },
     request: async (method, args, signal) => {
+      if (method === "runtime.chunk") {
+        const name = args[0];
+        if (name !== "sheet" && name !== "finance" && name !== "pdf-read") throw new Error("Invalid runtime chunk");
+        if (options.chunk) return options.chunk(name, signal);
+        const response = await fetch(`/api/assistant/artifacts/runtime/chunks/${name}`, { signal });
+        if (!response.ok || !/^(?:text|application)\/(?:javascript|ecmascript)(?:;|$)/i.test(response.headers.get("content-type") ?? ""))
+          throw new CloudError(
+            "unavailable",
+            "The runtime library did not return JavaScript; retry or ask the operator to check the runtime assets.",
+          );
+        return response.text();
+      }
       if (method === "ui.modal") {
         if (options.unattended)
           throw new Error("Background code cannot open interactive dialogs. Return a result or explain missing inputs instead.");
@@ -141,10 +160,9 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
           }
         }
       }
-      if (method === "file.list") return inputFiles;
       if (method === "file.read") {
         if (typeof args[0] !== "string" || !inputFiles.some((file) => file.name === args[0]))
-          throw new Error("Input file not found; use files.list() first");
+          throw new Error("Input file not found; use the script context files first");
         clearTimeout(watchdog);
         emit({ inputPending: true });
         try {
@@ -158,7 +176,7 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
           if (state.status === "starting" && !signal.aborted) arm();
         }
       }
-      if (method === "file.open" || method === "file.openMultiple" || method === "file.openFolder") {
+      if (method === "file.open" || method === "file.openMultiple") {
         if (options.mode === "test") {
           clearTimeout(watchdog);
           emit({ inputPending: true });
@@ -179,7 +197,7 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
         clearTimeout(watchdog);
         emit({ status: "waiting" });
         try {
-          const files = (await options.pick?.(method !== "file.open", method === "file.openFolder", accept, signal)) ?? [];
+          const files = (await options.pick?.(method !== "file.open", false, accept, signal)) ?? [];
           // File references cross the bridge; local selection does not upload bytes.
           return method === "file.open" ? (files[0] ? wrap(files[0]) : null) : files.map(wrap);
         } finally {
@@ -295,8 +313,6 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
         emit({ inputPending: true });
         try {
           const result = await options.database(args[0], signal);
-          if (typeof args[0] === "object" && args[0] !== null && "operation" in args[0] && args[0].operation === "connect")
-            log("info", "Database connected");
           return result;
         } finally {
           emit({ inputPending: false });
@@ -305,54 +321,15 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
       }
       if (method === "storage") {
         const request = RuntimeStorage.parse(args[0]);
-        if (request.scope === "shared" || options.mode === "user") {
-          if (!options.storage) throw new Error("Shared storage requires a saved app or script");
-          clearTimeout(watchdog);
-          emit({ inputPending: true });
-          try {
-            return await options.storage(method, args);
-          } finally {
-            emit({ inputPending: false });
-            if (state.status === "starting" && !signal.aborted) arm();
-          }
+        if (!options.storage) throw new Error("Storage requires a saved app or script");
+        clearTimeout(watchdog);
+        emit({ inputPending: true });
+        try {
+          return await options.storage(method, [request]);
+        } finally {
+          emit({ inputPending: false });
+          if (state.status === "starting" && !signal.aborted) arm();
         }
-        const local = localStorageCall(request);
-        method = local.method;
-        args = local.args;
-      }
-      if (method.startsWith("store.") || method.startsWith("opfs.")) {
-        if (options.mode === "user") {
-          if (!options.storage) throw new Error("Storage unavailable");
-          return options.storage(method, args);
-        }
-        const [area, operation] = method.split(".");
-        if (operation === "keys" || operation === "list") {
-          const page = StoragePage.parse(args[0] ?? {});
-          return [...memory.keys()]
-            .filter((key) => key.startsWith(`${area}:`))
-            .map((key) => key.slice(area!.length + 1))
-            .filter((key) => key > page.after)
-            .sort()
-            .slice(0, page.limit);
-        }
-        if (typeof args[0] !== "string" || !args[0] || args[0].length > 240) throw new Error("Invalid storage key");
-        const key = `${area}:${args[0]}`;
-        if (operation === "delete") {
-          memory.delete(key);
-          memoryBytes.delete(key);
-          return null;
-        }
-        if (operation === "set" || operation === "write") {
-          const value = area === "store" ? JSON.stringify(args[1]) : args[1];
-          if (typeof value !== "string" && !(value instanceof Blob)) throw new Error("Expected serializable data");
-          const size = typeof value === "string" ? new Blob([value]).size : value.size;
-          const total = [...memoryBytes.entries()].reduce((sum, [id, bytes]) => sum + (id === key ? 0 : bytes), size);
-          if (total > LIMITS.rpcBytes || (!memory.has(key) && memory.size >= 1000)) throw new Error("Storage budget exceeded");
-          memoryBytes.set(key, size);
-          memory.set(key, area === "store" ? JSON.parse(String(value)) : new Blob([value]));
-          return null;
-        }
-        return memory.get(key) ?? null;
       }
       throw new Error("Unsupported host operation");
     },
@@ -377,7 +354,13 @@ export function createArtifactSession(container: HTMLElement, source: { runtime:
     stop: () => {
       clearTimeout(watchdog);
       modal?.reject(new Error("Run stopped"));
-      emit({ status: "stopped", busy: false, modal: undefined, modalId: undefined });
+      emit({
+        status: "stopped",
+        busy: false,
+        modal: undefined,
+        modalId: undefined,
+        ...(state.work?.status === "running" ? { work: { ...state.work, status: "cancelled" as const } } : {}),
+      });
       return run.stop();
     },
   };

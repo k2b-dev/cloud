@@ -8,14 +8,14 @@ export function sandboxDocument() {
  addEventListener('message',e=>{
    if(e.source!==parent)return;
    if(e.data.type==='boot'&&!worker){
-     const runtime=URL.createObjectURL(new Blob(['(()=>{',e.data.runtime,'\\n})();\\n(()=>{',e.data.code,'\\n})();'],{type:'text/javascript'}));
+     const runtime=URL.createObjectURL(new Blob(['(()=>{',e.data.runtime,'\\n})();\\nglobalThis.__artifactInit(',JSON.stringify(e.data.context),',',JSON.stringify(e.data.files),');\\n(()=>{',e.data.code,'\\n})();'],{type:'text/javascript'}));
      urls=[runtime];
      worker=new Worker(runtime);
      // PDF.js announces its bundled handler before the application protocol starts.
      worker.onmessage=m=>{if(m.data?.sourceName==='worker'&&m.data?.targetName==='main'&&m.data?.action==='ready')return;parent.postMessage(m.data,'*');};
      worker.onerror=m=>parent.postMessage({type:'error',text:m.message||'Worker failed to start'},'*');
 
-   } else if(e.data.type==='stop'){worker?.terminate();urls.forEach(u=>URL.revokeObjectURL(u));worker=null;}
+   } else if(e.data.type==='stop'){worker?.postMessage({type:'stop'});const stopping=worker;worker=null;setTimeout(()=>{stopping?.terminate();urls.forEach(u=>URL.revokeObjectURL(u));},25);}
    else worker?.postMessage(e.data);
  });
  parent.postMessage({type:'bridge-ready'},'*');

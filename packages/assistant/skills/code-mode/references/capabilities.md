@@ -14,7 +14,7 @@ remain real even when the script is exploratory.
 Inside a script or app, call:
 
 ```ts
-const result = await capabilities.run("app.capability", { /* documented input */ });
+const result = await cloud.capabilities.run("app.capability", { /* documented input */ });
 const data = result.data;
 ```
 
@@ -54,14 +54,14 @@ binary processing path for any app: files, invoice PDFs, audio, and imports use 
 mechanism. Never invent a download URL or put file bytes in capability JSON.
 
 ```ts
-const source = await capabilities.run("example.content.read", {id: sourceId});
-const file = await capabilities.streams.read(source.stream); // File
+const source = await cloud.capabilities.run("example.content.read", {id: sourceId});
+const file = await cloud.capabilities.streams.read(source.stream); // File
 // Analyze file with the documented CSV, Excel, PDF or binary helpers.
 const output = new Blob(["name,total\nAlice,42\n"], {type:"text/csv"});
-const target = await capabilities.run("example.content.create", {
+const target = await cloud.capabilities.run("example.content.create", {
   path: "totals.csv", size: output.size, mediaType: output.type,
 });
-const receipt = await capabilities.streams.write(target.stream, output);
+const receipt = await cloud.capabilities.streams.write(target.stream, output);
 ```
 
 The names and fields above illustrate the flow; discover the installed app's
@@ -72,10 +72,10 @@ byte size. The runtime accepts at most 50 MiB per payload, 250 MiB of transfers
 per run and 64 stream references. Do not split a larger file to bypass a limit.
 
 After an interrupted write while the same turn is active, call
-`capabilities.streams.status(target.stream)`.
+`cloud.capabilities.streams.status(target.stream)`.
 A completed result is `{state:"completed", result: <capability envelope>}`;
 `open` means it has not completed and `aborted` means it cannot continue.
-Use `capabilities.streams.abort(target.stream)` to discard an unfinished upload.
+Use `cloud.capabilities.streams.abort(target.stream)` to discard an unfinished upload.
 Never blindly repeat a write or claim success from a missing response. Stream
 references expire and are bound to the current conversation and foreground
 turn. They stop working when that turn is canceled or ends; another turn cannot

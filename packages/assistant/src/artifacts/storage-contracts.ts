@@ -5,6 +5,7 @@ import { LIMITS } from "./contracts";
 export const STORAGE_TRANSPORT_BYTES = LIMITS.rpcBytes * 6 + 4096;
 export const StorageRequest = z
   .object({
+    scope: z.enum(["shared", "user"]).default("shared"),
     area: z.enum(["kv", "files"]),
     operation: z.enum(["read", "write", "delete", "list"]),
     after: z.string().max(240).default(""),
@@ -16,7 +17,8 @@ export const StorageRequest = z
       .optional(),
     mediaType: z.string().max(200).default(""),
   })
-  .strict();
+  .strict()
+  .refine((request) => request.scope !== "user" || request.area === "kv", "Personal storage supports JSON keys only");
 export type StorageRequest = z.infer<typeof StorageRequest>;
 
 // Binary transfers are bounded independently from JSON/runtime messages.

@@ -35,15 +35,15 @@ test("isolated code worker transfers a 5 MiB file and rejects unissued or change
     files: [
       {
         path: "main.js",
-        content: `export default async()=>{
-    const source=await capabilities.run("independent.audio.read");
-    const file=await capabilities.streams.read(source.stream);
-    const target=await capabilities.run("independent.archive.import");
-    const saved=await capabilities.streams.write(target.stream,file);
-    const status=await capabilities.streams.status(target.stream);
+        content: `export default async (_input, {files,signal,progress}) =>{
+    const source=await cloud.capabilities.run("independent.audio.read");
+    const file=await cloud.capabilities.streams.read(source.stream);
+    const target=await cloud.capabilities.run("independent.archive.import");
+    const saved=await cloud.capabilities.streams.write(target.stream,file);
+    const status=await cloud.capabilities.streams.status(target.stream);
     const rejected=[];
     for(const ref of [{...source.stream,id:"forged"},{...source.stream,size:1}]){
-      try {await capabilities.streams.read(ref);}catch(e){rejected.push(e.message);}
+      try {await cloud.capabilities.streams.read(ref);}catch(e){rejected.push(e.message);}
     }
     return {size:file.size,saved:saved.data.saved,state:status.state,rejected};
   }`,

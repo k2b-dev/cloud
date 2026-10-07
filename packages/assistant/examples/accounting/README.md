@@ -8,15 +8,15 @@ CSV rows that count a collective payment only once.
 
 Application pipeline:
 
-1. Select a local folder and start `work.run`.
-2. Open one PDF with `pdf.open`, read its pages, and close it in `finally`.
+1. Pass chat inputPaths to a script with `{files,signal,progress}`.
+2. Open one PDF with `cloud.pdf.read`, read its pages, and release it in `finally`.
 3. Route extracted page items to a format-specific parser. Unknown formats and
    textless pages become understandable file errors, not empty success.
 4. Normalize amounts to signed integer cents: invoice costs and outgoing bank
    payments positive; credits negative. Keep date, currency, references, path,
    page, and extraction reason. Never confirm a mapping from amount alone.
 5. Call `reconcile`, present confirmed/review/duplicate/missing cases, and export
-   `exportRows(result).confirmed` through `sheet.toCsv` as `zuordnungen.csv` and
+   `exportRows(result).confirmed` through `cloud.sheet.toCsv` as `zuordnungen.csv` and
    `.open` as `offene-faelle.csv`. Defaults include semicolon, BOM, and CRLF;
    monetary columns already use decimal commas.
 
@@ -37,9 +37,9 @@ During app setup, connect its rsql database and create `ledger_rows` with:
 ```
 
 Normal users import rows without schema mutations. For each local workbook,
-open it once with `sheet.openExcel(file, {numbers:"string"})`, validate its
+open it once with `cloud.sheet.read(file, {numbers:"string"})`, validate its
 headers, and process one sheet at a time. Build `ImportRow` records with
-`import_key = JSON.stringify([files.path(file), sheetName, originalRowNumber])`
+`import_key = JSON.stringify([input.path, sheetName, originalRowNumber])`
 and `payload = JSON.stringify(originalRow)`. Call `importRows(db, rows,
 job.checkpoint)` and then close the workbook. Files stay local; only extracted
 records reach the remote resource database. A resource fork starts empty.

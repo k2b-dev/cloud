@@ -243,7 +243,7 @@ export function createArtifactAgentRuntime(
           },
           database: async (request, signal) => {
             if (!dataId) throw new Error("Database access requires a saved resource or resourceId");
-            return artifactClient.database(dataId, request, conversationId, signal, Boolean(input.resourceId));
+            return artifactClient.database(dataId, request, conversationId, signal);
           },
           storage: async (_method, args) => {
             if (!dataId) throw new Error("Shared storage requires a saved resource or resourceId");

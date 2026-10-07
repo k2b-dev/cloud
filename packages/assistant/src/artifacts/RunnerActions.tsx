@@ -43,15 +43,19 @@ export function RunnerActions(props: { id: string; userId: string; serverAccess:
           },
         ]
       : []),
-    {
-      label: a().local,
-      icon: "ti ti-device-desktop",
-      action: () =>
-        action(async () => {
-          const { openDataDialog } = await import("./DataDialogs");
-          await openDataDialog(props.id, props.serverAccess ? props.userId : "public-visitor", "local", a().local);
-        }),
-    },
+    ...(props.serverAccess
+      ? [
+          {
+            label: a().personal,
+            icon: "ti ti-user",
+            action: () =>
+              action(async () => {
+                const { openDataDialog } = await import("./DataDialogs");
+                await openDataDialog(props.id, "user", a().personal);
+              }),
+          },
+        ]
+      : []),
   ];
   return (
     <>

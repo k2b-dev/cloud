@@ -1,6 +1,6 @@
 // Configure shared KV `sources` with discovered IDs before running this Studio app.
 export default async () => {
-  const sources = await kv.shared.get("sources");
+  const sources = await cloud.kv.get("sources");
   if (!sources?.gridsTemplateId || !sources?.filesBaseId) {
     ui.text({ value: "Configure sources.gridsTemplateId and sources.filesBaseId first." });
     return;
@@ -33,7 +33,7 @@ export default async () => {
     busy = true;
     try {
       if (source === "grids") {
-        const result = await capabilities.run("grids.document.list", {
+        const result = await cloud.capabilities.run("grids.document.list", {
           templateId: sources.gridsTemplateId,
           limit: 100,
           ...(cursors.grids ? { cursor: cursors.grids } : {}),
@@ -41,7 +41,7 @@ export default async () => {
         pages.grids = result.data.map((item) => ({ key: `grids:${item.id}`, id: item.id, name: item.filename, source: "Grids" }));
         cursors.grids = result.page?.hasMore ? result.page.nextCursor : undefined;
       } else {
-        const result = await capabilities.run("filesv2.entry.list", {
+        const result = await cloud.capabilities.run("filesv2.entry.list", {
           baseId: sources.filesBaseId,
           path: sources.filesPath ?? "",
           type: "files",
@@ -70,11 +70,11 @@ export default async () => {
       busy = true;
       const row = selected;
       try {
-        const result = await capabilities.run(row.source === "Grids" ? "grids.document.content.read" : "filesv2.content.read", {
+        const result = await cloud.capabilities.run(row.source === "Grids" ? "grids.document.content.read" : "filesv2.content.read", {
           id: row.id,
         });
-        const file = await capabilities.streams.read(result.stream);
-        await files.save(file, file.name);
+        const file = await cloud.capabilities.streams.read(result.stream);
+        await cloud.download(file.name, file);
         status.setValue(`Downloaded: ${row.name}`);
       } catch (error) {
         status.setValue(`Download failed: ${error.message}`);

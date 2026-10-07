@@ -11,5 +11,15 @@ export const RunnerMetadata = z.object({
   canManage: z.boolean(),
 });
 export type RunnerMetadata = z.infer<typeof RunnerMetadata>;
-export const RunnerCompiled = z.object({ metadata: RunnerMetadata, code: z.string(), runtime: z.string() });
+export const ViewerContext = z.object({
+  locale: z.string(),
+  timeZone: z.string(),
+  user: z.object({ id: z.string(), name: z.string() }).nullable(),
+});
+export const RunnerCompiled = z.object({
+  metadata: RunnerMetadata,
+  code: z.string(),
+  runtime: z.string(),
+  context: ViewerContext.optional(),
+});
 export const runnerHref = (id: string) => `/app/assistant/apps/${encodeURIComponent(id)}/run`;

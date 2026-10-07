@@ -17,6 +17,7 @@ import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
 import { ArtifactCreate, ArtifactFile, ArtifactMetadata, ArtifactSource, ArtifactUpdate, LIMITS, PublicationNote } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
+import { FlatDatabaseRequest } from "./database-runtime";
 import { studioFiles } from "./file-transfer";
 import { HttpPrepare, HttpScope, SecretSave } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
@@ -24,8 +25,11 @@ import { artifactMessages } from "./messages";
 import { decodePdfRequest } from "./pdf-contracts";
 import { studioPdf } from "./pdf-service";
 import { renameSource } from "./rename-source";
+import { ChunkName, chunkSource } from "./runtime/chunks";
 import { cliHostBundle } from "./runtime/cli-bundle";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
+import { viewerContext } from "./runtime/context";
+import { CloudError } from "./runtime/errors";
 import { ArtifactError, artifacts } from "./service";
 import { STORAGE_TRANSPORT_BYTES, StorageFileQuery, StorageJsonRequest } from "./storage-contracts";
 import { StorageSettings, storageSettings } from "./storage-settings";
@@ -116,6 +120,13 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         const t = artifactMessages.resolve([getLocale(c)]).t;
         return respond(c, { ok: false, code: error.code, status: error.code === "HTTP_DENIED" ? 403 : 409, error: t[error.code] });
       }
+      if (error instanceof CloudError)
+        return respond(c, {
+          ok: false,
+          code: error.code,
+          status: error.code === "denied" ? 403 : error.code === "not_found" ? 404 : 400,
+          error: error.message,
+        });
       if (error instanceof DatabaseError) {
         const t = artifactMessages.resolve([getLocale(c)]).t;
         const message =
@@ -139,7 +150,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
                             ? t.DB_NOT_CONNECTED
                             : error.code === "DB_SERVER_IN_USE"
                               ? t.DB_SERVER_IN_USE
-                              : error.code;
+                              : error.message;
         return respond(c, { ok: false, code: error.code, status: error.status, error: message });
       }
       const code = error instanceof ArtifactError ? error.code : error instanceof z.ZodError ? "INVALID_INPUT" : "REQUEST_FAILED";
@@ -342,7 +353,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         },
       });
     })
-    .post("/:id/database", v("json", DatabaseRequest), async (c) =>
+    .post("/:id/database", v("json", FlatDatabaseRequest), async (c) =>
       respond(c, ok(await artifactDatabase.call(id(c), c.req.valid("json"), identity(c), c.req.raw.signal))),
     )
     .post("/:id/database/inspect", v("json", DatabaseRequest), async (c) =>
@@ -369,6 +380,9 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
           ok(await runtimeCapabilities.resolve(z.uuid().parse(c.req.param("callId")), c.req.valid("json"), identity(c), caller(c))),
         ),
     )
+    .get("/runtime/chunks/:name", async (c) =>
+      c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, { "Content-Type": "text/javascript" }),
+    )
     .get("/runtime/host.js", async (c) => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))
     .post("/runtime/claim", v("json", ClientCall), async (c) => respond(c, ok(await clientCalls.claim(c.req.valid("json"), identity(c)))))
     .post("/runtime/complete", v("json", ClientCallResult), async (c) =>
@@ -377,7 +391,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     .post("/", v("json", ArtifactCreate), async (c) => respond(c, ok(await artifacts.create(c.req.valid("json"), identity(c))), 201))
     .post("/runtime/compile", v("json", ArtifactSource), async (c) => {
       try {
-        return respond(c, ok(await compileArtifact(c.req.valid("json"))));
+        return respond(c, ok({ ...(await compileArtifact(c.req.valid("json"))), context: viewerContext(c) }));
       } catch (error) {
         return respond(c, { ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) });
       }
@@ -396,7 +410,10 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         const action = sourceActions(bundle.source).find((action) => action.name === input.action);
         if (!action) throw new ArtifactError("NOT_FOUND");
         parseActionInput(action, input.input);
-        const compiled = await compileArtifact(bundle.source, { action: input.action, input: input.input });
+        const compiled = {
+          ...(await compileArtifact(bundle.source, { action: input.action, input: input.input })),
+          context: viewerContext(c),
+        };
         const current = await artifacts.get(input.id, identity(c), undefined, !draft);
         if (draft && current.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
         if (draft ? current.sourceRevision !== input.revision : current.publishedVersion !== input.publishedVersion)
@@ -504,7 +521,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     .get("/:id/compiled", v("query", RevisionQuery), async (c) => {
       const bundle = await artifacts.get(id(c), identity(c), revision(c));
       try {
-        return respond(c, ok({ ...(await compileArtifact(bundle.source)), revision: bundle.sourceRevision }));
+        return respond(c, ok({ ...(await compileArtifact(bundle.source)), context: viewerContext(c), revision: bundle.sourceRevision }));
       } catch (error) {
         return respond(c, { ok: false, status: 400, code: "COMPILE_FAILED", error: compilationDiagnostic(error) });
       }
@@ -557,8 +574,14 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     )
     .post(
       "/:id/storage/clear",
-      v("json", z.object({ area: z.enum(["files", "kv", "all"]), confirmed: z.literal(true) }).strict()),
-      async (c) => respond(c, ok(await artifacts.clearStorage(id(c), c.req.valid("json").area, identity(c)))),
+      v(
+        "json",
+        z
+          .object({ scope: z.enum(["shared", "user"]).default("shared"), area: z.enum(["files", "kv", "all"]), confirmed: z.literal(true) })
+          .strict(),
+      ),
+      async (c) =>
+        respond(c, ok(await artifacts.clearStorage(id(c), c.req.valid("json").area, identity(c), undefined, c.req.valid("json").scope))),
     )
     .get("/:id/projects", async (c) => respond(c, ok(await artifacts.projects(id(c), identity(c)))))
     .put("/:id/projects/:projectId", v("json", z.object({ linked: z.boolean() }).strict()), async (c) =>

@@ -31,3 +31,10 @@ test("background code admits computation and artifacts but no route around task 
   expect(backgroundCodeRouteAllowed("/aBc234/compiled", "DELETE")).toBe(false);
   expect(backgroundCodeRouteAllowed("/aBc234/secret", "GET")).toBe(false);
 });
+
+test("background scripts can load only the three named lazy runtime libraries", () => {
+  for (const name of ["sheet", "finance", "pdf-read"]) expect(backgroundCodeRouteAllowed(`/runtime/chunks/${name}`, "GET")).toBe(true);
+  for (const path of ["/runtime/chunks/private", "/runtime/chunks/../secret", "/runtime/chunks/sheet/extra"])
+    expect(backgroundCodeRouteAllowed(path, "GET")).toBe(false);
+  expect(backgroundCodeRouteAllowed("/runtime/chunks/sheet", "POST")).toBe(false);
+});

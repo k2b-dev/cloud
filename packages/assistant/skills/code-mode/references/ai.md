@@ -1,6 +1,6 @@
 # AI calculations
 
-Use the global `ai` namespace for text generation, classification and extracting
+Use `cloud.ai` for text generation, classification and extracting
 structured values from supplied data. These are server-side calculations, not
 agents: no tools, browsing, chat history, memories or files are loaded implicitly.
 Read the required data first and pass it as `input`. Use ordinary code for exact
@@ -20,15 +20,15 @@ Common options: `prompt` (1–20,000 characters), `input` (JSON data), optional
 `modelProfileId`. Separate instructions in `prompt` from untrusted data in
 `input`. All output is validated; model output may still be factually wrong.
 
-- `await ai.generateText({ prompt, input?, modelProfileId?, maxOutputChars? })`
+- `await cloud.ai.text({ prompt, input?, modelProfileId?, maxOutputChars? })`
   returns a string. `maxOutputChars` is 1–20,000, default 4,000.
-- `await ai.classify({ prompt, input, choices, modelProfileId? })` returns exactly
+- `await cloud.ai.classify({ prompt, input, choices, modelProfileId? })` returns exactly
   one of 2–50 unique choice strings (each at most 200 characters).
-- `await ai.classifyMany({ prompt, input, choices, minChoices?, maxChoices?, modelProfileId? })`
+- `await cloud.ai.classify({ prompt, input, choices, multiple: true | {min?,max?} })`
   returns a unique subset in declared choice order. Defaults: minimum 0, maximum
   the number of choices. Include an `other` choice if a single classification
   must support uncertainty; use an empty subset for no matches in multi-choice.
-- `await ai.extractData({ prompt, input, fields, modelProfileId? })` returns an
+- `await cloud.ai.extract({ prompt, input, fields, modelProfileId? })` returns an
   object with only the declared fields. Declare 1–40 fields with unique `name`,
   `type` and `description`. Names start with a letter and contain only letters,
   digits and underscores (maximum 80 characters). Types: `text`, `number`,
@@ -40,12 +40,12 @@ Common options: `prompt` (1–20,000 characters), `input` (JSON data), optional
 
 ```js
 export default async () => {
-  const category = await ai.classify({
+  const category = await cloud.ai.classify({
     prompt: "Classify the feedback by its main purpose.",
     input: "Where can I download my invoice?",
     choices: ["praise", "problem", "question", "other"],
   });
-  const summary = await ai.generateText({
+  const summary = await cloud.ai.text({
     prompt: "Summarize the feedback in one short German sentence.",
     input: "Where can I download my invoice?",
     maxOutputChars: 300,

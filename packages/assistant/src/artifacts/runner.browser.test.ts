@@ -33,17 +33,16 @@ test("standalone public runner starts local code and blocks every server bridge 
     files: [
       {
         path: "main.js",
-        content: `export default async () => {
+        content: `export default async (_input, {files,signal,progress}) => {
     ui.text({value:"Local calculation: " + (6*7)});
     for (const [name,call] of [
-      ["database",()=>database.connect()],
-      ["files",()=>files.shared.list()],
-      ["kv",()=>kv.shared.keys()],
-      ["http",()=>http.fetch("https://example.com")],
-      ["capabilities",()=>capabilities.run("core.entities.search",{})]
+      ["database",()=>cloud.db.list("records")],
+      ["files",()=>cloud.files.list()],
+      ["kv",()=>cloud.kv.keys()],
+      ["http",()=>cloud.http.fetch("https://example.com")],
+      ["capabilities",()=>cloud.capabilities.run("core.entities.search",{})]
     ]) { try {await call();ui.text({value:"UNEXPECTED: " + name});} catch {ui.text({value:"Blocked: " + name});} }
-    const selected=await files.open();
-    if(selected)ui.text({value:"Local file: " + await selected.text()});
+    ui.filePicker({label:"Choose file",onChange:async ([selected])=>ui.text({value:"Local file: "+await selected.text()})});
   }`,
       },
     ],
@@ -80,6 +79,7 @@ test("standalone public runner starts local code and blocks every server bridge 
     await page.getByText("Local calculation: 42", { exact: true }).waitFor();
     for (const name of ["database", "files", "kv", "http", "capabilities"])
       await page.getByText(`Blocked: ${name}`, { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Choose file" }).click();
     await (await chooser).setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("works") });
     await page.getByText("Local file: works", { exact: true }).waitFor();
     expect(requests.filter((path) => path.startsWith("/api/") && !path.startsWith("/api/assistant/runner/"))).toEqual([]);
@@ -92,16 +92,18 @@ test("standalone public runner starts local code and blocks every server bridge 
   }
 }, 60000);
 
-test("runner explains access changes, restarts with isolated public storage, and stops after revocation", async () => {
+test("runner explains access changes, denies personal storage after public restart, and stops after revocation", async () => {
   const compiled = await compileArtifact({
     entry: "main.js",
     files: [
       {
         path: "main.js",
-        content: `export default async () => {
-    const count=(await kv.local.get("count") ?? 0)+1;
-    await kv.local.set("count",count);
-    ui.text({value:"Counter: "+count});
+        content: `export default async (_input, {files,signal,progress}) => {
+    try {
+      const count=(await cloud.kv.user.get("count") ?? 0)+1;
+      await cloud.kv.user.set("count",count);
+      ui.text({value:"Counter: "+count});
+    } catch(error) {ui.text({value:"Personal storage: "+error.code});}
     ui.button({label:"Ping",onClick:()=>console.info("pong")});
   }`,
       },
@@ -118,10 +120,20 @@ test("runner explains access changes, restarts with isolated public storage, and
     serverAccess,
     canManage: false,
   });
+  const personal = new Map<string, unknown>();
   const server = Bun.serve({
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/api/assistant/artifacts/Run001/storage") {
+        const input = await request.json();
+        expect(input.scope).toBe("user");
+        if (input.operation === "write") {
+          personal.set(input.key, JSON.parse(input.content));
+          return Response.json({ written: true });
+        }
+        return Response.json({ item: personal.has(input.key) ? { content: JSON.stringify(personal.get(input.key)) } : null });
+      }
       if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "application/javascript" } });
       if (path.startsWith("/api/assistant/runner/Run001")) {
         if (revoked) return Response.json({ message: "Unavailable" }, { status: 404 });
@@ -154,7 +166,7 @@ test("runner explains access changes, restarts with isolated public storage, and
       return button && !button.disabled && !document.querySelector('[role="alert"]');
     });
     expect(starts).toBe(2);
-    expect(await page.getByText("Counter: 1", { exact: true }).count()).toBe(1);
+    expect(await page.getByText("Personal storage: denied", { exact: true }).count()).toBe(1);
     revoked = true;
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await page.getByRole("alert").filter({ hasText: "no longer available" }).waitFor();

@@ -21,6 +21,7 @@ export function backgroundCodeRouteAllowed(path: string, method: string): boolea
   return (
     method === "GET" &&
     (path === "/runtime/host.js" ||
+      /^\/runtime\/chunks\/(?:sheet|finance|pdf-read)$/.test(path) ||
       /^\/[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}(?:\/compiled|\/access|\/storage\/file)?$/.test(path))
   );
 }

@@ -90,7 +90,7 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
               args.path === "__artifact_entry__"
                 ? headless
                   ? "globalThis.__artifactStart(() => null);"
-                  : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `() => entry(${JSON.stringify(invocation.input ?? null)})` : "entry"});`
+                  : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `entry, ${JSON.stringify(invocation.input ?? null)}` : "entry"});`
                 : files.get(args.path);
             if (contents === undefined) throw new Error(`Missing source file: ${args.path}`);
             if (args.path.endsWith(".json")) return { contents, loader: "json" };

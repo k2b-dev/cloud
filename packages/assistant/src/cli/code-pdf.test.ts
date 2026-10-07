@@ -43,12 +43,12 @@ test("CLI PDF uses binary multipart, cancels an individual request and continues
       conversationId: "aBc234",
       turnId: "aBc234",
       args: {
-        code: `export default async()=>{
+        code: `export default async (_input, {files,signal,progress}) =>{
       const abort=new AbortController();
-      const operation=pdf.render({html:"slow"},{signal:abort.signal});
+      const operation=cloud.pdf.render({html:"slow"},{signal:abort.signal});
       setTimeout(()=>abort.abort(),300);
-      let cancelled=false;try{await operation;}catch(error){cancelled=error.name==="AbortError";}
-      const document=await pdf.attach({document:new Blob([new Uint8Array(17*1024*1024)]),attachments:[{name:"data.xml",data:new Blob(["<data/>"],{type:"application/xml"})}]});
+      let cancelled=false;try{await operation;}catch(error){cancelled=error.name==="CloudError" && error.code==="cancelled";}
+      const document=await cloud.pdf.attach({document:new Blob([new Uint8Array(17*1024*1024)]),attachments:[{name:"data.xml",data:new Blob(["<data/>"],{type:"application/xml"})}]});
       return {cancelled,type:document.type,content:await document.text()};
     }`,
       },

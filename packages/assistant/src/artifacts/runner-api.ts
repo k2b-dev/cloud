@@ -5,7 +5,9 @@ import { z } from "zod";
 import { ArtifactCompileError } from "./actions";
 import { artifactMessages } from "./messages";
 import { RunnerMetadata } from "./runner-contracts";
+import { ChunkName, chunkSource } from "./runtime/chunks";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
+import { viewerContext } from "./runtime/context";
 import { ArtifactError, artifacts } from "./service";
 
 export const runnerMetadata = (bundle: Awaited<ReturnType<typeof artifacts.runner>>) => RunnerMetadata.parse(bundle);
@@ -38,6 +40,9 @@ export const createRunnerRoutes = () =>
         error: artifactMessages.resolve([getLocale(c)]).t[code],
       });
     })
+    .get("/chunks/:name", async (c) =>
+      c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, { "Content-Type": "text/javascript" }),
+    )
     .get("/:id", async (c) =>
       respond(
         c,
@@ -45,7 +50,13 @@ export const createRunnerRoutes = () =>
       ),
     )
     .get("/:id/compiled", async (c) =>
-      respond(c, ok(await compiledRunner(c.req.param("id"), { actor: c.get("actor"), accessSubject: c.get("accessSubject") }))),
+      respond(
+        c,
+        ok({
+          ...(await compiledRunner(c.req.param("id"), { actor: c.get("actor"), accessSubject: c.get("accessSubject") })),
+          context: viewerContext(c),
+        }),
+      ),
     );
 
 export const runnerApi = new Hono<AuthContext>().use("*", auth.requireRole("*")).use(rateLimit()).route("/", createRunnerRoutes());

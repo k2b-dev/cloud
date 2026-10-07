@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { validateAiSkillDescription, validateAiSkillInstructions, validateAiSkillReferences } from "./skill-format";
+import { ASSISTANT_CODE_MODE_SKILL } from "./code-mode-skill";
+import { ASSISTANT_DATA_ANALYSIS_SKILL } from "./data-analysis-skill";
+import {
+  validateAiSkillDescription,
+  validateAiSkillExtraFrontmatter,
+  validateAiSkillInstructions,
+  validateAiSkillName,
+  validateAiSkillReferences,
+} from "./skill-format";
 import { getBuiltinAiSkillTemplate } from "./skill-seeds";
-import { aiSkills, seedCloudAiSkills } from "./skills";
+import { type AiSkillTemplate, aiSkills, seedCloudAiSkills } from "./skills";
 
 afterEach(() => mock.restore());
 
@@ -201,4 +209,21 @@ describe("Cloud AI Skill seeds", () => {
     const help = await Bun.file(new URL("../../../grids/src/help/documents/en/grids-gql.help.md", import.meta.url)).text();
     expect(help).toContain("Query with AI");
   });
+});
+
+test("generated Assistant skills pass every field validator used by seedOnce", () => {
+  const skills: AiSkillTemplate[] = [ASSISTANT_CODE_MODE_SKILL, ASSISTANT_DATA_ANALYSIS_SKILL];
+  for (const skill of skills) {
+    expect(validateAiSkillName(skill.name)).toBe(skill.name);
+    expect(validateAiSkillDescription(skill.description)).toBe(skill.description);
+    expect(validateAiSkillInstructions(skill.instructions)).toBe(skill.instructions);
+    expect(validateAiSkillExtraFrontmatter(skill.extraFrontmatter)).toEqual(skill.extraFrontmatter ?? {});
+    const references = skill.references ?? [];
+    expect(validateAiSkillReferences(references)).toEqual([...references]);
+  }
+  const contract = ASSISTANT_CODE_MODE_SKILL.references.find((reference) => reference.path === "references/cloud.md");
+  expect(contract).toBeDefined();
+  expect(contract!.content.match(/```ts\n/g)).toHaveLength(1);
+  expect(contract!.content.match(/```/g)).toHaveLength(2);
+  expect(ASSISTANT_CODE_MODE_SKILL.instructions).toContain("/skills/assistant-code-mode/references/cloud.md");
 });

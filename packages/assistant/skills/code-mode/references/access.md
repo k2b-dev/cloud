@@ -51,7 +51,7 @@ publication, including for managers. Share this URL, not a chat workspace URL.
 A private app requires sign-in and app access. Publication never grants access.
 
 Before requesting a public grant, explain that visitors can use local computation,
-file pickers, downloads and browser-local storage, but cannot use the app database,
+transitional UI file pickers and downloads, but cannot use personal storage, the app database,
 server files/KV, personal secrets, server HTTP/PDF or protected Cloud actions.
 Being signed in does not remove these restrictions: server features require an
 explicit user, group or authenticated grant. Never execute as the app owner.

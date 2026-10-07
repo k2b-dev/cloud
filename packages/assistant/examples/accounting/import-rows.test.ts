@@ -6,15 +6,11 @@ test("retries an interrupted multi-batch import without duplicates and rejects c
   let batches = 0,
     fail = true;
   const db: ImportDatabase = {
-    query: async (_sql, keys) => ({
-      data: keys.filter((key) => stored.has(key)).map((key) => ({ import_key: key, payload: stored.get(key)! })),
-    }),
-    table: () => ({
-      insert: async (rows) => {
-        if (++batches === 2 && fail) throw new Error("connection lost");
-        for (const row of rows) stored.set(row.import_key, row.payload);
-      },
-    }),
+    query: async (_sql, keys) => keys.filter((key) => stored.has(key)).map((key) => ({ import_key: key, payload: stored.get(key)! })),
+    insert: async (_table, rows) => {
+      if (++batches === 2 && fail) throw new Error("connection lost");
+      for (const row of rows) stored.set(row.import_key, row.payload);
+    },
   };
   const rows: ImportRow[] = Array.from({ length: 2500 }, (_, i) => ({
     import_key: `folder/file.xlsx::Ledger::${i + 2}`,

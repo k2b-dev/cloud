@@ -45,10 +45,10 @@ paths, pages, units and relevant dates with derived findings.
 After selecting the actual current-chat path in `inputPaths`, run this entry:
 
 ```js
-export default async () => {
-  const inputs = await files.list();
+export default async (_input, {files}) => {
+  const inputs = files;
   if (inputs.length !== 1) throw new Error("Select one CSV to inspect.");
-  const rows = await sheet.fromCsv(await files.read(inputs[0].name));
+  const rows = await cloud.sheet.parseCsv(await inputs[0].file());
   return {
     file: inputs[0].name,
     rowCount: rows.length,

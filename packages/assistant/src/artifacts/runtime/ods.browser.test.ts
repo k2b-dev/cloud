@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import type {} from "./browser-harness";
+import { ChunkName, chunkSource } from "./chunks";
 import { compileArtifact } from "./compile";
 
 test("ODS reads typed cells, grouped rows and cached formulas and writes workbooks in the isolated worker", async () => {
@@ -38,25 +39,24 @@ test("ODS reads typed cells, grouped rows and cached formulas and writes workboo
       {
         path: "main.js",
         content: `
-    export default async () => {
+    export default async (_input, {files,signal,progress}) => {
       const blob = b64 => new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))]);
       const input = blob(${JSON.stringify(await fixture("ledger.ods"))});
-      const workbook = await sheet.openOds(input);
+      const workbook = await cloud.sheet.read(input);
       const names = workbook.sheetNames;
-      const ledger = workbook.readSheet("Ledger");
-      const types = workbook.readSheet("Types").map(row => row.map(value =>
+      const ledger = workbook.rows("Ledger");
+      const types = workbook.rows("Types").map(row => row.map(value =>
         value instanceof Date ? value.toISOString() : value));
-      const empty = workbook.readSheet("Empty");
+      const empty = workbook.rows("Empty");
       const failures = {};
-      try { workbook.readSheet("Missing"); } catch (e) { failures.missing = e.message; }
-      workbook.close(); workbook.close();
-      try { workbook.readSheet("Ledger"); } catch (e) { failures.closed = e.message; }
+      try { workbook.rows("Missing"); } catch (e) { failures.missing = e.message; }
+
+      const again = workbook.rows();
       for (const [name, file] of [
         ["invalid", new Blob(["not an ODS file"])],
-        ["xlsx", blob(${JSON.stringify(await fixture("ledger.xlsx"))})],
         ["repeat", blob(${JSON.stringify(await fixture("repeated.ods"))})],
       ]) {
-        try { await sheet.openOds(file); failures[name] = "unexpected success"; }
+        try { await cloud.sheet.read(file); failures[name] = "unexpected success"; }
         catch (e) { failures[name] = e.message; }
       }
       const bytes = new Uint8Array(await input.arrayBuffer());
@@ -66,25 +66,25 @@ test("ODS reads typed cells, grouped rows and cached formulas and writes workboo
           zip.setUint32(i + 24, 129 * 1024 * 1024, true); break;
         }
       }
-      try { await sheet.openOds(new Blob([bytes])); failures.size = "unexpected success"; }
+      try { await cloud.sheet.read(new Blob([bytes])); failures.size = "unexpected success"; }
       catch (e) { failures.size = e.message; }
       // XLSX still uses its existing decimal-preserving parser.
-      const excel = await sheet.openExcel(blob(${JSON.stringify(await fixture("ledger.xlsx"))}), {numbers:"string"});
-      const excelAmount = excel.readSheet("Ledger")[1][1];
-      excel.close();
-      // Writing goes through the same worker and reads back with openOds.
-      const written = await sheet.toOds([{ name: "Export/2026", rows: [
+      const excel = await cloud.sheet.read(blob(${JSON.stringify(await fixture("ledger.xlsx"))}), {numbers:"string"});
+      const excelAmount = excel.rows("Ledger")[1][1];
+
+      // Writing goes through the same worker and reads back with automatic format detection.
+      const written = await cloud.sheet.toOds([{ name: "Export/2026", rows: [
         ["Text", "Number", "Flag", "Date", "Empty"],
         ["Müller & Söhne", 12.34, true, new Date("2026-09-20T00:00:00Z"), null],
       ]}]);
-      const back = await sheet.openOds(written);
+      const back = await cloud.sheet.read(written);
       const roundTrip = {
         type: written.type,
         names: back.sheetNames,
-        rows: back.readSheet("Export_2026").map(row => row.map(value => value instanceof Date ? value.toISOString() : value)),
+        rows: back.rows("Export_2026").map(row => row.map(value => value instanceof Date ? value.toISOString() : value)),
       };
-      back.close();
-      try { await sheet.toOds([{ name: "Bad", rows: [[{ formula: "=1" }]] }]); failures.write = "unexpected success"; }
+
+      try { await cloud.sheet.toOds([{ name: "Bad", rows: [[{ formula: "=1" }]] }]); failures.write = "unexpected success"; }
       catch (e) { failures.write = e.message; }
       return {names, ledger, types, empty, failures, excelAmount, roundTrip};
     }
@@ -96,7 +96,17 @@ test("ODS reads typed cells, grouped rows and cached formulas and writes workboo
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: () => new Response("<!doctype html><body></body>", { headers: { "Content-Type": "text/html" } }),
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      const prefix = "/api/assistant/artifacts/runtime/chunks/";
+      if (path.startsWith(prefix)) {
+        const name = ChunkName.safeParse(path.slice(prefix.length));
+        return name.success
+          ? new Response(await chunkSource(name.data), { headers: { "Content-Type": "text/javascript" } })
+          : new Response("Unknown runtime library", { status: 404 });
+      }
+      return new Response("<!doctype html><body></body>", { headers: { "Content-Type": "text/html" } });
+    },
   });
   try {
     const page = await browser.newPage();
@@ -122,9 +132,7 @@ test("ODS reads typed cells, grouped rows and cached formulas and writes workboo
       empty: [],
       failures: {
         missing: "Sheet not found: Missing",
-        closed: "Workbook is closed",
-        invalid: expect.stringContaining("ODS ZIP"),
-        xlsx: expect.stringContaining("mimetype"),
+        invalid: expect.stringContaining("XLSX ZIP"),
         repeat: expect.stringContaining("limit"),
         size: expect.stringContaining("128 MiB"),
         write: "Bad row 1 column 1: cells must be strings, numbers, booleans, dates, or null",

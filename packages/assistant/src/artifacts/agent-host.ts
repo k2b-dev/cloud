@@ -22,6 +22,7 @@ import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runt
 import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
 import { DatabaseRequest } from "./database-contracts";
+import { FlatDatabaseRequest } from "./database-runtime";
 import { httpService } from "./http-service";
 
 export const AgentHostRequest = z
@@ -127,7 +128,9 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
   const request = new Request(url, init);
   const database = /^\/api\/assistant\/artifacts\/([^/]+)\/database(?:\/maintenance)?(\/connect)?$/.exec(url.pathname);
   if (config.background && config.mandate && database && request.method === "POST") {
-    const input = database[2] ? { operation: "connect" } : DatabaseRequest.parse(await request.clone().json());
+    const input = database[2]
+      ? { operation: "connect" }
+      : (url.pathname.includes("/maintenance") ? DatabaseRequest : FlatDatabaseRequest).parse(await request.clone().json());
     try {
       await aiChatTasks.authorizeRuntime({
         mandate: config.mandate,

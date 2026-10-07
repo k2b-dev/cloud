@@ -1,178 +1,31 @@
-# Local PDF and spreadsheet documents
+# Read and export documents
 
-Use this path when original documents must stay on the device. User apps select
-files with their picker; parsing runs in the isolated worker, without upload or
-network access. Do not send private local documents to `read_file` as a workaround.
-Chat attachments have already been uploaded; scripts may explicitly select those.
-
-## Learn the format before building around it
-
-Inspect representative supplied files with a one-off script: sheet names and
-headers for Excel, or text/positions from relevant PDF pages. Keep output small.
-Test extraction and validation before building the surrounding app. If examples
-are missing, request an anonymized sample only when upload fits the user's
-requirements; offer a small App started by the user in Studio when
-originals must stay local. Its picker and console can suffice without a custom UI.
-Follow [Investigation patterns](investigation.md) for the general workflow.
-
-## PDF
-
-`await pdf.open(file: Blob)` returns `{pageCount: number, readPage, close}`.
-`await readPage(number)` returns `{page: number, width: number, height: number,
-text: string, items: {text: string, transform: number[], width: number,
-height: number, direction: string, endOfLine: boolean}[]}`.
-`await close()` releases the document and returns nothing.
-
+Read [cloud contract](cloud.md) first. Readers load on first use and parse locally
+inside the isolated worker. Files are not uploaded by reading them.
 
 ```js
-const document = await pdf.open(file);
+const workbook = await cloud.sheet.read(file, {numbers:"string"});
+const names = workbook.sheetNames;
+const firstRows = workbook.rows();
+const otherRows = workbook.rows(names[1]);
+```
+
+The format is detected from XLSX/ODS bytes. Rows include the header row and keep
+empty/duplicate headings. Formulas use cached values. Dates remain cell values;
+CSV parsing converts numbers only and leaves dates as text. XLS/XLSB and formula
+execution are unavailable. Read inputs sequentially to bound memory. The parsing
+budget is 64 MiB per document and 128 MiB expanded workbook XML.
+
+`await cloud.sheet.toOds([{name:"Results",rows:[["Name","Amount"],["Alice",12.5]]}])`
+returns a Blob. Download it with `await cloud.download("results.ods", blob)`.
+
+```js
+const document = await cloud.pdf.read(file);
 try {
-  for (let number = 1; number <= document.pageCount; number++) {
-    const page = await document.readPage(number);
-    // page: {page, width, height, text, items}
-    // item: {text, transform, width, height, direction, endOfLine}
-  }
-} finally {
-  await document.close();
-}
+  const page = await document.page(1);
+  console.log(page.text, page.items);
+} finally { await document.close(); }
 ```
 
-The PDF reader is built in; no package import or CDN is needed. Pages start at 1.
-`transform` contains the six PDF text transformation values; retain original
-items when layout matters. `text` is a convenient concatenation, not a table
-parser. Keep `files.path(file)`, page number, and matching evidence alongside
-every extracted record. A page without text needs review; no OCR is available.
-Encrypted, unsupported, and corrupt files can throw. External font/CMap assets
-are not fetched; verify extraction for documents requiring unusual fonts. Report the filename and
-error, continue with other files, and never silently classify failures as empty.
-
-Use [Electronic invoices](einvoice.md) and [CAMT](camt.md) for their supported
-XML formats. Other format-specific mappings belong in app source modules. Verify
-against representative documents before claiming Sparkasse, DHL, or FedEx
-support. Similar-looking PDFs can encode very different text layouts.
-
-## Excel (XLSX only, reading only)
-
-`await sheet.openExcel(file: Blob, {numbers?: "number" | "string"}?)` returns
-`{sheetNames: string[], readSheet(name), close()}`. `readSheet` is synchronous
-and returns cell arrays: `(string | number | boolean | Date | null)[][]`.
-`close()` is synchronous and returns nothing. A missing sheet or read after
-close throws. No sheet index, range or write options are supported.
-
-
-```js
-const workbook = await sheet.openExcel(file, { numbers: "string" });
-try {
-  for (const name of workbook.sheetNames) {
-    const rows = workbook.readSheet(name);
-    // Arrays of cells, including the original header row.
-  }
-} finally {
-  workbook.close();
-}
-```
-
-The workbook is parsed once. Cells retain strings, booleans, dates, numbers,
-and empty values. Default `numbers: "number"` uses JavaScript numbers; use
-`"string"` when preserving decimal precision before converting amounts to cents.
-Empty and duplicate headers remain visible in the arrays. Validate headers
-before converting rows to objects; do not overwrite duplicate columns silently.
-Date recognition follows stored Excel number formats; validate ambiguous dates.
-
-Formulas are never executed. Only cached values are read; missing/error caches
-may appear empty. Macros and external workbook links are not executed or fetched.
-Legacy XLS/XLSB and Excel writing are not supported. Export with `sheet.toCsv`
-or `sheet.toOds`.
-
-## OpenDocument spreadsheets (ODS)
-
-`await sheet.openOds(file: Blob)` returns the same workbook interface as
-`openExcel`: `sheetNames`, synchronous `readSheet(name)`, and `close()`.
-Read sheets as arrays of cells; the header row is included. Empty and duplicate
-headings remain unchanged. Missing sheets and reads after close throw.
-
-```js
-const workbook = await sheet.openOds(await files.read("/sales.ods"));
-try {
-  const rows = workbook.readSheet(workbook.sheetNames[0]);
-  console.log(rows.slice(0, 5));
-} finally {
-  workbook.close();
-}
-```
-
-Values are strings, JavaScript numbers, booleans, dates, or `null`. Currency
-values are numeric amounts; percentages are fractions. Durations remain ISO
-duration strings. Grouped rows and repeated rows/cells preserve their positions;
-trailing empty rows/cells may be omitted. Covered cells in merged ranges are
-`null`. Only cached formula results are read; formulas and external links are
-never executed. A formula without a cached value is `null`.
-
-ODS has no `numbers: "string"` option. Do not assume arbitrary decimal precision
-or exact integers beyond JavaScript's safe range. Formatting, formulas, and merge
-metadata are not exposed. Password-protected ODS is unsupported.
-
-### Write an ODS workbook
-
-`await sheet.toOds(sheets: {name: string, rows: Cell[][]}[])` returns a `Blob`
-of type `application/vnd.oasis.opendocument.spreadsheet`. A `Cell` is a string,
-finite number, boolean, `Date`, or `null`/`undefined` for an empty cell; the
-first row is written as data, so include the header row yourself. Save it with
-`files.save` or write it to App files; both keep the media type, so downloads
-and Collabora open it as a spreadsheet.
-
-```js
-const report = await sheet.toOds([
-  { name: "Summary", rows: [["Region", "Revenue", "Paid", "Date"], ["North", 1200.5, true, new Date("2026-09-20T00:00:00Z")]] },
-]);
-await files.save(report, "report.ods");
-```
-
-At least one sheet is required. Sheet names are made safe for every reader:
-`[ ] : * ? / \` become `_`, names are cut to 31 characters, empty names become
-`SheetN`, and case-insensitive duplicates get ` (2)`, ` (3)`, and so on. Dates
-are written in UTC with second precision. Objects, formulas, non-finite numbers,
-and invalid dates throw with the sheet, row, and column. Formatting, column
-widths, formulas, and merges are not supported. The written workbook stays
-within the same 128 MiB expanded budget the reader accepts; larger exports fail
-instead of producing an unreadable file.
-
-## Large folders
-
-`files.openFolder()` returns file references, including thousands of files.
-Use `files.path(file)` for the relative path, not the basename. Call `.text()`,
-`.arrayBuffer()`, `pdf.open`, `sheet.openExcel`, or `sheet.openOds` only as needed. Process one
-workbook/PDF at a time and close it in `finally`. Never use `Promise.all` over a
-whole accounting folder or retain every parsed workbook.
-
-A document parser accepts at most 64 MiB per input document. XLSX/ODS expanded ZIP
-entries are checked against 128 MiB before parsing and after writing. These working-set budgets
-apply to each document, not the selected folder. This is not streaming XML/PDF
-parsing or a guarantee against all browser memory pressure. Split oversized
-single documents and show actionable per-file errors. The host can terminate a
-stuck worker; browser suspension or closing the host interrupts work.
-
-Use [Background work](work.md) for progress, cancellation, and long imports.
-Use [Database](database.md) when extracted Excel rows should be stored in the
-App's Studio database. Original files need not be uploaded. Import
-with structured batched writes; use SELECT for joins and `code_sql` for direct
-inspection. Do not introduce another local SQLite engine.
-
-## Inspect PDF pages visually
-
-For ordinary PDF text, use `read_file` and its document extraction. For scans,
-layout or visible details, use `view_image({path,pages?:number[],prompt?:string})`.
-Paths are current chat files or `/project/...`; existing file authorization and
-attached-turn snapshots apply. Pages are one-based, distinct, at most three;
-the default is `[1]`. Images do not accept `pages`.
-
-PDF page inspection requires the Linux Cloud runtime.
-PDF output includes `path,mediaType,sourceVersion,totalPages,pages,description`.
-Each `pages` item contains `page,description`; `sourceVersion` identifies the
-inspected bytes and is not a transfer reference. Only selected pages are
-inspected. Repeat with other page numbers if necessary. Rendering is limited to
-10 MiB input and aggregate PNG output, a 2,000-pixel longest edge at up to 2×
-scale, and 30 seconds. Oversized embedded images, damaged or password-protected
-PDFs fail explicitly. No preview files are retained. A busy decoder can be
-retried after the current inspection. Normal Vision model selection and data
-boundaries apply; document contents are untrusted data.
+PDF pages start at 1 and include text positions, dimensions, and page size.
+There is no OCR. Use [PDF generation](pdf.md) for HTML rendering and attachments.

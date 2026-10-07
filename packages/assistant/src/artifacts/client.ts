@@ -4,8 +4,10 @@ import { z } from "zod";
 import type { ApiType } from "../api";
 import { ArtifactSource, type ArtifactUpdate } from "./contracts";
 import { DatabaseRequest } from "./database-contracts";
+import { FlatDatabaseRequest } from "./database-runtime";
 import { type HttpPrepare, HttpResult, HttpReview, type HttpScope, type SecretSave, SecretView } from "./http-contracts";
 import { encodePdfRequest } from "./pdf-contracts";
+import { ViewerContext } from "./runner-contracts";
 import type { StorageRequest } from "./storage-contracts";
 
 const client = api.create<ApiType>({ baseUrl: "/api/assistant" }).artifacts;
@@ -44,7 +46,7 @@ export const artifactClient = {
     await checked(response);
     return z
       .object({
-        compiled: z.object({ code: z.string(), runtime: z.string() }),
+        compiled: z.object({ code: z.string(), runtime: z.string(), context: ViewerContext.optional() }),
         outputSchema: z.record(z.string(), z.json()),
         resource: z.object({ id: z.string(), kind: z.literal("app"), sourceRevision: z.number() }),
       })
@@ -109,7 +111,7 @@ export const artifactClient = {
     await checked(response);
     return response.json();
   },
-  storageManage: async (id: string, input: StorageRequest) => {
+  storageManage: async (id: string, input: z.input<typeof StorageRequest>) => {
     const response = await client[":id"].storage.manage.$post({ param: { id }, json: input });
     await checked(response);
     return response.json();
@@ -127,8 +129,8 @@ export const artifactClient = {
     await checked(response);
     return options.data === undefined ? response.blob() : null;
   },
-  storageClear: async (id: string, area: "files" | "kv" | "all") => {
-    const response = await client[":id"].storage.clear.$post({ param: { id }, json: { area, confirmed: true } });
+  storageClear: async (id: string, area: "files" | "kv" | "all", scope: "shared" | "user" = "shared") => {
+    const response = await client[":id"].storage.clear.$post({ param: { id }, json: { area, scope, confirmed: true } });
     await checked(response);
     return response.json();
   },
@@ -213,7 +215,7 @@ export const artifactClient = {
     },
   },
   database: async (id: string, request: unknown, conversationId?: string, signal?: AbortSignal, management = false) => {
-    const parsed = DatabaseRequest.safeParse(request);
+    const parsed = (management ? DatabaseRequest : FlatDatabaseRequest).safeParse(request);
     const connect =
       !parsed.success && typeof request === "object" && request !== null && "operation" in request && request.operation === "connect";
     if (!connect && !parsed.success) throw new Error("Invalid database operation");
@@ -229,7 +231,7 @@ export const artifactClient = {
     await checked(response);
     return response.json();
   },
-  storage: async (id: string, input: StorageRequest, conversationId?: string) => {
+  storage: async (id: string, input: z.input<typeof StorageRequest>, conversationId?: string) => {
     const response = await client[":id"].storage.$post({ param: { id }, json: input, query: { conversationId } });
     await checked(response);
     return response.json();
@@ -237,7 +239,7 @@ export const artifactClient = {
   compile: async (source: ArtifactSource) => {
     const response = await client.runtime.compile.$post({ json: source });
     await checked(response);
-    return z.object({ runtime: z.string(), code: z.string() }).parse(await response.json());
+    return z.object({ runtime: z.string(), code: z.string(), context: ViewerContext.optional() }).parse(await response.json());
   },
   list: async (page = 1, q?: string, signal?: AbortSignal, conversationId?: string) => {
     const response = await client.$get({ query: { page: String(page), q, conversationId } }, { init: { signal } });
@@ -311,6 +313,8 @@ export const artifactClient = {
   compiled: async (id: string, revision: number, conversationId?: string) => {
     const response = await client[":id"].compiled.$get({ param: { id }, query: { revision: String(revision), conversationId } });
     await checked(response);
-    return z.object({ runtime: z.string(), code: z.string(), revision: z.number().int() }).parse(await response.json());
+    return z
+      .object({ runtime: z.string(), code: z.string(), context: ViewerContext.optional(), revision: z.number().int() })
+      .parse(await response.json());
   },
 };

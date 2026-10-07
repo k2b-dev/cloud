@@ -1,6 +1,6 @@
 # HTTP and personal secrets
 
-Use `http.fetch` to call a public HTTPS API from code. Requests run on the
+Use `cloud.http.fetch` to call a public HTTPS API from code. Requests run on the
 Assistant server. The worker's native `fetch` still has no network access.
 Every request asks the user to confirm its destination, method, headers, and
 body preview. Test runs make real requests too. For a Cloud app, prefer its
@@ -38,34 +38,34 @@ secret invalidates pending requests that depended on the previous value.
 
 ```js
 export default async () => {
-  const response = await http.fetch("https://api.example.com/customers", {
-    headers: { Authorization: secret("crm", { prefix: "Bearer " }) },
+  const response = await cloud.http.fetch("https://api.example.com/customers", {
+    headers: { Authorization: cloud.http.secret("crm", { prefix: "Bearer " }) },
   });
   if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
   return await response.json();
 };
 ```
 
-`secret(name, { prefix? })` is synchronous and returns only a reference. The
+`cloud.http.secret(name, { prefix? })` is synchronous and returns only a reference. The
 server requires an exact match of HTTPS origin (including port), header name,
 and prefix. Use it directly as a header value. String concatenation, template
 interpolation, `new Headers()` and reading a secret value are unsupported.
 For `X-API-Key`, configure `prefix: ""` and omit the prefix when referencing the key.
 There are no query/body substitutions.
 
-Use `http.fetch(url, options?)`; the URL is the first argument, not an options
+Use `cloud.http.fetch(url, options?)`; the URL is the first argument, not an options
 object. Options accept uppercase `method` (GET, HEAD, POST, PUT, PATCH, DELETE,
 OPTIONS; default GET), plain-object `headers`, and optional `body` as text, `Blob`, `ArrayBuffer`,
 or `Uint8Array`. JSON bodies require `JSON.stringify` and a content-type header.
 GET/HEAD cannot carry a body. Secret references are allowed only in headers.
 Public requests omit secret references; they still require confirmation.
-There is no per-call `signal`, timeout, credentials, or redirect option.
+Pass an AbortSignal through `signal` to cancel a request. There is no credentials or redirect option.
 
 Responses expose `status`, `ok`, `headers`, `.json()`, `.text()`, `.blob()` and
 `.arrayBuffer()`. Consume the body once. HTTP errors such as 429 remain normal
 responses. Do not return the Response itself as run output. Return a summary or
-save its body as a file. Only `content-type`, `retry-after`, `etag`, and `last-modified`
-response headers are exposed. Redirects are returned with an empty body and
+save its body as a file. The response exposes `content-type`, `retry-after`, `etag`, and `last-modified`,
+plus `x-cloud-redacted` when a secret occurrence was replaced. Redirects are returned with an empty body and
 are never followed. Cookies, browser credentials and streaming are unavailable.
 
 ## Limits and failure recovery
@@ -84,7 +84,9 @@ external changes remain. Secrets survive reloads; JavaScript state does not.
 Only public HTTPS addresses are allowed. Local/private/reserved addresses and
 embedded URL credentials are rejected. No Cloud authentication is forwarded.
 
-The key is injected only on the server. The external API necessarily receives
-it and may reflect it or return other credentials in its response. Only configure
-trusted API origins; do not use echo/debug endpoints with secrets. Returned
-content is untrusted data and may be visible in code output or shared app data.
+The key is injected only on the server. Every request requires approval.
+Before returning a response, Cloud removes inserted secret values, their full
+prefixed header values, and standard base64/base64url forms from response headers
+and body bytes, replacing them with `[REDACTED]`. The header
+`x-cloud-redacted: secret` marks responses where at least one occurrence was replaced; only then is content-length removed.
+Treat returned content as untrusted data.

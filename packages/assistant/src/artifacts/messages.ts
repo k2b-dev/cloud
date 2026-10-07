@@ -80,7 +80,7 @@ export const artifactMessages = i18n.define({
       databaseCleanupQueued: "The resource is deleted. Its database is queued for cleanup; failed attempts are retried automatically.",
       DB_RESULT_TOO_LARGE: "SQL result is too large for a tool response. Select fewer columns or add a smaller LIMIT.",
       DB_NOT_CONFIGURED: "Databases are not available in this Cloud instance. Ask an administrator to configure the rsql server and token.",
-      DB_NOT_CONNECTED: "Call database.connect() before using the database.",
+      DB_NOT_CONNECTED: "Create a table with code_database before using the app database.",
       DB_SERVER_IN_USE: "This server still owns app databases or pending cleanup. It cannot be replaced or cleared yet.",
 
       projects: "Projects",
@@ -90,7 +90,7 @@ export const artifactMessages = i18n.define({
         "Members of these projects can use this published Studio App and its shared app data. Editing permissions stay unchanged.",
       add: "Add",
       administration: "Studio administration",
-      storageHelp: "Counts cover shared server storage. Browser-local files and KV cannot be counted or removed remotely.",
+      storageHelp: "Shared storage counts cover server files and JSON. Personal JSON is shown only to its owner.",
       testConnection: "Test connection",
       connectionReady: "Connection successful",
       clearSettings: "Remove connection",
@@ -278,7 +278,7 @@ export const artifactMessages = i18n.define({
       DB_RESULT_TOO_LARGE: "Das SQL-Ergebnis ist zu groß für eine Tool-Antwort. Wähle weniger Spalten oder ein kleineres LIMIT.",
       DB_NOT_CONFIGURED:
         "Datenbanken sind in dieser Cloud-Instanz nicht verfügbar. Ein Administrator muss zuerst den rsql-Server und das Token konfigurieren.",
-      DB_NOT_CONNECTED: "Rufe vor dem Datenbankzugriff database.connect() auf.",
+      DB_NOT_CONNECTED: "Lege vor dem Datenbankzugriff eine Tabelle mit code_database an.",
       DB_SERVER_IN_USE:
         "Dieser Server enthält noch App-Datenbanken oder ausstehende Bereinigungen und kann noch nicht ersetzt oder geleert werden.",
 
@@ -289,8 +289,7 @@ export const artifactMessages = i18n.define({
         "Mitglieder dieser Projekte können die veröffentlichte Studio App und ihre geteilten App-Daten nutzen. Bearbeitungsrechte bleiben unverändert.",
       add: "Hinzufügen",
       administration: "Studio-Administration",
-      storageHelp:
-        "Die Zahlen zeigen den gemeinsamen Serverspeicher. Lokale Browser-Dateien und KV lassen sich nicht zentral zählen oder löschen.",
+      storageHelp: "Die Zahlen zeigen gemeinsame Server-Dateien und JSON. Persönliches JSON sieht nur die jeweilige Person.",
       testConnection: "Verbindung prüfen",
       connectionReady: "Verbindung erfolgreich",
       clearSettings: "Verbindung entfernen",

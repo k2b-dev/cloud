@@ -63,7 +63,7 @@ databaseSuite()("Scheduled Code Mode", () => {
       expect(interactive).toMatchObject({ status: "done", result: { status: "ready", output: '{"marker":null}' } });
       const denied = await run(
         delivered.turnId,
-        'export default async()=>{try {await http.fetch("https://example.com/"); return "unexpected";} catch(e) {return String(e);}}',
+        'export default async()=>{try {await cloud.http.fetch("https://example.com/"); return "unexpected";} catch(e) {return String(e);}}',
       );
       expect(JSON.stringify(denied)).toContain("access denied");
       const pendingHttp = HttpPrepare.parse({
