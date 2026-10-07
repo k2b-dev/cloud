@@ -5,6 +5,7 @@ import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infr
 import "../../../../scripts/fixtures/authorization-preload";
 import type { User } from "../contracts";
 import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { aiChatTasks } from "./chat-tasks";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
@@ -14,6 +15,7 @@ import { aiProjects } from "./projects";
 import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
 import { listPendingAiTurnActions } from "./runtime";
+import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
@@ -345,6 +347,110 @@ suite("AI executor integration", () => {
       completionQueue = [];
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
+    const userId = await insertUser();
+    const owner = { type: "user" as const, userId };
+    // The integration bootstrap seeds the built-in Skills; every signed-in user can read skill-creator.
+    const creator = (await aiSkills.list(owner)).find((candidate) => candidate.name === "skill-creator");
+    if (!creator?.enabled) throw new Error("Expected the seeded skill-creator to be enabled for a new user");
+    const skill = await aiSkills.create({
+      subject: owner,
+      name: `weekly-report-${crypto.randomUUID().slice(0, 8)}`,
+      description: "Write the weekly sales report.",
+      instructions: "Summarize the week.",
+    });
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const prompts = new Map<string, string>();
+    const runTurn = async (label: string, turnId: string) => {
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId,
+        leaseOwner: `${label}-skills-exec`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      nextCompletion = textCompletion("Done");
+      onCompletionRequest = (body) => {
+        prompts.set(label, JSON.stringify(body));
+      };
+      await createExecutor(`${label}-skills-exec`, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+    };
+
+    try {
+      const runConfig: AiChatTurnRunConfig = {
+        kind: "chat",
+        input: "Weekly report",
+        actor: { kind: "user", user: actorUser(userId) },
+        toolSource: { kind: "default" },
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig,
+        userMessage: userMessage("Weekly report"),
+      });
+      await runTurn("interactive", turn.id);
+
+      const task = (await aiChatTasks.create({
+        userId,
+        chatId: conversation.shortId,
+        prompt: "Weekly report",
+        schedule: { kind: "cron", cron: "0 9 * * 1" },
+        timezone: "UTC",
+      }))!;
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: new Date().toISOString(),
+        trigger: "manual",
+        requestKey: `prompt:${task.id}`,
+      }))!;
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { ...runConfig, input: task.prompt },
+        userMessage: userMessage(task.prompt),
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Expected the scheduled run to start");
+      await runTurn("background", delivered.turnId);
+
+      const interactive = prompts.get("interactive") ?? "";
+      const background = prompts.get("background") ?? "";
+      for (const prompt of [interactive, background]) {
+        expect(prompt).toContain("# Skills");
+        expect(prompt).toContain(skill.name);
+      }
+      expect(interactive).toContain("Recurring work: a request is likely to recur");
+      expect(interactive).toContain("load skill-creator and draft from this conversation");
+      expect(background).not.toContain("Recurring work:");
+
+      // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
+      expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
+      const { turn: withoutCreator } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig,
+        userMessage: userMessage("Weekly report"),
+      });
+      await runTurn("without-creator", withoutCreator.id);
+      const withoutCreatorPrompt = prompts.get("without-creator") ?? "";
+      expect(withoutCreatorPrompt).toContain("# Skills");
+      expect(withoutCreatorPrompt).toContain(skill.name);
+      expect(withoutCreatorPrompt).not.toContain("Recurring work:");
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await aiSkills.delete(skill.id, owner);
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });

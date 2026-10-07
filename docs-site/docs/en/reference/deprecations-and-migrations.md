@@ -10,6 +10,19 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Assistant offers Skills for recurring work
+
+In chats a person follows, Assistant now recognizes recurring work and may
+offer once to save the approach as a personal Skill; the Skill draft keeps
+procedure and format and leaves out chat content, names, amounts, and resource
+IDs other than a Studio App the Skill calls. The offer appears only while
+`skill-creator` is enabled for the user. The built-in `skill-creator` template
+moves to version 3. An unmodified installation updates at the next start. A
+customized copy keeps its content and shows **Update available** under
+**Admin > AI > Skills** until an administrator resets it. No setting changes.
+Scheduled task runs are unaffected. See
+[Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
+
 ## Assistant offers code tools in every turn and says why a tool is missing
 
 Every Assistant turn with the default tool source now offers the server-run code

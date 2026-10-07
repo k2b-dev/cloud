@@ -1079,6 +1079,8 @@ export class AiTurnExecutor {
       memory: memory?.text,
       timeZone,
       locale: promptLocale,
+      interactive: !config.background,
+      skillCreatorAvailable: availableSkills.some((skill) => skill.name === "skill-creator"),
     });
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
