@@ -5,6 +5,7 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "core",
+  platformPermissions: ["mail:send"],
   cli: {
     account: { module: "src/cli/account.ts", references: "src/cli-references/account" },
     admin: { module: "src/cli/admin.ts", references: "src/cli-references/admin" },

@@ -1,5 +1,6 @@
 import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog, AppSearchLink } from "./app";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
+import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
 
@@ -65,6 +66,7 @@ export type AppRuntimeMetadata = {
 };
 
 export type AppRegistryEntry = {
+  platformPermissions?: readonly PlatformPermission[];
   id: string;
   name: string;
   icon: string;

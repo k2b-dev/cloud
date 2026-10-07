@@ -190,6 +190,17 @@
         "It includes truthful pagination and complete serialized-result limits in verification, and keeps Assistant skill guidance task-oriented.",
         "It does not implement or commit the planned changes."
       ]
+    },
+    {
+      "id": 17,
+      "prompt": "Our inventory application needs to discover available outgoing mail senders. Implement the supported server path without configuring app-owned SMTP.",
+      "expected_output": "Declares platformPermissions: [\"mail:send\"], waits for app.start(), then calls mail.profiles() from @k2b/cloud/services and handles default, selected, empty and error results.",
+      "files": [],
+      "expectations": [
+        "The application declares mail:send and uses the public mail service.",
+        "Identity comes from app.start(); callers cannot supply another application id.",
+        "SMTP credentials stay out of application-facing results and app-owned SMTP configuration."
+      ]
     }
   ]
 }

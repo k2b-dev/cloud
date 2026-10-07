@@ -27,7 +27,6 @@ import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
 import { validateFreeIpaCaCert } from "../services/freeipa-config";
 import { testFreeIpaConnection } from "../services/ipa/connection";
-import { sendEmail } from "../services/notifications/email";
 import { GotenbergRenderError, testGotenberg } from "../services/pdf";
 import * as settings from "../services/settings";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
@@ -43,10 +42,6 @@ const BulkSaveSchema = z.union([
     .strict(),
   z.record(z.string(), z.unknown()).transform((updates) => ({ updates, resets: [] as string[] })),
 ]);
-const TestEmailSchema = z.object({
-  recipient: z.email(),
-});
-
 const LEGAL_DOCUMENTS = [
   { kind: "terms", path: "/legal/terms" },
   { kind: "privacy", path: "/legal/privacy" },
@@ -293,24 +288,6 @@ const app = new Hono<AuthContext>()
   })
   .delete("/legacy", auth.requireRole("admin"), async (c) => {
     return c.json(await settingsDeleteLegacyKeys(await liveSettingKeys()));
-  })
-  .post("/test-email", auth.requireRole("admin"), v("json", TestEmailSchema), async (c) => {
-    const { recipient } = c.req.valid("json");
-    const sentAt = new Date().toISOString();
-
-    try {
-      await sendEmail(recipient, "Cloud test email", {
-        rawHtml: `
-          <p>This is a test email from Cloud.</p>
-          <p>If you received this message, SMTP delivery is configured correctly.</p>
-          <p style="margin-top:24px;color:#71717a;font-size:12px;">Sent at ${sentAt}</p>
-        `,
-      });
-      return c.json({ ok: true });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to send test email";
-      return c.json({ message }, 500);
-    }
   })
   .post("/run-ai-enrichment", auth.requireRole("admin"), async (c) => {
     try {

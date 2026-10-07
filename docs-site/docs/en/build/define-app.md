@@ -216,6 +216,7 @@ The remaining options declare application-owned contributions:
 | Option | Contribution | Reference |
 | --- | --- | --- |
 | `settings` | Typed runtime configuration | [Settings](/en/docs/platform/settings) |
+| `platformPermissions` | Requested platform permissions; `["mail:send"]` for outgoing mail | [Outgoing mail](/en/docs/platform/outgoing-mail) |
 | `notifications` | Notification definitions the application may send | [Notifications](/en/docs/platform/notifications) |
 | `widgets` | Dashboard widget endpoints | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |
 | `legalLinks` | Application-owned legal and information links | — |

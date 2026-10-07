@@ -1567,3 +1567,11 @@ See [Context command shortcuts](/en/docs/platform/search#context-command-shortcu
 The portable UI package no longer exports `isSpotlightShortcut` or
 `SPOTLIGHT_SHORTCUT*` constants. `SpotlightButton` has no implicit shortcut
 label. Supply `shortcutLabel` only when the host actually owns that binding.
+
+## Outgoing mail sender profiles
+
+The `mail.noreply.*` setting definitions and `/api/admin/core/settings/test-email`
+route are replaced by outgoing mail profiles and the per-profile test route.
+Core imports configured legacy SMTP settings automatically.
+See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for the upgrade
+and rollback rules.

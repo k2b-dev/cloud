@@ -126,7 +126,6 @@ type Props = {
   entries: SettingFieldDef[];
   accountSection?: "sign-in" | "registration";
   approvalState?: ApprovalAvailability;
-  showTestEmailAction?: boolean;
   showTestPdfAction?: boolean;
   showTestFreeIpaAction?: boolean;
   showLegacySettings?: boolean;
@@ -494,13 +493,6 @@ export default function CoreSettingsForm(props: Props) {
     },
   });
 
-  const openTestEmailDialog = () => {
-    void prompts.dialog<void>((close) => <TestEmailDialog close={close} />, {
-      title: t().sendTestEmail,
-      icon: "ti ti-mail-check",
-    });
-  };
-
   const testPdf = mutations.create<{ bytes: number; contentType: string }, void>({
     mutation: async () => {
       const response = await coreClient.admin.core.settings["test-pdf"].$post();
@@ -552,14 +544,6 @@ export default function CoreSettingsForm(props: Props) {
 
   const headerActions = () => (
     <>
-      <Show when={props.showTestEmailAction}>
-        <Tooltip.Anchor content={hasChanges() ? t().testEmailPending : t().testEmailSaved}>
-          <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={openTestEmailDialog} disabled={hasChanges()}>
-            <i class="ti ti-send" /> {t().testEmail}
-          </Button>
-        </Tooltip.Anchor>
-      </Show>
-
       <Show when={props.showTestPdfAction}>
         <Tooltip.Anchor content={hasChanges() ? t().testPdfPending : t().testPdfSaved}>
           <Button
@@ -632,7 +616,7 @@ export default function CoreSettingsForm(props: Props) {
       actions={
         <>
           <DocumentationLink base={props.documentationBase} topic={props.documentationTopic ?? ""} />
-          {props.showTestEmailAction || props.showTestPdfAction || props.showTestFreeIpaAction ? headerActions() : undefined}
+          {props.showTestPdfAction || props.showTestFreeIpaAction ? headerActions() : undefined}
         </>
       }
       footer={
@@ -679,7 +663,7 @@ export default function CoreSettingsForm(props: Props) {
         </NoticeCard>
       </Show>
 
-      <Show when={props.showTestEmailAction || props.showTestPdfAction || props.showTestFreeIpaAction}>
+      <Show when={props.showTestPdfAction || props.showTestFreeIpaAction}>
         <NoticeCard tone="info" title={t().testsUseSaved} detail={t().testsUseSavedDescription} />
       </Show>
 
@@ -805,11 +789,6 @@ const sectionDefs = (
     subtitle: t.syncPolicyDescription,
     icon: "ti ti-refresh",
   },
-  "mail.smtp": {
-    title: t.smtpDelivery,
-    subtitle: t.smtpDeliveryDescription,
-    icon: "ti ti-mail",
-  },
   "mail.templates": {
     title: t.templates,
     subtitle: t.templatesDescription,
@@ -870,7 +849,6 @@ const sectionIdForEntry = (entry: SettingFieldDef): string => {
   if (entry.key.startsWith("freeipa.")) return "freeipa.connection";
 
   if (entry.kind === "template") return "mail.templates";
-  if (entry.key.startsWith("mail.")) return "mail.smtp";
 
   if (entry.key.startsWith("gotenberg.max_") || entry.key === "gotenberg.timeout_ms") return "gotenberg.limits";
   if (entry.key.startsWith("gotenberg.")) return "gotenberg.connection";
@@ -908,75 +886,6 @@ const formatSettingPreview = (entry: SettingFieldDef, value: unknown, t: ReturnT
   if (!text) return t.empty;
   return text.length > 96 ? `${text.slice(0, 93)}...` : text;
 };
-
-function TestEmailDialog(props: { close: () => void }) {
-  const locale = useLocale();
-  const t = () => settingsMessages.resolve([locale()]).t;
-  const [recipient, setRecipient] = createSignal("");
-
-  const send = mutations.create<void, void>({
-    mutation: async () => {
-      const email = recipient().trim();
-      if (!email) throw new Error(t().recipientRequired);
-
-      const response = await coreClient.admin.core.settings["test-email"].$post({ json: { recipient: email } });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        const message =
-          body && typeof body === "object" && "message" in body && typeof body.message === "string"
-            ? body.message
-            : t().testEmailFailed({ status: response.status });
-        throw new Error(message);
-      }
-    },
-    onSuccess: () => {
-      props.close();
-      void prompts.dialog<void>(
-        (close) => (
-          <div class="flex flex-col gap-4">
-            <p class="text-sm text-secondary">{t().testEmailDelivered}</p>
-            <div class="flex justify-end">
-              <Button type="button" size="sm" onClick={() => close()}>
-                {t().close}
-              </Button>
-            </div>
-          </div>
-        ),
-        { title: t().testEmailSent, icon: "ti ti-check" },
-      );
-    },
-    onError: (e) => prompts.error(e.message),
-  });
-
-  return (
-    <form
-      class="flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        send.mutate();
-      }}
-    >
-      <TextInput
-        label={t().recipientEmail}
-        description={t().recipientEmailDescription}
-        type="email"
-        required
-        value={recipient}
-        onValueChange={setRecipient}
-        placeholder="you@example.org"
-      />
-
-      <div class="flex justify-end gap-2">
-        <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={send.loading()}>
-          {t().cancel}
-        </Button>
-        <Button type="submit" size="sm" loading={send.loading()} loadingLabel={t().sending}>
-          <i class={send.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} /> {t().send}
-        </Button>
-      </div>
-    </form>
-  );
-}
 
 const providerOption = (provider: AiProviderId) => AI_PROVIDER_OPTIONS.find((option) => option.id === provider) ?? AI_PROVIDER_OPTIONS[0]!;
 const defaultDataBoundary = (provider: AiProviderId): AiDataBoundary =>

@@ -25,6 +25,7 @@ import { logCommands } from "./logs";
 import { metricsCommands } from "./metrics";
 import { natsCommands } from "./nats";
 import { notificationCommands } from "./notifications";
+import { outgoingMailCommands } from "./outgoing-mail";
 import { syncCommands } from "./sync";
 import { telemetryCommands } from "./telemetry";
 import { webhookCommands } from "./webhooks";
@@ -55,6 +56,9 @@ export default defineCliCommands({
     "nats consumers": "Inspect NATS consumers.",
     "nats streams": "Find NATS streams and buckets.",
     "notification-batches": "Manage account notification batches.",
+    "outgoing-mail": "Manage outgoing mail sender profiles and application access.",
+    "outgoing-mail profiles": "Manage outgoing mail sender profiles.",
+    "outgoing-mail apps": "Manage application outgoing mail access.",
     notifications: "Inspect and resend email notifications.",
     postgres: "Inspect Postgres diagnostics.",
     redis: "Inspect Valkey diagnostics.",
@@ -96,6 +100,7 @@ export default defineCliCommands({
     ...workflowCommands,
     ...dataCommands,
     ...notificationCommands,
+    ...outgoingMailCommands,
     ...webhookCommands,
     ...metricsCommands,
     ...natsCommands,

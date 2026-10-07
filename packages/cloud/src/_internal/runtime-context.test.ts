@@ -131,3 +131,12 @@ describe("buildRuntimeFromRegistry", () => {
     });
   });
 });
+
+it("copies platform permissions into runtime metadata", () => {
+  const app = entry();
+  app.platformPermissions = ["mail:send"];
+  const runtime = buildRuntimeFromRegistry([app]);
+  expect(runtime.apps[0]?.platformPermissions).toEqual(["mail:send"]);
+  expect(runtime.apps[0]?.platformPermissions).not.toBe(app.platformPermissions);
+  expect(buildRuntimeFromRegistry([entry()]).apps[0]?.platformPermissions).toBeUndefined();
+});

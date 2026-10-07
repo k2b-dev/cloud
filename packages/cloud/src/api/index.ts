@@ -29,6 +29,7 @@ import adminCoreSettingsRoutes from "./admin-core-settings";
 import adminIdentityRoutes from "./admin-identity";
 import adminLifecycleRoutes from "./admin-lifecycle";
 import adminLinuxIdentityRoutes from "./admin-linux-identities";
+import adminOutgoingMailRoutes from "./admin-outgoing-mail";
 import adminRailRoutes from "./admin-rail";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
 import { createAppApprovalRoutes } from "./app-approval";
@@ -77,6 +78,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/ai-projects", adminAiProjectsRoutes)
     .route("/admin/core/ai-skills", adminAiSkillsRoutes)
     .route("/admin/core/announcements", adminAnnouncementRoutes)
+    .route("/admin/core/outgoing-mail", adminOutgoingMailRoutes)
     .route("/admin/core/settings", adminCoreSettingsRoutes)
     .route("/admin/core/rail", adminRailRoutes)
     .route("/admin/core/linux-identities", adminLinuxIdentityRoutes)

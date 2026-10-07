@@ -17,3 +17,7 @@ test("GOTENBERG_URL bootstraps and backs the gotenberg.url setting", () => {
   expect(setting.envBootstrap()).toBeUndefined();
   expect(setting.envFallback()).toBeUndefined();
 });
+
+test("outgoing mail SMTP settings are no longer registered", () => {
+  expect(Object.keys(CORE_SETTINGS).filter((key) => key.startsWith("mail.noreply."))).toEqual([]);
+});

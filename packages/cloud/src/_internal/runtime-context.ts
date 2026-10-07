@@ -15,6 +15,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
     const searchTags = searchQueries?.flatMap((query) => query.universalSearch!.tags.flatMap((tag) => [tag.tag, ...(tag.aliases ?? [])]));
     return {
       id: e.id,
+      platformPermissions: e.platformPermissions ? [...e.platformPermissions] : undefined,
       name: e.name,
       icon: e.icon,
       description: e.description,

@@ -136,7 +136,11 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
  */
 export const allKnownKeys = (): string[] => SETTINGS.map((d) => d.key);
 
-const knownKeysWith = (extraKnownKeys: readonly string[]) => Array.from(new Set([...allKnownKeys(), ...extraKnownKeys]));
+// Retain the prior SMTP configuration for one release so operators can roll back.
+const retainedLegacyKeys = ["smtp_host", "smtp_port", "from", "user", "password"].map((key) => `mail.noreply.${key}`);
+
+const knownKeysWith = (extraKnownKeys: readonly string[]) =>
+  Array.from(new Set([...allKnownKeys(), ...retainedLegacyKeys, ...extraKnownKeys]));
 
 export const listLegacyKeys = async (extraKnownKeys: readonly string[] = []): Promise<LegacySettingRow[]> => {
   const knownKeys = knownKeysWith(extraKnownKeys);

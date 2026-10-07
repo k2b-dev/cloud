@@ -106,6 +106,7 @@ log.info("Import completed", { itemCount: 42 });
 Use the capability guide to choose the narrow API:
 
 - [Settings](/en/docs/platform/settings)
+- [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()` from `@k2b/cloud/services`, with `MailProfile` and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging)
 - [App capabilities](/en/docs/platform/capabilities)

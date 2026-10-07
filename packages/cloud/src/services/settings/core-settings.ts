@@ -672,43 +672,6 @@ export const CORE_SETTINGS = {
     description: "Account request denial email template (HTML). Subject: Account Request Update",
     templateVars: ["FIRST_NAME", "REASON", "CONTACT_EMAIL", "APP_NAME"] as readonly string[],
   },
-  "mail.noreply.smtp_host": {
-    kind: "string",
-    label: "SMTP Host",
-    default: "",
-    description: "SMTP server hostname",
-    placeholder: "e.g. smtp.example.org",
-  },
-  "mail.noreply.smtp_port": {
-    kind: "number",
-    label: "SMTP Port",
-    default: 587,
-    min: 1,
-    max: 65535,
-    description: "SMTP server port (587 for STARTTLS, 465 for SSL)",
-  },
-  "mail.noreply.from": {
-    kind: "email",
-    label: "From Address",
-    default: "",
-    description: "From email address",
-    placeholder: "e.g. noreply@example.org",
-  },
-  "mail.noreply.user": {
-    kind: "string",
-    label: "SMTP User",
-    default: "",
-    description: "SMTP username",
-    placeholder: "e.g. noreply@example.org",
-  },
-  "mail.noreply.password": {
-    kind: "secret",
-    label: "SMTP Password",
-    default: "",
-    description: "SMTP password",
-    placeholder: "SMTP password",
-  },
-
   // ── Security ────────────────────────────────────────────────────────────
   "security.rate_limit_per_second": {
     kind: "number",

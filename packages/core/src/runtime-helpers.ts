@@ -28,6 +28,7 @@ import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateEvents } from "./migrate/core/events";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
+import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
@@ -55,6 +56,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
+    { name: "outgoing-mail", run: migrateOutgoingMail },
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
