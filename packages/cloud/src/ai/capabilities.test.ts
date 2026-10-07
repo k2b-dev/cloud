@@ -897,6 +897,21 @@ describe("AI capability catalog", () => {
     expect(searchDescription).toContain("Do not search for them again in this turn");
     expect(searchDescription).not.toContain("temporarily");
     expect(searchDescription).not.toContain("spaces.create");
+    const load = second.find((tool) => tool.def.name === "load_tools");
+    if (!load || load.kind !== "server") throw new Error("load_tools missing");
+    // The provider name the model called it by earlier names the offline operation, too.
+    expect(
+      await load.execute(
+        { names: ["contacts__query__list", "contacts.list"] },
+        { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+      ),
+    ).toMatchObject({
+      loaded: [],
+      unavailable: [
+        { name: "contacts__query__list", reason: "app_offline" },
+        { name: "contacts.list", reason: "app_offline" },
+      ],
+    });
   });
 
   test("restricted conversations cannot discover or load excluded tools, including persisted names", async () => {
@@ -906,6 +921,8 @@ describe("AI capability catalog", () => {
       actor,
       staticTools: [],
       allowedTools: ["contacts.list"],
+      // The executor passes the built-ins that the fixed scope removed.
+      unofferedTools: ["local_bash", "write_file"],
       store: {
         getLoadedTools: async () => persisted,
         loadTools: async ({ names }) => {
@@ -921,14 +938,17 @@ describe("AI capability catalog", () => {
     const load = tools.find((tool) => tool.def.name === "load_tools")!;
     expect(
       await load.execute(
-        { names: ["contacts.create", "spaces.create", "local_bash"] },
+        { names: ["contacts.create", "spaces.create", "contacts__action__create", "local_bash", "write_file", "made_up"] },
         { signal: AbortSignal.timeout(1_000), requestApproval: async () => false, requestClientTool: async <T>() => undefined as T },
       ),
     ).toMatchObject({
       unavailable: [
         { name: "contacts.create", reason: "not_allowed" },
         { name: "spaces.create", reason: "not_allowed" },
-        { name: "local_bash", reason: "unknown" },
+        { name: "contacts__action__create", reason: "not_allowed" },
+        { name: "local_bash", reason: "not_allowed" },
+        { name: "write_file", reason: "not_allowed" },
+        { name: "made_up", reason: "unknown" },
       ],
       loaded: [],
     });

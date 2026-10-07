@@ -629,6 +629,7 @@ export class AiTurnExecutor {
     let resolvedProjectId: string | null = null;
     let chatId = config.chatId ?? "";
     let allowedTools: string[] | null = null;
+    let sourceToolNames: string[] = [];
     try {
       if (config.background && !config.mandate) throw new Error("Background execution requires its task mandate.");
       const [nextMaterial, conversation] = await Promise.all([
@@ -639,6 +640,7 @@ export class AiTurnExecutor {
       if (!conversation) throw new Error("Conversation is no longer available.");
       allowedTools = conversation.allowedTools ?? null;
       const allowed = allowedTools === null ? null : new Set(allowedTools);
+      sourceToolNames = material.tools.map((tool) => tool.def.name);
       if (allowed) material.tools = material.tools.filter((tool) => allowed.has(tool.def.name));
       chatId ||= conversation?.shortId ?? "";
       if (config.project) {
@@ -760,6 +762,12 @@ export class AiTurnExecutor {
           (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
         )
       : [];
+    const offeredToolNames = new Set(activeTools.map((tool) => tool.def.name));
+    // Built-ins that exist but this turn does not offer: client tools without their client, tools a
+    // task cannot use, and tools outside the conversation's fixed scope. load_tools explains each one.
+    const unofferedTools = [
+      ...new Set([...sourceToolNames, ...runtimeTools.map((tool) => tool.def.name), ...CODE_RUNTIME_TOOL_NAMES, "local_bash"]),
+    ].filter((name) => !offeredToolNames.has(name));
     const memoryToolEnabled = activeTools.some((tool) => tool.def.name === "memory");
     const projectToolEnabled = activeTools.some((tool) => tool.def.name === "search_project");
 
@@ -868,7 +876,7 @@ export class AiTurnExecutor {
           actor: capabilityAuthority?.actor ?? toolActor,
           staticTools: activeTools,
           allowedTools,
-          unofferedTools: [...CODE_RUNTIME_TOOL_NAMES, "local_bash"].filter((name) => !activeTools.some((tool) => tool.def.name === name)),
+          unofferedTools,
           runtimeContext: dynamicToolRuntimeContext,
           store: toolStore,
           ...(capabilityAuthority ? { listRegistry: listCapabilities } : {}),

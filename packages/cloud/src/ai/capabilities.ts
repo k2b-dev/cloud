@@ -689,7 +689,7 @@ export const createAiToolResolver =
     actor: RequestActor;
     staticTools: AiRuntimeTool[];
     allowedTools?: readonly string[] | null;
-    /** Built-in tools that exist but that this turn does not offer, such as client tools its client did not declare. */
+    /** Built-in tools that exist but that this turn does not offer, such as client tools its client did not declare or tools outside `allowedTools`. */
     unofferedTools?: readonly string[];
     runtimeContext?: Omit<AiToolPreparationContext, "actor" | "conversationId">;
     store: Pick<AiConversationService, "getLoadedTools" | "loadTools">;
@@ -742,8 +742,17 @@ export const createAiToolResolver =
       ...(input.unofferedTools ?? []),
     ]);
     const unoffered = new Set(input.unofferedTools);
+    // A model may name a loaded operation by the provider name it called it by; app IDs contain no dot.
+    const loadedByProviderName = new Map(
+      persistedLoadedNames.flatMap((id) => {
+        const dot = id.indexOf(".");
+        if (dot < 1) return [];
+        return (["query", "action"] as const).map((kind) => [aiCapabilityToolName(id.slice(0, dot), kind, id.slice(dot + 1)), id] as const);
+      }),
+    );
     // App operation IDs always contain a dot; built-in names never do.
-    const unavailableReason = (name: string): AiToolUnavailableReason => {
+    const unavailableReason = (requested: string): AiToolUnavailableReason => {
+      const name = loadedByProviderName.get(requested) ?? requested;
       if (allowed && outOfScope.has(name) && !allowed.has(name)) return "not_allowed";
       if (unoffered.has(name)) return "not_offered_in_turn";
       if (!name.includes(".")) return "unknown";

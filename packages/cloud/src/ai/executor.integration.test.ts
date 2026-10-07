@@ -1052,6 +1052,67 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("says that a fixed tool scope excludes a built-in", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId, allowedTools: ["read_file"] });
+    const requests: { messages: { role: string; content: unknown }[] }[] = [];
+
+    try {
+      completionQueue = [
+        toolCallCompletion("load-1", "load_tools", { names: ["write_file", "code_run", "code_open", "made_up"] }),
+        textCompletion("This chat cannot write files"),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body as (typeof requests)[number]);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Write a file",
+          chatId: conversation.shortId,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Write a file"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "scoped-load-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+
+      await createExecutor("scoped-load-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+
+      expect(requests).toHaveLength(2);
+      const loadResult = JSON.parse(String(requests[1]!.messages.find((message) => message.role === "tool")?.content));
+      expect(loadResult).toMatchObject({
+        loaded: [],
+        unavailable: [
+          { name: "write_file", reason: "not_allowed" },
+          { name: "code_run", reason: "not_allowed" },
+          { name: "code_open", reason: "not_allowed" },
+          { name: "made_up", reason: "unknown" },
+        ],
+      });
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("does not advertise tool-only Help or memory mutations to a model without tools", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
