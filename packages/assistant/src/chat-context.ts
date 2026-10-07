@@ -1,6 +1,7 @@
 import {
   type AiConversationSkillUse,
   type AiConversationSource,
+  type AiConversationSourceKind,
   type AiConversationWorkingGroup,
   type AiFileStat,
   type AiChatTaskView as AssistantChatTask,
@@ -15,9 +16,10 @@ import {
 import { sql } from "bun";
 import { type ArtifactSummary, artifacts } from "./artifacts/service";
 
-/** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
+/** Snapshot limits: results, files, and apps come from people and stay small; sources and working files can grow. */
 const RESULT_LIMIT = 500;
 const FILE_LIMIT = 500;
+const APP_LIMIT = 500;
 const WORKING_GROUP_LIMIT = 200;
 const LOOSE_WORKING_FILE_LIMIT = 100;
 const SOURCE_PAGE = 100;
@@ -74,6 +76,54 @@ export type AssistantChatContextSnapshot = {
 const runState = (status: string | undefined): "ready" | "error" | "running" | null =>
   status === "ready" || status === "error" || status === "running" ? status : null;
 
+/** An app shows only while the viewer may still read it, and under its current title and icon. */
+const readableSources = (sources: readonly AiConversationSource[], apps: ReadonlyMap<string, ArtifactSummary>) =>
+  sources.flatMap((source) => {
+    if (source.ref?.type !== "assistant.artifact") return [source];
+    const app = apps.get(source.ref.id);
+    return app ? [{ ...source, title: app.title, icon: app.icon ?? source.icon }] : [];
+  });
+
+const appIdsOf = (sources: readonly AiConversationSource[]) =>
+  sources.flatMap((source) => (source.ref?.type === "assistant.artifact" ? [source.ref.id] : []));
+
+/**
+ * One page of the chat's sources for the sidebar's "Load more" and its search, with apps as the viewer may see them.
+ * `null` when the chat does not exist for the viewer.
+ */
+export const loadAssistantChatSources = async (
+  userId: string,
+  chatId: string,
+  query: { q?: string; cursor?: string; limit?: number; kinds?: AiConversationSourceKind[]; observed?: boolean },
+): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number } | null> => {
+  const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
+  if (!conversation) return null;
+  const page = await aiConversations.listConversationSources({
+    conversationId: conversation.id,
+    search: query.q,
+    before: query.cursor,
+    limit: query.limit,
+    kinds: query.kinds,
+    observed: query.observed,
+  });
+  const ids = [...new Set(appIdsOf(page.sources))];
+  const apps = new Map((ids.length ? await artifacts.describe(ids, userId, conversation.id) : []).map((app) => [app.id, app]));
+  return { ...page, sources: readableSources(page.sources, apps) };
+};
+
+/** Apps this chat referenced (built, edited, ran, listed, or opened), newest first, for the Studio overview. */
+const chatAppIds = async (conversationId: string) => {
+  const ids = new Set<string>();
+  let before: string | undefined;
+  do {
+    // The resource type is part of what the search matches, so this lists the chat's app references.
+    const page = await aiConversations.listConversationResources({ conversationId, search: "assistant.artifact", limit: 100, before });
+    for (const resource of page.resources) if (resource.ref.type === "assistant.artifact") ids.add(resource.ref.id);
+    before = page.nextCursor;
+  } while (before && ids.size < APP_LIMIT);
+  return [...ids].slice(0, APP_LIMIT);
+};
+
 const resultSources = async (conversationId: string) => {
   const sources: AiConversationSource[] = [];
   let before: string | undefined;
@@ -93,7 +143,7 @@ export const loadAssistantChatContextSnapshot = async (
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const now = new Date().toISOString();
-  const [delivered, sourcePage, overview, tasks, skills, memories] = await Promise.all([
+  const [delivered, sourcePage, overview, tasks, skills, memories, chatApps] = await Promise.all([
     resultSources(conversation.id),
     aiConversations.listConversationSources({
       conversationId: conversation.id,
@@ -109,14 +159,16 @@ export const loadAssistantChatContextSnapshot = async (
     aiChatTasks.list({ userId, chatId, limit: 100 }),
     aiSkills.listConversationUses(conversation.id),
     aiMemories.listFromConversation(userId, conversation.id),
+    chatAppIds(conversation.id),
   ]);
   const project = conversation.projectId ? await aiProjects.get(conversation.projectId, { type: "user", userId }, "read") : null;
   const projectRefs = project ? await aiProjects.listReferences(project.id, { type: "user", userId }) : [];
-  const resultAppIds = delivered.sources.flatMap((source) => (source.ref?.type === "assistant.artifact" ? [source.ref.id] : []));
+  const resultAppIds = appIdsOf(delivered.sources);
   const appIds = [
     ...new Set([
       ...resultAppIds,
-      ...sourcePage.sources.flatMap((source) => (source.ref?.type === "assistant.artifact" ? [source.ref.id] : [])),
+      ...chatApps,
+      ...appIdsOf(sourcePage.sources),
       ...projectRefs.flatMap((reference) => (reference.ref.type === "assistant.artifact" ? [reference.ref.id] : [])),
     ]),
   ];
@@ -140,6 +192,8 @@ export const loadAssistantChatContextSnapshot = async (
         ).map((row) => [row.call_id, row]),
       )
     : new Map<string, { id: string; title: string }>();
+  // An upload stays the person's file, also when the assistant hands it over with present.
+  const uploads = new Set(overview.files.flatMap((file) => (file.origin === "user" ? [file.path] : [])));
   const results = delivered.sources.flatMap((source): AssistantChatResult[] => {
     const base = {
       key: source.key,
@@ -151,7 +205,7 @@ export const loadAssistantChatContextSnapshot = async (
     };
     if (source.path) {
       // A result counts only while its file exists.
-      if (source.size === null || source.mediaType === null) return [];
+      if (source.size === null || source.mediaType === null || uploads.has(source.path)) return [];
       return [
         {
           ...base,
@@ -215,12 +269,7 @@ export const loadAssistantChatContextSnapshot = async (
       bytes: overview.workingBytes,
     },
     storage: { usedBytes: overview.usedBytes, maxBytes: overview.maxBytes },
-    // An app shows only while the viewer may still read it, and under its current title.
-    sources: sourcePage.sources.flatMap((source) => {
-      if (source.ref?.type !== "assistant.artifact") return [source];
-      const app = apps.get(source.ref.id);
-      return app ? [{ ...source, title: app.title, icon: app.icon ?? source.icon }] : [];
-    }),
+    sources: readableSources(sourcePage.sources, apps),
     sourceCount: sourcePage.total,
     sourceCursor: sourcePage.nextCursor ?? null,
     tasks: tasks.map(toAiChatTaskView),

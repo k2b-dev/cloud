@@ -15,13 +15,13 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { ContextStudio } from "../artifacts/ContextStudio";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
-import { AssistantChatSidebarTab, type ChatSidebarActions, type ChatSidebarJump } from "./AssistantChatSidebar";
+import { AssistantChatSidebarTab, type ChatSidebarActions, type ChatSidebarJump, createChatSourcePages } from "./AssistantChatSidebar";
 import {
   type AssistantContextFile,
   AssistantContextRow,
@@ -53,6 +53,7 @@ import {
   matchesAssistantInvalidation,
   useAssistantLive,
 } from "./assistant-live";
+import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
 
@@ -119,7 +120,11 @@ export const createAssistantChatContextState = (props: AssistantChatContextQuery
       return assistantApi.loadProjectContext(projectId, abortSignal);
     },
   });
-  let pending: AssistantLiveInvalidation | null = null;
+  /**
+   * The changes of one window load one snapshot. Every change in it settles with that load, so the live updates move
+   * their cursor only after the snapshot reloaded, and try again when it failed.
+   */
+  let batch: { invalidation: AssistantLiveInvalidation; done: Promise<void>; settle: (load: Promise<void>) => void } | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const unregisterChat = live.register({
     matches: (invalidation) =>
@@ -127,14 +132,23 @@ export const createAssistantChatContextState = (props: AssistantChatContextQuery
         invalidation,
       ) &&
       (!invalidation.conversationIds || invalidation.conversationIds.has(props.chatId)),
-    invalidate: async (invalidation) => {
-      pending = invalidation;
-      timer ??= setTimeout(() => {
+    invalidate: (invalidation) => {
+      if (batch) {
+        batch.invalidation = invalidation;
+        return batch.done;
+      }
+      let settle!: (load: Promise<void>) => void;
+      const done = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      batch = { invalidation, done, settle };
+      timer = setTimeout(() => {
+        const current = batch!;
+        batch = null;
         timer = undefined;
-        const next = pending;
-        pending = null;
-        if (next) void snapshot.invalidate(next);
+        current.settle(snapshot.invalidate(current.invalidation));
       }, LIVE_COALESCE_MS);
+      return done;
     },
   });
   const unregisterProject = live.register({
@@ -145,6 +159,8 @@ export const createAssistantChatContextState = (props: AssistantChatContextQuery
   });
   onCleanup(() => {
     if (timer) clearTimeout(timer);
+    // Nothing is left to reload.
+    batch?.settle(Promise.resolve());
     unregisterChat();
     unregisterProject();
   });
@@ -286,6 +302,10 @@ function AssistantChatContextView(
   const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
     null,
   );
+  // The snapshot carries the newest sources; the Sources overview loads older ones on request.
+  const sourcePages = createChatSourcePages(() => props.state.snapshot());
+  const olderSources = createMemo(() => splitAssistantConversationSources(sourcePages.extra()));
+  const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
   return (
     <Show
       when={props.state.context()}
@@ -354,8 +374,10 @@ function AssistantChatContextView(
             });
           }
         };
+        const chatSources = () => [...value().chat.sources, ...olderSources().sources];
+        const chatReferences = () => [...value().chat.references, ...olderSources().references];
         const allReferences = () => [
-          ...visibleAssistantReferences(value().chat.references, value().chat.chatId, value().chat.tasks[0]?.id).map((source) => ({
+          ...visibleAssistantReferences(chatReferences(), value().chat.chatId, value().chat.tasks[0]?.id).map((source) => ({
             kind: "source" as const,
             title: assistantReferenceTitle(source, text),
             description: source.preview || (source.ref ? assistantResourceTypeLabel(source.ref, text) : text("Cloud resource")),
@@ -418,12 +440,12 @@ function AssistantChatContextView(
               when={
                 props.category &&
                 !(props.category === "apps"
-                  ? apps().filter((app) => includes(app.title)).length + value().chat.runs.length
+                  ? value().chat.apps.filter((app) => includes(app.title)).length + value().chat.runs.length
                   : props.category === "files"
                     ? files().filter((file) => includes(file.displayName ?? file.path)).length
                     : props.category === "sources"
                       ? references().filter((item) => includes(item.title)).length +
-                        value().chat.sources.filter((item) => includes(item.title)).length
+                        chatSources().filter((item) => includes(item.title)).length
                       : props.category === "knowledge"
                         ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0)
                         : value().chat.tasks.length)
@@ -485,12 +507,12 @@ function AssistantChatContextView(
               )}
             </Show>
 
-            <Show when={section("sources") && value().chat.sources.length > 0}>
+            <Show when={section("sources") && chatSources().length > 0}>
               <AssistantContextSection title={text("Sources")}>
                 <AssistantContextRows>
                   <For
-                    each={value()
-                      .chat.sources.filter((source) => includes(source.title))
+                    each={chatSources()
+                      .filter((source) => includes(source.title))
                       .slice(0, limit())}
                   >
                     {(source) => (
@@ -502,13 +524,11 @@ function AssistantChatContextView(
                       />
                     )}
                   </For>
-                  <Show when={!props.category && value().chat.sources.length > CONTEXT_PREVIEW_LIMIT}>
+                  <Show when={!props.category && chatSources().length > CONTEXT_PREVIEW_LIMIT}>
                     <AssistantContextViewAll
-                      count={value().chat.sources.length}
+                      count={chatSources().length}
                       onClick={() =>
-                        props.onOpenView
-                          ? overview("sources", text("Sources"))
-                          : void openSourceSearch(text("Sources"), value().chat.sources)
+                        props.onOpenView ? overview("sources", text("Sources")) : void openSourceSearch(text("Sources"), chatSources())
                       }
                     />
                   </Show>
@@ -516,7 +536,7 @@ function AssistantChatContextView(
               </AssistantContextSection>
             </Show>
 
-            <Show when={section("apps") && (apps().length > 0 || value().chat.runs.length > 0)}>
+            <Show when={section("apps") && (apps().length > 0 || value().chat.apps.length > 0 || value().chat.runs.length > 0)}>
               <AssistantContextSection title={props.category === "apps" ? "" : "Studio"}>
                 <Show
                   when={props.category === "apps"}
@@ -565,7 +585,7 @@ function AssistantChatContextView(
                         title={reference.title}
                         description={reference.description}
                         scope={reference.kind === "project" ? "project" : undefined}
-                        showScope={reference.kind === "project" && value().chat.references.length > 0}
+                        showScope={reference.kind === "project" && chatReferences().length > 0}
                         onClick={
                           reference.kind === "project"
                             ? () => void openAssistantCloudReference(reference.title, reference.reference.ref)
@@ -586,6 +606,12 @@ function AssistantChatContextView(
                   </Show>
                 </AssistantContextRows>
               </AssistantContextSection>
+            </Show>
+
+            <Show when={props.category === "sources" && sourcePages.more()}>
+              <Button size="sm" variant="ghost" class="self-start" disabled={sourcePages.loading()} onClick={() => void sourcePages.load()}>
+                {sidebarCopy().loadMore}
+              </Button>
             </Show>
 
             <Show when={section("files") && images().length > 0}>

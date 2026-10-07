@@ -30,6 +30,7 @@ import {
   type JSX,
   on,
   onCleanup,
+  onMount,
   Show,
   untrack,
 } from "solid-js";
@@ -51,11 +52,12 @@ import {
   buildResultsModel,
   buildSourceEntries,
   buildWorkingModel,
-  dedupeSearchHits,
   type FileKind,
   fileKind,
   groupByTime,
+  matchChatSearch,
   RESULT_CARD_LIMIT,
+  resultsInFolder,
   SOURCE_PREVIEW_LIMIT,
   type SourceEntry,
   type TimeGroup,
@@ -205,6 +207,82 @@ function RowMenu(props: { items: readonly DropdownItem[]; label: string }) {
     </Dropdown.Root>
   );
 }
+
+/**
+ * Which groups are open, by a key that outlives a snapshot. Every snapshot builds its groups anew, so a group that kept
+ * its own state would close on each live update and after each deletion inside it.
+ */
+const createOpenGroups = () => {
+  const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
+  return {
+    isOpen: (key: string) => open().has(key),
+    toggle: (key: string, next: boolean) =>
+      setOpen((current) => {
+        const updated = new Set(current);
+        if (next) updated.add(key);
+        else updated.delete(key);
+        return updated;
+      }),
+  };
+};
+
+const FOLDER_PAGE = 50;
+
+/**
+ * The loaded pages of one working folder, kept across snapshots. A folder that changed other than by a deletion here
+ * reloads its first page in place; until it arrived, the loaded files stay.
+ */
+const createFolderListing = (files: ConversationFileSource, folder: string) => {
+  const [pages, setPages] = createSignal<AiFileStat[][]>([]);
+  const [loading, setLoading] = createSignal(false);
+  const [more, setMore] = createSignal(false);
+  let known: { count: number; updatedAt: string } | null = null;
+  let request = 0;
+  const page = (after?: string) => files.listFiles(`/temp/${folder}/`, { limit: FOLDER_PAGE, after });
+  const load = async () => {
+    if (loading()) return;
+    const current = ++request;
+    setLoading(true);
+    try {
+      const next = await page(pages().at(-1)?.at(-1)?.path);
+      if (current !== request) return;
+      setPages((loaded) => [...loaded, next]);
+      setMore(next.length === FOLDER_PAGE);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (current === request) setLoading(false);
+    }
+  };
+  return {
+    files: () => pages().flat(),
+    loading,
+    more,
+    load,
+    /** Loads an opened folder, or follows one that changed since its files were loaded. */
+    sync: async (group: { count: number; updatedAt: string }) => {
+      const changed = !known || known.count !== group.count || Date.parse(group.updatedAt) > Date.parse(known.updatedAt);
+      known = { count: group.count, updatedAt: group.updatedAt };
+      if (pages().length === 0) return load();
+      if (!changed || loading()) return;
+      const current = ++request;
+      try {
+        const first = await page();
+        if (current !== request) return;
+        setPages([first]);
+        setMore(first.length === FOLDER_PAGE);
+      } catch {
+        // The loaded files stay; opening the group again retries.
+      }
+    },
+    /** A file deleted here: the folder holds one file less and is no newer. */
+    drop: (path: string) => {
+      setPages((loaded) => loaded.map((files) => files.filter((file) => file.path !== path)));
+      if (known) known = { ...known, count: known.count - 1 };
+    },
+  };
+};
+type FolderListing = ReturnType<typeof createFolderListing>;
 
 function ResultMeta(props: { result: AssistantChatResult }) {
   const copy = useSidebarCopy();
@@ -443,6 +521,7 @@ export function AssistantChatSidebarContent(props: {
   const text = useAssistantText();
   const assistantCopy = useAssistantCopy();
   const live = () => props.state.snapshot();
+  const groups = createOpenGroups();
   const [held, setHeld] = createSignal<AssistantChatContextSnapshot | null>(null);
   createEffect(
     on(props.frozen, (frozen) => {
@@ -461,6 +540,14 @@ export function AssistantChatSidebarContent(props: {
     if (!kept || !current || kept.chatId !== current.chatId) return 0;
     const before = new Map(kept.results.map((result) => [result.key, result.deliveredAt]));
     return current.results.filter((result) => before.get(result.key) !== result.deliveredAt).length;
+  });
+  /** Anything else changed while the sidebar held its state: files, sources, tasks, or a result that went away. */
+  const pendingChanges = createMemo(() => {
+    const kept = held();
+    const current = live();
+    if (!kept || !current || kept === current || kept.chatId !== current.chatId) return false;
+    const content = (snapshot: AssistantChatContextSnapshot) => JSON.stringify({ ...snapshot, now: null });
+    return content(kept) !== content(current);
   });
   /** Takes over the live state; used for "New · N" and after the person's own changes. */
   const applyLatest = () => setHeld(props.frozen() ? live() : null);
@@ -485,6 +572,21 @@ export function AssistantChatSidebarContent(props: {
     >
       {(snapshot) => {
         const files = createMemo(() => conversationFileSource("/api/ai", snapshot().chatId));
+        /** A group's open state in this chat. */
+        const group = (key: string) => {
+          const scoped = `${snapshot().chatId}:${key}`;
+          return { open: groups.isOpen(scoped), onToggle: (next: boolean) => groups.toggle(scoped, next) };
+        };
+        const listings = new Map<string, FolderListing>();
+        const listing = (folder: string) => {
+          const key = `${snapshot().chatId}:${folder}`;
+          let found = listings.get(key);
+          if (!found) {
+            found = createFolderListing(files(), folder);
+            listings.set(key, found);
+          }
+          return found;
+        };
         const results = createMemo(() => buildResultsModel(snapshot().results, snapshot().now, snapshot().timeZone));
         const yourFiles = createMemo(() => buildFilesModel(snapshot().files, snapshot().now, snapshot().timeZone));
         const working = createMemo(() => buildWorkingModel(snapshot()));
@@ -545,6 +647,8 @@ export function AssistantChatSidebarContent(props: {
           deleting.add(file.path);
           try {
             await files().remove!(file.path);
+            // Before the reload, so a folder's loaded files already lack it and stay as they are.
+            onRemoved?.(file.path);
           } catch (error) {
             failure = error instanceof Error ? error.message : text("File could not be deleted.");
           } finally {
@@ -561,7 +665,7 @@ export function AssistantChatSidebarContent(props: {
               !current.working.looseFiles.some((entry) => entry.path === file.path) &&
               !file.path.startsWith("/temp/"));
           if (gone) {
-            onRemoved?.(file.path);
+            if (failure !== null) onRemoved?.(file.path);
             props.actions.onFileDeleted?.(deleted);
           } else toast.error(failure!, { title: text("Could not delete file") });
           const focused = document.activeElement;
@@ -655,13 +759,13 @@ export function AssistantChatSidebarContent(props: {
                     size="xs"
                     variant="ghost"
                     class="assistant-sidebar-new"
-                    data-pending={pendingResults() > 0 ? "true" : undefined}
-                    aria-hidden={pendingResults() > 0 ? undefined : "true"}
-                    tabIndex={pendingResults() > 0 ? 0 : -1}
-                    aria-label={copy().showNewResults({ count: pendingResults() })}
+                    data-pending={pendingChanges() ? "true" : undefined}
+                    aria-hidden={pendingChanges() ? undefined : "true"}
+                    tabIndex={pendingChanges() ? 0 : -1}
+                    aria-label={pendingResults() > 0 ? copy().showNewResults({ count: pendingResults() }) : copy().showUpdates}
                     onClick={applyLatest}
                   >
-                    {copy().newResults({ count: pendingResults() })}
+                    {pendingResults() > 0 ? copy().newResults({ count: pendingResults() }) : copy().updates}
                   </Button>
                 </span>
               }
@@ -679,30 +783,36 @@ export function AssistantChatSidebarContent(props: {
                     )}
                   </For>
                   <Show when={results().latestOverflow.length}>
-                    <Disclosure title={copy().moreFromTurn({ count: results().latestOverflow.length })}>
+                    <Disclosure
+                      title={copy().moreFromTurn({ count: results().latestOverflow.length })}
+                      open={group("results:overflow").open}
+                      onToggle={group("results:overflow").onToggle}
+                    >
                       <For each={results().latestOverflow}>
                         {(result) => <ResultRow result={result} actions={props.actions} files={files()} onDelete={deleteResult(result)} />}
                       </For>
                     </Disclosure>
                   </Show>
                   <For each={results().older}>
-                    {(group) => (
+                    {(older) => (
                       <Disclosure
-                        title={groupLabel(group)}
-                        count={group.items.length}
-                        description={group.items
+                        title={groupLabel(older)}
+                        count={older.items.length}
+                        description={older.items
                           .slice(0, 2)
                           .map((result) => result.title)
                           .join(", ")}
+                        open={group(`results:${older.key}`).open}
+                        onToggle={group(`results:${older.key}`).onToggle}
                       >
-                        <For each={group.items}>
+                        <For each={older.items}>
                           {(result) => (
                             <ResultRow
                               result={result}
                               actions={props.actions}
                               files={files()}
                               onDelete={deleteResult(result)}
-                              when={group.kind === "month" ? dayLabel(result.deliveredAt) : undefined}
+                              when={older.kind === "month" ? dayLabel(result.deliveredAt) : undefined}
                             />
                           )}
                         </For>
@@ -721,15 +831,25 @@ export function AssistantChatSidebarContent(props: {
               >
                 <For each={yourFiles().recent}>{(file) => <FileRow file={file} open={() => void openUpload(file)} />}</For>
                 <Show when={yourFiles().olderCount}>
-                  <Disclosure title={copy().older} count={yourFiles().olderCount}>
+                  <Disclosure
+                    title={copy().older}
+                    count={yourFiles().olderCount}
+                    open={group("files:older").open}
+                    onToggle={group("files:older").onToggle}
+                  >
                     <For each={yourFiles().older}>
-                      {(group) => (
-                        <Disclosure title={groupLabel(group)} count={group.items.length}>
-                          <For each={group.items}>
+                      {(older) => (
+                        <Disclosure
+                          title={groupLabel(older)}
+                          count={older.items.length}
+                          open={group(`files:${older.key}`).open}
+                          onToggle={group(`files:${older.key}`).onToggle}
+                        >
+                          <For each={older.items}>
                             {(file) => (
                               <FileRow
                                 file={file}
-                                when={group.kind === "month" ? dayLabel(file.updatedAt) : undefined}
+                                when={older.kind === "month" ? dayLabel(file.updatedAt) : undefined}
                                 open={() => void openUpload(file)}
                               />
                             )}
@@ -740,7 +860,13 @@ export function AssistantChatSidebarContent(props: {
                   </Disclosure>
                 </Show>
                 <Show when={yourFiles().voice.length}>
-                  <Disclosure title={copy().voiceRecordings} count={yourFiles().voice.length} icon="ti ti-microphone">
+                  <Disclosure
+                    title={copy().voiceRecordings}
+                    count={yourFiles().voice.length}
+                    icon="ti ti-microphone"
+                    open={group("files:voice").open}
+                    onToggle={group("files:voice").onToggle}
+                  >
                     <For each={yourFiles().voice}>
                       {(file) => <FileRow file={file} name={formatDictationTimestamp(file.dictationRecordedAt!, locale())} />}
                     </For>
@@ -750,7 +876,7 @@ export function AssistantChatSidebarContent(props: {
             </Show>
 
             <Show when={snapshot().sourceCount}>
-              <SourcesSection snapshot={snapshot()} actions={props.actions} />
+              <SourcesSection snapshot={snapshot()} actions={props.actions} group={group} />
             </Show>
 
             <Show when={working().count || props.runCount}>
@@ -783,12 +909,19 @@ export function AssistantChatSidebarContent(props: {
                       <div class="assistant-sidebar-timegroup">
                         <p class="assistant-sidebar-timegroup__label">{groupLabel(timeGroup)}</p>
                         <For each={timeGroup.items}>
-                          {(group) => (
+                          {(working) => (
                             <WorkingGroupRow
-                              group={group}
+                              group={working}
                               files={files()}
+                              listing={working.folder === null ? null : listing(working.folder)}
+                              results={working.folder === null ? [] : resultsInFolder(snapshot().results, working.folder)}
+                              open={group(`working:${working.key}`).open}
+                              onToggle={group(`working:${working.key}`).onToggle}
                               fileRow={(file, onRemoved) => <FileRow file={file} onRemoved={onRemoved} />}
                               onDeleted={async () => {
+                                // A folder of the same name later is a new one.
+                                if (working.folder !== null) listings.delete(`${snapshot().chatId}:${working.folder}`);
+                                group(`working:${working.key}`).onToggle(false);
                                 await props.state.refresh();
                                 applyLatest();
                               }}
@@ -798,6 +931,9 @@ export function AssistantChatSidebarContent(props: {
                       </div>
                     )}
                   </For>
+                  <Show when={working().hiddenGroups}>
+                    {(count) => <p class="assistant-sidebar-hint">{copy().hiddenGroups({ count: count() })}</p>}
+                  </Show>
                   <Show when={props.runCount && props.actions.onOpenStudio}>
                     <DetailPanel.Action
                       class="assistant-sidebar-row"
@@ -825,44 +961,38 @@ export function AssistantChatSidebarContent(props: {
 function WorkingGroupRow(props: {
   group: WorkingGroup;
   files: ConversationFileSource;
+  /** The folder's loaded files; null for the group of loose working files, whose files the snapshot carries. */
+  listing: FolderListing | null;
+  /** Results stored in the folder, which deleting it deletes too. */
+  results: readonly AssistantChatResult[];
+  open: boolean;
+  onToggle: (open: boolean) => void;
   fileRow: (file: AiFileStat, onRemoved: (path: string) => void) => JSX.Element;
   onDeleted: () => Promise<void>;
 }) {
   const copy = useSidebarCopy();
   const text = useAssistantText();
-  const PAGE = 50;
-  const [open, setOpen] = createSignal(false);
-  const [pages, setPages] = createSignal<AiFileStat[][]>([]);
-  const [loading, setLoading] = createSignal(false);
-  const [more, setMore] = createSignal(false);
   const name = () =>
     props.group.folder === null
       ? copy().workingOther
       : props.group.resultTitle
         ? copy().workingFor({ title: props.group.resultTitle })
         : props.group.folder;
-  const load = async () => {
-    if (props.group.folder === null || loading()) return;
-    setLoading(true);
-    try {
-      const after = pages().at(-1)?.at(-1)?.path;
-      const page = await props.files.listFiles(`/temp/${props.group.folder}/`, { limit: PAGE, after });
-      setPages((current) => [...current, page]);
-      setMore(page.length === PAGE);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
+  createEffect(
+    on(
+      () => [props.open, props.group.count, props.group.updatedAt] as const,
+      ([open, count, updatedAt]) => {
+        if (open) void props.listing?.sync({ count, updatedAt });
+      },
+    ),
+  );
   const remove = async () => {
     const folder = props.group.folder;
     if (folder === null) return;
-    const confirmed = await prompts.confirm(copy().deleteGroupDetail({ count: props.group.count }), {
-      title: copy().deleteGroupNamed({ name: name() }),
-      confirmText: text("Delete"),
-      variant: "danger",
-    });
+    const confirmed = await prompts.confirm(
+      copy().deleteGroupDetail({ count: props.group.count, results: props.results.map((result) => result.title) }),
+      { title: copy().deleteGroupNamed({ name: name() }), confirmText: text("Delete"), variant: "danger" },
+    );
     if (!confirmed) return;
     try {
       await props.files.removeFolder(`/temp/${folder}`);
@@ -876,11 +1006,8 @@ function WorkingGroupRow(props: {
       title={name()}
       count={props.group.count}
       description={formatFileViewSize(props.group.bytes)}
-      open={open()}
-      onToggle={(next) => {
-        setOpen(next);
-        if (next && pages().length === 0) void load();
-      }}
+      open={props.open}
+      onToggle={props.onToggle}
       menuItems={
         props.group.folder === null
           ? undefined
@@ -889,22 +1016,29 @@ function WorkingGroupRow(props: {
       menuLabel={copy().groupActions({ name: props.group.resultTitle ?? props.group.folder ?? copy().workingOther })}
     >
       <Show
-        when={props.group.folder !== null}
-        fallback={<For each={props.group.files}>{(file) => props.fileRow(file, () => undefined)}</For>}
+        when={props.listing}
+        fallback={
+          <>
+            <For each={props.group.files}>{(file) => props.fileRow(file, () => undefined)}</For>
+            <Show when={props.group.count - props.group.files.length > 0}>
+              <p class="assistant-sidebar-hint">{copy().moreFiles({ count: props.group.count - props.group.files.length })}</p>
+            </Show>
+          </>
+        }
       >
-        <For each={pages().flat()}>
-          {(file) =>
-            props.fileRow(file, (path) => setPages((current) => current.map((page) => page.filter((entry) => entry.path !== path))))
-          }
-        </For>
-        <Show when={loading()}>
-          <Placeholder state="loading" align="left" title={copy().loading} />
-        </Show>
-        <Show when={more() && !loading()}>
-          <Button size="xs" variant="ghost" class="assistant-sidebar-more" onClick={() => void load()}>
-            {copy().showMoreFiles}
-          </Button>
-        </Show>
+        {(listing) => (
+          <>
+            <For each={listing().files()}>{(file) => props.fileRow(file, listing().drop)}</For>
+            <Show when={listing().loading()}>
+              <Placeholder state="loading" align="left" title={copy().loading} />
+            </Show>
+            <Show when={listing().more() && !listing().loading()}>
+              <Button size="xs" variant="ghost" class="assistant-sidebar-more" onClick={() => void listing().load()}>
+                {copy().showMoreFiles}
+              </Button>
+            </Show>
+          </>
+        )}
       </Show>
     </Disclosure>
   );
@@ -922,7 +1056,10 @@ const hostOf = (href: string | null) => {
 /** Searches keep their query visible: it is what left Cloud for the search provider. */
 const searchQuery = (source: AiConversationSource) => (source.title && source.key !== "web_search" ? source.title : null);
 
-function SourceRow(props: { entry: SourceEntry; actions: ChatSidebarActions; when?: string }) {
+/** A group's open state, by a key that outlives the snapshot. */
+type GroupState = (key: string) => { open: boolean; onToggle: (open: boolean) => void };
+
+function SourceRow(props: { entry: SourceEntry; actions: ChatSidebarActions; group?: GroupState; when?: string }) {
   const copy = useSidebarCopy();
   const text = useAssistantText();
   const jumpItems = (source: AiConversationSource): DropdownItem[] =>
@@ -987,6 +1124,8 @@ function SourceRow(props: { entry: SourceEntry; actions: ChatSidebarActions; whe
             }
             count={entry().items.length}
             description={props.when}
+            open={props.group?.(`source:${entry().key}`).open}
+            onToggle={props.group?.(`source:${entry().key}`).onToggle}
           >
             <For each={entry().items}>{(item) => cloudRow(item)}</For>
           </Disclosure>
@@ -996,38 +1135,71 @@ function SourceRow(props: { entry: SourceEntry; actions: ChatSidebarActions; whe
   );
 }
 
-function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions: ChatSidebarActions }) {
+/**
+ * The chat's sources after the snapshot's first page, loaded on request. When a new snapshot's first page ends
+ * elsewhere, the loaded pages start over, so no source falls between them or shows twice.
+ */
+export const createChatSourcePages = (snapshot: Accessor<AssistantChatContextSnapshot | null>) => {
+  const [pages, setPages] = createSignal<{ sources: AiConversationSource[]; cursor: string | null } | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  let generation = 0;
+  const boundary = createMemo(() => `${snapshot()?.chatId}\0${snapshot()?.sourceCursor}\0${snapshot()?.sourceCount}`);
+  createEffect(
+    on(
+      boundary,
+      () => {
+        generation += 1;
+        setPages(null);
+        setLoading(false);
+      },
+      { defer: true },
+    ),
+  );
+  const cursor = () => {
+    const loaded = pages();
+    return loaded ? loaded.cursor : (snapshot()?.sourceCursor ?? null);
+  };
+  /** The sources loaded after the snapshot's first page. */
+  const extra = () => pages()?.sources ?? [];
+  return {
+    sources: () => [...(snapshot()?.sources ?? []), ...extra()],
+    extra,
+    /** More sources exist than are loaded. */
+    more: () => Boolean(cursor()),
+    loading,
+    load: async () => {
+      const from = cursor();
+      const chatId = snapshot()?.chatId;
+      if (!from || !chatId || loading()) return;
+      const current = generation;
+      setLoading(true);
+      try {
+        const page = await assistantApi.listConversationSources({
+          conversationId: chatId,
+          kinds: ["web", "activity", "resource"],
+          observed: true,
+          limit: 100,
+          cursor: from,
+        });
+        if (current !== generation) return;
+        setPages((loaded) => ({ sources: [...(loaded?.sources ?? []), ...page.sources], cursor: page.nextCursor ?? null }));
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (current === generation) setLoading(false);
+      }
+    },
+  };
+};
+
+function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions: ChatSidebarActions; group: GroupState }) {
   const copy = useSidebarCopy();
   const locale = useLocale();
   const [open, setOpen] = createSignal(false);
   const [all, setAll] = createSignal(false);
-  const [extra, setExtra] = createSignal<AiConversationSource[]>([]);
-  const [cursor, setCursor] = createSignal<string | undefined>();
-  const [loading, setLoading] = createSignal(false);
-  const sources = () => [...props.snapshot.sources, ...extra()];
-  const entries = createMemo(() => buildSourceEntries(sources()));
+  const pages = createChatSourcePages(() => props.snapshot);
+  const entries = createMemo(() => buildSourceEntries(pages.sources()));
   const groups = createMemo(() => groupByTime(entries(), (entry) => entry.at, props.snapshot.now, props.snapshot.timeZone));
-  const loadMore = async () => {
-    if (loading()) return;
-    setLoading(true);
-    try {
-      const before = extra().length ? cursor() : (props.snapshot.sourceCursor ?? undefined);
-      const page = await assistantApi.listConversationSources({
-        conversationId: props.snapshot.chatId,
-        kinds: ["web", "activity", "resource"],
-        observed: true,
-        limit: 100,
-        cursor: before,
-      });
-      setExtra((current) => [...current, ...page.sources]);
-      setCursor(page.nextCursor);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
-    }
-  };
-  const canLoadMore = () => sources().length < props.snapshot.sourceCount && (extra().length === 0 || Boolean(cursor()));
   return (
     <DetailPanel.Section
       collapsible
@@ -1042,8 +1214,11 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
           when={all()}
           fallback={
             <>
-              <For each={entries().slice(0, SOURCE_PREVIEW_LIMIT)}>{(entry) => <SourceRow entry={entry} actions={props.actions} />}</For>
-              <Show when={props.snapshot.sourceCount > SOURCE_PREVIEW_LIMIT && entries().length > SOURCE_PREVIEW_LIMIT}>
+              <For each={entries().slice(0, SOURCE_PREVIEW_LIMIT)}>
+                {(entry) => <SourceRow entry={entry} actions={props.actions} group={props.group} />}
+              </For>
+              {/* Bundles can hold the whole first page; the older sources stay one step away. */}
+              <Show when={entries().length > SOURCE_PREVIEW_LIMIT || pages.more()}>
                 <Button size="xs" variant="ghost" class="assistant-sidebar-more" onClick={() => setAll(true)}>
                   {copy().all({ count: props.snapshot.sourceCount })}
                 </Button>
@@ -1055,12 +1230,12 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
             {(group) => (
               <div class="assistant-sidebar-timegroup">
                 <p class="assistant-sidebar-timegroup__label">{timeGroupLabel(group, locale(), copy())}</p>
-                <For each={group.items}>{(entry) => <SourceRow entry={entry} actions={props.actions} />}</For>
+                <For each={group.items}>{(entry) => <SourceRow entry={entry} actions={props.actions} group={props.group} />}</For>
               </div>
             )}
           </For>
-          <Show when={canLoadMore()}>
-            <Button size="xs" variant="ghost" class="assistant-sidebar-more" disabled={loading()} onClick={() => void loadMore()}>
+          <Show when={pages.more()}>
+            <Button size="xs" variant="ghost" class="assistant-sidebar-more" disabled={pages.loading()} onClick={() => void pages.load()}>
               {copy().loadMore}
             </Button>
           </Show>
@@ -1255,18 +1430,16 @@ function SidebarSearchResults(props: {
     const timer = setTimeout(() => setDebounced(value), 200);
     onCleanup(() => clearTimeout(timer));
   });
+  // Project context the chat never read with a tool belongs to Context, not to what the search finds as sources.
   const [hits] = createResource(
     () => (debounced().length >= SEARCH_MIN_CHARS ? { chatId: props.snapshot.chatId, q: debounced() } : null),
     async ({ chatId, q }) =>
-      dedupeSearchHits((await assistantApi.listConversationSources({ conversationId: chatId, q, limit: SEARCH_LIMIT })).sources),
+      (await assistantApi.listConversationSources({ conversationId: chatId, q, limit: SEARCH_LIMIT, observed: true })).sources,
   );
-  const needle = () => debounced().toLocaleLowerCase();
-  const results = () =>
-    props.snapshot.results.filter((result) => `${result.title} ${result.description ?? ""}`.toLocaleLowerCase().includes(needle()));
-  const resultPaths = () => new Set(props.snapshot.results.flatMap((result) => (result.file ? [result.file.path] : [])));
-  const fileHits = () => (hits() ?? []).filter((hit) => hit.kind === "file" && !resultPaths().has(hit.key));
-  const sourceHits = () =>
-    buildSourceEntries((hits() ?? []).filter((hit) => hit.kind === "web" || hit.kind === "activity" || hit.kind === "resource"));
+  const matches = createMemo(() => matchChatSearch(props.snapshot.results, hits() ?? [], debounced()));
+  const results = () => matches().results;
+  const fileHits = () => matches().files;
+  const sourceHits = () => buildSourceEntries(matches().sources);
   const empty = () => !hits.loading && hits() !== undefined && !results().length && !fileHits().length && !sourceHits().length;
   return (
     <>
@@ -1277,16 +1450,16 @@ function SidebarSearchResults(props: {
           </DetailPanel.Section>
         </Show>
         <Show when={fileHits().length}>
-          <DetailPanel.Section title={copy().yourFiles} icon="ti ti-files">
+          <DetailPanel.Section title={copy().files} icon="ti ti-files">
             <For each={fileHits()}>
               {(hit) => (
                 <DetailPanel.Action
                   class="assistant-sidebar-row"
-                  leading={<i class={kindIcon[fileKind(hit.mediaType ?? "", hit.key)]} aria-hidden="true" />}
+                  leading={<i class={kindIcon[fileKind(hit.mediaType ?? "", hit.path)]} aria-hidden="true" />}
                   title={hit.title}
-                  description={hit.key}
+                  description={hit.path}
                   trailing={hit.size === null ? undefined : <span class="assistant-sidebar-size">{formatFileViewSize(hit.size)}</span>}
-                  onClick={() => props.actions.onOpenFile({ path: hit.key, title: hit.title })}
+                  onClick={() => props.actions.onOpenFile({ path: hit.path, title: hit.title })}
                 />
               )}
             </For>
@@ -1338,19 +1511,39 @@ function SidebarSearchField(props: { search: ChatSidebarSearch; onClosed: () => 
   );
 }
 
-/** Pointer or keyboard focus inside the sidebar: the results stay as they are while someone reads or acts on them. */
+/**
+ * Pointer or keyboard focus inside the sidebar: the results stay as they are while someone reads or acts on them. A
+ * touch has no hover and a tap may not focus anything, so after a touch inside the reading lasts until a touch outside.
+ */
 const createReadingFreeze = () => {
   const [pointer, setPointer] = createSignal(false);
   const [focus, setFocus] = createSignal(false);
+  let host: HTMLElement | undefined;
+  onMount(() => {
+    const outside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node && host?.contains(event.target))) setPointer(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    onCleanup(() => document.removeEventListener("pointerdown", outside, true));
+  });
   return {
     frozen: () => pointer() || focus(),
+    /** Ends the reading, for a sidebar that closes. */
+    release: () => {
+      setPointer(false);
+      setFocus(false);
+    },
     handlers: {
-      onPointerEnter: () => setPointer(true),
-      onPointerLeave: () => setPointer(false),
+      onPointerEnter: (event: PointerEvent & { currentTarget: HTMLElement }) => {
+        host = event.currentTarget;
+        setPointer(true);
+      },
+      onPointerLeave: (event: PointerEvent) => {
+        if (event.pointerType !== "touch") setPointer(false);
+      },
       onFocusIn: () => setFocus(true),
-      onFocusOut: (event: FocusEvent) => {
-        const host = event.currentTarget as HTMLElement;
-        if (!(event.relatedTarget instanceof Node && host.contains(event.relatedTarget))) setFocus(false);
+      onFocusOut: (event: FocusEvent & { currentTarget: HTMLElement }) => {
+        if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setFocus(false);
       },
     },
   };
@@ -1383,6 +1576,7 @@ export function AssistantChatSidebarPanel(props: {
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented && getComputedStyle(event.currentTarget).position === "absolute") {
           event.preventDefault();
+          freeze.release();
           props.onClose();
         }
       }}
@@ -1418,7 +1612,10 @@ export function AssistantChatSidebarPanel(props: {
               label={copy().close}
               aria-expanded="true"
               aria-controls={props.id}
-              onClick={() => props.onClose()}
+              onClick={() => {
+                freeze.release();
+                props.onClose();
+              }}
             >
               <i class="ti ti-layout-sidebar-right-collapse" aria-hidden="true" />
             </IconButton>
@@ -1471,6 +1668,8 @@ export const openAssistantChatSidebarSheet = async (props: {
         onOpenTask: props.actions.onOpenTask && leave(() => close(), props.actions.onOpenTask),
         onOpenKnowledge: props.actions.onOpenKnowledge && leave(() => close(), props.actions.onOpenKnowledge),
         onOpenReferences: props.actions.onOpenReferences && leave(() => close(), props.actions.onOpenReferences),
+        onOpenProjectFile: props.actions.onOpenProjectFile && leave(() => close(), props.actions.onOpenProjectFile),
+        onOpenSecrets: props.actions.onOpenSecrets && leave(() => close(), props.actions.onOpenSecrets),
       };
       const content = () => (
         <BottomSheet onDismiss={dismiss}>

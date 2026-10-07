@@ -10,7 +10,7 @@ import { coreSettings } from "../services/settings/api";
 import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { startAiDictationRuntime } from "./dictation-runtime";
-import { AiTurnExecutor, indexConversationToolSource } from "./executor";
+import { AiTurnExecutor } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { drainQueuedMessages } from "./message-queue";
 import { aiQuotas } from "./quotas";
@@ -368,18 +368,6 @@ export const submitAiTurnAction = async (input: {
       }
     }
     await aiToolAudit.noteToolCompleted({ turnId: input.turnId, callId: input.callId, isError: false }).catch(() => undefined);
-    // A browser tool never reaches the executor's tool end, so an app delivery is indexed when the browser reports back.
-    const result = input.action.result;
-    if (pending.name === "code_open")
-      await indexConversationToolSource({
-        conversationId: input.conversationId,
-        turnId: input.turnId,
-        callId: input.callId,
-        name: pending.name,
-        args: pending.args,
-        result,
-        isError: typeof result !== "object" || result === null || "error" in result,
-      });
   }
 
   await enqueueAiTurn({ conversationId: input.conversationId, turnId: input.turnId });

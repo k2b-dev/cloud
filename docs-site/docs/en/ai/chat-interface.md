@@ -223,13 +223,16 @@ Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown lin
 against the current conversation file manifest. Return `{path, href}` with a
 reloadable host workspace URL, or `null` for ordinary links. Plain clicks invoke
 `onOpenFile(path)`; modified clicks retain native navigation to that workspace
-URL. Assistant resolves only existing current-chat files and same-origin links.
+URL. Assistant resolves only existing current-chat files and same-origin links,
+and any path below the chat's working folder `/temp/`, whose files its snapshot
+counts but does not list; the workspace reports such a file if it is gone.
 Conversation file paths are not website URLs; agents deliver files with `present`.
 
 Assistant shows what a chat holds in the sidebar **In this chat**, in this
 order: what needs attention, **Results** (files, Studio apps, and
 visualizations the assistant delivered, each with the sentence it gave),
-**Your files** (uploads and voice recordings), **Sources** (read web pages,
+**Your files** (uploads and voice recordings; an upload the assistant hands
+over with `present` stays here), **Sources** (read web pages,
 each web search with its query, and the Cloud items a tool call read, bundled
 per call, without stored previews), **Working files** (everything below
 `/temp/`, grouped by folder, with the storage used once it passes 70 % of the
@@ -242,13 +245,23 @@ one, however old, then other results of the last 24 hours up to six entries.
 Older results, and every other long list, group by day for the last seven days
 and by month before that. The grouping uses the snapshot's server time and the
 viewer's time-zone cookie, so the server render is final. While the pointer or
-focus is inside the sidebar, its results keep their state and new ones raise a
-**New · N** count in the heading; leaving the sidebar or selecting the count
-shows them. Live changes reload the snapshot at most every 500 ms. Selecting a
-result's title loads the chat up to the message that delivered it, scrolls to
-the delivery (`data-call-id` on the present row, `data-presentation-id` on a
-visualization), and adds a `?message=` history entry. A search in the sidebar's
-header queries the sources route across results, files, and sources.
+focus is inside the sidebar, it keeps the state someone reads: new results
+raise a **New · N** count in the heading, other changes an **Update** control;
+leaving the sidebar or selecting the control shows them. After a touch inside,
+the state holds until a touch outside, because touch has no hover. Opened groups
+and a working folder's loaded files stay open through live changes and
+deletions. Live changes reload the snapshot at most every 500 ms; the live
+updates acknowledge a change only once that reload succeeded, so a failed one is
+tried again. Selecting a result's title loads the chat up to the message that
+delivered it, scrolls to the delivery (`data-call-id` on the present row,
+`data-presentation-id` on a visualization), and adds a `?message=` history
+entry. A search in the sidebar's header queries `GET /api/assistant/workspace/conversations/:id/sources`, which
+takes the sources route's parameters and shows an app only while the viewer may
+read it, under its current title. It finds results by title, description, or
+path, and files and sources the chat read; Project context it never read stays
+under Context. **Sources** shows the newest 100 and loads older ones from the
+same route; a new first page starts the loaded pages over. More than 200 working
+folders or 100 loose working files are counted, and search finds the rest.
 
 CSS decides the sidebar's presentation from the chat area's width: a 20 rem
 column from 56 rem, a non-modal drawer over the chat's edge below that, and a
@@ -265,7 +278,9 @@ closes the file's open workspace tab, reloads the list, and moves keyboard focus
 to the row that takes its place. A file that another tab or the CLI already
 deleted counts as deleted; other failures keep the file and show the server
 message. Shared Project files stay read-only under Context. A working folder
-can be deleted as a whole after confirmation.
+can be deleted as a whole after confirmation; the confirmation names the
+results stored in it, because they go with it. The Studio overview lists up to
+500 apps the chat referenced, not only the ones in its newest sources.
 Deletion never rewrites the chat history. Earlier messages keep their text; a
 Markdown link to the file becomes an ordinary link, opening a presented file
 reports `File not found`, and an image attachment shows its icon instead of the

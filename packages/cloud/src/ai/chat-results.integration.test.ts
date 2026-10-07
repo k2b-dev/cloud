@@ -1,12 +1,9 @@
 import { beforeAll, expect, test } from "bun:test";
-import { createSync } from "@k2b/sync";
 import { sql } from "bun";
-import { connectTestNats, databaseSuite, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
-import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { __aiExecutorTest } from "./executor";
 import { aiFileStore, loadAiConversationFileOverview } from "./files-store";
 import { migrateCloudAi } from "./migrate";
-import { submitAiTurnAction } from "./runtime";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 
@@ -146,6 +143,16 @@ suite("AI chat results integration", () => {
         args: { path: "/missing.pdf" },
         result: { error: "missing" },
       });
+      // The browser reports a failed code_open as a result with an error; the continuing turn ends the call without isError.
+      await indexConversationToolSource({
+        conversationId: chat.conversation.id,
+        turnId: second.turnId,
+        isError: false,
+        callId: "open-2",
+        name: "code_open",
+        args: { id: "App003" },
+        result: { error: "Browser workspace disconnected" },
+      });
       expect((await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] })).total).toBe(3);
     } finally {
       await chat.cleanup();
@@ -246,6 +253,50 @@ suite("AI chat results integration", () => {
     }
   });
 
+  test("a result goes with its file: a later file at the same path is not that result", async () => {
+    const chat = await fixture();
+    const write = (path: string) =>
+      aiFileStore.write({ conversationId: chat.conversation.id, path, bytes: bytes("%PDF"), mediaType: "application/pdf" });
+    const results = async () =>
+      (await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] })).sources.map(
+        (source) => source.key,
+      );
+    try {
+      const { turnId } = await chat.turn([]);
+      for (const path of ["/report.pdf", "/final.pdf", "/temp/report/final.pdf"]) {
+        await write(path);
+        await indexConversationToolSource({
+          conversationId: chat.conversation.id,
+          turnId,
+          callId: `present-${path}`,
+          name: "present",
+          args: { path, title: `Delivered ${path}` },
+          result: { path, size: 4, mediaType: "application/pdf" },
+          isError: false,
+        });
+      }
+      expect((await results()).sort()).toEqual(["/final.pdf", "/report.pdf", "/temp/report/final.pdf"]);
+
+      // Deleting a file, also with its folder, removes its result; a new file at the path stays a plain file.
+      await aiFileStore.remove({ conversationId: chat.conversation.id, path: "/report.pdf" });
+      await aiFileStore.remove({ conversationId: chat.conversation.id, path: "/temp/report", recursive: true });
+      await write("/report.pdf");
+      await write("/temp/report/final.pdf");
+      expect(await results()).toEqual(["/final.pdf"]);
+
+      // A file renamed onto the path of a deleted result does not take over its title, description, or turn.
+      await sql`
+        INSERT INTO ai.conversation_sources (conversation_id, kind, source_key, title)
+        VALUES (${chat.conversation.id}::uuid, 'result', '/summary.pdf', 'Deleted before results followed their files')
+      `;
+      await write("/draft.pdf");
+      expect(await aiFileStore.rename({ conversationId: chat.conversation.id, from: "/draft.pdf", to: "/summary.pdf" })).toBe("renamed");
+      expect(await results()).toEqual(["/final.pdf"]);
+    } finally {
+      await chat.cleanup();
+    }
+  });
+
   test("the file overview groups working files by folder and pages a group literally", async () => {
     const chat = await fixture();
     const write = (path: string, text = "x", mediaType = "text/html") =>
@@ -312,6 +363,13 @@ suite("AI chat results integration", () => {
         },
         { callId: "old-open", name: "code_open", args: { id: "App009" }, result: { error: "Browser workspace disconnected" } },
         { callId: "old-fail", name: "present", args: { path: "/gone.pdf" }, result: { message: "missing" }, isError: true },
+        // Delivered, but deleted since: its path may hold another file later.
+        {
+          callId: "old-deleted",
+          name: "present",
+          args: { path: "/deleted.pdf" },
+          result: { path: "/deleted.pdf", size: 4, mediaType: "application/pdf" },
+        },
       ]);
       // The database as it was before results existed.
       await sql`DELETE FROM ai.conversation_sources WHERE kind = 'result'`;
@@ -331,60 +389,22 @@ suite("AI chat results integration", () => {
       // Running it again changes nothing.
       await migrateCloudAi();
       expect((await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] })).total).toBe(1);
+
+      // A start that stopped after widening the check, before the backfill committed, repeats the backfill.
+      await sql`DELETE FROM ai.conversation_sources WHERE kind = 'result'`;
+      await sql`ALTER TABLE ai.conversation_sources DROP CONSTRAINT ai_conversation_sources_kind_check`;
+      await sql`
+        ALTER TABLE ai.conversation_sources
+        ADD CONSTRAINT ai_conversation_sources_kind_check CHECK (kind IN ('result', 'web', 'activity')) NOT VALID
+      `;
+      await migrateCloudAi();
+      expect((await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] })).total).toBe(1);
+      const [check] = await sql<{ validated: boolean }[]>`
+        SELECT convalidated AS validated FROM pg_constraint WHERE conname = 'ai_conversation_sources_kind_check'
+      `;
+      expect(check?.validated).toBe(true);
     } finally {
       await chat.cleanup();
-    }
-  });
-});
-
-suiteFor("database", "nats")("AI chat results reported by the browser", () => {
-  beforeAll(async () => {
-    await migrateCloudAi();
-  });
-
-  test("an app the browser opened with code_open becomes a result when the browser reports back", async () => {
-    const chat = await fixture();
-    // Reporting back queues the turn's continuation, which needs Sync.
-    const connection = await connectTestNats({ ignoreClusterUpdates: true });
-    const sync = createSync({
-      connection,
-      namespace: testSyncNamespace("chat-results"),
-      application: "cloud-test",
-      defaults: { replicas: 1 },
-    });
-    bindProcessSync(sync);
-    try {
-      const { turnId } = await chat.turn([]);
-      for (const [callId, id] of [
-        ["open-ok", "App002"],
-        ["open-failed", "App003"],
-      ] as const)
-        await aiConversations.savePendingTurnAction({
-          turnId,
-          conversationId: chat.conversation.id,
-          callId,
-          kind: "client_tool",
-          status: "pending",
-          name: "code_open",
-          args: { id },
-          approvalScope: "code_open",
-          allowAlways: false,
-          resolvedEvent: null,
-        });
-      const submit = (callId: string, result: unknown) =>
-        submitAiTurnAction({ conversationId: chat.conversation.id, turnId, callId, action: { type: "tool_result", result } });
-      expect(await submit("open-ok", { opened: "App002", started: false })).toEqual({ ok: true });
-      expect(await submit("open-failed", { error: "Browser workspace disconnected" })).toEqual({ ok: true });
-      const results = await aiConversations.listConversationSources({ conversationId: chat.conversation.id, kinds: ["result"] });
-      expect(results.sources.map((source) => source.key)).toEqual(["assistant.artifact:App002"]);
-    } finally {
-      await chat.cleanup();
-      await sync.drain();
-      for (const resource of await sync.resources())
-        for (const name of resource.natsNames)
-          await connection.request(`$JS.API.STREAM.DELETE.${name}`, new Uint8Array(), { timeout: 5_000 });
-      unbindProcessSync();
-      await connection.drain();
     }
   });
 });

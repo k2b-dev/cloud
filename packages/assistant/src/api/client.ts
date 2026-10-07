@@ -292,6 +292,7 @@ export const assistantApi = {
     return response.json();
   },
 
+  /** One page of a chat's sources, with apps as the viewer may see them: unreadable apps left out, current titles. */
   listConversationSources: async (input: {
     conversationId: string;
     q?: string;
@@ -303,7 +304,7 @@ export const assistantApi = {
     observed?: boolean;
     signal?: AbortSignal;
   }): Promise<{ sources: AiConversationSource[]; nextCursor?: string; total: number }> => {
-    const response = await client.conversations[":conversationId"].sources.$get(
+    const response = await assistantClient.workspace.conversations[":conversationId"].sources.$get(
       {
         param: { conversationId: input.conversationId },
         query: {
@@ -317,7 +318,7 @@ export const assistantApi = {
       { init: { signal: input.signal } },
     );
     if (!response.ok) throw new Error(await readError(response, "Failed to load chat sources"));
-    return response.json();
+    return (await response.json()) as { sources: AiConversationSource[]; nextCursor?: string; total: number };
   },
 
   listConversationFiles: async (input: { conversationId: string; signal?: AbortSignal }): Promise<AiFileStat[]> => {

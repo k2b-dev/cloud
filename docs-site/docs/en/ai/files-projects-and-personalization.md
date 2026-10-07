@@ -62,10 +62,16 @@ folder.
 
 Cloud indexes every successful delivery as a conversation source of kind
 `result` with the turn and call that made it; `code_open` is indexed when the
-browser reports back. Starting this release indexes the deliveries already
-stored in chat history once, so existing chats show their results too. Renaming
-a delivered file keeps it a result. A result counts only while its file, app,
-or visualization exists and the viewer may read it.
+turn continues with the browser's report, and a report with an `error` delivers
+nothing. Starting this release indexes the deliveries already stored in chat
+history once, so existing chats show their results too; files deleted since are
+skipped. That first start reads every stored tool result once, so it takes
+longer on installations with a long chat history; meanwhile
+`ai.conversation_sources` stays readable, and writes to it wait. Renaming
+a delivered file keeps it a result. Deleting a file, also with its folder,
+removes its result, so a later file at the same path is not that result. A
+result counts only while its file, app, or visualization exists and the viewer
+may read it.
 
 `GET /conversations/:id/sources` accepts `kind` (comma-separated `result`,
 `web`, `activity`, `resource`, `file`) and `observed=true`, which leaves out

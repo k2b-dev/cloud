@@ -162,8 +162,11 @@ const recordMemoryWorkflowEvidence = async (input: Parameters<typeof recordAiMem
   }
 };
 
-/** Indexes what a finished tool call read or delivered; never throws. Client tools have no execution end here. */
-export const indexConversationToolSource = async (input: {
+/**
+ * Indexes what a finished tool call read or delivered; never throws. A browser tool ends here too, once the turn
+ * continues with the result the browser reported.
+ */
+const indexConversationToolSource = async (input: {
   conversationId: string;
   turnId: string;
   callId: string;
@@ -202,7 +205,14 @@ export const indexConversationToolSource = async (input: {
         preview: text(args.description) || undefined,
         icon: "ti ti-file",
       };
-    } else if (input.name === "code_open" && text(args.id)) {
+    } else if (
+      input.name === "code_open" &&
+      text(args.id) &&
+      typeof input.result === "object" &&
+      input.result !== null &&
+      !("error" in input.result)
+    ) {
+      // The browser reports a failure as a result with an error, which reaches this point without isError.
       source = {
         kind: "result",
         key: `assistant.artifact:${text(args.id)}`,

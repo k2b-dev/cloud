@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AssistantChatResult } from "../chat-context";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 import {
   buildFilesModel,
@@ -6,8 +7,9 @@ import {
   buildSourceEntries,
   buildWorkingModel,
   calendarDay,
-  dedupeSearchHits,
   groupByTime,
+  matchChatSearch,
+  resultsInFolder,
 } from "./chat-sidebar-model";
 
 const days = (count: number) => minutesAgo(count * 24 * 60);
@@ -148,12 +150,61 @@ describe("chat sidebar files, working files, and sources", () => {
     ]);
   });
 
-  test("show a delivered file once in search hits", () => {
-    const hits = dedupeSearchHits([
-      source("result", "/report.pdf", "Report", minutesAgo(1), { path: "/report.pdf" }),
-      source("file", "/report.pdf", "report.pdf", minutesAgo(1), { path: "/report.pdf" }),
-      source("file", "/data.csv", "data.csv", minutesAgo(1), { path: "/data.csv" }),
-    ]);
-    expect(hits.map((hit) => `${hit.kind}:${hit.key}`)).toEqual(["result:/report.pdf", "file:/data.csv"]);
+  test("search finds a result by its file name, an app by its current title, and shows a delivered file once", () => {
+    const report = fileResult("/final-report.pdf", { title: "Sales summary", at: minutesAgo(5), turn: "t1", seq: 3 });
+    const app: AssistantChatResult = {
+      key: "assistant.artifact:App001",
+      kind: "app",
+      title: "Revenue dashboard",
+      description: null,
+      icon: "ti ti-app-window",
+      deliveredAt: minutesAgo(4),
+      turnId: "t1",
+      callId: "open",
+      messageSeq: 3,
+      app: { id: "App001", href: "/app/assistant/apps/App001", published: false, lastRun: null },
+    };
+    // The server matched the result's path and the file itself; the local title search knows nothing of the path.
+    const byPath = matchChatSearch(
+      [report, app],
+      [
+        source("result", "/final-report.pdf", "Sales summary", minutesAgo(5), {
+          path: "/final-report.pdf",
+          size: 4,
+          mediaType: "application/pdf",
+        }),
+        source("file", "/final-report.pdf", "final-report.pdf", minutesAgo(5), { path: "/final-report.pdf", size: 4 }),
+        source("file", "/data.csv", "data.csv", minutesAgo(9), { path: "/data.csv", size: 2, mediaType: "text/csv" }),
+      ],
+      "final-report",
+    );
+    expect(byPath.results.map((result) => result.key)).toEqual(["/final-report.pdf"]);
+    expect(byPath.files.map((file) => file.path)).toEqual(["/data.csv"]);
+    // The server stores an app under "Studio app"; its current title matches only here.
+    expect(matchChatSearch([report, app], [], "dashboard").results.map((result) => result.key)).toEqual(["assistant.artifact:App001"]);
+    expect(matchChatSearch([report, app], [], "final-report.pdf").results).toEqual([report]);
+  });
+
+  test("a delivered file the snapshot does not carry shows as a file, a deleted one not at all", () => {
+    const matches = matchChatSearch(
+      [],
+      [
+        source("result", "/old.pdf", "Old report", minutesAgo(90), { path: "/old.pdf", size: 4, mediaType: "application/pdf" }),
+        source("result", "/gone.pdf", "Gone", minutesAgo(91), { path: null, size: null }),
+        source("web", "https://example.test/", "Example", minutesAgo(2)),
+      ],
+      "report",
+    );
+    expect(matches.files).toEqual([{ path: "/old.pdf", title: "Old report", mediaType: "application/pdf", size: 4 }]);
+    expect(matches.sources.map((hit) => hit.key)).toEqual(["https://example.test/"]);
+  });
+
+  test("a working folder's results are the delivered files below it", () => {
+    const results = [
+      fileResult("/temp/report/final.pdf", { at: minutesAgo(1), turn: "t", seq: 1 }),
+      fileResult("/temp/report-2/other.pdf", { at: minutesAgo(1), turn: "t", seq: 1 }),
+      fileResult("/report.pdf", { at: minutesAgo(1), turn: "t", seq: 1 }),
+    ];
+    expect(resultsInFolder(results, "report").map((result) => result.key)).toEqual(["/temp/report/final.pdf"]);
   });
 });

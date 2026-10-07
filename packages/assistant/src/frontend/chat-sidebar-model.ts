@@ -266,15 +266,40 @@ export const buildSourceEntries = (sources: readonly AiConversationSource[]): So
   return entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || a.key.localeCompare(b.key));
 };
 
-/** Search hits from the sources endpoint, with a result and its file shown once. */
-export const dedupeSearchHits = (hits: readonly AiConversationSource[]): AiConversationSource[] => {
-  const resultPaths = new Set(hits.flatMap((hit) => (hit.kind === "result" && hit.path ? [hit.path] : [])));
-  const seen = new Set<string>();
-  return hits.filter((hit) => {
-    if (hit.kind === "file" && resultPaths.has(hit.key)) return false;
-    const key = `${hit.kind}\0${hit.key}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+export type ChatSearchMatches = {
+  results: AssistantChatResult[];
+  /** Files with their path; a delivered file the snapshot does not carry as a result shows here under its title. */
+  files: Array<{ path: string; title: string; mediaType: string | null; size: number | null }>;
+  sources: AiConversationSource[];
 };
+
+/**
+ * What a sidebar search shows: results the server matched, or whose title, description, or path matches the query
+ * (an app's current title lives only in the snapshot), then files, then sources. A delivered file shows once.
+ */
+export const matchChatSearch = (
+  results: readonly AssistantChatResult[],
+  hits: readonly AiConversationSource[],
+  query: string,
+): ChatSearchMatches => {
+  const needle = query.trim().toLocaleLowerCase();
+  const matched = new Set(hits.flatMap((hit) => (hit.kind === "result" ? [hit.key] : [])));
+  const shown = results.filter(
+    (result) =>
+      matched.has(result.key) ||
+      (needle.length > 0 && `${result.title} ${result.description ?? ""} ${result.file?.path ?? ""}`.toLocaleLowerCase().includes(needle)),
+  );
+  const paths = new Set(shown.flatMap((result) => (result.file ? [result.file.path] : [])));
+  const files: ChatSearchMatches["files"] = [];
+  for (const hit of hits) {
+    const path = hit.kind === "file" ? hit.key : hit.kind === "result" ? hit.path : null;
+    if (!path || paths.has(path) || (hit.kind === "result" && hit.size === null)) continue;
+    paths.add(path);
+    files.push({ path, title: hit.title, mediaType: hit.mediaType, size: hit.size });
+  }
+  return { results: shown, files, sources: hits.filter((hit) => hit.kind === "web" || hit.kind === "activity" || hit.kind === "resource") };
+};
+
+/** The results stored in a working folder: deleting the folder deletes them too. */
+export const resultsInFolder = (results: readonly AssistantChatResult[], folder: string): AssistantChatResult[] =>
+  results.filter((result) => result.file?.path.startsWith(`/temp/${folder}/`));

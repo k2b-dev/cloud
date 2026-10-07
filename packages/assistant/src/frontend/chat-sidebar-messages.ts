@@ -1,6 +1,12 @@
 import { i18n } from "@k2b/stdlib";
 
 const plural = (count: number, one: string, other: string) => `${count} ${count === 1 ? one : other}`;
+/** Up to three titles in the language's quotation marks, then an ellipsis. */
+const titles = (values: readonly string[], open: string, close: string) =>
+  values
+    .slice(0, 3)
+    .map((value) => `${open}${value}${close}`)
+    .join(", ") + (values.length > 3 ? ", …" : "");
 
 /** Copy of the chat sidebar ("In this chat"). */
 export const chatSidebarMessages = i18n.define({
@@ -26,6 +32,8 @@ export const chatSidebarMessages = i18n.define({
       resultsEmpty: "Files, apps, and visualizations that the assistant creates for you appear here.",
       newResults: ({ count }: { count: number }) => `New · ${count}`,
       showNewResults: ({ count }: { count: number }) => `Show ${plural(count, "new result", "new results")}`,
+      updates: "Update",
+      showUpdates: "Show the latest changes",
       moreFromTurn: ({ count }: { count: number }) => `${count} more from this turn`,
       showInChat: "Show in chat",
       showInChatNamed: ({ title }: { title: string }) => `Show “${title}” in the chat`,
@@ -41,6 +49,7 @@ export const chatSidebarMessages = i18n.define({
       runRunning: "running",
 
       yourFiles: "Your files",
+      files: "Files",
       older: "Older",
       voiceRecordings: "Voice recordings",
 
@@ -58,8 +67,16 @@ export const chatSidebarMessages = i18n.define({
       storage: ({ used, max }: { used: string; max: string }) => `${used} of ${max} used`,
       deleteGroup: "Delete group",
       deleteGroupNamed: ({ name }: { name: string }) => `Delete the group “${name}”?`,
-      deleteGroupDetail: ({ count }: { count: number }) =>
-        `This deletes ${plural(count, "working file", "working files")} from this chat. Results and your files stay.`,
+      deleteGroupDetail: ({ count, results }: { count: number; results: readonly string[] }) =>
+        `This deletes ${plural(count, "file", "files")} from this chat` +
+        (results.length === 0
+          ? "."
+          : results.length === 1
+            ? `, including the result ${titles(results, "“", "”")}.`
+            : `, including ${results.length} results: ${titles(results, "“", "”")}.`),
+      hiddenGroups: ({ count }: { count: number }) =>
+        `${plural(count, "older group is", "older groups are")} not listed. Search finds their files.`,
+      moreFiles: ({ count }: { count: number }) => `${plural(count, "more file is", "more files are")} not listed. Search finds them.`,
       groupActions: ({ name }: { name: string }) => `Actions for ${name}`,
       fileActions: ({ name }: { name: string }) => `Actions for ${name}`,
       showMoreFiles: "Show more",
@@ -110,6 +127,8 @@ export const chatSidebarMessages = i18n.define({
       resultsEmpty: "Dateien, Apps und Visualisierungen, die der Assistant für dich erstellt, erscheinen hier.",
       newResults: ({ count }: { count: number }) => `Neu · ${count}`,
       showNewResults: ({ count }: { count: number }) => `${count} ${count === 1 ? "neues Ergebnis" : "neue Ergebnisse"} anzeigen`,
+      updates: "Aktualisieren",
+      showUpdates: "Neueste Änderungen anzeigen",
       moreFromTurn: ({ count }: { count: number }) => `${count} weitere aus dieser Runde`,
       showInChat: "Im Chat zeigen",
       showInChatNamed: ({ title }: { title: string }) => `„${title}“ im Chat zeigen`,
@@ -125,6 +144,7 @@ export const chatSidebarMessages = i18n.define({
       runRunning: "läuft",
 
       yourFiles: "Deine Dateien",
+      files: "Dateien",
       older: "Ältere",
       voiceRecordings: "Sprachaufnahmen",
 
@@ -142,8 +162,17 @@ export const chatSidebarMessages = i18n.define({
       storage: ({ used, max }: { used: string; max: string }) => `${used} von ${max} belegt`,
       deleteGroup: "Gruppe löschen",
       deleteGroupNamed: ({ name }: { name: string }) => `Gruppe „${name}“ löschen?`,
-      deleteGroupDetail: ({ count }: { count: number }) =>
-        `Damit werden ${count} ${count === 1 ? "Arbeitsdatei" : "Arbeitsdateien"} aus diesem Chat gelöscht. Ergebnisse und deine Dateien bleiben.`,
+      deleteGroupDetail: ({ count, results }: { count: number; results: readonly string[] }) =>
+        `Damit ${count === 1 ? "wird 1 Datei" : `werden ${count} Dateien`} aus diesem Chat gelöscht` +
+        (results.length === 0
+          ? "."
+          : results.length === 1
+            ? `, darunter das Ergebnis ${titles(results, "„", "“")}.`
+            : `, darunter ${results.length} Ergebnisse: ${titles(results, "„", "“")}.`),
+      hiddenGroups: ({ count }: { count: number }) =>
+        `${count} ${count === 1 ? "ältere Gruppe ist" : "ältere Gruppen sind"} nicht aufgeführt. Die Suche findet ihre Dateien.`,
+      moreFiles: ({ count }: { count: number }) =>
+        `${count} weitere ${count === 1 ? "Datei ist" : "Dateien sind"} nicht aufgeführt. Die Suche findet sie.`,
       groupActions: ({ name }: { name: string }) => `Aktionen für ${name}`,
       fileActions: ({ name }: { name: string }) => `Aktionen für ${name}`,
       showMoreFiles: "Weitere anzeigen",

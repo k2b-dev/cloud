@@ -474,19 +474,16 @@ export const aiFileStore = {
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
       const path = await storedAiFilePath(tx, input.conversationId, input.path);
-      if (input.recursive) {
-        const pattern = pathsBelow(path);
-        const rows = await tx<{ id: string }[]>`
-          DELETE FROM ai.files
-          WHERE conversation_id = ${input.conversationId} AND (path = ${path} OR path LIKE ${pattern})
-          RETURNING id
-        `;
-        return rows.length;
-      }
+      const pattern = input.recursive ? pathsBelow(path) : null;
       const rows = await tx<{ id: string }[]>`
         DELETE FROM ai.files
-        WHERE conversation_id = ${input.conversationId} AND path = ${path}
+        WHERE conversation_id = ${input.conversationId} AND (path = ${path} OR path LIKE ${pattern})
         RETURNING id
+      `;
+      // A result is the file it delivered. Once that file is gone, another file at the same path is not that result.
+      await tx`
+        DELETE FROM ai.conversation_sources
+        WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND (source_key = ${path} OR source_key LIKE ${pattern})
       `;
       return rows.length;
     });
@@ -506,24 +503,18 @@ export const aiFileStore = {
       if (target[0]) return "conflict" as const;
       await tx`UPDATE ai.files SET path = ${input.to}, updated_at = now(), version = version + 1 WHERE id = ${source[0].id}::uuid`;
       // A delivered result is the file, not its old name. A result row left at the new name belonged to a file that
-      // is gone; the moved file's own delivery replaces it.
-      const moved = await tx<{ source_key: string }[]>`
-        SELECT source_key FROM ai.conversation_sources
+      // is gone and must not attach to this one; the moved file's own delivery, if any, moves there.
+      await tx`
+        DELETE FROM ai.conversation_sources
+        WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${input.to}
+      `;
+      // A title that was only the old file name follows the new one; a title the assistant chose stays.
+      await tx`
+        UPDATE ai.conversation_sources
+        SET source_key = ${input.to},
+            title = CASE WHEN title = ${from.slice(from.lastIndexOf("/") + 1)} THEN ${input.to.slice(input.to.lastIndexOf("/") + 1)} ELSE title END
         WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${from}
       `;
-      if (moved[0]) {
-        await tx`
-          DELETE FROM ai.conversation_sources
-          WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${input.to}
-        `;
-        // A title that was only the old file name follows the new one; a title the assistant chose stays.
-        await tx`
-          UPDATE ai.conversation_sources
-          SET source_key = ${input.to},
-              title = CASE WHEN title = ${from.slice(from.lastIndexOf("/") + 1)} THEN ${input.to.slice(input.to.lastIndexOf("/") + 1)} ELSE title END
-          WHERE conversation_id = ${input.conversationId} AND kind = 'result' AND source_key = ${from}
-        `;
-      }
       return "renamed" as const;
     });
   },

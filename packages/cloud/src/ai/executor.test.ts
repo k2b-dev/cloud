@@ -564,6 +564,39 @@ test("web search sources retain the query above the activity description", async
   }
 });
 
+test("an app is a result only when the browser opened it", async () => {
+  const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
+  const call = {
+    conversationId: "conversation",
+    turnId: "turn",
+    callId: "open",
+    name: "code_open",
+    args: { id: "App002" },
+    isError: false,
+  };
+  try {
+    // A browser tool ends when the turn continues, with what the browser reported and without isError, also on failure.
+    for (const result of [{ error: "Browser workspace disconnected" }, "opened", null])
+      await __aiExecutorTest.indexConversationToolSource({ ...call, result });
+    expect(index).not.toHaveBeenCalled();
+    await __aiExecutorTest.indexConversationToolSource({ ...call, result: { opened: "App002", started: false } });
+    expect(index).toHaveBeenCalledWith({
+      conversationId: "conversation",
+      turnId: "turn",
+      callId: "open",
+      source: {
+        kind: "result",
+        key: "assistant.artifact:App002",
+        title: "Studio app",
+        icon: "ti ti-app-window",
+        ref: { type: "assistant.artifact", id: "App002" },
+      },
+    });
+  } finally {
+    index.mockRestore();
+  }
+});
+
 test("direct code tools index returned Studio references without a capability wrapper", async () => {
   const index = spyOn(aiConversations, "indexConversationResources").mockResolvedValue(undefined);
   const call = {

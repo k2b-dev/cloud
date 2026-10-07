@@ -8,7 +8,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
-import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot } from "./AssistantChatSidebar.fixture";
+import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
 // Which presentation the sidebar takes, whether the server's first frame is final, and whether live updates move what
 // someone reads are layout results of the shipped cascade, which happy-dom does not model. A real engine lays out the
@@ -33,7 +33,8 @@ import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "ch
 
 const config = window.harness;
 const [snapshot, setSnapshot] = createSignal(config.snapshot);
-const sidebar = { setSnapshot, jumps: [], revealed: null };
+// \`next\`: what the following reload returns; without it a reload returns the same content anew.
+const sidebar = { setSnapshot, jumps: [], revealed: null, next: null, actions: [] };
 window.sidebar = sidebar;
 const state = { snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined };
 render(
@@ -41,6 +42,7 @@ render(
     <SidebarHarness
       snapshot={snapshot}
       initialClosed={config.closed}
+      refresh={async () => setSnapshot(JSON.parse(JSON.stringify(sidebar.next ?? snapshot())))}
       onJump={(target) => {
         sidebar.jumps.push(target);
         sidebar.revealed = revealChatDelivery(document.querySelector(".harness-timeline"), target)?.textContent ?? null;
@@ -48,7 +50,14 @@ render(
       onSheet={() =>
         void openAssistantChatSidebarSheet({
           state,
-          actions: { onOpenFile() {}, onOpenApp() {}, onJump() {} },
+          actions: {
+            onOpenFile() {},
+            onOpenApp() {},
+            onJump() {},
+            onOpenSecrets() {
+              sidebar.actions.push({ name: "secrets", sheetOpen: document.querySelector('[role="dialog"]') !== null });
+            },
+          },
           wrap: (content) => <LocaleProvider locale="de">{content()}</LocaleProvider>,
         })
       }
@@ -116,7 +125,8 @@ const pageHtml = (body: string, closed: boolean, snapshot: AssistantChatContextS
   `<body class="k2b-ui" style="margin:0"><div id="root">${body}</div>` +
   `<script>window.harness = ${JSON.stringify({ closed, snapshot })};</script></body></html>`;
 
-const newPage = (width: number) => browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 768, hasTouch: width < 768 });
+const newPage = (width: number, touch = width < 768) =>
+  browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 768, hasTouch: touch });
 
 /** Serves the page from an origin, so it has cookies and history like the real one. */
 const load = async (page: Page, html: string) => {
@@ -133,8 +143,8 @@ const serverPage = async (width: number, closed = false, snapshot = sidebarSnaps
 };
 
 /** The same component rendered in the browser, with live controls on `window.sidebar`. */
-const clientPage = async (width: number, closed = false, snapshot = sidebarSnapshot()) => {
-  const page = await newPage(width);
+const clientPage = async (width: number, closed = false, snapshot = sidebarSnapshot(), touch = width < 768) => {
+  const page = await newPage(width, touch);
   await load(page, pageHtml("", closed, snapshot));
   page.setDefaultTimeout(4000);
   await page.addScriptTag({ content: script });
@@ -159,6 +169,24 @@ const layout = (page: Page) =>
   });
 
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+
+type HarnessWindow = { sidebar: { setSnapshot: (value: unknown) => void; next: unknown; actions: unknown[] } };
+/** A live update: the snapshot as the server sends it, a new object every time. */
+const push = (page: Page, snapshot: AssistantChatContextSnapshot) =>
+  page.evaluate((json) => (window as unknown as HarnessWindow).sidebar.setSnapshot(JSON.parse(json)), JSON.stringify(snapshot));
+/** Pointer and focus away from the sidebar, so live updates apply. */
+const leaveSidebar = async (page: Page) => {
+  await page.mouse.move(100, 400);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+};
+const workingFile = (path: string, index: number) => ({
+  path,
+  size: 1_000,
+  mediaType: "text/html",
+  origin: "assistant",
+  updatedAt: minutesAgo(30 + index),
+  version: 1,
+});
 
 describe(`Assistant chat sidebar in ${browserName}`, () => {
   test("the server's first frame is final: column at 1280 px, toggle when closed or narrow, and the browser render agrees", async () => {
@@ -317,6 +345,239 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const delivered = await page.locator('[data-call-id="call-/Umsatzbericht Q1-Q3.pdf"]').boundingBox();
       expect(delivered!.y).toBeGreaterThan(0);
       expect(delivered!.y).toBeLessThan(800);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("a drawer that widened into the column closes with its close button and stays closed", async () => {
+    const page = await clientPage(820);
+    try {
+      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await frames(page);
+      expect((await layout(page)).sidebar).toMatchObject({ x: 1280 - 320, width: 320 });
+      await page.getByRole("button", { name: "Seitenleiste schließen" }).click();
+      await frames(page);
+      const closed = await layout(page);
+      expect(closed.sidebar).toBeNull();
+      expect(closed.toggle).not.toBeNull();
+      expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
+      // Narrow again, it stays closed until the toggle opens it.
+      await page.setViewportSize({ width: 820, height: 800 });
+      await frames(page);
+      expect((await layout(page)).sidebar).toBeNull();
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("opened groups and a working folder's loaded files stay through live updates and a deletion inside", async () => {
+    const results = Array.from({ length: 40 }, (_, index) =>
+      fileResult(`/bericht-${index}.pdf`, { at: minutesAgo(30 + index * 24 * 60), turn: `t${index}`, seq: index + 1 }),
+    );
+    const snapshot = sidebarSnapshot({ results });
+    const page = await clientPage(1280, false, snapshot);
+    const listed: string[] = [];
+    await page.route("http://assistant.test/api/ai/conversations/**", async (route) => {
+      if (route.request().method() === "DELETE") return route.fulfill({ json: { deleted: true } });
+      const prefix = new URL(route.request().url()).searchParams.get("prefix")!;
+      listed.push(prefix);
+      return route.fulfill({
+        json: {
+          files: ["bericht.html", "chart.png", "daten.csv"].map((name, index) => workingFile(`${prefix}${name}`, index)),
+          totalBytes: 0,
+        },
+      });
+    });
+    try {
+      const sidebar = page.locator("#assistant-chat-context");
+      const august = sidebar.getByRole("button", { name: /August 2026/ });
+      await august.click();
+      await sidebar.getByRole("button", { name: /Arbeitsdateien/ }).click();
+      const folder = sidebar.getByRole("button", { name: /^umsatzbericht-q1-q3/ });
+      await folder.click();
+      await sidebar.getByText("chart.png", { exact: true }).waitFor();
+
+      // Every live update builds the groups from a new snapshot.
+      await leaveSidebar(page);
+      await push(page, snapshot);
+      await frames(page);
+      expect(await august.getAttribute("aria-expanded")).toBe("true");
+      expect(await folder.getAttribute("aria-expanded")).toBe("true");
+      expect(await sidebar.getByText("chart.png", { exact: true }).count()).toBe(1);
+      expect(listed).toEqual(["/temp/umsatzbericht-q1-q3/"]);
+
+      // Deleting a file reloads the snapshot with one file less; the folder stays open with its other files.
+      const next = structuredClone(snapshot);
+      next.working.groups[0]!.count -= 1;
+      next.working.count -= 1;
+      await page.evaluate((json) => {
+        (window as unknown as HarnessWindow).sidebar.next = JSON.parse(json);
+      }, JSON.stringify(next));
+      await sidebar.getByRole("button", { name: "chart.png löschen" }).click();
+      await page.getByRole("button", { name: "Löschen", exact: true }).click();
+      await sidebar.getByText("chart.png", { exact: true }).waitFor({ state: "detached" });
+      await frames(page);
+      expect(await folder.getAttribute("aria-expanded")).toBe("true");
+      expect(await august.getAttribute("aria-expanded")).toBe("true");
+      expect(await sidebar.getByText("daten.csv", { exact: true }).count()).toBe(1);
+      expect(listed).toHaveLength(1);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("on a touch screen the drawer keeps what someone reads until they touch outside it", async () => {
+    const page = await clientPage(820, false, sidebarSnapshot(), true);
+    try {
+      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).tap();
+      const sidebar = page.locator("#assistant-chat-context");
+      await sidebar.locator(".assistant-result__description").first().tap();
+      const next = sidebarSnapshot();
+      next.results = [fileResult("/Prognose Q4.xlsx", { at: SIDEBAR_NOW, turn: "turn-4", seq: 12 }), ...next.results];
+      await push(page, next);
+      await frames(page);
+      expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Umsatzbericht Q1-Q3.pdf");
+      expect(await page.locator('.assistant-sidebar-new[data-pending="true"]').textContent()).toBe("Neu · 1");
+
+      // A touch on the chat ends the reading.
+      await page.touchscreen.tap(100, 400);
+      await frames(page);
+      expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Prognose Q4.xlsx");
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("other changes than results also wait while someone reads, behind an update control", async () => {
+    const page = await clientPage(1280);
+    try {
+      const sidebar = page.locator("#assistant-chat-context");
+      const box = (await sidebar.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + 300);
+      const next = sidebarSnapshot();
+      next.files = [upload("/neu-hochgeladen.csv", SIDEBAR_NOW), ...next.files];
+      next.fileCount += 1;
+      await push(page, next);
+      await frames(page);
+      expect(await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).count()).toBe(0);
+      const update = page.locator('.assistant-sidebar-new[data-pending="true"]');
+      expect(await update.textContent()).toBe("Aktualisieren");
+      await update.click();
+      await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).waitFor();
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("sources bundled into few rows still lead to all of them, and loaded pages start over with a new first page", async () => {
+    const mails = Array.from({ length: 100 }, (_, index) =>
+      source("resource", `mail.message:M${index}`, `Mail ${index}`, minutesAgo(10 + index), {
+        ref: { type: "mail.message", id: `M${index}` },
+        sourceCallId: index < 50 ? "list-1" : "list-2",
+        icon: "ti ti-mail",
+      }),
+    );
+    const snapshot = sidebarSnapshot({ sources: mails, sourceCount: 150, sourceCursor: "cursor-1" });
+    const page = await clientPage(1280, false, snapshot);
+    const cursors: (string | null)[] = [];
+    await page.route("http://assistant.test/api/assistant/**", async (route) => {
+      cursors.push(new URL(route.request().url()).searchParams.get("cursor"));
+      return route.fulfill({
+        json: { sources: [source("web", "https://example.test/older", "Ältere Seite", minutesAgo(600))], total: 150 },
+      });
+    });
+    try {
+      const sidebar = page.locator("#assistant-chat-context");
+      await sidebar.getByRole("button", { name: /^Quellen/ }).click();
+      // The first page is two bundles, one per call; the older sources are one step away.
+      await sidebar.getByRole("button", { name: "Alle 150" }).click();
+      await sidebar.getByRole("button", { name: "Weitere laden" }).click();
+      await sidebar.getByText("Ältere Seite", { exact: true }).waitFor();
+      expect(cursors).toEqual(["cursor-1"]);
+
+      // A new first page ends elsewhere: the loaded pages start over instead of leaving a gap.
+      await leaveSidebar(page);
+      await push(page, { ...snapshot, sourceCount: 151, sourceCursor: "cursor-2" });
+      await frames(page);
+      expect(await sidebar.getByText("Ältere Seite", { exact: true }).count()).toBe(0);
+      await sidebar.getByRole("button", { name: "Weitere laden" }).click();
+      await sidebar.getByText("Ältere Seite", { exact: true }).waitFor();
+      expect(cursors).toEqual(["cursor-1", "cursor-2"]);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("deleting a working folder names the results stored in it", async () => {
+    const snapshot = sidebarSnapshot();
+    snapshot.results.push(
+      fileResult("/temp/umsatzbericht-q1-q3/vorschau.html", {
+        title: "Vorschau",
+        at: minutesAgo(200),
+        turn: "turn-1",
+        seq: 2,
+        mediaType: "text/html",
+      }),
+    );
+    const page = await clientPage(1280, false, snapshot);
+    try {
+      const sidebar = page.locator("#assistant-chat-context");
+      await sidebar.getByRole("button", { name: /Arbeitsdateien/ }).click();
+      await sidebar.locator(".assistant-sidebar-group__row").getByRole("button", { name: "Aktionen für Umsatzbericht Q1-Q3.pdf" }).click();
+      await page.getByRole("menuitem", { name: "Gruppe löschen" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      expect(await dialog.textContent()).toContain("Damit werden 7 Dateien aus diesem Chat gelöscht, darunter das Ergebnis „Vorschau“.");
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "detached" });
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("the toggle never covers the first message: below 56 rem the timeline starts below it", async () => {
+    for (const [width, closed] of [
+      [390, false],
+      [820, false],
+      [900, true],
+      [1280, true],
+    ] as const) {
+      const page = await clientPage(width, closed);
+      try {
+        const box = await page.evaluate(() => {
+          const content = document.querySelector(".harness-timeline")!;
+          const style = getComputedStyle(content);
+          const rect = content.getBoundingClientRect();
+          const toggle = document.querySelector(".assistant-context-toggle")!.getBoundingClientRect();
+          return {
+            top: rect.top + Number.parseFloat(style.paddingTop),
+            right: rect.right - Number.parseFloat(style.paddingRight),
+            toggleBottom: toggle.bottom,
+            toggleLeft: toggle.left,
+          };
+        });
+        // The messages start below the toggle, or end left of it.
+        expect(box.top >= box.toggleBottom || box.right <= box.toggleLeft).toBe(true);
+      } finally {
+        await page.close();
+      }
+    }
+  }, 30_000);
+
+  test("on a phone, an action in the sheet's Context runs after the sheet closed", async () => {
+    const page = await clientPage(390);
+    try {
+      await page.getByRole("button", { name: "Zeigen, was in diesem Chat ist" }).click();
+      const sheet = page.getByRole("dialog");
+      await sheet.getByRole("button", { name: /^Kontext/ }).click();
+      await sheet.getByRole("button", { name: "Secrets" }).click();
+      await sheet.waitFor({ state: "detached" });
+      await page.waitForFunction(() => (window as unknown as HarnessWindow).sidebar.actions.length > 0);
+      expect(await page.evaluate(() => (window as unknown as HarnessWindow).sidebar.actions)).toEqual([
+        { name: "secrets", sheetOpen: false },
+      ]);
     } finally {
       await page.close();
     }

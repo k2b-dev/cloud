@@ -15,6 +15,8 @@ export function SidebarHarness(props: {
   locale?: string;
   onJump?: (target: ChatSidebarJump) => void;
   onSheet?: () => void;
+  /** Reloads the snapshot, as after a deletion; nothing changes without it. */
+  refresh?: () => Promise<void>;
 }) {
   const host = createChatSidebarHost({ initialClosed: props.initialClosed === true, onSheet: () => props.onSheet?.() });
   const copy = chatSidebarMessages.resolve([props.locale ?? "de"]).t;
@@ -30,7 +32,7 @@ export function SidebarHarness(props: {
         >
           <section class="assistant-chat-messages" style={{ "min-height": "0", display: "flex" }}>
             <div class="k2b-chat-timeline__viewport" style={{ flex: "1", "overflow-y": "auto" }}>
-              <div class="harness-timeline" style={{ "max-width": "48rem", margin: "0 auto", padding: "1rem" }}>
+              <div class="harness-timeline k2b-chat-timeline__content">
                 <For each={turns}>
                   {(turn) => (
                     <article data-chat-anchor={String(turn * 3)} style={{ "margin-block": "1.5rem" }}>
@@ -66,7 +68,12 @@ export function SidebarHarness(props: {
           </IconButton>
           <AssistantChatSidebarPanel
             id="assistant-chat-context"
-            state={{ snapshot: props.snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined }}
+            state={{
+              snapshot: props.snapshot,
+              projectContext: () => null,
+              error: () => undefined,
+              refresh: async () => props.refresh?.(),
+            }}
             actions={{
               onOpenFile: () => undefined,
               onOpenApp: () => undefined,

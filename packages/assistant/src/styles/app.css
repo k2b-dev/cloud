@@ -88,6 +88,11 @@
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
 }
+/* Below 56rem the toggle always shows at the top of a full-width timeline: the first message starts below it, so the
+   toggle never covers it. From 56rem the timeline's centered column keeps clear of the toggle by itself. */
+@container assistant-chat (max-width: 55.999rem) {
+  .k2b-ui .assistant-chat-layout:has(> .assistant-context-toggle) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
+}
 
 @container assistant-chat (min-width: 56rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: column; }

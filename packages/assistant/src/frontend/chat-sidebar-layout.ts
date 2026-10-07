@@ -46,12 +46,16 @@ export const createChatSidebarHost = (options: { initialClosed: boolean; onSheet
     headingRef: (element: HTMLElement) => {
       heading = element;
     },
-    /** Closing the column is remembered; closing the drawer is not, it only covered the chat for a moment. */
+    /**
+     * Closing the column is remembered; closing the drawer is not, it only covered the chat for a moment. A drawer
+     * opened in a narrow chat that has widened since shows as the column, so closing always ends the drawer too.
+     */
     close: () => {
       if (layout && chatSidebarMode(layout) === "column") {
         setClosed(true);
         rememberAssistantContextClosed(true);
-      } else setDrawerOpen(false);
+      }
+      setDrawerOpen(false);
       // The toggle shows once the new state reached the DOM.
       queueMicrotask(() => toggle?.focus());
     },

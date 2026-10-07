@@ -2210,38 +2210,81 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         aiConversations.getConversation({ conversationId, ownerUserId: request.ownerUserId }),
       );
       // The app is a result of this chat because code_open delivered it here.
+      let delivered = true;
       const sources = spyOn(aiConversations, "listConversationSources").mockImplementation(async (request) => ({
-        sources: request.kinds?.includes("result")
-          ? [
-              {
-                kind: "result" as const,
-                key: `assistant.artifact:${resource.id}`,
-                title: "Studio app",
-                preview: null,
-                icon: "ti ti-app-window",
-                href: null,
-                path: null,
-                mediaType: null,
-                size: null,
-                ref: { type: "assistant.artifact", id: resource.id },
-                occurrences: 1,
-                firstSeenAt: new Date().toISOString(),
-                lastSeenAt: new Date().toISOString(),
-                sourceTurnId: turnId,
-                sourceCallId: "open-app",
-                sourceMessageSeq: 3,
-              },
-            ]
-          : [],
-        total: request.kinds?.includes("result") ? 1 : 0,
+        sources:
+          request.kinds?.includes("result") && delivered
+            ? [
+                {
+                  kind: "result" as const,
+                  key: `assistant.artifact:${resource.id}`,
+                  title: "Studio app",
+                  preview: null,
+                  icon: "ti ti-app-window",
+                  href: null,
+                  path: null,
+                  mediaType: null,
+                  size: null,
+                  ref: { type: "assistant.artifact", id: resource.id },
+                  occurrences: 1,
+                  firstSeenAt: new Date().toISOString(),
+                  lastSeenAt: new Date().toISOString(),
+                  sourceTurnId: turnId,
+                  sourceCallId: "open-app",
+                  sourceMessageSeq: 3,
+                },
+                // The person's own upload, handed over with present: it stays their file, not a result.
+                {
+                  kind: "result" as const,
+                  key: "/kunden.csv",
+                  title: "kunden.csv",
+                  preview: null,
+                  icon: "ti ti-file",
+                  href: null,
+                  path: "/kunden.csv",
+                  mediaType: "text/csv",
+                  size: 1,
+                  ref: null,
+                  occurrences: 1,
+                  firstSeenAt: new Date().toISOString(),
+                  lastSeenAt: new Date().toISOString(),
+                  sourceTurnId: turnId,
+                  sourceCallId: "present-upload",
+                  sourceMessageSeq: 3,
+                },
+              ]
+            : [],
+        total: request.kinds?.includes("result") && delivered ? 1 : 0,
+      }));
+      // The chat also wrote the app's source, which indexed it as a resource of the chat.
+      const resources = spyOn(aiConversations, "listConversationResources").mockImplementation(async (request) => ({
+        resources:
+          request.search === "assistant.artifact"
+            ? [
+                {
+                  ref: { type: "assistant.artifact", id: resource.id },
+                  title: "Studio app",
+                  preview: null,
+                  icon: null,
+                  href: null,
+                  firstSeenAt: new Date().toISOString(),
+                  lastSeenAt: new Date().toISOString(),
+                  sourceTurnId: turnId,
+                  sourceCallId: "write-app",
+                },
+              ]
+            : [],
       }));
       const tasks = spyOn(aiChatTasks, "list").mockResolvedValue([]);
       // This database holds only the tables code needs; the sidebar's Context section is not under test here.
       const skills = spyOn(aiSkills, "listConversationUses").mockResolvedValue([]);
       const memories = spyOn(aiMemories, "listFromConversation").mockResolvedValue([]);
+      await sql`INSERT INTO ai.files(conversation_id,path,bytes,size,media_type,origin)
+        VALUES (${conversationId}::uuid,'/kunden.csv','a'::bytea,1,'text/csv','user')`;
       try {
         const options = { timeZone: "Europe/Berlin" };
         const snapshot = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        expect(snapshot?.results.map((result) => result.key)).toEqual([`assistant.artifact:${resource.id}`]);
         // The result shows the app under its current title, with the state of its last run of this revision.
         expect(snapshot?.results[0]).toMatchObject({ kind: "app", title: resource.title, messageSeq: 3 });
         expect(snapshot?.results[0]?.app).toMatchObject({ id: resource.id, href: `/app/assistant/apps/${resource.id}`, lastRun: "ready" });
@@ -2249,9 +2292,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await artifacts.writeFile(resource.id, "main.ts", "export default()=>43", owner);
         expect((await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
         expect(await loadAssistantChatContextSnapshot(stranger.user.id, "abc234", options)).toBeNull();
+        // An app the chat built but never opened is no result, and the Studio overview still lists it.
+        delivered = false;
+        const built = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        expect(built?.results).toEqual([]);
+        expect(built?.apps.map((app) => app.id)).toEqual([resource.id]);
       } finally {
         lookup.mockRestore();
         sources.mockRestore();
+        resources.mockRestore();
+        await sql`DELETE FROM ai.files WHERE conversation_id=${conversationId}::uuid AND path='/kunden.csv'`;
         tasks.mockRestore();
         skills.mockRestore();
         memories.mockRestore();
