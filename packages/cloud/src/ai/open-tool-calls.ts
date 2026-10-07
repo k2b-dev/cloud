@@ -5,6 +5,16 @@ export const AI_OPEN_TOOL_CALL_RESULT =
   "No result: the turn ended before this call returned, so it may or may not have run. Check its effect before you repeat it.";
 
 /**
+ * nessi answers a call without a directly following result with this text before it calls the provider. It does not
+ * say whether the call ran, and it leaves a result stored after another message apart from its call. nessi does not
+ * export the text; the tests that run a request through nessi fail when it changes.
+ */
+const NESSI_INTERRUPTED_RESULT = "Tool call was interrupted before it returned a result.";
+
+const isNessiAnswer = (message: Message): boolean =>
+  message.role === "tool_result" && message.isError === true && message.result === NESSI_INTERRUPTED_RESULT;
+
+/**
  * Where each call of the model message at `index` has its result: the first result for it before the next user
  * message, or before a later model message with a call of the same ID, since some providers reuse call IDs from turn to
  * turn.
@@ -24,7 +34,9 @@ const resultsOf = (messages: readonly Message[], index: number, ids: ReadonlySet
  * Gives every call its result right after the message that made it. A call without one gets an error result; a result
  * stored after another model message, such as a scheduled result delivered while the call ran, moves up to its call.
  */
-const answerOpenCalls = (messages: Message[]): Message[] => {
+const answerOpenCalls = (request: Message[]): Message[] => {
+  // nessi's own answers make way for the result stored apart from the call, or for a clearer answer.
+  const messages = request.some(isNessiAnswer) ? request.filter((message) => !isNessiAnswer(message)) : request;
   let out: Message[] | null = null;
   const moved = new Set<number>();
   for (let index = 0; index < messages.length; index++) {
@@ -61,7 +73,8 @@ const answerOpenCalls = (messages: Message[]): Message[] => {
  * history, so every later turn of the chat would fail, and the model could not tell whether the call ran. The request
  * answers each open call as not returned and puts each result next to its call; the stored history keeps everything
  * as it was, so the chat still shows an open call as not run. A running turn does not see scheduled results that
- * arrived during it, and nessi answers every call before the next model call, so only earlier turns need this.
+ * arrived during it, and nessi answers every call before the next model call, so only earlier turns need this. nessi
+ * also answers an open call itself, but neither says that it may have run nor moves a result up to its call.
  */
 export const answerOpenToolCalls = (provider: Provider): Provider => ({
   name: provider.name,

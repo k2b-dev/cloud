@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Message, Provider, ProviderRequest } from "@k2b/nessi";
+import { type Message, memoryStore, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
 import { AI_OPEN_TOOL_CALL_RESULT, answerOpenToolCalls } from "./open-tool-calls";
 
 /** Records each streamed request. */
@@ -60,6 +60,33 @@ test("a result stored after a scheduled message moves up to its call instead of 
   const sent = await send([user("Send both"), calls("a", "b"), result("a"), digest, result("b"), user("Thanks")]);
   expect(sent).toEqual([user("Send both"), calls("a", "b"), result("b"), result("a"), digest, user("Thanks")]);
   expect(sent.filter((message) => message.role === "tool_result" && message.callId === "b")).toHaveLength(1);
+});
+
+/** What the provider receives when nessi runs the next turn over `history`, which nessi itself repairs first. */
+const sendThroughNessi = async (history: Message[], input: string) => {
+  const requests: ProviderRequest[] = [];
+  const store = memoryStore();
+  for (const message of history) await store.append(message);
+  for await (const _event of nessi({ systemPrompt: "Test", store, provider: answerOpenToolCalls(recording(requests)), input })) {
+  }
+  return requests[0]!.messages;
+};
+
+test("through nessi, which answers an open call itself, the call still reads as not returned", async () => {
+  const sent = await sendThroughNessi([user("Send both"), calls("done", "open"), result("done")], "Continue where you left off.");
+  expect(sent).toEqual([
+    user("Send both"),
+    calls("done", "open"),
+    { role: "tool_result", callId: "open", name: "send_mail", result: AI_OPEN_TOOL_CALL_RESULT, isError: true },
+    result("done"),
+    user("Continue where you left off."),
+  ]);
+});
+
+test("through nessi, a result stored after a scheduled message still moves up to its call, once", async () => {
+  const digest: Message = { role: "assistant", content: [{ type: "text", text: "Your daily digest is ready." }] };
+  const sent = await sendThroughNessi([user("Send both"), calls("a", "b"), result("a"), digest, result("b")], "Thanks");
+  expect(sent).toEqual([user("Send both"), calls("a", "b"), result("b"), result("a"), digest, user("Thanks")]);
 });
 
 test("a history without open calls reaches the provider unchanged", async () => {
