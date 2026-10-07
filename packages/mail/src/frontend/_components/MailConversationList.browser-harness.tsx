@@ -1,11 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { batch, createSignal, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import type { Mailbox } from "../../contracts";
-import type { MailFolderView } from "../../service/messages";
+import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
+import MailConversationReader from "./MailConversationReader";
 import type { MailListItem } from "./mail-navigation";
 
 export type MailListHarnessOptions = {
@@ -16,6 +17,11 @@ export type MailListHarnessOptions = {
   sidebarCollapsed?: boolean;
   /** Folders whose mail stays inside them, which All mail and the work views name one after another. */
   folderOnlyHints?: MailFolderView[];
+  /**
+   * Opens a clicked conversation in the real reader, as the workspace does: the URL follows through the
+   * history, the detail arrives as one reconciled snapshot, and back and forward restore it.
+   */
+  reader?: boolean;
 };
 
 declare global {
@@ -34,6 +40,42 @@ window.folderHintDismissed = false;
 const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unknown as Mailbox;
 const noop = () => {};
 
+/** One message per conversation; even rows have an HTML body in its frame, odd rows a plain text body. */
+const detailFor = (item: MailListItem | undefined) => {
+  if (!item?.conversationId) return { selectedConversationId: null, subject: "", messages: [] as MessageDetail[] };
+  const html = Number(item.conversationId.slice(2)) % 2 === 0;
+  const message: MessageDetail = {
+    id: `Msg${item.conversationId.slice(2)}`,
+    subject: item.subject,
+    messageId: `<${item.conversationId}@example.test>`,
+    internalDate: item.latestMessageAt,
+    sentAt: item.latestMessageAt,
+    from: [{ name: item.participantLabels[0] ?? "", address: "person@example.test" }],
+    to: [],
+    preview: item.preview,
+    hasAttachments: false,
+    replyTo: [],
+    cc: [],
+    flags: [],
+    keywords: [],
+    hydrationStatus: "complete",
+    remoteAvailable: true,
+    folderId: "Fold01",
+    contentType: html ? "text/html" : "text/plain",
+    sizeBytes: 64,
+    plainText: `Body of ${item.subject}`,
+    sanitizedHtml: html ? `<p>Body of ${item.subject}</p>` : null,
+    forwardText: "",
+    selectedHeaders: {},
+    sourceAvailable: true,
+    mailingList: null,
+    remoteContent: { imageIds: [], allowedByRule: false, sender: "person@example.test", domain: "example.test" },
+    delivery: null,
+    attachments: [],
+  };
+  return { selectedConversationId: item.conversationId, subject: item.subject, messages: [message] };
+};
+
 window.mountMailList = (options) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
@@ -41,6 +83,18 @@ window.mountMailList = (options) => {
   const [list, setList] = createStore({ items: options.items });
   const [hintFolders, setHintFolders] = createSignal(options.folderOnlyHints ?? []);
   window.setMailItems = (items) => setList("items", reconcile(items));
+  const [selected, setSelected] = createSignal(options.selectedConversationId);
+  const [detail, setDetail] = createStore(detailFor(options.items.find((item) => item.conversationId === selected())));
+  const open = (conversationId: string | null) =>
+    batch(() => {
+      setSelected(conversationId);
+      setDetail(reconcile(detailFor(list.items.find((item) => item.conversationId === conversationId))));
+    });
+  const requestUrl = () => `/app/mail/Box001${selected() ? `?conversation=${selected()}` : ""}`;
+  if (options.reader) {
+    history.replaceState(null, "", requestUrl());
+    window.addEventListener("popstate", () => open(new URL(location.href).searchParams.get("conversation")));
+  }
   render(
     () => (
       <LocaleProvider locale={options.locale}>
@@ -77,12 +131,12 @@ window.mountMailList = (options) => {
                 <MailConversationList
                   mailbox={mailbox}
                   mailboxId="Box001"
-                  requestUrl={`/app/mail/Box001${options.selectedConversationId ? `?conversation=${options.selectedConversationId}` : ""}`}
+                  requestUrl={requestUrl()}
                   query=""
                   title="Inbox"
                   items={list.items}
                   error={null}
-                  selectedConversationId={options.selectedConversationId}
+                  selectedConversationId={selected()}
                   selectedMessageId={null}
                   selectedConversationIds={new Set()}
                   selectionMode={options.selectionMode ?? false}
@@ -116,6 +170,9 @@ window.mountMailList = (options) => {
                   onNavigate={noop}
                   onNavigateItem={(href) => {
                     window.mailNavigations.push(href);
+                    if (!options.reader) return;
+                    history.pushState(null, "", href);
+                    open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
                   onToggleSelectionMode={noop}
                   onListModeChange={noop}
@@ -133,7 +190,50 @@ window.mountMailList = (options) => {
                 />
               </AppWorkspace.MainPane>
               <div id="reader" class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]">
-                Reader
+                <Show when={options.reader} fallback="Reader">
+                  <MailConversationReader
+                    mailboxId="Box001"
+                    requestUrl={requestUrl()}
+                    canWrite
+                    canAdmin={false}
+                    identities={[]}
+                    selectionKey={detail.selectedConversationId}
+                    selectedConversationId={detail.selectedConversationId}
+                    selectedMessageId={null}
+                    unread={false}
+                    flagged={false}
+                    inJunk={false}
+                    reference={null}
+                    subject={detail.subject}
+                    messages={detail.messages}
+                    activity={[]}
+                    conversationSummary={null}
+                    conversationDrafts={[]}
+                    totalMessageCount={detail.messages.length}
+                    error={null}
+                    dateConfig={dateConfig}
+                    readingFormat="automatic"
+                    theme="light"
+                    calendarIntegrationAvailable={false}
+                    listCollapsed={false}
+                    detailsOpen={false}
+                    toolbarActions={["reply"]}
+                    onRestoreList={noop}
+                    onToggleDetails={noop}
+                    onToolbarActionsChange={noop}
+                    actionPending={false}
+                    onAction={noop}
+                    onOpenHref={noop}
+                    onManageTags={noop}
+                    onMergeConversation={noop}
+                    onReassignMessage={noop}
+                    onSplitMessage={noop}
+                    onSummarySaved={async () => {}}
+                    onReconcile={async () => {}}
+                    onReconcileAfterWrite={async () => {}}
+                    onClose={noop}
+                  />
+                </Show>
               </div>
             </AppWorkspace.Main>
           </AppWorkspace.Content>
