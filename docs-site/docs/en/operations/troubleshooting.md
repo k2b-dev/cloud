@@ -143,6 +143,21 @@ profile still uses an `assistant` CLI plugin from an earlier release. Run
 `cld plugins update assistant` for that profile; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
 
+## AI turns stop using tools before they finish
+
+A turn answers without further tools in the last tenth of its run time limit,
+when it repeats a pattern after a hint, or when the model profile's
+`maxToolRounds` is used up. Filter `ai:executor` for `AI turn got a loop hint`
+and `AI turn answers without further tools`; the `reason` is `run_time`,
+`loop`, or `tool_rounds`. Frequent `run_time` reasons point to a run time limit
+too short for the work, or to slow tools. Frequent `loop` reasons point to a
+model that does not follow the tool hints, or to tools that are missing in
+these turns. A turn that fails with `The model did not produce a final answer
+without tools.` used a model or provider that still emits tool calls when the
+request offers none.
+
+See [Loops within a turn](/en/docs/ai/chat-runtime-and-streaming#loops-within-a-turn).
+
 ## Shutdown hangs
 
 Find the stop hook that still accepts work or waits on an unbounded task.

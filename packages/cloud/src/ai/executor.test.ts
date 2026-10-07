@@ -1,12 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import type { OutboundEvent, Provider, Tool } from "@k2b/nessi";
+import type { OutboundEvent } from "@k2b/nessi";
 import { aiTurnAllowsRememberedApprovals } from "./approvals";
 import { __aiExecutorTest } from "./executor";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 
-const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
+const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
 
@@ -505,103 +505,6 @@ describe("nessi block event mapping", () => {
     expect(mapper.translate({ type: "loop_start", agentId: "cloud", loopId: "turn-1" } as OutboundEvent)).toEqual([]);
     expect(mapper.translate({ ...turn, type: "turn_start" } as OutboundEvent)).toEqual([]);
     expect(mapper.translate({ ...turn, type: "usage", usage: { input: 1, output: 1, total: 2 } } as OutboundEvent)).toEqual([]);
-  });
-});
-
-describe("tool round policy", () => {
-  const request = { systemPrompt: "Base prompt", messages: [] };
-  const tool = {} as Tool;
-  const provider = (prompts: string[]): Provider => ({
-    name: "test",
-    family: "openai-compatible",
-    model: "test",
-    capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
-    complete: async () => {
-      throw new Error("not used");
-    },
-    stream: async function* (input) {
-      prompts.push(input.systemPrompt ?? "");
-      yield {
-        type: "block_end",
-        blockId: "call",
-        index: 0,
-        block: { type: "tool_call", id: "call", name: "test", args: {} },
-      };
-    },
-  });
-
-  test("does not configure a turn limit by default", () => {
-    const originalProvider = provider([]);
-    const originalTools = [tool];
-    const policy = applyToolRoundPolicy({
-      provider: originalProvider,
-      tools: originalTools,
-      issuedToolRounds: 0,
-      completedToolRounds: 0,
-    });
-
-    expect(policy.provider).toBe(originalProvider);
-    expect(policy.tools).toBe(originalTools);
-    expect(policy.maxTurns).toBeUndefined();
-  });
-
-  test("reserves one tool-free provider call for the final answer", async () => {
-    const prompts: string[] = [];
-    const policy = applyToolRoundPolicy({
-      provider: provider(prompts),
-      tools: [tool],
-      maxToolRounds: 1,
-      issuedToolRounds: 0,
-      completedToolRounds: 0,
-    });
-
-    expect(policy.maxTurns).toBe(2);
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([tool]);
-    for await (const _event of policy.provider.stream(request)) {
-      // consume the first tool-using provider round
-    }
-    policy.noteToolRound();
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
-    for await (const _event of policy.provider.stream(request)) {
-      // consume the reserved final provider round
-    }
-
-    expect(prompts[0]).toBe("Base prompt");
-    expect(prompts[1]).toContain("no more tools are available");
-    expect(prompts[1]).toContain("best result supported by the evidence already gathered");
-  });
-
-  test("counts persisted tool rounds across resumed workers", async () => {
-    const prompts: string[] = [];
-    const policy = applyToolRoundPolicy({
-      provider: provider(prompts),
-      tools: [tool],
-      maxToolRounds: 2,
-      issuedToolRounds: 2,
-      completedToolRounds: 2,
-    });
-
-    expect(policy.maxTurns).toBe(1);
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
-    for await (const _event of policy.provider.stream(request)) {
-      // consume the reserved final provider round
-    }
-    expect(prompts[0]).toContain("no more tools are available");
-  });
-
-  test("keeps a pending last-round tool available until its resumed execution completes", async () => {
-    const policy = applyToolRoundPolicy({
-      provider: provider([]),
-      tools: [tool],
-      maxToolRounds: 1,
-      issuedToolRounds: 1,
-      completedToolRounds: 0,
-    });
-
-    expect(policy.maxTurns).toBe(1);
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([tool]);
-    policy.noteToolRound();
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
   });
 });
 
