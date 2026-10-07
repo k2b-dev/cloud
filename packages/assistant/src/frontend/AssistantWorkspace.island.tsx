@@ -105,7 +105,13 @@ import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { assistantComposerCommands } from "./composer-commands";
-import { confirmComposerSave, editComposerSession, newComposerSession, observeComposerRevision } from "./composer-session";
+import {
+  confirmComposerSave,
+  editComposerSession,
+  newComposerSession,
+  observeComposerRevision,
+  sendBesideComposer,
+} from "./composer-session";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { useAssistantText } from "./ui-copy";
@@ -1795,6 +1801,16 @@ export default function AssistantWorkspace(props: Props) {
                                   },
                                   onRetrySteer: async (block) => {
                                     if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
+                                  },
+                                  onContinueTurn: async (message) => {
+                                    const target = chat.activeConversationId();
+                                    if (!target) return;
+                                    // Sending replaces the saved draft; what the person was writing goes back into it.
+                                    await sendBesideComposer(session(target), {
+                                      send: () => send({ message }),
+                                      hasContent: () => Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
+                                      save: () => saveComposer(target, target),
+                                    });
                                   },
                                   onOpenScheduledTaskRun: (taskId, occurrenceId) =>
                                     void openAssistantTaskRun(taskId, occurrenceId, liveHub),

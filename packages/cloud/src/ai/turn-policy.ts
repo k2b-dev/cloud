@@ -1,5 +1,6 @@
 import type { Provider, Tool, ToolResolver } from "@k2b/nessi";
 import type { AiToolBlockStatus } from "./protocol";
+import { AiTurnFailure } from "./turn-failure";
 
 /** Calls that only find or load other tools. */
 const DISCOVERY_TOOL_NAMES = new Set(["search_tools", "list_apps", "load_tools"]);
@@ -192,7 +193,7 @@ export const applyAiTurnPolicy = (input: {
     if (resumingRound) resumingRound = false;
     else check();
     if (finalReason) {
-      if (completed > completedAtFinal) throw new Error("The model did not produce a final answer without tools.");
+      if (completed > completedAtFinal) throw new AiTurnFailure("step_limit", "The model did not produce a final answer without tools.");
       return [];
     }
     const resolved = typeof input.tools === "function" ? await input.tools() : input.tools;

@@ -41,6 +41,11 @@ export type AiChatActions = {
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
+  /**
+   * Continue after a failed turn. Send `message`, a visible request in the reader's language to pick up where the
+   * turn stopped, through the host's normal send path. Without it, a failed turn shows its reason only.
+   */
+  onContinueTurn?: (message: string) => void | Promise<void>;
   onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
   /** Open the originating background run for a delivered scheduled result. */
   onOpenScheduledTaskRun?: (taskId: string, occurrenceId: string) => void;

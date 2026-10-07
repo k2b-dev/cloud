@@ -158,6 +158,8 @@ export type AiConversation = {
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
   runError: string | null;
+  /** Public ID of the latest turn, which `runStatus` and `runError` describe; null before the first turn. */
+  runTurnId?: string | null;
   unreadCompletion: boolean;
   /** Optional shared project context; the conversation itself remains private to its owner. */
   projectId: string | null;
@@ -299,6 +301,8 @@ export type AiStoredMessage = {
     };
     toolPresentations?: Record<string, AiToolPresentation>;
     toolOutcomes?: Record<string, "rejected" | "approved">;
+    /** Why the turn failed, on the last message of its loop. The chat words it in the reader's language. */
+    turnError?: AiTurnError;
   } | null;
   /** Private owner feedback for this rendered assistant response. Never enters model context. */
   feedback?: AiMessageFeedback | null;
@@ -318,6 +322,23 @@ export type AiConversationTimelineEntry = {
   toolCount: number;
   createdAt: string;
 };
+
+/**
+ * Why a turn failed, as a stable code. `limitMinutes` comes with `time_limit` when the turn had a run time limit.
+ * Codes are never translated; clients word them in the reader's language.
+ */
+export type AiTurnErrorCode =
+  | "model_unavailable"
+  | "quota_exhausted"
+  | "context_full"
+  | "time_limit"
+  | "step_limit"
+  | "wait_expired"
+  | "interrupted"
+  | "not_allowed"
+  | "failed";
+
+export type AiTurnError = { code: AiTurnErrorCode; limitMinutes?: number };
 
 export type AiTurnStatus = "queued" | "running" | "waiting_for_action" | "completed" | "failed" | "aborted";
 
@@ -932,7 +953,10 @@ export type AiConversationService = {
     conversationId: string;
     turnId: string;
     status: "completed" | "failed" | "aborted";
+    /** The reason a person reads, such as in `runError`; never raw provider text. */
     error?: string | null;
+    /** Recorded on the turn's last message so its history shows why it failed. */
+    turnError?: AiTurnError | null;
     /** When set, only the lease owner may finalize; otherwise only ownerless turns are finalized. */
     leaseOwner?: string;
   }): Promise<AiTurnCompletionResult>;

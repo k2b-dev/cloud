@@ -603,6 +603,47 @@ run. A call the user approved that never returned keeps its decision as
 receipt. Live `message_saved` events carry usage after each model response,
 before its tools finish, without rendering a second copy of the active response.
 
+### Failed turns
+
+A failed turn records why as `meta.turnError` on the last message of its loop,
+which is the user's own message when the model never answered. The code is
+stable and never translated; clients word it in their reader's language:
+
+| `code` | Meaning | A new message can continue |
+| --- | --- | --- |
+| `model_unavailable` | The model service failed or timed out, also after its retries | yes |
+| `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |
+| `context_full` | The chat no longer fits the model, also after compaction | no |
+| `time_limit` | The turn's run time limit ended it; `limitMinutes` names the limit | yes |
+| `step_limit` | The model profile's `maxToolRounds` is used up, or the model kept calling tools after it was asked to answer | yes |
+| `wait_expired` | An approval or an answer did not arrive before the wait's deadline | yes |
+| `interrupted` | Workers lost the turn repeatedly and it used up its recovery attempts | yes |
+| `not_allowed` | The chat may no longer use its model, project, apps, or background mandate, AI settings offer no usable model, or the background AI budget stopped the run | no |
+| `failed` | Any other cause | yes |
+
+`AiTurn.error`, `AiConversation.runError`, and the `error` of `turn_finished`
+hold the worded reason for readers without the chat view, such as `cld`: in the
+turn's language, or in English when the sweep finalized the turn. When a new
+message can continue, it adds that the results so far are kept and that a new
+message continues the task; a failed compaction holds the reason only. A
+background run that its mandate or the background AI budget blocked keeps
+Cloud's own explanation there. `AiConversation.runTurnId` is the public ID of
+the latest turn, which `runStatus` and `runError` describe; the messages of that
+turn carry it as `loopId`. The raw cause, such as the provider's message,
+goes only to the error log entry `AI turn failed` under `ai:executor`, beside
+the `code`, and a provider call's message also stays on its
+[usage record](/en/docs/ai/usage-and-feedback#read-the-report). A stop records
+no reason.
+
+The next turn of the chat sees the failed turn's finished steps in its context.
+A turn that ended while a call ran or waited for an approval leaves that call
+without a result. Each model request answers such a call with an error result
+saying it did not return and may or may not have run, right after the message
+that made it; stored history keeps the call as not run. A result stored after a
+scheduled result that arrived while its call ran moves up next to its call in
+the request. Providers reject a history with an unanswered call or a result
+apart from its call, so before, the chat's next turn failed.
+
 ### Run time budget
 
 Administrators configure `ai.turn_timeout_minutes` in AI settings. The default
@@ -619,9 +660,9 @@ what is still open, and to tell the user that a new message continues the task.
 With the default of 30 minutes, tool use ends after 27 minutes. The turn then
 completes normally with that answer.
 
-An expired execution deadline still ends the turn as failed with a time-limit
-message and an instruction to continue with a new message, for example when a
-single model or tool call outlasts the reserve. It is distinct from a user's
+An expired execution deadline still ends the turn as failed with the reason
+`time_limit`, for example when a single model or tool call outlasts the
+reserve; see [Failed turns](#failed-turns). It is distinct from a user's
 Stop action. Continuing does not automatically replay uncertain external calls.
 
 ### Loops within a turn
@@ -652,8 +693,8 @@ used up the model profile's `maxToolRounds`.
 
 The model profile's `maxToolRounds` ends tool use the same way; see
 [Models and providers](/en/docs/ai/models-and-providers). If the model still
-calls a tool in a model call without tools, the turn ends as failed instead of
-continuing without them. Each hint logs the warning `AI turn got a loop hint`
+calls a tool in a model call without tools, the turn ends as failed with the
+reason `step_limit` instead of continuing without them. Each hint logs the warning `AI turn got a loop hint`
 and each switch to the final answer logs `AI turn answers without further
 tools`, both under `ai:executor` with the conversation and turn IDs.
 
@@ -665,8 +706,8 @@ model call that failed before the model produced any output because of HTTP
 timeout. It retries at most twice. The wait follows the provider's
 `retry-after-ms` or `Retry-After` header, otherwise 1 and then 4 seconds. A
 requested wait over 60 seconds, or one that would end after the turn's run time
-limit, is not started; the turn then fails with the provider's message. Stop
-ends a wait at once.
+limit, is not started; the turn then fails as `model_unavailable`. Stop ends a
+wait at once.
 
 A failure after the call streamed text, reasoning, or a tool call still ends
 the turn, because streamed output cannot be taken back. Context overflow goes

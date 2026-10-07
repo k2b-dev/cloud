@@ -213,9 +213,10 @@ order:
    reconnects, the line reads "Reconnecting" without its shimmer, and its clock
    stands. While an approval or answer is pending it says what the turn waits
    for and since when. Finished,
-   it reads "Worked 3 min" with the step count, "Worked 1 min · stopped" after
-   a stop, and "Worked 4 min · interrupted" when the turn failed or its wait
-   expired. Expanding it shows intermediate texts as quiet paragraphs and the
+   it reads "Worked 3 min" with the step count, and "Worked 1 min · stopped"
+   after a stop. A failed turn reads "Worked 4 min" too and says why in a
+   notice at its end; a failed turn from an earlier release, which recorded no
+   reason, reads "Worked 4 min · interrupted". Expanding it shows intermediate texts as quiet paragraphs and the
    steps between them as groups, with reasoning inside its group. Every step
    stays there, including results and actions, so input and output remain
    reachable. Failed steps say "failed" in muted text; a rejected approval says
@@ -275,8 +276,42 @@ actions are keyed by their call. When the turn ends, the work line changes its
 text and the message actions appear; nothing else moves, and host views such as
 a running Studio session keep their state. Copy copies only the final message.
 
-Turns with a work line, results, or actions span the full message column, so
-disclosure chevrons share one right edge. Plain prose keeps the reading width.
+Turns with a work line, results, actions, or a failure notice span the full
+message column, so disclosure chevrons share one right edge. Plain prose keeps
+the reading width.
+
+### Failed turns
+
+A failed turn keeps its results and receipts in place and ends with a danger
+notice: "The answer was interrupted." and the reason in the reader's language,
+such as "The model service did not answer. The results so far are kept." The
+reason comes from `meta.turnError` on the turn's last message, see
+[Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns); the
+provider's own message never appears. A turn that failed before the model
+answered, or right after an accepted survey answer, shows the notice where its
+progress stood, under the same timeline id; this includes a request forwarded
+from another chat.
+Screen readers hear the notice once when the turn they followed fails.
+
+When the failed turn is the chat's newest, no turn runs, and a new turn can
+finish the work, the notice offers **Continue**. Supply
+`AiChatActions.onContinueTurn(message)` and send `message`, a visible request
+in the reader's language to pick up where the turn stopped, through your
+normal send path. The person then sees what was asked, and the next turn sees
+the failed turn's finished steps. A call the failed turn left open reaches the
+model as not returned, so it checks the call's effect instead of repeating it
+blindly. A full context, a used-up usage limit, or lost access would fail the
+next turn the same way; their notices name the next step instead of offering
+**Continue**. Without `onContinueTurn` the notice shows only the reason; the
+message menu's **Retry** stays available either way. When your send path goes
+through the conversation draft, as the controller's `send` does, sending
+replaces what the person was writing; save the composer's content back
+afterwards, also when sending failed.
+
+The controller's `error()` does not repeat a failure that the failed turn shows
+in its notice; it matches the turn by `AiConversation.runTurnId` or the
+`turnId` of `turn_finished`. A failure without a recorded reason, such as a
+failed compaction, still reaches `error()`.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
@@ -410,8 +445,8 @@ not a substitute for consequence-critical review content in the card itself.
 
 ## Handle frontend tools
 
-Pass approval, frontend-tool, retry, fork, message-feedback, and file handlers through
-`AiChatActionsProvider`. Rich Cloud blocks remain Cloud-owned JSX inside the
+Pass approval, frontend-tool, retry, continue, fork, message-feedback, and file
+handlers through `AiChatActionsProvider`. Rich Cloud blocks remain Cloud-owned JSX inside the
 generic timeline.
 
 Applications hosting code-triggered approvals can render the same public

@@ -596,3 +596,272 @@ const renderTimeline = async (
     jest.useRealTimers();
   }
 });
+
+const renderFailedTurnTimeline = async (
+  dom: ReturnType<typeof createDomTestHarness>,
+  source: { messages: () => readonly AiStoredMessage[]; activeTurn: () => ReturnType<typeof emptyProjection>["activeTurn"] },
+  locale: string,
+  onContinueTurn?: (message: string) => void,
+) => {
+  const { Chat, LocaleProvider } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  return render(
+    () => (
+      <LocaleProvider locale={locale}>
+        <AiChatActionsProvider actions={{ onContinueTurn }}>
+          {(() => {
+            const items = createAiChatTimeline(source);
+            return <Chat.Timeline items={items()} />;
+          })()}
+        </AiChatActionsProvider>
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+};
+
+(isServer ? test.skip : test)("a failed turn keeps its elements and names its reason and next step in the reader's language", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const continued: string[] = [];
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "de",
+    (message) => {
+      continued.push(message);
+    },
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/q1.csv" } };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: "Jetzt lese ich die Daten." });
+    emit({ ...base, seq: 3, type: "block_set", block: { ...read, status: "completed", result: "a" } });
+    await tick();
+    const turn = dom.root.querySelector(".ai-turn");
+    expect(dom.root.querySelector(".ai-turn__notice")).toBeNull();
+
+    emit({
+      ...base,
+      seq: 4,
+      type: "turn_finished",
+      status: "failed",
+      error: "Der KI-Dienst hat nicht geantwortet.",
+      messages: [
+        storedMessage(10, { role: "user", content: [{ type: "text", text: "Lies die Daten" }] }),
+        storedMessage(
+          11,
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "Jetzt lese ich die Daten." },
+              { type: "tool_call", id: "read", name: "read_file", args: read.args },
+            ],
+          },
+          { loopDoneReason: "error" },
+        ),
+        storedMessage(
+          12,
+          { role: "tool_result", callId: "read", name: "read_file", result: "a", isError: false },
+          { meta: { turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(state.activeTurn).toBeNull();
+    // The live turn becomes history in place; its status text folds into the work line, the notice ends the turn.
+    expect(dom.root.querySelector(".ai-turn")).toBe(turn);
+    expect(dom.root.textContent).not.toContain("Jetzt lese ich die Daten.");
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    expect(notice?.textContent).toContain("Die Antwort wurde abgebrochen.");
+    expect(notice?.textContent).toContain("Der KI-Dienst hat nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten.");
+    expect(dom.root.querySelector(".ai-turn > :last-child")).toBe(notice);
+    // The notice says why; the work line reads like any finished turn.
+    expect(dom.root.querySelector(".ai-turn-work")?.textContent).not.toContain("abgebrochen");
+
+    const live = dom.root.querySelector(".ai-turn")?.parentElement?.innerHTML;
+    const history = structuredClone(unwrap(state.messages));
+
+    const button = [...(notice?.querySelectorAll("button") ?? [])].find((element) => element.textContent?.includes("Weiterarbeiten"));
+    expect(button).toBeDefined();
+    button!.click();
+    await tick();
+    expect(continued).toEqual(["Mach an der Stelle weiter, an der du aufgehört hast."]);
+
+    // Once the chat moved on, the turn keeps its reason but no longer offers to continue.
+    setState("messages", (messages) => [
+      ...messages,
+      storedMessage(13, { role: "user", content: [{ type: "text", text: "Neue Frage" }] }, { loopId: "next" }),
+    ]);
+    await tick();
+    expect(dom.root.querySelector(".ai-turn__notice")).toBe(notice);
+    expect(notice?.textContent).not.toContain("Weiterarbeiten");
+
+    // A reload renders the same turn from history alone.
+    dispose();
+    const reloaded = await renderFailedTurnTimeline(dom, { messages: () => history, activeTurn: () => null }, "de", () => {});
+    try {
+      await tick();
+      expect(dom.root.querySelector(".ai-turn")?.parentElement?.innerHTML).toBe(live);
+    } finally {
+      reloaded();
+    }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a turn that failed before the model answered shows its reason where its progress stood", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const continued: string[] = [];
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "en",
+    (message) => {
+      continued.push(message);
+    },
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    await tick();
+    const progress = dom.root.querySelector(".ai-turn");
+    expect(progress).not.toBeNull();
+    emit({
+      ...base,
+      seq: 2,
+      type: "turn_finished",
+      status: "failed",
+      error: "Your AI usage limit for this period is reached.",
+      messages: [
+        storedMessage(
+          10,
+          { role: "user", content: [{ type: "text", text: "Summarize" }] },
+          { meta: { turnError: { code: "quota_exhausted" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(dom.root.querySelector(".ai-turn")).toBe(progress);
+    expect(dom.root.querySelector(".ai-turn-work")).toBeNull();
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    expect(notice?.textContent).toContain("The answer was interrupted.");
+    expect(notice?.textContent).toContain("You can continue once it resets.");
+    // Another turn would meet the same limit, so the notice offers no Continue.
+    expect(notice?.querySelector("button")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a turn that failed after an accepted answer ends with its notice below the answer, in place", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "en",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const args = { title: "Invoice details", questions: [{ id: "amount", type: "text", label: "Amount" }] };
+  const answer = { submitted: true, answers: { amount: "150 EUR" } };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({
+      ...base,
+      seq: 2,
+      type: "block_set",
+      block: { id: "tool:survey-1", kind: "tool", callId: "survey-1", name: "survey", args, status: "completed", result: answer },
+    });
+    await tick();
+    // After the answer, the live turn shows its progress below it.
+    const progress = dom.root.querySelector(".ai-turn");
+    expect(dom.root.textContent).toContain("150 EUR");
+    expect(progress).not.toBeNull();
+
+    emit({
+      ...base,
+      seq: 3,
+      type: "turn_finished",
+      status: "failed",
+      error: "The model service did not answer.",
+      messages: [
+        storedMessage(10, { role: "user", content: [{ type: "text", text: "Book the invoice" }] }),
+        storedMessage(
+          11,
+          { role: "assistant", content: [{ type: "tool_call", id: "survey-1", name: "survey", args }] },
+          { loopDoneReason: "error" },
+        ),
+        storedMessage(
+          12,
+          { role: "tool_result", callId: "survey-1", name: "survey", result: answer, isError: false },
+          { meta: { turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(state.activeTurn).toBeNull();
+    // The notice takes the progress's place, so nothing above it moves.
+    expect(dom.root.querySelector(".ai-turn")).toBe(progress);
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    expect(notice?.textContent).toContain("The model service did not answer.");
+    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted.") ?? -1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a forwarded request whose turn failed before the model answered shows the notice below it", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "en",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const agentMessage = { id: "forward-1", sourceChatId: "cSrc12", sourceTurnId: "tSrc12", sourceTitle: "Planning" };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    await tick();
+    const progress = dom.root.querySelector(".ai-turn");
+    expect(progress).not.toBeNull();
+    emit({
+      ...base,
+      seq: 2,
+      type: "turn_finished",
+      status: "failed",
+      error: "The model service did not answer.",
+      messages: [
+        storedMessage(
+          10,
+          { role: "user", content: [{ type: "text", text: "Message from Planning\n\nPlease check the budget." }] },
+          { meta: { agentMessage, turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(dom.root.textContent).toContain("Please check the budget.");
+    expect(dom.root.querySelector(".ai-turn")).toBe(progress);
+    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("The model service did not answer.");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

@@ -4,8 +4,10 @@ import { type SQL, sql } from "bun";
 import { type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
+import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { AiRunTimeout } from "./run-timeout";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
 import { activeTurnWaits } from "./turn-timing";
@@ -29,6 +31,7 @@ import type {
   AiToolPresentation,
   AiTurn,
   AiTurnClaim,
+  AiTurnError,
   AiTurnRunConfig,
   AiTurnStatus,
   AiTurnSteer,
@@ -112,6 +115,7 @@ type ConversationRow = {
   latest_browser_pending?: boolean;
   latest_turn_error?: string | null;
   latest_turn_completed_at?: Date | string | null;
+  latest_turn_short_id?: string | null;
   enrich_fail_count: number | null;
   project_id: string | null;
   draft_content: unknown;
@@ -552,6 +556,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   lastUsedAt: iso(row.last_used_at),
   runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
   runError: row.latest_turn_status === "failed" ? row.latest_turn_error?.trim() || "Assistant response failed." : null,
+  runTurnId: row.latest_turn_short_id ?? null,
   unreadCompletion:
     Boolean(
       row.background_received_at &&
@@ -723,10 +728,10 @@ const loadConversationSummary = async (input: {
       latest.status AS latest_turn_status,
       ${browserWorkPending()} AS latest_browser_pending,
       latest.error AS latest_turn_error,
-      latest.completed_at AS latest_turn_completed_at
+      latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id
     FROM ai.conversations conversation
     LEFT JOIN LATERAL (
-      SELECT status, error, completed_at, live_blocks
+      SELECT short_id, status, error, completed_at, live_blocks
       FROM ai.turns
       WHERE conversation_id = conversation.id AND NOT COALESCE(run_config ? 'background', false)
       ORDER BY created_at DESC, id DESC
@@ -784,13 +789,30 @@ const messageSearchText = (message: Message): string => {
  * time limit, or a turn the sweep finalizes. History reads the ending from the last assistant message, so such a turn
  * never looks finished. A failure replaces the `aborted` that a loop cut off by its run time limit recorded, so the
  * limit never looks like a user stop. A call the user approved that never returned keeps its approval in history.
+ * A failure's reason goes to the turn's last message, also when that is the user's own, so history can say why the
+ * turn failed and what to do next.
  */
 const recordTurnEnd = async (
   db: typeof sql,
-  input: { conversationId: string; turnId: string; reason: "aborted" | "error" },
+  input: { conversationId: string; turnId: string; reason: "aborted" | "error"; turnError?: AiTurnError | null },
 ): Promise<void> => {
   const replaces = input.reason === "error" ? "aborted" : null;
   for (const table of ["ai.messages", "ai.task_messages"]) {
+    if (input.turnError) {
+      await db`
+        UPDATE ${db(table)}
+        SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('turnError', ${JSON.stringify(input.turnError)}::text::jsonb)
+        WHERE id = (
+          SELECT id
+          FROM ${db(table)}
+          WHERE conversation_id = ${input.conversationId}
+            AND loop_id = ${input.turnId}::text
+            AND kind = 'message'
+          ORDER BY seq DESC
+          LIMIT 1
+        )
+      `;
+    }
     await db`
       UPDATE ${db(table)}
       SET loop_done_reason = ${input.reason}
@@ -1184,10 +1206,10 @@ export const aiConversations: AiConversationService = {
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
-        latest.completed_at AS latest_turn_completed_at
+        latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at, live_blocks
+        SELECT short_id, status, error, completed_at, live_blocks
         FROM ai.turns
         WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
@@ -1240,12 +1262,12 @@ export const aiConversations: AiConversationService = {
       SELECT conversation.*, ${effectiveDone()} AS is_done,
         EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status, ${browserWorkPending()} AS latest_browser_pending,
-        latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at,
+        latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id,
         jsonb_build_object('completed', COALESCE(progress.completed,0), 'total', COALESCE(progress.total,0),
           'step', progress.step, 'tool', ai.sidebar_tool_label(latest.live_blocks)->>'label') AS activity
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at, live_blocks FROM ai.turns
+        SELECT short_id, status, error, completed_at, live_blocks FROM ai.turns
         WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id ORDER BY created_at DESC, id DESC LIMIT 1
       ) latest ON TRUE
       LEFT JOIN LATERAL (
@@ -1287,10 +1309,10 @@ export const aiConversations: AiConversationService = {
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
-        latest.completed_at AS latest_turn_completed_at
+        latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at, live_blocks
+        SELECT short_id, status, error, completed_at, live_blocks
         FROM ai.turns
         WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
@@ -2957,6 +2979,7 @@ export const aiConversations: AiConversationService = {
           conversationId: input.conversationId,
           turnId: input.turnId,
           reason: input.status === "aborted" ? "aborted" : "error",
+          turnError: input.status === "failed" ? (input.turnError ?? { code: "failed" }) : null,
         });
         await tx`
           UPDATE ai.turn_steers
@@ -2977,11 +3000,12 @@ export const aiConversations: AiConversationService = {
     // 1) Finalize turns that exhausted actual recovery attempts. Resuming a
     // resolved user/frontend action is normal progress and does not consume
     // this budget.
+    // The sweep does not know a turn's language; the chat words the recorded reason in the reader's.
     const exhaustedRows = await sql<{ id: string; conversation_id: string; error: string; attempt: number; live_seq: number | string }[]>`
       UPDATE ai.turns
       SET status = 'failed',
           completed_at = now(),
-          error = 'AI turn exhausted its recovery attempts.',
+          error = ${aiTurnErrorText({ code: "interrupted" }, "en")},
           lease_owner = NULL,
           lease_expires_at = NULL,
           live_blocks = NULL
@@ -3029,11 +3053,13 @@ export const aiConversations: AiConversationService = {
     `;
 
     // 2) Finalize over-budget turns without a live lease.
-    const budgetRows = await sql<{ id: string; conversation_id: string; error: string; attempt: number; live_seq: number | string }[]>`
+    const budgetRows = await sql<
+      { id: string; conversation_id: string; error: string; attempt: number; live_seq: number | string; run_budget_ms: number | null }[]
+    >`
       UPDATE ai.turns
       SET status = 'failed',
           completed_at = now(),
-          error = 'Run time limit reached. You can continue the task in a new message.',
+          error = ${aiTurnErrorText({ code: "time_limit" }, "en")},
           lease_owner = NULL,
           lease_expires_at = NULL,
           live_blocks = NULL
@@ -3047,8 +3073,12 @@ export const aiConversations: AiConversationService = {
           AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())
         LIMIT ${limit}
       )
-      RETURNING id, conversation_id, error, attempt, live_seq
+      RETURNING id, conversation_id, error, attempt, live_seq, run_budget_ms
     `;
+    const turnErrors = new Map<string, AiTurnError>([
+      ...exhaustedRows.map((row): [string, AiTurnError] => [row.id, { code: "interrupted" }]),
+      ...budgetRows.map((row): [string, AiTurnError] => [row.id, new AiRunTimeout(Number(row.run_budget_ms) || null).turnError()]),
+    ]);
     result.failed = [...exhaustedRows, ...budgetRows].map((row) => ({
       conversationId: row.conversation_id,
       turnId: row.id,
@@ -3087,10 +3117,12 @@ export const aiConversations: AiConversationService = {
     // History tells a stop from a turn that failed or whose wait expired, as it does for turns that end on their own.
     const stopped = new Set(abortedRows.filter((row) => row.stopped).map((row) => row.id));
     for (const finalized of [...result.failed, ...result.aborted]) {
+      const stop = stopped.has(finalized.turnId);
       await recordTurnEnd(sql, {
         conversationId: finalized.conversationId,
         turnId: finalized.turnId,
-        reason: stopped.has(finalized.turnId) ? "aborted" : "error",
+        reason: stop ? "aborted" : "error",
+        turnError: stop ? null : (turnErrors.get(finalized.turnId) ?? { code: "wait_expired" }),
       });
       await sql`
         UPDATE ai.pending_actions

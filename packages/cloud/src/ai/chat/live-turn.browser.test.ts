@@ -4,6 +4,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { AiWireEvent } from "../protocol";
+import type { AiStoredMessage } from "../types";
 
 // Whether the live turn moves while it reconnects depends on real layout, fonts and themes, so this
 // measures the real timeline in a browser.
@@ -227,6 +228,113 @@ for (const view of [
         expect(resumed.nodes.map(({ text }) => text)).not.toContain(label);
         expect(resumed.nodes.at(-1)).toMatchObject({ text: "Here is the summary." });
         expect(resumed.nodes.at(-1)!.box[1]).toBe(row.box[1]!);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`a failed turn keeps its results in place and ends with its reason and Continue (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        const de = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        const card = { title: "Revenue Q1–Q3", value: "1.2 M", caption: "Gross, without refunds" };
+        const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/orders.csv" } };
+        const shown = { id: "tool-card", kind: "tool" as const, callId: "card", name: "card", args: card };
+        const stored = (seq: number, message: AiStoredMessage["message"], patch: Partial<AiStoredMessage> = {}): AiStoredMessage => ({
+          id: `m${seq}`,
+          shortId: `m${seq}`,
+          conversationId: "chat",
+          seq,
+          kind: "message",
+          message,
+          loopId: "turn",
+          modelProfileId: null,
+          providerModel: null,
+          usage: null,
+          stopReason: null,
+          loopAggregate: null,
+          loopDoneReason: null,
+          compactedAt: null,
+          meta: null,
+          createdAt: "2026-10-07T09:56:00.000Z",
+          ...patch,
+        });
+        const request = stored(10, { role: "user", content: [{ type: "text", text: "Build the revenue report" }] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        // The person's message is in the chat before the turn ends, as the controller keeps it.
+        await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+        await emit(page, { ...base, seq: 3, type: "block_set", block: { ...read, status: "completed", result: "id,total" } });
+        await emit(page, { ...base, seq: 4, type: "block_set", block: { ...shown, status: "completed", result: { displayed: true } } });
+        await emit(page, { ...base, seq: 5, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Now I build the report." });
+        const box = (selector: string) =>
+          page.evaluate((query) => {
+            const content = document.querySelector(".k2b-chat-timeline__content")!.getBoundingClientRect();
+            const node = document.querySelector(query);
+            if (!node) return null;
+            const rect = node.getBoundingClientRect();
+            return [rect.left - content.left, rect.top - content.top, rect.width, rect.height].map(Math.round);
+          }, selector);
+        const workBefore = await box(".ai-turn-work");
+        const resultBefore = await box(".ai-turn > :nth-child(2)");
+        await emit(page, {
+          ...base,
+          seq: 6,
+          type: "turn_finished",
+          status: "failed",
+          error: "The model service did not answer.",
+          messages: [
+            request,
+            stored(11, {
+              role: "assistant",
+              content: [
+                { type: "tool_call", id: "read", name: "read_file", args: read.args },
+                { type: "tool_call", id: "card", name: "card", args: card },
+              ],
+            }),
+            stored(12, { role: "tool_result", callId: "read", name: "read_file", result: "id,total", isError: false }),
+            stored(13, { role: "tool_result", callId: "card", name: "card", result: { displayed: true }, isError: false }),
+            stored(
+              14,
+              { role: "assistant", content: [{ type: "text", text: "Now I build the report." }] },
+              { loopDoneReason: "error", meta: { turnError: { code: "model_unavailable" } }, createdAt: "2026-10-07T10:00:00.000Z" },
+            ),
+          ],
+        });
+        // The work line and the result stay where they were; the status folds away and the notice ends the turn.
+        expect(await box(".ai-turn-work")).toEqual(workBefore);
+        expect(await box(".ai-turn > :nth-child(2)")).toEqual(resultBefore);
+        const notice = await box(".ai-turn__notice");
+        expect(notice).not.toBeNull();
+        expect(notice![1]!).toBeGreaterThanOrEqual(resultBefore![1]! + resultBefore![3]!);
+        expect(notice![0]! + notice![2]!).toBeLessThanOrEqual(Math.ceil(view.width));
+        const text = await page.locator(".ai-turn__notice").innerText();
+        expect(text).toContain(de ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+        expect(await page.locator(".ai-turn-work").innerText()).toContain(de ? "4 Min. gearbeitet" : "Worked 4 min");
+        expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
+        expect(
+          await page.evaluate(() => {
+            const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
+            return viewport.scrollWidth - viewport.clientWidth;
+          }),
+        ).toBeLessThanOrEqual(0);
+
+        await page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue" }).click();
+        expect(await page.evaluate(() => (window as unknown as { continued: string[] }).continued)).toEqual([
+          de ? "Mach an der Stelle weiter, an der du aufgehört hast." : "Continue where you left off.",
+        ]);
       } finally {
         await context.close();
       }

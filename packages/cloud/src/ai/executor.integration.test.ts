@@ -14,6 +14,7 @@ import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
+import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
@@ -757,7 +758,10 @@ suite("AI executor integration", () => {
       });
       const finalized = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
       expect(finalized?.status).toBe("failed");
-      expect(finalized?.error).toContain("no longer available");
+      // The path of the missing file stays in the log; the person reads a reason without internals.
+      expect(finalized?.error).toBe("Something went wrong. The results so far are kept. Send a new message to continue.");
+      const [input] = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(input?.meta?.turnError).toEqual({ code: "failed" });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
@@ -1518,7 +1522,7 @@ suite("AI executor integration", () => {
     }
   });
 
-  test("a provider first-byte timeout is stored as the turn's and the call's redacted error", async () => {
+  test("a provider first-byte timeout keeps its text on the call and stores a reason a person can act on for the turn", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const message = "SSE stream first byte timeout after 60000ms.";
@@ -1552,7 +1556,13 @@ suite("AI executor integration", () => {
       // Two retries, then the last timeout ends the turn.
       expect(attempts).toBe(3);
       const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
-      expect(finalTurn).toMatchObject({ status: "failed", error: message });
+      expect(finalTurn).toMatchObject({
+        status: "failed",
+        error: "The model service did not answer. The results so far are kept. Send a new message to continue.",
+      });
+      // History names the reason on the turn's last message, here the user's own; the chat words it for its reader.
+      const [input] = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(input?.meta?.turnError).toEqual({ code: "model_unavailable" });
       const calls = await sql<
         { id: string; kind: "chat" | "background" }[]
       >`SELECT id,kind FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
@@ -1565,6 +1575,134 @@ suite("AI executor integration", () => {
           errorCode: "ai_provider_call_failed",
         });
     } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a model call that throws at once ends the turn with its own reason, also while the executor still handles turn_start", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Hi", locale: "en", toolSource: { kind: "none" } },
+        userMessage: userMessage("Hi"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "quota-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      // nessi starts this call before the executor has handled the turn_start that precedes it.
+      const provider = syntheticProvider(async function* () {
+        throw new AiQuotaError("quota_exhausted", "Chat usage limit reached. Resets at 2026-10-08T00:00:00.000Z.");
+      });
+      await createExecutor("quota-exec", undefined, fakeValidateWithProvider(provider)).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: "failed",
+        error: "Your AI usage limit for this period is reached. You can continue once it resets.",
+      });
+      const [input] = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(input?.meta?.turnError).toEqual({ code: "quota_exhausted" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a turn after a failed one sees its finished work, and a call it left open as not returned", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: { messages: { role: string; content?: unknown; tool_calls?: { id: string }[]; tool_call_id?: string }[] }[] = [];
+    try {
+      // The model calls a tool, then its service fails on every later call, retries included.
+      completionQueue = [toolCallCompletion("call-1", "missing_tool", { path: "/report.csv" })];
+      onCompletionRequest = (body) => {
+        requests.push(body as (typeof requests)[number]);
+        if (requests.length > 1)
+          rejectionQueue.push(() => Response.json({ error: { message: "upstream 502 at node-7" } }, { status: 502 }));
+      };
+      const run = async (text: string, leaseOwner: string) => {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: MODEL_ID,
+          runConfig: {
+            kind: "chat",
+            input: text,
+            locale: "de",
+            actor: { kind: "user", user: actorUser(userId) },
+            toolSource: { kind: "default" },
+          },
+          userMessage: userMessage(text),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner,
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        await createExecutor(leaseOwner, undefined, fakeValidateToolTurn).run({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          claim: claim!,
+          signal: new AbortController().signal,
+        });
+        return turn;
+      };
+
+      const failed = await run("Fasse den Bericht zusammen", "failed-exec");
+      expect(requests).toHaveLength(4);
+      // The stored error is in the turn's language and never the provider's own text, which only the log keeps.
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: failed.id })).toMatchObject({
+        status: "failed",
+        error: "Der KI-Dienst hat nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
+      });
+      const history = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(history.map((message) => message.message.role)).toEqual(["user", "assistant", "tool_result"]);
+      expect(history.at(-1)?.meta?.turnError).toEqual({ code: "model_unavailable" });
+      expect(history[1]?.loopDoneReason).toBe("error");
+
+      // A stop while an approval waited leaves a call without a result in the same way.
+      await aiConversations.createSessionStore({ conversationId: conversation.id, turnId: failed.id }).append({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "call-open", name: "send_report", args: { to: "team" } }],
+      });
+
+      requests.length = 0;
+      rejectionQueue = [];
+      onCompletionRequest = (body) => {
+        requests.push(body as (typeof requests)[number]);
+      };
+      nextCompletion = textCompletion("Hier ist die Zusammenfassung.");
+      const continued = await run("Mach an der Stelle weiter, an der du aufgehört hast.", "continue-exec");
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: continued.id })).toMatchObject({
+        status: "completed",
+        error: null,
+      });
+      const sent = requests[0]!.messages.filter((message) => message.role !== "system");
+      expect(sent.map((message) => message.role)).toEqual(["user", "assistant", "tool", "assistant", "tool", "user"]);
+      expect(sent[1]?.tool_calls?.map((call) => call.id)).toEqual(["call-1"]);
+      expect(sent[2]).toMatchObject({ tool_call_id: "call-1" });
+      expect(sent[4]).toMatchObject({ tool_call_id: "call-open", content: expect.stringContaining("may or may not have run") });
+      expect(sent[5]).toMatchObject({ content: "Mach an der Stelle weiter, an der du aufgehört hast." });
+    } finally {
+      completionQueue = [];
+      rejectionQueue = [];
+      onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }

@@ -94,13 +94,26 @@ const isCurrentStreamSession = (current: AiStreamSession | null, candidate: AiSt
 
 const DEFAULT_RUN_ERROR = "Assistant response failed.";
 
-const conversationRunError = (conversation: AiConversation | null | undefined): string | null =>
-  conversation?.runStatus === "failed" ? conversation.runError?.trim() || DEFAULT_RUN_ERROR : null;
+/** The failure of the chat's latest turn, and that turn when known. */
+type AiRunError = { message: string; turnId: string | null };
 
-const runErrorFromEvent = (event: AiStreamEvent, activeTurnId: string | null | undefined): string | null | undefined => {
+const conversationRunError = (conversation: AiConversation | null | undefined): AiRunError | null =>
+  conversation?.runStatus === "failed"
+    ? { message: conversation.runError?.trim() || DEFAULT_RUN_ERROR, turnId: conversation.runTurnId ?? null }
+    : null;
+
+/**
+ * Whether the failed turn shows its failure itself: its last message carries the reason, and the timeline words it in
+ * a notice at the turn's end. The run error then stays out of `error()`, so it does not appear twice. A turn without a
+ * recorded reason, such as a failed compaction or a turn from an earlier release, still reports it there.
+ */
+const turnShowsError = (messages: readonly AiStoredMessage[], turnId: string | null): boolean =>
+  turnId !== null && messages.some((message) => message.loopId === turnId && message.meta?.turnError);
+
+const runErrorFromEvent = (event: AiStreamEvent, activeTurnId: string | null | undefined): AiRunError | null | undefined => {
   if (event.type === "state") return conversationRunError(event.conversation);
   if (event.type !== "turn_finished" || event.turnId !== activeTurnId) return undefined;
-  return event.status === "failed" ? event.error?.trim() || DEFAULT_RUN_ERROR : null;
+  return event.status === "failed" ? { message: event.error?.trim() || DEFAULT_RUN_ERROR, turnId: event.turnId } : null;
 };
 
 export type CreateAiChatControllerOptions = {
@@ -168,7 +181,7 @@ const errorText = (error: unknown, fallback: string): string =>
 export const createAiChatController = (options: CreateAiChatControllerOptions) => {
   const [activeConversationId, setActiveConversationIdSignal] = createSignal<string | null>(options.initialConversationId ?? null);
   const [globalError, setGlobalError] = createSignal<string | null>(options.initialError ?? null);
-  const [runError, setRunError] = createSignal<string | null>(conversationRunError(options.initialDetail?.conversation));
+  const [runError, setRunError] = createSignal<AiRunError | null>(conversationRunError(options.initialDetail?.conversation));
   const [runStatusRaw, setRunStatusRaw] = createSignal<AiChatRunStatus | null>(null);
   const [streamStatus, setStreamStatus] = createSignal<AiStreamStatus>("idle");
   const initialProjection = options.initialDetail ? detailToProjection(options.initialDetail) : emptyProjection();
@@ -250,7 +263,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const conversationId = activeConversationId();
     if (conversationId) openStream(conversationId);
   };
-  const error = () => globalError() ?? runError();
+  const error = () => {
+    const run = runError();
+    return globalError() ?? (run && !turnShowsError(state.messages, run.turnId) ? run.message : null);
+  };
 
   const activeTurn = () => state.activeTurn;
   const messages = createMemo(() => messagesWithPendingSend(visibleMessages(state), pendingSends()[activeConversationId() ?? ""]));
@@ -1415,6 +1431,7 @@ export const __aiControllerTest = {
   completeFrontendToolBlock,
   conversationRunError,
   failSteerBlock,
+  turnShowsError,
   projectionForConversationOpen,
   reconcileSteerBlocks,
   runErrorFromEvent,

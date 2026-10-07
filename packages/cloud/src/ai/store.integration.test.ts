@@ -1457,6 +1457,8 @@ suite("AI conversation store integration", () => {
       const stoppedMessage = await lastAssistant(stopped);
       expect(stoppedMessage?.loopDoneReason).toBe("aborted");
       expect(stoppedMessage?.meta?.toolOutcomes).toEqual({ "run-1": "approved" });
+      // A stop is the person's own choice; only failures record a reason.
+      expect(stoppedMessage?.meta?.turnError).toBeUndefined();
       const history = buildBlocksFromMessages(
         (await aiConversations.listTurnMessages({ conversationId: stopped.conversationId, loopId: stopped.turnId })).filter(
           (entry) => entry.message.role !== "user",
@@ -1467,8 +1469,18 @@ suite("AI conversation store integration", () => {
       // A loop cut off by its run time limit recorded `aborted`; the failed turn must not read as a user stop.
       const { turn: timedOut } = await startTurn("worker-timeout", [{ type: "tool_call", id: "run-2", name: "code_run", args: {} }]);
       await sql`UPDATE ai.messages SET loop_done_reason = 'aborted' WHERE loop_id = ${timedOut.turnId}::text AND role = 'assistant'`;
-      expect(await aiConversations.completeTurn({ ...timedOut, leaseOwner: "worker-timeout", status: "failed" })).toBe("completed");
-      expect((await lastAssistant(timedOut))?.loopDoneReason).toBe("error");
+      expect(
+        await aiConversations.completeTurn({
+          ...timedOut,
+          leaseOwner: "worker-timeout",
+          status: "failed",
+          turnError: { code: "time_limit", limitMinutes: 30 },
+        }),
+      ).toBe("completed");
+      expect(await lastAssistant(timedOut)).toMatchObject({
+        loopDoneReason: "error",
+        meta: { turnError: { code: "time_limit", limitMinutes: 30 } },
+      });
 
       // The sweep: an approval that waited past its deadline is not a stop; a stop the worker never finished is.
       const { turn: expired } = await startTurn("worker-expired", [{ type: "tool_call", id: "run-3", name: "code_run", args: {} }]);
@@ -1480,8 +1492,9 @@ suite("AI conversation store integration", () => {
       await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${cancelled.turnId}`;
       const sweep = await aiConversations.sweepTurns({ maxAttempts: 50 });
       expect(sweep.aborted.map((turn) => turn.turnId)).toEqual(expect.arrayContaining([expired.turnId, cancelled.turnId]));
-      expect((await lastAssistant(expired))?.loopDoneReason).toBe("error");
+      expect(await lastAssistant(expired)).toMatchObject({ loopDoneReason: "error", meta: { turnError: { code: "wait_expired" } } });
       expect((await lastAssistant(cancelled))?.loopDoneReason).toBe("aborted");
+      expect((await lastAssistant(cancelled))?.meta?.turnError).toBeUndefined();
     } finally {
       await cleanupFixture({ userId, conversationIds });
     }
@@ -1683,6 +1696,8 @@ suite("AI conversation store integration", () => {
       expect(requeued?.status).toBe("queued");
       const failed = await aiConversations.getTurn({ conversationId: budgetConv.id, turnId: budgetTurn.id });
       expect(failed?.status).toBe("failed");
+      // The sweep does not know the turn's language; the chat words the recorded reason for its reader.
+      expect(failed?.error).toBe("The run time limit was reached. The results so far are kept. Send a new message to continue.");
       const aborted = await aiConversations.getTurn({ conversationId: waitConv.id, turnId: waitTurn.id });
       expect(aborted?.status).toBe("aborted");
       const capped = await aiConversations.getTurn({ conversationId: cappedConv.id, turnId: cappedTurn.id });
@@ -1911,7 +1926,9 @@ suite("AI conversation store integration", () => {
       expect(summaries.find((item) => item.id === failed.id)).toMatchObject({
         runStatus: "failed",
         runError: "Provider unavailable",
+        runTurnId: expect.any(String),
       });
+      expect(summaries.find((item) => item.id === normal.id)?.runTurnId).toBeNull();
       expect(summaries.find((item) => item.id === done.id)).toMatchObject({
         runStatus: "idle",
         runError: null,

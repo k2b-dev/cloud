@@ -1,4 +1,4 @@
-import { announce, Button, ButtonLink, Chat, useLocale } from "@k2b/ui";
+import { announce, Button, ButtonLink, Chat, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
   createEffect,
@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
+import type { AiTurnError } from "../types";
 import { ApprovalBlockView, CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
@@ -25,6 +26,7 @@ import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, countWorkSteps, groupWorkBlocks, summarizeToolGroup } from "./tool-groups";
+import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 
@@ -53,6 +55,10 @@ export type AiTurnSegment = {
    * it in a row at the end of its last segment.
    */
   reconnect?: "line" | "row";
+  /** Why the turn failed, shown in a notice at its end. Only the last segment of a failed turn carries it. */
+  error?: AiTurnError | null;
+  /** The failed turn is the chat's newest and nothing runs, so a new message can pick up its work. */
+  continuable?: boolean;
 };
 
 const isLive = (phase: AiTurnPhase) => phase === "running" || phase === "waiting";
@@ -165,7 +171,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = worked();
     const short = duration === null ? "" : formatWorkDuration(duration, t());
     if (segment().phase === "stopped") return t().workedStopped({ duration: short });
-    if (segment().phase === "failed") return t().workedInterrupted({ duration: short });
+    // A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
+    if (segment().phase === "failed" && !segment().error) return t().workedInterrupted({ duration: short });
     return short ? t().workedFor({ duration: short }) : t().worked;
   };
   const ariaLabel = () => {
@@ -175,7 +182,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     return t().workedLabel({
       duration: duration === null ? "" : formatWorkDuration(duration, t(), true),
       steps: layout().steps ? steps() : "",
-      ending: phase === "stopped" || phase === "failed" ? phase : null,
+      ending: phase === "stopped" || (phase === "failed" && !segment().error) ? phase : null,
     });
   };
   const trailing = () => {
@@ -523,6 +530,37 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
 }
 
 /**
+ * Why a turn failed and what comes next, at its end. "Continue" sends a visible message through the host's normal
+ * send path, so the person sees what was asked; it is offered only for the chat's newest turn and only when a new
+ * turn can finish the work.
+ */
+function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const actions = useAiChatActions();
+  const [continuing, setContinuing] = createSignal(false);
+  const canContinue = () => props.continuable && aiTurnErrorCanContinue(props.error) && Boolean(actions.onContinueTurn);
+  const continueTurn = async () => {
+    if (continuing()) return;
+    setContinuing(true);
+    try {
+      await actions.onContinueTurn?.(t().continueTurnMessage);
+    } finally {
+      setContinuing(false);
+    }
+  };
+  return (
+    <NoticeCard tone="danger" class="ai-turn__notice" title={t().turnErrorTitle} detail={aiTurnErrorDescription(props.error, locale())}>
+      <Show when={canContinue()}>
+        <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
+          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueTurn}
+        </Button>
+      </Show>
+    </NoticeCard>
+  );
+}
+
+/**
  * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. A status
  * is not read token by token: screen readers hear each status once it is complete, and that the answer is ready.
  */
@@ -605,6 +643,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
+  // Screen readers hear once that the turn they followed failed and why; history read later is not announced.
+  createEffect(
+    on(live, (now, before) => {
+      const error = props.segment().error;
+      if (before && !now && error) {
+        const t = aiChatMessages(locale());
+        announce(`${t.turnErrorTitle} ${aiTurnErrorDescription(error, locale())}`);
+      }
+    }),
+  );
   return (
     <AiToolDisclosureProvider state={props.disclosureState}>
       <div class="ai-turn">
@@ -637,6 +685,9 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         <Show when={props.segment().reconnect === "row"}>
           {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
+        </Show>
+        <Show when={props.segment().error}>
+          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} />}
         </Show>
       </div>
     </AiToolDisclosureProvider>

@@ -138,6 +138,13 @@ turn still fails when:
 
 See [Transient provider failures](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures).
 
+The chat, `cld`, and the turn's stored error show only a worded reason, such
+as "The model service did not answer." To find the cause, filter `ai:executor`
+for the error `AI turn failed`: it carries the conversation and turn IDs, the
+reason `code`, and the provider's own message as `error`. The provider call's
+message also stays on its usage record. See
+[Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns).
+
 If `cld assistant` stops following a turn that keeps running in Assistant, the
 profile still uses an `assistant` CLI plugin from an earlier release. Run
 `cld plugins update assistant` for that profile; see

@@ -1,4 +1,4 @@
-import { For, type JSX, Show, splitProps } from "solid-js";
+import { children, For, type JSX, Show, splitProps } from "solid-js";
 import type { IntentTone } from "../semantics";
 
 export type NoticeTone = Extract<IntentTone, "neutral" | "info" | "success" | "warning" | "danger">;
@@ -26,6 +26,9 @@ export const NOTICE_CARD_CLASSES = {
 
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
   const [local, articleProps] = splitProps(props, ["tone", "title", "detail", "meta", "children", "class", "bodyClass"]);
+  // Children that render nothing, such as a Show whose condition is false, add no body and no gap.
+  const body = children(() => local.children);
+  const hasBody = () => body.toArray().some((node) => node != null && node !== false && node !== "");
   return (
     <article {...articleProps} class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`} data-tone={local.tone ?? "neutral"}>
       <div class={NOTICE_CARD_CLASSES.content}>
@@ -38,7 +41,9 @@ function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
           )}
         </Show>
         <Show when={local.detail}>{(detail) => <p class={NOTICE_CARD_CLASSES.description}>{detail()}</p>}</Show>
-        <Show when={local.children}>{(body) => <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>}</Show>
+        <Show when={hasBody()}>
+          <div class={`${NOTICE_CARD_CLASSES.body} ${local.bodyClass ?? ""}`}>{body()}</div>
+        </Show>
       </div>
     </article>
   );

@@ -284,7 +284,8 @@ suite("AI conversation stream repair", () => {
 
     const state = expectState(await stream.next());
     expect(state.activeTurn).toBeNull();
-    expect(state.conversation).toMatchObject({ runStatus: "failed", runError: "boom" });
+    // The failed turn goes out under its public ID, as its messages' loopId.
+    expect(state.conversation).toMatchObject({ runStatus: "failed", runError: "boom", runTurnId: turn.shortId });
     expect(await stream.next()).toMatchObject({ type: "turn_finished", turnId: turn.shortId, status: "failed", error: "boom" });
     expect(await stream.quiet(500)).toEqual([]);
   }, 20_000);
