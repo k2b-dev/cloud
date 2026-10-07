@@ -1,6 +1,6 @@
 import type { Provider } from "@k2b/nessi";
 import type { NessiIssue } from "@k2b/nessi/ai";
-import type { AiSettingsError, AiTurnError, AiTurnErrorCode } from "./types";
+import type { AiTurnError, AiTurnErrorCode } from "./types";
 
 /** A failure whose reason Cloud knows where it throws it, such as a loop that will not answer without tools. */
 export class AiTurnFailure extends Error {
@@ -18,24 +18,35 @@ export class AiTurnFailure extends Error {
  */
 export type AiTurnFailureInfo = { error: AiTurnError; detail: string; message?: string };
 
-const settingsErrorCode = (error: unknown): AiSettingsError["code"] | null =>
-  error && typeof error === "object" && "aiError" in error && error.aiError && typeof error.aiError === "object" && "code" in error.aiError
-    ? (error.aiError as AiSettingsError).code
-    : null;
+/** The reason part of a failure, known before the turn ends. */
+export type AiTurnFailureReason = Omit<AiTurnFailureInfo, "detail">;
+
+// Matched by their codes, so this module stays free of the quota and accounting stores.
+const QUOTA_CODES: ReadonlySet<unknown> = new Set(["quota_exhausted", "quota_usage_unknown"]);
+const BACKGROUND_BUDGET_CODES: ReadonlySet<unknown> = new Set([
+  "ai_background_cost_stop",
+  "ai_background_budget_reserved",
+  "ai_background_budget_insufficient",
+]);
+
+const isSettingsError = (error: unknown): boolean =>
+  Boolean(error && typeof error === "object" && "aiError" in error && error.aiError && typeof error.aiError === "object");
 
 /** The reason behind an error that Cloud threw while it prepared or drove a turn. */
-export const aiTurnErrorFromThrown = (error: unknown): AiTurnError => {
-  if (error instanceof AiTurnFailure) return { code: error.code };
-  // An AiQuotaError; matched by its code, so this module stays free of the quota store.
-  if (error instanceof Error && "code" in error && error.code === "quota_exhausted") return { code: "quota_exhausted" };
-  const settings = settingsErrorCode(error);
-  if (settings === "model_access_denied" || settings === "model_policy_mismatch") return { code: "not_allowed" };
-  if (settings) return { code: "model_unavailable" };
-  return { code: "failed" };
+export const aiTurnReasonFromThrown = (error: unknown): AiTurnFailureReason => {
+  if (error instanceof AiTurnFailure) return { error: { code: error.code } };
+  const code = error instanceof Error && "code" in error ? error.code : null;
+  // A quota whose usage could not be measured blocks the next turn like a used-up one, until it resets.
+  if (QUOTA_CODES.has(code)) return { error: { code: "quota_exhausted" } };
+  // Background AI that its budget stops keeps Cloud's own explanation, as a blocked mandate does.
+  if (error instanceof Error && BACKGROUND_BUDGET_CODES.has(code)) return { error: { code: "not_allowed" }, message: error.message };
+  // Settings that deny the model, or that offer no usable one, fail every new turn the same way until they change.
+  if (isSettingsError(error)) return { error: { code: "not_allowed" } };
+  return { error: { code: "failed" } };
 };
 
 export const aiTurnFailureFromThrown = (error: unknown, fallback: string): AiTurnFailureInfo => ({
-  error: aiTurnErrorFromThrown(error),
+  ...aiTurnReasonFromThrown(error),
   detail: error instanceof Error ? error.message : fallback,
 });
 
@@ -47,13 +58,15 @@ export const aiTurnErrorFromProviderIssue = (issue: NessiIssue): AiTurnError | n
 };
 
 /**
- * nessi passes on only the text of an error that a model call throws. This keeps the error itself, so the turn can
- * name its reason without reading text: a quota that ran out, or a model service that failed.
+ * Keeps the reason of the model call it wraps, where the call runs: a call starts without one, and its own issue or
+ * thrown error sets it. nessi reads the next event ahead while the executor still handles the previous one, so a
+ * reason kept where the events arrive could be overwritten by an older event. nessi also passes on only the text of
+ * an error that a call throws; this keeps the error itself, so the reason never depends on its text.
  */
-export const rememberProviderErrors = (provider: Provider, remember: (error: AiTurnError) => void): Provider => {
+export const rememberProviderErrors = (provider: Provider, remember: (reason: AiTurnFailureReason | null) => void): Provider => {
   const note = (error: unknown) => {
-    const reason = aiTurnErrorFromThrown(error);
-    remember(reason.code === "failed" ? { code: "model_unavailable" } : reason);
+    const reason = aiTurnReasonFromThrown(error);
+    remember(reason.error.code === "failed" ? { error: { code: "model_unavailable" } } : reason);
   };
   return {
     name: provider.name,
@@ -62,6 +75,7 @@ export const rememberProviderErrors = (provider: Provider, remember: (error: AiT
     contextWindow: provider.contextWindow,
     capabilities: provider.capabilities,
     complete: async (request) => {
+      remember(null);
       try {
         return await provider.complete(request);
       } catch (error) {
@@ -70,8 +84,13 @@ export const rememberProviderErrors = (provider: Provider, remember: (error: AiT
       }
     },
     stream: async function* (request) {
+      remember(null);
       try {
-        yield* provider.stream(request);
+        for await (const event of provider.stream(request)) {
+          const error = event.type === "issue" ? aiTurnErrorFromProviderIssue(event.issue) : null;
+          if (error) remember({ error });
+          yield event;
+        }
       } catch (error) {
         if (!request.signal?.aborted) note(error);
         throw error;

@@ -611,22 +611,25 @@ stable and never translated; clients word it in their reader's language:
 
 | `code` | Meaning | A new message can continue |
 | --- | --- | --- |
-| `model_unavailable` | The model service failed or timed out, also after its retries, or AI is not configured | yes |
-| `quota_exhausted` | The user's AI usage limit for the period is used up | no |
+| `model_unavailable` | The model service failed or timed out, also after its retries | yes |
+| `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |
 | `context_full` | The chat no longer fits the model, also after compaction | no |
 | `time_limit` | The turn's run time limit ended it; `limitMinutes` names the limit | yes |
 | `step_limit` | The model profile's `maxToolRounds` is used up, or the model kept calling tools after it was asked to answer | yes |
 | `wait_expired` | An approval or an answer did not arrive before the wait's deadline | yes |
 | `interrupted` | Workers lost the turn repeatedly and it used up its recovery attempts | yes |
-| `not_allowed` | The chat may no longer use its model, project, apps, or background mandate | no |
+| `not_allowed` | The chat may no longer use its model, project, apps, or background mandate, AI settings offer no usable model, or the background AI budget stopped the run | no |
 | `failed` | Any other cause | yes |
 
 `AiTurn.error`, `AiConversation.runError`, and the `error` of `turn_finished`
 hold the worded reason for readers without the chat view, such as `cld`: in the
 turn's language, or in English when the sweep finalized the turn. When a new
 message can continue, it adds that the results so far are kept and that a new
-message continues the task. A background run that its mandate blocked keeps
-Cloud's own explanation there. The raw cause, such as the provider's message,
+message continues the task; a failed compaction holds the reason only. A
+background run that its mandate or the background AI budget blocked keeps
+Cloud's own explanation there. `AiConversation.runTurnId` is the public ID of
+the latest turn, which `runStatus` and `runError` describe; the messages of that
+turn carry it as `loopId`. The raw cause, such as the provider's message,
 goes only to the error log entry `AI turn failed` under `ai:executor`, beside
 the `code`, and a provider call's message also stays on its
 [usage record](/en/docs/ai/usage-and-feedback#read-the-report). A stop records
@@ -636,8 +639,10 @@ The next turn of the chat sees the failed turn's finished steps in its context.
 A turn that ended while a call ran or waited for an approval leaves that call
 without a result. Each model request answers such a call with an error result
 saying it did not return and may or may not have run, right after the message
-that made it; stored history keeps the call as not run. Providers reject a
-history with an unanswered call, so before, the chat's next turn failed.
+that made it; stored history keeps the call as not run. A result stored after a
+scheduled result that arrived while its call ran moves up next to its call in
+the request. Providers reject a history with an unanswered call or a result
+apart from its call, so before, the chat's next turn failed.
 
 ### Run time budget
 

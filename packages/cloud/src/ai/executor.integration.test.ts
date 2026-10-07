@@ -14,6 +14,7 @@ import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
+import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
@@ -1566,6 +1567,47 @@ suite("AI executor integration", () => {
           cancelled: false,
           errorCode: "ai_provider_call_failed",
         });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a model call that throws at once ends the turn with its own reason, also while the executor still handles turn_start", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Hi", locale: "en", toolSource: { kind: "none" } },
+        userMessage: userMessage("Hi"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "quota-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      // nessi starts this call before the executor has handled the turn_start that precedes it.
+      const provider = syntheticProvider(async function* () {
+        throw new AiQuotaError("quota_exhausted", "Chat usage limit reached. Resets at 2026-10-08T00:00:00.000Z.");
+      });
+      await createExecutor("quota-exec", undefined, fakeValidateWithProvider(provider)).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: "failed",
+        error: "Your AI usage limit for this period is reached. You can continue once it resets.",
+      });
+      const [input] = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(input?.meta?.turnError).toEqual({ code: "quota_exhausted" });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;

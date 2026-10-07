@@ -180,6 +180,32 @@ const storedItems = (
   // Only the chat's newest turn can be continued, and only while no other turn runs.
   const newestLoop = idle ? (messages.at(-1)?.loopId ?? null) : null;
   const segmentId = createSegmentIds();
+  // The model never answered: the notice stands where the live turn showed its progress, under the same id.
+  const unansweredNotice = (entry: AiStoredMessage, itemIndex: number): ChatTimelineItem[] => {
+    const loopId = entry.loopId;
+    const error = loopId && lastEntryOfLoop.get(loopId) === itemIndex ? turnErrors.get(loopId) : undefined;
+    if (!loopId || !error) return [];
+    const id = segmentId(loopId, "start");
+    return [
+      {
+        kind: "message",
+        id,
+        role: "assistant",
+        createdAt: entry.createdAt,
+        class: "ai-chat-message-wide",
+        content: views.content({
+          id,
+          turnId: loopId,
+          phase: "failed",
+          layout: layoutAiTurn([], { phase: "failed" }),
+          earlier: false,
+          duration: () => null,
+          error,
+          continuable: newestLoop === loopId,
+        }),
+      },
+    ];
+  };
   return timeline.flatMap((item, itemIndex): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
@@ -187,7 +213,7 @@ const storedItems = (
       if (agentMessage) {
         const separator = text.indexOf("\n\n");
         const forwardedText = separator >= 0 ? text.slice(separator + 2) : text;
-        return {
+        const systemItem: ChatTimelineItem = {
           kind: "message",
           id: item.id,
           role: "system",
@@ -219,6 +245,7 @@ const storedItems = (
           ),
           anchorId: item.entry.seq,
         };
+        return [systemItem, ...unansweredNotice(item.entry, itemIndex)];
       }
       const userItem: ChatTimelineItem = {
         kind: "message",
@@ -231,31 +258,7 @@ const storedItems = (
         actionDisplay: "menu",
         anchorId: item.entry.seq,
       };
-      const loopId = item.entry.loopId;
-      const error = loopId && lastEntryOfLoop.get(loopId) === itemIndex ? turnErrors.get(loopId) : undefined;
-      if (!loopId || !error) return userItem;
-      // The model never answered: the notice stands where the live turn showed its progress, under the same id.
-      const id = segmentId(loopId, "start");
-      return [
-        userItem,
-        {
-          kind: "message",
-          id,
-          role: "assistant",
-          createdAt: item.entry.createdAt,
-          class: "ai-chat-message-wide",
-          content: views.content({
-            id,
-            turnId: loopId,
-            phase: "failed",
-            layout: layoutAiTurn([], { phase: "failed" }),
-            earlier: false,
-            duration: () => null,
-            error,
-            continuable: newestLoop === loopId,
-          }),
-        },
-      ];
+      return [userItem, ...unansweredNotice(item.entry, itemIndex)];
     }
 
     if (item.type === "summary") {
@@ -284,7 +287,9 @@ const storedItems = (
     const turnError = item.loopId && lastOfLoop ? turnErrors.get(item.loopId) : undefined;
     const phase = turnError ? "failed" : lastOfLoop ? storedPhase(item.entries) : "completed";
     const segments = splitSurveyResults(item.blocks);
-    if (segments.length === 0) segments.push({ type: "assistant", blocks: [] });
+    // A turn that failed after an accepted answer ends with its notice where the live turn showed its progress, below
+    // the answer and under the same id, as activeItems() places it.
+    if (segments.length === 0 || (turnError && segments.at(-1)?.type === "survey")) segments.push({ type: "assistant", blocks: [] });
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
     const scheduledTask = item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask ?? null;
     let firstSegment = true;

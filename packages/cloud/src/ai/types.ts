@@ -156,6 +156,8 @@ export type AiConversation = {
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
   runError: string | null;
+  /** Public ID of the latest turn, which `runStatus` and `runError` describe; null before the first turn. */
+  runTurnId?: string | null;
   unreadCompletion: boolean;
   /** Optional shared project context; the conversation itself remains private to its owner. */
   projectId: string | null;

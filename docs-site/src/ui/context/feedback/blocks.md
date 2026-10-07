@@ -29,7 +29,8 @@ import { ButtonLink, InlineGuidance, NoticeCard } from "@k2b/ui";
 `NoticeCard` accepts `title`, optional `detail`, optional `meta`, `tone`,
 `class`, and `bodyClass`. Children render below the title and detail, for
 example a list or the controls for the next step. Without a title, the
-children are the whole notice.
+children are the whole notice. Children that render nothing, such as a `Show`
+whose condition is false, add no body and no space.
 
 `meta` is one short fact shown as a small pill at the end of the title row,
 such as a deadline (`Due 22 Nov`) or a count. It uses the tone color on a

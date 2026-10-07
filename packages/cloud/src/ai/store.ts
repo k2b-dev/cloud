@@ -115,6 +115,7 @@ type ConversationRow = {
   latest_browser_pending?: boolean;
   latest_turn_error?: string | null;
   latest_turn_completed_at?: Date | string | null;
+  latest_turn_short_id?: string | null;
   enrich_fail_count: number | null;
   project_id: string | null;
   draft_content: unknown;
@@ -555,6 +556,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
   lastUsedAt: iso(row.last_used_at),
   runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
   runError: row.latest_turn_status === "failed" ? row.latest_turn_error?.trim() || "Assistant response failed." : null,
+  runTurnId: row.latest_turn_short_id ?? null,
   unreadCompletion:
     Boolean(
       row.background_received_at &&
@@ -726,10 +728,10 @@ const loadConversationSummary = async (input: {
       latest.status AS latest_turn_status,
       ${browserWorkPending()} AS latest_browser_pending,
       latest.error AS latest_turn_error,
-      latest.completed_at AS latest_turn_completed_at
+      latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id
     FROM ai.conversations conversation
     LEFT JOIN LATERAL (
-      SELECT status, error, completed_at, live_blocks
+      SELECT short_id, status, error, completed_at, live_blocks
       FROM ai.turns
       WHERE conversation_id = conversation.id AND NOT COALESCE(run_config ? 'background', false)
       ORDER BY created_at DESC, id DESC
@@ -1204,10 +1206,10 @@ export const aiConversations: AiConversationService = {
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
-        latest.completed_at AS latest_turn_completed_at
+        latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at, live_blocks
+        SELECT short_id, status, error, completed_at, live_blocks
         FROM ai.turns
         WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC
@@ -1260,12 +1262,12 @@ export const aiConversations: AiConversationService = {
       SELECT conversation.*, ${effectiveDone()} AS is_done,
         EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status, ${browserWorkPending()} AS latest_browser_pending,
-        latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at,
+        latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id,
         jsonb_build_object('completed', COALESCE(progress.completed,0), 'total', COALESCE(progress.total,0),
           'step', progress.step, 'tool', ai.sidebar_tool_label(latest.live_blocks)->>'label') AS activity
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at, live_blocks FROM ai.turns
+        SELECT short_id, status, error, completed_at, live_blocks FROM ai.turns
         WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id ORDER BY created_at DESC, id DESC LIMIT 1
       ) latest ON TRUE
       LEFT JOIN LATERAL (
@@ -1307,10 +1309,10 @@ export const aiConversations: AiConversationService = {
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
-        latest.completed_at AS latest_turn_completed_at
+        latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id
       FROM ai.conversations conversation
       LEFT JOIN LATERAL (
-        SELECT status, error, completed_at, live_blocks
+        SELECT short_id, status, error, completed_at, live_blocks
         FROM ai.turns
         WHERE NOT COALESCE(run_config ? 'background', false) AND conversation_id = conversation.id
         ORDER BY created_at DESC, id DESC

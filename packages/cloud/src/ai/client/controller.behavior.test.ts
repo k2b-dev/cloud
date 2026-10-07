@@ -14,10 +14,10 @@ const {
   failSteerBlock,
   isActiveConversationLoading,
   isCurrentStreamSession,
-  newestTurnShowsError,
   projectionForConversationOpen,
   reconcileSteerBlocks,
   runErrorFromEvent,
+  turnShowsError,
   settleFrontendCall,
   isComposerDraftSendable,
 } = __aiControllerTest;
@@ -954,8 +954,9 @@ describe("AI controller turn failures", () => {
     const failed = { ...conversation("failed"), runStatus: "failed" as const, runError: "Provider unavailable" };
     const event: AiStreamSseEvent = { type: "state", conversation: failed, messages: [], activeTurn: null };
 
-    expect(conversationRunError(failed)).toBe("Provider unavailable");
-    expect(runErrorFromEvent(event, null)).toBe("Provider unavailable");
+    expect(conversationRunError(failed)).toEqual({ message: "Provider unavailable", turnId: null });
+    expect(runErrorFromEvent(event, null)).toEqual({ message: "Provider unavailable", turnId: null });
+    expect(conversationRunError({ ...failed, runTurnId: "tRn234" })).toEqual({ message: "Provider unavailable", turnId: "tRn234" });
   });
 
   test("uses the current finished turn and ignores stale turn events", () => {
@@ -970,20 +971,20 @@ describe("AI controller turn failures", () => {
       error: "Unauthorized",
     };
 
-    expect(runErrorFromEvent(failed, "turn-1")).toBe("Unauthorized");
+    expect(runErrorFromEvent(failed, "turn-1")).toEqual({ message: "Unauthorized", turnId: "turn-1" });
     expect(runErrorFromEvent(failed, "older-turn")).toBeUndefined();
     expect(runErrorFromEvent({ ...failed, status: "completed", error: null }, "turn-1")).toBeNull();
   });
 
-  test("a failure the newest turn shows in its notice stays out of the composer", () => {
-    const message = (seq: number, loopId: string | null, meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
-      id: `m${seq}`,
-      shortId: `m${seq}`,
+  test.skipIf(isServer)("a failure the failed turn shows in its notice stays out of the composer; one it cannot show reaches it", () => {
+    const failedMessage: AiStoredMessage = {
+      id: "m1",
+      shortId: "m1",
       conversationId: "chat",
-      seq,
+      seq: 1,
       kind: "message",
       message: { role: "user", content: [{ type: "text", text: "Hi" }] },
-      loopId,
+      loopId: "turn-1",
       modelProfileId: null,
       providerModel: null,
       usage: null,
@@ -991,19 +992,54 @@ describe("AI controller turn failures", () => {
       loopAggregate: null,
       loopDoneReason: null,
       compactedAt: null,
-      meta,
+      meta: { turnError: { code: "model_unavailable" } },
       createdAt: "2026-10-07T10:00:00.000Z",
+    };
+    const failedChat = (runTurnId: string | undefined, runError: string): AiConversation => ({
+      ...conversation("chat"),
+      runStatus: "failed",
+      runError,
+      ...(runTurnId ? { runTurnId } : {}),
     });
-    const failed = message(1, "turn-1", { turnError: { code: "model_unavailable" } });
-    expect(newestTurnShowsError([failed])).toBe(true);
-    // An older notice does not cover a newer failure, such as a turn from an earlier release without a reason.
-    expect(newestTurnShowsError([failed, message(2, "turn-2")])).toBe(false);
-    expect(newestTurnShowsError([])).toBe(false);
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let dispose!: () => void;
+    const controller = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: "chat",
+        initialDetail: {
+          conversation: failedChat("turn-1", "The model service did not answer."),
+          messages: [failedMessage],
+          activeTurn: null,
+        },
+        streamTransport: {
+          subscribe: (input) => {
+            emit = input.onEvent;
+            return { close() {} };
+          },
+        },
+      });
+    });
+    try {
+      // The turn's notice says it; the composer does not repeat it.
+      expect(controller.error()).toBeNull();
+      // A compaction that failed afterwards stores no message, so only the composer can say it.
+      emit({ type: "state", conversation: failedChat("cMp234", "Something went wrong."), messages: [failedMessage], activeTurn: null });
+      expect(controller.error()).toBe("Something went wrong.");
+      // Without the failed turn's ID, as from an earlier release, the composer keeps the error.
+      emit({ type: "state", conversation: failedChat(undefined, "Provider unavailable"), messages: [failedMessage], activeTurn: null });
+      expect(controller.error()).toBe("Provider unavailable");
+      expect(turnShowsError([failedMessage], "turn-1")).toBe(true);
+      expect(turnShowsError([failedMessage], null)).toBe(false);
+    } finally {
+      dispose();
+    }
   });
 
   test("falls back to stable user-facing copy when no error was persisted", () => {
     const failed = { ...conversation("failed"), runStatus: "failed" as const, runError: null };
-    expect(conversationRunError(failed)).toBe("Assistant response failed.");
+    expect(conversationRunError(failed)?.message).toBe("Assistant response failed.");
   });
 });
 

@@ -1926,7 +1926,9 @@ suite("AI conversation store integration", () => {
       expect(summaries.find((item) => item.id === failed.id)).toMatchObject({
         runStatus: "failed",
         runError: "Provider unavailable",
+        runTurnId: expect.any(String),
       });
+      expect(summaries.find((item) => item.id === normal.id)?.runTurnId).toBeNull();
       expect(summaries.find((item) => item.id === done.id)).toMatchObject({
         runStatus: "idle",
         runError: null,

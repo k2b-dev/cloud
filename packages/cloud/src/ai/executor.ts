@@ -18,6 +18,7 @@ import { isAssistantChatTurn } from "./assistant-models";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
+import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
@@ -62,9 +63,9 @@ import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools
 import {
   AiTurnFailure,
   type AiTurnFailureInfo,
-  aiTurnErrorFromProviderIssue,
-  aiTurnErrorFromThrown,
+  type AiTurnFailureReason,
   aiTurnFailureFromThrown,
+  aiTurnReasonFromThrown,
   rememberProviderErrors,
 } from "./turn-failure";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
@@ -77,7 +78,6 @@ import type {
   AiStoredMessage,
   AiToolPresentation,
   AiTurnClaim,
-  AiTurnError,
   AiTurnFinalizedEvent,
   AiTurnRunConfig,
   AiTurnSteer,
@@ -644,7 +644,8 @@ export class AiTurnExecutor {
   /**
    * Ends the turn. A failure stores its reason twice: as a code on the turn's last message, which the chat words in
    * the reader's language, and as text in the turn's language for readers without the chat view. The raw cause, such
-   * as a provider's own message, goes only to the log.
+   * as a provider's own message, goes only to the log. A failed compaction left the chat as it was, so its text names
+   * only the reason.
    */
   private async finalize(
     conversationId: string,
@@ -656,10 +657,15 @@ export class AiTurnExecutor {
     locale?: string,
   ) {
     const failed = status === "failed" ? (failure ?? { error: { code: "failed" as const }, detail: "AI turn failed" }) : null;
-    if (failed) log.error("AI turn failed", { conversationId, turnId, code: failed.error.code, error: failed.detail });
-    const error = failed
-      ? (failed.message ?? aiTurnErrorText(failed.error, normalizeLocale(locale ?? (await coreSettings.get<string>("app.locale")))))
-      : null;
+    let error: string | null = null;
+    if (failed) {
+      log.error("AI turn failed", { conversationId, turnId, code: failed.error.code, error: failed.detail });
+      error = failed.message ?? null;
+      if (!error) {
+        const textLocale = normalizeLocale(locale ?? (await coreSettings.get<string>("app.locale")));
+        error = kind === "compact" ? aiChatMessages(textLocale).turnErrorReason(failed.error) : aiTurnErrorText(failed.error, textLocale);
+      }
+    }
     const finalized = await aiConversations.completeTurn({
       conversationId,
       turnId,
@@ -1138,8 +1144,8 @@ export class AiTurnExecutor {
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
     // The reason a failed turn names: the one the current model call or the turn's own checks gave.
-    const failureReason: { current: AiTurnError | null } = { current: null };
-    const remember = (reason: AiTurnError) => {
+    const failureReason: { current: AiTurnFailureReason | null } = { current: null };
+    const remember = (reason: AiTurnFailureReason | null) => {
       failureReason.current = reason;
     };
     const turnPolicy = applyAiTurnPolicy({
@@ -1197,7 +1203,7 @@ export class AiTurnExecutor {
         try {
           return await turnPolicy.tools();
         } catch (error) {
-          remember(aiTurnErrorFromThrown(error));
+          remember(aiTurnReasonFromThrown(error));
           throw error;
         }
       },
@@ -1312,9 +1318,10 @@ export class AiTurnExecutor {
     noteToolCall: (call: AiTurnPolicyToolCall) => void;
     /**
      * Why the turn would fail now, as a model call or the turn's own checks said. A new model call starts without one,
-     * so a context overflow that compaction resolved never names a later failure.
+     * so a context overflow that compaction resolved never names a later failure. Only the model calls and checks set
+     * it, in the order they run; the events here arrive later than that.
      */
-    failureReason: { current: AiTurnError | null };
+    failureReason: { current: AiTurnFailureReason | null };
     onBackgroundBlocked?: (message: string) => void;
   }): Promise<AttemptOutcome> {
     const {
@@ -1407,11 +1414,8 @@ export class AiTurnExecutor {
           });
         } else if (event.type === "turn_end" && event.message.content.some((block) => block.type === "tool_call")) {
           noteToolRound();
-        } else if (event.type === "turn_start") {
-          failureReason.current = null;
         } else if (event.type === "issue") {
           lastIssueMessage = event.issue.message;
-          failureReason.current = aiTurnErrorFromProviderIssue(event.issue) ?? failureReason.current;
           log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
         } else if (event.type === "loop_end") {
           const aggregate = await withDurableTurnTiming(turnId, event.aggregate);
@@ -1424,15 +1428,15 @@ export class AiTurnExecutor {
           if (event.reason === "aborted") return { kind: "finished", status: "aborted", failure: null, timing };
           if (event.reason === "stop") return { kind: "finished", status: "completed", failure: null, timing };
           const detail = lastIssueMessage ?? `AI turn ended: ${event.reason}`;
-          const error: AiTurnError =
+          const reason: AiTurnFailureReason =
             event.reason === "max_turns"
-              ? { code: "step_limit" }
+              ? { error: { code: "step_limit" } }
               : event.reason === "context_overflow"
-                ? { code: "context_full" }
+                ? { error: { code: "context_full" } }
                 : event.reason === "no_credits"
-                  ? { code: "quota_exhausted" }
-                  : (failureReason.current ?? { code: "failed" });
-          return { kind: "finished", status: "failed", failure: { error, detail }, timing };
+                  ? { error: { code: "quota_exhausted" } }
+                  : (failureReason.current ?? { error: { code: "failed" } });
+          return { kind: "finished", status: "failed", failure: { ...reason, detail }, timing };
         }
       }
       return { kind: "finished", status: abortController.signal.aborted ? "aborted" : "completed", failure: null };
@@ -1641,17 +1645,23 @@ export class AiTurnExecutor {
       turnId,
       leaseOwner: this.config.leaseOwner,
     });
+    const reason: { current: AiTurnFailureReason | null } = { current: null };
     const loop = compact({
       agentId: "cloud",
       loopId: turnId,
       store,
-      provider: inferenceProvider(resolved.provider, resolved.profile, {
-        kind: "background",
-        task: "chat-compaction",
-        conversationId,
-        turnId,
-        appId: "core",
-      }),
+      provider: rememberProviderErrors(
+        inferenceProvider(resolved.provider, resolved.profile, {
+          kind: "background",
+          task: "chat-compaction",
+          conversationId,
+          turnId,
+          appId: "core",
+        }),
+        (remembered) => {
+          reason.current = remembered;
+        },
+      ),
       force: true,
       signal: abortController.signal,
       compact: createCloudCompactFn({
@@ -1671,15 +1681,20 @@ export class AiTurnExecutor {
     const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
     let status: "completed" | "failed" | "aborted" = "failed";
     let failure: AiTurnFailureInfo | null = null;
+    let issueMessage: string | null = null;
     try {
       for await (const event of loop as AsyncIterable<CompactEvent>) {
         if (event.type === "compaction_start") await pipeline.applyCompaction("running");
         else if (event.type === "compaction_end") await pipeline.applyCompaction("completed");
-        else if (event.type === "issue")
-          failure = { error: aiTurnErrorFromProviderIssue(event.issue) ?? { code: "failed" }, detail: event.issue.message };
+        else if (event.type === "issue") issueMessage = event.issue.message;
         else if (event.type === "loop_end") {
           status = event.reason === "stop" ? "completed" : event.reason === "aborted" ? "aborted" : "failed";
           await pipeline.applyCompaction(status === "failed" ? "failed" : "completed", event.result);
+          if (status === "failed")
+            failure = {
+              ...(reason.current ?? { error: { code: "failed" } }),
+              detail: issueMessage ?? `AI compaction ended: ${event.reason}`,
+            };
         }
       }
     } catch (err) {
@@ -1687,7 +1702,8 @@ export class AiTurnExecutor {
         status = "aborted";
       } else {
         status = "failed";
-        failure = aiTurnFailureFromThrown(err, "AI compaction failed");
+        const thrown = aiTurnFailureFromThrown(err, "AI compaction failed");
+        failure = reason.current ? { ...reason.current, detail: thrown.detail } : thrown;
       }
     } finally {
       stopHeartbeat();

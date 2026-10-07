@@ -25,7 +25,8 @@ far are kept. Send a new message to continue." Code that matched those texts
 reads `meta.turnError.code` instead. Operators find the raw cause in the error
 log entry `AI turn failed` under `ai:executor`. A failed turn no longer streams
 a temporary "⚠️" text block. The chat controller's `error()` no longer repeats
-a failure the turn's notice shows.
+a failure the turn's notice shows. `AiConversation.runTurnId` names the latest
+turn, which `runStatus` and `runError` describe.
 
 Applications that host the chat timeline add
 `AiChatActions.onContinueTurn(message)` and send `message` through their

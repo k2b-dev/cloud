@@ -288,7 +288,9 @@ such as "The model service did not answer. The results so far are kept." The
 reason comes from `meta.turnError` on the turn's last message, see
 [Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns); the
 provider's own message never appears. A turn that failed before the model
-answered shows the notice where its progress stood, under the same timeline id.
+answered, or right after an accepted survey answer, shows the notice where its
+progress stood, under the same timeline id; this includes a request forwarded
+from another chat.
 Screen readers hear the notice once when the turn they followed fails.
 
 When the failed turn is the chat's newest, no turn runs, and a new turn can
@@ -301,11 +303,15 @@ model as not returned, so it checks the call's effect instead of repeating it
 blindly. A full context, a used-up usage limit, or lost access would fail the
 next turn the same way; their notices name the next step instead of offering
 **Continue**. Without `onContinueTurn` the notice shows only the reason; the
-message menu's **Retry** stays available either way.
+message menu's **Retry** stays available either way. When your send path goes
+through the conversation draft, as the controller's `send` does, sending
+replaces what the person was writing; save the composer's content back
+afterwards, also when sending failed.
 
-The controller's `error()` does not repeat a failure that the newest turn shows
-in its notice. A failure without a recorded reason, such as a failed
-compaction, still reaches `error()`.
+The controller's `error()` does not repeat a failure that the failed turn shows
+in its notice; it matches the turn by `AiConversation.runTurnId` or the
+`turnId` of `turn_finished`. A failure without a recorded reason, such as a
+failed compaction, still reaches `error()`.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision

@@ -1,18 +1,36 @@
 import { expect, test } from "bun:test";
 import type { Provider } from "@k2b/nessi";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { AiQuotaError } from "./quotas";
-import { AiTurnFailure, aiTurnErrorFromProviderIssue, aiTurnErrorFromThrown, rememberProviderErrors } from "./turn-failure";
-import type { AiTurnError } from "./types";
+import {
+  AiTurnFailure,
+  type AiTurnFailureReason,
+  aiTurnErrorFromProviderIssue,
+  aiTurnReasonFromThrown,
+  rememberProviderErrors,
+} from "./turn-failure";
 
 test("a thrown error names the reason a person can act on, not its text", () => {
-  expect(aiTurnErrorFromThrown(new AiTurnFailure("step_limit", "no final answer"))).toEqual({ code: "step_limit" });
-  expect(aiTurnErrorFromThrown(new AiQuotaError("quota_exhausted", "Chat usage limit reached."))).toEqual({ code: "quota_exhausted" });
+  expect(aiTurnReasonFromThrown(new AiTurnFailure("step_limit", "no final answer"))).toEqual({ error: { code: "step_limit" } });
+  expect(aiTurnReasonFromThrown(new AiQuotaError("quota_exhausted", "Chat usage limit reached."))).toEqual({
+    error: { code: "quota_exhausted" },
+  });
+  // Usage that could not be measured blocks the next turn like a used-up quota; another message would not help.
+  expect(aiTurnReasonFromThrown(new AiQuotaError("quota_usage_unknown", "Chat usage could not be measured."))).toEqual({
+    error: { code: "quota_exhausted" },
+  });
+  // Settings that deny the model or offer no usable one point to another model or the administrator, never to Continue.
   const denied = Object.assign(new Error("denied"), { aiError: { code: "model_access_denied", message: "denied" } });
-  expect(aiTurnErrorFromThrown(denied)).toEqual({ code: "not_allowed" });
-  const disabled = Object.assign(new Error("AI is disabled."), { aiError: { code: "ai_disabled", message: "AI is disabled." } });
-  expect(aiTurnErrorFromThrown(disabled)).toEqual({ code: "model_unavailable" });
-  expect(aiTurnErrorFromThrown(new Error("socket hang up"))).toEqual({ code: "failed" });
+  expect(aiTurnReasonFromThrown(denied)).toEqual({ error: { code: "not_allowed" } });
+  const missing = Object.assign(new Error("No API key."), { aiError: { code: "missing_provider_credential", message: "No API key." } });
+  expect(aiTurnReasonFromThrown(missing)).toEqual({ error: { code: "not_allowed" } });
+  // A background budget stop keeps Cloud's own explanation for task runs, as a blocked mandate does.
+  const stopped = new AiBackgroundCostError();
+  expect(aiTurnReasonFromThrown(stopped)).toEqual({ error: { code: "not_allowed" }, message: stopped.message });
+  const insufficient = new AiBackgroundAdmissionError(false);
+  expect(aiTurnReasonFromThrown(insufficient)).toEqual({ error: { code: "not_allowed" }, message: insufficient.message });
+  expect(aiTurnReasonFromThrown(new Error("socket hang up"))).toEqual({ error: { code: "failed" } });
 });
 
 test("a model call's own issue ends the turn as an unavailable model or a full context; tool issues do not", () => {
@@ -39,25 +57,48 @@ const throwing = (error: unknown): Provider => ({
   },
 });
 
+const drain = async (stream: AsyncIterable<unknown>) => {
+  for await (const _event of stream) {
+  }
+};
+
 test("an error a model call throws is remembered by its reason and still ends the call", async () => {
-  const reasons: AiTurnError[] = [];
-  const remember = (reason: AiTurnError) => {
-    reasons.push(reason);
+  const reasons: (AiTurnFailureReason | null)[] = [];
+  const remember = (reason: AiTurnFailureReason | null) => {
+    if (reason) reasons.push(reason);
   };
   const quota = rememberProviderErrors(throwing(new AiQuotaError("quota_exhausted", "Chat usage limit reached.")), remember);
   await expect(quota.complete({ messages: [] })).rejects.toThrow("Chat usage limit reached.");
   const reset = rememberProviderErrors(throwing(new Error("socket hang up")), remember);
-  await expect(
-    (async () => {
-      for await (const _event of reset.stream({ messages: [] })) {
-      }
-    })(),
-  ).rejects.toThrow("socket hang up");
+  await expect(drain(reset.stream({ messages: [] }))).rejects.toThrow("socket hang up");
   // A stop is not a failure.
   const stopped = new AbortController();
   stopped.abort();
   await expect(reset.complete({ messages: [], signal: stopped.signal })).rejects.toThrow();
-  expect(reasons).toEqual([{ code: "quota_exhausted" }, { code: "model_unavailable" }]);
+  expect(reasons).toEqual([{ error: { code: "quota_exhausted" } }, { error: { code: "model_unavailable" } }]);
+});
+
+test("each model call starts without a reason, and its own issue names one where the call runs", async () => {
+  let reason: AiTurnFailureReason | null = { error: { code: "context_full" } };
+  const calls: string[] = [];
+  const provider = rememberProviderErrors(
+    {
+      ...throwing(null),
+      async *stream() {
+        // The reason of the call before is gone once this call runs.
+        calls.push(reason ? "stale" : "clean");
+        yield { type: "issue", issue: { kind: "provider_error", message: "upstream 502", retryable: false } };
+      },
+    },
+    (remembered) => {
+      reason = remembered;
+    },
+  );
+  const atIssue: (AiTurnFailureReason | null)[] = [];
+  for await (const event of provider.stream({ messages: [] })) if (event.type === "issue") atIssue.push(reason);
+  expect(calls).toEqual(["clean"]);
+  // Set before the issue leaves the call, so a reader that is still busy with older events cannot overwrite it.
+  expect(atIssue).toEqual([{ error: { code: "model_unavailable" } }]);
 });
 
 test("the stored error says how to go on only when a new message can", () => {

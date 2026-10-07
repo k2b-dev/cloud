@@ -55,6 +55,13 @@ test("a result counts only for the model message before it, since providers may 
   expect(sent).toEqual([user("First"), calls("call_0"), notReturned, user("Second"), calls("call_0"), result("call_0"), user("Third")]);
 });
 
+test("a result stored after a scheduled message moves up to its call instead of being answered as not returned", async () => {
+  const digest: Message = { role: "assistant", content: [{ type: "text", text: "Your daily digest is ready." }] };
+  const sent = await send([user("Send both"), calls("a", "b"), result("a"), digest, result("b"), user("Thanks")]);
+  expect(sent).toEqual([user("Send both"), calls("a", "b"), result("b"), result("a"), digest, user("Thanks")]);
+  expect(sent.filter((message) => message.role === "tool_result" && message.callId === "b")).toHaveLength(1);
+});
+
 test("a history without open calls reaches the provider unchanged", async () => {
   const messages = [user("Send"), calls("done"), result("done"), user("Thanks")];
   expect(await send(messages)).toBe(messages);

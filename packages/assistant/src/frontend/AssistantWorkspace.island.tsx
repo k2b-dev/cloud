@@ -105,7 +105,13 @@ import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { assistantComposerCommands } from "./composer-commands";
-import { confirmComposerSave, editComposerSession, newComposerSession, observeComposerRevision } from "./composer-session";
+import {
+  confirmComposerSave,
+  editComposerSession,
+  newComposerSession,
+  observeComposerRevision,
+  sendBesideComposer,
+} from "./composer-session";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { useAssistantText } from "./ui-copy";
@@ -1798,10 +1804,13 @@ export default function AssistantWorkspace(props: Props) {
                                   },
                                   onContinueTurn: async (message) => {
                                     const target = chat.activeConversationId();
-                                    if (!target || !(await send({ message }))) return;
-                                    // Sending consumed the saved draft; keep what the person was writing in the composer.
-                                    if (composerDraft(target).trim() || composerAttachmentsFor(target).length > 0)
-                                      await saveComposer(target, target);
+                                    if (!target) return;
+                                    // Sending replaces the saved draft; what the person was writing goes back into it.
+                                    await sendBesideComposer(session(target), {
+                                      send: () => send({ message }),
+                                      hasContent: () => Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
+                                      save: () => saveComposer(target, target),
+                                    });
                                   },
                                   onOpenScheduledTaskRun: (taskId, occurrenceId) =>
                                     void openAssistantTaskRun(taskId, occurrenceId, liveHub),

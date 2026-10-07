@@ -762,3 +762,106 @@ const renderFailedTurnTimeline = async (
     dom.cleanup();
   }
 });
+
+(isServer ? test.skip : test)("a turn that failed after an accepted answer ends with its notice below the answer, in place", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "en",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const args = { title: "Invoice details", questions: [{ id: "amount", type: "text", label: "Amount" }] };
+  const answer = { submitted: true, answers: { amount: "150 EUR" } };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({
+      ...base,
+      seq: 2,
+      type: "block_set",
+      block: { id: "tool:survey-1", kind: "tool", callId: "survey-1", name: "survey", args, status: "completed", result: answer },
+    });
+    await tick();
+    // After the answer, the live turn shows its progress below it.
+    const progress = dom.root.querySelector(".ai-turn");
+    expect(dom.root.textContent).toContain("150 EUR");
+    expect(progress).not.toBeNull();
+
+    emit({
+      ...base,
+      seq: 3,
+      type: "turn_finished",
+      status: "failed",
+      error: "The model service did not answer.",
+      messages: [
+        storedMessage(10, { role: "user", content: [{ type: "text", text: "Book the invoice" }] }),
+        storedMessage(
+          11,
+          { role: "assistant", content: [{ type: "tool_call", id: "survey-1", name: "survey", args }] },
+          { loopDoneReason: "error" },
+        ),
+        storedMessage(
+          12,
+          { role: "tool_result", callId: "survey-1", name: "survey", result: answer, isError: false },
+          { meta: { turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(state.activeTurn).toBeNull();
+    // The notice takes the progress's place, so nothing above it moves.
+    expect(dom.root.querySelector(".ai-turn")).toBe(progress);
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    expect(notice?.textContent).toContain("The model service did not answer.");
+    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted.") ?? -1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)("a forwarded request whose turn failed before the model answered shows the notice below it", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "en",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const agentMessage = { id: "forward-1", sourceChatId: "cSrc12", sourceTurnId: "tSrc12", sourceTitle: "Planning" };
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    await tick();
+    const progress = dom.root.querySelector(".ai-turn");
+    expect(progress).not.toBeNull();
+    emit({
+      ...base,
+      seq: 2,
+      type: "turn_finished",
+      status: "failed",
+      error: "The model service did not answer.",
+      messages: [
+        storedMessage(
+          10,
+          { role: "user", content: [{ type: "text", text: "Message from Planning\n\nPlease check the budget." }] },
+          { meta: { agentMessage, turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(dom.root.textContent).toContain("Please check the budget.");
+    expect(dom.root.querySelector(".ai-turn")).toBe(progress);
+    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("The model service did not answer.");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
