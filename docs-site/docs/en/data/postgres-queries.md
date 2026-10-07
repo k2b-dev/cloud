@@ -5,7 +5,7 @@ section: Data
 order: 410
 description: Query application-owned Postgres data with the shared database connection.
 tags: [data, postgres, sql, queries]
-updated: 2026-09-15
+updated: 2026-10-07
 ---
 
 # Postgres queries
@@ -196,6 +196,15 @@ const rows = await sql<DbInventoryItem[]>`
 
 Validate `sort` and `direction` before the service receives them. See
 [Typed HTTP APIs](/en/docs/server/http#validate-every-request-value).
+
+For keyset pagination on a `timestamptz` column, select the cursor timestamp as
+SQL text with full precision, for example
+`to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.
+Preserve that string in the opaque cursor and cast it back with `::timestamptz`
+for the next page's comparison. Include a unique tie-breaker such as `id` in
+both the ordering and the cursor. JavaScript `Date` keeps only milliseconds;
+using it for a cursor can skip or repeat rows stored within the same
+millisecond. Public display timestamps can still use the row mapper above.
 
 ## Load relations in batches
 

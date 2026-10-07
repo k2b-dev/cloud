@@ -85,11 +85,11 @@ type DbAttentionCommand = OperatorTargetCommandState & {
   updated_at: Date | string;
 };
 
-const encodeAttentionCursor = (row: DbAttentionCommand): string =>
+const encodeAttentionCursor = (row: { cursor_at: string; id: string }): string =>
   Buffer.from(
     JSON.stringify({
       version: 1,
-      updatedAt: toIso(row.updated_at)!,
+      updatedAt: row.cursor_at,
       id: row.id,
     } satisfies AttentionCursor),
   ).toString("base64url");
@@ -260,8 +260,9 @@ const loadMailboxOperations = async (
   const folderPath = (folder: DbFolder): string => folderPaths.get(folder.id) ?? folder.name;
   folders.sort((left, right) => folderPath(left).toLowerCase().localeCompare(folderPath(right).toLowerCase()));
   const attentionLimit = Math.min(Math.max(options.attentionLimit ?? 100, 1), 200);
-  const attentionCommandsPage = await sql<DbAttentionCommand[]>`
-    SELECT id, kind, state, attempt, last_error_code, provider_effect_started_at, created_at, updated_at
+  const attentionCommandsPage = await sql<(DbAttentionCommand & { cursor_at: string })[]>`
+    SELECT id, kind, state, attempt, last_error_code, provider_effect_started_at, created_at, updated_at,
+           to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM mail.commands
     WHERE mailbox_id = ${mailboxId}::uuid AND state IN ('failed', 'ambiguous', 'needs_attention')
       AND (${options.attentionCursor?.updatedAt ?? null}::timestamptz IS NULL

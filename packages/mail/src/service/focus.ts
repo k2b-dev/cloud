@@ -45,6 +45,7 @@ type DbFocusItem = {
   subject: string;
   participant_summary: string;
   latest_message_at: Date | string;
+  cursor_at: string;
   work_status: MailFocusItem["workStatus"];
   assignee_user_id: string | null;
   revision: number;
@@ -205,6 +206,7 @@ export const listFocusConversations = async (params: {
         c.subject,
         c.participant_summary,
         c.latest_message_at,
+        to_char(c.latest_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
         c.work_status,
         c.assignee_user_id,
         c.revision,
@@ -301,6 +303,6 @@ export const listFocusConversations = async (params: {
       unread: row.unread,
       needsAction: row.needs_action,
     })),
-    nextCursor: hasMore && last ? encodeCursor({ version: 1, view, userId, date: toIso(last.latest_message_at), id: last.id }) : null,
+    nextCursor: hasMore && last ? encodeCursor({ version: 1, view, userId, date: last.cursor_at, id: last.id }) : null,
   });
 };

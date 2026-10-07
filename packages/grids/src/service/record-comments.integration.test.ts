@@ -73,6 +73,54 @@ beforeAll(async () => {
 });
 
 describe("record comments integration", () => {
+  postgresTest("pages every comment within one millisecond exactly once", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const expected: string[] = [];
+      for (const micros of [100, 200, 200, 300, 400]) {
+        const id = uuid();
+        expected.push(id);
+        await sql`
+          INSERT INTO grids.record_comments (id, short_id, base_id, table_id, record_id, author_user_id, body, created_at)
+          VALUES (${id}::uuid, ${testShortId()}, ${fixture.baseId}::uuid, ${fixture.tableId}::uuid,
+            ${fixture.ownerRecordId}::uuid, ${fixture.ownerId}::uuid, 'Precision test',
+            ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz)
+        `;
+      }
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < expected.length; page++) {
+        const result = await comments.list({
+          baseId: fixture.baseId,
+          tableId: fixture.tableId,
+          recordId: fixture.ownerRecordId,
+          limit: 2,
+          cursor,
+        });
+        if (!result.ok) throw new Error(result.error.message);
+        seen.push(...result.data.items.map((item) => item.id));
+        expect(result.data.items.every((item) => item.createdAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+        cursor = result.data.nextCursor;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeNull();
+      expect(seen.sort()).toEqual(expected.sort());
+      expect(new Set(seen).size).toBe(expected.length);
+      const legacy = Buffer.from(JSON.stringify(["2027-01-01T00:00:00.000Z", uuid()])).toString("base64url");
+      const result = await comments.list({
+        baseId: fixture.baseId,
+        tableId: fixture.tableId,
+        recordId: fixture.ownerRecordId,
+        limit: 2,
+        cursor: legacy,
+      });
+      expect(result.ok && result.data.items.length).toBe(2);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("paginates comments newest-first without row-scope filtering", async () => {
     const fixture = createFixture();
     try {

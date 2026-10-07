@@ -518,6 +518,77 @@ suite("AI conversation store integration", () => {
     }
   });
 
+  for (const listing of ["resources", "sources", "occurrences"] as const) {
+    test(`pages ${listing} without losing microseconds or timestamp ties`, async () => {
+      const userId = await insertUser();
+      const conversationIds: string[] = [];
+      try {
+        const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+        const other = await aiConversations.createConversation({ ownerUserId: userId });
+        conversationIds.push(conversation.id, other.id);
+        for (const [index, micros] of [100, 200, 200, 300, 400].entries()) {
+          await sql`
+            INSERT INTO ai.conversation_resource_refs (conversation_id, resource_type, resource_id, last_seen_at)
+            VALUES (${conversation.id}::uuid, 'notebooks.note', ${`note-${index}`},
+              ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz)
+          `;
+        }
+        await sql`
+          INSERT INTO ai.conversation_resource_refs (conversation_id, resource_type, resource_id, last_seen_at)
+          VALUES (${other.id}::uuid, 'notebooks.note', 'note-2', '2026-01-01T00:00:00.000200Z')
+        `;
+        if (listing === "sources") {
+          await sql`
+            INSERT INTO ai.conversation_sources (conversation_id, kind, source_key, title, last_seen_at)
+            VALUES (${conversation.id}::uuid, 'web', 'web-result', 'Web result', '2026-01-01T00:00:00.000200Z')
+          `;
+          await aiFileStore.write({
+            conversationId: conversation.id,
+            path: "/cursor.txt",
+            mediaType: "text/plain",
+            bytes: new Uint8Array([1]),
+          });
+          await sql`UPDATE ai.files SET updated_at = '2026-01-01T00:00:00.000200Z' WHERE conversation_id = ${conversation.id}::uuid`;
+        }
+        const fetchPage = async (before?: string) => {
+          if (listing === "occurrences") {
+            const page = await aiConversations.listUserConversationResources({ ownerUserId: userId, before, limit: 2 });
+            return { keys: page.resources.map((row) => `${row.ref.id}:${row.chat.shortId}`), next: page.nextCursor };
+          }
+          if (listing === "sources") {
+            const page = await aiConversations.listConversationSources({ conversationId: conversation.id, before, limit: 2 });
+            expect(page.sources.every((row) => row.lastSeenAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+            return { keys: page.sources.map((row) => `${row.kind}:${row.key}`), next: page.nextCursor };
+          }
+          const page = await aiConversations.listConversationResources({ conversationId: conversation.id, before, limit: 2 });
+          expect(page.resources.every((row) => row.lastSeenAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+          return { keys: page.resources.map((row) => row.ref.id), next: page.nextCursor };
+        };
+        const expected =
+          listing === "occurrences"
+            ? [...Array.from({ length: 5 }, (_, index) => `note-${index}:${conversation.shortId}`), `note-2:${other.shortId}`]
+            : listing === "sources"
+              ? [...Array.from({ length: 5 }, (_, index) => `resource:notebooks.note:note-${index}`), "web:web-result", "file:/cursor.txt"]
+              : Array.from({ length: 5 }, (_, index) => `note-${index}`);
+        const seen: string[] = [];
+        let before: string | undefined;
+        for (let page = 0; page < expected.length; page++) {
+          const result = await fetchPage(before);
+          seen.push(...result.keys);
+          before = result.next;
+          if (!before) break;
+        }
+        expect(before).toBeUndefined();
+        expect(seen.sort()).toEqual(expected.sort());
+        expect(new Set(seen).size).toBe(expected.length);
+        const legacy = encodeURIComponent(JSON.stringify({ at: "2027-01-01T00:00:00.000Z", type: "", id: "", chat: "" }));
+        expect((await fetchPage(legacy)).keys).toHaveLength(2);
+      } finally {
+        await cleanupFixture({ userId, conversationIds });
+      }
+    });
+  }
+
   test("lists files, web activity, pages, and Cloud refs as unified Sources", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];

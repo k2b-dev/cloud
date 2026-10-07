@@ -304,10 +304,10 @@ const rowToConversationResourceRef = (row: ConversationResourceRefRow): AiConver
 });
 
 type ResourceCursor = { at: string; type: string; id: string };
-const encodeResourceCursor = (row: ConversationResourceRefRow): string =>
-  encodeURIComponent(JSON.stringify({ at: iso(row.last_seen_at), type: row.resource_type, id: row.resource_id } satisfies ResourceCursor));
-const encodeSourceCursor = (row: ConversationSourceRow): string =>
-  encodeURIComponent(JSON.stringify({ at: iso(row.last_seen_at), type: row.source_kind, id: row.source_key } satisfies ResourceCursor));
+const encodeResourceCursor = (row: ConversationResourceRefRow & { cursor_at: string }): string =>
+  encodeURIComponent(JSON.stringify({ at: row.cursor_at, type: row.resource_type, id: row.resource_id } satisfies ResourceCursor));
+const encodeSourceCursor = (row: ConversationSourceRow & { cursor_at: string }): string =>
+  encodeURIComponent(JSON.stringify({ at: row.cursor_at, type: row.source_kind, id: row.source_key } satisfies ResourceCursor));
 const decodeResourceCursor = (value: string | undefined): ResourceCursor | null => {
   if (!value) return null;
   try {
@@ -389,10 +389,10 @@ const interChatMessageSelect = () => sql`
 `;
 
 type ResourceOccurrenceCursor = ResourceCursor & { chat: string };
-const encodeResourceOccurrenceCursor = (row: ConversationResourceOccurrenceRow): string =>
+const encodeResourceOccurrenceCursor = (row: ConversationResourceOccurrenceRow & { cursor_at: string }): string =>
   encodeURIComponent(
     JSON.stringify({
-      at: iso(row.last_seen_at),
+      at: row.cursor_at,
       type: row.resource_type,
       id: row.resource_id,
       chat: row.conversation_short_id,
@@ -1452,9 +1452,10 @@ export const aiConversations: AiConversationService = {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? 20), 1), 100);
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceCursor(input.before);
-    const rows = await sql<ConversationResourceRefRow[]>`
+    const rows = await sql<(ConversationResourceRefRow & { cursor_at: string })[]>`
       SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href,
-             source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at
+             source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at,
+             to_char(indexed.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM ai.conversation_resource_refs indexed
       LEFT JOIN ai.turns source_turn ON source_turn.id = indexed.source_turn_id
       WHERE indexed.conversation_id = ${input.conversationId}::uuid
@@ -1475,11 +1476,12 @@ export const aiConversations: AiConversationService = {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? 20), 1), 100);
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceOccurrenceCursor(input.before);
-    const rows = await sql<ConversationResourceOccurrenceRow[]>`
+    const rows = await sql<(ConversationResourceOccurrenceRow & { cursor_at: string })[]>`
       SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href,
              source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at,
              conversation.short_id AS conversation_short_id, conversation.title AS conversation_title,
-             conversation.updated_at AS conversation_updated_at
+             conversation.updated_at AS conversation_updated_at,
+             to_char(indexed.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM ai.conversation_resource_refs indexed
       JOIN ai.conversations conversation ON conversation.id = indexed.conversation_id
       LEFT JOIN ai.turns source_turn ON source_turn.id = indexed.source_turn_id
@@ -1525,8 +1527,8 @@ export const aiConversations: AiConversationService = {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? 20), 1), 100);
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceCursor(input.before);
-    const rows = await sql<ConversationSourceRow[]>`
-      SELECT *
+    const rows = await sql<(ConversationSourceRow & { cursor_at: string })[]>`
+      SELECT source.*, to_char(source.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM (
         SELECT source.kind AS source_kind, source.source_key, source.title, source.preview,
                source.icon, source.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,

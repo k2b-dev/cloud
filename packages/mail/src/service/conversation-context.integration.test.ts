@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import * as appIntegrations from "./app-integrations";
 import type { MailRequestContext } from "./auth";
-import { listRelatedConversations } from "./conversation-context";
+import { listRelatedConversations, listRelatedMail } from "./conversation-context";
 import { createMailbox } from "./mailboxes";
 import { normalizeMailSubject } from "./message-threading";
 
@@ -110,6 +112,84 @@ suite("related Mail conversations", () => {
     await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     for (const row of access) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
     await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+  });
+
+  test("pages related Mail timestamps with microseconds and accepts legacy millisecond cursors", async () => {
+    const participant = `cursor-${suffix}@example.test`;
+    const bookId = "Book01";
+    const contactId = "Cont01";
+    const resolveContacts = spyOn(appIntegrations, "resolveContacts").mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          {
+            ref: { type: "contacts.contact", id: contactId },
+            contactId,
+            bookId,
+            bookName: "Cursor contacts",
+            displayName: "Cursor contact",
+            companyName: null,
+            jobTitle: null,
+            matchedEmails: [participant],
+            emails: [{ label: null, email: participant }],
+            phones: [],
+            contactPointsTruncated: false,
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            openHref: null,
+          },
+        ],
+        matchedEmails: [participant],
+        nextCursor: null,
+      },
+    });
+    const createdIds: string[] = [];
+    const expected: string[] = [];
+    try {
+      const sourceId = await createConversation(300, "Cursor source", participant, 0);
+      createdIds.push(sourceId);
+      for (const [index, micros] of [100, 200, 200, 300, 400].entries()) {
+        const id = await createConversation(301 + index, "Related Mail cursor precision", participant, 1);
+        createdIds.push(id);
+        expected.push(id);
+        await sql`UPDATE mail.conversations SET latest_message_at = ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz WHERE id = ${id}::uuid`;
+      }
+      const page = (cursor?: string) =>
+        listRelatedMail({
+          context: contextFor(owner),
+          request: {},
+          contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          mailboxId,
+          conversationId: sourceId,
+          bookId,
+          contactId,
+          limit: 2,
+          cursor,
+        });
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      for (let index = 0; index < expected.length; index++) {
+        const result = await page(cursor);
+        if (!result.ok) throw new Error("error" in result ? result.error.message : result.message);
+        seen.push(...result.data.items.map((item) => item.id));
+        expect(result.data.items.every((item) => item.latestMessageAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+        cursor = result.data.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeUndefined();
+      expect(seen.toSorted()).toEqual(expected.toSorted());
+      expect(new Set(seen).size).toBe(expected.length);
+      const legacy = Buffer.from(JSON.stringify({ version: 1, date: "2027-01-01T00:00:00.000Z", id: crypto.randomUUID() })).toString(
+        "base64url",
+      );
+      const result = await page(legacy);
+      expect(result.ok && result.data.items.length).toBe(2);
+    } finally {
+      resolveContacts.mockRestore();
+      for (const id of createdIds) {
+        await sql`DELETE FROM mail.message_contents WHERE id IN (SELECT message_id FROM mail.conversation_messages WHERE conversation_id = ${id}::uuid)`;
+        await sql`DELETE FROM mail.conversations WHERE id = ${id}::uuid`;
+      }
+    }
   });
 
   test("ranks shared participants before normalized subjects and explains every result", async () => {

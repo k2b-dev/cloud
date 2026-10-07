@@ -88,6 +88,7 @@ type DbSearchHit = {
   participant_labels: unknown[] | string;
   latest_message_at: Date | string;
   sort_date: Date | string;
+  cursor_at: string;
   message_id: string | null;
   internal_date: Date | string;
   sent_at: Date | string | null;
@@ -1293,6 +1294,10 @@ const runSearch = async (params: {
           WHEN ${params.groupByConversation} THEN COALESCE(conversation.latest_message_at, deduplicated.internal_date)
           ELSE deduplicated.internal_date
         END AS sort_date,
+        to_char((CASE
+          WHEN ${params.groupByConversation} THEN COALESCE(conversation.latest_message_at, deduplicated.internal_date)
+          ELSE deduplicated.internal_date
+        END) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
         deduplicated.message_id,
         deduplicated.internal_date,
         deduplicated.sent_at,
@@ -1714,7 +1719,7 @@ export const searchMessages = async (params: {
             backend,
             queryHash,
             rank: last.rank,
-            internalDate: (lastRow.sort_date instanceof Date ? lastRow.sort_date : new Date(lastRow.sort_date)).toISOString(),
+            internalDate: lastRow.cursor_at,
             id: lastRow.result_id,
           })
         : null,
