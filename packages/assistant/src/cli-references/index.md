@@ -225,7 +225,7 @@ asynchronous when the target is busy.
 
 Tasks belong to a chat, but each run uses an independent execution history.
 It starts from completed chat context and reads current files, memories, and
-Project resources. Interactive chatting can continue while it runs. Results and
+Project knowledge and files. App reads, including Project references, need grants. Interactive chatting can continue while it runs. Results and
 failures are delivered to the original chat, reopening it and updating its
 activity time. One-time `--at` values are local wall-clock times in `app.timezone`,
 with the exact format `YYYY-MM-DDTHH:mm`. Recurring tasks use a five-field cron
@@ -251,7 +251,9 @@ Capability grants are a JSON list. Each entry contains `appId`, `capabilityId`,
 `kind` (`query` or `action`), and `fixedInput`. Fixed fields must match exactly;
 `{}` allows any input within the caller's current access. Omitting grants when
 creating a task gives it no capability grants. Updating grants replaces the list.
-Always-approval actions cannot be preapproved.
+Only Actions whose `approval` is `none` or `rememberable` can be granted; an Action
+without an `approval` field in the catalog asks every time and cannot be granted.
+`--yes` is required only for a non-empty grants list.
 
 ```json
 [
@@ -353,7 +355,7 @@ Skills and Projects require authentication, including direct API requests.
 Public grants are rejected; share with users, groups, service accounts, or all
 authenticated identities instead. Project sharing does not share private chats.
 
-Project names and short IDs are accepted by management commands. Access grants use `read`, `write`, or `admin`; the Project owner is always an administrator.
+Project names and short IDs are accepted by management commands. Access grants use `read`, `write`, or `admin`. The creator starts as `admin`, and a Project always keeps at least one `admin`.
 
 Run `cld assistant <group> help` or `cld assistant <group> <command> --help` for the complete accepted flags.
 

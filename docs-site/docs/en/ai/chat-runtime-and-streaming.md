@@ -458,8 +458,9 @@ and retry decision. Dictations are not workflow runs.
 A scheduled task belongs to one chat and runs as that chat's owner. Creating
 it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
 `grants` list names every capability the task may call. In a background run,
-every app capability needs a matching grant, Queries included; a task without
-grants can use only built-in tools such as chat files. Fixed input values must
+every app capability needs a matching grant, Queries included, such as the
+reader Query behind a Project reference. A task without grants can use only
+built-in tools such as chat files. Fixed input values must
 match exactly, and the owner's current access still applies to each call.
 
 A background run cannot ask for approval. Remembered approvals from the chat
