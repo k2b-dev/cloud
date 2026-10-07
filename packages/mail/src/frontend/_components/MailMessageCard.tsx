@@ -60,6 +60,9 @@ export default function MailMessageCard(props: {
   context: MailMessageCardContext;
   actions: MailMessageCardActions;
 }) {
+  // A card shows one message for its whole life. The body clears its selection while it unmounts, when the
+  // reader may already have dropped this message, so that report must not read `props.message` again.
+  const messageId = props.message.id;
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
   const findingPresentation = (finding: MailSecurityFinding): { title: string; explanation: string } => {
@@ -345,7 +348,7 @@ export default function MailMessageCard(props: {
                     attachments={props.message.attachments}
                     remoteContent={props.message.remoteContent}
                     linksDisabled={security().linksDisabled}
-                    onSelectionChange={(value) => props.actions.selectionChange(props.message.id, value)}
+                    onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
                   />
                 )}
               </Show>

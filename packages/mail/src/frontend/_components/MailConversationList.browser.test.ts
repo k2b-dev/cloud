@@ -174,6 +174,7 @@ const load = async (
     selectionMode?: boolean;
     sidebarCollapsed?: boolean;
     folderOnlyHints?: MailFolderView[];
+    reader?: boolean;
   } = {},
 ) => {
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
@@ -201,6 +202,7 @@ const load = async (
     selectionMode: options.selectionMode,
     sidebarCollapsed: options.sidebarCollapsed,
     folderOnlyHints: options.folderOnlyHints,
+    reader: options.reader,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -724,6 +726,113 @@ describe("Mail hint for a folder whose mail stays inside it", () => {
       expect(await page.evaluate(() => `${document.activeElement?.tagName} ${document.activeElement?.textContent?.trim()}`)).toBe(
         "H1 Inbox",
       );
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+});
+
+describe("Mail conversation switching", () => {
+  const subjectOf = (id: string) => items.find((candidate) => candidate.conversationId === id)!.subject;
+  /** What the page shows: the URL, the current row, the reader's heading, and the open message with its body. */
+  const opened = (page: Page) =>
+    page.evaluate(() => {
+      const card = document.querySelector<HTMLElement>("#reader [data-mail-message-id]");
+      const body = card?.querySelector(".mail-message-body");
+      const frame = body?.querySelector("iframe");
+      // An HTML body renders in its frame; its document text without the frame's own script and styles.
+      const framed = frame ? new DOMParser().parseFromString(frame.srcdoc, "text/html") : null;
+      for (const element of framed?.querySelectorAll("script, style") ?? []) element.remove();
+      return {
+        url: `${location.pathname}${location.search}`,
+        current: document.querySelector('.mail-list-entry:has([aria-current="page"])')?.getAttribute("data-conversation-id") ?? null,
+        heading: document.querySelector("#reader [data-mail-reader-heading]")?.textContent?.trim() ?? null,
+        cards: document.querySelectorAll("#reader [data-mail-message-id]").length,
+        message: card?.dataset.mailMessageId ?? null,
+        body: (framed ? framed.body.textContent : body?.textContent)?.trim() ?? null,
+      };
+    });
+  const expected = (id: string) => ({
+    url: `/app/mail/Box001?conversation=${id}`,
+    current: id,
+    heading: subjectOf(id),
+    cards: 1,
+    message: `Msg${id.slice(2)}`,
+    body: `Body of ${subjectOf(id)}`,
+  });
+  /** Waits until the page shows the conversation, then compares everything at once. */
+  const shows = async (page: Page, id: string) => {
+    await page
+      .waitForFunction((url) => `${location.pathname}${location.search}` === url, expected(id).url, { timeout: 2_000 })
+      .catch(() => undefined);
+    expect(await opened(page)).toEqual(expected(id));
+  };
+  const open = (page: Page, id: string) => page.click(linkOf(id));
+
+  test("every click opens the clicked conversation, fast clicks end on the last one, and back and forward follow", async () => {
+    const page = await load({ reader: true });
+    try {
+      // An HTML body (even rows) and a plain body (odd rows) unmount on every switch; back to an earlier one too.
+      for (const id of ["Cv0001", "Cv0002", "Cv0003", "Cv0001", "Cv0004"]) {
+        await open(page, id);
+        await shows(page, id);
+      }
+      for (const id of ["Cv0005", "Cv0006", "Cv0007"]) await open(page, id);
+      await shows(page, "Cv0007");
+
+      await page.focus(linkOf("Cv0008"));
+      await page.keyboard.press("Enter");
+      await shows(page, "Cv0008");
+
+      await page.goBack();
+      await shows(page, "Cv0007");
+      await page.goBack();
+      await shows(page, "Cv0006");
+      await page.goForward();
+      await shows(page, "Cv0007");
+      await open(page, "Cv0002");
+      await shows(page, "Cv0002");
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("after switching, the quick look opens for every other row, closes again, and never for the open one", async () => {
+    const page = await load({ reader: true });
+    try {
+      await open(page, "Cv0001");
+      await open(page, "Cv0002");
+      await shows(page, "Cv0002");
+
+      await pointAt(page, row("Cv0001"));
+      await page.clock.runFor(201);
+      expect(await shown(page)).toBe(subjectOf("Cv0001"));
+      await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__subject`).innerText()).toBe(subjectOf("Cv0001"));
+      await away(page);
+      await page.clock.runFor(181);
+      expect(await shown(page)).toBeNull();
+
+      await pointAt(page, row("Cv0002"));
+      await page.clock.runFor(500);
+      expect(await shown(page)).toBeNull();
+
+      await pointAt(page, row("Cv0003"));
+      await page.clock.runFor(201);
+      expect(await shown(page)).toBe(subjectOf("Cv0003"));
+      // Opening the previewed row closes its card; the row is now the open one.
+      await open(page, "Cv0003");
+      await shows(page, "Cv0003");
+      await page.clock.runFor(500);
+      expect(await shown(page)).toBeNull();
+
+      await pointAt(page, row("Cv0002"));
+      await page.clock.runFor(201);
+      expect(await shown(page)).toBe(subjectOf("Cv0002"));
+      // Only now, no longer open, did Cv0002 request its preview.
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0002"))).toHaveLength(1);
       expect(page.errors).toEqual([]);
     } finally {
       await close(page);
