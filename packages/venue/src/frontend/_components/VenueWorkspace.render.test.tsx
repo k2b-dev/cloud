@@ -353,6 +353,7 @@ const template: ShiftTemplate = {
   id: "Temp01",
   venueId: "Cafe01",
   weekday: 2,
+  date: null,
   title: "Theke",
   startTime: "11:00",
   endTime: "14:00",
@@ -749,7 +750,7 @@ describe("Venue shift detail and schedule", () => {
     );
     expect(pausedDetail).toContain("Old brunch");
     expect(pausedDetail).toContain("This shift was paused or its time changed after the sign-up");
-    expect(pausedDetail).not.toContain("Time someone added outside the recurring shifts.");
+    expect(pausedDetail).not.toContain("Time someone added outside the planned shifts.");
 
     // A sign-up link from My shifts opens the shift it belongs to.
     expect(text(detailOf(render("read", [], { calendarDate: day, shift: "a:Asg002", dashboard: board })))).toContain("Theke");

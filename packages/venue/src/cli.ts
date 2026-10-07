@@ -185,6 +185,7 @@ const slotRows = (slots: UpcomingSlot[]) =>
   slots.map((slot) => ({
     templateId: slot.template.id,
     date: slot.date,
+    recurring: slot.template.date === null ? "yes" : "no",
     title: slot.template.title,
     time: `${slot.template.startTime}-${slot.template.endTime}`,
     assigned: slot.assignedCount,
@@ -579,12 +580,13 @@ export default defineCliCommands({
       },
     }),
     command("shifts list", {
-      summary: "List upcoming shift slots",
+      summary: "List upcoming weekly and one-off shift slots",
       args: { venue: arg.optional({ valueLabel: "venue" }) },
       async run({ ctx, args }) {
         const dashboard = await loadDashboard(ctx, args.venue);
         printJsonOrTable(ctx, { items: dashboard.slots }, slotRows(dashboard.slots), [
           { key: "date" },
+          { key: "recurring" },
           { key: "title" },
           { key: "time" },
           { key: "assigned" },

@@ -259,7 +259,7 @@ const scanReminders = async (venue: Venue, venueId: string, accessIds: string[],
 };
 
 const scanGaps = async (venue: Venue, venueId: string, accessIds: string[], overrides: DateOverride[], scan: ScanState) => {
-  // Where staff only add free time, recurring shifts take no sign-ups and would always miss people.
+  // Where staff only add free time, planned shifts take no sign-ups and would always miss people.
   if (venue.signupMode === "free") return;
   const { startDate, days } = noticeWindowDays(scan.window, venue.timezone);
   // The schedule's own slot computation: paused shifts plan no slots.

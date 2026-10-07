@@ -5,7 +5,7 @@ section: Everyday
 order: 200
 description: Opening hours, staffing shifts, public pages, calendars, and visitor feedback for staffed places.
 tags: [venues, shifts, schedules, public-pages, cli]
-updated: 2026-09-29
+updated: 2026-10-07
 ---
 
 # Venues
@@ -21,9 +21,9 @@ across different places.
   the schedule has shifts, admins see setup steps derived from what exists:
   opening hours or shifts, shifts when staffing opens the venue, and access
   for the team.
-- Define weekly opening hours and exceptions for individual dates: a closed
-  day or a special opening with its own times.
-- Publish staffing slots and let staff take upcoming shifts. One click or tap
+- Define weekly opening hours and opening-hour exceptions for individual
+  dates: a closed day or a special opening with its own times.
+- Publish weekly or one-off staffing slots and let staff take upcoming shifts. One click or tap
   on a shift opens its details with the people on it; on a phone they open as
   a sheet from the bottom.
 - Manage the public page in one view: switch it on or off, copy its page and
@@ -99,8 +99,8 @@ requests and scans never send one twice.
 | Resource or surface | Responsibility |
 | --- | --- |
 | Venue | One staffed place with its name, timezone, public settings, and access policy |
-| Opening rule and date override | Regular weekly hours plus exceptions for a specific date: closed, or a special opening that replaces the day's hours and opens the venue in every opening mode |
-| Shift template and assignment | A recurring staffing slot on one weekday and the users assigned to its occurrences; a paused template (`active: false`) plans no occurrences. `POST /api/venue/venues/{id}/templates/batch` creates up to seven templates, for example one per weekday, in one transaction: all or none |
+| Opening rule and date override | Regular weekly hours plus opening-hour exceptions for a specific date: closed, or a special opening that replaces the day's hours and opens the venue in every opening mode. An exception never creates a shift |
+| Shift template and assignment | A weekly staffing slot on one weekday or a one-off slot on a specific date, and the users assigned to it; a paused template (`active: false`) plans no occurrences. `POST /api/venue/venues/{id}/templates/batch` creates up to seven templates, for example one per weekday, in one transaction: all or none |
 | Public section | An ordered Markdown, menu, notice, or links block; the public page shows it unless it is a draft |
 | Feedback entry | A visitor rating (1 to 5 stars, required) and optional comment for one venue |
 | Personal calendar link | A tokenized iCal feed of the current user's shifts at every venue, worded in the Cloud's default language (`app.locale`) because a calendar app sends no language; renewing it replaces the token, and the old URL answers 404 |
@@ -135,6 +135,41 @@ is off. Both require admin permission.
 
 The same rules apply in the workspace, the API, `cld venue`, capabilities, and
 Venue API keys with the matching permission.
+
+### Plan a one-off shift through the API
+
+Admins can use `POST /api/venue/venues/{id}/templates` for either kind of shift.
+For a one-off, send `date` as `YYYY-MM-DD` with the title, start and end times,
+and staffing settings. The date must be from today through 366 days ahead in
+the venue's time zone. Omit `weekday` to derive it from the date; if supplied,
+it must agree. For weekly shifts, omit `date` or set it to `null` and supply
+`weekday` (Sunday is 0).
+
+`PATCH /api/venue/venues/{id}/templates/{resourceId}` replaces the settings.
+Include the date when updating a one-off; changing it applies the same date
+limits. Keeping an old date allows edits to a past shift. An update cannot
+switch a weekly shift into a one-off or a one-off into a weekly shift.
+The batch route accepts up to seven shifts of either kind and saves all or none.
+
+One-off shifts use the same signup, capacity, cancellation, notifications,
+and personal calendar as weekly shifts. They appear only on their date,
+including when viewing past weeks. The dashboard's `templates` list contains
+weekly templates and one-off shifts from seven days ago through 366 days ahead;
+its `slots` include the one-offs in the requested calendar range. Paused and
+deleted shifts plan no slots. For a one-off,
+`POST /api/venue/venues/{id}/templates/{templateId}/signup-weeks` takes only
+its own date and, as for weekly shifts, skips a date the user already has or
+that is full: the answer is `201` with the sign-ups it made, possibly none.
+
+The `shift.list` and `shift.read` capabilities return `recurring: true` for
+weekly shifts and `false` for one-offs. Pass the returned `venueId`,
+`templateId`, and `date` to `assignment.signup` for either kind. The capability
+limit of 100 active templates applies to weekly templates and one-offs in the
+requested date range, so old one-offs do not prevent listing upcoming shifts;
+when that range exceeds the limit, `shift.list` asks for fewer days.
+Opening-hour exceptions stay separate: they change only the hours and never
+create a shift. A one-off shift counts toward the staffed opening logic like a
+weekly shift on that date.
 
 ## How Venues fits Cloud
 
@@ -180,6 +215,12 @@ and the public page preview are available in the workspace and the API
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+Startup adds the nullable shift date, its weekday constraint, and a date index
+idempotently. Existing templates keep `date: null` and continue weekly; no new
+configuration or signup migration is needed. Once one-off shifts exist, an
+older Venue release ignores their date and plans them every week; before
+rolling back, delete or pause one-off shifts, or restore the pre-upgrade database.
 
 Venues runs one scheduler, `venue:shift-notices`, every 15 minutes on the
 installation's NATS; after downtime it runs once for the missed time. Each run

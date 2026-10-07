@@ -56,6 +56,7 @@ const template: ShiftTemplate = {
   id: "Temp01",
   venueId: "Cafe01",
   weekday: 1,
+  date: null,
   title: "Lunch counter",
   startTime: "11:00",
   endTime: "14:00",
@@ -283,6 +284,50 @@ describe("Venue clarity behavior", () => {
       expect(closes).toEqual([true]);
       expect(toasts().at(-1)?.dataset.tone).toBe("success");
       expect(toasts().at(-1)?.textContent).toContain("2 shifts taken");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("taking a one-off shift uses plain signup even with the following weeks selected", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const oneOff = slot(addDays(today, 1), "Special event");
+    oneOff.template.date = oneOff.date;
+    const posts: { path: string; body: unknown }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      if (method === "POST") {
+        posts.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
+        return Response.json(assignment(oneOff, "user-1", "Alex Example"), { status: 201 });
+      }
+      return Response.json({ ...dashboard, templates: [oneOff.template], slots: [oneOff] });
+    }) as typeof fetch;
+
+    const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
+    const closes: boolean[] = [];
+    const dispose = render(
+      () => <SignupDialog dashboard={dashboard} userId="user-1" close={(changed) => closes.push(changed)} />,
+      dom.root,
+    );
+    try {
+      await flush();
+      const weeks = [...dom.root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((input) =>
+        input.closest("label")?.textContent?.includes("Also the next 4 weeks"),
+      );
+      expect(weeks).toBeDefined();
+      weeks!.click();
+      expect(weeks!.checked).toBe(true);
+      buttonNamed(dom.root, "Take shift").click();
+      await flush();
+      expect(posts).toEqual([
+        { path: `/api/venue/venues/${venue.id}/templates/${oneOff.template.id}/signup`, body: { date: oneOff.date } },
+      ]);
+      expect(closes).toEqual([true]);
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -711,7 +756,7 @@ describe("Venue clarity behavior", () => {
     };
     try {
       const special = await saveUnchanged(exception({ kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }));
-      expect(special.text).toContain("Edit exception");
+      expect(special.text).toContain("Edit opening-hour exception");
       expect(special.text).toContain("Special opening");
       expect(special.inputs).toEqual(expect.arrayContaining(["18:00", "22:00", "Long night"]));
       expect(special.saved).toEqual([{ date: "2030-10-17", kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }]);

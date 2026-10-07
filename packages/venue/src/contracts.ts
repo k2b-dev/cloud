@@ -141,6 +141,8 @@ export const ShiftTemplateSchema = z.object({
   id: VenueResourceIdSchema,
   venueId: VenueResourceIdSchema,
   weekday: WeekdaySchema,
+  /** `null` repeats weekly on `weekday`; a date plans this shift on that date only. */
+  date: DateKeySchema.nullable(),
   title: z.string(),
   startTime: TimeSchema,
   endTime: TimeSchema,
@@ -155,7 +157,10 @@ export type ShiftTemplate = z.infer<typeof ShiftTemplateSchema>;
 
 export const ShiftTemplateInputSchema = z
   .object({
-    weekday: WeekdaySchema,
+    weekday: WeekdaySchema.optional().describe(
+      "Required for weekly shifts; if a date is set, omitted weekday is derived and a supplied weekday must agree.",
+    ),
+    date: DateKeySchema.nullable().optional().describe("Omitted or null repeats weekly; a date makes this a one-off shift."),
     title: z.string().trim().min(1).max(160),
     startTime: TimeSchema,
     endTime: TimeSchema,
@@ -164,6 +169,17 @@ export const ShiftTemplateInputSchema = z
     requireTargetForOpening: z.boolean().default(false),
     active: z.boolean().default(true),
   })
+  .refine((input) => input.date != null || input.weekday !== undefined, {
+    path: ["weekday"],
+    message: "Weekday is required for a weekly shift",
+  })
+  .refine(
+    (input) => input.date == null || input.weekday === undefined || input.weekday === new Date(`${input.date}T12:00:00Z`).getUTCDay(),
+    {
+      path: ["weekday"],
+      message: "Weekday must match the shift date",
+    },
+  )
   .refine((input) => input.startTime < input.endTime, endsAfterStart)
   .refine((input) => input.maxPeople == null || input.maxPeople >= input.minPeople, {
     path: ["maxPeople"],
@@ -437,7 +453,7 @@ export const VenueDashboardSchema = z.object({
   openingRules: z.array(OpeningRuleSchema),
   /** Exceptions from a week ago through the next year. */
   overrides: z.array(DateOverrideSchema),
-  /** Every shift template that was not deleted; a paused one has `active: false` and plans no slots. */
+  /** Weekly templates plus one-off shifts from seven days ago through 366 days ahead; paused ones plan no slots. */
   templates: z.array(ShiftTemplateSchema),
   slots: z.array(UpcomingSlotSchema),
   /**

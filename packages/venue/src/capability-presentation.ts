@@ -51,7 +51,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "shift.list": {
           title: "Schichten eines Standorts auflisten",
           description:
-            "Listet die Schichten eines bekannten Standorts nach Datum auf, ohne zu zeigen, wer sie übernommen hat. Die venueId kommt aus venue.list oder venue.search; nutze venueId, templateId und Datum jeder Schicht mit shift.read oder assignment.signup.",
+            "Listet wöchentliche und einmalige Schichten eines bekannten Standorts nach Datum auf, ohne zu zeigen, wer sie übernommen hat. recurring gibt an, ob die Schicht wöchentlich wiederkehrt. Die venueId kommt aus venue.list oder venue.search; nutze venueId, templateId und Datum jeder Schicht mit shift.read oder assignment.signup.",
           input: {
             venueId: venueIdInput,
             startDate: "Erster Tag in der Zeitzone des Standorts; standardmäßig heute.",
@@ -63,7 +63,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "shift.read": {
           title: "Schicht eines Standorts lesen",
           description:
-            "Gezielte Abfrage einer einzelnen Schicht: Liest sie mit venueId, templateId und Datum, die „Schichten eines Standorts auflisten“ gemeinsam zurückgibt.",
+            "Gezielte Abfrage einer wöchentlichen oder einmaligen Schicht: Liest sie mit venueId, templateId und Datum, die „Schichten eines Standorts auflisten“ gemeinsam zurückgibt.",
           input: {
             venueId: venueIdInput,
             templateId: templateIdInput,
@@ -128,7 +128,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "assignment.signup": {
           title: "Schicht übernehmen",
           description:
-            "Legt einen Schichteinsatz für eine Schicht an einem Tag an, den shift.list zurückgegeben hat. Der Aufruf ist nicht idempotent.",
+            "Legt einen Schichteinsatz für eine wöchentliche oder einmalige Schicht an einem Tag an, den shift.list zurückgegeben hat. Der Aufruf ist nicht idempotent.",
           input: {
             venueId: venueIdInput,
             templateId: templateIdInput,

@@ -72,6 +72,7 @@ export const ShiftDataSchema = z
     templateId: ResourceIdSchema,
     title: z.string().min(1).max(160),
     date: DateKeySchema,
+    recurring: z.boolean().describe("True for a weekly shift; false for a one-off shift on this date only."),
     startsAt: TimestampSchema,
     endsAt: TimestampSchema,
     assignedCount: z.number().int().nonnegative(),

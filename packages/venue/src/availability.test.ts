@@ -22,6 +22,7 @@ const shiftTemplate = (overrides: Partial<ShiftTemplate> = {}): ShiftTemplate =>
   id: "shift-1",
   venueId: "venue-1",
   weekday: 1,
+  date: null,
   title: "Service desk",
   startTime: "10:00",
   endTime: "12:00",
@@ -74,6 +75,31 @@ const project = (input: Partial<Parameters<typeof buildPublicAvailability>[0]> =
   });
 
 describe("buildPublicAvailability", () => {
+  test("a one-off opens only on its date and still requires its target", () => {
+    const input = {
+      venue: { openMode: "staffed" as const, timezone: "Europe/Berlin" },
+      templates: [shiftTemplate({ date: "2026-07-13", requireTargetForOpening: true })],
+      days: 14,
+    };
+    expect(project({ ...input, assignments: [assignment()] }).open).toBeFalse();
+    const staffed = [assignment(), assignment({ id: "assignment-2", userId: "user-2" })];
+    expect(project({ ...input, assignments: staffed }).open).toBeTrue();
+    // Even stale assignments on the same weekday cannot make another occurrence of a dated template.
+    const nextWeek = staffed.map((entry) => ({ ...entry, startsAt: "2026-07-20T08:00:00.000Z", endsAt: "2026-07-20T10:00:00.000Z" }));
+    expect(project({ ...input, assignments: [...staffed, ...nextWeek] }).upcomingOpenings).toEqual([]);
+    expect(project({ ...input, assignments: nextWeek, now: new Date("2026-07-20T08:30:00Z") }).open).toBeFalse();
+  });
+
+  test("lists a future one-off staffed opening without changing opening-hour exceptions", () => {
+    const result = project({
+      templates: [shiftTemplate({ date: "2026-07-20" })],
+      assignments: [assignment({ startsAt: "2026-07-20T08:00:00.000Z", endsAt: "2026-07-20T10:00:00.000Z" })],
+      days: 14,
+    });
+    expect(result.upcomingOpenings.map((entry) => entry.startsAt)).toEqual(["2026-07-20T08:00:00.000Z"]);
+    expect(result.upcomingExceptions).toEqual([]);
+  });
+
   test("opens during regular hours", () => {
     const result = project({ openingRules: [openingRule()] });
 

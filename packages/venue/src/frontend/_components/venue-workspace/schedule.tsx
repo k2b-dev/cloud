@@ -385,9 +385,13 @@ export function ExceptionDialog(
   );
 }
 
+type ShiftRepeat = "weekly" | "once";
+
 type ShiftTemplateDraft = {
   title: string;
+  repeat: ShiftRepeat;
   weekdays: number[];
+  date: string | null;
   startTime: string;
   endTime: string;
   minPeople: string;
@@ -399,6 +403,7 @@ type ShiftTemplateDraft = {
 type ShiftTemplateErrors = {
   title?: string;
   weekdays?: string;
+  date?: string;
   startTime?: string;
   endTime?: string;
   minPeople?: string;
@@ -407,20 +412,28 @@ type ShiftTemplateErrors = {
 
 const WHOLE_NUMBER = /^\d+$/;
 
+/** One-off shifts can be planned from today through a year ahead, as the server accepts them. */
+const ONE_OFF_DAYS_AHEAD = 366;
+const dateKeyAfter = (date: string, days: number) =>
+  new Date(Date.parse(`${date}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
 /**
- * Checks a shift draft field by field and builds one template per chosen weekday, in calendar order, when every
- * field is valid. The server applies the same rules.
+ * Checks a shift draft field by field and builds one template per chosen weekday, in calendar order, or one
+ * one-off shift for the chosen date, when every field is valid. The server applies the same rules. A one-off
+ * date outside today through a year ahead is only an error when it is new: an unchanged past date stays editable.
  */
 const buildShiftTemplates = (
   draft: ShiftTemplateDraft,
   t: VenueMessages,
+  dateBounds: { today: string; keep?: string | null },
 ): { inputs: ShiftTemplateInput[]; errors: ShiftTemplateErrors } => {
   const title = draft.title.trim();
   const min = draft.minPeople.trim();
   const max = draft.maxPeople.trim();
   const errors: ShiftTemplateErrors = {
     title: title ? undefined : t.titleRequired,
-    weekdays: draft.weekdays.length > 0 ? undefined : t.pickWeekday,
+    weekdays: draft.repeat === "weekly" && draft.weekdays.length === 0 ? t.pickWeekday : undefined,
+    date: draft.repeat === "once" ? oneOffDateError(draft.date, dateBounds, t) : undefined,
     ...timeRangeErrors(draft.startTime, draft.endTime, t),
     minPeople: WHOLE_NUMBER.test(min) ? undefined : t.peopleInvalid,
     maxPeople: max && !WHOLE_NUMBER.test(max) ? t.peopleInvalid : undefined,
@@ -430,32 +443,41 @@ const buildShiftTemplates = (
     if (draft.requireTargetForOpening && Number(min) < 1) errors.minPeople = t.shiftValidationTarget;
   }
   if (hasErrors(errors)) return { inputs: [], errors };
-  const weekdays = WEEKDAYS_FROM_MONDAY.filter((weekday) => draft.weekdays.includes(weekday));
-  return {
-    inputs: weekdays.map((weekday) => ({
-      title,
-      weekday,
-      startTime: draft.startTime.trim(),
-      endTime: draft.endTime.trim(),
-      minPeople: Number(min),
-      maxPeople: max ? Number(max) : null,
-      requireTargetForOpening: draft.requireTargetForOpening,
-      active: draft.active,
-    })),
-    errors,
+  const shared = {
+    title,
+    startTime: draft.startTime.trim(),
+    endTime: draft.endTime.trim(),
+    minPeople: Number(min),
+    maxPeople: max ? Number(max) : null,
+    requireTargetForOpening: draft.requireTargetForOpening,
+    active: draft.active,
   };
+  if (draft.repeat === "once" && draft.date) return { inputs: [{ ...shared, date: draft.date }], errors };
+  const weekdays = WEEKDAYS_FROM_MONDAY.filter((weekday) => draft.weekdays.includes(weekday));
+  return { inputs: weekdays.map((weekday) => ({ ...shared, weekday })), errors };
+};
+
+const oneOffDateError = (date: string | null, bounds: { today: string; keep?: string | null }, t: VenueMessages): string | undefined => {
+  if (!date) return t.pickDate;
+  if (date === bounds.keep) return undefined;
+  return date < bounds.today || date > dateKeyAfter(bounds.today, ONE_OFF_DAYS_AHEAD) ? t.oneOffDateRange : undefined;
 };
 
 /**
- * Creates a shift on one or several weekdays at once, as one template per weekday, or edits one template. Its
- * weekday stays a single choice when editing, because every weekday is a template of its own.
+ * Creates a weekly shift on one or several weekdays at once, as one template per weekday, or a one-off shift on
+ * one date; or edits one of them. Editing keeps the kind and a single weekday, because every weekday is a
+ * template of its own.
  */
-export function ShiftTemplateDialog(props: SubmittingDialogProps<ShiftTemplateInput[]> & { initial?: ShiftTemplate }) {
+export function ShiftTemplateDialog(
+  props: SubmittingDialogProps<ShiftTemplateInput[]> & { initial?: ShiftTemplate; timeZone: string; today: string },
+) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
   const dialog = createDialogSave(props);
   const [title, setTitle] = createSignal(props.initial?.title ?? "");
+  const [repeat, setRepeat] = createSignal<ShiftRepeat>(props.initial?.date ? "once" : "weekly");
   const [weekdays, setWeekdays] = createSignal<number[]>([props.initial?.weekday ?? 1]);
+  const [date, setDate] = createSignal<string | null>(props.initial?.date ?? props.today);
   const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "09:00");
   const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "13:00");
   const [minPeople, setMinPeople] = createSignal(String(props.initial?.minPeople ?? 1));
@@ -466,7 +488,9 @@ export function ShiftTemplateDialog(props: SubmittingDialogProps<ShiftTemplateIn
     buildShiftTemplates(
       {
         title: title(),
+        repeat: repeat(),
         weekdays: weekdays(),
+        date: date(),
         startTime: startTime(),
         endTime: endTime(),
         minPeople: minPeople(),
@@ -475,11 +499,12 @@ export function ShiftTemplateDialog(props: SubmittingDialogProps<ShiftTemplateIn
         active: props.initial?.active ?? true,
       },
       t(),
+      { today: props.today, keep: props.initial?.date },
     );
   const errors = (): ShiftTemplateErrors => (attempted() ? result().errors : {});
   const toggleWeekday = (weekday: number, checked: boolean) =>
     setWeekdays((current) => (checked ? [...new Set([...current, weekday])] : current.filter((entry) => entry !== weekday)));
-  const count = () => weekdays().length;
+  const count = () => (repeat() === "weekly" ? weekdays().length : 1);
 
   const submit = () => {
     // Enter can submit before the time field completes its input on blur.
@@ -508,45 +533,71 @@ export function ShiftTemplateDialog(props: SubmittingDialogProps<ShiftTemplateIn
         error={() => errors().title}
         required
       />
+      <Show when={!props.initial}>
+        <SegmentedControl<ShiftRepeat>
+          ariaLabel={t().shiftRepeat}
+          value={repeat}
+          onValueChange={setRepeat}
+          options={[
+            { value: "weekly", label: t().shiftWeekly, icon: "ti ti-repeat" },
+            { value: "once", label: t().shiftOnce, icon: "ti ti-calendar-event" },
+          ]}
+        />
+      </Show>
       <Show
-        when={!props.initial}
+        when={repeat() === "weekly"}
         fallback={
-          <Select
-            label={t().weekday}
-            value={() => String(weekdays()[0] ?? 1)}
-            onValueChange={(value) => setWeekdays([Number(value ?? 1)])}
-            options={weekdayOptions(locale())}
+          <DatePicker
+            label={t().date}
+            description={t().oneOffShiftHint}
+            value={date}
+            onValueChange={setDate}
+            dateConfig={timeZoneDateConfig(props.timeZone, locale())}
+            error={() => errors().date}
+            required
           />
         }
       >
-        <fieldset class="k2b-field" data-invalid={errors().weekdays ? "true" : undefined} data-shift-weekdays="">
-          <legend class="k2b-field__label">{t().weekdays}</legend>
-          <p class="k2b-field__description">{t().weekdaysDescription}</p>
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <For each={WEEKDAYS_FROM_MONDAY}>
-              {(weekday) => (
-                <CheckboxCard
-                  label={
-                    <>
-                      <span aria-hidden="true">{weekdayName(weekday, locale(), "short")}</span>
-                      <span class="sr-only">{weekdayName(weekday, locale(), "long")}</span>
-                    </>
-                  }
-                  value={() => weekdays().includes(weekday)}
-                  onValueChange={(checked) => toggleWeekday(weekday, checked)}
-                  variant="input"
-                />
+        <Show
+          when={!props.initial}
+          fallback={
+            <Select
+              label={t().weekday}
+              value={() => String(weekdays()[0] ?? 1)}
+              onValueChange={(value) => setWeekdays([Number(value ?? 1)])}
+              options={weekdayOptions(locale())}
+            />
+          }
+        >
+          <fieldset class="k2b-field" data-invalid={errors().weekdays ? "true" : undefined} data-shift-weekdays="">
+            <legend class="k2b-field__label">{t().weekdays}</legend>
+            <p class="k2b-field__description">{t().weekdaysDescription}</p>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <For each={WEEKDAYS_FROM_MONDAY}>
+                {(weekday) => (
+                  <CheckboxCard
+                    label={
+                      <>
+                        <span aria-hidden="true">{weekdayName(weekday, locale(), "short")}</span>
+                        <span class="sr-only">{weekdayName(weekday, locale(), "long")}</span>
+                      </>
+                    }
+                    value={() => weekdays().includes(weekday)}
+                    onValueChange={(checked) => toggleWeekday(weekday, checked)}
+                    variant="input"
+                  />
+                )}
+              </For>
+            </div>
+            <Show when={errors().weekdays}>
+              {(error) => (
+                <p class="k2b-field__error" role="alert" aria-live="polite">
+                  {error()}
+                </p>
               )}
-            </For>
-          </div>
-          <Show when={errors().weekdays}>
-            {(error) => (
-              <p class="k2b-field__error" role="alert" aria-live="polite">
-                {error()}
-              </p>
-            )}
-          </Show>
-        </fieldset>
+            </Show>
+          </fieldset>
+        </Show>
       </Show>
       <div class="grid gap-3 sm:grid-cols-2">
         <TimeInput label={t().startTime} value={startTime()} onValueChange={setStartTime} placeholder="09:00" error={errors().startTime} />
