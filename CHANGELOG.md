@@ -3,6 +3,28 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.32.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.31.0...cloud-v0.32.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai:** fold finished work into one summary line ([#692](https://github.com/k2b-dev/cloud/issues/692))
+
+### Features
+
+* **access:** show who a group grant actually reaches in the access editor ([#697](https://github.com/k2b-dev/cloud/issues/697)) ([4d0e8b1](https://github.com/k2b-dev/cloud/commit/4d0e8b1a84e67ba5f103881edea9d6bf35682ff3)), closes [#688](https://github.com/k2b-dev/cloud/issues/688)
+* **ai:** fold finished work into one summary line ([#692](https://github.com/k2b-dev/cloud/issues/692)) ([b4cd708](https://github.com/k2b-dev/cloud/commit/b4cd708d85581db60c51ebd7a863ea77c32cefca))
+* **ai:** retry transient model provider errors ([#687](https://github.com/k2b-dev/cloud/issues/687)) ([5228701](https://github.com/k2b-dev/cloud/commit/5228701e5affb38fe22e6a166dc973ba244c3a48))
+* **cli:** explain how the Assistant works for agents that configure it ([#696](https://github.com/k2b-dev/cloud/issues/696)) ([da06fed](https://github.com/k2b-dev/cloud/commit/da06fedee211ecbed2b8ab065747a43039a54747))
+* **ui:** add a classless base stylesheet for HTML apps ([#695](https://github.com/k2b-dev/cloud/issues/695)) ([8a83654](https://github.com/k2b-dev/cloud/commit/8a83654754e200e85f624ffb104a756b21b36bcd))
+* **venue:** plan one-off shifts and name opening-hour exceptions clearly ([#690](https://github.com/k2b-dev/cloud/issues/690)) ([5208134](https://github.com/k2b-dev/cloud/commit/5208134d48087e29af56d9a19756f50c5067d60c))
+
+
+### Bug Fixes
+
+* **ai:** show capabilities and approvals in the reader's language ([#682](https://github.com/k2b-dev/cloud/issues/682)) ([2c70089](https://github.com/k2b-dev/cloud/commit/2c700894d34f4b0ef5608931433f41a749dc9a10))
+* **mail:** open every clicked conversation instead of freezing after the first switch ([#694](https://github.com/k2b-dev/cloud/issues/694)) ([a2d9f83](https://github.com/k2b-dev/cloud/commit/a2d9f8370af8160c3ed95083655bfb85c07b9627))
+
 ## [0.31.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.30.0...cloud-v0.31.0) (2026-10-06)
 
 
