@@ -28,7 +28,11 @@ fails there with a hint. Test their calculations in scripts, then read the
 diagnostics that `code_write` returns for the app's JavaScript and CSS, and the
 errors and warnings of `code_present`. In Studio, an app's errors and `console`
 output appear in its console, and a failed `cloud.*` call the app did not handle
-shows a notice outside the app.
+shows a notice outside the app. A chat card has no console: when the app fails
+while starting, the card shows a short notice without the error text, and you do
+not see it. Catch failures in the app and show `error.message` in the page.
+Console lines past a per-second budget are dropped, and a blocked resource is
+reported once per kind and origin.
 
 Run already includes a compact snapshot; inspect only when you need more
 detail. Logs include the latest 20 entries; long text and output previews are

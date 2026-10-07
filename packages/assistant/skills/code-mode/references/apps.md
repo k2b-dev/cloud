@@ -165,4 +165,5 @@ More complete apps, a CSV dashboard and a form that creates a PDF, are in
 - Studio's app page and the full-screen runner start an app on their own for
   people who manage it. Everyone else, a tab opened beside the chat, and every
   chat card wait for a click on Start. Errors and `console` output of a running
-  app appear in its Studio console.
+  app appear in its Studio console; a chat card only says that the app failed
+  while starting.

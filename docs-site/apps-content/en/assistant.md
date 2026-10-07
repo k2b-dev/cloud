@@ -143,7 +143,8 @@ An app starts on its own only for people who manage it. Everyone else sees the
 app's name and **Start**, so code someone else wrote never runs just because a
 page opened. If an app's last start in this browser tab never finished, for
 example because of an endless loop, it does not start on its own again; the page
-explains this and offers **Start**.
+explains this and offers **Start**. Leaving or reloading the page during a start
+counts as unfinished too, so a reload during a slow start asks once.
 
 App managers see a **Draft** or **Published** badge beside the runtime controls.
 Select it for a short explanation and a **Publish** button for saved drafts.
@@ -532,28 +533,41 @@ stylesheet, so headings, lists, tables, forms, buttons, `<details>` and
 CSS always wins. The theme follows Cloud while the app runs.
 
 Each app runs in a locked frame inside a second frame without script. It cannot
-read the Cloud page, cookies or browser storage, reach the network, navigate
-the page or open windows. Everything it needs goes through `cloud.*`: data,
+read the Cloud page, cookies or browser storage, load anything from the network,
+navigate the page or open windows. Everything it needs goes through `cloud.*`: data,
 files, AI, PDFs, HTTP through Cloud and other apps' capabilities. Natural
 browser code that cannot work there fails with a clear message: `fetch`,
 `alert`, `confirm`, `prompt`, `print`, `localStorage`, and inline `on…`
 handlers. Forms never navigate. A link to an `https` address opens in a new tab
 after the person confirms the full address; other links are ignored. Files the
-app hands out, with `cloud.download` or a download link, are saved as files and
-never opened on the Cloud domain. The address bar keeps the app's `#hash`, so a
-reload returns to the same view.
+app hands out, with `cloud.download` or a download link, are saved as files of
+up to 50 MiB each and never opened on the Cloud domain. The address bar keeps
+the app's `#hash`, so a reload returns to the same view.
+
+One known gap: in Safari and every browser on iOS, which all use WebKit, an app
+can still make the browser open a connection to a host that the app names, with
+a `<link rel="preconnect">` hint. WebKit applies no content security rule to
+these hints, so the host name, and anything an app encodes in it, reaches that
+host's DNS server and the host itself. An app can send data that it can read
+this way, without a Cloud question. Other engines open no connection. Start an
+app that someone else manages only if you trust them.
 
 Whenever Cloud asks the person something for an app, an HTTP request, a
 capability or a link, the app is greyed out and cannot be clicked until they
 answer, and the confirm button becomes active only after half a second. One
 question is open at a time per app; after three refusals Cloud stops the app. An
-app that floods Cloud with messages is stopped as well.
+app that floods Cloud with messages is stopped as well. Logs, errors and
+sandbox reports have their own per-second budget: past it, the app loses console
+lines instead of being stopped, and a blocked resource is reported once per kind
+and origin.
 
 An app appears once its modules, including top-level `await`, have run, its
 fonts are loaded, and no `cloud.*` call is pending, at most after a few seconds;
 until then a loading state holds its place. Errors, `console` output and the
 static findings of the composer appear in the app's console. A failed `cloud.*`
-call that the app did not handle also shows a notice outside the app.
+call that the app did not handle also shows a notice outside the app. Cloud
+words every message outside the app itself, from the failure's code; text from
+the app appears only in the console.
 
 `code_write` reports static problems in an app's JavaScript and CSS, and
 `code_present` refuses an app with errors such as CDN scripts, missing imports
@@ -959,11 +973,13 @@ fixed height, 45% of the viewport and at most 600 pixels, from the moment the
 call starts, so nothing in the chat moves. An app in the chat starts only when
 the person selects **Start**, never while scrolling past; **Stop** and leaving
 the chat end it, and the card keeps its place through the end of the turn. A
-saved app also offers **Open**, which shows it beside the chat.
+saved app also offers **Open**, which shows it beside the chat. A card has no
+console: when its app fails while starting, the card says so in a notice.
 
 While the app runs, the download menu saves a static copy as it is shown, as
-**HTML** or **PDF**. The copy keeps text and styles but no scripts, event
-handlers, frames or script links, and it is saved as a file, never opened on the
+**HTML** or **PDF**, including what the person entered in form fields except
+passwords. The copy keeps text and styles but no scripts, event handlers, frames,
+script links or form targets, and it is saved as a file, never opened on the
 Cloud domain. These downloads need no chat-file entry. Presentations of a chat
 share a 250 MiB storage budget.
 

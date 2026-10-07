@@ -20,8 +20,8 @@ App action needs Use, not Manage, and does not need access-management tools.
    Read grants again to verify the result. A conflict means the grants changed:
    inspect and prepare a new review. Do not retry an unknown mutation blindly.
 
-Studio Apps support users, groups, `{type:"authenticated"}` and
-`{type:"public"}`. Public only accepts `permission:"read"`; public Manage and
+Studio Apps support users, groups and `{type:"authenticated"}`. Public grants
+are switched off for now (see "Standalone apps and public links" below);
 service-account grants are rejected. Never replace an unavailable recipient
 with a broader one. The last manager cannot be removed.
 Publishing and sharing remain separate; Use executes only published source.
