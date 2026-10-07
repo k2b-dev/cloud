@@ -253,7 +253,7 @@ export const listRelatedMail = async (params: {
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(params.limit, 1), 25);
   const rows = await sql<
-    Array<{ id: string; subject: string; participant_summary: string; latest_message_at: Date; preview: string | null }>
+    Array<{ id: string; subject: string; participant_summary: string; latest_message_at: Date; cursor_at: string; preview: string | null }>
   >`
     WITH address_matches AS MATERIALIZED (
       SELECT DISTINCT link.conversation_id
@@ -272,6 +272,7 @@ export const listRelatedMail = async (params: {
       conversation.subject,
       conversation.participant_summary,
       conversation.latest_message_at,
+      to_char(conversation.latest_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
       latest.preview
     FROM address_matches match
     JOIN mail.conversations conversation ON conversation.id = match.conversation_id
@@ -298,10 +299,10 @@ export const listRelatedMail = async (params: {
     latestMessageAt: row.latest_message_at.toISOString(),
     preview: row.preview,
   }));
-  const last = items.at(-1);
+  const last = page.at(-1);
   return ok({
     items,
-    nextCursor: hasMore && last ? encodeHistoryCursor({ version: 1, date: last.latestMessageAt, id: last.id }) : null,
+    nextCursor: hasMore && last ? encodeHistoryCursor({ version: 1, date: last.cursor_at, id: last.id }) : null,
   });
 };
 

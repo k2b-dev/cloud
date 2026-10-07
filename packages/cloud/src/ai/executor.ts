@@ -15,6 +15,7 @@ import {
   hasRememberedAiToolApproval,
 } from "./approvals";
 import { isAssistantChatTurn } from "./assistant-models";
+import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
@@ -53,6 +54,7 @@ import { aiConversations } from "./store";
 import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
+import { acceptCanonicalToolNames } from "./tool-call-names";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
@@ -545,8 +547,10 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
       source.kind === "default"
         ? [
             ...(await createConfiguredDefaultCloudAiTools()),
-            ...(config.clientToolIds?.includes("local_bash") ? [createCloudAiLocalBashTool()] : []),
-            ...createCloudAiCodeTools().filter((tool) => config.clientToolIds?.some((name) => name === tool.def.name)),
+            // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
+            ...[createCloudAiLocalBashTool(), ...createCloudAiCodeTools()].filter(
+              (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),
+            ),
           ]
         : [],
     toolApprovalContext: config.toolApprovalContext,
@@ -664,6 +668,7 @@ export class AiTurnExecutor {
     let resolvedProjectId: string | null = null;
     let chatId = config.chatId ?? "";
     let allowedTools: string[] | null = null;
+    let sourceToolNames: string[] = [];
     try {
       if (config.background && !config.mandate) throw new Error("Background execution requires its task mandate.");
       const [nextMaterial, conversation] = await Promise.all([
@@ -674,6 +679,7 @@ export class AiTurnExecutor {
       if (!conversation) throw new Error("Conversation is no longer available.");
       allowedTools = conversation.allowedTools ?? null;
       const allowed = allowedTools === null ? null : new Set(allowedTools);
+      sourceToolNames = material.tools.map((tool) => tool.def.name);
       if (allowed) material.tools = material.tools.filter((tool) => allowed.has(tool.def.name));
       chatId ||= conversation?.shortId ?? "";
       if (config.project) {
@@ -795,6 +801,12 @@ export class AiTurnExecutor {
           (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
         )
       : [];
+    const offeredToolNames = new Set(activeTools.map((tool) => tool.def.name));
+    // Built-ins that exist but this turn does not offer: client tools without their client, tools a
+    // task cannot use, and tools outside the conversation's fixed scope. load_tools explains each one.
+    const unofferedTools = [
+      ...new Set([...sourceToolNames, ...runtimeTools.map((tool) => tool.def.name), ...CODE_RUNTIME_TOOL_NAMES, "local_bash"]),
+    ].filter((name) => !offeredToolNames.has(name));
     const memoryToolEnabled = activeTools.some((tool) => tool.def.name === "memory");
     const projectToolEnabled = activeTools.some((tool) => tool.def.name === "search_project");
 
@@ -903,6 +915,7 @@ export class AiTurnExecutor {
           actor: capabilityAuthority?.actor ?? toolActor,
           staticTools: activeTools,
           allowedTools,
+          unofferedTools,
           runtimeContext: dynamicToolRuntimeContext,
           store: toolStore,
           ...(capabilityAuthority ? { listRegistry: listCapabilities } : {}),
@@ -1074,16 +1087,19 @@ export class AiTurnExecutor {
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
     const turnPolicy = applyAiTurnPolicy({
-      provider: retryTransientProviderErrors(
-        assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
-        {
-          deadline,
-          delaysMs: this.config.providerRetryDelaysMs,
-          onRetry: async ({ retry, delayMs, issue }) => {
-            log.warn("AI provider call retried", { conversationId, turnId, retry, delayMs, kind: issue.kind, message: issue.message });
-            await pipeline.emitProviderRetry();
+      provider: acceptCanonicalToolNames(
+        retryTransientProviderErrors(
+          assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId),
+          {
+            deadline,
+            delaysMs: this.config.providerRetryDelaysMs,
+            onRetry: async ({ retry, delayMs, issue }) => {
+              log.warn("AI provider call retried", { conversationId, turnId, retry, delayMs, kind: issue.kind, message: issue.message });
+              await pipeline.emitProviderRetry();
+            },
           },
-        },
+        ),
+        prepared.canonicalNames,
       ),
       tools,
       maxToolRounds: resolved.profile.maxToolRounds,

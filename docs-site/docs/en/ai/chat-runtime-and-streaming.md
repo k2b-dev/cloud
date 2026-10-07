@@ -161,10 +161,20 @@ into the conversation; it does not browse repositories, authenticate to a
 website, or reach private network targets. Cards, surveys, the long-form text
 editor, file writes and presentation, Markdown-to-PDF, and calculation load on
 demand. Built-in usage hints remain in the system prompt even while their
-schemas are deferred. These
-tools provide no arbitrary code execution, host access, or network access
-beyond the explicit web tools. See
+schemas are deferred. These built-ins provide no arbitrary code execution,
+host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
+
+The default tool source also offers the server-run Code Mode tools `code_run`,
+`code_action`, `code_inspect`, `code_interact`, `code_stop`, `code_export`,
+and `code_present` in every turn, whichever client submits it, including API
+clients, `cld assistant --detach`, and scheduled tasks. They load on demand
+and run JavaScript in an isolated Assistant-owned host. That code can call
+Cloud capabilities, databases, and external HTTPS endpoints with the user's
+permissions; each call keeps its normal approvals or, in a scheduled task, its
+task grants. See
+[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
+and [Advertise connected client tools](/en/docs/ai/chat-interface#advertise-connected-client-tools).
 
 The `text_editor` frontend interaction lets the model provide one complete
 plain-text or Markdown draft for the user to revise. The browser presents both

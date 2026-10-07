@@ -959,8 +959,9 @@ export const listConversationComments = async (params: {
     ? sql`(comment.created_at, comment.id) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)`
     : sql`(comment.created_at, comment.id) > (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)`;
   const ordering = newestFirst ? sql`comment.created_at DESC, comment.id DESC` : sql`comment.created_at, comment.id`;
-  const rows = await sql<CommentRow[]>`
-    SELECT ${commentColumns}
+  const rows = await sql<(CommentRow & { cursor_at: string })[]>`
+    SELECT ${commentColumns},
+           to_char(comment.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
     LEFT JOIN auth.users author_user ON comment.author_kind = 'user' AND author_user.id = comment.author_id
@@ -983,7 +984,7 @@ export const listConversationComments = async (params: {
   if (newestFirst) items.reverse();
   return ok({
     items,
-    nextCursor: hasMore && cursorRow ? encodeDateCursor({ version: 1, date: toIso(cursorRow.created_at), id: cursorRow.id }) : null,
+    nextCursor: hasMore && cursorRow ? encodeDateCursor({ version: 1, date: cursorRow.cursor_at, id: cursorRow.id }) : null,
   });
 };
 

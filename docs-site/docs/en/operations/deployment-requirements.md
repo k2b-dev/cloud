@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Deployment requirements
@@ -229,8 +229,10 @@ See [Identity key operations](/en/docs/operations/identity-key-operations) for
 signing-key rotation, KEK recovery and revocation. Keep these secrets independent;
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
-Managed Assistant code hosts validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host
-is created, before launching Chromium. It must be an HTTP(S) origin reachable
+Managed Assistant code hosts serve every Assistant turn that runs code,
+including API clients, `cld assistant --detach`, and scheduled tasks. They
+validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host is created, before launching
+Chromium. It must be an HTTP(S) origin reachable
 from the Assistant service. Each host also uses an authenticated ephemeral
 loopback HTTP listener inside that service; allow local networking without
 publishing these ports. Binary bodies preserve backpressure across this hop.

@@ -72,6 +72,16 @@ type AiToolCatalogEntry = AiToolCatalogItem & {
 
 export type AiRememberableCapabilityApprovals = ReadonlyMap<string, string>;
 
+/**
+ * Why `load_tools` could not make a requested name callable:
+ * - `unknown`: no tool has this exact name;
+ * - `not_offered_in_turn`: the tool exists, but this turn's client or task does not provide it;
+ * - `not_allowed`: the conversation's fixed tool scope excludes it;
+ * - `app_offline`: the app operation is not in the live registry now.
+ */
+export const AI_TOOL_UNAVAILABLE_REASONS = ["unknown", "not_offered_in_turn", "not_allowed", "app_offline"] as const;
+export type AiToolUnavailableReason = (typeof AI_TOOL_UNAVAILABLE_REASONS)[number];
+
 const DEFAULT_SEARCH_LIMIT = 10;
 const DEFAULT_APP_LIST_LIMIT = 20;
 const MAX_APP_LIST_LIMIT = 25;
@@ -367,15 +377,16 @@ export const createAiHelpTools = (help: HelpReaderFactory = createHelpReader, lo
   return [search, read];
 };
 
+/** `null` when the registry could not be read. */
 const resolveCapabilityRegistry = async (
   listRegistry: () => Promise<CapabilityRegistryEntry[]>,
   onError?: (error: unknown) => void,
-): Promise<CapabilityRegistryEntry[]> => {
+): Promise<CapabilityRegistryEntry[] | null> => {
   try {
     return await listRegistry();
   } catch (error) {
     onError?.(error);
-    return [];
+    return null;
   }
 };
 
@@ -453,6 +464,9 @@ const ToolCatalogItemSchema = z
 
 type ToolStateStore = Pick<AiConversationService, "loadTools">;
 
+/** `call` is the name to call the tool by; app operations get a provider-safe name. */
+const LoadedToolSchema = z.object({ name: z.string(), call: z.string() }).strict();
+
 export const createAiToolMetaTools = (input: {
   apps: readonly CapabilityRegistryEntry[];
   catalog: readonly AiToolCatalogEntry[];
@@ -461,6 +475,10 @@ export const createAiToolMetaTools = (input: {
   store: ToolStateStore;
   maxLoadedTools?: number;
   unavailableLoadedNames?: readonly string[];
+  /** False when this turn offers no app operations at all. */
+  appOperationsOffered?: boolean;
+  /** Why a requested name that is not in `catalog` cannot be loaded; defaults to `unknown`. */
+  unavailableReason?: (name: string) => AiToolUnavailableReason;
 }): AiRuntimeTool[] => {
   const apps = buildAiCapabilityAppCatalog(input.apps);
   const directoryEntries: string[] = [];
@@ -476,17 +494,17 @@ export const createAiToolMetaTools = (input: {
   const liveAppDirectory =
     directoryEntries.length > 0
       ? ` Live capability apps: ${directoryEntries.join(", ")}${hiddenAppCount > 0 ? `, and ${hiddenAppCount} more` : ""}.`
-      : " No live capability apps are visible in this provider turn; retry discovery later instead of claiming a permanent product limitation.";
+      : input.appOperationsOffered === false
+        ? " App operations are not offered in this turn."
+        : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
   const unavailableLoadedNames = input.unavailableLoadedNames ?? [];
   const unavailableLoadedNotice =
     unavailableLoadedNames.length > 0
-      ? ` Previously loaded tools currently absent from the live catalog: ${unavailableLoadedNames
-          .slice(-MAX_UNAVAILABLE_LOADED_NAMES)
-          .join(", ")}${
+      ? ` Previously loaded tools that are not available now: ${unavailableLoadedNames.slice(-MAX_UNAVAILABLE_LOADED_NAMES).join(", ")}${
           unavailableLoadedNames.length > MAX_UNAVAILABLE_LOADED_NAMES
             ? `, and ${unavailableLoadedNames.length - MAX_UNAVAILABLE_LOADED_NAMES} more`
             : ""
-        }. Treat them as temporarily unavailable; do not infer a permanent product limitation or search repeatedly.`
+        }. Do not search for them again in this turn; continue without them or tell the user what is missing.`
       : "";
   const search = defineAiTool({
     name: "search_tools",
@@ -524,38 +542,52 @@ export const createAiToolMetaTools = (input: {
   const load = defineAiTool({
     name: "load_tools",
     description:
-      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first.",
+      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope excludes it; app_offline means its app is not reachable now. For the last three, do not search or load the name again in this turn.",
     inputSchema: z.object({ names: z.array(z.string().trim().min(1)).min(1).max(25) }).strict(),
     outputSchema: z
       .object({
-        loaded: z.array(z.string()),
-        alreadyLoaded: z.array(z.string()),
-        missing: z.array(z.string()),
+        loaded: z.array(LoadedToolSchema),
+        alreadyLoaded: z.array(LoadedToolSchema),
+        unavailable: z.array(z.object({ name: z.string(), reason: z.enum(AI_TOOL_UNAVAILABLE_REASONS) }).strict()),
         evicted: z.array(z.string()),
         titles: z.record(z.string(), z.string()),
       })
       .strict(),
     approval: "never",
   }).server(async ({ names }) => {
-    const available = new Set(input.catalog.map((entry) => entry.name));
+    const catalogByName = new Map(input.catalog.map((entry) => [entry.name, entry]));
+    // A provider name the model saw in an earlier call loads its operation, too.
+    const byProviderName = new Map(input.catalog.flatMap((entry) => (entry.capability ? [[entry.capability.providerName, entry]] : [])));
     const requested = [...new Set(names)];
-    const eager = requested.filter((name) => input.eagerNames.has(name));
-    const valid = requested.filter((name) => available.has(name) && !input.eagerNames.has(name));
-    const missing = requested.filter((name) => !available.has(name));
+    const found = requested.flatMap((name) => {
+      const entry = catalogByName.get(name) ?? byProviderName.get(name);
+      return entry ? [entry.name] : [];
+    });
+    const eager = [...new Set(found.filter((name) => input.eagerNames.has(name)))];
+    const valid = [...new Set(found.filter((name) => !input.eagerNames.has(name)))];
+    const unavailable = requested
+      .filter((name) => !catalogByName.has(name) && !byProviderName.has(name))
+      .map((name) => ({ name, reason: input.unavailableReason?.(name) ?? ("unknown" as const) }));
     const updated = await input.store.loadTools({
       conversationId: input.conversationId,
       names: valid,
       maxLoadedTools: input.maxLoadedTools,
     });
+    const callable = (name: string) => ({ name, call: catalogByName.get(name)?.capability?.providerName ?? name });
     const alreadyLoaded = [...new Set([...eager, ...updated.alreadyLoaded])];
-    const catalogByName = new Map(input.catalog.map((entry) => [entry.name, entry]));
     const titles = Object.fromEntries(
       [...new Set([...updated.loaded, ...alreadyLoaded, ...updated.evicted])].flatMap((name) => {
         const entry = catalogByName.get(name);
         return entry ? [[name, entry.title]] : [];
       }),
     );
-    return { ...updated, alreadyLoaded, missing, titles };
+    return {
+      loaded: updated.loaded.map(callable),
+      alreadyLoaded: alreadyLoaded.map(callable),
+      unavailable,
+      evicted: updated.evicted,
+      titles,
+    };
   });
 
   return [search, load, listApps];
@@ -657,6 +689,8 @@ export const createAiToolResolver =
     actor: RequestActor;
     staticTools: AiRuntimeTool[];
     allowedTools?: readonly string[] | null;
+    /** Built-in tools that exist but that this turn does not offer, such as client tools its client did not declare or tools outside `allowedTools`. */
+    unofferedTools?: readonly string[];
     runtimeContext?: Omit<AiToolPreparationContext, "actor" | "conversationId">;
     store: Pick<AiConversationService, "getLoadedTools" | "loadTools">;
     listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
@@ -675,10 +709,11 @@ export const createAiToolResolver =
     }) => void;
   }): ToolResolver =>
   async (): Promise<Tool[]> => {
-    const [registry, persistedLoadedNames] = await Promise.all([
+    const [liveRegistry, persistedLoadedNames] = await Promise.all([
       input.listRegistry ? resolveCapabilityRegistry(input.listRegistry, input.onCapabilityRegistryError) : [],
       input.store.getLoadedTools({ conversationId: input.conversationId }),
     ]);
+    const registry = liveRegistry ?? [];
     const configuredLimit = Math.floor(input.maxLoadedTools ?? 0);
     const loadedNames = configuredLimit > 0 ? persistedLoadedNames.slice(-configuredLimit) : persistedLoadedNames;
     if (loadedNames.length !== persistedLoadedNames.length) {
@@ -689,18 +724,41 @@ export const createAiToolResolver =
       });
     }
     const allowed = input.allowedTools == null ? null : new Set(input.allowedTools);
-    const capabilityCatalog = buildAiCapabilityCatalog(registry, input.locale).filter((entry) => !allowed || allowed.has(entry.name));
+    const fullCapabilityCatalog = buildAiCapabilityCatalog(registry, input.locale);
+    const capabilityCatalog = fullCapabilityCatalog.filter((entry) => !allowed || allowed.has(entry.name));
     const helpTools = input.help ? createAiHelpTools(input.help, input.locale) : [];
     const resourceTool =
       input.execute && (capabilityCatalog.length > 0 || input.staticTools.some((tool) => tool.def.name === "code_read"))
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })
         : null;
-    const builtIns = [...input.staticTools, ...helpTools, ...(resourceTool ? [resourceTool] : [])].filter(
-      (tool) => !allowed || allowed.has(tool.def.name),
-    );
+    const allBuiltIns = [...input.staticTools, ...helpTools, ...(resourceTool ? [resourceTool] : [])];
+    const builtIns = allBuiltIns.filter((tool) => !allowed || allowed.has(tool.def.name));
     const catalog = buildAiToolCatalog(builtIns, capabilityCatalog);
     const catalogNames = new Set(catalog.map((entry) => entry.name));
     const unavailableLoadedNames = loadedNames.filter((name) => !catalogNames.has(name));
+    const outOfScope = new Set([
+      ...allBuiltIns.map((tool) => tool.def.name),
+      ...fullCapabilityCatalog.flatMap((entry) => [entry.name, entry.providerName]),
+      ...(input.unofferedTools ?? []),
+    ]);
+    const unoffered = new Set(input.unofferedTools);
+    // A model may name a loaded operation by the provider name it called it by; app IDs contain no dot.
+    const loadedByProviderName = new Map(
+      persistedLoadedNames.flatMap((id) => {
+        const dot = id.indexOf(".");
+        if (dot < 1) return [];
+        return (["query", "action"] as const).map((kind) => [aiCapabilityToolName(id.slice(0, dot), kind, id.slice(dot + 1)), id] as const);
+      }),
+    );
+    // App operation IDs always contain a dot; built-in names never do.
+    const unavailableReason = (requested: string): AiToolUnavailableReason => {
+      const name = loadedByProviderName.get(requested) ?? requested;
+      if (allowed && outOfScope.has(name) && !allowed.has(name)) return "not_allowed";
+      if (unoffered.has(name)) return "not_offered_in_turn";
+      if (!name.includes(".")) return "unknown";
+      if (!input.listRegistry) return "not_offered_in_turn";
+      return liveRegistry === null || persistedLoadedNames.includes(name) ? "app_offline" : "unknown";
+    };
     const eagerNames = new Set(builtIns.map((tool) => tool.def.name).filter((name) => !CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(name)));
     const activeBuiltIns = builtIns.filter((tool) => eagerNames.has(tool.def.name) || loadedNames.includes(tool.def.name));
     const runtimeTools = [
@@ -712,6 +770,8 @@ export const createAiToolResolver =
         store: input.store,
         maxLoadedTools: input.maxLoadedTools,
         unavailableLoadedNames,
+        appOperationsOffered: Boolean(input.listRegistry),
+        unavailableReason,
       }),
       ...activeBuiltIns,
       ...(input.execute

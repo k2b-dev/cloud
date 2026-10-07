@@ -193,16 +193,33 @@ Tool-capable personal chats keep three bounded discovery tools available:
   not a search filter. Searching never loads a tool;
 - `load_tools` retains qualified capability IDs or stable built-in names.
   Skills and the system prompt may name either directly, so the model does not
-  need a search call merely to translate an already known tool;
+  need a search call merely to translate an already known tool. It also accepts
+  the provider name of an app operation, such as
+  `mail__query__conversation_dot_list`, which a model may have seen in an
+  earlier call. Its result lists `loaded` and `alreadyLoaded` tools as
+  `{name, call}`, where `call` is the name the model calls the tool by, and
+  every other requested name under `unavailable` with one reason:
+
+  | Reason | Meaning |
+  | --- | --- |
+  | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
+  | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
+  | `not_allowed` | The conversation's fixed tool scope excludes it |
+  | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
+
+  The model looks up an unknown name once with `search_tools` and does not
+  search for or retry the other three in the same turn;
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,
 descriptions, enums, and useful formats. The provider remains responsible for
-authoritative input validation and the complete result contract. If an
-operation disappears from the live catalog, AI Core treats it as temporarily
-unavailable rather than inferring a replacement.
+authoritative input validation and the complete result contract. A call to a
+loaded app operation by its capability ID runs under its provider name. A call
+to any other name the turn does not offer fails, and the model reads how to
+find a callable name. If an operation disappears from the live catalog, AI Core
+names it in the `search_tools` description and does not infer a replacement.
 
 Capability providers may add the fixed result envelope's optional `summary`
 when one short statement communicates the successful outcome better than raw
@@ -221,9 +238,12 @@ replays the user's browser cookie, bearer token, resource API key, or service
 account credential for this path. An unavailable app or denied resource fails
 that tool call without granting fallback access.
 
-The chat stores qualified capability IDs and stable built-in names, not
-provider-encoded function names, credentials, or private contracts. Cloud
-generates a provider-safe callable name only when preparing a model request.
+Loaded-tool state and remembered approvals store qualified capability IDs and
+stable built-in names, never credentials or private contracts. Cloud generates
+a provider-safe callable name when preparing a model request. Model message
+history stores each call under its provider-safe name, and the `call` field of
+a `load_tools` result carries that name. Code that reads stored tool calls
+accepts both the capability ID and the provider name.
 When a result contains a semantic `open` or `edit` link, clients use
 that exact path instead of inferring a route from a resource ref.
 

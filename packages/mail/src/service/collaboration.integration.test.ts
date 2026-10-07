@@ -21,6 +21,7 @@ import { getConversationSummary, updateConversationSummary } from "./conversatio
 import { createMailbox } from "./mailboxes";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { getConversationViewCounts, listConversations } from "./messages";
+import { getMailboxOperations } from "./operations";
 import { ingestEnvelope } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats");
@@ -507,5 +508,132 @@ suite("mail collaboration backend", () => {
     });
     expect(stale.ok).toBe(false);
     if (!stale.ok) expect(stale.error.status).toBe(409);
+  });
+  for (const order of ["oldest", "newest"] as const) {
+    test(`pages microsecond comment timestamps in ${order} order`, async () => {
+      const [conversation] = await sql<{ id: string }[]>`
+        INSERT INTO mail.conversations (short_id, mailbox_id, latest_message_at)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, now()) RETURNING id
+      `;
+      const id = conversation!.id;
+      try {
+        const expected: string[] = [];
+        for (const micros of [100, 200, 200, 300, 400]) {
+          const [comment] = await sql<{ id: string }[]>`
+            INSERT INTO mail.conversation_comments (short_id, conversation_id, author_kind, author_id, body_markdown, created_at)
+            VALUES (${newShortId()}, ${id}::uuid, 'user', ${owner.id}::uuid, 'Precision test',
+              ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz) RETURNING id
+          `;
+          expected.push(comment!.id);
+        }
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        for (let page = 0; page < expected.length; page++) {
+          const result = await listConversationComments({ context: ownerContext, mailboxId, conversationId: id, order, limit: 2, cursor });
+          if (!result.ok) throw new Error(result.error.message);
+          seen.push(...result.data.items.map((item) => item.id));
+          expect(result.data.items.every((item) => item.createdAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+          cursor = result.data.nextCursor ?? undefined;
+          if (!cursor) break;
+        }
+        expect(cursor).toBeUndefined();
+        expect(seen.sort()).toEqual(expected.sort());
+        expect(new Set(seen).size).toBe(expected.length);
+        const legacy = Buffer.from(
+          JSON.stringify({
+            version: 1,
+            date: order === "oldest" ? "2025-01-01T00:00:00.000Z" : "2027-01-01T00:00:00.000Z",
+            id: crypto.randomUUID(),
+          }),
+        ).toString("base64url");
+        const result = await listConversationComments({
+          context: ownerContext,
+          mailboxId,
+          conversationId: id,
+          order,
+          limit: 2,
+          cursor: legacy,
+        });
+        expect(result.ok && result.data.items.length).toBe(2);
+      } finally {
+        await sql`DELETE FROM mail.conversations WHERE id = ${id}::uuid`;
+      }
+    });
+  }
+
+  test("pages microsecond conversation activity and operator attention timestamps", async () => {
+    const conversationIds: string[] = [];
+    const messageIds: string[] = [];
+    const commandIds: string[] = [];
+    try {
+      for (const [index, micros] of [100, 200, 200, 300, 400].entries()) {
+        const at = `2026-01-01T00:00:00.000${micros}Z`;
+        const [conversation] = await sql<{ id: string }[]>`
+          INSERT INTO mail.conversations (short_id, mailbox_id, subject, latest_message_at, updated_at)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, 'Cursor test', '2026-01-01T00:00:00Z', ${at}::timestamptz) RETURNING id
+        `;
+        conversationIds.push(conversation!.id);
+        const [message] = await sql<{ id: string }[]>`
+          INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, internal_date, size_bytes, content_hash, hydration_status)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<cursor-${crypto.randomUUID()}@example.com>`},
+            '2026-01-01T00:00:00Z', 1, ${crypto.randomUUID().replaceAll("-", "").padEnd(64, "0")}, 'complete') RETURNING id
+        `;
+        messageIds.push(message!.id);
+        const [remoteRef] = await sql<{ id: string }[]>`
+          INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+          VALUES (${folderId}::uuid, ${message!.id}::uuid, 1, ${1000 + index}) RETURNING id
+        `;
+        await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+          VALUES (${remoteRef!.id}::uuid, ${folderId}::uuid, ${message!.id}::uuid, ARRAY[]::text[], ARRAY[]::text[])`;
+        await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+          VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 1, 'manual')`;
+        const [command] = await sql<{ id: string }[]>`
+          INSERT INTO mail.commands (mailbox_id, kind, state, actor_kind, actor_id, access_subject_kind, access_subject_id,
+            idempotency_key, request_hash, target, payload, updated_at)
+          VALUES (${mailboxId}::uuid, 'sync_mailbox', 'failed', 'user', ${owner.id}::uuid, 'user', ${owner.id}::uuid,
+            ${crypto.randomUUID()}, ${"a".repeat(64)}, '{}'::jsonb, '{}'::jsonb, ${at}::timestamptz) RETURNING id
+        `;
+        commandIds.push(command!.id);
+      }
+      for (const listing of ["activity", "attention"] as const) {
+        const expected = listing === "activity" ? conversationIds : commandIds;
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        for (let page = 0; page < 20; page++) {
+          if (listing === "activity") {
+            const result = await listConversations({ context: ownerContext, mailboxId, view: "recently_active", limit: 2, cursor });
+            if (!result.ok) throw new Error(result.error.message);
+            seen.push(...result.data.items.filter((item) => expected.includes(item.id)).map((item) => item.id));
+            expect(
+              result.data.items.filter((item) => expected.includes(item.id)).every((item) => item.updatedAt === "2026-01-01T00:00:00.000Z"),
+            ).toBe(true);
+            cursor = result.data.nextCursor ?? undefined;
+          } else {
+            const result = await getMailboxOperations(ownerContext, mailboxId, { attentionLimit: 2, attentionCursor: cursor });
+            if (!result.ok) throw new Error(result.error.message);
+            seen.push(...result.data.attentionCommands.filter((item) => expected.includes(item.id)).map((item) => item.id));
+            expect(
+              result.data.attentionCommands
+                .filter((item) => expected.includes(item.id))
+                .every((item) => item.updatedAt === "2026-01-01T00:00:00.000Z"),
+            ).toBe(true);
+            cursor = result.data.nextAttentionCursor ?? undefined;
+          }
+          if (!cursor) break;
+        }
+        expect(cursor).toBeUndefined();
+        expect(seen.sort()).toEqual([...expected].sort());
+        expect(new Set(seen).size).toBe(expected.length);
+      }
+      const legacy = Buffer.from(JSON.stringify({ version: 1, updatedAt: "2027-01-01T00:00:00.000Z", id: crypto.randomUUID() })).toString(
+        "base64url",
+      );
+      const result = await getMailboxOperations(ownerContext, mailboxId, { attentionLimit: 2, attentionCursor: legacy });
+      expect(result.ok && result.data.attentionCommands.length).toBe(2);
+    } finally {
+      for (const id of commandIds) await sql`DELETE FROM mail.commands WHERE id = ${id}::uuid`;
+      for (const id of conversationIds) await sql`DELETE FROM mail.conversations WHERE id = ${id}::uuid`;
+      for (const id of messageIds) await sql`DELETE FROM mail.message_contents WHERE id = ${id}::uuid`;
+    }
   });
 });

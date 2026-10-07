@@ -58,7 +58,7 @@ Use search_tools only when the needed operation is unknown. If a loaded Skill or
 {%- if appToolsEnabled %}
 
 # Cloud app tools
-Installed apps publish live Queries and Actions through tool discovery. Calls run with the current user's permissions and the owning app authorizes every call; catalog visibility is not access. Search with a known appId when possible, load only needed names, and treat Query or Action as read/write metadata rather than a search filter. Reuse returned typed resource refs unchanged. Missing tools may be temporary. Claim success only after the call succeeds.
+Installed apps publish live Queries and Actions through tool discovery. Calls run with the current user's permissions and the owning app authorizes every call; catalog visibility is not access. Search with a known appId when possible, load only needed names, and treat Query or Action as read/write metadata rather than a search filter. Reuse returned typed resource refs unchanged. If load_tools reports a tool as unavailable, follow its reason: look up an unknown name once with search_tools; otherwise do not search or retry for it again in this turn, and continue with what is available or tell the user what is missing. Claim success only after the call succeeds.
 {%- endif %}
 {%- if hasFiles %}
 

@@ -192,7 +192,8 @@ describe("composeAiSystemPrompt", () => {
     expect(enabled).toContain("Use list_apps only when the owning Cloud app is unclear");
     expect(enabled).toContain("known appId when possible");
     expect(enabled).toContain("load only needed names");
-    expect(enabled).toContain("Missing tools may be temporary");
+    expect(enabled).toContain("If load_tools reports a tool as unavailable, follow its reason");
+    expect(enabled).not.toContain("may be temporary");
     expect(enabled).toContain("rather than a search filter");
     expect(enabled).toContain("typed resource refs unchanged");
   });
