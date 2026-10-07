@@ -86,3 +86,45 @@ test("host stop aborts pending host requests", async () => {
     dom.cleanup();
   }
 });
+
+test("a call cancelled while queued does not switch off the watchdog", async () => {
+  const dom = createDomTestHarness();
+  dom.window.happyDOM.settings.disableJavaScriptEvaluation = true;
+  const errors: string[] = [];
+  const first = Promise.withResolvers<unknown>();
+  jest.useFakeTimers();
+  const run = startArtifactRun(
+    dom.root,
+    { runtime: "", code: "" },
+    { log: () => {}, error: (message) => errors.push(message), output: () => {}, ready: () => {}, request: () => first.promise },
+  );
+  const frame = dom.window.document.querySelector("iframe")!;
+  const message = (data: unknown) => {
+    const event = new dom.window.MessageEvent("message", { data });
+    Object.defineProperty(event, "source", { value: frame.contentWindow });
+    dom.window.dispatchEvent(event);
+  };
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+  try {
+    message({ type: "work", status: "running", completed: 0, total: 1 });
+    message({ type: "rpc", id: 0, method: "ai", args: [] });
+    message({ type: "rpc", id: 1, method: "ai", args: [] });
+    // The second call is cancelled while the first one still holds the queue.
+    message({ type: "cancel", id: 1 });
+    await settle();
+    first.resolve(null);
+    await settle();
+    // Synchronous work after both calls is still stopped at the time limit.
+    jest.advanceTimersByTime(15000);
+    expect(errors).toEqual([expect.stringContaining("15-second time limit")]);
+    expect(run.stopped).toBe(true);
+    jest.advanceTimersByTime(50);
+    await run.stop();
+  } finally {
+    first.resolve(null);
+    jest.useRealTimers();
+    dom.cleanup();
+  }
+});

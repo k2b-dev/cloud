@@ -108,10 +108,12 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
         queued++;
         hooks.pending?.(queued);
         chain = chain.then(async () => {
-          const waits = HOST_WAITS.has(m.method);
+          // Counted only once it really waits: a call cancelled while queued never paused the watchdog.
+          let waits = false;
           try {
             if (stopped || requestAbort.signal.aborted) return;
-            if (waits) {
+            if (HOST_WAITS.has(m.method)) {
+              waits = true;
               waitingForHost++;
               armWork();
             }
