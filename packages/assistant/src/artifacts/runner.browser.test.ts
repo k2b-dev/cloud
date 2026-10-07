@@ -161,6 +161,24 @@ test("an app someone else manages waits for Start, and a start that never got re
   }
 }, 60000);
 
+test("a reload while a manager's app still starts keeps it from starting again", async () => {
+  const server = serve({ "index.html": "<main><h1>Hangs</h1></main>", "app.js": "await new Promise(() => {});" });
+  const context = await browser.newContext();
+  context.setDefaultTimeout(10000);
+  try {
+    const page = await context.newPage();
+    await page.goto(new URL(query(server.state), server.url).href);
+    await page.locator("iframe.studio-app-frame").waitFor({ state: "attached" });
+    // Leaving the page is no evidence that the start finished: the next load offers Start instead.
+    await page.reload();
+    await page.getByText("did not respond the last time it started", { exact: false }).waitFor();
+    expect(await page.locator("iframe.studio-app-frame").count()).toBe(0);
+  } finally {
+    await context.close();
+    server.stop();
+  }
+}, 60000);
+
 test("the runner explains access changes, stops after revocation and denies personal storage without access", async () => {
   const server = serve(COUNTER);
   const context = await browser.newContext();

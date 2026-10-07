@@ -23,7 +23,7 @@ import { artifactMessages } from "./messages";
 import { runnerClient } from "./runner-client";
 import type { RunnerMetadata } from "./runner-contracts";
 import type { RuntimeContext } from "./runtime/cloud";
-import { CloudError } from "./runtime/errors";
+import { CloudError, type CloudErrorCode } from "./runtime/errors";
 import { fetchChunk, type RuntimeServices } from "./runtime/services";
 
 type Log = { time: string; level: string; text: string };
@@ -40,7 +40,10 @@ const RUNTIME = "/api/assistant/artifacts/runtime";
 const RUNNER = "/api/assistant/runner";
 const filesOf = (source: Pick<ArtifactSource, "files">): AppFiles =>
   Object.fromEntries(source.files.map((file) => [file.path, file.content]));
-/** Set while an app starts and cleared once it is ready: a start that hung the tab does not repeat after a reload. */
+/**
+ * Set while an app starts and cleared once it is ready or stopped: a start that hung the tab does not repeat after a
+ * reload. A reload during a slow start therefore shows safe mode once; that costs one click.
+ */
 const startMarker = (id: string, revision: number) => `assistant-app-starting:${id}:${revision}`;
 
 /**
@@ -96,7 +99,7 @@ export function ArtifactPanel(props: {
   const [loading, setLoading] = createSignal(false);
   const [ready, setReady] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [notice, setNotice] = createSignal("");
+  const [notice, setNotice] = createSignal<CloudErrorCode>();
   const [safeMode, setSafeMode] = createSignal(false);
   const [logs, setLogs] = createSignal<Log[]>([]);
   const [consoleOpen, setConsoleOpen] = createSignal(false);
@@ -124,8 +127,6 @@ export function ArtifactPanel(props: {
   };
   onCleanup(() => void stop());
   onMount(() => {
-    window.addEventListener("pagehide", clearMarker);
-    onCleanup(() => window.removeEventListener("pagehide", clearMarker));
     createEffect(() => {
       onCleanup(registerLocalRun(activeServerAccess() ? props.userId : "public-visitor", props.artifactId, stop));
     });
@@ -220,7 +221,7 @@ export function ArtifactPanel(props: {
     const token = generation;
     setLoading(true);
     setError("");
-    setNotice("");
+    setNotice(undefined);
     setSafeMode(false);
     setLogs([]);
     try {
@@ -269,10 +270,11 @@ export function ArtifactPanel(props: {
       clearMarker();
     } else if (event.type === "log") log(event.level, event.text);
     else if (event.type === "error") log("error", event.where ? `${event.text} (${event.where})` : event.text);
-    else if (event.type === "notice") setNotice(event.text);
-    else if (event.type === "stopped" && event.reason !== "Stopped") {
+    else if (event.type === "not-ready") log("error", t().appNotReady({ seconds: event.seconds }));
+    else if (event.type === "notice") setNotice(event.code);
+    else if (event.type === "stopped" && event.reason !== "request") {
       void stop();
-      setError(event.reason);
+      setError(event.reason === "refusals" ? t().appStoppedRefusals : t().appStoppedFlood);
     }
   };
 
@@ -342,9 +344,11 @@ export function ArtifactPanel(props: {
       </div>
       <div class="artifact-panel__console">
         <Show when={notice()}>
-          <InlineGuidance tone="danger" role="alert">
-            {t().appNotice({ message: notice() })}
-          </InlineGuidance>
+          {(code) => (
+            <InlineGuidance tone="danger" role="alert">
+              {t().appNotice({ code: code() })}
+            </InlineGuidance>
+          )}
         </Show>
         <Show when={!loading() && running() && (metadata()?.sourceRevision ?? 0) > running()!.revision && !props.files}>
           <InlineGuidance role="status" icon="ti ti-info-circle">

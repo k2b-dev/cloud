@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+import type { CloudErrorCode } from "./runtime/errors";
 export const artifactMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -17,7 +18,18 @@ export const artifactMessages = i18n.define({
       noInterface: "This app has no interface",
       noInterfaceHelp: "It offers actions that Assistant and other apps can call.",
       safeModeHelp: "The app did not respond the last time it started, so it was not started again.",
-      appNotice: ({ message }: { message: string }) => `The app could not complete an action: ${message}`,
+      appNotice: ({ code }: { code: CloudErrorCode }) => {
+        const reasons: Partial<Record<CloudErrorCode, string>> = {
+          denied: "The app could not complete an action: access was denied.",
+          limit: "The app could not complete an action: a limit was reached.",
+          unavailable: "The app could not complete an action: a service is unavailable.",
+        };
+        return reasons[code] ?? "The app could not complete an action.";
+      },
+      appFailed: "The app ran into an error while starting and may not work as expected.",
+      appNotReady: ({ seconds }: { seconds: number }) => `The app did not finish starting within ${seconds} seconds.`,
+      appStoppedRefusals: "The app was stopped after three declined questions.",
+      appStoppedFlood: "The app sent too many messages and was stopped.",
       linkTitle: "Open an external link?",
       linkHelp: ({ app }: { app: string }) => `${app} wants to open this address in a new tab:`,
       linkOpen: "Open link",
@@ -206,7 +218,18 @@ export const artifactMessages = i18n.define({
       noInterface: "Diese App hat keine Oberfläche",
       noInterfaceHelp: "Sie bietet Aktionen, die Assistant und andere Apps aufrufen können.",
       safeModeHelp: "Die App hat beim letzten Start nicht reagiert und wurde deshalb nicht erneut gestartet.",
-      appNotice: ({ message }: { message: string }) => `Die App konnte eine Aktion nicht ausführen: ${message}`,
+      appNotice: ({ code }: { code: CloudErrorCode }) => {
+        const reasons: Partial<Record<CloudErrorCode, string>> = {
+          denied: "Die App konnte eine Aktion nicht ausführen: Der Zugriff wurde verweigert.",
+          limit: "Die App konnte eine Aktion nicht ausführen: Ein Limit wurde erreicht.",
+          unavailable: "Die App konnte eine Aktion nicht ausführen: Ein Dienst ist nicht verfügbar.",
+        };
+        return reasons[code] ?? "Die App konnte eine Aktion nicht ausführen.";
+      },
+      appFailed: "Beim Start der App ist ein Fehler aufgetreten; sie funktioniert womöglich nicht wie erwartet.",
+      appNotReady: ({ seconds }: { seconds: number }) => `Die App ist nicht innerhalb von ${seconds} Sekunden fertig gestartet.`,
+      appStoppedRefusals: "Die App wurde nach drei abgelehnten Rückfragen gestoppt.",
+      appStoppedFlood: "Die App hat zu viele Nachrichten gesendet und wurde gestoppt.",
       linkTitle: "Externen Link öffnen?",
       linkHelp: ({ app }: { app: string }) => `${app} möchte diese Adresse in einem neuen Tab öffnen:`,
       linkOpen: "Link öffnen",

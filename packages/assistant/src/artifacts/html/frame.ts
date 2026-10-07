@@ -9,6 +9,7 @@ import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
 import { chartOptions, chartSvg } from "../runtime/lib";
 import { ensureRandomUuid } from "../runtime/random-uuid";
+import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
 
 for (const key of [
@@ -51,39 +52,57 @@ const show = (value: unknown): string => {
 };
 const clip = (text: string) => named(text).slice(0, 2000);
 
-let logWindow = 0;
-let logCount = 0;
+/** At most `LIMITS.logs` diagnostics per second; the rest are dropped, so a chatty or failing app never uses up the message budget of its mount. */
+const budget = () => {
+  let start = 0;
+  let count = 0;
+  return () => {
+    const now = performance.now();
+    if (now - start >= 1000) {
+      start = now;
+      count = 0;
+    }
+    return ++count <= LIMITS.logs;
+  };
+};
+// Errors have their own budget, so chatty logs never hide them.
+const logs = budget();
+const errors = budget();
 for (const level of ["log", "info", "warn", "error"] as const satisfies FrameLogLevel[]) {
   const original = console[level].bind(console);
   console[level] = (...args: unknown[]) => {
     original(...args);
-    const now = performance.now();
-    if (now - logWindow >= 1000) {
-      logWindow = now;
-      logCount = 0;
-    }
-    // Errors always reach the host; chatty logs must not use up the message budget of the mount.
-    if (level !== "error" && ++logCount > LIMITS.logs) return;
-    send({ type: "log", level, text: clip(args.map(show).join(" ")) });
+    if ((level === "error" ? errors : logs)()) send({ type: "log", level, text: clip(args.map(show).join(" ")) });
   };
 }
 addEventListener("error", (event: ErrorEvent) => {
+  if (!errors()) return;
   const where = event.filename ? `${named(event.filename)}:${event.lineno}:${event.colno}` : undefined;
   send({ type: "error", text: clip(event.error instanceof Error ? show(event.error) : String(event.message)), where });
 });
 addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
-  const reason = event.reason as { name?: string; code?: string; message?: string } | undefined;
+  if (!errors()) return;
+  const reason = event.reason as { name?: string; code?: string } | undefined;
   send({ type: "error", text: clip(`Unhandled rejection: ${show(event.reason)}`) });
-  // A failed cloud.* call nobody handled must not leave a silently dead button.
-  if (reason?.name === "CloudError")
-    send({ type: "notice", code: String(reason.code ?? "unavailable"), text: String(reason.message).slice(0, 300) });
+  // A failed cloud.* call nobody handled must not leave a silently dead button. Cloud words the notice from the code.
+  if (reason?.name === "CloudError") send({ type: "notice", code: String(reason.code) });
 });
+// One report per directive and blocked origin: a list of 800 external images is one finding, not 1,600 messages.
+const blocked = new Set<string>();
 document.addEventListener("securitypolicyviolation", (event) => {
-  const what =
-    event.effectiveDirective === "script-src-attr" || (event.effectiveDirective === "script-src-elem" && !event.blockedURI)
-      ? "an inline handler or script (use addEventListener in app.js)"
-      : `${event.effectiveDirective}${event.blockedURI ? ` ${event.blockedURI}` : ""}`;
-  send({ type: "log", level: "error", text: `Blocked by the app sandbox: ${what}` });
+  const inline = event.effectiveDirective === "script-src-attr" || (event.effectiveDirective === "script-src-elem" && !event.blockedURI);
+  let source = event.blockedURI;
+  try {
+    source = new URL(source).origin;
+  } catch {}
+  const key = inline ? "inline" : `${event.effectiveDirective}${source ? ` ${source}` : ""}`;
+  if (blocked.has(key) || !errors()) return;
+  blocked.add(key);
+  send({
+    type: "log",
+    level: "error",
+    text: `Blocked by the app sandbox: ${inline ? "an inline handler or script (use addEventListener in app.js)" : key}`,
+  });
 });
 
 // ---------------------------------------------------------------- bridge and cloud
@@ -115,9 +134,24 @@ addEventListener("message", (event: MessageEvent) => {
   if (message?.type === "result") bridge.result(message);
   else if (message?.type === "theme") document.documentElement.dataset.theme = message.value === "dark" ? "dark" : "light";
   else if (message?.type === "hash" && typeof message.value === "string" && location.hash !== message.value) location.hash = message.value;
-  else if (message?.type === "snapshot")
-    send({ type: "snapshot", id: message.id, html: `<!doctype html>${document.documentElement.outerHTML}` });
+  else if (message?.type === "snapshot") send({ type: "snapshot", id: message.id, html: shown() });
 });
+/** The document as the person sees it: outerHTML keeps attributes only, so current form values move into attributes of a copy. */
+function shown() {
+  const copy = document.documentElement.cloneNode(true) as HTMLElement;
+  const copies = copy.querySelectorAll("input, textarea, select");
+  document.querySelectorAll("input, textarea, select").forEach((element, index) => {
+    const target = copies[index];
+    if (element instanceof HTMLInputElement && target instanceof HTMLInputElement) {
+      if (element.type === "checkbox" || element.type === "radio") target.toggleAttribute("checked", element.checked);
+      else if (element.type !== "password" && element.type !== "file") target.setAttribute("value", element.value);
+    } else if (element instanceof HTMLTextAreaElement && target) target.textContent = element.value;
+    else if (element instanceof HTMLSelectElement && target instanceof HTMLSelectElement)
+      for (const [position, option] of [...element.options].entries())
+        target.options[position]?.toggleAttribute("selected", option.selected);
+  });
+  return `<!doctype html>${copy.outerHTML}`;
+}
 const cloud = createCloud(rpc, config.context);
 Object.defineProperty(self, "cloud", { value: cloud, enumerable: true });
 
@@ -236,7 +270,6 @@ addEventListener("hashchange", () => send({ type: "hash", value: location.hash }
 
 // ---------------------------------------------------------------- modules and ready
 
-const SPECIFIER = /(\bimport\s*\(\s*|\bfrom\s*|\bimport\s+)(["'])(\.{1,2}\/[^"']+)\2/g;
 const resolve = (from: string, specifier: string) =>
   decodeURIComponent(new URL(specifier, `https://app.invalid/${from}`).pathname.slice(1));
 
@@ -247,10 +280,15 @@ function urlOf(path: string, trail: string[] = []): string {
   if (trail.includes(path)) throw new CloudError("invalid", `Circular import: ${[...trail, path].join(" → ")}`);
   const source = config.modules[path];
   if (source === undefined) throw new CloudError("invalid", `Import of a missing app file: ${path}`);
-  const code = source.replace(
-    SPECIFIER,
-    (_all, head: string, quote: string, specifier: string) => `${head}${quote}${urlOf(resolve(path, specifier), [...trail, path])}${quote}`,
-  );
+  // Only real imports: import-like text in comments and strings stays as it is.
+  let code = "";
+  let at = 0;
+  for (const { start, end, value } of moduleSpecifiers(source)) {
+    if (!/^\.{1,2}\//.test(value)) continue;
+    code += source.slice(at, start) + urlOf(resolve(path, value), [...trail, path]);
+    at = end;
+  }
+  code += source.slice(at);
   const url = URL.createObjectURL(new Blob([`${code}\n//# sourceURL=${path}`], { type: "text/javascript" }));
   fileOf.set(url, path);
   return url;

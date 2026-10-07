@@ -4,6 +4,7 @@
 //   Cloud page → wrapper iframe (no script; network CSP that its srcdoc child
 //   inherits) → app iframe (hash-pinned prelude, app modules as blob URLs).
 import type { RuntimeContext } from "../runtime/cloud";
+import { moduleSpecifiers } from "./imports";
 import type { FrameConfig } from "./protocol";
 
 export type LintIssue = { severity: "error" | "warning"; kind: string; message: string; where?: string };
@@ -24,7 +25,6 @@ export type ComposeOptions = {
 /** Network rules of both frames. The wrapper carries them too, so a composer or parser slip never opens the network. */
 const NETWORK =
   "connect-src blob: data:; img-src data: blob:; font-src data: blob:; media-src data: blob:; worker-src blob:; object-src 'none'; form-action 'none'; base-uri 'none'; manifest-src 'none'; frame-src 'none'";
-const IMPORT = /(?:\bimport\s*\(\s*|\bfrom\s*|\bimport\s+)(["'])([^"']+)\1/g;
 const SCRIPT_TYPES = new Set(["", "text/javascript", "module"]);
 
 const attr = (text: string) => text.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
@@ -89,9 +89,8 @@ export function lintSource(path: string, raw: string, files: AppFiles): LintIssu
     /(?<![\w.$])fetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b/,
   );
   add("warning", "worker", "Workers cannot load app files in Studio apps; keep the code in app modules", /\bnew\s+(Shared)?Worker\s*\(/);
-  for (const match of source.matchAll(IMPORT)) {
-    const specifier = match[2]!;
-    const where = `${path}:${source.slice(0, match.index).split("\n").length}`;
+  for (const { start, value: specifier } of moduleSpecifiers(raw)) {
+    const where = `${path}:${raw.slice(0, start).split("\n").length}`;
     if (!/^\.{1,2}\//.test(specifier))
       issues.push({
         severity: "error",
@@ -160,7 +159,7 @@ function prepare(files: AppFiles) {
   }
   const imported = (target: string) =>
     Object.entries(modules).some(([path, code]) =>
-      [...withoutComments(code).matchAll(IMPORT)].some((match) => /^\.{1,2}\//.test(match[2]!) && resolve(path, match[2]!) === target),
+      moduleSpecifiers(code).some(({ value }) => /^\.{1,2}\//.test(value) && resolve(path, value) === target),
     );
   if (modules["app.js"] !== undefined && !entries.includes("app.js") && !imported("app.js")) entries.push("app.js");
 

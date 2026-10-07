@@ -247,10 +247,12 @@ export function ChatPresentation(props: {
                 }}
                 onEvent={(event) => {
                   if (event.type === "ready") setReady(true);
-                  else if (event.type === "notice") setNotice(t().appNotice({ message: event.text }));
-                  else if (event.type === "stopped" && event.reason !== "Stopped") {
+                  else if (event.type === "notice") setNotice(t().appNotice({ code: event.code }));
+                  // The card has no console: a start that failed says so, in Cloud's words and never the app's.
+                  else if (event.type === "not-ready" || (event.type === "error" && !ready())) setNotice((shown) => shown || t().appFailed);
+                  else if (event.type === "stopped" && event.reason !== "request") {
                     stop();
-                    setError(event.reason);
+                    setError(event.reason === "refusals" ? t().appStoppedRefusals : t().appStoppedFlood);
                   }
                 }}
               />

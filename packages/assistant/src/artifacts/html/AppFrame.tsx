@@ -26,8 +26,11 @@ export function loadAppAssets(base: string): Promise<AppFrameAssets> {
   return pending;
 }
 
-/** The confirm button arms late and is never the default, so a click meant for the app cannot open the link. */
-export function confirmLink(url: string, app: string, locale: string): Promise<boolean> {
+/**
+ * The confirm button arms late and is never the default, so a click meant for the app cannot open the link.
+ * The question closes, unanswered, when `signal` aborts because the app stopped.
+ */
+export function confirmLink(url: string, app: string, locale: string, signal: AbortSignal): Promise<boolean> {
   const t = artifactMessages.resolve([locale]).t;
   return prompts
     .dialog<boolean>(
@@ -54,7 +57,7 @@ export function confirmLink(url: string, app: string, locale: string): Promise<b
           </div>
         );
       },
-      { title: t.linkTitle, size: "small" },
+      { title: t.linkTitle, size: "small", signal },
     )
     .then((answer) => answer === true);
 }
@@ -83,7 +86,7 @@ export function AppFrame(props: {
       title: props.title,
       hash: props.hash,
       services: props.services,
-      confirmOpen: (url) => confirmLink(url, props.title, props.context.locale),
+      confirmOpen: (url, signal) => confirmLink(url, props.title, props.context.locale, signal),
       onHash: props.onHash,
       onEvent: (event) => {
         if (event.type === "ready") setReady(true);

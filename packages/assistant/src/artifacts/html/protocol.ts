@@ -21,7 +21,8 @@ export type FrameToHost =
   | { type: "cancel"; id: number }
   | { type: "log"; level: FrameLogLevel; text: string }
   | { type: "error"; text: string; where?: string }
-  | { type: "notice"; code: string; text: string }
+  /** An unhandled `cloud.*` failure; only its code, since Cloud never shows text the app supplies. */
+  | { type: "notice"; code: string }
   | { type: "ready"; height: number }
   | { type: "hash"; value: string }
   | { type: "open"; url: string }

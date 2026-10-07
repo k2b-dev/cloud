@@ -19,6 +19,10 @@ const FILES = [
 document.querySelector("#quantity").addEventListener("input", (event) => (total.textContent = String(Number(event.target.value) * 10)));`,
   },
 ];
+const BROKEN = [
+  { path: "index.html", content: "<main><h1>Inventory</h1></main>" },
+  { path: "app.js", content: 'throw new Error("Your Cloud session expired. Sign in again at https://login.example");' },
+];
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 let release: () => void = () => {};
@@ -70,7 +74,7 @@ beforeAll(async () => {
           id: path.slice(path.lastIndexOf("/") + 1),
           conversationId: "abc234",
           title: "Inventory",
-          files: app ? null : FILES,
+          files: app ? null : path.endsWith("3") ? BROKEN : FILES,
           artifactId: app ? "aBc234" : null,
         });
       }
@@ -100,6 +104,8 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
     await card.waitFor();
     const reserved = (await card.boundingBox())!.height;
     expect(reserved).toBe(360);
+    // The chat sidebar jumps to a result through this attribute.
+    expect(await card.getAttribute("data-presentation-id")).toBe("00000000-0000-4000-8000-000000000001");
     release();
     const start = card.getByRole("button", { name: "Starten", exact: true });
     await start.waitFor();
@@ -123,6 +129,8 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
     const exported = await Bun.file(copy).text();
     await rm(copy, { force: true });
     expect(exported).toContain(">30<");
+    // The copy shows what the person entered, not the initial value.
+    expect(exported).toContain('value="3"');
     expect(exported).not.toMatch(/<script/i);
     expect(exported).toContain("default-src 'none'");
     const pdf = page.waitForEvent("download");
@@ -158,6 +166,21 @@ test("a saved app in the chat runs its current source and opens beside the chat"
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await card.getByRole("button", { name: "Öffnen", exact: true }).click();
     expect(await page.evaluate(() => globalThis.openedApps)).toEqual(["aBc234:Inventory"]);
+  } finally {
+    await context.close();
+  }
+}, 60000);
+
+test("a chat app that fails while starting says so in Cloud's words, not the app's", async () => {
+  const context = await browser.newContext({ viewport: { width: 900, height: 800 } });
+  try {
+    const page = await context.newPage();
+    await page.goto(new URL("?presentation=00000000-0000-4000-8000-000000000003", server.url).href);
+    release();
+    const card = page.locator(".assistant-chat-presentation");
+    await card.getByRole("button", { name: "Starten", exact: true }).click();
+    await card.getByRole("alert").filter({ hasText: "Beim Start der App ist ein Fehler aufgetreten" }).waitFor();
+    expect(await card.textContent()).not.toContain("session expired");
   } finally {
     await context.close();
   }
