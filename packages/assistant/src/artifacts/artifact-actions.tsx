@@ -252,10 +252,10 @@ export function createArtifactActions(props: {
               { label: a().sql, icon: "ti ti-database", action: () => navigateTo(`/app/assistant/apps/${item.id}/database`) },
             ]
           : []),
-        { label: a().local, icon: "ti ti-device-desktop", action: () => openDataDialog(item.id, props.userId, "local", a().local) },
+        { label: a().personal, icon: "ti ti-user", action: () => openDataDialog(item.id, "user", a().personal) },
         ...(item.permission === "admin"
           ? [
-              { label: a().shared, icon: "ti ti-cloud", action: () => openDataDialog(item.id, props.userId, "shared", a().shared) },
+              { label: a().shared, icon: "ti ti-cloud", action: () => openDataDialog(item.id, "shared", a().shared) },
               { label: a().database, icon: "ti ti-database-cog", action: () => openDatabaseDialog(item.id, a().database) },
             ]
           : []),

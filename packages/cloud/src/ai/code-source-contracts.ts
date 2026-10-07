@@ -48,7 +48,53 @@ const CodeWriteInput = Id.extend({
     .max(64),
 });
 
+const DbName = z
+  .string()
+  .regex(/^[A-Za-z][A-Za-z0-9_]*$/)
+  .max(63);
+const DbColumn = z
+  .object({
+    name: DbName.refine(
+      (name) => !["id", "created_at", "updated_at", "created_by", "updated_by"].includes(name.toLowerCase()),
+      "Omit Cloud-managed columns.",
+    ),
+    type: z.enum(["text", "integer", "real", "boolean", "json", "date", "datetime"]),
+    not_null: z.boolean().optional(),
+    unique: z.boolean().optional(),
+    index: z.boolean().optional(),
+  })
+  .strict();
+const TableWrite = z.enum(["everyone", "own", "managers"]);
+const DatabaseSchemaInput = z.discriminatedUnion("operation", [
+  Id.extend({
+    operation: z.literal("tables.create"),
+    name: DbName,
+    columns: z.array(DbColumn).min(1).max(1000),
+    write: TableWrite.default("everyone"),
+  }),
+  Id.extend({
+    operation: z.literal("tables.update"),
+    table: DbName,
+    changes: z
+      .object({
+        write: TableWrite.optional(),
+        rename: DbName.optional(),
+        add_columns: z.array(DbColumn).optional(),
+        drop_columns: z.array(DbName).optional(),
+        rename_columns: z.record(DbName, DbName).optional(),
+      })
+      .strict(),
+  }),
+  Id.extend({ operation: z.literal("schema.get"), table: DbName }),
+  Id.extend({ operation: z.literal("tables.list") }),
+]);
+
 export const CODE_SOURCE_TOOLS = {
+  code_database: {
+    description:
+      "Manage app tables and schema. Manage permission required. Table write rules are everyone (default), own (only creators update/delete), or managers. Cloud sets created_by/updated_by from trusted identity. Schema belongs here, never in runtime scripts.",
+    input: DatabaseSchemaInput,
+  },
   code_files: {
     description:
       "List authorized files in one explicit chat, Project or App shared store. Returns locations, metadata and nextAfter. Use code_file_stat to obtain the opaque version before copying; does not load bytes into model context.",
@@ -118,18 +164,20 @@ export const CODE_SOURCE_TOOLS = {
   },
   code_storage_list: {
     description:
-      "Inspect an App's shared files or JSON keys for administration. Manage required. Returns storageRevision, counts and a page of key/bytes/mediaType/version metadata; no file contents. Follow nextAfter.",
+      "Inspect shared files/JSON with Manage, or only your personal JSON with scope user and Use. Returns storageRevision, counts and a page of key/bytes/mediaType/version metadata; no file contents. Follow nextAfter.",
     input: Id.extend({
+      scope: z.enum(["shared", "user"]).default("shared").describe("user shows only the signed-in viewer’s personal JSON data."),
       area: z.enum(["files", "kv"]),
       after: z.string().max(240).default(""),
       limit: z.number().int().min(1).max(1000).default(100),
-    }),
+    }).refine((input) => input.scope !== "user" || input.area === "kv", "Personal storage supports JSON keys only."),
   },
   code_storage_delete: {
     description:
-      "Delete one shared file/JSON key, or clear an explicit storage area, with fresh user review. Manage required. Source, publications and database are preserved. Read code_storage_list first.",
+      "Delete one shared file/JSON key or clear an area with fresh review and Manage. Scope user deletes only your personal JSON and requires Use. Source, publications and database are preserved. Read code_storage_list first.",
     review: true,
     input: Id.extend({
+      scope: z.enum(["shared", "user"]).default("shared"),
       area: z.enum(["files", "kv", "all"]),
       key: z.string().min(1).max(240).optional().describe("Delete this exact key; omit to clear the entire area. Not valid with area all."),
       expectedStorageRevision: z
@@ -137,7 +185,9 @@ export const CODE_SOURCE_TOOLS = {
         .int()
         .positive()
         .describe("storageRevision from code_storage_list; concurrent writes invalidate the review."),
-    }).refine((input) => input.area !== "all" || input.key === undefined, "all clears both areas and cannot select a key"),
+    })
+      .refine((input) => input.area !== "all" || input.key === undefined, "all clears both areas and cannot select a key")
+      .refine((input) => input.scope !== "user" || input.area === "kv", "Personal storage supports JSON keys only."),
   },
   code_access_read: {
     description:

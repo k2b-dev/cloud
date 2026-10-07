@@ -88,6 +88,24 @@ describe("accounts entity routes", () => {
     expect(queried).toBe(false);
   });
 
+  test("withholds group members, as the access editor requests them, from guest actors", async () => {
+    let queried = false;
+    const routes = createAccountsEntitiesRoutes({
+      authenticate: authenticateAs("guest"),
+      requireUser,
+      listEntities: async () => {
+        queried = true;
+        return { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+      },
+    });
+
+    const response = await routes.request(
+      "/entities?kinds=user&member_of_group_id=33333333-3333-4333-8333-333333333333&recursive=true&page=1&per_page=20",
+    );
+    expect(response.status).toBe(403);
+    expect(queried).toBe(false);
+  });
+
   test("keeps anonymous callers at 401 and userless service accounts at 403", async () => {
     const anonymous = createAccountsEntitiesRoutes({
       authenticate: async (c) => c.json({ code: "UNAUTHORIZED", message: "Authentication required" }, 401),

@@ -1,6 +1,6 @@
 # CAMT account reports
 
-`camt.parse(xml: string, options?: CamtParseOptions)` synchronously returns
+`await cloud.finance.camt.parse(xml: string, options?: CamtParseOptions)` returns
 `Result<CamtDocument>`. Check `ok` before reading `data`; errors have
 `code`, `status`, `message`, and `issues: {code,path,message,line?,column?}[]`.
 Issue paths use zero-based array indices; XML locations are one-based.
@@ -130,10 +130,10 @@ type CamtParseOptions = {
 ## Read transaction references without guessing
 
 ```js
-export default async () => {
-  const file = await files.open({ accept: ".xml" });
+export default async (_input, {files}) => {
+  const file = files[0] ? await files[0].file() : null;
   if (!file) return { cancelled: true };
-  const result = camt.parse(await file.text());
+  const result = await cloud.finance.camt.parse(await file.text());
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.data.reports.flatMap(report => report.entries.map(entry => ({
     report: report.id,

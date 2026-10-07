@@ -319,3 +319,55 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("the reader follows every switch to another conversation and back", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const conversation = (index: number) => {
+    const id = `Conv0${index}`;
+    const message: MessageDetail = {
+      ...envelopeOnly,
+      id: `Msg00${index}`,
+      subject: `Subject ${index}`,
+      hydrationStatus: "complete",
+      plainText: `Body ${index}`,
+      sourceAvailable: true,
+    };
+    return { selectionKey: id, selectedConversationId: id, subject: message.subject, messages: [message] };
+  };
+  const [selected, setSelected] = createSignal(conversation(1));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get selectionKey() {
+          return selected().selectionKey;
+        },
+        get selectedConversationId() {
+          return selected().selectedConversationId;
+        },
+        get subject() {
+          return selected().subject;
+        },
+        get messages() {
+          return selected().messages;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const body = () => dom.root.querySelector("[data-mail-message-id] .mail-message-body")?.textContent ?? "";
+    await waitFor(() => body().includes("Body 1"));
+    // Leaving a conversation unmounts its open message body; that must not break the next render.
+    for (const index of [2, 3, 1, 2]) {
+      setSelected(conversation(index));
+      await waitFor(() => body().includes(`Body ${index}`));
+      expect([...dom.root.querySelectorAll("[data-mail-message-id]")].map((card) => card.getAttribute("data-mail-message-id"))).toEqual([
+        `Msg00${index}`,
+      ]);
+    }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

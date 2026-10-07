@@ -90,7 +90,7 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
               args.path === "__artifact_entry__"
                 ? headless
                   ? "globalThis.__artifactStart(() => null);"
-                  : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `() => entry(${JSON.stringify(invocation.input ?? null)})` : "entry"});`
+                  : `import entry from ${JSON.stringify("./" + entry)}; globalThis.__artifactStart(${invocation ? `entry, ${JSON.stringify(invocation.input ?? null)}` : "entry"});`
                 : files.get(args.path);
             if (contents === undefined) throw new Error(`Missing source file: ${args.path}`);
             if (args.path.endsWith(".json")) return { contents, loader: "json" };
@@ -112,7 +112,12 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
 /** Compile every published handler without running any application code. */
 export async function validateArtifact(source: ArtifactSource) {
   await compileArtifact(source);
-  for (const action of sourceActions(source)) await compileArtifact(source, { action: action.name });
+  for (const action of sourceActions(source)) {
+    // code_action passes one JSON object. Saved revisions keep compiling; publication rejects uncallable actions.
+    if (action.inputSchema.type !== "object")
+      throw new ArtifactCompileError(`app.actions.json: ${action.name} inputSchema must have type "object"`);
+    await compileArtifact(source, { action: action.name });
+  }
 }
 
 /** Keep compiler messages useful to the author instead of dropping AggregateError details. */

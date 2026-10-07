@@ -1,5 +1,6 @@
 import { createRoot } from "solid-js";
 import { createArtifactAgentRuntime } from "../agent-runtime";
+import { CloudError } from "./errors";
 import { startArtifactRun } from "./host";
 import type { RuntimeEvent, UiNode } from "./protocol";
 import { createArtifactSession, type RunSnapshot } from "./session";
@@ -116,6 +117,7 @@ globalThis.runArtifactAgentScenario = async (source) => {
 };
 
 globalThis.runArtifactSessionScenario = async (source) => {
+  const personal = new Map<string, unknown>();
   const ready = Promise.withResolvers<void>();
   let invalidRejected = false;
   const run = createArtifactSession(document.body, source, {
@@ -134,8 +136,15 @@ globalThis.runArtifactSessionScenario = async (source) => {
           run.respond({ count: 3 });
         });
     },
-    storage: async () => {
-      throw new Error("Test run touched persistent storage");
+    storage: async (_method, args) => {
+      const { RuntimeStorage } = await import("./shared-storage");
+      const request = RuntimeStorage.parse(args[0]);
+      if (request.scope !== "user") throw new Error("Wrong scope");
+      if (request.operation === "write") {
+        personal.set(request.key!, request.value);
+        return null;
+      }
+      return personal.get(request.key!) ?? null;
     },
     pick: async () => {
       throw new Error("Test run opened a user file picker");
@@ -174,7 +183,13 @@ globalThis.runArtifactScenario = async (scenario) => {
       errors.push(error);
       ready.resolve();
     },
-    request: async () => {
+    request: async (method, args) => {
+      if (method === "runtime.chunk") {
+        const response = await fetch(`/api/assistant/artifacts/runtime/chunks/${args[0]}`);
+        if (!response.ok || !/^(?:text|application)\/(?:javascript|ecmascript)(?:;|$)/i.test(response.headers.get("content-type") ?? ""))
+          throw new CloudError("unavailable", "The runtime library did not return JavaScript; check the runtime assets.");
+        return response.text();
+      }
       throw new Error("No host effects configured for this test");
     },
   });
@@ -208,7 +223,7 @@ declare global {
 globalThis.runArtifactFolderScenario = async (source, mode) => {
   const ready = Promise.withResolvers<void>();
   const files = Array.from({ length: 3000 }, (_, index) => {
-    const file = new File(["x".repeat(8192)], "ledger.csv");
+    const file = new File(["x".repeat(8192)], `folder-${index}/ledger.csv`);
     Object.defineProperty(file, "webkitRelativePath", { value: `folder-${index}/ledger.csv` });
     return file;
   });
@@ -226,7 +241,11 @@ globalThis.runArtifactFolderScenario = async (source, mode) => {
   const timer = setTimeout(() => ready.reject(new Error("Folder scenario timed out")), 20000);
   try {
     await ready.promise;
-    return run.snapshot();
+    await run.event({ id: "pick" });
+    const state = run.snapshot();
+    const result = state.nodes.find((node) => node.id === "result");
+    if (result?.type !== "text") throw new Error("Missing selection result");
+    return { ...state, output: JSON.parse(result.value) };
   } finally {
     clearTimeout(timer);
     await run.stop();
@@ -237,31 +256,25 @@ declare global {
   var runArtifactWorkScenario: (source: { code: string; runtime: string }) => Promise<{ finished: RunSnapshot; cancelled: RunSnapshot }>;
 }
 globalThis.runArtifactWorkScenario = async (source) => {
-  const ready = Promise.withResolvers<void>();
-  const run = createArtifactSession(document.body, source, {
-    mode: "test",
-    changed: (state) => {
-      if (state.status === "ready") ready.resolve();
-    },
-  });
   const wait = async (check: () => boolean) => {
     const deadline = Date.now() + 22000;
     while (!check()) {
-      if (Date.now() > deadline) throw new Error("Job scenario timed out");
+      if (Date.now() > deadline) throw new Error("Progress scenario timed out");
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   };
+  const first = createArtifactSession(document.body, source, { mode: "test", changed: () => {} });
+  let second: ReturnType<typeof createArtifactSession> | undefined;
   try {
-    await ready.promise;
-    await run.event({ id: "start" });
-    await wait(() => run.snapshot().work?.status === "completed");
-    const finished = run.snapshot();
-    await run.event({ id: "start" });
-    await run.event({ id: "cancel" });
-    await wait(() => run.snapshot().work?.status === "cancelled");
-    return { finished, cancelled: run.snapshot() };
+    await wait(() => first.snapshot().status === "ready" || first.snapshot().status === "error");
+    const finished = first.snapshot();
+    second = createArtifactSession(document.body, source, { mode: "test", changed: () => {} });
+    await wait(() => second!.snapshot().work?.status === "running");
+    await second.stop();
+    return { finished, cancelled: second.snapshot() };
   } finally {
-    await run.stop();
+    await first.stop();
+    await second?.stop();
   }
 };
 
@@ -269,24 +282,40 @@ declare global {
   var runArtifactStoragePages: () => Promise<{ counts: number[]; unique: number; first: string; last: string }>;
 }
 globalThis.runArtifactStoragePages = async () => {
-  const { ArtifactStorage } = await import("./storage");
-  const storage = new ArtifactStorage("fixture-user", "fixture-resource");
+  const { sharedStorage, RuntimeStorage } = await import("./shared-storage");
+  const original = window.fetch;
+  const keys = Array.from({ length: 1005 }, (_, i) => `file-${String(i).padStart(5, "0")}.txt`);
+  window.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body));
+      return Response.json({
+        items: keys
+          .filter((key) => key > request.after)
+          .slice(0, request.limit)
+          .map((key) => ({ key })),
+      });
+    },
+    { preconnect: fetch.preconnect },
+  );
   try {
-    for (let i = 0; i < 1005; i++) await storage.call("opfs.write", [`file-${String(i).padStart(5, "0")}.txt`, ""]);
-    const keys: string[] = [],
+    const collected: string[] = [],
       counts: number[] = [];
     let after = "";
     for (;;) {
-      const page = await storage.call("opfs.list", [{ after, limit: 500 }]);
-      if (!Array.isArray(page) || page.some((key) => typeof key !== "string")) throw new Error("Invalid key page");
-      counts.push(page.length);
-      keys.push(...page);
-      if (page.length < 500) break;
-      after = page.at(-1);
+      const page = await sharedStorage(
+        "fixture-resource",
+        RuntimeStorage.parse({ scope: "shared", area: "files", operation: "list", after, limit: 500 }),
+      );
+      if (!Array.isArray(page)) throw new Error("Invalid storage page");
+      const values = page.map(String);
+      counts.push(values.length);
+      collected.push(...values);
+      if (values.length < 500) break;
+      after = values.at(-1)!;
     }
-    return { counts, unique: new Set(keys).size, first: keys[0]!, last: keys.at(-1)! };
+    return { counts, unique: new Set(collected).size, first: collected[0]!, last: collected.at(-1)! };
   } finally {
-    await storage.clear();
+    window.fetch = original;
   }
 };
 
@@ -300,11 +329,16 @@ globalThis.prepareLocalScriptPicker = (source) => {
   button.textContent = "Start script";
   button.onclick = async () => {
     const { pickFiles } = await import("../ArtifactPanel");
-    createArtifactSession(document.body, source, {
+    let picked = false;
+    const run = createArtifactSession(document.body, source, {
       mode: "user",
       pick: pickFiles,
       changed: (state) => {
         globalThis.localScriptPickerResult = state;
+        if (!picked && state.status === "ready") {
+          picked = true;
+          queueMicrotask(() => void run.event({ id: "pick" }));
+        }
       },
     });
     // Host cleanup is the page lifetime in this focused picker scenario.

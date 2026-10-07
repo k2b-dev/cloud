@@ -88,6 +88,11 @@ set `data-theme="dark"` on the scope.
 See [Theme and styles](https://cloud.k2b.dev/en/ui/surfaces/utilities) for
 configuration and accessible color choices.
 
+For a page written in plain HTML, `@k2b/ui/base.css` is a classless
+stylesheet with the same tokens: semantic elements look like the components in
+light and dark, without classes or JavaScript. See the
+[Base stylesheet](https://cloud.k2b.dev/en/ui/surfaces/base-stylesheet) guide.
+
 ## Documentation
 
 - [Getting started and SSR setup](https://cloud.k2b.dev/en/ui/getting-started)

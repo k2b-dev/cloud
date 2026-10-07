@@ -44,6 +44,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | Plan tasks in Spaces, write task descriptions and comments, or link a note or file to a task | `cld spaces reference` |
 | Import or export contacts | `cld contacts reference` |
 | Build a dashboard | `cld pulse reference dashboard-dsl.md` |
+| Set up the Assistant for someone: Projects, knowledge, references, Skills, memories, or scheduled tasks | `cld assistant reference how-it-works.md` first: whose permissions it uses, what is live or a copy, and what needs approval. Then `cld assistant reference` |
 
 ## Agent workflow
 

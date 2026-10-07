@@ -2,6 +2,12 @@
 
 Use `cld assistant` for interactive access to the user's personal Cloud agent and for chat automation. Assistant is the CLI and GUI surface for personal conversations stored by Cloud AI Core; chats started from Mail or another application appear in the same history. The root command starts or continues a chat, while named management commands inspect chat state and files, resolve pending actions, manage personalization, and manage Projects.
 
+Before you configure the Assistant for someone, read
+[How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
+It explains whose permissions the Assistant uses, what Projects share and
+whether it is live, which Actions need approval, how scheduled tasks are
+authorized, and when to use instructions, Skills, memories, or knowledge.
+
 ## Interactive and print modes
 
 Start a line-oriented terminal session:
@@ -83,10 +89,9 @@ created after the confirmed generation.
 
 `assistant code storage-manage ID --input-file request.json` uses the existing
 `area`, `operation`, `key`, `after`, `limit` storage contract with Manage access.
-Use `assistant code storage-clear ID --area files|kv|all --yes` for bulk cleanup.
+Use `assistant code storage-clear ID --area files|kv|all --scope shared|user --yes` for bulk cleanup. Scope defaults to `shared`; `user` clears only the current user’s personal JSON (`--area kv`).
 These commands share the Studio Advanced menu's permission-aware services.
-Browser-local OPFS and KV belong to that browser profile. A CLI process cannot
-purge them remotely; direct the user to Studio → Advanced → Local data.
+Personal JSON uses scope:"user" and always belongs to the signed-in viewer across devices.
 
 Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
 an open Assistant browser tab. Install Playwright Chromium, or set
@@ -134,7 +139,7 @@ the same isolated host, approval flags, and optional steps as `code run`.
 or `{"id":"<resource-id>"}` for saved code. Add `inputPaths` for explicitly
 selected files of the current chat. Scripts read those inputs on demand. In
 explicit GUI test runs, the same paths supply isolated picker fixtures;
-`files.list()` and `files.read()` remain unavailable to the app. User apps use
+The script context input files remain empty for apps. User apps use
 their own local picker and receive no implicit chat files. One-offs create no Studio resource. Optional
 `--steps-file` accepts an array of `{name,args}` steps using `code_interact`,
 `code_inspect`, or `code_export`; the CLI supplies the run ID. An export returns
@@ -144,29 +149,30 @@ instead of parsing a shortened preview. Pending input downloads pause startup
 and readiness watchdogs, but still count toward the tool call's 45-second outer
 budget. Capability approval waits pause that outer budget. At host capacity,
 finished one-offs without UI, exports, pending requests, or running jobs are
-reclaimed automatically. Invalid tool arguments return `kind: "input"` before
-source execution.
+reclaimed automatically. Invalid tool arguments fail the command before source
+execution. A started call that does not complete fails the command with
+`{failed: true, error, guidance?}`.
 
-For long work, use `work.run`, cooperative checkpoints, and progress.
+For long work, use the script context signal and progress; yield between batches.
 `code_inspect` accepts `waitMs` up to 30000. After explicit steps, the CLI keeps
 its host alive until active background work finishes. Closing the CLI interrupts
 the worker. An unresolved modal requires an explicit interaction step.
 
-Bundled `pdf.open` reads PDF pages/text/positions; `sheet.openExcel` reads XLSX
-workbooks without running formulas. No package imports or Excel writer are
-needed. Local folders have no 64-file/16-MiB aggregate cap: read one document
-at a time and close it afterward. Parser budgets are 64 MiB per document and
-128 MiB expanded XLSX XML. Selected chat inputs and captured exports retain
+Lazy `cloud.pdf.read` reads PDF pages/text/positions; `cloud.sheet.read` detects
+XLSX/ODS bytes and reads cached formula values. `cloud.sheet.toOds` exports
+workbooks. No package imports are needed. Process selected files sequentially
+and close PDF readers after use. Parser budgets are 64 MiB per document and
+128 MiB expanded workbook XML. Selected chat inputs and captured exports retain
 64 paths, 50 MiB per file, and 250 MiB total; use Blob for large exports.
 Those are separate from persistent shared storage quotas.
 
-Agent/CLI runs use isolated local test storage. Shared storage changes are real
+Agent/CLI runs use the same personal and shared server stores. Storage changes are real
 and persist across runs and publications. Forks start with empty data. Use
 `code storage` with JSON input for file list/delete and KV operations. Use
 `code sql` with `{"sql":"SELECT title FROM todos LIMIT 20","params":[]}` for
 a direct read-only query. It never creates a database. `code database-connect`
 explicitly provisions one when the instance has rsql configured;
-`code database` accepts structured schema/row operations. Project membership grants Use on linked published Apps, including
+`code database` sends flat `list/get/insert/update/delete/query` operations to the Use runtime and dotted `tables.*`, `schema.get`, and `rows.*` operations to Manage-only maintenance. Project membership grants Use on linked published Apps, including
 read/run/storage/database commands and copying published source. A Project chat
 is not required; editing and management rights remain separate.
 
@@ -187,7 +193,7 @@ Read redacted connection state with `studio-admin settings`. Configure using
 omit `token` to preserve it, or add `--test` to test without saving. Never put
 the token directly in command arguments. Settings cannot replace a server that
 still owns databases or pending cleanup. Central inventory covers shared data
-and Project associations, not browser-local storage.
+and Project associations, not personal JSON storage.
 
 ## Chats and turns
 
@@ -219,7 +225,7 @@ asynchronous when the target is busy.
 
 Tasks belong to a chat, but each run uses an independent execution history.
 It starts from completed chat context and reads current files, memories, and
-Project resources. Interactive chatting can continue while it runs. Results and
+Project knowledge and files. App reads, including Project references, need grants. Interactive chatting can continue while it runs. Results and
 failures are delivered to the original chat, reopening it and updating its
 activity time. One-time `--at` values are local wall-clock times in `app.timezone`,
 with the exact format `YYYY-MM-DDTHH:mm`. Recurring tasks use a five-field cron
@@ -245,7 +251,9 @@ Capability grants are a JSON list. Each entry contains `appId`, `capabilityId`,
 `kind` (`query` or `action`), and `fixedInput`. Fixed fields must match exactly;
 `{}` allows any input within the caller's current access. Omitting grants when
 creating a task gives it no capability grants. Updating grants replaces the list.
-Always-approval actions cannot be preapproved.
+Only Actions whose `approval` is `none` or `rememberable` can be granted; an Action
+without an `approval` field in the catalog asks every time and cannot be granted.
+`--yes` is required only for a non-empty grants list.
 
 ```json
 [
@@ -331,7 +339,7 @@ cld assistant personalization configure --use off --learning off
 
 ## Projects
 
-Projects combine shared instructions, knowledge, files, Cloud references, model defaults, and Cloud access grants. Chats created in a Project remain private.
+Projects combine shared instructions, knowledge, files, Cloud references, model defaults, and access grants that say who may use the Project. Chats created in a Project remain private. Knowledge and files are copies that every member can read; a reference is a live pointer that the Assistant reads with each member's own access and that grants nothing. Reference types are `<app>.<type>`, such as `notebooks.note`, `spaces.space`, `grids.base`, or `mail.mailbox`; see [How the Assistant works](how-it-works.md).
 
 ```bash
 cld assistant projects list
@@ -347,13 +355,12 @@ Skills and Projects require authentication, including direct API requests.
 Public grants are rejected; share with users, groups, service accounts, or all
 authenticated identities instead. Project sharing does not share private chats.
 
-Project names and short IDs are accepted by management commands. Access grants use `read`, `write`, or `admin`; the Project owner is always an administrator.
+Project names and short IDs are accepted by management commands. Access grants use `read`, `write`, or `admin`. The creator starts as `admin`, and a Project always keeps at least one `admin`.
 
 Run `cld assistant <group> help` or `cld assistant <group> <command> --help` for the complete accepted flags.
 
 Resource deletion requires Manage access and removes publications, grants and
-shared data; remote database cleanup is queued. It does not erase browser-local
-data. Running resources without Manage access requires per-call capability
+shared and personal server data; remote database cleanup is queued. Running resources without Manage access requires per-call capability
 consent, including reads; personal remembered approvals do not apply.
 
 
@@ -381,16 +388,17 @@ Direct JSON file read/write is no longer accepted; use the binary commands.
 
 ### PDF generation and Finance in Code Mode
 
-Code run through the CLI uses the same Studio APIs: `pdf.render`, `pdf.attach`
-and `pdf.facturX` return Blobs through the configured Gotenberg service.
-`files.save` captures the result for an explicit export step. PDF calls use
+Code run through the CLI uses the same Studio APIs: `cloud.pdf.render`, `cloud.pdf.attach`
+and `cloud.pdf.render({html,facturX:{xml,profile}})` return Blobs through the configured Gotenberg service.
+`cloud.download(name,data)` captures the result for an explicit export step. PDF calls use
 binary multipart, preserve cancellation across the browser subprocess, and do
 not need `--approve` for the internal conversion. App Use access or an accessible
 unrestricted chat is required; source editing and resource maintenance retain
 their existing Manage requirement.
 
-`camt.parse` and `einvoice.validate/calculate/serialize/parseXml/parsePdf` are
-available alongside `money`, `datev`, and `sepa`. No WASM/XSD checker is included.
+`cloud.finance.camt.parse` and `cloud.finance.einvoice` methods are awaited,
+alongside `cloud.finance.datev` and `cloud.finance.sepa`. `cloud.money` handles
+exact arithmetic synchronously. No WASM/XSD checker is included.
 CAMT supports camt.052.001.08; invoice generation supports EUR ZUGFeRD CII EN16931.
 PDF invoice reading extracts embedded XML, not OCR. See the Code Mode Finance
 and PDF references for full options and examples. Generating SEPA or invoice
@@ -465,7 +473,7 @@ cld assistant code change-grant ID ACCESS_ID --input '{"permission":null}'
 ```
 
 Public execution supports local computation, selected files, downloads and
-browser-local storage. It never grants app database, server files/KV, secrets,
+personal JSON storage. It never grants app database, server files/KV, secrets,
 server HTTP/PDF or protected Cloud actions. Signed-in visitors need a separate
 explicit app grant for these features. Warn before sharing an app that requires
 them. Published code and embedded data become public, never its draft or history.

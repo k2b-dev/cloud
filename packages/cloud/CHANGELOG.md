@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.26.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.25.0...npm-cloud-v0.26.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai:** fold finished work into one summary line ([#692](https://github.com/k2b-dev/cloud/issues/692))
+
+### Features
+
+* **access:** show who a group grant actually reaches in the access editor ([#697](https://github.com/k2b-dev/cloud/issues/697)) ([4d0e8b1](https://github.com/k2b-dev/cloud/commit/4d0e8b1a84e67ba5f103881edea9d6bf35682ff3)), closes [#688](https://github.com/k2b-dev/cloud/issues/688)
+* **ai:** fold finished work into one summary line ([#692](https://github.com/k2b-dev/cloud/issues/692)) ([b4cd708](https://github.com/k2b-dev/cloud/commit/b4cd708d85581db60c51ebd7a863ea77c32cefca))
+* **ai:** retry transient model provider errors ([#687](https://github.com/k2b-dev/cloud/issues/687)) ([5228701](https://github.com/k2b-dev/cloud/commit/5228701e5affb38fe22e6a166dc973ba244c3a48))
+
+
+### Bug Fixes
+
+* **ai:** show capabilities and approvals in the reader's language ([#682](https://github.com/k2b-dev/cloud/issues/682)) ([2c70089](https://github.com/k2b-dev/cloud/commit/2c700894d34f4b0ef5608931433f41a749dc9a10))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.15.0 to 0.16.0
+
 ## [0.25.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.24.0...npm-cloud-v0.25.0) (2026-10-06)
 
 

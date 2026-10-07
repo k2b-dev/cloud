@@ -13,6 +13,7 @@ import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { drainQueuedMessages } from "./message-queue";
+import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
 import { isAiVisionModelConfigured } from "./settings";
@@ -43,7 +44,6 @@ export { isAiSettingsError, validateAiTurnRequest } from "./validate";
 const log = logger("ai:runtime");
 
 const AI_WORKER_ID = `worker-${crypto.randomUUID()}`;
-const AI_TURN_LEASE_MS = 45_000;
 const AI_TURN_HEARTBEAT_MS = 3_000;
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;

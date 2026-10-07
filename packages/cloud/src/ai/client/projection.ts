@@ -9,8 +9,17 @@ export type AiActiveTurn = {
   status: "running" | "waiting_for_action";
   blocks: AiTurnBlock[];
   modelProfileId: string | null;
-  /** A model call failed transiently and waits for its retry. Live only: the next turn event or a snapshot ends it. */
+  /**
+   * A model call failed transiently and waits for its retry. Live only: the next turn event ends it, and so does a
+   * snapshot that has moved past the retry.
+   */
   providerRetry?: boolean;
+  /** Server start of the turn, known from a state snapshot. */
+  createdAt?: string;
+  /** Time already spent waiting for answered user actions, from the last state snapshot. */
+  actionWaitMs?: number;
+  /** Start of the user action the turn waited for at the last state snapshot. */
+  waitingSince?: string | null;
 };
 
 export type AiChatProjection = {
@@ -92,7 +101,9 @@ export const mergeActiveTurn = (previous: AiActiveTurn | null, incoming: AiActiv
   const pendingSteers = previous.blocks.filter((block) => block.kind === "steer_message" && block.status !== "consumed");
   const known = new Set(incoming.blocks.map((block) => block.id));
   const blocks = [...incoming.blocks, ...pendingSteers.filter((block) => !known.has(block.id))];
-  return { ...incoming, blocks, status: deriveStatus(blocks) };
+  // A snapshot never carries a provider retry. One at the retry's own position has seen nothing after it, so the wait goes on.
+  const retry = previous.providerRetry && incoming.seq === previous.seq ? { providerRetry: true } : {};
+  return { ...turnTiming(previous), ...incoming, ...retry, blocks, status: deriveStatus(blocks) };
 };
 
 export const reconcileActiveTurnActions = (
@@ -114,8 +125,21 @@ export const activeTurnFromSnapshot = (snapshot: AiTurnSnapshot | null): AiActiv
     status: snapshot.status === "waiting_for_action" ? "waiting_for_action" : "running",
     blocks: normalizeCustomApprovalBlocks(snapshot.blocks),
     modelProfileId: snapshot.modelProfileId,
+    createdAt: snapshot.createdAt,
+    ...(snapshot.actionWaitMs !== undefined ? { actionWaitMs: snapshot.actionWaitMs } : {}),
+    ...(snapshot.waitingSince !== undefined ? { waitingSince: snapshot.waitingSince } : {}),
   };
 };
+
+/** Snapshot timing survives later attempts of the same turn, which carry no timing of their own. */
+const turnTiming = (turn: AiActiveTurn | null | undefined): Pick<AiActiveTurn, "createdAt" | "actionWaitMs" | "waitingSince"> =>
+  turn
+    ? {
+        ...(turn.createdAt !== undefined ? { createdAt: turn.createdAt } : {}),
+        ...(turn.actionWaitMs !== undefined ? { actionWaitMs: turn.actionWaitMs } : {}),
+        ...(turn.waitingSince !== undefined ? { waitingSince: turn.waitingSince } : {}),
+      }
+    : {};
 
 /**
  * Fold one stream event into the projection. Pure and total: the client and any
@@ -168,6 +192,7 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
         status: deriveStatus(blocks),
         blocks,
         modelProfileId: event.modelProfileId,
+        ...turnTiming(active?.turnId === event.turnId ? active : null),
       },
     };
   }

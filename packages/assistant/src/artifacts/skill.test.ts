@@ -6,8 +6,8 @@ test("money reference computes tax and preserves the allocated total", async () 
   const document = await Bun.file(new URL("../../skills/code-mode/references/money.md", import.meta.url)).text();
   const source = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
-  const start = new Function("money", source!.replace("export default", "return"));
-  expect(start(money)()).toEqual({ net: "19.99", tax: "3.80", gross: "23.79", parts: ["7.93", "7.93", "7.93"] });
+  const start = new Function("cloud", source!.replace("export default", "return"));
+  expect(start({ money })()).toEqual({ net: "19.99", tax: "3.80", gross: "23.79", parts: ["7.93", "7.93", "7.93"] });
 });
 
 test("bundled code mode skill matches its canonical Markdown files", async () => {
@@ -102,9 +102,10 @@ test("invoice reference generates parseable XML with matching calculated totals"
   const source = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(source).toBeDefined();
   const outputs: Blob[] = [];
-  const run = new Function("einvoice", "files", `return (async () => {${source}})()`);
-  await run(einvoice, {
-    save: async (blob: Blob) => {
+  const run = new Function("cloud", `return (async () => {${source}})()`);
+  await run({
+    finance: { einvoice },
+    download: async (_name: string, blob: Blob) => {
       outputs.push(blob);
     },
   });
@@ -148,4 +149,27 @@ test("invoice reference declares the fields, kinds and payment codes stdlib acce
     const payment = typeCode === "30" || typeCode === "58" ? { ...invoice.payment, typeCode } : { typeCode };
     expect(einvoice.validate({ ...invoice, payment }).ok, typeCode).toBe(true);
   }
+});
+
+test("database setup examples use the Manage tool and expose write rules without managed columns", async () => {
+  const { CODE_SOURCE_TOOLS } = await import("@k2b/cloud/ai");
+  for (const folder of ["importer", "invoice-matcher"]) {
+    const input = await Bun.file(new URL(`../../examples/studio-actions/${folder}/setup.json`, import.meta.url)).json();
+    expect(CODE_SOURCE_TOOLS.code_database.input.safeParse({ ...input, id: "AbC234" }).success).toBe(true);
+  }
+  for (const write of ["everyone", "own", "managers"]) {
+    expect(
+      CODE_SOURCE_TOOLS.code_database.input.safeParse({ id: "AbC234", operation: "tables.update", table: "todos", changes: { write } })
+        .success,
+    ).toBe(true);
+  }
+  expect(
+    CODE_SOURCE_TOOLS.code_database.input.safeParse({
+      id: "AbC234",
+      operation: "tables.create",
+      name: "todos",
+      columns: [{ name: "created_by", type: "text" }],
+    }).success,
+  ).toBe(false);
+  expect(CODE_SOURCE_TOOLS.code_storage_list.input.safeParse({ id: "AbC234", scope: "user", area: "files" }).success).toBe(false);
 });

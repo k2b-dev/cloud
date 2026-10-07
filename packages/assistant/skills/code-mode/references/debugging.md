@@ -39,7 +39,7 @@ Run and Interact already include a compact snapshot. Inspect only when you need
 more detail. Nodes are paginated (20 by default); follow `nextNodeOffset`.
 Use `nodeId` to page through rows or options. Counts describe the full
 collection. Logs include the latest 20 entries; long text and output previews
-are truncated. Use `files.save` and `code_export` for complete deliverables,
+are truncated. Use `cloud.download` and `code_export` for complete deliverables,
 then inspect/present them with the normal chat file tools.
 
 ## Isolation and interruptions
@@ -57,6 +57,13 @@ rerun. Inspect saved data before deliberately starting a replacement run.
 The host retains temporary runs while the conversation is active and for two
 idle minutes after it finishes. Saved source and exported files remain durable.
 The server admits eight hosts; a full host pool returns an availability error.
+A server-run call that does not complete (rejected arguments, a timeout, an
+unavailable run, a lost host) is a tool error with its reason and next step.
+A `code_interact` step that fails (an unknown control, a throwing callback) is
+a tool error too; in a batch it names the failed step, and earlier steps ran, so
+inspect the run before repeating any of them. A `code_run` or `code_action`
+whose code fails completes the call: its snapshot has `status: "error"` and
+`error`. A failed `code_open` returns `{failed: true, error}` as its result.
 
 The deadlines protect different boundaries:
 
@@ -69,9 +76,8 @@ The deadlines protect different boundaries:
 - A tool call has a 45-second outer budget, including compilation and file
   transfer. Capability approval waits pause this budget. Hanging input transfers
   are therefore still bounded and stopped; inspect the input/network error.
-- `work.run` has no total-duration limit while the worker heartbeat responds;
-  15 seconds without a heartbeat terminates it. Use checkpoints for CPU loops.
-  `code_inspect` waits at most 30 seconds per call and returns current progress.
+- The script context’s `progress` renews the responsive-work watchdog. Check
+  its `signal`, yield between batches, and use scheduled actions for durable work.
 
 Runtime stack positions refer to the compiled bundle, not original source
 lines. Use the message and source to locate the issue; compilation diagnostics

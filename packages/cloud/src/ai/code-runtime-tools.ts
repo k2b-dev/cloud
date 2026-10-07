@@ -6,6 +6,8 @@ import type { RequestActor } from "../server";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
+import { TIMEZONE_COOKIE } from "../shared/time";
+import { CodeToolFailure } from "./browser-code-contracts";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER, codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
@@ -25,6 +27,7 @@ type Context = ToolContext & {
   conversationId?: string;
   turnId?: string;
   locale?: string;
+  timeZone?: string;
   reportProgress?: (message: string) => Promise<void>;
 };
 
@@ -97,6 +100,7 @@ export const runManagedCodeTool =
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
       headers.set(CODE_CAPABILITY_TOKEN_HEADER, callback.token);
       if (context.locale) headers.set(LOCALE_HEADER, context.locale);
+      if (context.timeZone) headers.set("cookie", `${TIMEZONE_COOKIE}=${encodeURIComponent(context.timeZone)}`);
       const response = await fetch(new URL(`/_internal/assistant/tools/${name}`, app.baseUrl), {
         method: "POST",
         headers,
@@ -160,7 +164,12 @@ export async function waitForManagedCodeCall(
       seen.add(approval.id);
       if (approval.decision === null) await request({ id: approval.id, approved });
     }
-    if (state.status === "done") return z.json().parse(state.result);
+    if (state.status === "done") {
+      // Nessi records a thrown error as a failed tool result the model can act on.
+      const failure = CodeToolFailure.safeParse(state.result);
+      if (failure.success) throw new Error([failure.data.error, failure.data.guidance].filter(Boolean).join(" "));
+      return z.json().parse(state.result);
+    }
     if (state.status === "lost")
       throw new Error("The isolated code host was lost. The call was not replayed; inspect saved data before starting a new run.");
     await new Promise<void>((resolve, reject) => {

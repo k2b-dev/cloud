@@ -27,6 +27,7 @@ const WRITE_TOOLS = new Set([
   "code_publish",
   "code_restore",
   "code_database_export",
+  "code_database",
   ...Object.entries(CODE_SOURCE_TOOLS)
     .filter(([, definition]) => "review" in definition && definition.review)
     .map(([name]) => name),
@@ -62,12 +63,17 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
       code_database_clear: "clear",
       code_database_reset: "reset",
     };
-    const databaseOperation = databaseOperations[name];
+    const databaseOperation =
+      name === "code_database" ? z.object({ operation: z.string() }).parse(input).operation : databaseOperations[name];
     let authorizeDatabase: (() => Promise<void>) | undefined;
     if (context.turnId && databaseOperation) {
       const config = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
       if (config?.kind !== "compact" && config?.background) {
-        const { id } = z.object({ id: z.string() }).parse(input);
+        const {
+          id,
+          table,
+          name: tableName,
+        } = z.object({ id: z.string(), table: z.string().optional(), name: z.string().optional() }).parse(input);
         const conversationId = context.conversationId,
           turnId = context.turnId;
         authorizeDatabase = async () => {
@@ -76,7 +82,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
           await aiChatTasks.authorizeRuntime({
             mandate: config.mandate,
             kind: "database",
-            input: { resourceId: id, operation: databaseOperation },
+            input: { resourceId: id, operation: databaseOperation, table: table ?? tableName },
           });
         };
       }
@@ -163,6 +169,7 @@ export const createCodeSourceTools = () => [
   createCodeSourceTool("code_file_stat"),
   createCodeSourceTool("code_file_copy"),
   createCodeSourceTool("code_database_export"),
+  createCodeSourceTool("code_database"),
   createCodeSourceTool("code_manage_read"),
   createCodeSourceTool("code_delete"),
   createCodeSourceTool("code_database_read"),

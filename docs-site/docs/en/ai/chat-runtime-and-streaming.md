@@ -300,6 +300,28 @@ longer available. The transport reports the status as an `AiStreamError` code;
 the controller chooses the text. Reopening or refreshing the chat, or acting in
 it, subscribes again. Other failures keep reconnecting with backoff.
 
+Each attempt numbers its events without holes and starts with
+`turn_started`, and a turn ends with `turn_finished` before the next one
+starts. The worker saves the turn's live state within one second of every
+event. The stream checks each event against this order. When an event is
+missing, it sends a fresh `state` as soon as the saved state holds that event
+and continues after it, so a reader never applies updates over a hole. An event
+can go missing because the snapshot a subscription starts from lags the live
+events, because its publish failed, or because it is too large for the live
+topic. Events over 257 KiB, such as a tool block with a large web page, travel
+only as their position, and the stream delivers them in full through the saved
+state. Such a `state` carries the conversation as it is now, with its current
+draft revision and run status; the stream ends once the conversation is
+archived or deleted. A turn's end always reaches readers, also when a stop or
+the sweep numbers it from a saved state that lags the live events, and also
+when the turn ended while the stream waited for its saved state. Then the
+`state` already shows the turn as finished, its `turn_finished` follows, and
+replayed events of that turn are dropped. If the saved state does not catch up
+within five seconds, the stream continues with what it has and logs the
+warning `AI conversation stream continues without an event the saved state
+does not hold` under `ai:stream`; readers then miss part of the turn until
+it ends.
+
 The server closes a stream once its reader has left about 4 MiB unread. The
 event that crosses that limit is still queued, and a `state` snapshot or a
 `turn_finished` event with its stored messages can be larger than one stream
@@ -317,6 +339,9 @@ re-enqueues its continuation; a conflicting response for an already resolved
 call is rejected. On reconnect, the state snapshot reconciles durable action
 responses before rendering, so resolved approval controls do not reappear and
 plain browser tools are not executed again merely because the page reloaded.
+A call the user approved keeps `approved: true` on its tool block, and its
+stored result records the decision, as a rejection does, so history can show
+the decision after a reload.
 
 Do not maintain a second client-side chat state machine.
 
@@ -453,6 +478,24 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
+### Scheduled chat tasks
+
+A scheduled task belongs to one chat and runs as that chat's owner. Creating
+it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
+`grants` list names every capability the task may call. In a background run,
+every app capability needs a matching grant, Queries included, such as the
+reader Query behind a Project reference. A task without grants can use only
+built-in tools such as chat files. Fixed input values must
+match exactly, and the owner's current access still applies to each call.
+
+A background run cannot ask for approval. Remembered approvals from the chat
+do not apply, and an operation that needs an approval or a browser fails the
+run, which moves the task to `needs_attention`. Action grants are accepted only
+for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
+Actions that ask for every call cannot be scheduled. Before each run, Core
+checks that the owner is active, the chat is not archived, and the mandate is
+confirmed and unchanged.
+
 ### Scheduled Code Mode
 
 Scheduled turns can run Code Mode without a user tab. Core binds each call and
@@ -469,7 +512,9 @@ capability query/action entries, `{kind:"http",fixedInput:{origin,url,method}}`
 and `{kind:"database",fixedInput:{resourceId,operation,table}}`. All fixed fields
 are optional; omitted fields remain unrestricted. HTTP origins match exactly,
 not by suffix; URL restrictions match the full URL. Database operations match
-exactly, so an operation-specific grant also needs a `connect` grant. Resource
+exactly. Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
+Runtime `cloud.db` calls need no `connect` grant; `code_database`
+`tables.create` provisions the database under its `tables.create` grant. Resource
 permissions and the HTTP service's public-HTTPS/secret-binding checks still apply.
 HTTP authority is rechecked against the stored request immediately before sending.
 The same access review and task-detail presentation show all three grant types.
@@ -500,9 +545,11 @@ raw request object, and secret references appear only by name.
 Code Mode source and runtime tools do not require confirmation. Source Actions
 retain permission checks and idempotency. Browser execution claims resolve a
 public short turn ID to the authorized active turn's UUID before persistence.
-A duplicate claim cannot repeat an interaction. Host failures return
-`kind: "host"` with `retryable: false`; agents should report them rather than
-rewriting otherwise valid application source or retrying unchanged calls.
+A duplicate claim cannot repeat an interaction. A call that does not complete
+returns `CodeToolFailure` (`{failed: true, error, guidance?}`), and the
+server-run code tools report it to the agent as a tool error. Host failures
+carry guidance to report them rather than rewrite otherwise valid application
+source or repeat unchanged calls.
 
 The execution host belongs to one Assistant process. Run this alpha with one
 Assistant replica: temporary JavaScript state is not transferred between replicas
@@ -524,11 +571,27 @@ a path from the original filename.
 Chat timing uses the durable user turn's wall-clock interval. Each model request
 records its generation interval before tool execution; these measurements survive
 client actions and executor resumption. Tool execution and approval/browser waits
-use their durable audit timestamps. Overlapping phases are counted once. An older
-or incomplete trace has no aggregate timing or token-rate estimate; the chat can
-still display elapsed time from persisted messages. Live `message_saved` events
-carry usage after each model response, before its tools finish, without rendering
-a second copy of the active response.
+use their durable audit timestamps: an approval or an answer waits until the user
+gives it, a secret prompt included, and a tool the browser runs by itself waits
+only until it starts. Overlapping phases are counted once. An older or
+incomplete trace has no aggregate timing or token-rate estimate; the chat can
+still display elapsed time from persisted messages. The chat shows a turn's work
+time: wall time minus time spent waiting for approvals and other user actions.
+While a turn runs, its state snapshot carries `actionWaitMs`, the time already
+spent on answered waits, and `waitingSince`, the start of the wait that is still
+open, by the same rules, so a client that reconnects continues the same clock
+and the finished turn shows the same value. Older servers omit both fields.
+
+A turn that is finished without a loop end of its own, such as a stop while an
+approval waits or a turn the sweep finalizes, records `aborted` after a stop,
+or `error` when it failed or its wait expired, as `loopDoneReason` on its last
+assistant message. A failure also replaces the `aborted` that a loop cut off by
+its run time limit records, so the limit never looks like a user stop. History
+then shows the turn as stopped or interrupted, and a call that never ran as not
+run. A call the user approved that never returned keeps its decision as
+`toolOutcomes` on the message that holds the call, so history still shows its
+receipt. Live `message_saved` events carry usage after each model response,
+before its tools finish, without rendering a second copy of the active response.
 
 ### Run time budget
 
@@ -540,9 +603,49 @@ lease recovery. Resuming after a human interaction uses that same configured
 budget for its new running phase. Individual provider and tool timeouts and
 worker leases remain independent, even with an unlimited turn budget.
 
-An expired execution deadline ends the turn as failed with a time-limit message
-and an instruction to continue with a new message. It is distinct from a user's
+The last tenth of the run time is kept for the answer: a model call that starts
+in it gets no tools and is asked to answer with what the turn has done, to say
+what is still open, and to tell the user that a new message continues the task.
+With the default of 30 minutes, tool use ends after 27 minutes. The turn then
+completes normally with that answer.
+
+An expired execution deadline still ends the turn as failed with a time-limit
+message and an instruction to continue with a new message, for example when a
+single model or tool call outlasts the reserve. It is distinct from a user's
 Stop action. Continuing does not automatically replay uncertain external calls.
+
+### Loops within a turn
+
+A chat turn, including one that runs scheduled or in the background, watches
+for two patterns that rarely lead anywhere:
+
+- the same tool called with the same input fails twice;
+- six calls in a row to `search_tools`, `list_apps`, or `load_tools` without a
+  working step that completed.
+
+The first time a pattern appears, the next model call gets a short hint to
+change its approach or tell the user what blocks it. When either pattern
+appears again after its hint, also with another tool or input, the next model
+call gets no tools and is asked to answer with what the turn has, say what
+blocked it, and what the user can do. The turn then completes with that
+answer. A rejected approval is the user's decision and does not count as a
+failure. After the search hint, loading a tool that a search found is still
+allowed; another search, or a load that adds no tool, continues the pattern.
+
+The counts belong to the turn since its start or its latest steering message.
+When a turn resumes after an approval or on another worker, its finished calls
+count again, including rounds that compaction archived, but a hint given
+before is not remembered, so the pattern gets one more hint. A steering
+message starts these checks over: the turn continues with tools, also after a
+loop's final answer, unless it is in the last tenth of its run time or has
+used up the model profile's `maxToolRounds`.
+
+The model profile's `maxToolRounds` ends tool use the same way; see
+[Models and providers](/en/docs/ai/models-and-providers). If the model still
+calls a tool in a model call without tools, the turn ends as failed instead of
+continuing without them. Each hint logs the warning `AI turn got a loop hint`
+and each switch to the final answer logs `AI turn answers without further
+tools`, both under `ai:executor` with the conversation and turn IDs.
 
 ### Transient provider failures
 
@@ -562,9 +665,13 @@ separate provider call with its own admission, quota check and
 [usage record](/en/docs/ai/usage-and-feedback#read-the-report).
 
 While a call waits, the stream sends `provider_retry`. The controller marks the
-active turn with `providerRetry: true` until its next event; a state snapshot
-never carries it. Meanwhile the chat timeline of `@k2b/cloud/ai/ui` ends the
-live turn with **Reconnecting**, and `cld assistant` prints `model: reconnecting`
+active turn with `providerRetry: true` until its next event. A state snapshot
+never carries it; the controller keeps the mark through a snapshot at the
+retry's own position, so subscribing again during a long wait does not end it.
+Meanwhile the work line of the live turn in the chat timeline
+of `@k2b/cloud/ai/ui` reads **Reconnecting** and its clock stands; a turn
+without a work line yet shows a **Reconnecting** row at its end. `cld assistant`
+prints `model: reconnecting`
 to standard error or writes a `provider_retry` JSONL line. An `assistant` CLI
 plugin from an earlier release stops following the turn at this event; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).

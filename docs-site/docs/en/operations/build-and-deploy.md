@@ -274,3 +274,12 @@ normal signing-key rotation, KEK rewrap, and emergency revocation.
 
 See [Runtime configuration](/en/docs/operations/runtime-configuration) before
 setting container values.
+
+### Assistant runtime assets
+
+Assistant script and action workers use the `cloud` runtime contract. Deploy its
+eager worker, content-hashed CSV/sheet/finance/PDF-reader chunks, and chunk manifest
+from the same image. Existing app source needs the migration described in
+[Studio library migration](/en/docs/reference/deprecations-and-migrations#studio-script-and-action-library).
+Startup adds personal server-side KV storage through Assistant migrations. App
+database tables gain nullable audit user columns on first access, without backfill.

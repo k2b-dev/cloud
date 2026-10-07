@@ -10,11 +10,18 @@ import { artifactDatabase, DatabaseError } from "./database";
 import { studioFiles } from "./file-transfer";
 import { artifactMessages } from "./messages";
 import { reviewMessages } from "./review-messages";
+import { CloudError } from "./runtime/errors";
 import type { ArtifactIdentity } from "./service";
 import { ArtifactError, artifacts, user } from "./service";
 import { sourceDiagnostics, sourceManifest } from "./source";
 
-export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean; capabilityToken?: string };
+export type CodeToolContext = ArtifactIdentity & {
+  locale: string;
+  timeZone: string;
+  signal: AbortSignal;
+  review?: boolean;
+  capabilityToken?: string;
+};
 /** Review copy in the reader's language; `app` names the App the way every review refers to it. */
 const review = (context: CodeToolContext, app?: { title: string; id: string }) => {
   const t = reviewMessages.resolve([context.locale]).t;
@@ -31,6 +38,31 @@ async function result<T>(
   try {
     return ok(await operation());
   } catch (error) {
+    if (error instanceof CloudError) {
+      const status =
+        error.code === "denied"
+          ? 403
+          : error.code === "not_found"
+            ? 404
+            : error.code === "conflict"
+              ? 409
+              : error.code === "limit"
+                ? 413
+                : 400;
+      const code =
+        error.code === "invalid"
+          ? "INVALID_INPUT"
+          : error.code === "denied"
+            ? "ACCESS_DENIED"
+            : error.code === "not_found"
+              ? "NOT_FOUND"
+              : error.code === "conflict"
+                ? "CONFLICT"
+                : error.code === "limit"
+                  ? "LIMIT"
+                  : error.code;
+      return { ok: false as const, error: { code, status, message: error.message } };
+    }
     if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
       return fail({ code: error.code, status: error.code === "CONFLICT" ? (409 as const) : (400 as const), message: error.message });
     if (error instanceof DatabaseError) {
@@ -71,6 +103,11 @@ async function result<T>(
 }
 
 export const artifactCodeHandlers = {
+  code_database: ({ id, ...request }, context) =>
+    result(context, async () => {
+      if (request.operation === "tables.create") await artifactDatabase.connect(id, context, context.signal, true);
+      return { data: await artifactDatabase.call(id, request, context, context.signal, "maintenance") };
+    }),
   code_files: (input, context) => result(context, async () => ({ data: await studioFiles.list(input, context, input.after, input.limit) })),
   code_file_stat: ({ file }, context) =>
     result(context, async () => {
@@ -185,10 +222,10 @@ export const artifactCodeHandlers = {
     }),
   code_storage_list: (input, context) =>
     result(context, async () => {
-      const state = await artifacts.storageState(input.id, context);
+      const state = await artifacts.storageState(input.id, context, input.scope);
       const page = await artifacts.storage(
         input.id,
-        { operation: "list", area: input.area, after: input.after, limit: input.limit },
+        { scope: input.scope, operation: "list", area: input.area, after: input.after, limit: input.limit },
         context,
         true,
         undefined,
@@ -199,7 +236,7 @@ export const artifactCodeHandlers = {
     }),
   code_storage_delete: (input, context) =>
     result<unknown>(context, async () => {
-      const state = await artifacts.storageState(input.id, context);
+      const state = await artifacts.storageState(input.id, context, input.scope);
       if (state.storageRevision !== input.expectedStorageRevision) throw new ArtifactError("CONFLICT");
       if (context.review) {
         const { t, app, size } = review(context, { title: state.title, id: input.id });
@@ -217,10 +254,17 @@ export const artifactCodeHandlers = {
       }
       const data =
         input.key && input.area !== "all"
-          ? await artifacts.storage(input.id, { operation: "delete", area: input.area, key: input.key }, context, true, undefined, {
-              storageRevision: input.expectedStorageRevision,
-            })
-          : await artifacts.clearStorage(input.id, input.area, context, input.expectedStorageRevision);
+          ? await artifacts.storage(
+              input.id,
+              { scope: input.scope, operation: "delete", area: input.area, key: input.key },
+              context,
+              true,
+              undefined,
+              {
+                storageRevision: input.expectedStorageRevision,
+              },
+            )
+          : await artifacts.clearStorage(input.id, input.area, context, input.expectedStorageRevision, input.scope);
       return { data };
     }),
   code_access_read: ({ id }, context) =>
@@ -300,7 +344,7 @@ export const artifactCodeHandlers = {
     }),
   code_sql: ({ id, sql, params }, context) =>
     result(context, async () => {
-      const data = await artifactDatabase.call(id, { operation: "query", sql, params }, context, context.signal);
+      const data = await artifactDatabase.call(id, { operation: "query", sql, params }, context, context.signal, "inspect");
       if (new TextEncoder().encode(JSON.stringify({ data })).byteLength > CAPABILITY_MAX_RESULT_BYTES)
         throw new DatabaseError("DB_RESULT_TOO_LARGE");
       return { data };

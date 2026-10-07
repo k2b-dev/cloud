@@ -1,0 +1,19 @@
+{
+  "id": "APP_ID",
+  "operation": "tables.create",
+  "name": "records",
+  "write": "everyone",
+  "columns": [
+    {
+      "name": "external_key",
+      "type": "text",
+      "unique": true,
+      "not_null": true
+    },
+    {
+      "name": "payload",
+      "type": "text",
+      "not_null": true
+    }
+  ]
+}

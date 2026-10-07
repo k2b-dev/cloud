@@ -1,34 +1,32 @@
 import { files } from "@k2b/stdlib/browser";
 import { Button, ButtonLink, NoticeCard, Placeholder, prompts, Tabs, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
-import { z } from "zod";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
-import { stopLocalRuns } from "./local-runs";
 import { artifactMessages } from "./messages";
-import { ArtifactStorage } from "./runtime/storage";
 
-export function openDataDialog(id: string, userId: string, scope: "local" | "shared", title: string) {
-  return prompts.dialog<void>(() => <DataDialog id={id} userId={userId} scope={scope} />, { title, size: "medium" });
+export function openDataDialog(id: string, scope: "user" | "shared", title: string) {
+  return prompts.dialog<void>(() => <DataDialog id={id} scope={scope} />, { title, size: "medium" });
 }
-function DataDialog(props: { id: string; userId: string; scope: "local" | "shared" }) {
+function DataDialog(props: { id: string; scope: "user" | "shared" }) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t,
     a = () => advancedMessages.resolve([locale()]).t;
-  const [area, setArea] = createSignal<"files" | "kv">("files"),
+  const [area, setArea] = createSignal<"files" | "kv">(props.scope === "user" ? "kv" : "files"),
     [after, setAfter] = createSignal("");
   const [busy, setBusy] = createSignal(false),
     [error, setError] = createSignal("");
-  const storage = new ArtifactStorage(props.userId, props.id);
   const [entries, { refetch }] = createResource(
     () => ({ area: area(), after: after() }),
     async ({ area, after }) => {
-      if (props.scope === "local")
-        return z
-          .array(z.string())
-          .parse(await storage.call(area === "kv" ? "store.keys" : "opfs.list", [{ after, limit: 50 }]))
-          .map((key) => ({ key }));
-      const response = await artifactClient.storageManage(props.id, { area, after, limit: 50, operation: "list", mediaType: "" });
+      const response = await artifactClient.storageManage(props.id, {
+        scope: props.scope,
+        area,
+        after,
+        limit: 50,
+        operation: "list",
+        mediaType: "",
+      });
       return "items" in response ? (response.items ?? []) : [];
     },
   );
@@ -46,17 +44,13 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
     }
   }
   async function read(key: string) {
-    if (props.scope === "local") {
-      const value = await storage.call(area() === "kv" ? "store.get" : "opfs.read", [key]);
-      if (value === null) throw new Error(t().NOT_FOUND);
-      return value instanceof Blob ? value : new Blob([JSON.stringify(value, null, 2)], { type: "application/json" });
-    }
     if (area() === "files") {
       const file = await artifactClient.storageFile(props.id, key, { management: true });
       if (!file) throw new Error(t().NOT_FOUND);
       return file;
     }
     const result = await artifactClient.storageManage(props.id, {
+      scope: props.scope,
       area: area(),
       operation: "read",
       key,
@@ -69,20 +63,24 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
   }
   async function remove(key?: string) {
     if (
-      !(await prompts.confirm(!key && props.scope === "local" ? a().clearLocalConfirm : a().clearConfirm, {
+      !(await prompts.confirm(!key && props.scope === "user" ? a().clearPersonalConfirm : a().clearConfirm, {
         title: t().remove,
         variant: "danger",
       }))
     )
       return;
     await action(async () => {
-      if (props.scope === "local") {
-        await stopLocalRuns(props.userId, props.id);
-        if (key) await storage.call(area() === "kv" ? "store.delete" : "opfs.delete", [key]);
-        else await storage.clear();
-      } else if (key)
-        await artifactClient.storageManage(props.id, { area: area(), operation: "delete", key, mediaType: "", after: "", limit: 50 });
-      else await artifactClient.storageClear(props.id, area());
+      if (key)
+        await artifactClient.storageManage(props.id, {
+          scope: props.scope,
+          area: area(),
+          operation: "delete",
+          key,
+          mediaType: "",
+          after: "",
+          limit: 50,
+        });
+      else await artifactClient.storageClear(props.id, area(), props.scope);
       if (!key) setAfter("");
     });
   }
@@ -90,8 +88,8 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
     <div class="assistant-data-dialog">
       <NoticeCard
         tone="info"
-        title={props.scope === "local" ? a().local : a().shared}
-        detail={props.scope === "local" ? a().localHelp : a().sharedHelp}
+        title={props.scope === "user" ? a().personal : a().shared}
+        detail={props.scope === "user" ? a().personalHelp : a().sharedHelp}
       />
       <Tabs
         value={area}
@@ -101,10 +99,7 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
           setArea(value);
         }}
         ariaLabel={a().view}
-        options={[
-          { value: "files", label: t().files },
-          { value: "kv", label: a().kv },
-        ]}
+        options={[...(props.scope === "shared" ? [{ value: "files" as const, label: t().files }] : []), { value: "kv", label: a().kv }]}
       />
       <Show when={error()}>
         <NoticeCard tone="danger" title={error()} />
@@ -182,7 +177,7 @@ function DataDialog(props: { id: string; userId: string; scope: "local" | "share
       </Show>
       <div class="flex flex-wrap justify-between gap-2">
         <Button variant="danger" disabled={busy() || entries.loading} onClick={() => void remove()}>
-          {props.scope === "local" ? a().clearLocal : a().clear}
+          {props.scope === "user" ? a().clearPersonal : a().clear}
         </Button>
         <div class="flex gap-2">
           <Button disabled={!after() || busy()} onClick={() => setAfter("")}>

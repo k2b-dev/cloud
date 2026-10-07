@@ -1,5 +1,5 @@
 import { aiConversations, CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
-import { type AuthContext, getLocale, requireInvocation } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -39,6 +39,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
           accessSubject: c.get("accessSubject"),
           conversationId: conversation.id,
           locale: getLocale(c),
+          timeZone: getTimeZone(c),
           review: envelope.review,
           signal: c.req.raw.signal,
           capabilityToken: c.req.header(CODE_CAPABILITY_TOKEN_HEADER),
@@ -51,6 +52,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
 register("code_files", CODE_SOURCE_TOOLS.code_files.input, artifactCodeHandlers.code_files);
 register("code_file_stat", CODE_SOURCE_TOOLS.code_file_stat.input, artifactCodeHandlers.code_file_stat);
 register("code_file_copy", CODE_SOURCE_TOOLS.code_file_copy.input, artifactCodeHandlers.code_file_copy);
+register("code_database", CODE_SOURCE_TOOLS.code_database.input, artifactCodeHandlers.code_database);
 register("code_database_export", CODE_SOURCE_TOOLS.code_database_export.input, artifactCodeHandlers.code_database_export);
 register("code_manage_read", CODE_SOURCE_TOOLS.code_manage_read.input, artifactCodeHandlers.code_manage_read);
 register("code_delete", CODE_SOURCE_TOOLS.code_delete.input, artifactCodeHandlers.code_delete);

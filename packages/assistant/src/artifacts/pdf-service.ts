@@ -7,6 +7,7 @@ import {
   renderFacturXHtmlToPdfWithConfig,
   renderHtmlToPdfWithConfig,
 } from "@k2b/cloud/services";
+import { PDF_CHART_STYLE } from "./pdf-chart-style";
 import { checkPdfBytes, PdfRequest } from "./pdf-contracts";
 import { authorizeRuntimeScope } from "./runtime-scope";
 import type { ArtifactIdentity } from "./service";
@@ -29,7 +30,7 @@ export async function executePdf(input: unknown, config: GotenbergConfig, option
   if (request.operation === "attach") return attachPdfFilesWithConfig(request, bounded, options);
   // Code Mode documents render in standards mode, with or without their own doctype. The platform
   // renderer applies its offline HTML mode to the document, header and footer.
-  const html = `<!doctype html>${request.html}`;
+  const html = `<!doctype html><style>${PDF_CHART_STYLE}</style>${request.html}`;
   return request.operation === "facturX"
     ? renderFacturXHtmlToPdfWithConfig({ ...request, html, conformanceLevel: request.profile }, bounded, options)
     : renderHtmlToPdfWithConfig({ ...request, html }, bounded, options);

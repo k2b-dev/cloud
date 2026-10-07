@@ -4,16 +4,18 @@ export function secret(name: string, options: { prefix?: string } = {}): SecretR
   const reference = SecretReference.parse({ secret: name, prefix: options.prefix ?? "" });
   Object.defineProperty(reference, Symbol.toPrimitive, {
     value: () => {
-      throw new Error('Use secret(name, { prefix: "Bearer " }) directly as a header value; do not concatenate secrets.');
+      throw new Error('Use cloud.http.secret(name, { prefix: "Bearer " }) directly as a header value; do not concatenate secrets.');
     },
   });
   return Object.freeze(reference);
 }
-export function createHttp(rpc: (method: string, args: unknown[]) => Promise<unknown>) {
+export function createHttp(rpc: (method: string, args: unknown[], signal?: AbortSignal) => Promise<unknown>) {
   return {
+    secret,
     async fetch(
       url: string,
       options: {
+        signal?: AbortSignal;
         method?: string;
         headers?: Record<string, string | SecretReference>;
         body?: string | Blob | ArrayBuffer | Uint8Array;
@@ -29,8 +31,9 @@ export function createHttp(rpc: (method: string, args: unknown[]) => Promise<unk
         for (let offset = 0; offset < bytes.length; offset += 8192) text += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
         body = btoa(text);
       }
-      const request = HttpRequest.parse({ url, ...options, body });
-      const result = HttpResult.parse(await rpc("http.fetch", [request]));
+      const { signal, ...init } = options;
+      const request = HttpRequest.parse({ url, ...init, body });
+      const result = HttpResult.parse(await rpc("http.fetch", [request], signal));
       const bytes = Uint8Array.from(atob(result.body), (c) => c.charCodeAt(0));
       return new Response([204, 205, 304].includes(result.status) || request.method === "HEAD" ? null : bytes, {
         status: result.status,

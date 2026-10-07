@@ -55,6 +55,8 @@ test("HTML render forwards page options, assets, tagging and offline policy", as
         }
         expect(await files[0]!.text()).toStartWith('<!doctype html><meta charset="utf-8">');
         expect(await files[0]!.text()).toContain("h1{color:red}");
+        expect(await files[0]!.text()).toContain(".cloud-chart");
+        expect(await files[0]!.text()).toContain("--stdlib-chart-c1:#3b82f6");
         return new Response("%PDF-ok", { headers: { "Content-Type": "application/pdf" } });
       },
     },

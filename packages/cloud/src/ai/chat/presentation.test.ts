@@ -5,22 +5,19 @@ import { type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 
 test("uses the shared message streaming state before the first model block", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
-  const blocksSource = readFileSync(resolve(import.meta.dir, "blocks.tsx"), "utf8");
+  const viewSource = readFileSync(resolve(import.meta.dir, "turn-view.tsx"), "utf8");
 
-  expect(presentationSource).toContain("id: `${turn.turnId}-pending`");
-  expect(presentationSource).toContain('kind: "message"');
-  expect(presentationSource).toContain('status: "streaming"');
+  expect(presentationSource).toContain("if (segments.length === 0 ||");
+  expect(presentationSource).toContain('status: turn.status === "running" && last ? "streaming" : "complete"');
   expect(presentationSource).not.toContain("Generating response");
-  expect(blocksSource).toContain("label={t().thinking}");
-  expect(blocksSource).toContain("label={t().showReasoning}");
+  expect(viewSource).toContain("t.stepThinking");
 });
 
-test("uses the full message width for every disclosure row, including persisted messages", () => {
+test("spans the message width for turns with work, live and in history", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
   const cloudStyles = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
 
-  expect(presentationSource).toContain('class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
-  expect(presentationSource).toContain('class: blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
+  expect(presentationSource.match(/class: isWideLayout\(layout\) \? "ai-chat-message-wide" : undefined/g)).toHaveLength(2);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{\s*width:\s*100%;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{[^}]*max-width:\s*none;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s+:where\([^}]+min-width:\s*0;/);
@@ -56,4 +53,29 @@ describe("active turn message segmentation", () => {
       blocks: [{ id: "tool-1" }, { id: "steer-applied-1" }, { id: "text-2" }],
     });
   });
+});
+
+test("a long step shows its duration in place of its target, in the reader's language", async () => {
+  const { liveStepLabel } = await import("./turn-view");
+  const { aiChatMessages } = await import("./messages");
+  const run: AiTurnBlock = {
+    id: "tool-run",
+    kind: "tool",
+    callId: "run",
+    name: "code_run",
+    args: { title: "dashboard.tsx" },
+    status: "running",
+  };
+  const read: AiTurnBlock = {
+    id: "tool-read",
+    kind: "tool",
+    callId: "read",
+    name: "read_file",
+    args: { path: "/q1.csv" },
+    status: "running",
+  };
+  expect(liveStepLabel(run, aiChatMessages("de"), 44_000)).toBe("Führt Code aus · dashboard.tsx");
+  expect(liveStepLabel(run, aiChatMessages("de"), 3 * 60_000)).toBe("Führt Code aus · 3 Min.");
+  expect(liveStepLabel(read, aiChatMessages("en"))).toBe("Reading q1.csv");
+  expect(liveStepLabel(read, aiChatMessages("en"), 60_000)).toBe("Reading a file · 1 min");
 });

@@ -10,6 +10,135 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Studio script and action library
+
+This breaking Assistant runtime change replaces top-level helpers with one
+frozen `cloud` global. Existing app source is not automatically migrated.
+Update scripts and actions before deploying the new runtime. Operators should
+ship the eager worker, content-hashed lazy chunks, and chunk manifest together.
+Assistant’s normal startup migration adds personal KV storage; existing database
+tables gain nullable audit columns on first access, without backfill.
+
+| Previous API | Replacement |
+| --- | --- |
+| ai.generateText / classify / classifyMany / extractData | cloud.ai.text / classify (multiple) / extract |
+| money | cloud.money; format/parse default to viewer locale |
+| datev / sepa / camt / einvoice | cloud.finance.*; await every method |
+| ids.ulid() | crypto.randomUUID() |
+| http.fetch / secret | cloud.http.fetch / cloud.http.secret; every request requires approval |
+| capabilities.run / streams | cloud.capabilities.run / streams |
+| database.connect().table(name) | flat cloud.db.list/get/insert/update/delete; schema uses code_database tools |
+| kv.shared | cloud.kv |
+| kv.local | removed; use server-side cloud.kv.user for personal JSON |
+| files.shared | cloud.files |
+| files.local / store / opfs | removed; no personal file store or browser-local runtime storage |
+| files.list/read for run inputs | script context files with path/size/type/file() |
+| files.open/openMultiple/openFolder/path | removed; transitional UI filePicker stays until HTML apps |
+| files.save(data,name) | cloud.download(name,data) |
+| sheet.fromCsv / openExcel / openOds | cloud.sheet.parseCsv / read (detected from bytes) |
+| sheet.toCsv | await cloud.sheet.toCsv before downloading |
+| pdf.open / facturX | cloud.pdf.read / render({facturX}) |
+| work.* | script context signal/progress |
+| ui.* | transitional; remains until HTML apps replace it |
+
+Lists return at most 1,000 rows and raise `limit` when paging is needed. The
+server sets created_by/updated_by and enforces each table’s everyone/own/managers
+write rule. Personal KV is isolated per app and viewer across devices; anonymous
+public-share visitors cannot use it or write database rows. Cloud calls fail with
+CloudError and one of the documented stable codes. Secret-bearing HTTP responses
+redact raw, prefixed, base64/base64url, JSON-escaped (including escaped slashes and ASCII Unicode escapes), and URL-encoded secret forms before reaching code.
+
+## Assistant turns end loops and long runs with an answer
+
+A chat turn, including scheduled and background ones, now stops using tools
+and answers in three cases where it used to go on until it failed:
+
+- In the last tenth of the run time limit (`ai.turn_timeout_minutes`, default
+  30), so with the default after 27 minutes. A turn that used to fail with
+  "Run time limit reached" now usually completes with what it has done and
+  what is still open.
+- When the same tool call fails twice with the same input, or after six tool
+  searches in a row without a completed step, the model first gets a hint;
+  when either pattern appears again, the turn answers without tools. A
+  steering message gives the turn its tools back.
+
+No setting changes. Operators who want turns to keep their full run time for
+tools raise `ai.turn_timeout_minutes`. See
+[Loops within a turn](/en/docs/ai/chat-runtime-and-streaming#loops-within-a-turn).
+
+## Code tool failures are tool errors, and App action inputs are objects
+
+Assistant's server-run code tools now report a call that does not complete as a
+tool error, and the chat shows that step as failed. The code host returns such a
+call as `CodeToolFailure` (`{failed: true, error, guidance?}`, exported from
+`@k2b/cloud/ai/browser`). The earlier `{error}` results and the `kind: "input"`,
+`kind: "host"`, and `retryable` fields are gone. A run whose code fails still
+returns its snapshot with `status: "error"`. `cld assistant code run` and
+`cld assistant code action` fail as before when a started call does not
+complete; the error they report is now the `CodeToolFailure` object.
+
+`code_action` takes its `input` as a JSON object and defaults to `{}`. JSON
+text, numbers, arrays, and `null` are rejected, and a value that does not match
+the action's schema returns `ACTION_INPUT_INVALID` naming each rejected field.
+Publication rejects an action whose `inputSchema` does not have
+`"type": "object"`; saved revisions keep compiling.
+
+Studio Apps published earlier can still list an action with a scalar or array
+`inputSchema`. That action can no longer be called: its author must change the
+schema to an object, read the value from that object in the handler, and
+publish again. To list the current publications whose action input is not an
+object schema, run:
+
+```sql
+SELECT artifact.short_id, artifact.published_title, action->>'name' AS action
+FROM assistant.artifacts artifact
+JOIN assistant.artifact_revisions revision
+  ON revision.artifact_id = artifact.id AND revision.revision = artifact.published_revision
+CROSS JOIN LATERAL jsonb_array_elements(revision.source->'files') AS file
+CROSS JOIN LATERAL jsonb_array_elements((file->>'content')::jsonb->'actions') AS action
+WHERE file->>'path' = 'app.actions.json'
+  AND action->'inputSchema'->>'type' IS DISTINCT FROM 'object';
+```
+
+An action without a `type` in its input schema stays callable with an object,
+but its App cannot be published again until the schema says `"type": "object"`.
+
+Update Core and Assistant together. While their versions differ, and when a
+turn resumes a call that an earlier release completed, a failed call can still
+reach the agent as a successful result, as in earlier releases.
+
+## Assistant turns fold finished work into one line
+
+The chat shows each Assistant turn in four places: one work line, the delivered
+results, the newest text, and receipts for actions and decisions. See
+[Chat interface](/en/docs/ai/chat-interface#four-places-per-turn).
+
+`AiChatActions.renderCodePresentation` now receives an accessor instead of a
+value. Cloud calls it once per `code_present` call, as soon as the call starts,
+so the host can reserve its frame and keep a running session when the turn
+ends. Replace `renderCodePresentation: (result) => <View result={result} />`
+with `renderCodePresentation: (result) => <View result={result()} />`, and
+treat `undefined` as "still running".
+
+The server records two facts it did not record before:
+
+- A turn that ends without a loop end of its own, such as a stop while an
+  approval waits or a turn the sweep finalizes, stores `aborted` after a stop,
+  or `error` when it failed or its wait expired, as the loop end of its last
+  assistant message. Turns that ended this way before the upgrade show as
+  finished.
+- The stored result of a call the user approved carries the decision, so the
+  approval stays visible as a receipt; a call that never returned keeps the
+  decision on the message that holds it. Approvals decided before the upgrade
+  show as ordinary steps, except Cloud actions, which always get a receipt.
+- The time a secret prompt in Studio waits for its answer now counts as
+  waiting instead of work, as approvals and survey answers do.
+
+The live turn snapshot carries `actionWaitMs` and `waitingSince`, so a client
+that reconnects shows the same work time. Both fields are optional: Core and
+Assistant can update in either order, and open Assistant tabs show the new view
+after a reload.
+
 ## Conversation streams announce provider retries
 
 The conversation stream now sends a `provider_retry` event while a model call

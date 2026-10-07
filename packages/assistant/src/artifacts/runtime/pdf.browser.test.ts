@@ -3,6 +3,7 @@ import { PDFDocument } from "pdf-lib";
 import { chromium } from "playwright";
 import { decodePdfRequest } from "../pdf-contracts";
 import { invoice } from "../test-invoice";
+import { ChunkName, chunkSource } from "./chunks";
 import { compileArtifact } from "./compile";
 import type {} from "./pdf-browser-harness";
 
@@ -18,23 +19,23 @@ test("opaque Studio worker offers pure JS finance, PDF transport and cancellatio
     files: [
       {
         path: "main.js",
-        content: `export default async () => {
+        content: `export default async (_input, {files,signal,progress}) => {
     const invoice = ${JSON.stringify(invoice)};
-    const model = einvoice.validate(invoice); if (!model.ok) throw new Error(JSON.stringify(model));
-    const xml = einvoice.serialize(model.data, {format:"zugferd-2.5-en16931"}); if (!xml.ok) throw new Error(JSON.stringify(xml));
-    const document = await pdf.facturX({html:"<h1>Invoice TEST-42</h1>",xml:xml.data.xml,profile:"EN 16931"});
-    const parsed = await einvoice.parsePdf(new Uint8Array(await document.arrayBuffer()));
+    const model = await cloud.finance.einvoice.validate(invoice); if (!model.ok) throw new Error(JSON.stringify(model));
+    const xml = await cloud.finance.einvoice.serialize(model.data, {format:"zugferd-2.5-en16931"}); if (!xml.ok) throw new Error(JSON.stringify(xml));
+    const document = await cloud.pdf.render({html:"<h1>Invoice TEST-42</h1>",facturX:{xml:xml.data.xml,profile:"EN 16931"}});
+    const parsed = await cloud.finance.einvoice.parsePdf(document);
     if (!parsed.ok) throw new Error(JSON.stringify(parsed));
-    const rendered = await pdf.render({html:"<style>h1{color:red}</style><h1>Invoice</h1>"});
-    const attached = await pdf.attach({document:rendered,attachments:[{name:"details.xml",data:new Blob([xml.data.xml],{type:"application/xml"}),relationship:"Data"}]});
+    const rendered = await cloud.pdf.render({html:"<style>h1{color:red}</style><h1>Invoice</h1>"});
+    const attached = await cloud.pdf.attach({document:rendered,attachments:[{name:"details.xml",data:new Blob([xml.data.xml],{type:"application/xml"}),relationship:"Data"}]});
     const abort = new AbortController();
-    const pending = pdf.render({html:"slow"},{signal:abort.signal});
+    const pending = cloud.pdf.render({html:"slow"},{signal:abort.signal});
     setTimeout(()=>abort.abort(),150);
-    let cancelled = false; try {await pending;} catch(error){cancelled=error.name === "AbortError";}
-    const next = await pdf.render({html:"after cancellation"});
-    return {number:parsed.data.invoice.number,valid:model.ok,xml:einvoice.parseXml(xml.data.xml).ok,
-      calculation:einvoice.calculate(invoice.lines).ok,invalidCamt:camt.parse("<bad/>").ok,
-      existing:[typeof money.sum,typeof datev.serialize,typeof sepa.serialize],pdf:document.type,
+    let cancelled = false; try {await pending;} catch(error){cancelled=error.name === "CloudError" && error.code === "cancelled";}
+    const next = await cloud.pdf.render({html:"after cancellation"});
+    return {number:parsed.data.invoice.number,valid:model.ok,xml:(await cloud.finance.einvoice.parseXml(xml.data.xml)).ok,
+      calculation:(await cloud.finance.einvoice.calculate(invoice.lines)).ok,invalidCamt:(await cloud.finance.camt.parse("<bad/>")).ok,
+      existing:[typeof cloud.money.sum,typeof cloud.finance.datev.serialize,typeof cloud.finance.sepa.serialize],pdf:document.type,
       bytes:attached.size,cancelled,after:next.size};
   }`,
       },
@@ -46,6 +47,8 @@ test("opaque Studio worker offers pure JS finance, PDF transport and cancellatio
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
+      const name = ChunkName.safeParse(new URL(request.url).pathname.split("/chunks/")[1]);
+      if (name.success) return new Response(await chunkSource(name.data), { headers: { "Content-Type": "text/javascript" } });
       if (new URL(request.url).pathname !== "/pdf")
         return new Response("<!doctype html><body></body>", { headers: { "Content-Type": "text/html" } });
       const input = decodePdfRequest(await request.formData());

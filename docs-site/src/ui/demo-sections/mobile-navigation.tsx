@@ -25,7 +25,15 @@ export function NavigationDemo() {
   const [count, setCount] = createSignal(3);
   const navigation = createNavigation({
     items: () => [
-      { id: "inbox", action: "inbox", label: "Inbox", icon: "ti ti-inbox", badge: count(), active: active() === "inbox" },
+      {
+        id: "inbox",
+        action: "inbox",
+        label: "Inbox",
+        icon: "ti ti-inbox",
+        badge: count(),
+        active: active() === "inbox",
+        inlineActions: [{ id: "inbox-details", action: "inbox-details", label: "Inbox details", icon: "ti ti-info-circle" }],
+      },
       {
         id: "projects",
         label: "Projects",

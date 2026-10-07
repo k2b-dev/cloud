@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.15.0...npm-ui-v0.16.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai:** fold finished work into one summary line ([#692](https://github.com/k2b-dev/cloud/issues/692))
+
+### Features
+
+* **ai:** fold finished work into one summary line ([#692](https://github.com/k2b-dev/cloud/issues/692)) ([b4cd708](https://github.com/k2b-dev/cloud/commit/b4cd708d85581db60c51ebd7a863ea77c32cefca))
+* **ui:** add a classless base stylesheet for HTML apps ([#695](https://github.com/k2b-dev/cloud/issues/695)) ([8a83654](https://github.com/k2b-dev/cloud/commit/8a83654754e200e85f624ffb104a756b21b36bcd))
+
+
+### Bug Fixes
+
+* **ai:** show capabilities and approvals in the reader's language ([#682](https://github.com/k2b-dev/cloud/issues/682)) ([2c70089](https://github.com/k2b-dev/cloud/commit/2c700894d34f4b0ef5608931433f41a749dc9a10))
+
 ## [0.15.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.14.0...npm-ui-v0.15.0) (2026-10-06)
 
 

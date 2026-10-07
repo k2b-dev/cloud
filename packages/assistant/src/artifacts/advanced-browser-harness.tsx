@@ -1,7 +1,6 @@
 import { render } from "solid-js/web";
 import AssistantEmptyChat from "../frontend/AssistantEmptyChat";
 import Apps from "./Apps.island";
-import { ArtifactStorage } from "./runtime/storage";
 
 const source = {
   entry: "main.ts",
@@ -47,7 +46,3 @@ render(
     ),
   document.getElementById("root")!,
 );
-if (location.pathname === "/reader") {
-  void new ArtifactStorage("test", id).call("store.set", ["local-fixture", 42]);
-  void new ArtifactStorage("someone-else", id).call("store.set", ["private-fixture", 99]);
-}

@@ -10,18 +10,19 @@ import {
   readAiConversationFile,
 } from "@k2b/cloud/ai";
 import { env } from "@k2b/cloud/config";
-import type { AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, LOCALE_HEADER, TIMEZONE_COOKIE } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { createCliCodeHost } from "../cli/code-host";
 import { runCodeAi } from "./ai-service";
 import { createArtifactServiceRoutes } from "./api";
-import { backgroundCodeRouteAllowed } from "./background-code-policy";
+import { backgroundCodeRouteAllowed, backgroundDatabaseOperation } from "./background-code-policy";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
 import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
 import { DatabaseRequest } from "./database-contracts";
+import { FlatDatabaseRequest } from "./database-runtime";
 import { httpService } from "./http-service";
 
 export const AgentHostRequest = z
@@ -124,15 +125,28 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
       },
       { status: 403 },
     );
-  const request = new Request(url, init);
+  const headers = new Headers(init?.headers);
+  headers.set(LOCALE_HEADER, context.locale);
+  headers.set("cookie", `${TIMEZONE_COOKIE}=${encodeURIComponent(context.timeZone)}`);
+  const request = new Request(url, { ...init, headers });
   const database = /^\/api\/assistant\/artifacts\/([^/]+)\/database(?:\/maintenance)?(\/connect)?$/.exec(url.pathname);
   if (config.background && config.mandate && database && request.method === "POST") {
-    const input = database[2] ? { operation: "connect" } : DatabaseRequest.parse(await request.clone().json());
+    const input = database[2]
+      ? { operation: "connect" }
+      : (url.pathname.includes("/maintenance") ? DatabaseRequest : FlatDatabaseRequest).parse(await request.clone().json());
     try {
       await aiChatTasks.authorizeRuntime({
         mandate: config.mandate,
         kind: "database",
-        input: { resourceId: database[1], ...input, table: "table" in input ? input.table : "name" in input ? input.name : undefined },
+        input: {
+          resourceId: database[1],
+          ...input,
+          operation:
+            url.pathname.includes("/maintenance") || database[2]
+              ? input.operation
+              : backgroundDatabaseOperation(FlatDatabaseRequest.parse(input).operation),
+          table: "table" in input ? input.table : "name" in input ? input.name : undefined,
+        },
       });
     } catch (error) {
       return Response.json(

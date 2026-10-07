@@ -32,6 +32,7 @@ import { imapPushRuntime } from "./imap-push-runtime";
 import * as incomingAutomations from "./incoming-automations";
 import * as listSubscriptions from "./list-subscriptions";
 import * as localTags from "./local-tags";
+import * as mailboxDetails from "./mailbox-details";
 import * as mailboxPreferences from "./mailbox-preferences";
 import * as mailboxes from "./mailboxes";
 import * as hydration from "./message-hydration";
@@ -115,6 +116,7 @@ export {
   listSubscriptions,
   localTags,
   mailboxAccess,
+  mailboxDetails,
   mailboxes,
   mailboxPreferences,
   messageInspector,

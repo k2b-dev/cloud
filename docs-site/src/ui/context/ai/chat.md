@@ -13,10 +13,22 @@ Compose `Chat.Timeline` and `Chat.Composer` inside `Chat`. The application owns 
 
 Timeline items are plain message or activity records. Message actions and attachments are structured arrays; activity bodies remain JSX so an application can render rich tool results without coupling the package to a protocol.
 
+`Chat.Timeline` renders rows by `id`, which must be unique within the timeline.
+A new record with a known `id` updates that row in place: the message element,
+its content, and any state inside it stay, even when the record object, its
+status, or its actions change. Give a message the same `id` from the moment it
+streams until it is stored, so finishing a response does not remount it. Pass
+the same `content` element when the content itself has not changed; a new
+element replaces the old one.
+
 Use `leading` when an activity needs a host-owned visual such as a favicon. Use
 the optional `accent` only for source or application identity; `success` and
 `danger` tones continue to own semantic state colors. Keep the rich activity
 body in the host so `Chat` remains independent from tool protocols.
+Activity labels use the normal font weight, and their description has the same
+size; hierarchy comes from color and indent. Use `ariaLabel` on an expandable
+activity whose visible text abbreviates, for example "Worked 3 minutes, 49
+steps" for "Worked 3 min · 49 steps".
 Set `busy` on an activity while work is running. It applies a quiet horizontal
 text-color-to-transparency shimmer to the activity icon and title; reduced-
 motion clients keep the text static. Streaming messages retain the minimal
@@ -193,7 +205,7 @@ type ChatMessageProps = {
 };
 
 type ChatActivityProps = {
-  label: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
+  label: string; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
   tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
   anchorId?: string | number; children?: JSX.Element; class?: string;

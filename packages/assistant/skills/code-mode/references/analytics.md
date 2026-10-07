@@ -1,5 +1,8 @@
 # Analytics UI
 
+The transitional `ui` tree remains available until HTML apps replace it.
+
+
 Create an interactive analysis with the built-in UI API:
 
 ```js
@@ -170,7 +173,8 @@ For a short known sequence, use
 `code_interact({runId,steps:[{id:"region",event:{type:"change",value:"north"}},{id:"apply"}]})`.
 A batch accepts up to three sequential steps and returns one final snapshot.
 It stops at an error, modal, or unfinished background work; check `completedSteps`
-and `nextStep` before continuing. Do not mix `steps` with top-level `id`, `event`,
+and `nextStep` before continuing. A step that itself fails returns a tool error
+naming that step instead. Do not mix `steps` with top-level `id`, `event`,
 or `answer`. Use separate calls when the next action depends on inspecting data.
 
 Existing budgets still apply: 300 UI nodes, 1,000 rows/data entries per chart,

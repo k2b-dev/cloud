@@ -1,11 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import type { OutboundEvent, Provider, Tool } from "@k2b/nessi";
+import type { OutboundEvent } from "@k2b/nessi";
 import { aiTurnAllowsRememberedApprovals } from "./approvals";
 import { __aiExecutorTest } from "./executor";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
+import * as stream from "./stream";
 
-const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
+const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
 
@@ -435,108 +436,75 @@ describe("nessi block event mapping", () => {
     ).toMatchObject({ type: "block_set", block: { status: "rejected", isError: true } });
   });
 
+  test("marks approved calls, including the parent of a custom approval, so their receipt survives", () => {
+    const mapper = createEventMapper(3, []);
+    mapper.setApprovedCallIds(new Set(["call-1"]));
+    const end = mapper.translate({
+      ...turn,
+      type: "tool_execution_end",
+      callId: "call-1",
+      name: "danger",
+      result: { done: true },
+    } as OutboundEvent);
+    expect(end[0]).toMatchObject({ type: "block_set", block: { status: "completed", approved: true } });
+    const other = mapper.translate({
+      ...turn,
+      type: "tool_execution_start",
+      callId: "call-2",
+      name: "read_file",
+      args: {},
+    } as OutboundEvent);
+    expect(other[0]).toMatchObject({ type: "block_set", block: { callId: "call-2" } });
+    expect((other[0] as { block: { approved?: boolean } }).block.approved).toBeUndefined();
+  });
+
+  test("rebuilds a resolved approval as approved before its result is saved", () => {
+    const blocks = rebuildAttemptBaseline({
+      loopMessages: [
+        {
+          id: "m1",
+          shortId: "m1",
+          conversationId: "c",
+          seq: 1,
+          kind: "message",
+          message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "danger", args: {} }] },
+          loopId: "turn-1",
+          modelProfileId: null,
+          providerModel: null,
+          usage: null,
+          stopReason: null,
+          loopAggregate: null,
+          loopDoneReason: null,
+          compactedAt: null,
+          meta: null,
+          createdAt: "2026-10-07T10:00:00.000Z",
+        },
+      ],
+      pendingRecords: [],
+      resolvedRecords: [
+        {
+          turnId: "turn-1",
+          conversationId: "c",
+          callId: "call-1",
+          kind: "approval",
+          status: "resolved",
+          name: "danger",
+          args: {},
+          approvalScope: "danger",
+          allowAlways: false,
+          resolvedEvent: { type: "approval_response", callId: "call-1", approved: true },
+        },
+      ],
+      turnSteers: [],
+    });
+    expect(blocks[0]).toMatchObject({ kind: "tool", status: "running", approved: true });
+  });
+
   test("loop lifecycle and usage events map to nothing", () => {
     const mapper = createEventMapper(1, []);
     expect(mapper.translate({ type: "loop_start", agentId: "cloud", loopId: "turn-1" } as OutboundEvent)).toEqual([]);
     expect(mapper.translate({ ...turn, type: "turn_start" } as OutboundEvent)).toEqual([]);
     expect(mapper.translate({ ...turn, type: "usage", usage: { input: 1, output: 1, total: 2 } } as OutboundEvent)).toEqual([]);
-  });
-});
-
-describe("tool round policy", () => {
-  const request = { systemPrompt: "Base prompt", messages: [] };
-  const tool = {} as Tool;
-  const provider = (prompts: string[]): Provider => ({
-    name: "test",
-    family: "openai-compatible",
-    model: "test",
-    capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
-    complete: async () => {
-      throw new Error("not used");
-    },
-    stream: async function* (input) {
-      prompts.push(input.systemPrompt ?? "");
-      yield {
-        type: "block_end",
-        blockId: "call",
-        index: 0,
-        block: { type: "tool_call", id: "call", name: "test", args: {} },
-      };
-    },
-  });
-
-  test("does not configure a turn limit by default", () => {
-    const originalProvider = provider([]);
-    const originalTools = [tool];
-    const policy = applyToolRoundPolicy({
-      provider: originalProvider,
-      tools: originalTools,
-      issuedToolRounds: 0,
-      completedToolRounds: 0,
-    });
-
-    expect(policy.provider).toBe(originalProvider);
-    expect(policy.tools).toBe(originalTools);
-    expect(policy.maxTurns).toBeUndefined();
-  });
-
-  test("reserves one tool-free provider call for the final answer", async () => {
-    const prompts: string[] = [];
-    const policy = applyToolRoundPolicy({
-      provider: provider(prompts),
-      tools: [tool],
-      maxToolRounds: 1,
-      issuedToolRounds: 0,
-      completedToolRounds: 0,
-    });
-
-    expect(policy.maxTurns).toBe(2);
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([tool]);
-    for await (const _event of policy.provider.stream(request)) {
-      // consume the first tool-using provider round
-    }
-    policy.noteToolRound();
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
-    for await (const _event of policy.provider.stream(request)) {
-      // consume the reserved final provider round
-    }
-
-    expect(prompts[0]).toBe("Base prompt");
-    expect(prompts[1]).toContain("no more tools are available");
-    expect(prompts[1]).toContain("best result supported by the evidence already gathered");
-  });
-
-  test("counts persisted tool rounds across resumed workers", async () => {
-    const prompts: string[] = [];
-    const policy = applyToolRoundPolicy({
-      provider: provider(prompts),
-      tools: [tool],
-      maxToolRounds: 2,
-      issuedToolRounds: 2,
-      completedToolRounds: 2,
-    });
-
-    expect(policy.maxTurns).toBe(1);
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
-    for await (const _event of policy.provider.stream(request)) {
-      // consume the reserved final provider round
-    }
-    expect(prompts[0]).toContain("no more tools are available");
-  });
-
-  test("keeps a pending last-round tool available until its resumed execution completes", async () => {
-    const policy = applyToolRoundPolicy({
-      provider: provider([]),
-      tools: [tool],
-      maxToolRounds: 1,
-      issuedToolRounds: 1,
-      completedToolRounds: 0,
-    });
-
-    expect(policy.maxTurns).toBe(1);
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([tool]);
-    policy.noteToolRound();
-    expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
   });
 });
 
@@ -622,4 +590,81 @@ test("direct code tools index returned Studio references without a capability wr
   } finally {
     index.mockRestore();
   }
+});
+
+describe("saved live state", () => {
+  test("follows every event within one interval, also without a further event, and stops when the attempt ends", async () => {
+    const saved: number[] = [];
+    const save = spyOn(aiConversations, "saveTurnLiveState").mockImplementation(async (input) => {
+      saved.push(input.seq);
+      return true;
+    });
+    const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+    try {
+      const pipeline = new __aiExecutorTest.StreamPipeline({
+        conversationId: "chat",
+        turnId: "turn",
+        attempt: 1,
+        startSeq: 0,
+        leaseOwner: "worker",
+        seedBlocks: [],
+        allowRememberedApprovals: false,
+      });
+      // A new attempt saves its baseline at once.
+      await pipeline.emitTurnStarted("model");
+      await pipeline.emitBaseline();
+      expect(saved).toEqual([1]);
+
+      // Changes inside the interval are saved when it ends, although nothing follows them.
+      await pipeline.applyCompaction("running");
+      await pipeline.emitMessage({ id: "m1" } as Parameters<typeof pipeline.emitMessage>[0]);
+      expect(saved).toEqual([1]);
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 200);
+      expect(saved).toEqual([1, 3]);
+
+      // The attempt ends: a later save would overwrite what suspension or the next attempt saved.
+      await pipeline.applyCompaction("completed");
+      await pipeline.flush();
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 200);
+      expect(saved).toEqual([1, 3]);
+    } finally {
+      save.mockRestore();
+      publish.mockRestore();
+    }
+  });
+
+  test("saves one after another, so an older state never lands last, and the attempt's end waits for them", async () => {
+    const log: string[] = [];
+    const save = spyOn(aiConversations, "saveTurnLiveState").mockImplementation(async (input) => {
+      log.push(`start ${input.seq}`);
+      // The database stalls on the second save.
+      await Bun.sleep(input.seq === 2 ? 1_500 : 10);
+      log.push(`end ${input.seq}`);
+      return true;
+    });
+    const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+    try {
+      const pipeline = new __aiExecutorTest.StreamPipeline({
+        conversationId: "chat",
+        turnId: "turn",
+        attempt: 1,
+        startSeq: 0,
+        leaseOwner: "worker",
+        seedBlocks: [],
+        allowRememberedApprovals: false,
+      });
+      await pipeline.emitTurnStarted("model");
+      await pipeline.emitBaseline();
+      await pipeline.applyCompaction("running");
+      // The interval ends and saves event 2; the next change waits for the interval after it.
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 100);
+      await pipeline.applyCompaction("completed");
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS);
+      await pipeline.flush();
+      expect(log).toEqual(["start 1", "end 1", "start 2", "end 2", "start 3", "end 3"]);
+    } finally {
+      save.mockRestore();
+      publish.mockRestore();
+    }
+  });
 });

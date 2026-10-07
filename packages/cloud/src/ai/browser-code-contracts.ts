@@ -23,7 +23,7 @@ export const CodeRunInput = z
     resourceId: id
       .optional()
       .describe(
-        "Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Local storage stays temporary.",
+        "Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Test runs use real shared and personal data; writes and capability effects keep normal permissions and approvals.",
       ),
     version: z
       .number()
@@ -71,7 +71,10 @@ export const CodeActionInput = z
       .positive()
       .optional()
       .describe("Exact draft revision returned by code_actions({draft:true}); Manage required. Supply this OR publishedVersion."),
-    input: z.json().describe("Action input matching the discovered inputSchema."),
+    input: z
+      .record(z.string(), z.json())
+      .default({})
+      .describe("Action input object matching the discovered inputSchema. Pass the object itself, never JSON text."),
   })
   .strict()
   .refine(
@@ -161,6 +164,15 @@ export const CodeSecretInput = z
     prefix: z.string().max(160).default("Bearer "),
   })
   .strict();
+
+/**
+ * A runtime call that did not complete: rejected input, timeout, lost run or host failure.
+ * Hosts return it as data because a client tool result carries no error flag; the managed
+ * server tools report it to the model as a tool error. A run snapshot whose code failed is a
+ * completed call and keeps its own `status` and `error`.
+ */
+export const CodeToolFailure = z.object({ failed: z.literal(true), error: z.string(), guidance: z.string().optional() });
+export type CodeToolFailure = z.infer<typeof CodeToolFailure>;
 
 // Internal bridge envelope. Each model-facing tool receives only its own flat schema.
 export const CodeRuntimeInput = z.discriminatedUnion("operation", [

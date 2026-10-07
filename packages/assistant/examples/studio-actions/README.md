@@ -8,9 +8,10 @@ handlers in the real isolated runtime against disposable storage.
 To install an example, create a private App, save the folder's files together
 with `code_write` using its current `expectedRevision`, and set `entry:"main.js"`.
 Only the dashboard has a GUI entry; the other Apps deliberately have none.
-For the importer and invoice matcher, run `setup.js` once as a temporary
-`code_run({code,resourceId})` while holding Manage. This creates schema only if
-absent. It is not a published action and normal users never need Manage access.
+For the importer and invoice matcher, `setup.json` contains `code_database`
+tool inputs, not runtime source. List tables first, then pass each missing
+schema definition with the new App's `id` while holding Manage. Normal users
+never need Manage access to invoke the published actions.
 Discover and test the draft action with its exact `revision`, publish that
 revision, then call the discovered `publishedVersion`. Testing shared writes has
 real effects: use explicit test records and clean them up before sharing.

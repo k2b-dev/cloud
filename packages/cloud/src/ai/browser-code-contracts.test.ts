@@ -38,7 +38,7 @@ test("UI interactions use structured events without legacy list action fields", 
 test("code tools accept flat arguments and reject legacy envelopes", () => {
   const inputs = [
     { id },
-    { id, action: "double", publishedVersion: 1, input: 2 },
+    { id, action: "double", publishedVersion: 1, input: { value: 2 } },
     { runId: "run" },
     { runId: "run", id: "@modal:1", answer: { count: 2 } },
     { runId: "run" },
@@ -68,4 +68,11 @@ test("one-off resource context cannot replace saved source identity", () => {
   expect(parseCodeToolInput("code_run", { code: "export default () => 1", resourceId })).toMatchObject({ resourceId });
   expect(() => parseCodeToolInput("code_run", { id: resourceId, resourceId })).toThrow();
   expect(() => parseCodeToolInput("code_run", { resourceId })).toThrow();
+});
+
+test("action input is an object, never JSON text", () => {
+  const call = { id, action: "double", publishedVersion: 1 };
+  expect(parseCodeToolInput("code_action", call)).toMatchObject({ input: {} });
+  expect(parseCodeToolInput("code_action", { ...call, input: { value: 2 } })).toMatchObject({ input: { value: 2 } });
+  for (const input of ["{}", '{"value":2}', 2, [2], null]) expect(() => parseCodeToolInput("code_action", { ...call, input })).toThrow();
 });

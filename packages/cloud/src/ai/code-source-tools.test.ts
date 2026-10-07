@@ -5,6 +5,7 @@ import * as claims from "../capabilities/claims";
 import type { User } from "../contracts/shared";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
+import { aiChatTasks } from "./chat-tasks";
 import * as codeExecution from "./code-execution";
 import { createCodeSourceTool } from "./code-source-tools";
 import { aiConversations } from "./store";
@@ -164,3 +165,78 @@ for (const name of ["code_sql", "code_database_read", "code_database_export", "c
     expect(fetchRequest).not.toHaveBeenCalled();
   });
 }
+
+for (const input of [
+  { id: "AbC234", operation: "schema.get", table: "invoices" },
+  { id: "AbC234", operation: "tables.update", table: "invoices", changes: { write: "own" } },
+  { id: "AbC234", operation: "tables.create", name: "invoices", columns: [{ name: "title", type: "text" }] },
+])
+  test(`background ${input.operation} forwards its table to authorization`, async () => {
+    const actor = { kind: "user" as const, user };
+    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+    const config = {
+      kind: "chat" as const,
+      input: "Run",
+      toolSource: { kind: "none" as const },
+      background: { taskId: "task", occurrenceId: "occurrence", context: [] },
+      mandate: { id: crypto.randomUUID(), revision: 1 },
+    };
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
+    spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
+      config,
+      conversation: {
+        id: "chat-test",
+        shortId: "Chat01",
+        title: "Test",
+        titleSource: "user",
+        description: "",
+        descriptionSource: "default",
+        keywords: [],
+        pinnedAt: null,
+        archivedAt: null,
+        done: false,
+        isDone: false,
+        lastUsedAt: "2026-10-07",
+        runStatus: "queued",
+        runError: null,
+        unreadCompletion: false,
+        projectId: null,
+        draft: { content: [], revision: 0, updatedAt: null },
+        createdByUserId: user.id,
+        createdAt: "2026-10-07",
+        updatedAt: "2026-10-07",
+      },
+      turn: {
+        id: "turn-test",
+        shortId: "Turn01",
+        conversationId: "chat-test",
+        status: "running",
+        attempt: 1,
+        modelProfileId: null,
+        createdAt: "2026-10-07",
+        completedAt: null,
+        error: null,
+      },
+    });
+    const authorize = spyOn(aiChatTasks, "authorizeRuntime").mockRejectedValue(new Error("Stop after grant check"));
+    const tool = createCodeSourceTool("code_database");
+    if (tool.location !== "server") throw new Error("Expected server tool");
+    await expect(
+      tool.run(input, {
+        actor,
+        conversationId: "chat-test",
+        turnId: "turn-test",
+        callId: "call-test",
+        signal: new AbortController().signal,
+        requestClientTool: async () => {
+          throw new Error("Unexpected client tool");
+        },
+        requestApproval: async () => false,
+      }),
+    ).rejects.toThrow("Stop after grant check");
+    expect(authorize).toHaveBeenCalledWith({
+      mandate: config.mandate,
+      kind: "database",
+      input: { resourceId: "AbC234", operation: input.operation, table: "invoices" },
+    });
+  });

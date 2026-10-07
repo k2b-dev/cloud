@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Files, Projects, Skills, and personalization
@@ -182,6 +182,15 @@ The mount is never writable and does not copy shared bytes into a private chat.
 Only Project instructions are instruction-bearing. Knowledge, files, references,
 and tool results are untrusted data. References contain metadata only; the agent
 must use the target app's current authorized capabilities to read the source.
+
+Knowledge and files are copies stored in the Project: they do not follow their
+source, and every member with `read` access can read them. A reference is a
+live pointer. Each member's Assistant reads the current resource with that
+member's own access, so a member who cannot open the resource gets a failed
+read and nothing else. Adding a reference only checks that its qualified type,
+such as `notebooks.note` or `grids.base`, has a canonical reader; it does not
+grant access to the resource. For agents that configure Assistant through the
+CLI, `cld assistant reference how-it-works.md` summarizes these rules.
 
 The Assistant Project workspace lets users with `write` access manage basic
 metadata, knowledge, files, and Cloud resource references. Because Project

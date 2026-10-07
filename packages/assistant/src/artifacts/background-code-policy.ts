@@ -1,3 +1,10 @@
+import type { FlatDatabaseRequest } from "./database-runtime";
+
+/** Stored database grants retain their row-operation vocabulary. */
+export function backgroundDatabaseOperation(operation: FlatDatabaseRequest["operation"]) {
+  return operation === "query" ? "query" : `rows.${operation}`;
+}
+
 /** Every effect retains its service authorization; HTTP and RSQL also check task grants. */
 export function backgroundCodeRouteAllowed(path: string, method: string): boolean {
   if (method === "POST")
@@ -21,6 +28,7 @@ export function backgroundCodeRouteAllowed(path: string, method: string): boolea
   return (
     method === "GET" &&
     (path === "/runtime/host.js" ||
+      /^\/runtime\/chunks\/(?:csv|sheet|finance|pdf-read)$/.test(path) ||
       /^\/[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}(?:\/compiled|\/access|\/storage\/file)?$/.test(path))
   );
 }

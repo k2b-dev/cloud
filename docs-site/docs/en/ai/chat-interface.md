@@ -120,7 +120,14 @@ conversation SSE route, like the CLI; `streamTransport` replaces it for an
 application-owned chat endpoint. Changing chats closes the previous stream and
 opens one for the new chat, and every connection starts from a fresh state
 snapshot, so a frontend tool runs once and a resolved approval does not
-reappear. When access to the conversation ends, the controller stops the
+reappear. When the open stream of a running turn delivers nothing for 45
+seconds, one worker lease, the controller subscribes again and continues from
+the turn's saved state, so a lost update such as the end of the turn heals
+within a minute. The wait starts with the stream's first event, so a slow first
+snapshot is never cut off, and a stream that reconnects already starts from a
+fresh snapshot. A turn that waits for an approval, an answer, or a frontend
+tool is not silent; once the server accepts the action, the turn runs and is
+watched again. When access to the conversation ends, the controller stops the
 stream and shows, in the page's language, why the chat cannot continue,
 instead of reconnecting. `refreshActiveConversation()` does the same and
 resolves `false` when the chat is gone, so a caller does not retry it; an
@@ -190,16 +197,86 @@ Keep the Stop action available until the server accepts the abort.
 
 Render tool input and output as data. Do not inject model text as HTML.
 
-Ordinary tools render as single-line activities with compact gray metadata.
-Consecutive calls form one group until Markdown, a visible result, or an
-interactive decision creates a boundary. During execution the group shows its
-latest tool; afterward it summarizes the kinds of work performed, including a
-failure count. Expanding the group reveals its individual tools. Expanding a
-tool reveals input and output inside a bounded, scrollable region; payloads are
-rendered lazily. No tool group hides intervening Markdown or user controls.
-A response with a tool, reasoning, or compaction disclosure spans the full
-message column, so disclosure chevrons share one right edge whether the
-response shows one row or several.
+### Four places per turn
+
+`createAiChatTimeline` shows every assistant turn in four fixed places, in this
+order:
+
+1. **Work line.** One row for everything the reader no longer needs once the
+   turn ends: intermediate text, reasoning, ordinary tool steps, image
+   inspections (`view_image`), and compaction. While the turn runs, it names the
+   current step, such as "Reading orders.csv", with a clock and the step count;
+   on phones the count appears once the turn is finished. A step that runs
+   longer than 45 seconds shows its own duration instead of its target, such as
+   "Running code · 3 min"; after a reload it counts from the reload, since
+   blocks carry no start time. While a model call waits for its retry or the stream
+   reconnects, the line reads "Reconnecting" without its shimmer, and its clock
+   stands. While an approval or answer is pending it says what the turn waits
+   for and since when. Finished,
+   it reads "Worked 3 min" with the step count, "Worked 1 min · stopped" after
+   a stop, and "Worked 4 min · interrupted" when the turn failed or its wait
+   expired. Expanding it shows intermediate texts as quiet paragraphs and the
+   steps between them as groups, with reasoning inside its group. Every step
+   stays there, including results and actions, so input and output remain
+   reachable. Failed steps say "failed" in muted text; a rejected approval says
+   "rejected".
+2. **Results.** Presented files, `code_present` visualizations, cards, and
+   capability tables in the order they were made. A later result with the same
+   target, the same file path for `present` or the same title for
+   `code_present`, replaces the earlier one at its place. A running delivery
+   takes a place once its arguments have arrived, so a new version never shows
+   a frame of its own first. A capability table shows the summary and links of
+   its result above it. An approved call or a Cloud action that returns a table
+   shows the table here and its receipt in place 4.
+3. **Newest text.** While the turn runs this is a status: a new text replaces
+   the previous one in the same element once its first sentence has streamed,
+   and the place keeps its height until the turn ends. Finished, it is the final
+   message: the turn's last text, even if a tool call followed it. A stopped or
+   failed turn has no final message; its texts stay in the work line.
+4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
+   receipts for capability actions and for every approval the user decided:
+   "Email to Jana Berger sent" from the action's summary with its links,
+   "Approved: Run code" for an approved tool that is not a Cloud action,
+   "Rejected: Send email", "Failed: Send email", or "Not run: Send email ·
+   stopped" when the turn ended before the call ran. A decided card turns into
+   its receipt in place. If the decision was made in that card, focus stays on
+   its place without scrolling. An approved call carries `approved: true` on its
+   tool block, live and in history, so its receipt survives a reload, also when
+   the turn ended before the call returned. Links without a title read "Open",
+   "Edit", or "Download" in the reader's language.
+
+A turn without tool calls or compaction, such as a plain answer, a steering
+marker, or an answer with only reasoning, has no work line. Its texts form the
+message. While such a turn reconnects, a calm "Reconnecting" row stands at its
+end, where it moves nothing above it. Pass `reconnecting`, such as
+`() => chat.streamStatus() === "reconnecting"`, to `createAiChatTimeline` so
+a lost connection shows like a model retry; Assistant then leaves the
+composer's reconnecting notice to chats without a running turn. Steering and accepted survey answers split a turn into segments; each
+segment has its own places, and only the last one shows the duration.
+
+The work time is wall time minus time spent waiting for approvals and other
+user actions. History uses the loop's durable timing; the live clock stands
+while the turn waits for an approval or an answer and continues from the same
+value afterwards. A tool the browser runs by itself, such as a Studio code run,
+counts as work, live and in history.
+
+Screen readers do not hear the work line's ticking clock or a status while it
+streams: both sit outside the conversation log's live announcements. A status
+is announced once it is complete, a waiting approval as one short line such as
+"Approval needed: Send email" without moving focus, and the end of a turn with
+work as "Answer ready". A plain answer without tools streams into the log as
+before.
+
+The live turn and its history share one layout function and the same timeline
+item ids, `ai-turn:<turn id>:<segment>`. A segment is named by what opened it:
+`start`, `steer:<steer id>`, or `survey:<call id>`. Consecutive steering
+messages open one segment, and loading older history renames none. Results and
+actions are keyed by their call. When the turn ends, the work line changes its
+text and the message actions appear; nothing else moves, and host views such as
+a running Studio session keep their state. Copy copies only the final message.
+
+Turns with a work line, results, or actions span the full message column, so
+disclosure chevrons share one right edge. Plain prose keeps the reading width.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
@@ -214,10 +291,16 @@ the previous block content without duplicating its table. Results without table
 presentation remain compact; errors and approval requests retain their own UI.
 
 `AiChatActions.renderCodePresentation(result)` lets the application render a
-completed `code_present` result inline. The host owns validation, authorized
-loading, durable storage, and sandbox lifecycle. It must not execute saved code
-automatically when rendering the preview. These results remain outside ordinary
-tool disclosures.
+`code_present` result inline. Cloud calls it once per call, from the call's
+first event, with an accessor: `result()` is `undefined` while the call runs and
+the saved result once it completed. Hosts written for the earlier contract,
+which passed the completed result as a value, read `result()` instead. Reserve the preview's final frame while the
+result is pending, so the preview does not grow twice, and keep the view's
+state when the result arrives; the same view stays mounted when the turn
+becomes history. The host owns validation, authorized loading, durable storage,
+and sandbox lifecycle. It must not execute saved code automatically when
+rendering the preview. Without this action, `code_present` calls stay in the
+work line.
 
 Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown link
 against the current conversation file manifest. Return `{path, href}` with a
@@ -286,10 +369,9 @@ Markdown link to the file becomes an ordinary link, opening a presented file
 reports `File not found`, and an image attachment shows its icon instead of the
 thumbnail.
 
-Completed turns preserve the same ordered timeline and show their elapsed
-wall-clock duration. They do not move earlier Markdown into a second outer
-work disclosure. Explicit disclosure choices survive streaming updates and a
-reload in the same browser tab when session storage is available.
+The work line and groups never open by themselves. Explicit disclosure choices
+survive streaming updates, the end of the turn, and a reload in the same browser
+tab when session storage is available.
 
 Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search
@@ -301,18 +383,20 @@ preserve a person's choice across a remount can control it with `open` and
 
 An active response always ends with the shared streaming state of
 `Chat.Message`, including before the first model block arrives and after a
-steering message that waits for the next model call. It renders the minimal
-three-dot progress indicator; do not add a separate generating activity or
-label. Active tool rows set `busy` on `Chat.Activity`, which moves a quiet
-text-color-to-transparency shimmer across the tool icon and title instead of
-adding another loader or pulsing the accent color. Reduced-motion clients keep
-the same text static.
+steering message that waits for the next model call. Until the model takes up
+that message, the segment above it keeps its live work line. The streaming
+state renders the minimal three-dot progress indicator; do not add a separate
+generating activity or label. The live work line sets `busy` on
+`Chat.Activity`, which moves a quiet text-color-to-transparency shimmer across
+its icon and label instead of adding another loader or pulsing the accent
+color. Reduced-motion clients keep the same text static.
 
 While a model call waits for its
 [retry](/en/docs/ai/chat-runtime-and-streaming#transient-provider-failures),
 the live turn ends with one **Reconnecting** activity row (German: **Verbindung
 wird wiederhergestellt**) without the shimmer. Earlier rows keep their place,
-and the next turn event replaces the row with the model's output.
+and the next turn event removes the row while the model's output continues in
+the turn's places.
 
 Approval prompts span the available message column and lead with the owning
 application's name and icon. The primary control names the concrete action;
@@ -348,12 +432,13 @@ private owner metadata: it is not sent back to the model and does not alter the
 conversation transcript.
 
 The controller claims each call once, runs the handler, and sends the result
-back to the turn. Show interaction tools only when the relevant application
-view is present. After the server accepts a survey answer, replace the form
+back to the turn. Once the server accepts it, the call shows as finished, like
+an answered approval, before the stream confirms it. Show interaction tools
+only when the relevant application view is present. After the server accepts a survey answer, replace the form
 with a normal user message: show each question as small context above its answer. Use option
 labels for choices and retain free-text line breaks. These messages stay in
 chronological order between the assistant's outputs, remain visible outside
-**Worked for ...**, and render the same way after reloading the conversation.
+the work line, and render the same way after reloading the conversation.
 The answer remains a tool result in storage and in the model protocol; the
 presentation does not create another user turn or expose message retry/edit
 controls for that answer.
@@ -396,7 +481,10 @@ advertising a handler makes the tool discoverable, but the agent must call
 `load_tools` before using it. `createCloudAiCodeTools` supplies their definitions
 through the AI runtime tool exports. `CODE_RUNTIME_TOOL_NAMES`,
 `parseCodeToolInput`, and the internal `CodeRuntimeInput` envelope are exported
-from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations.
+from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations. A host
+returns a call that did not complete as `CodeToolFailure`
+(`{failed: true, error, guidance?}`, from `@k2b/cloud/ai/browser`); server-run
+code tools report it to the model as a tool error.
 
 `code_run` accepts the app `id` and optional chat `inputPaths`, takes a fixed
 snapshot of current source, and returns a run ID and compact state. There is no
@@ -419,7 +507,7 @@ Core forwards each operation to Assistant using an operation-bound invocation.
 The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
-`capabilities.run` remains available for other applications, not these tools.
+`cloud.capabilities.run` remains available for other applications, not these tools.
 `code_write` saves one atomic batch against `expectedRevision`, preserves sibling
 files and reports compilation diagnostics without rejecting incomplete source.
 Conflicting revisions and duplicate paths reject the whole batch. A file can
@@ -450,11 +538,13 @@ The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users
 enter the standalone runner; managers enter Studio management. Management actions
 include editing, publication, and access. The runner retains personal actions for copying an app,
-clearing browser-local data. Secrets are available in management only.
+viewing and clearing their own server-side **Personal data** (`cloud.kv.user`).
+Secrets are available in management only.
 Copying asks for confirmation, then opens a new chat with the copy attached
 and an unsent customization prompt. Only published code is copied, not data,
-secrets, or sharing settings. Public-only visitors can manage
-only their browser-local data. Permissions use the Cloud editor in a dialog.
+secrets, or sharing settings. Anonymous public visitors have no personal-data
+control; `cloud.kv.user` and database writes reject with `denied`. Permissions
+use the Cloud editor in a dialog.
 Artifacts are independent of chats. Cloud `auth.access` grants are linked
 through `assistant.artifact_access`: `read` is presented as **Use**, `admin` as
 **Manage**. Existing artifact `write` grants migrate to `admin`. Person, nested
@@ -551,7 +641,8 @@ app access. Public visitors see the app without the Cloud navigation shell.
 To share publicly, publish the app and add **Public** in **Manage access**.
 Only **Use** is available; public **Manage** is rejected through every interface.
 The dialog explains the limits: public visitors can compute locally, select
-files, download results and use browser-local storage. Public access never grants
+files through the transitional UI filePicker and download results. Browser-local
+runtime storage is removed. Public access never grants
 the app database, server files/KV, personal secrets, server HTTP/PDF or protected
 Cloud actions. Signed-in visitors still need a separate explicit app grant for
 server features. Existing apps that require these features may not work publicly.

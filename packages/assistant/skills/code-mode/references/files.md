@@ -87,5 +87,5 @@ stop. Revoking Cloud access prevents new leases; an already issued bearer
 lease can remain usable until expiry, subject to storage checks.
 
 For analysis inside code, use `filesv2.content.read` and
-`capabilities.streams.read` instead of fetching a bearer URL. See
+`cloud.capabilities.streams.read` instead of fetching a bearer URL. See
 [Capability calls](capabilities.md) for binary budgets and consent rules.

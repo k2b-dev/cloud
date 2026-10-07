@@ -95,6 +95,9 @@ for (const build of builds) {
 
 await buildPlexFonts(dist);
 
+// The classless page stylesheet ships as written: it targets current engines and stays readable.
+await copyFile(resolve(root, "src/base/base.css"), resolve(dist, "base.css"));
+
 await writeFile(resolve(dist, "global.css"), '@import "./styles.css";\n@import "./plex.css";\n@import "./tabler.css";\n');
 
 const tablerPath = resolve(dist, "tabler.css");

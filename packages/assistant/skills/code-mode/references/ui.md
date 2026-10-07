@@ -1,5 +1,8 @@
 # UI and dialogs
 
+The transitional `ui` tree remains available until HTML apps replace it.
+
+
 The built-in UI takes one options object per constructor. Create controls once,
 then update typed handles. A control belongs to at most one layout; unowned
 controls appear as roots. See [Analytics UI](analytics.md) for all controls,

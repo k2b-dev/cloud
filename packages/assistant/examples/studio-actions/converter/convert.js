@@ -1,5 +1,5 @@
 export default async ({ csv }) => {
-  const rows = await sheet.fromCsv(csv);
-  await files.save(new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" }), "converted.json");
+  const rows = await cloud.sheet.parseCsv(csv);
+  await cloud.download("converted.json", new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" }));
   return { rows: rows.length };
 };
