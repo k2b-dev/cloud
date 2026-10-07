@@ -33,7 +33,10 @@ an `iframe` `srcdoc` or in HTML that is rendered to PDF.
 
 Every rule and token sits in `@layer k2b-base`. Any rule of the page outside a
 layer wins, whatever its specificity, so page CSS never fights the base
-stylesheet.
+stylesheet. Four state rules are `!important` and stay in force: `[hidden]`
+always hides, a busy button hides its label, reduced motion turns off
+transitions and animations, and print hides buttons, file inputs, `<nav>`, and
+`<dialog>`.
 
 ## Theme
 
@@ -52,23 +55,23 @@ instead of fixed colors or `prefers-color-scheme`.
 | Area | Behavior |
 | --- | --- |
 | Page | `body` carries the padding (1.5rem, 1rem on phones) and a reading width of 72rem, so pages without `<main>` look the same. Text is 15px with a line height of 1.55. |
-| Spacing | Siblings are spaced by whitespace from above: 1rem in a flow, 0.5rem after a heading, 2rem before `h2` and `h3`, 2.5rem between top-level sections. No lines or frames separate sections. |
+| Spacing | Siblings are spaced by whitespace from above: 1rem in a flow, 0.5rem after a heading, 2rem before `h2` and `h3`, 2.5rem between top-level sections. Every `div` is a flow container too, with or without a class, so browser margins never come back. No lines or frames separate sections. |
 | Type | `h1` 1.5rem, `h2` 1.25rem, `h3` 1.0625rem, `h4` to `h6` body size, all semibold. `small`, `figcaption`, and `caption` are muted. |
 | Lists | A list item with a checkbox, directly or inside its `label`, is a checklist row without a bullet. The label grows, buttons trail, and checked items are muted and struck through. Put buttons next to the label, never inside it. |
 | `dl` | A key/value grid for detail views. |
 | Tables | Full width, small muted header, no row lines, a hover surface, cells centered vertically. A table in `<figure>` scrolls sideways instead of widening the page. |
-| Forms | A `label` sits above its field, or beside a checkbox or radio. Fields use a muted surface, show a border on hover and an inset focus ring, and mark `:user-invalid`. `fieldset` has no frame. |
+| Forms | A `label` sits above its field, or beside a checkbox or radio. Fields use a muted surface, show a border on hover and the focus ring inside their box, and mark `:user-invalid`. `fieldset` has no frame. |
 | Buttons | Buttons are calm. The submit button of a form and `.primary` are filled; `type="button"` and `value="cancel"` stay calm. `aria-busy="true"` shows a spinner without changing the size. |
-| Feedback | `role="alert"` is an error surface and hidden while empty. `role="status"` and `<output>` are muted text without a surface. `data-tone` (`info`, `success`, `warning`, `danger`) colors the surface of alerts and the text of status messages. |
+| Feedback | `role="alert"` is an error surface and hidden while empty. `role="status"` is muted text without a surface. `<output>` keeps the text color, because it holds a result the reader needs, and uses tabular numbers. `data-tone` (`info`, `success`, `warning`, `danger`) colors the surface of alerts and the text of status messages and outputs. |
 | Navigation | Buttons or links in a `<nav>` are tabs or filters; `aria-pressed`, `aria-current`, or `aria-selected` marks the active one. |
-| Disclosure and dialog | `details` shows a chevron. `dialog` is the only floating surface; a `footer` or `menu` inside it aligns its buttons at the end. |
-| Charts | The SVG of an `@k2b/stdlib` chart inside `.k2b-chart` > `.k2b-chart__svg`, the markup of the `Chart` component, uses the chart tokens. |
+| Disclosure and dialog | `details` shows a chevron. `dialog` is the only floating surface; `showModal()` opens it centered. A `footer` or `menu` inside it aligns its buttons at the end. |
+| Charts | An `@k2b/stdlib` chart uses the chart tokens in the markup that [Charts](#charts) describes. |
 
 ## Helper classes
 
 | Class | Behavior | Markup |
 | --- | --- | --- |
-| `.row` | A wrapping flex row aligned at the bottom; fields grow. With a heading inside it is a header: the title first, the actions at the end, centered. | `<form class="row"><label>Name <input></label><button>Add</button></form>`, `<header class="row"><h1>Expenses</h1><button type="button" class="primary">Export</button></header>` |
+| `.row` | A wrapping flex row aligned at the bottom; fields grow. With a heading, directly or in a title block with a subtitle, it is a header: the title first, the actions at the end, centered. Actions that wrap below a long title stay at the end. | `<form class="row"><label>Name <input></label><button>Add</button></form>`, `<header class="row"><h1>Expenses</h1><button type="button" class="primary">Export</button></header>` |
 | `.grid` | Columns of at least 14rem with a 1rem gap, for fields; key figures use columns of at least 8rem. | `<div class="grid"><label>…</label><label>…</label></div>` |
 | `.stat` | A key figure: a small muted label, the value large beneath it, without a surface. | `<div class="stat"><span>Revenue</span><strong>€12,400</strong></div>` |
 | `.scroll` | Scrolls sideways like a `<figure>` around a table. | `<div class="scroll"><table>…</table></div>` |
@@ -77,8 +80,36 @@ instead of fixed colors or `prefers-color-scheme`.
 | `.muted`, `.num`, `.primary`, `.sr-only` | Muted text, right-aligned tabular numbers, a filled button, and text only screen readers announce. | `<td class="num">€89.90</td>` |
 
 `.row`, `.grid`, and `.stat` take the flow spacing from their children. A
-custom flex or grid layout sets `gap` and turns the flow spacing off with
-`> * { margin: 0 }`; otherwise gap and spacing add up.
+custom flex or grid layout, on a `div` or any other container, sets `gap` and
+turns the flow spacing off with `> * { margin: 0 }`; otherwise gap and spacing
+add up.
+
+## Charts
+
+The SVG of an `@k2b/stdlib` chart takes the chart tokens and colors inside
+the wrapper markup of the `Chart` component:
+
+```html
+<div class="k2b-chart" data-chart-kind="line">
+  <div class="k2b-chart__svg" data-stretch style="--k2b-chart-width: 640px; --k2b-chart-height: 280px">
+    <svg preserveAspectRatio="none" …>…</svg>
+  </div>
+</div>
+```
+
+- Remove the `<style>` element that stdlib puts into every SVG. Its rules sit
+  outside the layer, so they would override the tokens with fixed light
+  colors.
+- Set `--k2b-chart-width` and `--k2b-chart-height` to the size the SVG was
+  rendered at. Without `data-stretch`, the chart scales as a whole up to 1.5
+  times that width.
+- `data-stretch` fills the width at the rendered height, while text and
+  markers keep their pixel size. Use it for every kind except pie, donut,
+  gauge, and map, which keep their aspect ratio. It needs
+  `preserveAspectRatio="none"` on the SVG and, on each `<text>`, a
+  `transform-origin` at its `x` and `y` in pixels.
+- `data-chart-kind` names the stdlib renderer; `scatter` gets larger points
+  and `sparkline` keeps room for its end markers.
 
 ## Accessibility
 
@@ -87,9 +118,13 @@ labels around or linked to their fields, `th` for table headers, and
 `role="alert"` or `role="status"` for messages. Give an icon-only button a
 name with `aria-label` or a `.sr-only` text.
 
-Focus shows as a 2px outline that never moves the layout. On touch screens,
-buttons, fields, `summary`, and navigation items are at least 2.75rem high.
-The stylesheet honors `prefers-reduced-motion` and prints on white.
+Focus shows as a 2px outline that never moves the layout: inside the box of a
+field, outside every other control, including checkboxes, radios, sliders, and
+file inputs. On touch screens, buttons, fields, `summary`, navigation items,
+and the label of a checklist row are at least 2.75rem high, and buttons and
+navigation items are at least 2.75rem wide. The stylesheet honors
+`prefers-reduced-motion` and prints on white with the light colors, also from
+the dark theme.
 
 ## Runtime
 

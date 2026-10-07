@@ -56,6 +56,25 @@ describe("@k2b/ui base stylesheet", () => {
     expect(base.filter((rule) => !rule.context.startsWith("@layer k2b-base")).map((rule) => rule.selector)).toEqual([]);
   });
 
+  // A layered !important beats every page rule, even an unlayered !important,
+  // so it is reserved for the state rules the documentation lists.
+  test("uses !important only for the documented state rules", () => {
+    const important = base
+      .filter((rule) => rule.body.includes("!important"))
+      .map((rule) => `${rule.context.replace("@layer k2b-base", "").replace(/^ > /, "")} ${rule.selector}`.trim());
+    expect(important).toEqual([
+      'button[aria-busy="true"]',
+      "[hidden]",
+      "@media (prefers-reduced-motion: reduce) *",
+      "@media (prefers-reduced-motion: reduce) *::before",
+      "@media (prefers-reduced-motion: reduce) *::after",
+      "@media print button",
+      '@media print input[type="file"]',
+      "@media print nav",
+      "@media print dialog",
+    ]);
+  });
+
   // An element rule that sets a block margin outranks the zero-specificity
   // flow rules and silently cancels the rhythm (a filter bar glued to the form
   // above it). Only flow rules, written entirely in :where(), set block
@@ -65,6 +84,7 @@ describe("@k2b/ui base stylesheet", () => {
       "body", // the page root, never a sibling
       'input:is([type="checkbox"], [type="radio"])', // the control box inside its label or row
       'button[aria-busy="true"]::after', // the centered spinner
+      "dialog:modal", // centered in the top layer, outside any flow
       ".row > *", // helpers take the flow margin from their children
       ".grid > *",
       ".stat > *",

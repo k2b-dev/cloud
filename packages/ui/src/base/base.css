@@ -4,15 +4,18 @@
    short helper classes cover layouts that HTML has no element for.
 
    Every rule and token sits in `@layer k2b-base`, so any unlayered rule of
-   the page wins without a specificity fight. `<html data-theme="dark">`
-   switches the theme; the default is light. The tokens carry the same names
-   and values as the `.k2b-ui` scope (a parity test keeps them equal).
+   the page wins without a specificity fight. Four state rules are
+   `!important` on purpose and stay in force: `[hidden]`, the hidden label of
+   a busy button, reduced motion, and what print hides.
+   `<html data-theme="dark">` switches the theme; the default is light. The
+   tokens carry the same names and values as the `.k2b-ui` scope (a parity
+   test keeps them equal).
 
    Spacing: only the flow rules below set block margins. Siblings in a flow
-   container are spaced from above; no element rule sets a top or bottom
-   margin, so no element can cancel the rhythm. `.row`, `.grid` and `.stat`
-   take the flow margin from their children; custom flex or grid layouts set
-   `gap` and `> * { margin: 0 }` themselves. */
+   container, `div` included, are spaced from above; no element rule sets a
+   top or bottom margin, so no element can cancel the rhythm. `.row`, `.grid`
+   and `.stat` take the flow margin from their children; custom flex or grid
+   layouts set `gap` and `> * { margin: 0 }` themselves. */
 @layer k2b-base {
   :root {
     color-scheme: light;
@@ -110,12 +113,12 @@
      The only rules that set block margins. All of them have zero
      specificity; a later, more specific flow rule wins by source order. */
 
-  :where(body, main, section, article, aside, header, footer, nav, form, fieldset, dialog, details, figure, blockquote, ul, ol, li, dd, td, th, div:not([class]))
+  :where(body, main, section, article, aside, header, footer, nav, form, fieldset, dialog, details, figure, blockquote, ul, ol, li, dd, td, th, div)
     > * {
     margin-block: 0;
   }
 
-  :where(body, main, section, article, aside, header, footer, form, fieldset, dialog, details, blockquote, div:not([class])) > * + * {
+  :where(body, main, section, article, aside, header, footer, form, fieldset, dialog, details, blockquote, div) > * + * {
     margin-block-start: 1rem;
   }
 
@@ -123,7 +126,7 @@
     margin-block-start: 2.5rem;
   }
 
-  :where(body, main, section, article, form, div:not([class])) > * + :where(h2, h3) {
+  :where(body, main, section, article, form, div) > * + :where(h2, h3) {
     margin-block-start: 2rem;
   }
 
@@ -399,8 +402,7 @@
     line-height: 1.25rem;
     transition:
       background-color 150ms ease,
-      border-color 150ms ease,
-      box-shadow 150ms ease;
+      border-color 150ms ease;
   }
 
   textarea {
@@ -408,19 +410,21 @@
     resize: vertical;
   }
 
-  :is(input, select, textarea):hover:not(:focus, :disabled) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="submit"], [type="button"], [type="reset"]):hover:not(:focus, :disabled),
+  select:hover:not(:focus, :disabled),
+  textarea:hover:not(:focus, :disabled) {
     border-color: var(--k2b-border);
   }
 
-  :is(input, select, textarea):focus-visible {
-    outline: none;
-  }
-
-  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]):focus,
+  /* Fields draw the focus outline inside their box, also on mouse focus.
+     An outline, unlike a box-shadow, also paints on a native select in
+     WebKit. Every other control keeps the outline outside. */
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="submit"], [type="button"], [type="reset"]):focus,
   select:focus,
   textarea:focus {
+    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+    outline-offset: calc(-1 * var(--k2b-focus-width));
     background: var(--k2b-surface);
-    box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
   }
 
   ::placeholder {
@@ -600,13 +604,16 @@
     flex: 1 1 12rem;
   }
 
-  /* A row with a heading is a header: title first, actions at the end, centered. */
-  .row:has(> :is(h1, h2, h3)) {
+  /* A row with a heading, directly or in a title block such as
+     `<div><h1>…</h1><p class="muted">…</p></div>`, is a header: title first,
+     actions at the end, centered. Actions that wrap below a long title on a
+     phone stay at the end. */
+  .row:has(> :is(h1, h2, h3), > * > :is(h1, h2, h3)) {
     align-items: center;
   }
 
-  .row > :is(h1, h2, h3) {
-    margin-inline-end: auto;
+  .row > :is(h1, h2, h3, :has(> :is(h1, h2, h3))) + * {
+    margin-inline-start: auto;
   }
 
   /* Fields or key figures in columns of at least 14rem. */
@@ -680,8 +687,9 @@
   }
 
   /* Inline feedback. role="alert" is an error surface, hidden while empty.
-     role="status" and <output> are muted text without a surface, so a
-     message next to a button never looks like a second button. */
+     role="status" is muted text without a surface, so a message next to a
+     button never looks like a second button. <output> holds a result the
+     reader needs, so it keeps the text color. */
   [role="alert"] {
     padding: 0.625rem 0.875rem;
     border-radius: var(--k2b-radius-control);
@@ -697,7 +705,7 @@
     color: var(--k2b-text-muted);
   }
 
-  /* data-tone colors the surface of tags and alerts, and only the text of status messages. */
+  /* data-tone colors the surface of tags and alerts, and only the text of status messages and outputs. */
   :is(.tag, [role="alert"])[data-tone="info"] {
     color: var(--k2b-info-text);
     background: var(--k2b-info-surface);
@@ -809,6 +817,11 @@
     box-shadow: var(--k2b-shadow-float);
   }
 
+  /* A modal dialog is centered in the top layer; no flow margin applies to it. */
+  dialog:modal {
+    margin: auto;
+  }
+
   dialog::backdrop {
     background: rgb(9 9 11 / 0.45);
   }
@@ -870,8 +883,12 @@
 
   /* Chart markup as the @k2b/ui Chart renders it: `.k2b-chart` wraps
      `.k2b-chart__svg` with `--k2b-chart-width` and `--k2b-chart-height` and
-     the @k2b/stdlib SVG. Cartesian geometry (`data-stretch`) fills the width;
-     text and markers keep their pixel size. */
+     the @k2b/stdlib SVG. The page removes the `<style>` element stdlib embeds
+     in the SVG: its rules sit outside this layer and would override the
+     tokens below. Cartesian geometry (`data-stretch`, with
+     `preserveAspectRatio="none"` on the SVG and a `transform-origin` at each
+     text's x and y) fills the width; text and markers keep their pixel size.
+     These rules mirror the `.k2b-chart` rules of styles.css. */
   .k2b-chart {
     position: relative;
     display: block;
@@ -903,14 +920,28 @@
     scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
   }
 
-  .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point) {
+  .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
     transform-box: fill-box;
     transform-origin: center;
     scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
   }
 
+  /* The legend scales as one group, so its labels never overlap on a narrow screen. */
+  .k2b-chart__svg[data-stretch] .stdlib-chart-legend text {
+    scale: none;
+  }
+
+  .k2b-chart[data-chart-kind="scatter"] .k2b-chart__svg[data-stretch] .stdlib-chart-point {
+    scale: calc(var(--k2b-chart-inverse-x) * 1.75) calc(var(--k2b-chart-inverse-y) * 1.75);
+  }
+
   .k2b-chart__svg[data-stretch] :is(path, line, rect, circle) {
     vector-effect: non-scaling-stroke;
+  }
+
+  /* Room for the sparkline's end markers, so a short sparkline never clips them. */
+  .k2b-chart[data-chart-kind="sparkline"] .k2b-chart__svg {
+    padding: 4px;
   }
 
   .k2b-chart__svg:not([data-stretch]) {
@@ -928,9 +959,8 @@
     font-family: var(--k2b-font-sans);
   }
 
-  .stdlib-chart-tick-label,
-  .stdlib-chart-bar-value {
-    font-family: var(--k2b-font-mono) !important;
+  .stdlib-chart :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value, .stdlib-chart-axis-label) {
+    font-family: var(--k2b-font-mono);
     font-variant-numeric: tabular-nums;
   }
 
@@ -994,6 +1024,18 @@
       min-height: 2.75rem;
     }
 
+    /* Icon-only buttons such as a row's ✕ get the full width too. */
+    button,
+    input:is([type="submit"], [type="button"], [type="reset"]),
+    nav :is(a, button) {
+      min-width: 2.75rem;
+    }
+
+    /* The label is the tap target of a checklist row. */
+    li:has(> input[type="checkbox"], > label > input[type="checkbox"]) > label {
+      min-height: 2.75rem;
+    }
+
     input:is([type="checkbox"], [type="radio"]) {
       width: 1.375rem;
       height: 1.375rem;
@@ -1014,7 +1056,9 @@
   }
 
   @media print {
-    :root {
+    /* Paper is white: a dark page prints with the light tokens. */
+    :root,
+    :root[data-theme="dark"] {
       color-scheme: light;
     }
 
