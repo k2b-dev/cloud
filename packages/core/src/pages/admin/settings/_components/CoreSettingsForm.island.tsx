@@ -67,7 +67,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, type JSX, Show } from "solid-js";
 import ApprovalStatus from "../../../app-approval/ApprovalStatus";
 import type { ApprovalAvailability } from "../../../app-approval/availability";
 import { appApprovalMessages } from "../../../app-approval/messages";
@@ -133,6 +133,7 @@ type Props = {
   backgroundTaskPrompts?: Record<string, string[]>;
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
   aiCredentialProfileIds?: string[];
+  aiRequestHeaderNames?: Record<string, string[]>;
   aiModelAccess?: AiModelAccessMap;
   aiAccountingUnit?: string;
   /** Which slice of the AI settings this page shows (the AI sidebar group splits them). */
@@ -169,6 +170,10 @@ type AiModelProfileDraft = {
   contextWindow?: number;
   temperature?: number;
   maxOutputTokens?: number;
+  reasoningEffort?: string;
+  extraBody?: Record<string, unknown>;
+  /** Submitted patches only; stored values never return to the browser. */
+  requestHeaders?: Record<string, string | null>;
   maxLoadedTools?: number;
   maxToolRounds?: number;
   pricing?: { inputPerMillion: number; outputPerMillion: number };
@@ -710,6 +715,7 @@ export default function CoreSettingsForm(props: Props) {
           enrichmentOverview={props.aiEnrichmentOverview ?? null}
           backgroundTaskPrompts={props.backgroundTaskPrompts}
           credentialProfileIds={props.aiCredentialProfileIds ?? []}
+          requestHeaderNames={props.aiRequestHeaderNames ?? {}}
           modelAccess={props.aiModelAccess ?? {}}
           accountingUnit={props.aiAccountingUnit ?? "EUR"}
           section={props.aiSection ?? "general"}
@@ -894,6 +900,8 @@ const providerRequiresProfileKey = (provider: AiProviderId): boolean =>
   provider === "openai" || provider === "openrouter" || provider === "anthropic" || provider === "mistral" || provider === "gemini";
 const providerSupportsProfileKey = (provider: AiProviderId): boolean =>
   providerRequiresProfileKey(provider) || provider === "openai-compatible" || provider === "vllm";
+/** nessi accepts custom headers only on endpoints Cloud builds as generic OpenAI-compatible clients. */
+const providerSupportsRequestHeaders = (provider: AiProviderId): boolean => provider === "openai-compatible" || provider === "vllm";
 const asString = (value: unknown) => (typeof value === "string" ? value : "");
 const normalizeStringList = (value: unknown, fallback: string[]) =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : fallback;
@@ -954,6 +962,11 @@ const normalizeAiProfile = (value: unknown): AiModelProfileDraft | null => {
     baseURL: typeof raw.baseURL === "string" && raw.baseURL.trim() ? raw.baseURL.trim() : undefined,
     contextWindow:
       typeof raw.contextWindow === "number" && Number.isInteger(raw.contextWindow) && raw.contextWindow > 0 ? raw.contextWindow : undefined,
+    reasoningEffort: typeof raw.reasoningEffort === "string" ? raw.reasoningEffort.trim() || undefined : undefined,
+    extraBody:
+      raw.extraBody && typeof raw.extraBody === "object" && !Array.isArray(raw.extraBody)
+        ? Object.fromEntries(Object.entries(raw.extraBody))
+        : undefined,
     temperature: typeof raw.temperature === "number" ? raw.temperature : undefined,
     maxOutputTokens:
       typeof raw.maxOutputTokens === "number" && Number.isInteger(raw.maxOutputTokens) && raw.maxOutputTokens > 0
@@ -1112,6 +1125,8 @@ function AiSettingsPanel(props: {
   enrichmentOverview: AiEnrichmentOverview | null;
   backgroundTaskPrompts?: Record<string, string[]>;
   credentialProfileIds: string[];
+  /** Names of stored extra headers per profile. The values stay server-side. */
+  requestHeaderNames: Record<string, string[]>;
   modelAccess: AiModelAccessMap;
   accountingUnit: string;
   section: AiSection;
@@ -1190,6 +1205,7 @@ function AiSettingsPanel(props: {
       accountingUnit: props.accountingUnit,
       profile,
       hasCredential: profile ? props.credentialProfileIds.includes(profile.id) : false,
+      headerNames: profile ? (props.requestHeaderNames[profile.id] ?? []) : [],
       accessEntries: accessEntriesFor(profile),
       accessRevision: profile?.assistantAccess
         ? profile.assistantAccess.expectedRevision
@@ -1335,7 +1351,7 @@ function AiSettingsPanel(props: {
 
   /** Download all profiles as JSON — API keys are never exported. */
   const exportJson = () => {
-    const sanitized = profiles().map(({ apiKey: _apiKey, assistantAccess: _access, ...profile }) => profile);
+    const sanitized = profiles().map(({ apiKey: _apiKey, requestHeaders: _headers, assistantAccess: _access, ...profile }) => profile);
     const blob = new Blob([JSON.stringify(sanitized, null, 2)], { type: "application/json" });
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1829,6 +1845,8 @@ async function openAiProfileDialog(input: {
   profile?: AiModelProfileDraft;
   /** Whether a key is already stored for this profile — the value is never available here. */
   hasCredential?: boolean;
+  /** Names of stored extra headers; their values are never available here. */
+  headerNames?: string[];
   accessEntries: AccessEntry[];
   accessRevision: number | null;
   accessSourceProfileId?: string;
@@ -1882,6 +1900,34 @@ async function openAiProfileDialog(input: {
     const [maxToolRounds, setMaxToolRounds] = createSignal<number | null>(
       typeof input.profile?.maxToolRounds === "number" && input.profile.maxToolRounds > 0 ? input.profile.maxToolRounds : null,
     );
+    const [reasoningEffort, setReasoningEffort] = createSignal(input.profile?.reasoningEffort ?? "");
+    const [extraBody, setExtraBody] = createSignal(input.profile?.extraBody ? JSON.stringify(input.profile.extraBody, null, 2) : "");
+    // Stored header values never reach the browser. A stored row keeps its value
+    // unless a new one is typed; an unsaved draft patch from an earlier edit is
+    // restored so reopening the dialog does not lose it.
+    const storedHeaderNames = input.headerNames ?? [];
+    const draftHeaders = input.profile?.requestHeaders ?? {};
+    const [storedHeaders, setStoredHeaders] = createSignal(
+      storedHeaderNames
+        .filter(
+          (name) =>
+            draftHeaders[name] !== null &&
+            !Object.entries(draftHeaders).some(
+              ([key, value]) => key !== name && key.toLowerCase() === name.toLowerCase() && typeof value === "string",
+            ),
+        )
+        .map((name) => ({ name, value: draftHeaders[name] ?? "" })),
+    );
+    const [newHeaders, setNewHeaders] = createSignal(
+      Object.entries(draftHeaders)
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string" && !storedHeaderNames.includes(entry[0]))
+        .map(([name, value]) => ({ name, value })),
+    );
+    const showHeaders = () => providerSupportsRequestHeaders(provider());
+    // Changing the provider discards stored headers on save, like a stored API key.
+    const showStoredHeaders = () => showHeaders() && input.profile?.provider === provider();
+    const requestOptionCount = () =>
+      (extraBody().trim() ? 1 : 0) + (showHeaders() ? (showStoredHeaders() ? storedHeaders().length : 0) + newHeaders().length : 0);
     const [image, setImage] = createSignal<string | null>(input.profile?.image ?? null);
     const [formError, setFormError] = createSignal<string | undefined>();
 
@@ -2034,6 +2080,73 @@ async function openAiProfileDialog(input: {
       const toolRoundLimit = maxToolRounds();
       if (typeof toolRoundLimit === "number") nextProfile.maxToolRounds = Math.trunc(toolRoundLimit);
       else delete nextProfile.maxToolRounds;
+
+      const thinkingLevel = isAudio() ? "" : reasoningEffort().trim().toLowerCase();
+      if (thinkingLevel && !/^[a-z0-9_-]{1,32}$/.test(thinkingLevel)) {
+        fail(t().thinkingLevelInvalid, "advanced");
+        return;
+      }
+      if (thinkingLevel) nextProfile.reasoningEffort = thinkingLevel;
+      else delete nextProfile.reasoningEffort;
+
+      const extraBodyText = isAudio() ? "" : extraBody().trim();
+      if (extraBodyText) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(extraBodyText);
+        } catch {
+          parsed = undefined;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          fail(t().extraBodyInvalid, "advanced");
+          return;
+        }
+        nextProfile.extraBody = Object.fromEntries(Object.entries(parsed));
+      } else delete nextProfile.extraBody;
+
+      const headerPatch: Record<string, string | null> = {};
+      if (!isAudio() && showHeaders()) {
+        const seen = new Set<string>();
+        const validValue = (value: string) => value.length <= 4096 && !/[^\t\x20-\x7E]/.test(value);
+        if (showStoredHeaders()) {
+          for (const name of storedHeaderNames) if (!storedHeaders().some((header) => header.name === name)) headerPatch[name] = null;
+          for (const header of storedHeaders()) {
+            seen.add(header.name.toLowerCase());
+            if (!header.value) continue;
+            if (!validValue(header.value)) {
+              fail(t().headerValueInvalid({ name: header.name }), "advanced");
+              return;
+            }
+            headerPatch[header.name] = header.value;
+          }
+        }
+        for (const header of newHeaders()) {
+          const name = header.name.trim();
+          if (!name && !header.value) continue;
+          if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(name)) {
+            fail(t().headerNameInvalid({ name }), "advanced");
+            return;
+          }
+          if (seen.has(name.toLowerCase())) {
+            fail(t().headerDuplicate({ name }), "advanced");
+            return;
+          }
+          if (!header.value) {
+            fail(t().headerValueRequired({ name }), "advanced");
+            return;
+          }
+          if (!validValue(header.value)) {
+            fail(t().headerValueInvalid({ name }), "advanced");
+            return;
+          }
+          seen.add(name.toLowerCase());
+          for (const key of Object.keys(headerPatch))
+            if (key.toLowerCase() === name.toLowerCase() && headerPatch[key] === null) delete headerPatch[key];
+          headerPatch[name] = header.value;
+        }
+      }
+      if (Object.keys(headerPatch).length) nextProfile.requestHeaders = headerPatch;
+      else delete nextProfile.requestHeaders;
 
       const accessDraft = assistantAccessGrants(accessEntries());
       const initialAccess = assistantAccessGrants(input.accessEntries);
@@ -2309,6 +2422,107 @@ async function openAiProfileDialog(input: {
                       showSteppers={false}
                       placeholder={t().providerDefault}
                     />
+                    <TextInput
+                      label={t().thinkingLevel}
+                      description={t().thinkingLevelDescription}
+                      value={reasoningEffort}
+                      onValueChange={setReasoningEffort}
+                      placeholder={t().providerDefault}
+                      maxLength={32}
+                      monospace
+                      clearable
+                    />
+                    <PanelDialog.Section
+                      hideable
+                      title={t().requestOptions}
+                      icon="ti ti-code"
+                      subtitle={requestOptionCount() ? t().requestOptionsSummary({ count: requestOptionCount() }) : undefined}
+                    >
+                      <div class="grid gap-4">
+                        <TextInput
+                          label={t().extraBody}
+                          description={t().extraBodyDescription}
+                          value={extraBody}
+                          onValueChange={setExtraBody}
+                          placeholder={'{ "chat_template_kwargs": { "enable_thinking": false } }'}
+                          multiline
+                          lines={4}
+                          monospace
+                        />
+                        <Show when={showHeaders()}>
+                          <fieldset class="grid gap-2">
+                            <legend class="text-sm font-medium text-primary">{t().extraHeaders}</legend>
+                            <p class="text-xs text-dimmed">{t().extraHeadersDescription}</p>
+                            <Show when={showStoredHeaders()}>
+                              <Index each={storedHeaders()}>
+                                {(header, index) => (
+                                  <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                                    <TextInput aria-label={t().headerName} value={() => header().name} readOnly monospace />
+                                    <TextInput
+                                      aria-label={`${header().name}: ${t().headerValue}`}
+                                      value={() => header().value}
+                                      onValueChange={(value) =>
+                                        setStoredHeaders((rows) => rows.map((row, i) => (i === index ? { ...row, value } : row)))
+                                      }
+                                      placeholder={t().keepStoredValue}
+                                      password
+                                    />
+                                    <IconButton
+                                      label={t().removeHeader({ name: header().name })}
+                                      size="sm"
+                                      onClick={() => setStoredHeaders((rows) => rows.filter((_, i) => i !== index))}
+                                    >
+                                      <i class="ti ti-x" aria-hidden="true" />
+                                    </IconButton>
+                                  </div>
+                                )}
+                              </Index>
+                            </Show>
+                            <Index each={newHeaders()}>
+                              {(header, index) => (
+                                <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                                  <TextInput
+                                    aria-label={t().headerName}
+                                    value={() => header().name}
+                                    onValueChange={(name) =>
+                                      setNewHeaders((rows) => rows.map((row, i) => (i === index ? { ...row, name } : row)))
+                                    }
+                                    placeholder={t().headerName}
+                                    monospace
+                                  />
+                                  <TextInput
+                                    aria-label={t().headerValue}
+                                    value={() => header().value}
+                                    onValueChange={(value) =>
+                                      setNewHeaders((rows) => rows.map((row, i) => (i === index ? { ...row, value } : row)))
+                                    }
+                                    placeholder={t().headerValue}
+                                    password
+                                  />
+                                  <IconButton
+                                    label={t().removeHeader({ name: header().name.trim() || t().headerName })}
+                                    size="sm"
+                                    onClick={() => setNewHeaders((rows) => rows.filter((_, i) => i !== index))}
+                                  >
+                                    <i class="ti ti-x" aria-hidden="true" />
+                                  </IconButton>
+                                </div>
+                              )}
+                            </Index>
+                            <div>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setNewHeaders((rows) => [...rows, { name: "", value: "" }])}
+                              >
+                                <i class="ti ti-plus" aria-hidden="true" /> {t().addHeader}
+                              </Button>
+                            </div>
+                          </fieldset>
+                        </Show>
+                      </div>
+                    </PanelDialog.Section>
                     <PanelDialog.Section hideable title={t().toolLimits} icon="ti ti-tool">
                       <div class="grid gap-4">
                         <NumberInput

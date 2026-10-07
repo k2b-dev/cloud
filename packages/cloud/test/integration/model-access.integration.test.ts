@@ -60,6 +60,10 @@ suite("Assistant model grants using normal Cloud access", () => {
       profile_id TEXT PRIMARY KEY, secret TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
+    await sql`CREATE TABLE ai.model_request_headers (
+      profile_id TEXT PRIMARY KEY, secret TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
   });
 
   test("migration seeds real authenticated grants and is idempotent", async () => {
@@ -173,7 +177,7 @@ suite("Assistant model grants using normal Cloud access", () => {
     );
   });
 
-  test("admin settings PUT keeps keyless model grants and rolls back settings and credentials", async () => {
+  test("admin settings PUT keeps keyless model grants and rolls back settings, credentials and headers", async () => {
     const { auth } = await import("../../src/server");
     // Exercise the actual settings transaction; authentication is a separate tested middleware.
     const role = spyOn(auth, "requireRole").mockImplementation(() => async (_c, next) => next());
@@ -190,10 +194,22 @@ suite("Assistant model grants using normal Cloud access", () => {
         body: JSON.stringify({ updates: { "ai.enabled": false, "ai.model_profiles_json": JSON.stringify(submitted) } }),
       });
     const local = { id: "local", label: "Local", provider: "ollama", model: "local" };
-    const remote = { id: "remote", label: "Remote", provider: "openai", model: "remote" };
+    const remote = {
+      id: "remote",
+      label: "Remote",
+      provider: "openai-compatible",
+      model: "remote",
+      baseURL: "http://provider.test/v1",
+    };
+    const headers = { "X-Token": "fixture-header-secret", "X-Keep": "keep-secret" };
     const saved = await put([
       { ...local, assistantAccess: { expectedRevision: null, entries: [] } },
-      { ...remote, apiKey: "fixture-secret", assistantAccess: { expectedRevision: null, entries: [draft({ type: "authenticated" })] } },
+      {
+        ...remote,
+        apiKey: "fixture-secret",
+        requestHeaders: headers,
+        assistantAccess: { expectedRevision: null, entries: [draft({ type: "authenticated" })] },
+      },
     ]);
     expect(saved.status).toBe(204);
     const state = await aiModelAccess.listForAdmin();
@@ -205,27 +221,33 @@ suite("Assistant model grants using normal Cloud access", () => {
     };
     expect(await readProfiles()).toEqual([local, remote]);
     const { getAiCredential } = await import("../../src/ai/credentials");
+    const { getAiRequestHeaders } = await import("../../src/ai/request-headers");
     expect(await getAiCredential("remote")).toBe("fixture-secret");
+    expect(await getAiRequestHeaders("remote")).toEqual(headers);
     const invalid = await put([
       local,
       {
         ...remote,
         label: "Do not persist",
         apiKey: "replacement",
+        requestHeaders: { "X-Token": "replacement-header-secret", "X-Keep": null, "X-New": "new-secret" },
         assistantAccess: { expectedRevision: state.remote!.revision, entries: [draft({ type: "user", userId: crypto.randomUUID() })] },
       },
     ]);
     expect(invalid.status).toBe(400);
     expect(await readProfiles()).toEqual([local, remote]);
     expect(await getAiCredential("remote")).toBe("fixture-secret");
+    expect(await getAiRequestHeaders("remote")).toEqual(headers);
     expect(await aiModelAccess.listForAdmin()).toEqual(state);
     const update = [local, { ...remote, assistantAccess: { expectedRevision: state.remote!.revision, entries: [] } }];
     expect((await put(update)).status).toBe(204);
     expect((await put(update)).status).toBe(409);
+    expect(await getAiRequestHeaders("remote")).toEqual(headers);
     expect((await aiModelAccess.listForAdmin()).remote?.entries).toEqual([]);
     const reset = await app.request("/ai.model_profiles_json", { method: "DELETE" });
     expect(reset.status).toBe(204);
     expect(await aiModelAccess.listForAdmin()).toEqual({});
     expect(await getAiCredential("remote")).toBeNull();
+    expect(await getAiRequestHeaders("remote")).toEqual({});
   });
 });

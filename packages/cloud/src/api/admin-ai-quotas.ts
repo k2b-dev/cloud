@@ -1,12 +1,15 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { AiBackgroundCostError, backgroundCostState, releaseBackgroundCostStop } from "../ai/inference-calls";
 import { setAiModelPricing } from "../ai/model-pricing";
+import { AiModelRequestSettingsInvalid, getAiModelRequestSettings, setAiModelRequestSettings } from "../ai/model-request-settings";
 import { quotaAdminConfig, quotaReport } from "../ai/quota-report";
 import { AiQuotaError, aiQuotas } from "../ai/quotas";
 import { readAiSettingsState } from "../ai/settings";
-import { type AuthContext, auth, v } from "../server";
+import { type AuthContext, auth, jsonResponse, requiresAdmin, v } from "../server";
 import { AiModelPricingSchema, hasBillableAiPricing } from "../shared/ai-costs";
+import { AiModelRequestSettingsSchema, AiModelRequestSettingsUpdateSchema } from "../shared/ai-model-request-settings";
 import {
   AiQuotaConfigSchema,
   AiQuotaIdentitySchema,
@@ -21,6 +24,7 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
   new Hono<AuthContext>()
     .use("*", authenticate)
     .onError((error, c) => {
+      if (error instanceof AiModelRequestSettingsInvalid) return c.json({ message: error.message }, 400);
       if (error instanceof AiQuotaError || error instanceof AiBackgroundCostError)
         return c.json({ error: error.code, message: error.message }, 409);
       throw error;
@@ -44,6 +48,37 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
       async (c) => {
         const data = c.req.valid("json");
         return c.json(await setAiModelPricing(c.req.param("id")!, data.pricing, data.expected, c.get("user")!.id));
+      },
+    )
+    .get(
+      "/models/:id/settings",
+      describeRoute({
+        tags: ["Administration"],
+        summary: "Read masked model request settings",
+        ...requiresAdmin,
+        responses: { 200: jsonResponse(AiModelRequestSettingsSchema, "Model request settings (header names only)") },
+      }),
+      async (c) => {
+        c.header("Cache-Control", "no-store");
+        return c.json(await getAiModelRequestSettings(c.req.param("id")!));
+      },
+    )
+    .put(
+      "/models/:id/settings",
+      describeRoute({
+        tags: ["Administration"],
+        summary: "Patch model request settings with a revision guard",
+        ...requiresAdmin,
+        responses: {
+          200: jsonResponse(AiModelRequestSettingsSchema, "Updated model request settings (header names only)"),
+          400: jsonResponse(z.object({ message: z.string() }), "Invalid model request settings"),
+          409: jsonResponse(z.object({ message: z.string(), error: z.string() }), "Model request settings changed"),
+        },
+      }),
+      v("json", AiModelRequestSettingsUpdateSchema),
+      async (c) => {
+        c.header("Cache-Control", "no-store");
+        return c.json(await setAiModelRequestSettings(c.req.param("id")!, c.req.valid("json"), c.get("user")!.id));
       },
     )
     .get("/background", async (c) => c.json(await backgroundCostState()))

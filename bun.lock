@@ -139,7 +139,7 @@
       "version": "0.20.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
-        "@k2b/nessi": "0.12.1",
+        "@k2b/nessi": "0.15.0",
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.27.0",
         "@k2b/sync": "7.0.0",
@@ -736,7 +736,7 @@
     "@codemirror/state": "6.7.1",
     "@codemirror/view": "6.43.7",
     "@firecrawl/anydoc": "0.2.4",
-    "@k2b/nessi": "0.12.1",
+    "@k2b/nessi": "0.15.0",
     "@k2b/ssr": "0.14.0",
     "@k2b/stdlib": "0.27.0",
     "@k2b/sync": "7.0.0",
@@ -1004,7 +1004,7 @@
 
     "@k2b/filegate": ["@k2b/filegate@7.0.0", "", {}, "sha512-Y3b0C5DQFbuz+HDRhEp01bdsj5Pc6w/4osewGT3jwK369Jfgow0PsEaQzJq2tUhoe/hoZzsXg02gPbFYQ6eeWA=="],
 
-    "@k2b/nessi": ["@k2b/nessi@0.12.1", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-simdZR0f9l3ExbWjwlKDjPeudhKOe4y1uO9onhc8819rRiORAzgdUhf1cuhterw9VKXwlGDv/aB70mwYghaEcQ=="],
+    "@k2b/nessi": ["@k2b/nessi@0.15.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-pvDCL7MRawC00AZyysOPNlJ/xDy9+mWvXQuh3yip39tp+ceWanbZQqXi9GGoyshy0fnocqvFh3G1c0f4GuDmgw=="],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 
@@ -2295,6 +2295,8 @@
     "@jridgewell/remapping/@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
     "@jridgewell/trace-mapping/@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
+
+    "@k2b/fibel/@k2b/nessi": ["@k2b/nessi@0.12.1", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-simdZR0f9l3ExbWjwlKDjPeudhKOe4y1uO9onhc8819rRiORAzgdUhf1cuhterw9VKXwlGDv/aB70mwYghaEcQ=="],
 
     "@k2b/fibel/@k2b/stdlib": ["@k2b/stdlib@0.25.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "ibantools": "^4.5.4", "lean-qr": "", "libxml2-wasm": "0.6.0", "pdf-lib": "1.17.1", "saxes": "^6.0.0", "solid-js": "", "zod": "^4.4.3" }, "optionalPeers": ["ibantools", "lean-qr", "libxml2-wasm", "pdf-lib", "saxes", "solid-js", "zod"] }, "sha512-URi5nK5qtPeYsoFeNZK83stisJHqibJep5PsGg5sxXgHpVD8pb3ZXoWTkh68ys8UwQYNxqJZFjeC4VsdOVzP2g=="],
 

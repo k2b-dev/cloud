@@ -351,6 +351,38 @@ stay intact. Identity, grants, personal activation, and loaded turn snapshots ar
 preserved. Deleted linked Skills stay deleted; there is no automatic recreation,
 merge, or version history.
 
+## Model request settings
+
+Read and change a profile's thinking level, extra provider parameters and
+write-only endpoint headers:
+
+```bash
+cld admin ai models settings get --id MODEL_ID --json
+cld admin ai models settings set --id MODEL_ID --thinking-level low --yes --json
+cld admin ai models settings set --id MODEL_ID --extra-body-file parameters.json --yes --json
+cld admin ai models settings set --id MODEL_ID --headers-file headers.json --yes --json
+cld admin ai models settings set --id MODEL_ID --headers-stdin --yes --json < headers.json
+cld admin ai models settings set --id MODEL_ID --clear-thinking-level --clear-extra-body --clear-headers --yes --json
+```
+
+`set` changes only supplied fields and requires `--yes`. Extra parameters accept
+`--extra-body <json>`, `--extra-body-file <path>` or `--stdin`. Header patches accept
+`--headers <json>`, `--headers-file <path>` or `--headers-stdin`; prefer files or
+standard input because values may be secrets. A string sets a header and `null`
+removes it. Omitted names keep their values. `--clear-headers` removes all headers
+before applying any patch. Output contains only configured header names.
+
+The thinking level passes unchanged to chat and tool loops; clearing it restores
+the model default. Extra parameters apply to every call, including titles,
+summaries and compaction. Headers require vLLM or OpenAI-compatible chat profiles;
+if an API key is configured, it replaces custom Authorization with its Bearer
+value. Transcription profiles reject all three settings.
+
+The command reads the current revision before saving and rejects concurrent
+changes. Read again before retrying. See
+[Models and providers](/en/docs/ai/models-and-providers) for reserved parameters,
+size limits and provider thinking-level mappings.
+
 ## AI prices, Assistant cost budgets, and background stop
 
 Use `cld admin ai quotas` for the same controls as **Admin → AI → Assistant limits**.

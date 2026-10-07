@@ -225,6 +225,27 @@ recovery checks.
 See [Release process](/en/docs/contributing/release-process) for how versions
 and tags are produced.
 
+## AI provider upgrade: nessi 0.15
+
+Cloud now uses nessi 0.15. Before rolling out the updated runtime, review these
+changes for configured AI models:
+
+- Anthropic's default output budget increases from 1,024 to 8,192 tokens when no
+  `maxOutputTokens` is configured. Quota reservations use the new default. Set an
+  explicit profile limit if the installation needs a smaller output budget.
+- Gemini output-token usage includes thinking tokens, which can increase
+  recorded reference costs and consume cost allowances sooner.
+- Truncated or interrupted provider streams end the chat loop as errors instead
+  of being stored as complete answers.
+
+Model profiles also accept a thinking level and extra provider parameters.
+vLLM and OpenAI-compatible chat profiles can use encrypted, write-only HTTP
+headers. Existing profiles preserve their provider defaults when the new fields
+are unset. Extra parameters apply to helper calls too; review their scope before
+using them to change thinking behavior. See
+[Models and providers](/en/docs/ai/models-and-providers#set-the-thinking-level)
+for validation limits, provider mappings and CLI commands.
+
 ## Roll out a release
 
 Render and inspect the deployment before changing platform containers:
