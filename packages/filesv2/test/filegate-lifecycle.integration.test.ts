@@ -283,6 +283,40 @@ suite("real Filegate directory lifecycle", () => {
     expect((await service.editorFileInfo(launch.token, fileId)).LastModifiedTime).toBe("modified" in saved ? saved.modified : "");
   }, 60_000);
 
+  test("a video streams by range from its Files lease, as a browser plays and seeks it", async () => {
+    const baseId = `freeipa:users:${id(ipaUser)}`;
+    const video = new Uint8Array(await Bun.file(new URL("../../ui/test/media/portrait-180x320.webm", import.meta.url)).arrayBuffer());
+    const total = video.byteLength;
+    await client.root("freeipa").put(`${prefix}/home/${name(ipaUser)}/Reel.webm`, new Blob([video], { type: "video/webm" }), {
+      ownership: { uid, gid, mode: "0600" },
+    });
+    const lease = await service.download(ipaUser, { baseId, path: "Reel.webm" });
+    const origin = "http://localhost:3000";
+    const get = (range?: string) =>
+      fetch(lease.url, { headers: { Origin: origin, ...(range ? { Range: range } : {}) }, redirect: "error" });
+
+    // One lease serves every request of a playback: the first open range, a seek, and the tail a player reads first.
+    const first = await get("bytes=0-");
+    expect(first.status).toBe(206);
+    expect(first.headers.get("content-range")).toBe(`bytes 0-${total - 1}/${total}`);
+    expect(new Uint8Array(await first.arrayBuffer())).toEqual(video);
+    const seek = await get("bytes=1000-1999");
+    expect(seek.status).toBe(206);
+    expect(seek.headers.get("content-range")).toBe(`bytes 1000-1999/${total}`);
+    expect(seek.headers.get("content-length")).toBe("1000");
+    expect(new Uint8Array(await seek.arrayBuffer())).toEqual(video.subarray(1000, 2000));
+    const tail = await get("bytes=-100");
+    expect(tail.status).toBe(206);
+    expect(new Uint8Array(await tail.arrayBuffer())).toEqual(video.subarray(total - 100));
+    // A browser on Cloud's origin may read the range headers it needs to play from another origin.
+    expect(seek.headers.get("access-control-allow-origin")).toBe(origin);
+    expect(seek.headers.get("access-control-expose-headers")?.toLowerCase()).toContain("content-range");
+    const whole = await get();
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect((await whole.arrayBuffer()).byteLength).toBe(total);
+  }, 30_000);
+
   test("automatic Cloud creation and archival preserve daemon ownership and suppress reprovisioning", async () => {
     const root = client.root("cloud");
     const user = await createUser("files-lifecycle-local", "local");

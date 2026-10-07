@@ -1,5 +1,11 @@
 import { sql } from "bun";
-import { MAX_TASK_ATTACHMENT_SIZE_BYTES, MAX_TASK_ATTACHMENTS, type MutationResult, type SpaceItemAttachment } from "@/contracts";
+import {
+  attachmentMediaType,
+  MAX_TASK_ATTACHMENT_SIZE_BYTES,
+  MAX_TASK_ATTACHMENTS,
+  type MutationResult,
+  type SpaceItemAttachment,
+} from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { publishSpaceChange, spacesLive } from "./live";
 
@@ -15,7 +21,7 @@ type AttachmentRow = {
   created_at: Date;
 };
 
-export type SpaceItemAttachmentContent = SpaceItemAttachment & { itemId: string; content: Uint8Array };
+export type StoredSpaceItemAttachment = SpaceItemAttachment & { itemId: string };
 
 const mapAttachment = (row: AttachmentRow): SpaceItemAttachment => ({
   id: row.short_id,
@@ -45,7 +51,7 @@ export const upload = async (params: {
   userId: string | null;
 }): Promise<MutationResult<SpaceItemAttachment>> => {
   const filename = params.filename.trim();
-  const mimeType = params.mimeType.trim() || "application/octet-stream";
+  const mimeType = attachmentMediaType(filename, params.mimeType);
   if (!filename || filename.length > 255 || mimeType.length > 255) {
     return { ok: false, error: "Attachment metadata is invalid", status: 400 };
   }
@@ -91,13 +97,23 @@ export const upload = async (params: {
   return { ok: true, data: mapAttachment(result.data) };
 };
 
-export const getContentByShortId = async (params: { shortId: string }): Promise<SpaceItemAttachmentContent | null> => {
-  const [row] = await sql<(AttachmentRow & { content: Uint8Array })[]>`
-    SELECT short_id, item_id, filename, mime_type, size_bytes, kind, created_at, content
+export const getByShortId = async (params: { shortId: string }): Promise<StoredSpaceItemAttachment | null> => {
+  const [row] = await sql<AttachmentRow[]>`
+    SELECT short_id, item_id, filename, mime_type, size_bytes, kind, created_at
     FROM spaces.item_attachments
     WHERE short_id = ${params.shortId}
   `;
-  return row ? { ...mapAttachment(row), itemId: row.item_id, content: row.content } : null;
+  return row ? { ...mapAttachment(row), itemId: row.item_id } : null;
+};
+
+/** Reads only the requested bytes, so a video that plays by range never loads whole for every request. */
+export const readContent = async (params: { shortId: string; start: number; length: number }): Promise<Uint8Array<ArrayBuffer> | null> => {
+  const [row] = await sql<{ content: Uint8Array }[]>`
+    SELECT substring(content FROM ${params.start + 1}::int FOR ${params.length}::int) AS content
+    FROM spaces.item_attachments
+    WHERE short_id = ${params.shortId}
+  `;
+  return row ? new Uint8Array(row.content) : null;
 };
 
 export const remove = async (params: { shortId: string; itemId: string; spaceId: string }): Promise<MutationResult<void>> => {

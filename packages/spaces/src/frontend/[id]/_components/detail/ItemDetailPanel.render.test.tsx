@@ -321,10 +321,32 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain('style="width:5rem;height:5rem;min-width:5rem;min-height:5rem;flex:0 0 5rem"');
     expect(html).toContain('aria-label="Preview broken-dialog.webp"');
     expect(html).toContain('aria-label="Delete broken-dialog.webp"');
-    expect(html).toContain(">Add image</span>");
+    expect(html).toContain(">Add image or video</span>");
     expect(html).not.toContain('class="k2b-image-input"');
     expect(html).not.toContain("Images are optimized");
     expect(html).toContain("/attachments/File01/content");
+  });
+
+  test("shows a read-only task's video with a playable tile", () => {
+    const html = renderPanel({
+      item: task,
+      canWrite: false,
+      attachments: [
+        {
+          id: "Reel01",
+          filename: "reel.mp4",
+          mimeType: "video/mp4",
+          sizeBytes: 4_000_000,
+          kind: "file",
+          createdAt: now,
+        },
+      ],
+    });
+
+    expect(html).toContain(">Attachments</h3>");
+    expect(html).toContain('aria-label="Play reel.mp4"');
+    expect(html).toContain('src="/api/spaces/Space1/items/');
+    expect(html).toContain("/attachments/Reel01/content#t=0.001");
   });
 
   test("shows existing task images read-only without picker or delete controls", () => {
@@ -344,7 +366,7 @@ describe("Spaces item detail panel", () => {
     });
 
     expect(html).toContain('aria-label="Preview trace.webp"');
-    expect(html).not.toContain(">Add image</span>");
+    expect(html).not.toContain(">Add image or video</span>");
     expect(html).not.toContain('aria-label="Delete trace.webp"');
   });
 

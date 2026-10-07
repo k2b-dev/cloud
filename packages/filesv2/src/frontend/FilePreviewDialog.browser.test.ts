@@ -105,7 +105,13 @@ const files: Record<string, [string, string | Buffer]> = {
   ],
   "Small.csv": ["text/csv", "Stand,Team\nGrill,Team A\nDrinks,Team B\n"],
   "data.json": ["application/json", JSON.stringify({ stand: "Grill", team: "Team A", starts: "14:00", helpers: 4 })],
+  // A 9:16 reel and a 16:9 clip, both WebM, which every test engine decodes; and a file no browser can play.
+  "Reel.webm": ["video/webm", readFileSync(`${ui}test/media/portrait-180x320.webm`)],
+  "Clip.webm": ["video/webm", readFileSync(`${ui}test/media/landscape-320x180.webm`)],
+  "Broken.mov": ["video/quicktime", "This is no video at all."],
 };
+/** Media requests to the lease addresses, with the range each asked for and the status it got. */
+const mediaRequests: { name: string; range: string | null; status: number }[] = [];
 
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
@@ -134,10 +140,29 @@ const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "l
       });
     }
     if (path.startsWith("/content/")) {
-      const file = files[path.slice("/content/".length)];
+      const name = path.slice("/content/".length);
+      const file = files[name];
       if (!file) return route.fulfill({ status: 404 });
-      if (hold && path.endsWith(".md")) await hold;
-      return route.fulfill({ contentType: file[0], body: file[1], headers: { "access-control-allow-origin": "*" } });
+      if (hold && (path.endsWith(".md") || file[0].startsWith("video/"))) await hold;
+      // As Filegate does: a range request gets exactly its bytes with 206.
+      const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
+      const body = Buffer.from(file[1]);
+      if (file[0].startsWith("video/")) mediaRequests.push({ name, range: range?.[0] ?? null, status: range ? 206 : 200 });
+      if (range) {
+        const start = Number(range[1]);
+        const end = Math.min(range[2] ? Number(range[2]) : body.length - 1, body.length - 1);
+        return route.fulfill({
+          status: 206,
+          contentType: file[0],
+          body: body.subarray(start, end + 1),
+          headers: {
+            "access-control-allow-origin": "*",
+            "accept-ranges": "bytes",
+            "content-range": `bytes ${start}-${end}/${body.length}`,
+          },
+        });
+      }
+      return route.fulfill({ contentType: file[0], body, headers: { "access-control-allow-origin": "*", "accept-ranges": "bytes" } });
     }
     if (hold && path.endsWith(".woff2")) await hold;
     const asset = assets[path] ?? (path.endsWith(".woff2") ? ["font/woff2", readFileSync(`${ui}dist${path}`)] : null);
@@ -524,4 +549,97 @@ describe("file preview dialog in a browser", () => {
         await tab.context().close();
       }
     });
+  describe("videos", () => {
+    const metadata = (tab: Page) =>
+      tab.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null)?.readyState! >= 1);
+    const picture = (tab: Page) =>
+      tab.$eval(".k2b-video-player__video", (element) => {
+        const video = element as HTMLVideoElement;
+        const rect = video.getBoundingClientRect();
+        const scale = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
+        return { width: Math.round(video.videoWidth * scale), height: Math.round(video.videoHeight * scale) };
+      });
+
+    test("a portrait reel plays at the full height of the wide frame, fetched by range from its lease", async () => {
+      mediaRequests.length = 0;
+      let release = () => {};
+      const tab = await open(
+        desktop,
+        "light",
+        new Promise<void>((done) => {
+          release = done;
+        }),
+      );
+      try {
+        await show(tab, "Reel.webm");
+        await tab.waitForSelector(".k2b-video-player__video");
+        const frame = await box(tab, ".k2b-video-player");
+        release();
+        await metadata(tab);
+        await settle(tab);
+        // The frame was reserved before the reel arrived, so nothing moves when it does.
+        expect(await box(tab, ".k2b-video-player")).toEqual(frame);
+        expect(await actionNames(tab)).toEqual(["Download", "close dialog"]);
+        const dialog = await box(tab, ".filesv2-preview-dialog");
+        expect(dialog.width).toBe(1024);
+        const body = await box(tab, ".k2b-panel-dialog__body");
+        expect(frame.width).toBeGreaterThan(body.width - 2 * 24 - 2);
+        expect(frame.height).toBeGreaterThan(body.height - 2 * 24 - 2);
+        // Uncropped: the whole 9:16 picture at the frame's height.
+        expect(await picture(tab)).toEqual({ width: Math.round((frame.height * 9) / 16), height: frame.height });
+        expect(await tab.$eval(".k2b-panel-dialog__body", (element) => element.scrollHeight <= element.clientHeight)).toBe(true);
+        expect(mediaRequests.some((request) => request.name === "Reel.webm" && request.status === 206)).toBe(true);
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+    test("a wide clip fills the frame's width", async () => {
+      const tab = await open(desktop);
+      try {
+        await show(tab, "Clip.webm");
+        await metadata(tab);
+        const frame = await box(tab, ".k2b-video-player");
+        expect(await picture(tab)).toEqual({ width: frame.width, height: Math.round((frame.width * 9) / 16) });
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+    for (const theme of ["light", "dark"] as const)
+      test(`a reel fills a phone's width and plays inline (${theme})`, async () => {
+        const tab = await open(phone, theme);
+        try {
+          await show(tab, "Reel.webm");
+          await metadata(tab);
+          await settle(tab);
+          expect(await box(tab, ".filesv2-preview-dialog")).toEqual({ left: 0, top: 0, width: 390, height: 844 });
+          const frame = await box(tab, ".k2b-video-player");
+          const body = await box(tab, ".k2b-panel-dialog__body");
+          expect(frame.top + frame.height).toBeLessThanOrEqual(body.top + body.height);
+          expect(frame.height).toBeGreaterThan(844 / 2);
+          const shown = await picture(tab);
+          // The reel is limited by the phone's width or the frame's height, never cropped.
+          expect(shown.width === frame.width || shown.height === frame.height).toBe(true);
+          expect(await tab.$eval(".k2b-video-player__video", (video) => video.hasAttribute("playsinline"))).toBe(true);
+        } finally {
+          await tab.context().close();
+        }
+      });
+
+    test("a video the browser cannot play offers its download in the same frame", async () => {
+      const tab = await open(desktop);
+      try {
+        await show(tab, "Broken.mov");
+        await tab.waitForSelector(".k2b-video-player__fallback");
+        expect(await tab.$eval(".k2b-video-player__fallback", (element) => (element as HTMLElement).innerText)).toContain(
+          "This video cannot play here",
+        );
+        await tab.click(".k2b-video-player__fallback button");
+        expect(await tab.evaluate(() => window.preview.downloads)).toEqual(["Broken.mov"]);
+      } finally {
+        await tab.context().close();
+      }
+    });
+  });
 });

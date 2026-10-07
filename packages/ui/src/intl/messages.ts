@@ -414,6 +414,8 @@ const uiMessages = i18n.define({
       textEditor: "Text editor",
       audioUnsupported: "Your browser does not support audio playback.",
       videoUnsupported: "Your browser does not support video playback.",
+      videoCannotPlay: "This video cannot play here",
+      videoCannotPlayDescription: "Your browser cannot play this video. Download it to watch it in another app.",
       yes: "Yes",
       installApp: "Install app",
       installNative: ({ appName }: { appName: string }) =>
@@ -870,6 +872,8 @@ const uiMessages = i18n.define({
       textEditor: "Texteditor",
       audioUnsupported: "Dein Browser unterstützt keine Audiowiedergabe.",
       videoUnsupported: "Dein Browser unterstützt keine Videowiedergabe.",
+      videoCannotPlay: "Dieses Video kann hier nicht abgespielt werden",
+      videoCannotPlayDescription: "Dein Browser kann dieses Video nicht abspielen. Lade es herunter, um es in einer anderen App anzusehen.",
       yes: "Ja",
       installApp: "App installieren",
       installNative: ({ appName }) => `Dein Browser kann ${appName} installieren. Bestätige die Installation im nächsten Dialog.`,

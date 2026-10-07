@@ -1,10 +1,12 @@
 # Media preview
 
-`Lightbox` presents one or more images in a modal viewer. `PdfPreview` requests a PDF and displays the resulting document. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
+`Lightbox` presents one or more images in a modal viewer. `VideoPlayer` plays one video with the browser's own controls. `PdfPreview` requests a PDF and displays the resulting document. `ZoomPanViewport` makes any content, such as a diagram, zoomable, pannable, and viewable fullscreen. The caller owns media access, URLs, and generation.
 
 ## Use media preview
 
 Use `Lightbox` when a page already shows an image or thumbnail and readers need a larger view.
+
+Use `VideoPlayer` wherever a stored video should play in place, such as a file preview or an attachment dialog. Do not wrap it in a `Lightbox`.
 
 Use `PdfPreview` when a user action generates or loads a PDF for inspection. Use a normal download link when inline inspection is not part of the task.
 
@@ -19,6 +21,8 @@ import {
   type LightboxImage,
   type PdfPreviewProps,
   type PdfPreviewRequest,
+  VideoPlayer,
+  type VideoPlayerProps,
   ZoomPanViewport,
   type ZoomPanAction,
   type ZoomPanFullscreen,
@@ -31,6 +35,20 @@ import {
 Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. Pass a meaningful `alt` for informative images. Omit it only when the image is decorative.
 
 `initialIndex` selects the first visible image. The parent owns the open state and removes the component through `onClose`.
+
+## Video
+
+`VideoPlayer` shows the video from `src` with the browser's native controls: play and pause, seeking, volume, playback speed where the browser offers it, and fullscreen. It never transcodes; the browser decodes what it can. `label` names the video for assistive technology, usually its file name.
+
+The frame's size never depends on the video. It takes the height its host gives it, and where the host leaves the height open, it keeps `ratio`, width divided by height, 16:9 by default. The picture fits inside the frame without cropping on the muted inset surface, so a 9:16 reel and a wide recording both show whole. Nothing moves while the video loads, reports its size, or fails. For a reel on a phone, give the player the screen's height, for example in a dialog that fills the screen.
+
+The browser fetches the video by range while it plays and seeks. Serve `src` inline, with its video media type, and answer `Range` requests with `206 Partial Content`; Safari plays nothing from a server that ignores them. A cross-origin `src` needs CORS headers that expose `Content-Range`. Set `crossOrigin="anonymous"` for a signed URL on another origin, so the browser sends no credentials.
+
+`src` may be `null` while the host still fetches the address, for example a signed URL: the frame shows a loading state at its final size. Without `poster`, the player shows the video's first frame before playback, also on iOS.
+
+Pass `renew` when `src` can expire during playback, such as a short-lived lease. When playback fails, the player asks `renew` for a fresh address of the same video and continues at the same time and speed, playing if it was. A renewed address that fails before it loads, or a second failure at the same point, ends in the fallback. Changing `src` itself starts a different video from the beginning.
+
+When the browser cannot play the video, for example because of its codec, the frame shows a localized notice with `fallbackAction`, typically a download link, and calls `onFallback`.
 
 ## PDF requests
 
@@ -93,6 +111,14 @@ type PdfPreviewProps = {
 ```
 
 ```ts
+type VideoPlayerProps = {
+  src: string | null; label: string; poster?: string; ratio?: number;
+  crossOrigin?: "anonymous" | "use-credentials"; renew?: () => Promise<string>;
+  fallbackAction?: JSX.Element; onFallback?: () => void; class?: string;
+};
+```
+
+```ts
 type ZoomPanAction = { label: string; icon?: string; onSelect: () => void | Promise<void> };
 
 type ZoomPanFullscreen = {
@@ -113,13 +139,17 @@ The lightbox uses a native dialog, labeled navigation controls, arrow keys, Esca
 
 `PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a retry removes the focused retry action, focus moves to the open action once the document is shown, to the document itself when the host leaves `actions` out, or to the retry of a new error state.
 
+`VideoPlayer` names its video with `label`. The browser's controls bring their own labels and keyboard support. With focus on the video, the player adds the same keys in every engine: Space and `K` play and pause, the left and right arrows seek five seconds, `M` mutes, and `F` opens fullscreen. Focus draws its ring around the frame. The loading state is a polite status, and the fallback names the problem and offers its action.
+
 `ZoomPanViewport` is a focusable group with the caller's `label` and a localized description of its keys. With focus on the viewport, `+` and `-` zoom, `0` resets, `F` opens fullscreen, and arrow keys pan when zoomed in. At fit, arrow keys keep scrolling the page. Every control has a localized label and a tooltip with its key. Motion is off under `prefers-reduced-motion`.
 
 ## Runtime
 
-Both components require hydration. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after loading a preview. A late response after unmount cannot display a preview or retain an object URL.
+`Lightbox` and `PdfPreview` require hydration. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after loading a preview. A late response after unmount cannot display a preview or retain an object URL.
 
 The server may render their initial markup, but modal behavior, network requests, Blob URLs, and navigation controls run in the browser.
+
+`VideoPlayer` renders its frame and video element on the server, so the frame holds its size before hydration. Renewal, the keys, and the fallback need hydration.
 
 `ZoomPanViewport` renders at fit on the server; zoom, pan, and fullscreen need hydration. Mounting it in a separate Solid root, for example inside an editor widget, is supported: it falls back to the document locale.
 
@@ -147,6 +177,18 @@ const images: LightboxImage[] = [
 />
 ```
 
+
+```tsx
+<PanelDialog.Body scrollFade={false}>
+  <VideoPlayer
+    src={leaseUrl()}
+    label={file.name}
+    crossOrigin="anonymous"
+    renew={async () => (await issueLease(file.path)).url}
+    fallbackAction={<a href={downloadUrl} download={file.name}>Download</a>}
+  />
+</PanelDialog.Body>
+```
 
 ```tsx
 <ZoomPanViewport

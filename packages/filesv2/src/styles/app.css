@@ -106,10 +106,13 @@
   min-width: 0;
   max-width: 100%;
 }
-.filesv2-preview img,
-.filesv2-preview video {
+.filesv2-preview img {
   max-height: 50vh;
   object-fit: contain;
+}
+/* A video keeps its frame; in the details panel the frame stays within half the screen. */
+.k2b-ui .filesv2-preview > .k2b-video-player {
+  max-height: 50vh;
 }
 .filesv2-preview__pdf {
   display: flex;
@@ -215,8 +218,13 @@
 .k2b-ui .filesv2-preview-dialog--fill .k2b-content-file-view__media {
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
-.k2b-ui .filesv2-preview-dialog .filesv2-preview :is(img, video) {
+.k2b-ui .filesv2-preview-dialog .filesv2-preview img {
   max-height: 100%;
+}
+/* The dialog's video frame takes the whole body, so a portrait reel shows at the body's full height. */
+.k2b-ui .filesv2-preview-dialog .filesv2-preview > .k2b-video-player {
+  flex: 1 1 auto;
+  max-height: none;
 }
 /* Phones: the preview takes the whole screen, clear of notches and the home indicator. */
 @media (max-width: 47.999rem) {

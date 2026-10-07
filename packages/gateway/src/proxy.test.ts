@@ -115,3 +115,48 @@ describe("service worker scope", () => {
     }
   });
 });
+
+describe("byte ranges", () => {
+  test("a range request reaches the app and its 206 answer reaches the browser unchanged", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const video = new Uint8Array(4096).map((_, index) => index % 251);
+    const ranges: (string | null)[] = [];
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        const range = req.headers.get("range");
+        ranges.push(range);
+        const match = /^bytes=(\d+)-(\d+)$/.exec(range ?? "");
+        if (!match) return new Response(video, { headers: { "Content-Type": "video/webm", "Accept-Ranges": "bytes" } });
+        const [start, end] = [Number(match[1]), Number(match[2])];
+        return new Response(video.slice(start, end + 1), {
+          status: 206,
+          headers: {
+            "Content-Type": "video/webm",
+            "Accept-Ranges": "bytes",
+            "Content-Length": String(end - start + 1),
+            "Content-Range": `bytes ${start}-${end}/${video.length}`,
+          },
+        });
+      },
+    });
+    const table = buildRouteTable([{ prefix: "/", appId: "spaces", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
+    // The gateway answers on the wire as in production, so the browser sees what Bun.serve sends.
+    const gateway = Bun.serve({ port: 0, fetch: (req) => proxyRequest(req, table, createProxyStats(), () => {}, null) });
+    try {
+      const response = await fetch(`http://127.0.0.1:${gateway.port}/api/spaces/S/items/I/attachments/A/content`, {
+        headers: { Range: "bytes=1000-1999" },
+      });
+      expect(response.status).toBe(206);
+      expect(response.headers.get("content-range")).toBe(`bytes 1000-1999/${video.length}`);
+      expect(response.headers.get("content-length")).toBe("1000");
+      expect(response.headers.get("accept-ranges")).toBe("bytes");
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(video.subarray(1000, 2000));
+      expect(ranges).toEqual(["bytes=1000-1999"]);
+    } finally {
+      await gateway.stop(true);
+      await upstream.stop(true);
+      telemetry.mockRestore();
+    }
+  });
+});

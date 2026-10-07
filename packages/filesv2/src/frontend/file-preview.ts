@@ -6,7 +6,12 @@ import { ErrorSchema, type FileEntry } from "../contracts";
 export const fileIcon = (entry: FileEntry) =>
   `ti ${fileIcons.getFileIcon({ name: entry.name, type: entry.directory ? "directory" : "file" })}`;
 export const previewFile = (entry: FileEntry) => ({ path: entry.path, size: entry.size, mediaType: mimeType(entry.name) });
-export const previewKind = (entry: FileEntry) => (entry.directory ? null : getFileViewPreviewKind(previewFile(entry)));
+export const previewKind = (entry: FileEntry) => {
+  if (entry.directory) return null;
+  // A video streams from its lease through range requests, so its size never bounds the preview.
+  if (getFileViewPreviewKind({ path: entry.path, mediaType: mimeType(entry.name) }) === "video") return "video";
+  return getFileViewPreviewKind(previewFile(entry));
+};
 function mimeType(name: string) {
   const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
   const types: Record<string, string> = {
@@ -19,6 +24,9 @@ function mimeType(name: string) {
     svg: "image/svg+xml",
     avif: "image/avif",
     mp4: "video/mp4",
+    m4v: "video/x-m4v",
+    mov: "video/quicktime",
+    ogv: "video/ogg",
     webm: "video/webm",
     mp3: "audio/mpeg",
     wav: "audio/wav",

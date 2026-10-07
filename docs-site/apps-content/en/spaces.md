@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-04
+updated: 2026-10-07
 ---
 
 # Spaces
@@ -106,6 +106,17 @@ collapsed **Details**. An event shows its schedule under **Planning**, then its
 location, link, and invitations, its content, the assigned people, links,
 comments, and details. Parts without content stay hidden unless you can edit
 them.
+
+Task attachments hold images and videos, at most 20 per task and 10 MB per
+file. **Add image or video** downscales large images before uploading them and
+uploads videos (`.mp4`, `.m4v`, `.mov`, `.webm`, `.ogv`) unchanged, without
+transcoding. A video tile shows its first frame; selecting it plays the video in
+a dialog with the browser's own controls and **Download**. The dialog fits the
+whole picture, so a vertical reel shows at full height, and fills the screen on
+a phone. Whether a video plays depends on its codec and the browser; one that
+cannot play offers its download instead. The content route answers range
+requests with `206 Partial Content`, which browsers need to play and seek, and
+serves images and playable videos inline. Every other file type downloads.
 
 In list and table views, search updates results without reloading the page or
 moving focus out of the search field. The URL follows the displayed results,
@@ -208,7 +219,8 @@ and `GET /api/spaces/resolve?space=&title=`; both apply the same read access
 as the web interface.
 
 The `spaces.item.read` capability includes bounded task attachment metadata
-with authenticated preview and download links. Attachment content remains in
+with authenticated preview and download links; images and playable videos have
+a preview link. Attachment content remains in
 Spaces rather than being embedded in capability results.
 
 ## Assistant workflows

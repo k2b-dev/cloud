@@ -33,6 +33,7 @@ const { default: Lightbox } = await import("./Lightbox");
 const { default: MarkdownView } = await import("./MarkdownView");
 const { default: PdfPreview } = await import("./PdfPreview");
 const { default: StructuredDataPreview, isStructuredDataValue } = await import("./StructuredDataPreview");
+const { default: VideoPlayer } = await import("./VideoPlayer");
 
 /** Icon glyph classes live in the optional Tabler preset, not in styles.css. */
 const isIconClass = (token: string) => token === "ti" || token.startsWith("ti-");
@@ -128,8 +129,15 @@ describe("@k2b/ui content style coverage", () => {
       load: async () => ({ encoding: "utf8" as const, mediaType: "text/markdown", content: "# Title\n\nBody\n" }),
       downloadHref: "/download",
     });
+    const video = renderToString(() => createComponent(VideoPlayer, { src: "/reel.mp4", label: "Reel" }));
+    const videoFile = await renderFileView({
+      file: { path: "/clips/reel.mp4", mediaType: "video/mp4" },
+      load: async () => ({ encoding: "base64" as const, mediaType: "video/mp4", content: "" }),
+      previewHref: "/inline/reel.mp4",
+      downloadHref: "/download",
+    });
 
-    for (const html of [tree, structured, structuredRaw, pdf, lightbox, source, markdownFile]) {
+    for (const html of [tree, structured, structuredRaw, pdf, lightbox, source, markdownFile, video, videoFile]) {
       expect(unstyled(html)).toEqual([]);
       expect(foreign(html)).toEqual([]);
     }
@@ -341,6 +349,43 @@ describe("@k2b/ui content behaviour", () => {
     expect(html).not.toContain("ReferenceError");
     expect(html).toContain("Body text");
     expect(html).not.toContain("<h1>");
+  });
+
+  test("VideoPlayer reserves its frame and keeps the browser's controls on the server", () => {
+    const html = renderToString(() => createComponent(VideoPlayer, { src: "/clips/reel.mp4?lease=1", label: "Reel for approval" }));
+    expect(html).toContain('class="k2b-video-player "');
+    expect(html).toContain("aspect-ratio:1.7777777777777777");
+    expect(html).toMatch(/<video[^>]*class="k2b-video-player__video"/);
+    for (const attribute of ["controls", "playsinline", 'preload="metadata"', 'tabindex="0"', 'aria-label="Reel for approval"'])
+      expect(html).toContain(attribute);
+    // Without a poster, a media fragment makes Safari on iOS show the first frame.
+    expect(html).toContain('src="/clips/reel.mp4?lease=1#t=0.001"');
+
+    const portrait = renderToString(() =>
+      createComponent(VideoPlayer, { src: "/clips/reel.mp4", label: "Reel", poster: "/clips/reel.jpg", ratio: 9 / 16 }),
+    );
+    expect(portrait).toContain("aspect-ratio:0.5625");
+    expect(portrait).toContain('src="/clips/reel.mp4"');
+    expect(portrait).toContain('poster="/clips/reel.jpg"');
+  });
+
+  test("FileView plays a video through VideoPlayer from its inline address", async () => {
+    let reads = 0;
+    const html = await renderFileView({
+      file: { path: "/clips/reel.mov", mediaType: "video/mp4" },
+      load: async () => {
+        reads += 1;
+        return { encoding: "base64" as const, mediaType: "video/mp4", content: "" };
+      },
+      previewHref: "/inline/reel.mov",
+      crossOrigin: "anonymous",
+      downloadHref: "/download",
+    });
+    expect(reads).toBe(0);
+    expect(html).toContain('class="k2b-video-player "');
+    expect(html).toContain('src="/inline/reel.mov?preview-revision=0#t=0.001"');
+    expect(html).toContain('crossorigin="anonymous"');
+    expect(html).toContain('aria-label="reel.mov"');
   });
 
   test("StructuredDataPreview caps rows and reports the remainder", () => {

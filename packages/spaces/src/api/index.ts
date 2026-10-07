@@ -34,6 +34,7 @@ import {
   GrantAccessSchema,
   ItemFilterSchema,
   ItemListResultSchema,
+  isPlayableVideoType,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
   MessageResponseSchema,
   MoveItemSchema,
@@ -91,6 +92,7 @@ import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { spacesService } from "../service";
 import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
+import { resolveByteRange } from "../service/byte-range";
 import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
 import { spacesLive } from "../service/live";
@@ -1037,8 +1039,10 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: { description: "Attachment content" },
+        206: { description: "The requested byte range of the attachment content" },
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Attachment not found"),
+        416: { description: "The requested byte range lies outside the attachment" },
       },
     }),
     async (c) => {
@@ -1046,24 +1050,36 @@ const app = new Hono<AuthContext>()
       if (access.error) return access.error;
       const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
       if (!item.ok) return respond(c, item);
-      const attachment = await spacesService.item.attachments.getContentByShortId({ shortId: c.req.param("attachmentId") ?? "" });
+      const shortId = c.req.param("attachmentId") ?? "";
+      const attachment = await spacesService.item.attachments.getByShortId({ shortId });
       if (!attachment || attachment.itemId !== item.data.id) return respond(c, fail(err.notFound("Attachment")));
 
-      const inline = attachment.kind === "image" && c.req.query("download") !== "true";
+      // Images and playable videos answer inline with their own type; everything else is a download.
+      const inline = (attachment.kind === "image" || isPlayableVideoType(attachment.mimeType)) && c.req.query("download") !== "true";
       const contentType = inline ? attachment.mimeType : "application/octet-stream";
-      const disposition = `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(attachment.filename)}"`;
-      const buffer = attachment.content.buffer.slice(
-        attachment.content.byteOffset,
-        attachment.content.byteOffset + attachment.content.byteLength,
-      ) as ArrayBuffer;
-      return new Response(new Blob([buffer], { type: contentType }), {
-        headers: {
-          "Content-Type": contentType,
-          "Content-Disposition": disposition,
-          "X-Content-Type-Options": "nosniff",
-          "Cache-Control": "no-store",
-        },
+      const headers = new Headers({
+        "Content-Type": contentType,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(attachment.filename)}"`,
+        "Accept-Ranges": "bytes",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
       });
+      // Browsers fetch and seek video by range; Safari plays nothing without 206 answers.
+      const range = resolveByteRange(c.req.header("range"), attachment.sizeBytes);
+      if (range === "unsatisfiable") {
+        headers.set("Content-Range", `bytes */${attachment.sizeBytes}`);
+        return new Response(null, { status: 416, headers });
+      }
+      const selected = range ?? { start: 0, endExclusive: attachment.sizeBytes };
+      const content = await spacesService.item.attachments.readContent({
+        shortId,
+        start: selected.start,
+        length: selected.endExclusive - selected.start,
+      });
+      if (!content) return respond(c, fail(err.notFound("Attachment")));
+      headers.set("Content-Length", String(content.byteLength));
+      if (range) headers.set("Content-Range", `bytes ${range.start}-${range.endExclusive - 1}/${attachment.sizeBytes}`);
+      return new Response(content, { status: range ? 206 : 200, headers });
     },
   )
   .delete(

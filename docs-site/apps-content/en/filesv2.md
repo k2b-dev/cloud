@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Files
@@ -451,6 +451,28 @@ For each download, the browser requests a short-lived lease from Files.
 After authorization, Filegate sends the file directly to the browser. The full
 Filegate token never appears in the lease. Disabling an area or removing access
 prevents new leases; already issued leases retain their short remaining lifetime.
+
+## Play videos
+
+Videos (`.mp4`, `.m4v`, `.mov`, `.webm`, and `.ogv`) play in the preview dialog and
+in the details panel with the browser's own controls. The browser streams the
+video from a download lease by range requests, so a video of any size starts at
+once and seeks without loading the whole file; Filegate answers each range
+with `206 Partial Content`. When a lease expires during playback, for example
+after a long pause, the player requests a fresh lease through Files and
+continues at the same point. Every renewal passes the same access checks as a
+new download.
+
+Files does not transcode. Whether a video plays depends on its codec and the
+browser: H.264 and VP9 play in most current browsers, while HEVC (H.265) plays in
+Safari but not in every other browser. A video the browser cannot play shows a
+notice with **Download** in the same frame.
+
+The preview frame keeps its size while the video loads, and the picture fits it
+uncropped: a vertical 9:16 reel shows at the dialog's full height, and on a
+phone the dialog fills the screen. The details panel shows the video in a
+square frame. The browser reaches Filegate's public origin directly; its CORS
+configuration must allow Cloud's origin, as for every other download.
 
 Filegate owns each root's index, versioning, managed, and execution configuration.
 Files reads those capabilities independently for each root. Root file counts,
