@@ -321,7 +321,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 
 | Feature | Configuration and dependency | What to verify |
 | --- | --- | --- |
-| Platform email | `mail.noreply.smtp_host`, `mail.noreply.smtp_port`, `mail.noreply.from`, `mail.noreply.user`, `mail.noreply.password`; reachable SMTP server | Use the saved-settings email test. Magic links, password-reset emails and email notifications need this independently of installing Mail. |
+| Platform email | A default [outgoing mail sender profile](/en/docs/operations/outgoing-mail) and a reachable SMTP server | Test the profile through Administration → Outgoing mail or `cld admin outgoing-mail profiles test <key> --to <address>`. Magic links, password-reset emails, and email notifications need this independently of installing Mail. |
 | FreeIPA | `freeipa.enable`, connection, service credentials, trusted CA and group rules. Configure and explicitly enable the integration in Core administration; environment bootstrap is not supported. | Follow [FreeIPA setup](/en/docs/operations/freeipa), test TLS/login, and preview sync scope before directory changes. |
 | AI | `ai.enabled`, `ai.model_profiles_json`, selected model IDs, profile credentials/endpoint and applicable model access grants | Follow [Models and providers](/en/docs/ai/models-and-providers). An installed Assistant is not an enabled or authorized model. Private models need reachable inference endpoints; hosted models need provider credentials. |
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |

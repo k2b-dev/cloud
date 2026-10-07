@@ -266,6 +266,8 @@ On iPhone and iPad, Cloud must run as an installed Home Screen application.
 
 ### Email delivery
 
+Core delivers email through the default [outgoing mail profile](/en/docs/operations/outgoing-mail). Configure and test that sender before enabling email notifications.
+
 Email delivery is available when the resolved recipient has an address:
 
 - a direct email recipient supplies it in the send call;

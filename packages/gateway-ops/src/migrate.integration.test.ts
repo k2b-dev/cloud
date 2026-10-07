@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { migrate } from "./migrate";
+import { listRegisteredApps, upsertRegisteredApps } from "./registered-apps";
 
 const dbTest = testFor("database");
 
@@ -28,5 +29,26 @@ dbTest("discards malformed registry snapshots without resetting valid metadata o
   } finally {
     await sql`DELETE FROM gateway.registered_apps WHERE id LIKE ${`${prefix}%`}`;
     await sql`DELETE FROM gateway.health_webhooks WHERE id=${webhook}::uuid`;
+  }
+});
+
+dbTest("retains declared platform permissions in persistent app snapshots", async () => {
+  await migrate();
+  const id = `outgoing-mail-${crypto.randomUUID()}`;
+  try {
+    await upsertRegisteredApps([
+      {
+        id,
+        name: "Inventory",
+        icon: "mail",
+        description: "Inventory",
+        routes: [],
+        baseUrl: "http://inventory:3000",
+        platformPermissions: ["mail:send"],
+      },
+    ]);
+    expect((await listRegisteredApps()).find((app) => app.id === id)?.platformPermissions).toEqual(["mail:send"]);
+  } finally {
+    await sql`DELETE FROM gateway.registered_apps WHERE id = ${id}`;
   }
 });

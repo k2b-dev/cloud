@@ -6,7 +6,7 @@ import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
-import { clearProcessApplicationId } from "./process-identity";
+import { clearProcessApplicationId, getProcessPlatformPermissions } from "./process-identity";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
@@ -36,6 +36,7 @@ test("declared CLI modules are advertised, routed, and served behind authenticat
   try {
     const app = defineApp({
       id: "inventory",
+      platformPermissions: ["mail:send"],
       name: "Inventory",
       icon: "ti ti-box",
       description: "Stock",
@@ -43,9 +44,12 @@ test("declared CLI modules are advertised, routed, and served behind authenticat
       routes: ["/api/inventory"],
       cli: { inventory: { module: "src/cli.ts", references: "src/cli-references" } },
     });
+    expect(app.meta.platformPermissions).toEqual(["mail:send"]);
     expect(app.meta.routes).toEqual(["/api/inventory", "/cli/plugins/inventory"]);
     const server = await app.start({ fetch: () => new Response("application") });
     const entry = entries.find((value): value is AppRegistryEntry => (value as AppRegistryEntry).id === "inventory")!;
+    expect(entry.platformPermissions).toEqual(["mail:send"]);
+    expect(getProcessPlatformPermissions()).toEqual(["mail:send"]);
     expect(entry.cliModules).toEqual(["inventory"]);
     expect(entry.routes).toEqual(["/api/inventory", "/cli/plugins/inventory"]);
 

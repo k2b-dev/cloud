@@ -509,3 +509,23 @@ Cached-token discounts and separately billed modalities are not reconstructed.
 Raw tokens remain available for diagnosis. Historical data survives chat deletion.
 This alpha cut does not migrate old token quotas or credits; configure prices
 and cost limits explicitly, with unlimited usage as the default.
+
+## Outgoing mail
+
+```bash
+cld admin outgoing-mail profiles list --json
+cld admin outgoing-mail profiles get noreply --json
+cld admin outgoing-mail profiles put noreply --config-file sender.json
+cld admin outgoing-mail profiles test noreply --to operator@example.org
+cld admin outgoing-mail profiles set-default noreply --yes
+cld admin outgoing-mail profiles delete old-sender --yes
+cld admin outgoing-mail apps list --json
+cld admin outgoing-mail apps set inventory --default --yes
+cld admin outgoing-mail apps set inventory --profiles noreply,alerts --yes
+cld admin outgoing-mail apps set inventory --none --yes
+```
+
+SMTP passwords belong only in `--config-file` or `--stdin`, never inline
+`--config`. Replacements include the current revision; an omitted password is
+kept, and null clears it. Default access follows the current default profile;
+`--none` stores an empty selected set. Every app must declare `mail:send`.

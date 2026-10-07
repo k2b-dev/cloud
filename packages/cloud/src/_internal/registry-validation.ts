@@ -1,4 +1,5 @@
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
+import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../contracts/registry";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -118,6 +119,8 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("widgets", "an array of valid widgets");
     }
   }
+  if (value.platformPermissions !== undefined && !PlatformPermissionSchema.array().safeParse(value.platformPermissions).success)
+    return invalid("platformPermissions", "an array of platform permissions");
   if (value.settingKeys !== undefined && !isStringArray(value.settingKeys)) return invalid("settingKeys", "an array of strings");
   if (
     value.cliModules !== undefined &&

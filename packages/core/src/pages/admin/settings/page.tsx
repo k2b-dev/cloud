@@ -123,7 +123,6 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       icon: "ti ti-folders",
       group: null,
     },
-    { id: "mail", title: t.mailSettings, description: t.mailSettingsDescription, icon: "ti ti-mail", group: "mail" as const },
     {
       id: "pdf-rendering",
       title: t.pdfRenderingSettings,
@@ -218,6 +217,8 @@ export default ssr<AuthContext>(async (c) => {
   const t = adminMessages.resolve([locale]).t;
   const availableTabs = tabs(t, locale);
   const rawTab = c.req.query("tab");
+  // SMTP delivery moved to sender profiles — keep old links working.
+  if (rawTab === "mail") return c.redirect("/admin/outgoing-mail", 302);
   // "ai" predates the split into the AI sidebar group — keep old links working.
   const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
   const tabId: TabId = isTabId(legacyTab, availableTabs) ? legacyTab : "general";
@@ -274,7 +275,6 @@ export default ssr<AuthContext>(async (c) => {
 
   if (tab.group) {
     entries = await buildEntries(tab.group, locale);
-    if (tab.id === "mail") entries = entries.filter((entry) => entry.kind !== "template");
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
     if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
     if (tab.id === "ai-providers") {
@@ -351,7 +351,6 @@ export default ssr<AuthContext>(async (c) => {
             entries={entries}
             approvalState={approvalState}
             accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
-            showTestEmailAction={tab.id === "mail"}
             showTestPdfAction={tab.id === "pdf-rendering"}
             showTestFreeIpaAction={tab.id === "freeipa"}
             showLegacySettings={tab.id === "general"}

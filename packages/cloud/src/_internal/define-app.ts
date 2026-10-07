@@ -40,6 +40,7 @@ import {
   CapabilityOriginSchema,
 } from "../contracts/capabilities";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
+import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
@@ -201,6 +202,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    * prefix-trie from these strings.
    */
   routes: readonly string[];
+  /** Platform services requested by this application, visible to administrators. */
+  platformPermissions?: readonly PlatformPermission[];
   /**
    * Gateway-relative URL at which this app's OpenAPI 3.x JSON spec is
    * served, e.g. `"/api/notebooks/openapi.json"`. Opt-in: only set this
@@ -471,6 +474,9 @@ export const defineApp = <
   // ── 2. Meta ───────────────────────────────────────────────────────────
   const baseMeta: AppMeta = {
     id: opts.id,
+    platformPermissions: opts.platformPermissions
+      ? opts.platformPermissions.map((permission) => PlatformPermissionSchema.parse(permission))
+      : undefined,
     name: opts.name,
     icon: opts.icon,
     description: opts.description,
@@ -528,7 +534,7 @@ export const defineApp = <
         }
       })());
     try {
-      bindProcessApplicationId(meta.id);
+      bindProcessApplicationId(meta.id, meta.platformPermissions);
       cleanup.unshift(clearProcessApplicationId);
       const startedAt = Date.now();
 
@@ -587,6 +593,7 @@ export const defineApp = <
           ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
           : undefined,
         widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
+        platformPermissions: meta.platformPermissions ? [...meta.platformPermissions] : undefined,
         settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
         openapi: advertiseOpenapi ? opts.openapi : undefined,
         cliModules: cliModules.length > 0 ? cliModules : undefined,

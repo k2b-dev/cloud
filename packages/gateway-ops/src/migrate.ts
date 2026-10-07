@@ -27,6 +27,7 @@ export const migrate = async (): Promise<void> => {
       last_offline_logged_at TIMESTAMPTZ
     )
   `.simple();
+  await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS platform_permissions JSONB`.simple();
   await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS appearance JSONB`.simple();
   await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS runtime JSONB`.simple();
   await sql`ALTER TABLE gateway.registered_apps ADD COLUMN IF NOT EXISTS capabilities JSONB`.simple();

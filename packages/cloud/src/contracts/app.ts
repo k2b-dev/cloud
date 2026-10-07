@@ -1,4 +1,5 @@
 import type { Sync } from "@k2b/sync";
+import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
@@ -97,6 +98,7 @@ export type AppPwaPart = {
 };
 
 export type AppMeta = {
+  platformPermissions?: readonly PlatformPermission[];
   id: string;
   name: string;
   icon: string;

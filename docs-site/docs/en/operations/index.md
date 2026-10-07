@@ -43,3 +43,6 @@ container ownership.
 
 Configure people and their access through [Accounts & sign-in](/en/docs/accounts):
 account types, FreeIPA, app sign-in, Linux identities and lifecycle maintenance.
+
+Configure sender profiles and application access through
+[Outgoing mail](/en/docs/operations/outgoing-mail).

@@ -235,11 +235,6 @@ const de: Record<string, SettingCopy> = {
     label: "Vorlage für abgelehnte Kontoanträge",
     description: "HTML-Vorlage der E-Mail bei einem abgelehnten Kontoantrag.",
   },
-  "mail.noreply.smtp_host": { label: "SMTP-Host", description: "Hostname des SMTP-Servers." },
-  "mail.noreply.smtp_port": { label: "SMTP-Port", description: "Port des SMTP-Servers, üblicherweise 587 für STARTTLS oder 465 für SSL." },
-  "mail.noreply.from": { label: "Absenderadresse", description: "E-Mail-Adresse des Absenders." },
-  "mail.noreply.user": { label: "SMTP-Benutzername", description: "Benutzername für den SMTP-Server." },
-  "mail.noreply.password": { label: "SMTP-Passwort", description: "Passwort für den SMTP-Server." },
   "cli.plugins.access": {
     label: "Wer cld-Plugins installieren darf",
     description:

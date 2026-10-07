@@ -1,5 +1,6 @@
 import type { AppRegistryDetail } from "@k2b/cloud";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
+import { PlatformPermissionSchema } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
 
@@ -8,6 +9,7 @@ type DbRegisteredAppRow = {
   name: string;
   icon: string;
   description: string;
+  platform_permissions: unknown;
   appearance: unknown;
   runtime: unknown;
   base_url: string;
@@ -53,6 +55,7 @@ const mapRow = (row: DbRegisteredAppRow): PersistentRegisteredApp => ({
   name: row.name,
   icon: row.icon,
   description: row.description,
+  platformPermissions: PlatformPermissionSchema.array().safeParse(row.platform_permissions).data,
   appearance: jsonObject<AppRegistryEntry["appearance"]>(row.appearance),
   runtime: jsonObject<AppRegistryEntry["runtime"]>(row.runtime),
   baseUrl: row.base_url,
@@ -73,7 +76,7 @@ export const upsertRegisteredApps = async (apps: readonly AppRegistryEntry[]): P
   for (const app of apps) {
     await sql`
       INSERT INTO gateway.registered_apps (
-        id, name, icon, description, appearance, runtime, base_url, routes, nav, capabilities, legal_links,
+        id, name, icon, description, platform_permissions, appearance, runtime, base_url, routes, nav, capabilities, legal_links,
         widgets, openapi, first_seen_at, last_seen_at, updated_at, removed_at
       )
       VALUES (
@@ -81,6 +84,7 @@ export const upsertRegisteredApps = async (apps: readonly AppRegistryEntry[]): P
         ${app.name},
         ${app.icon},
         ${app.description},
+        ${app.platformPermissions ? JSON.stringify(app.platformPermissions) : null}::text::jsonb,
         ${app.appearance ? JSON.stringify(app.appearance) : null}::text::jsonb,
         ${app.runtime ? JSON.stringify(app.runtime) : null}::text::jsonb,
         ${app.baseUrl},
@@ -99,6 +103,7 @@ export const upsertRegisteredApps = async (apps: readonly AppRegistryEntry[]): P
         name = EXCLUDED.name,
         icon = EXCLUDED.icon,
         description = EXCLUDED.description,
+        platform_permissions = EXCLUDED.platform_permissions,
         appearance = EXCLUDED.appearance,
         runtime = EXCLUDED.runtime,
         base_url = EXCLUDED.base_url,

@@ -1,23 +1,9 @@
-import { createTransport, type Transporter } from "nodemailer";
 import sanitizeHtml from "sanitize-html";
 import { sanitizeEmailHtml } from "../../shared";
+import { resolveMailCredentials } from "../outgoing-mail/store";
+import { buildMailTransport } from "../outgoing-mail/transport";
 import * as settings from "../settings";
 import { coreSettings } from "../settings/api";
-
-/** Lazily-created transporter — uses current settings on each send. */
-const getTransporter = async (): Promise<Transporter> => {
-  const host = await settings.get<string>("mail.noreply.smtp_host");
-  const port = await settings.get<number>("mail.noreply.smtp_port");
-  const user = await settings.get<string>("mail.noreply.user");
-  const pass = await settings.get<string>("mail.noreply.password");
-
-  return createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: { user, pass },
-  });
-};
 
 /** Sanitize plain text content (no HTML allowed). */
 const sanitizeContent = (content: string): string => sanitizeHtml(content, { allowedTags: [], allowedAttributes: {} });
@@ -31,7 +17,7 @@ export const sendEmail = async (
   const rawAppUrl = await settings.get<string>("app.url");
   const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
   const appName = await settings.get<string>("app.name");
-  const emailFrom = await settings.get<string>("mail.noreply.from");
+  const profile = await resolveMailCredentials();
 
   let body = "";
   if (opts.rawHtml) {
@@ -42,16 +28,20 @@ export const sendEmail = async (
   const text = opts.content ? sanitizeContent(opts.content) : undefined;
 
   const html = await buildHtml(appUrl, appName, body);
-  const transporter = await getTransporter();
+  const transporter = buildMailTransport(profile);
 
-  await transporter.sendMail({
-    from: `"${appName}" <${emailFrom}>`,
-    to,
-    subject,
-    ...(opts.messageId ? { messageId: opts.messageId } : {}),
-    html,
-    ...(text ? { text } : {}),
-  });
+  try {
+    await transporter.sendMail({
+      from: { address: profile.fromAddress, name: profile.fromName ?? appName },
+      to,
+      subject,
+      ...(opts.messageId ? { messageId: opts.messageId } : {}),
+      html,
+      ...(text ? { text } : {}),
+    });
+  } finally {
+    transporter.close();
+  }
 };
 
 /**

@@ -23,7 +23,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "emerald",
     },
     {
-      href: "/admin/settings?tab=mail",
+      href: "/admin/outgoing-mail",
       title: t.mail,
       description: t.mailDescription,
       icon: "ti ti-mail",

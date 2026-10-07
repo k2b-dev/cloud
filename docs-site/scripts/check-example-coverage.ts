@@ -11,6 +11,7 @@ export type RecipeFixture = {
 };
 
 export const recipeFixtures: RecipeFixture[] = [
+  { page: "platform/outgoing-mail.md", fixtures: ["platform-outgoing-mail.ts"] },
   {
     page: "identity/authentication.md",
     fixtures: ["identity-access.ts"],

@@ -54,3 +54,10 @@ describe("validateAppRegistryEntry", () => {
       }),
     ).toContain("help"));
 });
+
+test("validates optional outgoing mail permission declarations", () => {
+  expect(validateAppRegistryEntry({ ...valid, platformPermissions: ["mail:send"] })).toBeNull();
+  expect(validateAppRegistryEntry({ ...valid, platformPermissions: [] })).toBeNull();
+  for (const platformPermissions of ["mail:send", ["unknown"], [1]])
+    expect(validateAppRegistryEntry({ ...valid, platformPermissions })).toContain("platformPermissions");
+});
