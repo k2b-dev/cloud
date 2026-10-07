@@ -59,6 +59,10 @@ import "@k2b/ui/icons/tabler.css";
 
 Omit either preset when your application already provides that asset.
 
+A page written in plain HTML instead of Solid components can use the
+classless [Base stylesheet](./surfaces/base-stylesheet), `@k2b/ui/base.css`.
+It styles the document itself, so load it only into a page that it owns.
+
 The icon preset gives every Tabler icon a fixed width of one em. An icon keeps
 that width while the icon font loads, so buttons and text next to it do not
 grow or move sideways when the font arrives. Because each icon is its own box,

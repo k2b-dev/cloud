@@ -121,6 +121,14 @@ try {
     if (!pattern.test(cssOutput)) throw new Error(`packed global stylesheet is missing ${label}`);
   }
 
+  const baseStyles = import.meta.resolve("@k2b/ui/base.css", join(consumer, "index.ts"));
+  if (!baseStyles.includes("/node_modules/@k2b/ui/dist/base.css")) {
+    throw new Error(`base stylesheet did not resolve from packed dist: ${baseStyles}`);
+  }
+  if (!(await Bun.file(baseStyles.startsWith("file:") ? new URL(baseStyles) : baseStyles).text()).includes("@layer k2b-base")) {
+    throw new Error("packed base stylesheet is missing its k2b-base layer");
+  }
+
   const browserEntry = join(consumer, "browser-entry.ts");
   const browserOut = join(consumer, "browser-dist");
   await Bun.write(browserEntry, 'export { Button, DatePicker } from "@k2b/ui";\n');
