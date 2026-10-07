@@ -15,7 +15,7 @@ import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
 import { listPendingAiTurnActions } from "./runtime";
 import { aiConversations } from "./store";
-import { aiStreamTopic } from "./stream";
+import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
 import type { AiChatTurnRunConfig, AiModelProfile, AiTurnFinalizedEvent } from "./types";
 import { aiUsage } from "./usage";
@@ -229,8 +229,12 @@ const insertUser = async () => {
   return row!.id;
 };
 
-const collectWire = async (conversationId: string, until: (event: AiWireEvent) => boolean, timeoutMs = 5_000): Promise<AiWireEvent[]> => {
-  const events: AiWireEvent[] = [];
+const collectWire = async (
+  conversationId: string,
+  until: (event: AiLiveTopicEvent) => boolean,
+  timeoutMs = 5_000,
+): Promise<AiLiveTopicEvent[]> => {
+  const events: AiLiveTopicEvent[] = [];
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

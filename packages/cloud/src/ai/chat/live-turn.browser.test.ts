@@ -5,8 +5,8 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { AiWireEvent } from "../protocol";
 
-// Whether the live turn moves while a model call waits for its retry depends on real layout, fonts and
-// themes, so this measures the real timeline in a browser.
+// Whether the live turn moves while it reconnects depends on real layout, fonts and themes, so this
+// measures the real timeline in a browser.
 const ui = resolve(import.meta.dir, "../../../../ui");
 
 const buildHarness = async (): Promise<string> => {
@@ -77,6 +77,10 @@ const emit = async (page: Page, event: AiWireEvent) => {
   await page.evaluate((value) => (window as unknown as { emit: (event: AiWireEvent) => void }).emit(value), event);
   await frames(page);
 };
+const reconnect = async (page: Page, on: boolean) => {
+  await page.evaluate((value) => (window as unknown as { reconnect: (on: boolean) => void }).reconnect(value), on);
+  await frames(page);
+};
 const steer = async (page: Page, text: string) => {
   await page.evaluate((value) => (window as unknown as { steer: (text: string) => void }).steer(value), text);
   await frames(page);
@@ -105,7 +109,7 @@ for (const view of [
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
   for (const theme of ["light", "dark"] as const)
-    test(`a provider retry appends one calm row without moving the live turn (${view.name}, ${theme})`, async () => {
+    test(`the work line says in place that the turn reconnects, and nothing moves (${view.name}, ${theme})`, async () => {
       const context = await browser.newContext({
         viewport: { width: view.width, height: view.height },
         isMobile: view.touch,
@@ -142,23 +146,36 @@ for (const view of [
           },
         });
         const before = await layout(page);
+        const boxes = (nodes: typeof before.nodes) => nodes.map(({ box }) => box);
+        const expectCalmLine = (nodes: typeof before.nodes) => {
+          expect(nodes[0]!.text.startsWith(label)).toBe(true);
+          expect(nodes[0]!.busy).toBe(false);
+          expect(nodes.filter(({ text }) => text.includes(label))).toHaveLength(1);
+        };
 
+        // A model call waits for its retry: the work line changes its label in place.
         await emit(page, { ...base, seq: 4, type: "provider_retry" });
-        const waiting = await layout(page);
-        expect(waiting.nodes.slice(0, before.nodes.length)).toEqual(before.nodes);
-        const row = waiting.nodes.at(-1)!;
-        expect(waiting.nodes).toHaveLength(before.nodes.length + 1);
-        expect(row).toMatchObject({ text: label, busy: false });
-        expect(row.box[1]).toBeGreaterThanOrEqual(Math.max(...before.nodes.map(({ box }) => box[1]! + box[3]!)));
-        expect(waiting.overflowX).toBeLessThanOrEqual(0);
+        const retrying = await layout(page);
+        expect(boxes(retrying.nodes)).toEqual(boxes(before.nodes));
+        expectCalmLine(retrying.nodes);
+        expect(retrying.overflowX).toBeLessThanOrEqual(0);
 
-        // The row goes; the newest text takes the status's place in the same element and nothing moves.
+        // The newest text takes the status's place in the same element and nothing moves.
         await emit(page, { ...base, seq: 5, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Here is the summary." });
         const resumed = await layout(page);
-        const boxes = (nodes: typeof before.nodes) => nodes.map(({ box }) => box);
         expect(boxes(resumed.nodes)).toEqual(boxes(before.nodes));
-        expect(resumed.nodes.map(({ text }) => text)).not.toContain(label);
+        expect(resumed.nodes.map(({ text }) => text).join(" ")).not.toContain(label);
         expect(resumed.nodes.at(-1)).toMatchObject({ text: "Here is the summary." });
+
+        // The stream loses its connection and gets it back: the same line says so, and again nothing moves.
+        await reconnect(page, true);
+        const offline = await layout(page);
+        expect(boxes(offline.nodes)).toEqual(boxes(resumed.nodes));
+        expectCalmLine(offline.nodes);
+        expect(offline.overflowX).toBeLessThanOrEqual(0);
+        await reconnect(page, false);
+        const online = await layout(page);
+        expect(online.nodes).toEqual(resumed.nodes);
       } finally {
         await context.close();
       }

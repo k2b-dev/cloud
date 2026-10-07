@@ -19,6 +19,12 @@ import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresent
 
 export const AI_WIRE_VERSION = 1;
 
+/**
+ * Lease of a turn worker. A running turn whose worker is gone is claimed again after one lease, so a running turn
+ * that sends nothing for this long either works silently or lost an update; a client then reloads the turn's state.
+ */
+export const AI_TURN_LEASE_MS = 45_000;
+
 export type AiToolBlockStatus = "running" | "awaiting_approval" | "awaiting_client" | "completed" | "failed" | "rejected";
 
 export type AiTurnBlock =

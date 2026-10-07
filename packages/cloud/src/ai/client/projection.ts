@@ -9,7 +9,10 @@ export type AiActiveTurn = {
   status: "running" | "waiting_for_action";
   blocks: AiTurnBlock[];
   modelProfileId: string | null;
-  /** A model call failed transiently and waits for its retry. Live only: the next turn event or a snapshot ends it. */
+  /**
+   * A model call failed transiently and waits for its retry. Live only: the next turn event ends it, and so does a
+   * snapshot that has moved past the retry.
+   */
   providerRetry?: boolean;
   /** Server start of the turn, known from a state snapshot. */
   createdAt?: string;
@@ -98,7 +101,9 @@ export const mergeActiveTurn = (previous: AiActiveTurn | null, incoming: AiActiv
   const pendingSteers = previous.blocks.filter((block) => block.kind === "steer_message" && block.status !== "consumed");
   const known = new Set(incoming.blocks.map((block) => block.id));
   const blocks = [...incoming.blocks, ...pendingSteers.filter((block) => !known.has(block.id))];
-  return { ...turnTiming(previous), ...incoming, blocks, status: deriveStatus(blocks) };
+  // A snapshot never carries a provider retry. One at the retry's own position has seen nothing after it, so the wait goes on.
+  const retry = previous.providerRetry && incoming.seq === previous.seq ? { providerRetry: true } : {};
+  return { ...turnTiming(previous), ...incoming, ...retry, blocks, status: deriveStatus(blocks) };
 };
 
 export const reconcileActiveTurnActions = (
