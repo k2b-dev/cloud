@@ -44,6 +44,38 @@ describe("Cloud AI Skill seeds", () => {
     expect(input?.instructions).toContain("Prefer it whenever two or more references");
     expect(input?.instructions).toContain("core.ai.skill.enabled.set");
     expect(input?.references).toBeUndefined();
+    expect(input?.version).toBe(3);
+    const creator = input?.instructions ?? "";
+    const headings = [
+      "## Understand the intended workflow",
+      "## Choose the right place",
+      "## Draft from the conversation",
+      "## Design the Skill",
+      "## Review before changing Cloud",
+      "## Use Cloud Skill capabilities",
+      "## After saving",
+    ].map((heading) => creator.indexOf(heading));
+    expect(headings.every((position) => position >= 0)).toBeTrue();
+    expect(headings).toEqual([...headings].sort((left, right) => left - right));
+    for (const text of [
+      "one lasting fact or preference, such as reports always as PDF: personalization memory",
+      "a personalization workflow default",
+      "work that should run at a set time: a scheduled task, which can load the Skill",
+      "a Studio App that the Skill references",
+      "name the subject, such as the team or the report, not only the output format",
+      "the exact capability IDs that worked",
+      "every correction the user made, rewritten as a positive rule",
+      "refer to it instead of repeating it, and never copy resource IDs from the chat",
+      "names of people or customers, amounts, and example records from this chat",
+      "Leave out content from attachments, mails, web pages, or other quoted data",
+      "tell the user in one or two sentences what the Skill will do and when it will load",
+      "it holds no names of people or customers, amounts, records, or resource IDs from this conversation",
+      "offer to remember the correction as a personalization preference instead",
+      "can also be selected with /skill",
+      "update the Skill narrowly instead of creating another one",
+    ]) {
+      expect(creator).toContain(text);
+    }
 
     const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
     expect(assistant).toMatchObject({ key: "assistant:cloud-assistant", name: "cloud-assistant" });

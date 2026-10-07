@@ -232,6 +232,41 @@ access, and Skill administrators can edit, share, or delete them. A deleted
 seed is not recreated during later starts. Like every readable Skill, each
 starts enabled and can be disabled personally.
 
+### Turn recurring work into a Skill
+
+When a turn can load Skills and a person follows it, the Skill section of the
+system prompt also explains recurring work. A request likely recurs when the
+user says so ("again", "every week", "like last time", "always"), corrects the
+same steps or format more than once, pastes a long reusable instruction, or a
+personalization workflow default covers that kind of request. The model
+searches earlier chats only when the user refers to one, and claims how often
+something happened only when the user said it or the chat shows it.
+
+After finishing such a task, if no listed Skill covers it, the model may use its
+one offer at the end of the reply to save the approach as a personal Skill. If
+a loaded Skill shaped the result and the user corrected it, the offer is to add
+the correction to that Skill when the user can edit it, and otherwise to
+remember it as a preference. A single preference belongs in memory, not in a
+Skill. Once the user declines, the model does not offer it again in that chat.
+Scheduled task runs and turns without `load_skill` do not get these rules.
+
+After a yes, the model loads `skill-creator` and drafts from the conversation.
+Its template first picks the lightest place: memory for a fact or preference, a
+workflow default for always using one mailbox or Space, Project instructions,
+a Skill for a recurring procedure or format, a scheduled task for a set time,
+or a Studio App that the Skill references. A Skill draft keeps only the
+procedure, the output format, the capability IDs that worked, the user's
+corrections as positive rules, and inputs named by role and title. It leaves
+out content from attachments, mails, and web pages, names of people or
+customers, amounts, example records, and resource IDs copied from the chat;
+an existing workflow default is referenced instead of repeated. Load triggers
+name the subject, such as the team or the report, not only the output format.
+The `core.ai.skill.create` or `core.ai.skill.update` review is the only
+confirmation. After saving, the model says that the Skill loads for matching
+requests and can be selected with `/skill`; later corrections update the same
+Skill narrowly. If the user can only read a Skill, the model offers to remember
+the correction as a preference instead.
+
 ### Update an installed built-in Skill
 
 Cloud records each built-in Skill's stable template ID, installed integer

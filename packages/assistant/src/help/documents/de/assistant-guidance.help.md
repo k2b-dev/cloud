@@ -39,6 +39,8 @@ Der Assistent erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte 
 
 Du kannst den Assistenten auch bitten, einen Skill zu erstellen oder zu verbessern. Cloud stellt allen angemeldeten Personen zunächst **Skill Creator** bereit. Dieser Skill führt durch den Entwurf und verwendet geprüfte Capabilities zur Skill-Verwaltung mit deinen aktuellen Berechtigungen. Wie jeder geteilte Skill lässt er sich für dich deaktivieren. Personen mit Administratorrechten können Zugriff vergeben, den Skill bearbeiten oder ihn löschen.
 
+Sieht eine Anfrage nach wiederkehrender Arbeit aus, etwa weil du „wieder“ schreibst oder dasselbe Format zweimal korrigierst, kann der Assistent einmal anbieten, das Vorgehen als Skill zu speichern. Stimmst du zu, entwirft er den Skill aus dem Chat: die Schritte, deine Korrekturen und das Ausgabeformat, ohne Namen, Beträge oder Inhalte aus deinen Anhängen. Die übliche Prüfung zeigt den Skill, bevor er gespeichert wird. Lehnst du ab, fragt er in diesem Chat nicht noch einmal.
+
 Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Dienstkonten oder allen angemeldeten Identitäten; öffentlicher Zugriff ist nicht möglich.
 
 ### Einen Skill passend laden lassen

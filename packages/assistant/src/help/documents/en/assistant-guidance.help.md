@@ -39,6 +39,8 @@ Open **Assistant settings > Skills** to create, import, edit, export, or share r
 
 You can also ask Assistant to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
 
+When a request looks like it will come back, for example because you say "again" or correct the same format twice, Assistant may offer once to save the approach as a Skill. If you agree, it drafts the Skill from the chat: the steps, your corrections, and the output format, without names, amounts, or content from your attachments. The usual review shows the Skill before it is saved. If you decline, Assistant does not ask again in that chat.
+
 Skills and Projects require sign-in. Share them with users, groups, service accounts, or all signed-in identities; public access is not supported.
 
 ### Create a Skill that loads at the right time
