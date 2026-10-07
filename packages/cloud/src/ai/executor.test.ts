@@ -695,4 +695,39 @@ describe("saved live state", () => {
       publish.mockRestore();
     }
   });
+
+  test("saves one after another, so an older state never lands last, and the attempt's end waits for them", async () => {
+    const log: string[] = [];
+    const save = spyOn(aiConversations, "saveTurnLiveState").mockImplementation(async (input) => {
+      log.push(`start ${input.seq}`);
+      // The database stalls on the second save.
+      await Bun.sleep(input.seq === 2 ? 1_500 : 10);
+      log.push(`end ${input.seq}`);
+      return true;
+    });
+    const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+    try {
+      const pipeline = new __aiExecutorTest.StreamPipeline({
+        conversationId: "chat",
+        turnId: "turn",
+        attempt: 1,
+        startSeq: 0,
+        leaseOwner: "worker",
+        seedBlocks: [],
+        allowRememberedApprovals: false,
+      });
+      await pipeline.emitTurnStarted("model");
+      await pipeline.emitBaseline();
+      await pipeline.applyCompaction("running");
+      // The interval ends and saves event 2; the next change waits for the interval after it.
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 100);
+      await pipeline.applyCompaction("completed");
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS);
+      await pipeline.flush();
+      expect(log).toEqual(["start 1", "end 1", "start 2", "end 2", "start 3", "end 3"]);
+    } finally {
+      save.mockRestore();
+      publish.mockRestore();
+    }
+  });
 });

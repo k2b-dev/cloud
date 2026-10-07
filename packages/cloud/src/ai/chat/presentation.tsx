@@ -376,19 +376,20 @@ const activeItems = (
 /**
  * Work time of the active turn: wall time minus time spent waiting for the user. A state snapshot seeds it after a
  * reconnect; the clock stands while the turn waits for an approval or an answer and continues from the same value
- * afterwards. While `paused`, the shown time stands too and then jumps to the true work time.
+ * afterwards. While `paused`, the shown time stands too and then jumps to the true work time; the clock itself keeps
+ * running, so a step that starts right after the pause is timed from the true work time.
  */
 const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<boolean>): Accessor<AiTurnDuration | null> => {
   const [now, setNow] = createSignal(Date.now());
   const running = createMemo(() => source.activeTurn() !== null);
   createEffect(() => {
-    if (!running() || paused() || typeof window === "undefined") return;
+    if (!running() || typeof window === "undefined") return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     onCleanup(() => window.clearInterval(timer));
   });
   let state: { turnId: string; seed: string; startedAt: number; waitMs: number; waitingSince: number | null } | null = null;
-  return createMemo(() => {
+  const duration = createMemo(() => {
     const turn = source.activeTurn();
     const time = now();
     if (!turn) {
@@ -419,6 +420,12 @@ const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<bo
       workedMs: Math.max(0, (state.waitingSince ?? time) - state.startedAt - state.waitMs),
       waitingMs: state.waitingSince === null ? null : Math.max(0, time - state.waitingSince),
     };
+  });
+  let shown: AiTurnDuration | null = null;
+  return createMemo(() => {
+    const current = duration();
+    if (!paused() || !shown || !current) shown = current;
+    return shown;
   });
 };
 

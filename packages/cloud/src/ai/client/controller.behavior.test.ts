@@ -1115,57 +1115,72 @@ for (const recovery of ["snapshot", "refresh"] as const)
   });
 
 describe("AI controller silence", () => {
-  const turn = (status: AiTurnSnapshot["status"]): AiTurnSnapshot => ({
+  const turn = (status: AiTurnSnapshot["status"], blocks: AiTurnBlock[] = []): AiTurnSnapshot => ({
     turnId: "turn",
     attempt: 1,
     seq: 3,
     status,
-    blocks: [],
+    blocks,
     modelProfileId: null,
     createdAt: "2026-10-07T00:00:00Z",
   });
+  const delta = (seq: number): AiStreamSseEvent => ({
+    v: 1,
+    type: "block_delta",
+    conversationId: "Chat01",
+    turnId: "turn",
+    attempt: 1,
+    seq,
+    blockId: "t",
+    blockKind: "text",
+    delta: "Hi",
+  });
+  const state = (activeTurn: AiTurnSnapshot): AiStreamSseEvent => ({
+    type: "state",
+    conversation: conversation("Chat01"),
+    messages: [],
+    activeTurn,
+  });
 
-  const follow = (activeTurn: AiTurnSnapshot) => {
+  const follow = (activeTurn: AiTurnSnapshot, options: Pick<Parameters<typeof createAiChatController>[0], "frontendTools"> = {}) => {
     const current = conversation("Chat01");
     const calls: string[] = [];
-    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let input!: Parameters<AiConversationStreamTransport["subscribe"]>[0];
     let dispose!: () => void;
-    createRoot((rootDispose) => {
+    const controller = createRoot((rootDispose) => {
       dispose = rootDispose;
-      createAiChatController({
+      return createAiChatController({
         baseUrl: "/api/ai",
         initialConversationId: current.id,
         initialDetail: { conversation: current, messages: [], activeTurn },
+        ...options,
         streamTransport: {
-          subscribe: (input) => {
+          subscribe: (subscription) => {
             calls.push("subscribe");
-            emit = input.onEvent;
+            input = subscription;
             return { close: () => calls.push("close") };
           },
         },
       });
     });
-    return { calls, emit: (event: AiStreamSseEvent) => emit(event), dispose };
+    return {
+      calls,
+      controller,
+      emit: (event: AiStreamSseEvent) => input.onEvent(event),
+      status: (status: "connecting" | "open" | "reconnecting") => input.onStatus?.(status),
+      dispose,
+    };
   };
 
   (isServer ? test.skip : test)("a running turn that sends nothing for a worker lease starts the stream again from its saved state", () => {
     jest.useFakeTimers();
     const stream = follow(turn("running"));
     try {
-      expect(stream.calls).toEqual(["subscribe"]);
+      stream.status("open");
+      stream.emit(state(turn("running")));
       // Each event restarts the wait.
       jest.advanceTimersByTime(AI_TURN_LEASE_MS - 1);
-      stream.emit({
-        v: 1,
-        type: "block_delta",
-        conversationId: "Chat01",
-        turnId: "turn",
-        attempt: 1,
-        seq: 4,
-        blockId: "t",
-        blockKind: "text",
-        delta: "Hi",
-      });
+      stream.emit(delta(4));
       jest.advanceTimersByTime(AI_TURN_LEASE_MS - 1);
       expect(stream.calls).toEqual(["subscribe"]);
       jest.advanceTimersByTime(1);
@@ -1176,18 +1191,94 @@ describe("AI controller silence", () => {
     }
   });
 
-  (isServer ? test.skip : test)("a turn that waits for the person is not silent, and a turn that runs again is watched again", () => {
+  (isServer ? test.skip : test)("a stream that reconnects keeps saying so, and a slow first state is not cut off", () => {
     jest.useFakeTimers();
-    const stream = follow(turn("waiting_for_action"));
+    const stream = follow(turn("running"));
     try {
+      // The first state takes longer than a lease to arrive.
+      stream.status("connecting");
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS * 2);
+      expect(stream.calls).toEqual(["subscribe"]);
+      stream.status("open");
+      stream.emit(state(turn("running")));
+
+      // The connection drops: the transport reconnects and brings a fresh state once it is back.
+      stream.status("reconnecting");
       jest.advanceTimersByTime(AI_TURN_LEASE_MS * 3);
       expect(stream.calls).toEqual(["subscribe"]);
-      stream.emit({
-        type: "state",
-        conversation: conversation("Chat01"),
-        messages: [],
-        activeTurn: { ...turn("running"), attempt: 2, seq: 1 },
+      expect(stream.controller.streamStatus()).toBe("reconnecting");
+      stream.status("open");
+      stream.emit(state(turn("running")));
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS);
+      expect(stream.calls).toEqual(["subscribe", "close", "subscribe"]);
+    } finally {
+      stream.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  (isServer ? test.skip : test)("a turn that waits for the person is not silent, and a turn that runs again is watched again", () => {
+    const approval: AiTurnBlock = {
+      id: "tool-send",
+      kind: "tool",
+      callId: "send",
+      name: "mail_send",
+      args: {},
+      status: "awaiting_approval",
+      approval: { allowAlways: false },
+    };
+    jest.useFakeTimers();
+    const stream = follow(turn("waiting_for_action", [approval]));
+    try {
+      stream.status("open");
+      stream.emit(state(turn("waiting_for_action", [approval])));
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS * 3);
+      expect(stream.calls).toEqual(["subscribe"]);
+      stream.emit(state({ ...turn("running"), attempt: 2, seq: 1 }));
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS);
+      expect(stream.calls).toEqual(["subscribe", "close", "subscribe"]);
+    } finally {
+      stream.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  (isServer ? test.skip : test)("a browser tool the controller ran is watched again once the server accepts its result", async () => {
+    const actions: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL) => {
+        actions.push(new URL(String(request), "http://cloud.test").pathname);
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const tool: AiTurnBlock = {
+      id: "tool-run",
+      kind: "tool",
+      callId: "run",
+      name: "code_run",
+      args: { title: "Report" },
+      status: "awaiting_client",
+      frontendMode: "client",
+    };
+    jest.useFakeTimers();
+    const stream = follow(turn("waiting_for_action", [tool]), { frontendTools: { code_run: async () => ({ ok: true }) } });
+    try {
+      stream.status("open");
+      stream.emit(state(turn("waiting_for_action", [tool])));
+      for (
+        let i = 0;
+        i < 20 && !stream.controller.activeTurn()?.blocks.some((block) => block.kind === "tool" && block.status === "completed");
+        i++
+      )
+        await Promise.resolve();
+      expect(actions).toEqual(["/api/ai/conversations/Chat01/turns/turn/actions/run"]);
+      expect(JSON.parse(JSON.stringify(stream.controller.activeTurn()))).toMatchObject({
+        status: "running",
+        blocks: [{ status: "completed", result: { ok: true } }],
       });
+
+      // The turn's next events never arrive.
       jest.advanceTimersByTime(AI_TURN_LEASE_MS);
       expect(stream.calls).toEqual(["subscribe", "close", "subscribe"]);
     } finally {

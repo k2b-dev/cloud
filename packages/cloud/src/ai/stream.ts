@@ -230,9 +230,9 @@ const needsSavedState = (event: AiLiveTopicEvent, current: StreamPosition | null
   return !reloadedTurns.has(event.turnId);
 };
 
-/** Whether `snapshot` already holds `event`: its turn ended, another turn runs, or the saved state reached it. */
-const holdsEvent = (active: { turn: { id: string; attempt: number }; liveSeq: number } | null, event: AiLiveTopicEvent): boolean =>
-  !active || active.turn.id !== event.turnId || !isNewerWireEvent(event, { attempt: active.turn.attempt, seq: active.liveSeq });
+/** Whether a saved state at `saved` already holds `event`: its turn ended, another turn runs, or the state reached it. */
+const holdsEvent = (saved: { turnId: string; attempt: number; seq: number } | null, event: AiLiveTopicEvent): boolean =>
+  !saved || saved.turnId !== event.turnId || !isNewerWireEvent(event, saved);
 
 const pause = (ms: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
@@ -246,13 +246,34 @@ const pause = (ms: number, signal: AbortSignal): Promise<void> =>
     signal.addEventListener("abort", done, { once: true });
   });
 
-/** The saved state once it holds `event`, or the newest one after a bounded wait. */
-const loadStreamSnapshotWith = async (conversation: AiConversation, event: AiLiveTopicEvent, signal: AbortSignal) => {
+/**
+ * The saved state once it holds `event`, or the newest one after a bounded wait. The stream may have opened long
+ * ago, so the conversation is read again: its draft and run status have moved on since. Null once the conversation
+ * is archived or deleted.
+ */
+const loadStreamSnapshotWith = async (
+  conversation: AiConversation,
+  event: AiLiveTopicEvent,
+  signal: AbortSignal,
+): Promise<AiStreamSnapshot | null> => {
   for (let read = 1; read < AI_STREAM_CATCH_UP_READS && !signal.aborted; read++) {
-    if (holdsEvent(await aiConversations.getActiveTurn({ conversationId: conversation.id }), event)) break;
+    const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
+    if (holdsEvent(active && { turnId: active.turn.id, attempt: active.turn.attempt, seq: active.liveSeq }, event)) break;
     await pause(AI_LIVE_SNAPSHOT_INTERVAL_MS, signal);
   }
-  return loadStreamSnapshot(conversation);
+  const current = await aiConversations.getConversation({ conversationId: conversation.id });
+  if (!current) return null;
+  const snapshot = await loadStreamSnapshot(current);
+  if (!signal.aborted && !holdsEvent(positionOf(snapshot), event)) {
+    // Readers miss this turn's events up to the event until it ends.
+    log.warn("AI conversation stream continues without an event the saved state does not hold", {
+      conversationId: conversation.id,
+      turnId: event.turnId,
+      attempt: event.attempt,
+      seq: event.seq,
+    });
+  }
+  return snapshot;
 };
 
 /**
@@ -276,7 +297,7 @@ export async function* streamAiConversationEvents(input: {
   signal: AbortSignal;
 }): AsyncGenerator<AiStreamEvent> {
   let current: StreamPosition | null = null;
-  // A turn whose start went missing is reloaded once; later events of a turn the state does not show are stale.
+  // Turns the stream reloaded the state for, once each; later events of one the state does not show are stale.
   const reloadedTurns = new Set<string>();
   for await (const item of streamSnapshotThenTail({
     captureCursor: () => latestTopicCursor({ topic: aiStreamTopic(), resourceId: "cloud-ai-stream", tenantId: input.conversation.id }),
@@ -293,7 +314,8 @@ export async function* streamAiConversationEvents(input: {
     if (needsSavedState(event, current, reloadedTurns)) {
       reloadedTurns.add(event.turnId);
       const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal);
-      if (input.signal.aborted) return;
+      // A conversation that was archived or deleted ends the stream; the reader's reconnect gets the route's answer.
+      if (input.signal.aborted || !snapshot) return;
       yield snapshot.state;
       current = positionOf(snapshot);
     }
@@ -302,6 +324,11 @@ export async function* streamAiConversationEvents(input: {
       if (current.finished) continue;
       // A turn ends once; the sweep and a stop number its end from the saved state, which can lag the live events.
       if (event.type !== "turn_finished" && !isNewerWireEvent(event, current)) continue;
+    } else if (reloadedTurns.has(event.turnId)) {
+      // The stream reloaded the state for this turn, and the newest state does not show it: the turn has ended, and that
+      // state holds its outcome, so nothing of it is replayed. Its end still goes out while no other turn runs, so a
+      // reader that waits for it sees the turn end.
+      if (event.type !== "turn_finished" || current) continue;
     } else if (event.type !== "turn_started") {
       continue;
     }

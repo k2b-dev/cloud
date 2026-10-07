@@ -120,10 +120,14 @@ conversation SSE route, like the CLI; `streamTransport` replaces it for an
 application-owned chat endpoint. Changing chats closes the previous stream and
 opens one for the new chat, and every connection starts from a fresh state
 snapshot, so a frontend tool runs once and a resolved approval does not
-reappear. When a running turn sends nothing for 45 seconds, one worker lease,
-the controller subscribes again and continues from the turn's saved state, so
-a lost update such as the end of the turn heals within a minute. A turn that
-waits for the person is not silent. When access to the conversation ends, the controller stops the
+reappear. When the open stream of a running turn delivers nothing for 45
+seconds, one worker lease, the controller subscribes again and continues from
+the turn's saved state, so a lost update such as the end of the turn heals
+within a minute. The wait starts with the stream's first event, so a slow first
+snapshot is never cut off, and a stream that reconnects already starts from a
+fresh snapshot. A turn that waits for an approval, an answer, or a frontend
+tool is not silent; once the server accepts the action, the turn runs and is
+watched again. When access to the conversation ends, the controller stops the
 stream and shows, in the page's language, why the chat cannot continue,
 instead of reconnecting. `refreshActiveConversation()` does the same and
 resolves `false` when the chat is gone, so a caller does not retry it; an
@@ -204,7 +208,8 @@ order:
    current step, such as "Reading orders.csv", with a clock and the step count;
    on phones the count appears once the turn is finished. A step that runs
    longer than 45 seconds shows its own duration instead of its target, such as
-   "Running code · 3 min". While a model call waits for its retry or the stream
+   "Running code · 3 min"; after a reload it counts from the reload, since
+   blocks carry no start time. While a model call waits for its retry or the stream
    reconnects, the line reads "Reconnecting" without its shimmer, and its clock
    stands. While an approval or answer is pending it says what the turn waits
    for and since when. Finished,
@@ -380,8 +385,9 @@ private owner metadata: it is not sent back to the model and does not alter the
 conversation transcript.
 
 The controller claims each call once, runs the handler, and sends the result
-back to the turn. Show interaction tools only when the relevant application
-view is present. After the server accepts a survey answer, replace the form
+back to the turn. Once the server accepts it, the call shows as finished, like
+an answered approval, before the stream confirms it. Show interaction tools
+only when the relevant application view is present. After the server accepts a survey answer, replace the form
 with a normal user message: show each question as small context above its answer. Use option
 labels for choices and retain free-text line breaks. These messages stay in
 chronological order between the assistant's outputs, remain visible outside

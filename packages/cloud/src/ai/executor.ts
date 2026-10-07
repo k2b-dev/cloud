@@ -1620,6 +1620,8 @@ class StreamPipeline {
   private lastSnapshotAt = 0;
   private snapshotDirty = false;
   private snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The newest save of the live state. Saves run one after another, so an older one never lands last. */
+  private saving: Promise<void> = Promise.resolve();
   private chain: Promise<void> = Promise.resolve();
 
   constructor(input: {
@@ -1789,15 +1791,15 @@ class StreamPipeline {
     this.cancelSnapshotTimer();
     this.lastSnapshotAt = Date.now();
     this.snapshotDirty = false;
-    await aiConversations
-      .saveTurnLiveState({
-        conversationId: this.conversationId,
-        turnId: this.turnId,
-        leaseOwner: this.leaseOwner,
-        blocks: this.blocks,
-        seq: this.seq,
-      })
-      .catch(() => undefined);
+    const blocks = this.blocks;
+    const seq = this.seq;
+    this.saving = this.saving.then(() =>
+      aiConversations
+        .saveTurnLiveState({ conversationId: this.conversationId, turnId: this.turnId, leaseOwner: this.leaseOwner, blocks, seq })
+        .then(() => undefined)
+        .catch(() => undefined),
+    );
+    await this.saving;
   }
 
   async emitError(message: string): Promise<void> {
@@ -1830,10 +1832,13 @@ class StreamPipeline {
     this.snapshotTimer = undefined;
   }
 
-  /** Waits for every publish. The attempt ends here: a later save would overwrite what suspension or the next attempt saved. */
+  /**
+   * Waits for every publish and save. The attempt ends here: a later save would overwrite what suspension or the next
+   * attempt saved.
+   */
   async flush(): Promise<void> {
     this.cancelSnapshotTimer();
-    await this.chain;
+    await Promise.all([this.chain, this.saving]);
   }
 }
 

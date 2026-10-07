@@ -310,9 +310,17 @@ can go missing because the snapshot a subscription starts from lags the live
 events, because its publish failed, or because it is too large for the live
 topic. Events over 257 KiB, such as a tool block with a large web page, travel
 only as their position, and the stream delivers them in full through the saved
-state. A turn's end always reaches readers, also when a stop or the sweep
-numbers it from a saved state that lags the live events. If the saved state
-does not catch up within five seconds, the stream continues with what it has.
+state. Such a `state` carries the conversation as it is now, with its current
+draft revision and run status; the stream ends once the conversation is
+archived or deleted. A turn's end always reaches readers, also when a stop or
+the sweep numbers it from a saved state that lags the live events, and also
+when the turn ended while the stream waited for its saved state. Then the
+`state` already shows the turn as finished, its `turn_finished` follows, and
+replayed events of that turn are dropped. If the saved state does not catch up
+within five seconds, the stream continues with what it has and logs the
+warning `AI conversation stream continues without an event the saved state
+does not hold` under `ai:stream`; readers then miss part of the turn until
+it ends.
 
 The server closes a stream once its reader has left about 4 MiB unread. The
 event that crosses that limit is still queued, and a `state` snapshot or a
@@ -615,8 +623,10 @@ separate provider call with its own admission, quota check and
 [usage record](/en/docs/ai/usage-and-feedback#read-the-report).
 
 While a call waits, the stream sends `provider_retry`. The controller marks the
-active turn with `providerRetry: true` until its next event; a state snapshot
-never carries it. Meanwhile the work line of the live turn in the chat timeline
+active turn with `providerRetry: true` until its next event. A state snapshot
+never carries it; the controller keeps the mark through a snapshot at the
+retry's own position, so subscribing again during a long wait does not end it.
+Meanwhile the work line of the live turn in the chat timeline
 of `@k2b/cloud/ai/ui` reads **Reconnecting** and its clock stands; a turn
 without a work line yet shows a **Reconnecting** row at its end. `cld assistant`
 prints `model: reconnecting`

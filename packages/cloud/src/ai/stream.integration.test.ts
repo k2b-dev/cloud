@@ -223,4 +223,90 @@ suite("AI conversation stream repair", () => {
     expect(state.activeTurn?.turnId).toBe(second.turn.shortId);
     expect(state.messages.some((message) => message.loopId === first.turn.shortId)).toBe(true);
   }, 20_000);
+
+  test("a repaired state carries the conversation as it is now, not as it was when the stream opened", async () => {
+    const chat = await createChat();
+    const earlier = await startTurn(chat, "Earlier");
+    await aiConversations.completeTurn({
+      conversationId: chat.id,
+      turnId: earlier.turn.id,
+      leaseOwner,
+      status: "failed",
+      error: "old failure",
+    });
+    const opened = (await aiConversations.getConversation({ conversationId: chat.id }))!;
+    expect(opened).toMatchObject({ runStatus: "failed", runError: "old failure" });
+    const stream = follow(opened);
+    expectState(await stream.next());
+
+    // A new turn runs and the draft moves on in another session.
+    const { turn, event, save } = await startTurn(chat, "Again");
+    await save([], 1);
+    await publishAiWireEvent(event(1, { type: "turn_started", modelProfileId: "test-model", providerModel: "", blocks: [] }));
+    expect(await stream.next()).toMatchObject({ type: "turn_started", turnId: turn.shortId });
+    const draft = await aiConversations.saveDraft({
+      conversationId: chat.id,
+      ownerUserId: chat.createdByUserId!,
+      expectedRevision: (await aiConversations.getConversation({ conversationId: chat.id }))!.draft.revision,
+      content: [{ type: "text", text: "Next question" }],
+    });
+    if (!draft.ok) throw new Error(`draft not saved: ${draft.reason}`);
+
+    // Event 2 goes missing.
+    await save([text("t1", "Hello")], 3);
+    await publishAiWireEvent(event(3, { type: "block_delta", blockId: "t1", blockKind: "text", delta: "o" }));
+    const repaired = expectState(await stream.next());
+    expect(repaired.activeTurn?.turnId).toBe(turn.shortId);
+    expect(repaired.conversation).toMatchObject({ id: chat.shortId, runStatus: "running", runError: null });
+    expect(repaired.conversation.draft.revision).toBe(draft.draft.revision);
+  }, 20_000);
+
+  test("a turn that fails while the stream waits for its saved state still ends for readers", async () => {
+    const chat = await createChat();
+    const { turn, event } = await startTurn(chat);
+    const stream = follow(chat);
+    expectState(await stream.next());
+
+    // A large tool result goes out as a marker, and the turn fails before its saved state holds it.
+    const tool: AiTurnBlock = {
+      id: "tool-web",
+      kind: "tool",
+      callId: "web",
+      name: "web_extract",
+      args: {},
+      status: "completed",
+      result: "x".repeat(400 * 1024),
+    };
+    await publishAiWireEvent(event(1, { type: "block_set", block: tool }));
+    await Bun.sleep(300);
+    await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner, status: "failed", error: "boom" });
+    await publishAiWireEvent(event(2, { type: "turn_finished", status: "failed", error: "boom" }));
+
+    const state = expectState(await stream.next());
+    expect(state.activeTurn).toBeNull();
+    expect(state.conversation).toMatchObject({ runStatus: "failed", runError: "boom" });
+    expect(await stream.next()).toMatchObject({ type: "turn_finished", turnId: turn.shortId, status: "failed", error: "boom" });
+    expect(await stream.quiet(500)).toEqual([]);
+  }, 20_000);
+
+  test("a turn that ended before the stream reloaded it is not replayed, but its end goes out", async () => {
+    const chat = await createChat();
+    const first = await startTurn(chat, "First");
+    const stream = follow(chat);
+    expect(expectState(await stream.next()).activeTurn?.turnId).toBe(first.turn.shortId);
+
+    // The first turn's end goes missing, and the next turn runs and ends before the stream sees its start.
+    await aiConversations.completeTurn({ conversationId: chat.id, turnId: first.turn.id, leaseOwner, status: "completed", error: null });
+    const second = await startTurn(chat, "Second");
+    await aiConversations.completeTurn({ conversationId: chat.id, turnId: second.turn.id, leaseOwner, status: "completed", error: null });
+    await publishAiWireEvent(second.event(1, { type: "turn_started", modelProfileId: "test-model", providerModel: "", blocks: [] }));
+    await publishAiWireEvent(second.event(2, { type: "block_set", block: text("t1", "Done.") }));
+    await publishAiWireEvent(second.event(3, { type: "turn_finished", status: "completed", error: null }));
+
+    const state = expectState(await stream.next());
+    expect(state.activeTurn).toBeNull();
+    expect(state.messages.some((message) => message.loopId === second.turn.shortId)).toBe(true);
+    expect(await stream.next()).toMatchObject({ type: "turn_finished", turnId: second.turn.shortId, status: "completed" });
+    expect(await stream.quiet(500)).toEqual([]);
+  }, 20_000);
 });
