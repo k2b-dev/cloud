@@ -10,6 +10,30 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Assistant offers code tools in every turn and says why a tool is missing
+
+Every Assistant turn with the default tool source now offers the server-run code
+tools `code_run`, `code_action`, `code_inspect`, `code_interact`, `code_stop`,
+`code_export`, and `code_present`. Before, only turns whose client listed them
+in `clientToolIds` had them, so `cld assistant --detach`, API clients, and
+scheduled tasks could not run code. Scheduled tasks now run them with their
+task grants, as [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
+describes. Only `code_open`, `code_secret`, and `local_bash` still need a client
+that declares them. Clients that list the server-run names keep working; the
+names have no effect.
+
+The `load_tools` result changed. `loaded` and `alreadyLoaded` hold
+`{name, call}` objects instead of names, and `missing` is replaced by
+`unavailable`, a list of `{name, reason}` with the reasons `unknown`,
+`not_offered_in_turn`, `not_allowed`, and `app_offline`. Code that reads
+`load_tools` tool blocks from the conversation API reads the new fields; the
+chat still shows results stored in the old shape. `load_tools` also accepts the
+provider name of an app operation, and a call to a loaded app operation by its
+capability ID now runs instead of failing as an unknown tool. See
+[Tools and approvals](/en/docs/ai/tools-and-approvals).
+
+No setting changes.
+
 ## Studio script and action library
 
 This breaking Assistant runtime change replaces top-level helpers with one

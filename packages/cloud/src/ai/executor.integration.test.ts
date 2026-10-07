@@ -989,6 +989,69 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("offers the server-run code tools to a turn without a client and says which client tools it lacks", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requests: { messages: { role: string; content: unknown }[]; tools?: { function: { name: string } }[] }[] = [];
+
+    try {
+      completionQueue = [
+        toolCallCompletion("load-1", "load_tools", { names: ["code_run", "code_open", "local_bash"] }),
+        textCompletion("Code can run here"),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(body as (typeof requests)[number]);
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Run a script",
+          chatId: conversation.shortId,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Run a script"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "server-code-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+
+      await createExecutor("server-code-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+
+      expect(requests).toHaveLength(2);
+      const offered = (index: number) => (requests[index]?.tools ?? []).map((tool) => tool.function.name);
+      expect(offered(0)).not.toContain("code_run");
+      expect(offered(1)).toContain("code_run");
+      expect(offered(1)).not.toContain("code_open");
+      const loadResult = JSON.parse(String(requests[1]!.messages.find((message) => message.role === "tool")?.content));
+      expect(loadResult).toMatchObject({
+        loaded: [{ name: "code_run", call: "code_run" }],
+        unavailable: [
+          { name: "code_open", reason: "not_offered_in_turn" },
+          { name: "local_bash", reason: "not_offered_in_turn" },
+        ],
+      });
+    } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("does not advertise tool-only Help or memory mutations to a model without tools", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-04
+updated: 2026-10-07
 ---
 
 # Background authority mandates
@@ -160,7 +160,9 @@ Changing grants updates the mandate revision, invalidating older runs' authority
 The agent can inspect a failed run and propose revised grants in the normal chat;
 expanding the scope requires a new reviewed task update. A worker cannot grant
 itself more authority. Missing or revoked authority produces an actionable task
-failure, not a pending browser dialog.
+failure, not a pending browser dialog. Scheduled turns run the server-run Code
+Mode tools under the same task-scoped authority; see
+[Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode).
 
 ## Invoke from a worker
 

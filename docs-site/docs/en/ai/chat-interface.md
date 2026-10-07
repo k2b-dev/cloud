@@ -418,20 +418,31 @@ runtime monitoring and production checks.
 
 ## Advertise connected client tools
 
-A frontend handler alone does not advertise execution to the model. Pass
-`clientToolIds` to `createAiChatController` and register matching
-`frontendTools`. The controller forwards only IDs that have a handler. Supported
-IDs are `local_bash`, `code_run`, `code_inspect`, `code_interact`, `code_stop`,
-`code_open`, and `code_export`; duplicates and arbitrary tool names are rejected. Clients without an execution host should omit this option.
+Every turn with the default tool source offers the server-run code tools
+`code_run`, `code_action`, `code_inspect`, `code_interact`, `code_stop`,
+`code_export`, and `code_present`, whichever client submits it: the web app,
+`cld assistant` with or without `--detach`, an API client, or a scheduled task.
+Cloud runs them in an Assistant-owned host, so they need no client.
+
+Only tools that a client must run wait for that client. A frontend handler alone
+does not advertise them to the model. Pass `clientToolIds` to
+`createAiChatController` and register matching `frontendTools`. The controller
+forwards only IDs that have a handler. The client-run tools are `code_open` and
+`code_secret`, which need the web app, and `local_bash`, which needs
+`cld assistant --allow-bash`. Scheduled tasks never get `code_open` or
+`code_secret`. The other code tool names are still accepted in `clientToolIds`
+and have no effect; duplicates and arbitrary tool names are rejected. Clients
+without an execution host should omit this option.
 
 Handlers receive `name`, `args`, `callId`, `turnId`, and `conversationId`. Capture
 that conversation identity for asynchronous work instead of using whichever
 chat is active when the work finishes. The controller submits the result to the
 originating conversation. Return JSON-compatible, bounded results.
 
-The six `code_*` client tools each have a flat input schema and are deferred:
-advertising a handler makes the tool discoverable, but the agent must call
-`load_tools` before using it. `createCloudAiCodeTools` supplies their definitions
+The `code_*` tools each have a flat input schema and are deferred: the agent
+must call `load_tools` before using one. When a turn does not offer a
+client-run tool, `load_tools` reports it with the reason `not_offered_in_turn`.
+`createCloudAiCodeTools` supplies their definitions
 through the AI runtime tool exports. `CODE_RUNTIME_TOOL_NAMES`,
 `parseCodeToolInput`, and the internal `CodeRuntimeInput` envelope are exported
 from `@k2b/cloud/ai/browser` and `@k2b/cloud/ai` for host integrations. A host
