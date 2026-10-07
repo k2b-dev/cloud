@@ -60,3 +60,41 @@ test("money defaults to the viewer locale; CSV dates remain text", async () => {
   expect(money.format(value)).toContain("1.234,56");
   expect(await parseCsv("date;amount\n2026-10-07;12,5", {}, "de-DE")).toEqual([{ date: "2026-10-07", amount: 12.5 }]);
 });
+
+test("CSV preserves unsafe integer columns, unique headings and missing cells", async () => {
+  expect(await parseCsv("id,name\n9007199254740993,large\n42,small", {}, "en-US")).toEqual([
+    { id: "9007199254740993", name: "large" },
+    { id: "42", name: "small" },
+  ]);
+  expect(await parseCsv("a,a,a,,column4\nleft,middle,right,blank,collision", {}, "en-US")).toEqual([
+    { a: "left", a_2: "middle", a_3: "right", column4: "blank", column4_2: "collision" },
+  ]);
+  expect(await parseCsv("a,b\nleft", {}, "en-US")).toEqual([{ a: "left", b: "" }]);
+});
+
+for (const locale of ["en-US", "de-DE"])
+  for (const delimiter of [undefined, ","])
+    test(`CSV numbers round-trip in ${locale} with ${delimiter ?? "default"} delimiter`, async () => {
+      const rows = [{ mass: 1.234, count: 1234 }];
+      expect(await parseCsv(await toCsv(rows, { delimiter }, locale), { delimiter }, locale)).toEqual(rows);
+    });
+
+test("unambiguous columns decide ambiguous numeric columns before locale", async () => {
+  expect(await parseCsv("Betrag;Menge\n1.234;1,5", {}, "en-US")).toEqual([{ Betrag: 1234, Menge: 1.5 }]);
+});
+
+for (const source of ['a,b\n"unterminated,x', "a,b\n1,2,3"])
+  test("malformed CSV rejects with an invalid code and physical line", async () => {
+    await expect(parseCsv(source, {}, "en-US")).rejects.toMatchObject({ code: "invalid", message: expect.stringContaining("line 2") });
+  });
+
+test("CSV diagnostics count blank and quoted physical lines", async () => {
+  await expect(parseCsv("a,b\n,,\n1,2,3", {}, "en-US")).rejects.toMatchObject({
+    code: "invalid",
+    message: expect.stringContaining("line 3"),
+  });
+  await expect(parseCsv('a,b\n"two\nlines",ok\n1,2,3', {}, "en-US")).rejects.toMatchObject({
+    code: "invalid",
+    message: expect.stringContaining("line 4"),
+  });
+});

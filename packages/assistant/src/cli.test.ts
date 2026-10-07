@@ -1343,3 +1343,26 @@ test("Project Skill CLI searches available Skills and confirms link changes", as
     { path: "/api/ai/skills/skill1/projects/proj12", body: { linked: false } },
   ]);
 });
+
+test("Studio database routes flat runtime operations and dotted maintenance separately", async () => {
+  for (const operation of ["list", "get", "insert", "update", "delete", "query", "tables.delete", "schema.get", "rows.insert"]) {
+    const { ctx } = createContext(["code", "database", "AbC234"], async (path, init) => {
+      expect(String(path)).toBe(`/api/assistant/artifacts/AbC234/database${operation.includes(".") ? "/maintenance" : ""}`);
+      expect(await new Response(init?.body).json()).toEqual({ operation, table: "invoices" });
+      return json({});
+    });
+    ctx.flags = { input: JSON.stringify({ operation, table: "invoices" }) };
+    await assistantCli.run(ctx);
+  }
+});
+
+test("Studio storage clear defaults to shared and forwards personal scope", async () => {
+  for (const scope of [undefined, "shared", "user"]) {
+    const { ctx } = createContext(["code", "storage-clear", "AbC234"], async (_path, init) => {
+      expect(await new Response(init?.body).json()).toEqual({ area: "kv", scope: scope ?? "shared", confirmed: true });
+      return json({});
+    });
+    ctx.flags = { area: "kv", yes: true, ...(scope ? { scope } : {}) };
+    await assistantCli.run(ctx);
+  }
+});

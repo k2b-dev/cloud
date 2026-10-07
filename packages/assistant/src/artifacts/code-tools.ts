@@ -10,11 +10,18 @@ import { artifactDatabase, DatabaseError } from "./database";
 import { studioFiles } from "./file-transfer";
 import { artifactMessages } from "./messages";
 import { reviewMessages } from "./review-messages";
+import { CloudError } from "./runtime/errors";
 import type { ArtifactIdentity } from "./service";
 import { ArtifactError, artifacts, user } from "./service";
 import { sourceDiagnostics, sourceManifest } from "./source";
 
-export type CodeToolContext = ArtifactIdentity & { locale: string; signal: AbortSignal; review?: boolean; capabilityToken?: string };
+export type CodeToolContext = ArtifactIdentity & {
+  locale: string;
+  timeZone: string;
+  signal: AbortSignal;
+  review?: boolean;
+  capabilityToken?: string;
+};
 /** Review copy in the reader's language; `app` names the App the way every review refers to it. */
 const review = (context: CodeToolContext, app?: { title: string; id: string }) => {
   const t = reviewMessages.resolve([context.locale]).t;
@@ -31,6 +38,31 @@ async function result<T>(
   try {
     return ok(await operation());
   } catch (error) {
+    if (error instanceof CloudError) {
+      const status =
+        error.code === "denied"
+          ? 403
+          : error.code === "not_found"
+            ? 404
+            : error.code === "conflict"
+              ? 409
+              : error.code === "limit"
+                ? 413
+                : 400;
+      const code =
+        error.code === "invalid"
+          ? "INVALID_INPUT"
+          : error.code === "denied"
+            ? "ACCESS_DENIED"
+            : error.code === "not_found"
+              ? "NOT_FOUND"
+              : error.code === "conflict"
+                ? "CONFLICT"
+                : error.code === "limit"
+                  ? "LIMIT"
+                  : error.code;
+      return { ok: false as const, error: { code, status, message: error.message } };
+    }
     if (error instanceof ArtifactCompileError || error instanceof AiFileWriteError)
       return fail({ code: error.code, status: error.code === "CONFLICT" ? (409 as const) : (400 as const), message: error.message });
     if (error instanceof DatabaseError) {

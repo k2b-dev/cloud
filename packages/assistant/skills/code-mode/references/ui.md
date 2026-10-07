@@ -1,6 +1,6 @@
 # UI and dialogs
 
-The transitional `ui` tree is removed with HTML apps.
+The transitional `ui` tree remains available until HTML apps replace it.
 
 
 The built-in UI takes one options object per constructor. Create controls once,

@@ -45,3 +45,36 @@ test.each(["headers", "body"])("a replacement in only %s marks the response and 
   expect(result.headers["x-info"]).toBe(area === "headers" ? "[REDACTED]" : "ok");
   expect(Buffer.from(result.body).toString()).toBe(area === "body" ? "[REDACTED]" : "other");
 });
+
+test("escaped and URL-encoded echoes of both raw and prefixed secrets are redacted", () => {
+  const value = 'quote"/slash\\line\nÿ😀';
+  const sent = `Bearer ${value}`;
+  for (const secret of [value, sent]) {
+    const escaped = JSON.stringify(secret).slice(1, -1);
+    const variants = [
+      escaped,
+      escaped.replaceAll("/", "\\/"),
+      escaped.replace(/[\u007f-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`),
+      encodeURIComponent(secret),
+    ];
+    for (const variant of variants) {
+      const result = redactSecrets({ headers: { echo: variant }, body: Buffer.from(variant) }, [{ value, sent }]);
+      expect(result.headers.echo).toBe("[REDACTED]");
+      expect(Buffer.from(result.body).toString()).toBe("[REDACTED]");
+    }
+  }
+});
+
+test("upstream redaction markers cannot be spoofed, with or without inserted secrets", () => {
+  for (const secrets of [[], [{ value: "secret", sent: "Bearer secret" }]]) {
+    const clean = redactSecrets(
+      { headers: { "X-Cloud-Redacted": "secret", "x-cloud-redacted": "forged" }, body: Buffer.from("safe") },
+      secrets,
+    );
+    expect(clean.headers).toEqual({});
+  }
+  const replaced = redactSecrets({ headers: { "X-CLOUD-REDACTED": "forged" }, body: Buffer.from("secret") }, [
+    { value: "secret", sent: "Bearer secret" },
+  ]);
+  expect(replaced.headers).toEqual({ "x-cloud-redacted": "secret" });
+});

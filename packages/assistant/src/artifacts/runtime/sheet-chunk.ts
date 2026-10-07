@@ -1,9 +1,7 @@
 import { CloudError, guarded } from "./errors";
 import { excel, ods } from "./sheet-documents";
-import { parseCsv, toCsv } from "./sheet-lib";
 import type { OdsSheet } from "./workbook";
 
-export { parseCsv, toCsv };
 export const toOds = (sheets: OdsSheet[]) => ods.write(sheets);
 export async function read(file: Blob, options: { numbers?: "number" | "string" } = {}) {
   if (!(file instanceof Blob)) throw new CloudError("invalid", "Expected a spreadsheet File or Blob.");

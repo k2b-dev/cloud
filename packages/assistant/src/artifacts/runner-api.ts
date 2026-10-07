@@ -1,6 +1,7 @@
 import { type AuthContext, auth, getLocale, rateLimit, respond } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
+import { etag } from "hono/etag";
 import { z } from "zod";
 import { ArtifactCompileError } from "./actions";
 import { artifactMessages } from "./messages";
@@ -40,8 +41,11 @@ export const createRunnerRoutes = () =>
         error: artifactMessages.resolve([getLocale(c)]).t[code],
       });
     })
-    .get("/chunks/:name", async (c) =>
-      c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, { "Content-Type": "text/javascript" }),
+    .get("/chunks/:name", etag(), async (c) =>
+      c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, {
+        "Content-Type": "text/javascript",
+        "Cache-Control": "no-cache",
+      }),
     )
     .get("/:id", async (c) =>
       respond(

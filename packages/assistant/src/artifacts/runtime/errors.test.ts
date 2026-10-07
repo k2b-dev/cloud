@@ -48,3 +48,10 @@ test("validation errors name the argument in one readable sentence", () => {
     message: 'Invalid argument "name": Invalid input: expected string, received number.',
   });
 });
+
+test("a disconnected database is unavailable despite its 409 status", () => {
+  expect(cloudError({ code: "DB_NOT_CONNECTED", status: 409, message: "Not connected" })).toMatchObject({
+    code: "unavailable",
+    message: "Not connected",
+  });
+});

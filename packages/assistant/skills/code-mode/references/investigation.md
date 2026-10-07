@@ -101,7 +101,7 @@ its saved source. Prefer a fresh short experiment over a reusable framework:
 - Read app records with `code_sql`; use a resource-scoped script for distributions,
   duplicate analysis, imports, structured migrations or DATEV/SEPA exports.
 - Inventory an app's shared files/KV, inspect formats or propose cleanup before
-  making authorized changes. Browser-local user data is not available this way.
+  making authorized changes. Personal JSON is visible only to its owner; `scope:"user"` shows the current user’s data.
 - Compare discovered capability results with uploaded files or app records;
   normalize keys, summarize mismatches, then add a reusable UI only if useful.
 - Reproduce a parsing or calculation bug in a tiny script, correct the app and

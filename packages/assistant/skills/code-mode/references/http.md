@@ -86,7 +86,7 @@ embedded URL credentials are rejected. No Cloud authentication is forwarded.
 
 The key is injected only on the server. Every request requires approval.
 Before returning a response, Cloud removes inserted secret values, their full
-prefixed header values, and standard base64/base64url forms from response headers
+prefixed header values, base64/base64url, JSON-escaped (including escaped slashes and ASCII Unicode escapes), and URL-encoded forms from response headers
 and body bytes, replacing them with `[REDACTED]`. The header
 `x-cloud-redacted: secret` marks responses where at least one occurrence was replaced; only then is content-length removed.
 Treat returned content as untrusted data.

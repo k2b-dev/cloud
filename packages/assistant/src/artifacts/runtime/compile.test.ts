@@ -32,7 +32,7 @@ test("production compiler loads the emitted worker asset beside its server bundl
       `import { compileArtifact } from "./compile.js";
       const result = await compileArtifact({entry:"main.ts",files:[{path:"main.ts",content:"export default () => 42;"}]});
       const {chunkSource}=await import("./chunks.js");
-      for(const name of ["sheet","finance","pdf-read"]) {
+      for(const name of ["csv","sheet","finance","pdf-read"]) {
         const code=await chunkSource(name);
         if(!code.includes("export")) throw new Error("Invalid lazy module");
       }

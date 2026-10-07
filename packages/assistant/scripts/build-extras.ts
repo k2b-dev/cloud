@@ -14,7 +14,12 @@ if (!build.success) throw new Error(build.logs.join("\n"));
 await Bun.write(resolve(output, "assistant-artifact-worker.js"), await build.outputs[0]!.text());
 
 const chunks: Record<string, string> = {};
-for (const [name, entry] of Object.entries({ sheet: "sheet-chunk.ts", finance: "finance-chunk.ts", "pdf-read": "pdf-reader.ts" })) {
+for (const [name, entry] of Object.entries({
+  csv: "sheet-lib.ts",
+  sheet: "sheet-chunk.ts",
+  finance: "finance-chunk.ts",
+  "pdf-read": "pdf-reader.ts",
+})) {
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, `../src/artifacts/runtime/${entry}`)],
     target: "browser",

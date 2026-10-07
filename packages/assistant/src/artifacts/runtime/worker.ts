@@ -163,6 +163,7 @@ Object.defineProperty(globalThis, "__artifactStart", {
   value: async (definition: Definition, input: unknown = null) => {
     if (started) return;
     started = true;
+    let entryRunning = true;
     let lastProgress: { completed: number; total?: number; label?: string } = { completed: 0 };
     try {
       if (typeof definition !== "function")
@@ -171,24 +172,30 @@ Object.defineProperty(globalThis, "__artifactStart", {
         );
       while (!booted) await new Promise((resolve) => setTimeout(resolve, 0));
       const progress = (completed: number, total?: number, label?: string) => {
+        if (!entryRunning) throw new CloudError("invalid", "Progress is only available while the entry function runs.");
         if (!Number.isFinite(completed) || completed < 0 || (total !== undefined && (!Number.isFinite(total) || total < completed)))
           throw new CloudError("invalid", "Progress must be nonnegative and no greater than its total.");
         lastProgress = { completed, total, label: label?.slice(0, 1000) };
         send({ type: "work", status: "running", ...lastProgress });
       };
-      const result = await definition(input, {
-        signal: controller.signal,
-        progress,
-        files: inputFiles.map((file) => ({
-          ...file,
-          file: async () => {
-            const result = await rpc("file.read", [file.path], controller.signal);
-            if (!result || typeof result !== "object" || !("file" in result) || !(result.file instanceof File))
-              throw new CloudError("not_found", "The input file is unavailable.");
-            return result.file;
-          },
-        })),
-      });
+      let result: unknown;
+      try {
+        result = await definition(input, {
+          signal: controller.signal,
+          progress,
+          files: inputFiles.map((file) => ({
+            ...file,
+            file: async () => {
+              const result = await rpc("file.read", [file.path], controller.signal);
+              if (!result || typeof result !== "object" || !("file" in result) || !(result.file instanceof File))
+                throw new CloudError("not_found", "The input file is unavailable.");
+              return result.file;
+            },
+          })),
+        });
+      } finally {
+        entryRunning = false;
+      }
       controller.signal.throwIfAborted();
       send({ type: "work", status: "completed", ...lastProgress });
       if (result !== undefined) {
@@ -205,6 +212,7 @@ Object.defineProperty(globalThis, "__artifactStart", {
       flushNow();
       send({ type: "ready" });
     } catch (e) {
+      entryRunning = false;
       send({ type: "work", status: controller.signal.aborted ? "cancelled" : "error", ...lastProgress });
       if (!controller.signal.aborted) send({ type: "error", text: textError(e).slice(0, LIMITS.text) });
     }

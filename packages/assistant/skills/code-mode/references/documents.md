@@ -12,7 +12,7 @@ const otherRows = workbook.rows(names[1]);
 
 The format is detected from XLSX/ODS bytes. Rows include the header row and keep
 empty/duplicate headings. Formulas use cached values. Dates remain cell values;
-CSV parsing converts numbers only and leaves dates as text. XLS/XLSB and formula
+CSV parsing converts numbers only and leaves dates as text. Ambiguous numeric columns use unambiguous number columns in the same file, then the export convention: dot decimals with a comma delimiter, otherwise the locale’s decimal mark. Columns containing unsafe integers stay text. Duplicate or blank header collisions get unique suffixes; malformed CSV and rows beyond the header fail with `invalid` and a line number. XLS/XLSB and formula
 execution are unavailable. Read inputs sequentially to bound memory. The parsing
 budget is 64 MiB per document and 128 MiB expanded workbook XML.
 

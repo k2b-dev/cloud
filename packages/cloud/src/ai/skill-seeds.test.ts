@@ -22,11 +22,11 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 58 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 59 });
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
     expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")).toMatchObject({
       key: "assistant:data-analysis",
-      version: 6,
+      version: 7,
     });
     expect(codeMode?.instructions).toContain("todo_write");
     expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
@@ -191,7 +191,7 @@ describe("Cloud AI Skill seeds", () => {
 
   test("Grids skill uses canonical Help and names only declared capabilities", async () => {
     const grids = getBuiltinAiSkillTemplate("cloud-grids")!;
-    expect(grids.version).toBe(6);
+    expect(grids.version).toBe(7);
     expect(grids.instructions).toContain("Help is the product handbook");
     expect(grids.instructions).toContain("search_help");
     expect(grids.instructions).toContain("read_help");

@@ -32,7 +32,7 @@ export function cloudError(error: unknown): CloudError {
   else if (/CONFLICT|UNIQUE|DUPLICATE/.test(normalized)) code = "conflict";
   else if (/LIMIT|TOO_LARGE|STORAGE_FULL|TOO_MANY|BUDGET/.test(normalized) || /exceed|budget|too many/i.test(message)) code = "limit";
   else if (/CANCEL/.test(normalized) || name === "AbortError") code = "cancelled";
-  else if (normalized === "DB_NOT_CONFIGURED") code = "unavailable";
+  else if (["DB_NOT_CONFIGURED", "DB_NOT_CONNECTED"].includes(normalized)) code = "unavailable";
   else if (/INVALID|SQL_UNSUPPORTED|SQL_PARAMS|NOT_NULL/.test(normalized) || ["ZodError", "TypeError", "RangeError"].includes(name))
     code = "invalid";
   else if (status === 401 || status === 403) code = "denied";

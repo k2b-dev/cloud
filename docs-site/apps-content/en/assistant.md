@@ -522,7 +522,7 @@ and `assistant code action --chat CHAT --input-file call.json`.
 
 Code Mode exposes one frozen global `cloud` in scripts, app actions, Studio,
 CLI, and scheduled hosts. The code-mode skill includes the self-contained
-`cloud.md` contract reference. The transitional `ui` tree is removed with HTML apps.
+`cloud.md` contract reference. The transitional `ui` tree remains available until HTML apps replace it.
 
 Choose storage by who owns the data: `cloud.kv.user` for personal preferences
 and todos across devices, `cloud.kv` for small shared app settings, `cloud.db`
@@ -592,19 +592,20 @@ under `cld assistant studio-admin`.
 A script default-exports `(input, {files,signal,progress}) => Json | void`.
 `files` contains the selected chat inputs as `{path,size,type,file()}`; content
 loads on demand. App actions receive an empty array. Stop aborts the signal.
-Progress reports renew the 15-second responsive-work watchdog; time-limit
+Progress is available only while the entry function runs. Reports renew the 15-second responsive-work watchdog; time-limit
 errors name the limit and suggest splitting work, reporting progress, or using
 a scheduled action. Completed writes are not rolled back.
 
 `cloud.sheet` detects CSV delimiters and UTF-8/Windows-1252 encoding. Numeric
 columns become numbers in their source convention, including currency values;
-leading-zero codes and dates stay text. `numbers:false` disables conversion.
+leading-zero codes and dates stay text. Ambiguous numeric columns use unambiguous number columns in the same file, then the export convention: dot decimals with a comma delimiter, otherwise the locale’s decimal mark. Columns containing unsafe integers stay text. Duplicate or blank header collisions get unique suffixes; malformed CSV and rows beyond the header fail with `invalid` and a line number.
+`numbers:false` disables conversion.
 `toCsv` is asynchronous and emits semicolon, BOM, CRLF, formula-escaped cells,
-and locale decimal marks. Await it before `cloud.download(name,data)`; passing
+and the same decimal convention. Await it before `cloud.download(name,data)`; passing
 a Promise raises `invalid` with guidance. XLSX/ODS are detected from bytes;
 `rows()` defaults to the first sheet and includes headers. `toOds` exports ODS.
 
-The spreadsheet/CSV library, finance formats, and PDF.js reader load on first
+CSV, spreadsheet readers, finance formats, and the PDF.js reader load on first
 use from separate content-hashed bundles through the host bridge. The worker
 never fetches them from the network. PDF reading uses `cloud.pdf.read`, then
 `page(number)` and `close()`. Document budgets remain 64 MiB input and 128 MiB
@@ -642,8 +643,7 @@ execution; existing access and action-review checks still apply.
 
 Resource managers can permanently delete an App from its Studio menu
 or with `cld assistant code delete ID --yes`. Publications, grants and shared
-storage are removed; database cleanup is queued and retried. Browser-local data
-cannot be erased remotely. Platform administrators retain the administration
+and personal JSON storage are removed; database cleanup is queued and retried. Platform administrators retain the administration
 surface for operator cleanup.
 
 Chat starters prepare editable prompts for file analysis, app creation,
@@ -707,7 +707,7 @@ body. Network failures can leave the external outcome unknown: inspect the
 service before deliberately retrying. Stopping a run cannot undo completed
 external actions.
 
-Before returning an HTTP response, Cloud redacts every inserted secret value, its full prefixed header value, and standard base64/base64url forms from headers and body bytes. When at least one occurrence is replaced, the response carries `x-cloud-redacted: secret` and its content-length header is removed. Other returned content remains untrusted.
+Before returning an HTTP response, Cloud redacts every inserted secret value, its full prefixed header value, base64/base64url, JSON-escaped (including escaped slashes and ASCII Unicode escapes), and URL-encoded forms from headers and body bytes. When at least one occurrence is replaced, the response carries `x-cloud-redacted: secret` and its content-length header is removed. Other returned content remains untrusted.
 
 The CLI uses the same execution path and prompts for HTTP confirmation in
 interactive mode. Unattended runs can authorize an exact origin with
@@ -850,8 +850,7 @@ suite runs their published handlers in the isolated Studio runtime.
 | Export database, clear rows, discard schema and data | `code_database_export`, reviewed `code_database_clear` and `code_database_reset` |
 | Delete App and queue external database cleanup | Reviewed `code_delete` |
 
-Browser-local storage belongs to that browser and cannot be erased by a server
-agent. Personal secret values stay in the trusted `code_secret` dialog; listing
+Personal JSON is stored on the server, visible only to its owner, and deleted with the App. Personal secret values stay in the trusted `code_secret` dialog; listing
 or deleting another person's credentials is not an App management operation.
 Project associations are managed from the **Studio Apps** section of a Project or the CLI
 (`assistant code projects` and `assistant code project-link`). Linking or unlinking requires

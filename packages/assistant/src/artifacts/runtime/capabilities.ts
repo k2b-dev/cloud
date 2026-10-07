@@ -1,6 +1,7 @@
 import { CapabilityStreamSchema } from "@k2b/cloud/contracts";
 import { artifactClient } from "../client";
 import type { HttpApproval } from "../http-host";
+import { CloudError, cloudError } from "./errors";
 export type CapabilityApproval = Extract<Awaited<ReturnType<typeof artifactClient.capabilityPrepare>>, { status: "approval" }>;
 export type CapabilityDecision = { approved: boolean; remember?: "always" };
 export type ApproveCapability = (request: CapabilityApproval, signal: AbortSignal, conversationId?: string) => Promise<CapabilityDecision>;
@@ -27,12 +28,14 @@ export async function runCapability(
       throw error;
     }
   }
-  if (response.status !== "completed") throw new Error("Capability Action was rejected by the user.");
+  if (response.status !== "completed") throw new CloudError("denied", "Capability Action was rejected by the user.");
   const result = response.result;
-  if (!result || typeof result !== "object" || !("ok" in result)) throw new Error("Invalid capability result");
+  if (!result || typeof result !== "object" || !("ok" in result)) throw new CloudError("unavailable", "Invalid capability result");
   if (!result.ok) {
     const error = "error" in result ? result.error : undefined;
-    throw new Error(error && typeof error === "object" && "message" in error ? String(error.message) : "Capability failed");
+    throw error && typeof error === "object" && "message" in error
+      ? cloudError(error)
+      : new CloudError("unavailable", "Invalid capability result");
   }
   const envelope = "data" in result ? result.data : null;
   if (envelope && typeof envelope === "object" && "stream" in envelope && envelope.stream) {

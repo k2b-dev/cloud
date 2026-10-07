@@ -23,7 +23,7 @@ export const CodeRunInput = z
     resourceId: id
       .optional()
       .describe(
-        "Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Local storage stays temporary.",
+        "Optional data context for one-off code. Requires Manage; uses this resource database and shared files/KV without changing its source. Test runs use real shared and personal data; writes and capability effects keep normal permissions and approvals.",
       ),
     version: z
       .number()

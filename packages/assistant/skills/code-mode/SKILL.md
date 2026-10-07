@@ -1,6 +1,6 @@
 ---
 name: assistant-code-mode
-description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve interactive and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries and combining discovered Cloud cloud.capabilities. For plain arithmetic or date offsets, answer directly or use calculate.
+description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve interactive and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries and combining discovered Cloud capabilities. For plain arithmetic or date offsets, answer directly or use calculate.
 ---
 # Assistant code mode
 
@@ -19,7 +19,7 @@ code. Discover other Cloud operations before using `cloud.capabilities.run`.
 
 Read [cloud contract](references/cloud.md) first: it is the complete runtime contract.
 One frozen global `cloud` supplies storage, data, AI, HTTP, files, document
-helpers, money, and charts. The transitional `ui` tree is removed with HTML apps.
+helpers, money, and charts. The transitional `ui` tree remains available until HTML apps replace it.
 Only relative source imports are supported. There is no DOM or native networking.
 Discover external capability and HTTP contracts separately.
 

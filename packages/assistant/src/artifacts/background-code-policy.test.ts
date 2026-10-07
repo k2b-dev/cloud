@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { backgroundCodeRouteAllowed } from "./background-code-policy";
+import { backgroundCodeRouteAllowed, backgroundDatabaseOperation } from "./background-code-policy";
 
 test("background code admits computation and artifacts but no route around task grants", () => {
   for (const path of [
@@ -32,9 +32,37 @@ test("background code admits computation and artifacts but no route around task 
   expect(backgroundCodeRouteAllowed("/aBc234/secret", "GET")).toBe(false);
 });
 
-test("background scripts can load only the three named lazy runtime libraries", () => {
-  for (const name of ["sheet", "finance", "pdf-read"]) expect(backgroundCodeRouteAllowed(`/runtime/chunks/${name}`, "GET")).toBe(true);
+test("background scripts can load only the four named lazy runtime libraries", () => {
+  for (const name of ["csv", "sheet", "finance", "pdf-read"])
+    expect(backgroundCodeRouteAllowed(`/runtime/chunks/${name}`, "GET")).toBe(true);
   for (const path of ["/runtime/chunks/private", "/runtime/chunks/../secret", "/runtime/chunks/sheet/extra"])
     expect(backgroundCodeRouteAllowed(path, "GET")).toBe(false);
   expect(backgroundCodeRouteAllowed("/runtime/chunks/sheet", "POST")).toBe(false);
+});
+
+test("flat database operations retain the stored grant vocabulary", () => {
+  for (const operation of ["list", "get", "insert", "update", "delete"] as const)
+    expect(backgroundDatabaseOperation(operation)).toBe(`rows.${operation}`);
+  expect(backgroundDatabaseOperation("query")).toBe("query");
+  expect(backgroundCodeRouteAllowed("/runtime/chunks/csv", "GET")).toBe(true);
+});
+
+test("a table-scoped mandate allows only the mapped insert on that table", async () => {
+  const { mandatePolicyAllows, parseMandatePolicy } = await import("@k2b/cloud/services/mandates");
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["assistant"],
+    operations: ["runtime.database"],
+    actions: "preapproved",
+    grants: [{ kind: "database", fixedInput: { resourceId: "AbC234", operation: "rows.insert", table: "invoices" } }],
+  });
+  const allows = (table: string) =>
+    mandatePolicyAllows(policy, {
+      appId: "assistant",
+      operation: "runtime.database",
+      actionApproval: "none",
+      input: { resourceId: "AbC234", operation: backgroundDatabaseOperation("insert"), table },
+    });
+  expect(allows("invoices")).toBe(true);
+  expect(allows("other")).toBe(false);
 });

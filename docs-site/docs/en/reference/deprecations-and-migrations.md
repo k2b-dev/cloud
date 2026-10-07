@@ -39,14 +39,14 @@ tables gain nullable audit columns on first access, without backfill.
 | sheet.toCsv | await cloud.sheet.toCsv before downloading |
 | pdf.open / facturX | cloud.pdf.read / render({facturX}) |
 | work.* | script context signal/progress |
-| ui.* | transitional; removed with HTML apps |
+| ui.* | transitional; remains until HTML apps replace it |
 
 Lists return at most 1,000 rows and raise `limit` when paging is needed. The
 server sets created_by/updated_by and enforces each table’s everyone/own/managers
 write rule. Personal KV is isolated per app and viewer across devices; anonymous
 public-share visitors cannot use it or write database rows. Cloud calls fail with
 CloudError and one of the documented stable codes. Secret-bearing HTTP responses
-redact exact, prefixed, base64, and base64url secret forms before reaching code.
+redact raw, prefixed, base64/base64url, JSON-escaped (including escaped slashes and ASCII Unicode escapes), and URL-encoded secret forms before reaching code.
 
 ## Code tool failures are tool errors, and App action inputs are objects
 

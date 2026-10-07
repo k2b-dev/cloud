@@ -49,3 +49,26 @@ test("progress watchdog pauses during host approval and resumes with an actionab
     dom.cleanup();
   }
 });
+
+test("host stop cancels pending interactions and rejects later interactions as cancelled", async () => {
+  const dom = createDomTestHarness();
+  dom.window.happyDOM.settings.disableJavaScriptEvaluation = true;
+  jest.useFakeTimers();
+  const run = startArtifactRun(
+    dom.root,
+    { runtime: "", code: "" },
+    { ui() {}, log() {}, error() {}, output() {}, busy() {}, ready() {}, request: async () => null },
+  );
+  try {
+    const pending = run.event({ id: "button" });
+    const rejection = pending.catch((error: unknown) => error);
+    const stopping = run.stop();
+    jest.advanceTimersByTime(50);
+    await stopping;
+    expect(await rejection).toMatchObject({ name: "CloudError", code: "cancelled" });
+    await expect(run.event({ id: "button" })).rejects.toMatchObject({ name: "CloudError", code: "cancelled" });
+  } finally {
+    jest.useRealTimers();
+    dom.cleanup();
+  }
+});

@@ -329,11 +329,23 @@ export const artifactDatabase = {
           data = result(await client.table(req.table).rows.get(req.id));
           break;
         case "rows.insert":
-          data = result(await client.table(req.table).rows.insert(req.rows));
+        case "rows.update": {
+          const schema = TableSchema.parse(result(await client.tables.get(req.table)));
+          const batch = req.operation === "rows.insert" ? (Array.isArray(req.rows) ? req.rows : [req.rows]) : [req.row];
+          batch.forEach((row) => checkColumns(schema, Object.keys(row), true));
+          const missing = ["created_by", "updated_by"].filter((name) => !schema.columns.some((column) => column.name === name));
+          if (missing.length) {
+            result(await client.tables.update(req.table, { add_columns: missing.map((name) => ({ name, type: "text" })) }));
+          }
+          const requester = user(identity).id;
+          data =
+            req.operation === "rows.insert"
+              ? result(
+                  await client.table(req.table).rows.insert(batch.map((row) => ({ ...row, created_by: requester, updated_by: requester }))),
+                )
+              : result(await client.table(req.table).rows.update(req.id, { ...req.row, updated_by: requester }));
           break;
-        case "rows.update":
-          data = result(await client.table(req.table).rows.update(req.id, req.row));
-          break;
+        }
         case "rows.delete":
           data = result(await client.table(req.table).rows.delete(req.id));
           break;

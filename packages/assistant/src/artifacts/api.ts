@@ -6,6 +6,7 @@ import { GotenbergRenderError } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { etag } from "hono/etag";
 import { z } from "zod";
 import { ActionInputError, ArtifactCompileError, parseActionInput, sourceActions } from "./actions";
 import { adminIdentity, artifactAdmin } from "./admin";
@@ -380,8 +381,11 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
           ok(await runtimeCapabilities.resolve(z.uuid().parse(c.req.param("callId")), c.req.valid("json"), identity(c), caller(c))),
         ),
     )
-    .get("/runtime/chunks/:name", async (c) =>
-      c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, { "Content-Type": "text/javascript" }),
+    .get("/runtime/chunks/:name", etag(), async (c) =>
+      c.body(await chunkSource(ChunkName.parse(c.req.param("name"))), 200, {
+        "Content-Type": "text/javascript",
+        "Cache-Control": "no-cache",
+      }),
     )
     .get("/runtime/host.js", async (c) => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))
     .post("/runtime/claim", v("json", ClientCall), async (c) => respond(c, ok(await clientCalls.claim(c.req.valid("json"), identity(c)))))

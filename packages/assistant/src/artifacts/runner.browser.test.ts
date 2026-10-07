@@ -41,7 +41,7 @@ test("standalone public runner starts local code and blocks every server bridge 
       ["kv",()=>cloud.kv.keys()],
       ["http",()=>cloud.http.fetch("https://example.com")],
       ["capabilities",()=>cloud.capabilities.run("core.entities.search",{})]
-    ]) { try {await call();ui.text({value:"UNEXPECTED: " + name});} catch {ui.text({value:"Blocked: " + name});} }
+    ]) { try {await call();ui.text({value:"UNEXPECTED: " + name});} catch(error) {ui.text({value:"Blocked: " + name});if(name==="database") ui.text({value:"Database error: "+error.code});} }
     ui.filePicker({label:"Choose file",onChange:async ([selected])=>ui.text({value:"Local file: "+await selected.text()})});
   }`,
       },
@@ -79,6 +79,7 @@ test("standalone public runner starts local code and blocks every server bridge 
     await page.getByText("Local calculation: 42", { exact: true }).waitFor();
     for (const name of ["database", "files", "kv", "http", "capabilities"])
       await page.getByText(`Blocked: ${name}`, { exact: true }).waitFor();
+    await page.getByText("Database error: denied", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Choose file" }).click();
     await (await chooser).setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("works") });
     await page.getByText("Local file: works", { exact: true }).waitFor();

@@ -2,7 +2,7 @@
 
 Read [cloud contract](cloud.md) first. Code runs in an isolated, terminable worker
 with one frozen global `cloud`, no DOM, and no native network access. The
-transitional `ui` tree is removed with HTML apps. Imports may reference only the
+transitional `ui` tree remains available until HTML apps replace it. Imports may reference only the
 resource’s own JavaScript, TypeScript, JSON, CSV, TSV, or text source files.
 
 A script or app action default-exports a function:
@@ -30,9 +30,11 @@ captured file. Large downloads should use a Blob to avoid the JSON-message budge
 `signal` aborts when the host stops the run. `progress(completed,total?,label?)`
 reports bounded progress and renews the 15-second responsive-work watchdog.
 Split long synchronous loops into batches, yield to the event loop, and check
-the signal. Progress does not roll back completed writes. For durable unattended
+the signal. Progress is available only while the entry function runs and does not roll back completed writes. For durable unattended
 work use a scheduled action; the task must grant its capabilities, HTTP targets,
-and database operations. Scheduled hosts use the same library and permissions.
+and database operations. Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
+Runtime calls need no `connect` grant; `code_database` `tables.create` provisions the database under its `tables.create` grant.
+Scheduled hosts use the same library and permissions.
 
 Return JSON or nothing; do not return UI handles, functions, or class instances.
 Logs appear in diagnostics. A script download is captured for `code_export`;
@@ -43,6 +45,7 @@ Use `crypto.randomUUID()` for IDs. `cloud.locale`, `cloud.timeZone`, and
 public-share visitors; personal KV and database writes are denied there.
 
 CSV reads detect UTF-8 then Windows-1252 and convert numeric columns in their
-source convention. Codes with leading zeros and dates remain text. Use
+source convention. Ambiguous numeric columns use unambiguous number columns in the same file, then the export convention: dot decimals with a comma delimiter, otherwise the locale’s decimal mark. Columns containing unsafe integers stay text. Duplicate or blank header collisions get unique suffixes; malformed CSV and rows beyond the header fail with `invalid` and a line number.
+Codes with leading zeros and dates remain text. Use
 `numbers:false` to keep all values as text. `cloud.sheet.toCsv` is asynchronous:
 await it before passing the result to `cloud.download`.

@@ -1,6 +1,6 @@
 import { LIMITS } from "../contracts";
 import type { RuntimeContext } from "./cloud";
-import { cloudError } from "./errors";
+import { CloudError, cloudError } from "./errors";
 import { RuntimeEvent, type UiNode, WorkerMessage } from "./protocol";
 import { sandboxDocument } from "./sandbox";
 import type { WorkState } from "./work";
@@ -87,7 +87,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
     );
     for (const event of events.values()) {
       clearTimeout(event.timer);
-      event.reject(new Error("Run stopped"));
+      event.reject(new CloudError("cancelled", "Run stopped"));
     }
     events.clear();
     hooks.busy(false);
@@ -226,7 +226,7 @@ export function startArtifactRun(container: HTMLElement, source: { runtime: stri
       return stopped;
     },
     event: (input: RuntimeEvent, timeoutMs = 15000): Promise<void> => {
-      if (stopped) return Promise.reject(new Error("Run stopped"));
+      if (stopped) return Promise.reject(new CloudError("cancelled", "Run stopped"));
       if (events.size >= LIMITS.pendingRequests) return Promise.reject(new Error("Too many pending interactions"));
       const parsed = RuntimeEvent.parse(input),
         id = eventId++;

@@ -1,5 +1,5 @@
 import { aiConversations, CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
-import { type AuthContext, getLocale, requireInvocation } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -39,6 +39,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
           accessSubject: c.get("accessSubject"),
           conversationId: conversation.id,
           locale: getLocale(c),
+          timeZone: getTimeZone(c),
           review: envelope.review,
           signal: c.req.raw.signal,
           capabilityToken: c.req.header(CODE_CAPABILITY_TOKEN_HEADER),

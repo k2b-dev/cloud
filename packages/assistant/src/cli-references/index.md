@@ -89,7 +89,7 @@ created after the confirmed generation.
 
 `assistant code storage-manage ID --input-file request.json` uses the existing
 `area`, `operation`, `key`, `after`, `limit` storage contract with Manage access.
-Use `assistant code storage-clear ID --area files|kv|all --yes` for bulk cleanup.
+Use `assistant code storage-clear ID --area files|kv|all --scope shared|user --yes` for bulk cleanup. Scope defaults to `shared`; `user` clears only the current user’s personal JSON (`--area kv`).
 These commands share the Studio Advanced menu's permission-aware services.
 Personal JSON uses scope:"user" and always belongs to the signed-in viewer across devices.
 
@@ -172,7 +172,7 @@ and persist across runs and publications. Forks start with empty data. Use
 `code sql` with `{"sql":"SELECT title FROM todos LIMIT 20","params":[]}` for
 a direct read-only query. It never creates a database. `code database-connect`
 explicitly provisions one when the instance has rsql configured;
-`code database` accepts structured schema/row operations. Project membership grants Use on linked published Apps, including
+`code database` sends flat `list/get/insert/update/delete/query` operations to the Use runtime and dotted `tables.*`, `schema.get`, and `rows.*` operations to Manage-only maintenance. Project membership grants Use on linked published Apps, including
 read/run/storage/database commands and copying published source. A Project chat
 is not required; editing and management rights remain separate.
 

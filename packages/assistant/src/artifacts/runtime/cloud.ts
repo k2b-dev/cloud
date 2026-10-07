@@ -9,6 +9,7 @@ import { createPdf } from "./pdf";
 type Rpc = (method: string, args?: unknown[], signal?: AbortSignal) => Promise<unknown>;
 export type RuntimeContext = { locale: string; timeZone: string; user: { id: string; name: string } | null };
 type LazyModules = {
+  csv: typeof import("./sheet-lib");
   sheet: typeof import("./sheet-chunk");
   finance: typeof import("./finance-chunk");
   "pdf-read": typeof import("./pdf-reader");
@@ -114,8 +115,8 @@ export function createCloud(rpc: Rpc, context: RuntimeContext) {
     money: boundMoney(context.locale),
     pdf: { ...createPdf(rpc), read: async (file: Blob) => (await load("pdf-read")).read(file) },
     sheet: {
-      parseCsv: async (input: Blob | string, options = {}) => (await load("sheet")).parseCsv(input, options, context.locale),
-      toCsv: async (rows: Record<string, unknown>[], options = {}) => (await load("sheet")).toCsv(rows, options, context.locale),
+      parseCsv: async (input: Blob | string, options = {}) => (await load("csv")).parseCsv(input, options, context.locale),
+      toCsv: async (rows: Record<string, unknown>[], options = {}) => (await load("csv")).toCsv(rows, options, context.locale),
       read: async (file: Blob, options = {}) => (await load("sheet")).read(file, options),
       toOds: async (sheets: Parameters<typeof import("./sheet-chunk").toOds>[0]) => (await load("sheet")).toOds(sheets),
     },

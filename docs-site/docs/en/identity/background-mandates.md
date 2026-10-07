@@ -160,8 +160,7 @@ Changing grants updates the mandate revision, invalidating older runs' authority
 The agent can inspect a failed run and propose revised grants in the normal chat;
 expanding the scope requires a new reviewed task update. A worker cannot grant
 itself more authority. Missing or revoked authority produces an actionable task
-failure, not a pending browser dialog. Managed Code Mode remains unavailable to
-these tasks until its execution host supports the same task-scoped authority.
+failure, not a pending browser dialog.
 
 ## Invoke from a worker
 
@@ -266,6 +265,8 @@ Scheduled tasks keep capability, HTTP, and RSQL access in the same mandate
 access can fix a Studio app ID, operation, and table. Omitted fields are free
 for the task to choose. An empty object explicitly grants unrestricted inputs
 for that kind, within the runtime's existing limits and current resource access.
+
+Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
 
 The ordinary task approval describes these grants before they are saved.
 Runtime calls check the stored mandate revision and exact fixed values; HTTP

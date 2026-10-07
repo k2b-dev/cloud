@@ -253,6 +253,13 @@ export function ArtifactPanel(props: {
           if (!response.ok) throw new Error("Runtime library unavailable");
           return response.text();
         },
+        ...(!serverAccess
+          ? {
+              database: async () => {
+                throw Object.assign(new Error(t().publicServerUnavailable), { code: "denied" });
+              },
+            }
+          : {}),
         storage: (_method, args) => {
           if (!serverAccess) throw Object.assign(new Error(t().publicServerUnavailable), { code: "denied" });
           return sharedStorage(props.artifactId, RuntimeStorage.parse(args[0]));

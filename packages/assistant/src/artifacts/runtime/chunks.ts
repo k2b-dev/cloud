@@ -1,8 +1,8 @@
 import { env } from "@k2b/cloud/config";
 import { z } from "zod";
-export const ChunkName = z.enum(["sheet", "finance", "pdf-read"]);
+export const ChunkName = z.enum(["csv", "sheet", "finance", "pdf-read"]);
 export type ChunkName = z.infer<typeof ChunkName>;
-export const chunkEntries = { sheet: "sheet-chunk.ts", finance: "finance-chunk.ts", "pdf-read": "pdf-reader.ts" };
+export const chunkEntries = { csv: "sheet-lib.ts", sheet: "sheet-chunk.ts", finance: "finance-chunk.ts", "pdf-read": "pdf-reader.ts" };
 const pending = new Map<ChunkName, Promise<string>>();
 export function chunkSource(name: ChunkName): Promise<string> {
   let code = pending.get(name);

@@ -46,7 +46,7 @@ export type SessionOptions = {
   save?: (file: File, signal: AbortSignal) => Promise<void>;
 };
 
-/** One run owns its effects and state. Test runs never reach a user's local storage or file picker. */
+/** One run owns its effects and state. Test runs use real app data and explicit picker fixtures. */
 export function createArtifactSession(
   container: HTMLElement,
   source: { runtime: string; code: string; context?: RuntimeContext },
@@ -115,7 +115,7 @@ export function createArtifactSession(
     request: async (method, args, signal) => {
       if (method === "runtime.chunk") {
         const name = args[0];
-        if (name !== "sheet" && name !== "finance" && name !== "pdf-read") throw new Error("Invalid runtime chunk");
+        if (name !== "csv" && name !== "sheet" && name !== "finance" && name !== "pdf-read") throw new Error("Invalid runtime chunk");
         if (options.chunk) return options.chunk(name, signal);
         const response = await fetch(`/api/assistant/artifacts/runtime/chunks/${name}`, { signal });
         if (!response.ok || !/^(?:text|application)\/(?:javascript|ecmascript)(?:;|$)/i.test(response.headers.get("content-type") ?? ""))
@@ -137,7 +137,7 @@ export function createArtifactSession(
             options.mode === "user"
               ? await options.modal?.(request, signal)
               : await new Promise<unknown>((resolve, reject) => {
-                  const abort = () => reject(new Error("Run stopped"));
+                  const abort = () => reject(new CloudError("cancelled", "Run stopped"));
                   signal.addEventListener("abort", abort, { once: true });
                   modal = {
                     resolve: (value) => {
@@ -162,14 +162,14 @@ export function createArtifactSession(
       }
       if (method === "file.read") {
         if (typeof args[0] !== "string" || !inputFiles.some((file) => file.name === args[0]))
-          throw new Error("Input file not found; use the script context files first");
+          throw new CloudError("not_found", "Input file not found; use the script context files first");
         clearTimeout(watchdog);
         emit({ inputPending: true });
         try {
           const file = options.readInput
             ? await options.readInput(args[0], signal)
             : inputs.find((file) => (file.webkitRelativePath || file.name) === args[0]);
-          if (!file) throw new Error("Input file not found");
+          if (!file) throw new CloudError("not_found", "Input file not found");
           return wrap(file);
         } finally {
           emit({ inputPending: false });
@@ -216,7 +216,7 @@ export function createArtifactSession(
           name.length > 180 ||
           /[\/\\\x00]/.test(name)
         )
-          throw new Error("Invalid output file");
+          throw new CloudError("invalid", "Download names must have 1-180 characters and contain no /, backslash, or NUL.");
         const file = new File([data], name, { type: data instanceof Blob ? data.type : "text/plain" });
         if (options.mode === "user") {
           await options.save?.(file, signal);
@@ -224,7 +224,7 @@ export function createArtifactSession(
         }
         const total = [...outputFiles.values()].reduce((size, item) => size + (item.name === name ? 0 : item.size), file.size);
         if (file.size > LIMITS.inputFileBytes || total > LIMITS.inputBytes || (!outputFiles.has(name) && outputFiles.size >= LIMITS.files))
-          throw new Error("Output files exceed the run budget");
+          throw new CloudError("limit", "Output files exceed the run budget");
         outputFiles.set(name, file);
         emit({ files: [...outputFiles.values()].map((file) => ({ name: file.name, size: file.size, type: file.type })) });
         return null;
@@ -308,7 +308,7 @@ export function createArtifactSession(
         }
       }
       if (method === "database") {
-        if (!options.database) throw new Error("Database access requires a saved app or script");
+        if (!options.database) throw new CloudError("unavailable", "Database access requires a saved app or script");
         clearTimeout(watchdog);
         emit({ inputPending: true });
         try {
@@ -321,7 +321,7 @@ export function createArtifactSession(
       }
       if (method === "storage") {
         const request = RuntimeStorage.parse(args[0]);
-        if (!options.storage) throw new Error("Storage requires a saved app or script");
+        if (!options.storage) throw new CloudError("unavailable", "Storage requires a saved app or script");
         clearTimeout(watchdog);
         emit({ inputPending: true });
         try {
@@ -353,7 +353,7 @@ export function createArtifactSession(
     },
     stop: () => {
       clearTimeout(watchdog);
-      modal?.reject(new Error("Run stopped"));
+      modal?.reject(new CloudError("cancelled", "Run stopped"));
       emit({
         status: "stopped",
         busy: false,

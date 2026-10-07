@@ -13,12 +13,25 @@ export function redactSecrets<T extends { headers: Record<string, string>; body:
     ...new Set(
       secrets.flatMap((secret) =>
         [secret.value, secret.sent].flatMap((value) =>
-          value ? [value, Buffer.from(value).toString("base64"), Buffer.from(value).toString("base64url")] : [],
+          value
+            ? [
+                value,
+                Buffer.from(value).toString("base64"),
+                Buffer.from(value).toString("base64url"),
+                JSON.stringify(value).slice(1, -1),
+                JSON.stringify(value).slice(1, -1).replaceAll("/", "\\/"),
+                JSON.stringify(value)
+                  .slice(1, -1)
+                  .replace(/[\u0080-\uffff]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`),
+                encodeURIComponent(value),
+              ]
+            : [],
         ),
       ),
     ),
   ].sort((a, b) => Buffer.byteLength(b) - Buffer.byteLength(a));
-  if (!variants.length) return response;
+  const cleanHeaders = Object.fromEntries(Object.entries(response.headers).filter(([name]) => name.toLowerCase() !== "x-cloud-redacted"));
+  if (!variants.length) return { ...response, headers: cleanHeaders };
   const patterns = variants.map((value) => Buffer.from(value));
   const replacement = Buffer.from("[REDACTED]");
   let redacted = false;
@@ -55,7 +68,7 @@ export function redactSecrets<T extends { headers: Record<string, string>; body:
     return output;
   };
   const headers = Object.fromEntries(
-    Object.entries(response.headers).map(([name, value]) => [name, replace(Buffer.from(value), LIMITS.text).toString("utf8")]),
+    Object.entries(cleanHeaders).map(([name, value]) => [name, replace(Buffer.from(value), LIMITS.text).toString("utf8")]),
   );
   const body = replace(response.body, maxBytes);
   if (redacted) {

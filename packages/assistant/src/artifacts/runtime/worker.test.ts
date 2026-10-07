@@ -28,6 +28,7 @@ test("the built eager worker installs only cloud and ui, with trusted viewer and
   const result = await runInContext(
     `__artifactStart(async (input, {files,signal,progress}) => {
    signal.addEventListener("abort",()=>{globalThis.observedAbort=true;});
+   globalThis.lateProgress = progress;
    progress(1,2,"Checking");
    return {input,files:files.map(({path,size,type})=>({path,size,type})),aborted:signal.aborted,
      viewer:cloud.user,locale:cloud.locale,timeZone:cloud.timeZone,uuid:crypto.randomUUID(),
@@ -53,6 +54,15 @@ test("the built eager worker installs only cloud and ui, with trusted viewer and
   expect(listeners.has("unhandledrejection")).toBe(true);
   const output = messages.find((message) => message.type === "output")?.value;
   expect(output).toHaveProperty("uuid", expect.stringMatching(/^[a-f0-9-]{36}$/));
+
+  const count = messages.length;
+  expect(() => runInContext("lateProgress(2, 2)", context)).toThrow("Progress is only available while the entry function runs.");
+  try {
+    runInContext("lateProgress(2, 2)", context);
+  } catch (error) {
+    expect(error).toMatchObject({ name: "CloudError", code: "invalid" });
+  }
+  expect(messages).toHaveLength(count);
 
   // The application retains the exact signal it received, even after completion.
   expect(messages).toContainEqual({ type: "work", status: "completed", completed: 1, total: 2, label: "Checking" });
@@ -109,4 +119,29 @@ test("built worker imports the finance chunk and exports files through the cloud
   expect(downloads.map((message) => message.args?.[1])).toEqual(["buchungen.csv", "ueberweisungen.xml"]);
   expect(downloads.every((message) => message.args?.[0] instanceof Blob)).toBe(true);
   expect(messages.at(-1)?.type).toBe("ready");
+}, 30000);
+
+test("progress is closed even when the entry fails", async () => {
+  const messages: unknown[] = [];
+  const context = createContext({
+    crypto,
+    postMessage: (message: unknown) => messages.push(message),
+    addEventListener() {},
+    console: { log() {}, info() {}, warn() {}, error() {} },
+    setTimeout,
+    clearTimeout,
+    AbortController,
+    Blob,
+    File,
+    Response,
+    TextEncoder,
+    TextDecoder,
+    URL,
+  });
+  runInContext(await runtimeSource(), context);
+  runInContext('__artifactInit({locale:"en-US",timeZone:"UTC",user:null},[]);', context);
+  await runInContext('__artifactStart((_input,{progress})=>{globalThis.lateProgress=progress;throw new Error("failed");});', context);
+  const count = messages.length;
+  expect(() => runInContext("lateProgress(1)", context)).toThrow("only available while the entry function runs");
+  expect(messages).toHaveLength(count);
 }, 30000);

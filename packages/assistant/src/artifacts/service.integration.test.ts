@@ -113,7 +113,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(
       await artifactCodeHandlers.code_access_change(
         { id: resource.id, accessId: publicGrant!.id, permission: "admin", expectedAccessRevision: accessRevision(grants) },
-        { ...owner, locale: "en", signal: new AbortController().signal, review: true },
+        { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal, review: true },
       ),
     ).toMatchObject({ ok: false, error: { code: "PUBLIC_READ_ONLY" } });
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
@@ -196,7 +196,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await rejected.json()).toMatchObject({ code: "ACTION_INPUT_INVALID", message: expect.stringContaining("value: ") });
       expect((await call({ value: 3 })).status).toBe(200);
       await artifacts.writeFile(resource.id, "double.ts", "export default ({ value }: { value: number }) => value * 3;", owner);
-      const context = { ...owner, locale: "en", signal: new AbortController().signal };
+      const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(await artifactCodeHandlers.code_actions({ id: resource.id, draft: false }, context)).toMatchObject({
         ok: true,
         data: { data: { publishedVersion: 1 } },
@@ -221,7 +221,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   test("agent publication and draft discovery report invalid source without changing publication", async () => {
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     for (const content of [
       "{",
       JSON.stringify({ actions: [{ name: "Convert" }] }),
@@ -591,7 +591,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   test("reviewed app grants reject stale approval and serialize concurrent changes", async () => {
     const resource = await artifacts.create({ title: "Reviewed sharing", source }, owner);
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const grants = await artifacts.access(resource.id, owner);
     const input = {
       id: resource.id,
@@ -635,7 +635,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ),
     ).toMatchObject({ ok: false, error: { code: "LAST_MANAGER" } });
     expect(
-      await artifactCodeHandlers.code_access_read({ id: resource.id }, { ...stranger, locale: "en", signal: context.signal }),
+      await artifactCodeHandlers.code_access_read(
+        { id: resource.id },
+        { ...stranger, locale: "en", timeZone: "UTC", signal: context.signal },
+      ),
     ).toMatchObject({ ok: false, error: { code: "ACCESS_DENIED" } });
   });
 
@@ -656,7 +659,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     );
     const file = await studioFiles.read({ scope: "app", id: from.id, path: "invoice.pdf" }, reader);
     const destination = { scope: "app" as const, id: to.id, path: "invoice.pdf" };
-    const context = { ...reader, locale: "en", signal: new AbortController().signal };
+    const context = { ...reader, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const input = { source: file!.reference, destination, expectedVersion: null };
     expect(await artifactCodeHandlers.code_file_copy(input, { ...context, review: true })).toMatchObject({
       ok: true,
@@ -681,7 +684,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   test("storage reviews reject intervening writes and file versions survive delete/recreate", async () => {
     const resource = await artifacts.create({ title: "Storage review", source }, owner);
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const write = () => artifacts.storage(resource.id, { area: "kv", operation: "write", key: "state", content: "{}" }, owner);
     await write();
     const state = await artifacts.storageState(resource.id, owner);
@@ -723,6 +726,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const context = {
       ...owner,
       locale: "en",
+      timeZone: "UTC",
       requestId: crypto.randomUUID(),
       origin: "assistant" as const,
       signal: new AbortController().signal,
@@ -1144,7 +1148,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   test("reviewed App deletion rejects storage changes and removes only the reviewed resource", async () => {
     const resource = await artifacts.create({ title: "Delete review", source }, owner);
-    const context = { ...owner, locale: "en", signal: new AbortController().signal };
+    const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
     const before = await artifacts.managementState(resource.id, owner);
     const input = { id: resource.id, expectedManagementRevision: before.managementRevision };
     expect(await artifactCodeHandlers.code_delete(input, { ...context, review: true })).toMatchObject({
@@ -1211,7 +1215,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(
         await artifactCodeHandlers.code_sql(
           { id: applet.id, sql: "SELECT title FROM todos", params: [] },
-          { ...owner, locale: "en", signal: new AbortController().signal },
+          { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal },
         ),
       ).toMatchObject({ ok: false, error: { code: "DB_NOT_CONFIGURED" } });
       expect(
@@ -1223,7 +1227,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.connect(applet.id, owner)).toEqual({ connected: true });
       expect(await artifactDatabase.connect(applet.id, owner)).toEqual({ connected: true });
       expect(creates).toBe(1);
-      const context = { ...owner, locale: "en", signal: new AbortController().signal };
+      const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(
         await artifactCodeHandlers.code_sql({ id: applet.id, sql: "SELECT title FROM todos LIMIT 10", params: [] }, context),
       ).toMatchObject({ ok: true });
@@ -1328,6 +1332,46 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         ],
         write: "everyone",
       });
+      await expect(
+        manage({ operation: "rows.insert", table: "tasks", rows: { title: "forged", created_by: reader.user.id } }),
+      ).rejects.toMatchObject({ code: "invalid" });
+      await manage({ operation: "rows.insert", table: "tasks", rows: { title: "managed" } });
+      const managed = z
+        .object({ id: z.number(), created_by: z.string(), updated_by: z.string() })
+        .parse(z.array(z.unknown()).parse(await runtime({ operation: "list", table: "tasks" }))[0]);
+      expect(managed).toMatchObject({ created_by: owner.user.id, updated_by: owner.user.id });
+      const managerGrant = await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "admin", owner);
+      await artifactDatabase.call(
+        resource.id,
+        { operation: "rows.update", table: "tasks", id: managed.id, row: { title: "managed update" } },
+        reader,
+        undefined,
+        "maintenance",
+      );
+      expect(await runtime({ operation: "get", table: "tasks", id: managed.id })).toMatchObject({
+        created_by: owner.user.id,
+        updated_by: reader.user.id,
+      });
+      await expect(
+        manage({ operation: "rows.update", table: "tasks", id: managed.id, row: { updated_by: owner.user.id } }),
+      ).rejects.toMatchObject({ code: "invalid" });
+      await artifacts.changeGrant(resource.id, managerGrant!.id, null, owner);
+      await manage({ operation: "tables.update", table: "tasks", changes: { write: "own" } });
+      expect(await runtime({ operation: "update", table: "tasks", id: managed.id, values: { title: "own update" } })).toMatchObject({
+        created_by: owner.user.id,
+        updated_by: owner.user.id,
+      });
+      await runtime({ operation: "delete", table: "tasks", id: managed.id });
+      await manage({ operation: "tables.update", table: "tasks", changes: { write: "everyone" } });
+      expect(
+        await artifactCodeHandlers.code_database(
+          { id: resource.id, operation: "tables.update", table: "tasks", changes: { drop_columns: ["created_by"] } },
+          { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal },
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: { code: "INVALID_INPUT", status: 400, message: "Cloud-managed columns cannot be dropped or renamed." },
+      });
       const row = z
         .object({ id: z.number(), created_by: z.string(), updated_by: z.string(), done: z.boolean(), payload: z.object({ a: z.number() }) })
         .parse(await runtime({ operation: "insert", table: "tasks", rows: { title: "one", done: true, payload: { a: 1 } } }, reader));
@@ -1382,8 +1426,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const client = createRsqlClient({ url: requireInfraUrl("rsql"), token: "artifact-test-only" }).ns(mapping!.namespace);
       expect((await client.tables.update("legacy", { drop_columns: ["created_by", "updated_by"] })).ok).toBe(true);
       expect((await client.table("legacy").rows.insert({ value: "existing" })).ok).toBe(true);
-      expect(await runtime({ operation: "list", table: "legacy" })).toMatchObject([{ created_by: null, updated_by: null }]);
-      expect(await runtime({ operation: "list", table: "legacy" })).toMatchObject([{ created_by: null, updated_by: null }]);
+      await manage({ operation: "rows.insert", table: "legacy", rows: { value: "maintenance" } });
+      expect(await runtime({ operation: "list", table: "legacy", where: { value: "maintenance" } })).toMatchObject([
+        { created_by: owner.user.id, updated_by: owner.user.id },
+      ]);
+      expect(await runtime({ operation: "list", table: "legacy", where: { value: "existing" } })).toMatchObject([
+        { created_by: null, updated_by: null },
+      ]);
+      expect(await runtime({ operation: "list", table: "legacy", where: { value: "existing" } })).toMatchObject([
+        { created_by: null, updated_by: null },
+      ]);
     } finally {
       settings.mockRestore();
     }
@@ -1434,7 +1486,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             sql: "SELECT count(*) AS total FROM ledger_rows a JOIN ledger_rows b ON a.import_key = b.import_key",
             params: [],
           },
-          { ...owner, locale: "en", signal: new AbortController().signal },
+          { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal },
         ),
       ).toMatchObject({ ok: true, data: { data: { data: [{ total: 2500 }] } } });
     } finally {
@@ -1584,7 +1636,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await expect(artifactDatabase.clear(resource.id, before.generation!, before.dataRevision!, owner)).rejects.toMatchObject({
         code: "CONFLICT",
       });
-      const context = { ...owner, locale: "en", signal: new AbortController().signal };
+      const context = { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(
         await artifactCodeHandlers.code_database_reset(
           { id: resource.id, expectedGeneration: before.generation!, expectedDataRevision: before.dataRevision! },
@@ -1708,7 +1760,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         updatedAt: new Date().toISOString(),
       });
       try {
-        const context = { ...owner, conversationId: conversation.id, locale: "en", signal: new AbortController().signal };
+        const context = { ...owner, conversationId: conversation.id, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
         expect(await artifactCodeHandlers.code_database_export({ id: resource.id, path: "/database.sqlite" }, context)).toMatchObject({
           ok: true,
         });
@@ -1922,7 +1974,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect((await artifacts.list(stranger, 1, "Shared calculation")).items).toMatchObject([{ id: script.id, permission: "read" }]);
       expect(await artifacts.runner(script.id, stranger)).toMatchObject({ serverAccess: true, canManage: false });
       await expect(artifacts.runner(script.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
-      const toolContext = { ...stranger, locale: "en", signal: new AbortController().signal };
+      const toolContext = { ...stranger, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
       expect(await artifactCodeHandlers.code_read({ id: script.id, path: "main.js", offset: 0 }, toolContext)).toMatchObject({
         ok: true,
         data: { data: { content: source.files[0]!.content } },
@@ -2075,7 +2127,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         waitingSince: null,
       });
       try {
-        const result = await evaluateCodeMode({ ...owner, conversationId, locale: "de", signal: AbortSignal.timeout(1_200_000) }, turnId);
+        const result = await evaluateCodeMode(
+          { ...owner, conversationId, locale: "de", timeZone: "Europe/Berlin", signal: AbortSignal.timeout(1_200_000) },
+          turnId,
+        );
         expect(result.apps).toHaveLength(1);
         const app = result.apps[0]!;
         const runs = result.history
@@ -2209,7 +2264,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     );
     spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Run", toolSource: { kind: "none" } });
     const abort = new AbortController();
-    const context = { ...owner, conversationId, locale: "en", signal: abort.signal };
+    const context = { ...owner, conversationId, locale: "en", timeZone: "UTC", signal: abort.signal };
     const call = {
       turnId,
       callId: "server-run",

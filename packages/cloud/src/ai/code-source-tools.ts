@@ -69,7 +69,11 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
     if (context.turnId && databaseOperation) {
       const config = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
       if (config?.kind !== "compact" && config?.background) {
-        const { id } = z.object({ id: z.string() }).parse(input);
+        const {
+          id,
+          table,
+          name: tableName,
+        } = z.object({ id: z.string(), table: z.string().optional(), name: z.string().optional() }).parse(input);
         const conversationId = context.conversationId,
           turnId = context.turnId;
         authorizeDatabase = async () => {
@@ -78,7 +82,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
           await aiChatTasks.authorizeRuntime({
             mandate: config.mandate,
             kind: "database",
-            input: { resourceId: id, operation: databaseOperation },
+            input: { resourceId: id, operation: databaseOperation, table: table ?? tableName },
           });
         };
       }

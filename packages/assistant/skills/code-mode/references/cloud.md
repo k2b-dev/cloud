@@ -310,13 +310,16 @@ interface CloudSheet {
    * CSV as objects keyed by the header row. Detects the delimiter and the
    * encoding (UTF-8, else Windows-1252). Dates stay text. Columns whose cells are all numbers
    * ("1.234,56", "1,234.56", "12,50 €") become numbers; codes with leading
-   * zeros stay text. `numbers: false` keeps every cell as text.
+   * zeros and unsafe integers stay text. Ambiguous columns use other unambiguous number columns,
+   * then dot decimals for comma delimiters, otherwise the locale decimal mark. Header collisions
+   * get unique suffixes. Malformed CSV or excess fields fail with invalid and a line number.
+   * `numbers: false` keeps every cell as text.
    */
   parseCsv(
     input: Blob | string,
     options?: { delimiter?: string; encoding?: string; numbers?: boolean },
   ): Promise<Record<string, string | number>[]>;
-  /** CSV text for Excel: semicolon, UTF-8 BOM, CRLF, formula-escaped cells, numbers with the user's decimal mark. */
+  /** CSV text for Excel: semicolon, UTF-8 BOM, CRLF, formula-escaped cells, dot decimals for comma delimiters, otherwise the locale decimal mark. */
   toCsv(rows: Record<string, unknown>[], options?: { delimiter?: string; bom?: boolean }): Promise<string>;
   /** Reads XLSX or ODS (detected from the bytes); `rows()` defaults to the first sheet and includes the header row. */
   read(file: Blob, options?: { numbers?: "number" | "string" }): Promise<{ sheetNames: string[]; rows(name?: string): Cell[][] }>;

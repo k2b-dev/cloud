@@ -95,7 +95,9 @@ test("PDF accepts Html and escapes its title; invalid async calls reject with Cl
 test("lazy libraries reject HTML responses as unavailable before importing and allow retries", async () => {
   let requests = 0;
   const cloud = createCloud(
-    async () => {
+    async (method, args) => {
+      expect(method).toBe("runtime.chunk");
+      expect(args).toEqual(["csv"]);
       requests++;
       return "<!doctype html><body>Missing runtime route</body>";
     },

@@ -1,6 +1,11 @@
-import { expect, spyOn, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { defineTool, type InboundEvent, nessi, type Provider, type StoreEntry } from "@k2b/nessi";
+import { sql } from "bun";
 import { z } from "zod";
+import * as registry from "../_internal/registry";
+import * as identity from "../services/identity/key-ring";
+import * as execution from "./capability-execution";
+import * as codeExecution from "./code-execution";
 import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
 import { aiConversations } from "./store";
 
@@ -198,4 +203,116 @@ test("a failed code call reaches the model as a tool error, while a failed run s
     { callId: "failed", isError: true },
     { callId: "snapshot", isError: false },
   ]);
+});
+
+test("managed code forwards trusted locale and timezone to the Assistant host", async () => {
+  const user = {
+    id: "11111111-1111-4111-8111-111111111111",
+    uid: "test",
+    roles: [],
+    provider: "local" as const,
+    profile: "user" as const,
+    givenname: "Test",
+    sn: "User",
+    displayName: "Test User",
+    mail: null,
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  };
+  const actor = { kind: "user" as const, user };
+  const config = { kind: "chat" as const, input: "Run", toolSource: { kind: "none" as const } };
+  try {
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
+    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+    spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
+      config,
+      conversation: {
+        id: "chat-test",
+        shortId: "Chat01",
+        title: "Test",
+        titleSource: "user",
+        description: "",
+        descriptionSource: "default",
+        keywords: [],
+        pinnedAt: null,
+        archivedAt: null,
+        done: false,
+        isDone: false,
+        lastUsedAt: "2026-10-07",
+        runStatus: "queued",
+        runError: null,
+        unreadCompletion: false,
+        projectId: null,
+        draft: { content: [], revision: 0, updatedAt: null },
+        createdByUserId: user.id,
+        createdAt: "2026-10-07",
+        updatedAt: "2026-10-07",
+      },
+      turn: {
+        id: "turn-test",
+        shortId: "Turn01",
+        conversationId: "chat-test",
+        status: "running",
+        attempt: 1,
+        modelProfileId: null,
+        createdAt: "2026-10-07",
+        completedAt: null,
+        error: null,
+      },
+    });
+    spyOn(registry, "getApp").mockResolvedValue({
+      id: "assistant",
+      name: "Assistant",
+      icon: "",
+      description: "",
+      baseUrl: "http://assistant.test",
+      routes: [],
+    });
+    const keys = await crypto.subtle.generateKey(
+      { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+      true,
+      ["sign", "verify"],
+    );
+    spyOn(identity, "withActiveIdentitySigner").mockImplementation(async (_purpose, callback) =>
+      callback({ kid: "test-key", key: keys.privateKey, signUntil: new Date(Date.now() + 60000), issuer: "https://cloud.test" }, sql),
+    );
+    const request = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_url: RequestInfo | URL, init?: RequestInit) => {
+          const headers = new Headers(init?.headers);
+          expect(headers.get("x-cloud-locale")).toBe("de-DE");
+          expect(headers.get("cookie")).toBe("cloud.timezone=Europe%2FBerlin");
+          return Response.json({ ok: true, data: { status: "done", result: { answer: 42 }, approvals: [] } });
+        },
+        { preconnect: fetch.preconnect },
+      ),
+    );
+    expect(
+      await runManagedCodeTool("code_run")(
+        {},
+        {
+          actor,
+          conversationId: "chat-test",
+          turnId: "turn-test",
+          callId: "run-test",
+          locale: "de-DE",
+          timeZone: "Europe/Berlin",
+          signal: new AbortController().signal,
+          requestApproval: async () => false,
+          requestClientTool: async () => {
+            throw new Error("Unexpected client tool");
+          },
+        },
+      ),
+    ).toEqual({ answer: 42 });
+    expect(request).toHaveBeenCalledTimes(1);
+  } finally {
+    mock.restore();
+  }
 });
