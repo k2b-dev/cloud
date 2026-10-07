@@ -120,7 +120,10 @@ conversation SSE route, like the CLI; `streamTransport` replaces it for an
 application-owned chat endpoint. Changing chats closes the previous stream and
 opens one for the new chat, and every connection starts from a fresh state
 snapshot, so a frontend tool runs once and a resolved approval does not
-reappear. When access to the conversation ends, the controller stops the
+reappear. When a running turn sends nothing for 45 seconds, one worker lease,
+the controller subscribes again and continues from the turn's saved state, so
+a lost update such as the end of the turn heals within a minute. A turn that
+waits for the person is not silent. When access to the conversation ends, the controller stops the
 stream and shows, in the page's language, why the chat cannot continue,
 instead of reconnecting. `refreshActiveConversation()` does the same and
 resolves `false` when the chat is gone, so a caller does not retry it; an
@@ -199,8 +202,12 @@ order:
    turn ends: intermediate text, reasoning, ordinary tool steps, image
    inspections (`view_image`), and compaction. While the turn runs, it names the
    current step, such as "Reading orders.csv", with a clock and the step count;
-   on phones the count appears once the turn is finished. While an approval or
-   answer is pending it says what the turn waits for and since when. Finished,
+   on phones the count appears once the turn is finished. A step that runs
+   longer than 45 seconds shows its own duration instead of its target, such as
+   "Running code · 3 min". While a model call waits for its retry or the stream
+   reconnects, the line reads "Reconnecting" without its shimmer, and its clock
+   stands. While an approval or answer is pending it says what the turn waits
+   for and since when. Finished,
    it reads "Worked 3 min" with the step count, "Worked 1 min · stopped" after
    a stop, and "Worked 4 min · interrupted" when the turn failed or its wait
    expired. Expanding it shows intermediate texts as quiet paragraphs and the
@@ -235,7 +242,11 @@ order:
 
 A turn without tool calls or compaction, such as a plain answer, a steering
 marker, or an answer with only reasoning, has no work line. Its texts form the
-message. Steering and accepted survey answers split a turn into segments; each
+message. While such a turn reconnects, a calm "Reconnecting" row stands at its
+end, where it moves nothing above it. Pass `reconnecting`, such as
+`() => chat.streamStatus() === "reconnecting"`, to `createAiChatTimeline` so
+a lost connection shows like a model retry; Assistant then leaves the
+composer's reconnecting notice to chats without a running turn. Steering and accepted survey answers split a turn into segments; each
 segment has its own places, and only the last one shows the duration.
 
 The work time is wall time minus time spent waiting for approvals and other

@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { AiStreamSseEvent, AiTurnBlock, AiTurnSnapshot } from "../protocol";
+import { AI_TURN_LEASE_MS, type AiStreamSseEvent, type AiTurnBlock, type AiTurnSnapshot } from "../protocol";
 import type { AiConversation } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
 import type { AiChatProjection } from "./projection";
@@ -1113,3 +1113,86 @@ for (const recovery of ["snapshot", "refresh"] as const)
       dispose();
     }
   });
+
+describe("AI controller silence", () => {
+  const turn = (status: AiTurnSnapshot["status"]): AiTurnSnapshot => ({
+    turnId: "turn",
+    attempt: 1,
+    seq: 3,
+    status,
+    blocks: [],
+    modelProfileId: null,
+    createdAt: "2026-10-07T00:00:00Z",
+  });
+
+  const follow = (activeTurn: AiTurnSnapshot) => {
+    const current = conversation("Chat01");
+    const calls: string[] = [];
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let dispose!: () => void;
+    createRoot((rootDispose) => {
+      dispose = rootDispose;
+      createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn },
+        streamTransport: {
+          subscribe: (input) => {
+            calls.push("subscribe");
+            emit = input.onEvent;
+            return { close: () => calls.push("close") };
+          },
+        },
+      });
+    });
+    return { calls, emit: (event: AiStreamSseEvent) => emit(event), dispose };
+  };
+
+  (isServer ? test.skip : test)("a running turn that sends nothing for a worker lease starts the stream again from its saved state", () => {
+    jest.useFakeTimers();
+    const stream = follow(turn("running"));
+    try {
+      expect(stream.calls).toEqual(["subscribe"]);
+      // Each event restarts the wait.
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS - 1);
+      stream.emit({
+        v: 1,
+        type: "block_delta",
+        conversationId: "Chat01",
+        turnId: "turn",
+        attempt: 1,
+        seq: 4,
+        blockId: "t",
+        blockKind: "text",
+        delta: "Hi",
+      });
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS - 1);
+      expect(stream.calls).toEqual(["subscribe"]);
+      jest.advanceTimersByTime(1);
+      expect(stream.calls).toEqual(["subscribe", "close", "subscribe"]);
+    } finally {
+      stream.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  (isServer ? test.skip : test)("a turn that waits for the person is not silent, and a turn that runs again is watched again", () => {
+    jest.useFakeTimers();
+    const stream = follow(turn("waiting_for_action"));
+    try {
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS * 3);
+      expect(stream.calls).toEqual(["subscribe"]);
+      stream.emit({
+        type: "state",
+        conversation: conversation("Chat01"),
+        messages: [],
+        activeTurn: { ...turn("running"), attempt: 2, seq: 1 },
+      });
+      jest.advanceTimersByTime(AI_TURN_LEASE_MS);
+      expect(stream.calls).toEqual(["subscribe", "close", "subscribe"]);
+    } finally {
+      stream.dispose();
+      jest.useRealTimers();
+    }
+  });
+});

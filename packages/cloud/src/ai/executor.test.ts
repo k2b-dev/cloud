@@ -4,6 +4,7 @@ import { aiTurnAllowsRememberedApprovals } from "./approvals";
 import { __aiExecutorTest } from "./executor";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
+import * as stream from "./stream";
 
 const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
@@ -652,4 +653,46 @@ test("direct code tools index returned Studio references without a capability wr
   } finally {
     index.mockRestore();
   }
+});
+
+describe("saved live state", () => {
+  test("follows every event within one interval, also without a further event, and stops when the attempt ends", async () => {
+    const saved: number[] = [];
+    const save = spyOn(aiConversations, "saveTurnLiveState").mockImplementation(async (input) => {
+      saved.push(input.seq);
+      return true;
+    });
+    const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+    try {
+      const pipeline = new __aiExecutorTest.StreamPipeline({
+        conversationId: "chat",
+        turnId: "turn",
+        attempt: 1,
+        startSeq: 0,
+        leaseOwner: "worker",
+        seedBlocks: [],
+        allowRememberedApprovals: false,
+      });
+      // A new attempt saves its baseline at once.
+      await pipeline.emitTurnStarted("model");
+      await pipeline.emitBaseline();
+      expect(saved).toEqual([1]);
+
+      // Changes inside the interval are saved when it ends, although nothing follows them.
+      await pipeline.applyCompaction("running");
+      await pipeline.emitMessage({ id: "m1" } as Parameters<typeof pipeline.emitMessage>[0]);
+      expect(saved).toEqual([1]);
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 200);
+      expect(saved).toEqual([1, 3]);
+
+      // The attempt ends: a later save would overwrite what suspension or the next attempt saved.
+      await pipeline.applyCompaction("completed");
+      await pipeline.flush();
+      await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 200);
+      expect(saved).toEqual([1, 3]);
+    } finally {
+      save.mockRestore();
+      publish.mockRestore();
+    }
+  });
 });

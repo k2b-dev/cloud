@@ -20,6 +20,7 @@ export function ItemChat(props: {
     const items = createAiChatTimeline({
       messages: chat.messages,
       activeTurn: chat.activeTurn,
+      reconnecting: () => chat.streamStatus() === "reconnecting",
     });
 
     return (

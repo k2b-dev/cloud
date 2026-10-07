@@ -54,3 +54,28 @@ describe("active turn message segmentation", () => {
     });
   });
 });
+
+test("a long step shows its duration in place of its target, in the reader's language", async () => {
+  const { liveStepLabel } = await import("./turn-view");
+  const { aiChatMessages } = await import("./messages");
+  const run: AiTurnBlock = {
+    id: "tool-run",
+    kind: "tool",
+    callId: "run",
+    name: "code_run",
+    args: { title: "dashboard.tsx" },
+    status: "running",
+  };
+  const read: AiTurnBlock = {
+    id: "tool-read",
+    kind: "tool",
+    callId: "read",
+    name: "read_file",
+    args: { path: "/q1.csv" },
+    status: "running",
+  };
+  expect(liveStepLabel(run, aiChatMessages("de"), 44_000)).toBe("Führt Code aus · dashboard.tsx");
+  expect(liveStepLabel(run, aiChatMessages("de"), 3 * 60_000)).toBe("Führt Code aus · 3 Min.");
+  expect(liveStepLabel(read, aiChatMessages("en"))).toBe("Reading q1.csv");
+  expect(liveStepLabel(read, aiChatMessages("en"), 60_000)).toBe("Reading a file · 1 min");
+});

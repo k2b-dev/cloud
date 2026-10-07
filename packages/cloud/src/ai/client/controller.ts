@@ -2,7 +2,7 @@ import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
-import { type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
+import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
   AiClientToolId,
@@ -201,6 +201,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const abortRequests = new Map<string, Promise<boolean>>();
   let stream: AiStreamHandle | null = null;
   let streamSession: AiStreamSession | null = null;
+  let silenceTimer: ReturnType<typeof setTimeout> | undefined;
   /** The chat error left by a stream that ended for good, until a stream opens again. */
   let streamError: string | null = null;
   let streamGeneration = 0;
@@ -294,8 +295,29 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     void markConversationViewed(session.conversationId);
   };
 
+  const clearSilenceTimer = () => {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = undefined;
+  };
+
+  /**
+   * A running turn that sends nothing for one worker lease either works silently or lost an update, such as its end.
+   * The stream then starts again from the turn's saved state. Waits for the person are not silence.
+   */
+  const watchSilence = (session: AiStreamSession) => {
+    clearSilenceTimer();
+    silenceTimer = setTimeout(() => {
+      silenceTimer = undefined;
+      if (!isCurrentStreamSession(streamSession, session)) return;
+      if (state.activeTurn?.status !== "running") return watchSilence(session);
+      closeStream();
+      openStream(session.conversationId);
+    }, AI_TURN_LEASE_MS);
+  };
+
   const applyEvent = (session: AiStreamSession, event: AiStreamEvent) => {
     if (!isCurrentStreamSession(streamSession, session)) return;
+    watchSilence(session);
     const conversationId = session.conversationId;
     if (event.type === "turn_finished" && pendingSends()[conversationId]) {
       completedDuringSend.set(conversationId, event.turnId);
@@ -327,6 +349,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const closeStream = () => {
+    clearSilenceTimer();
     stream?.close();
     stream = null;
     streamSession = null;
@@ -356,6 +379,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         endStream(conversationId, error);
       },
     });
+    watchSilence(session);
   };
 
   /** Stops the chat's stream for good and shows why. */

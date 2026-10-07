@@ -300,6 +300,20 @@ longer available. The transport reports the status as an `AiStreamError` code;
 the controller chooses the text. Reopening or refreshing the chat, or acting in
 it, subscribes again. Other failures keep reconnecting with backoff.
 
+Each attempt numbers its events without holes and starts with
+`turn_started`, and a turn ends with `turn_finished` before the next one
+starts. The worker saves the turn's live state within one second of every
+event. The stream checks each event against this order. When an event is
+missing, it sends a fresh `state` as soon as the saved state holds that event
+and continues after it, so a reader never applies updates over a hole. An event
+can go missing because the snapshot a subscription starts from lags the live
+events, because its publish failed, or because it is too large for the live
+topic. Events over 257 KiB, such as a tool block with a large web page, travel
+only as their position, and the stream delivers them in full through the saved
+state. A turn's end always reaches readers, also when a stop or the sweep
+numbers it from a saved state that lags the live events. If the saved state
+does not catch up within five seconds, the stream continues with what it has.
+
 The server closes a stream once its reader has left about 4 MiB unread. The
 event that crosses that limit is still queued, and a `state` snapshot or a
 `turn_finished` event with its stored messages can be larger than one stream
@@ -602,8 +616,10 @@ separate provider call with its own admission, quota check and
 
 While a call waits, the stream sends `provider_retry`. The controller marks the
 active turn with `providerRetry: true` until its next event; a state snapshot
-never carries it. Meanwhile the chat timeline of `@k2b/cloud/ai/ui` ends the
-live turn with **Reconnecting**, and `cld assistant` prints `model: reconnecting`
+never carries it. Meanwhile the work line of the live turn in the chat timeline
+of `@k2b/cloud/ai/ui` reads **Reconnecting** and its clock stands; a turn
+without a work line yet shows a **Reconnecting** row at its end. `cld assistant`
+prints `model: reconnecting`
 to standard error or writes a `provider_retry` JSONL line. An `assistant` CLI
 plugin from an earlier release stops following the turn at this event; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).

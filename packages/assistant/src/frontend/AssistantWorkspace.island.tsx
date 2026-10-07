@@ -1570,8 +1570,9 @@ export default function AssistantWorkspace(props: Props) {
     if (archived.id === chat.activeConversationId()) navigateTo("/app/assistant");
   };
 
+  // While a turn runs, its work line says that the chat reconnects.
   const composerNotice = createMemo(() =>
-    chat.streamStatus() === "reconnecting"
+    chat.streamStatus() === "reconnecting" && !chat.activeTurn()
       ? { message: t().reconnecting, reconnecting: true }
       : chat.error() || liveError()
         ? { message: chat.error() ?? liveError()!, reconnecting: false }
@@ -1596,7 +1597,11 @@ export default function AssistantWorkspace(props: Props) {
   );
 
   const ConversationTimeline = () => {
-    const items = createAiChatTimeline({ messages: chat.messages, activeTurn: chat.activeTurn });
+    const items = createAiChatTimeline({
+      messages: chat.messages,
+      activeTurn: chat.activeTurn,
+      reconnecting: () => chat.streamStatus() === "reconnecting",
+    });
 
     return (
       <Chat.Timeline

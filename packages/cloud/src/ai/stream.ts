@@ -1,3 +1,4 @@
+import { PayloadTooLargeError } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
@@ -27,12 +28,36 @@ const log = logger("ai:stream");
 const AI_STREAM_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 /**
+ * Interval at which a turn worker saves its live state (ai.turns.live_blocks).
+ * The saved state lags the live stream by at most one interval.
+ */
+export const AI_LIVE_SNAPSHOT_INTERVAL_MS = 1_000;
+
+/**
+ * Reads of the saved live state a stream makes while it waits for an event it
+ * could not pass on live, one interval apart. The worker saves within one
+ * interval; the rest covers a slow database before the stream continues with
+ * the state it has.
+ */
+const AI_STREAM_CATCH_UP_READS = 5;
+
+/**
+ * Raw topic events: the wire protocol, plus the marker a publisher sends in
+ * place of an event that exceeds the topic's payload limit. Streams never pass
+ * the marker on; they send the turn's saved state instead, which holds the
+ * event in full.
+ */
+export type AiLiveTopicEvent =
+  | AiWireEvent
+  | (Pick<AiWireEvent, "v" | "conversationId" | "turnId" | "attempt" | "seq"> & { type: "oversized"; replaces: AiWireEvent["type"] });
+
+/**
  * Live fanout for wire events. Events carry their full payload so the SSE hot
  * path never touches Postgres; durable state lives in ai.messages plus the
  * throttled ai.turns.live_blocks snapshot.
  */
 export const aiStreamTopic = lazySync((sync) =>
-  sync.topic<AiWireEvent>({
+  sync.topic<AiLiveTopicEvent>({
     id: "cloud-ai-stream",
     owner: "cloud",
     retention: { maxAgeMs: 15 * 60 * 1000, maxBytes: 256 * 1024 * 1024 },
@@ -53,13 +78,30 @@ export const aiTurnControlsTopic = lazySync((sync) =>
   }),
 );
 
-export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
+const publishLiveTopicEvent = async (event: AiLiveTopicEvent): Promise<void> => {
   await aiStreamTopic().publish({
     tenantId: event.conversationId,
     orderingKey: event.turnId,
     data: event,
-    idempotencyKey: `wire:${event.turnId}:${event.attempt}:${event.seq}`,
+    // A turn ends once. A stop or the sweep numbers the end from the saved state, which can lag the live events, so
+    // its position may repeat one of theirs and must not count as a duplicate of it.
+    idempotencyKey: event.type === "turn_finished" ? `wire:${event.turnId}:finished` : `wire:${event.turnId}:${event.attempt}:${event.seq}`,
   });
+};
+
+/**
+ * Publish a wire event. An event over the topic's payload limit, such as a
+ * tool block with a large result, goes out as an `oversized` marker with the
+ * same position; streams then send the saved state, which holds it in full.
+ */
+export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
+  try {
+    await publishLiveTopicEvent(event);
+  } catch (error) {
+    if (!(error instanceof PayloadTooLargeError)) throw error;
+    const { v, conversationId, turnId, attempt, seq } = event;
+    await publishLiveTopicEvent({ v, conversationId, turnId, attempt, seq, type: "oversized", replaces: event.type });
+  }
 };
 
 export const publishAiTurnAbort = async (input: { conversationId: string; turnId: string }): Promise<void> => {
@@ -101,7 +143,16 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
 /** Initial history window; older messages load on demand while scrolling up. */
 export const AI_STREAM_INITIAL_MESSAGE_LIMIT = 100;
 
-export const loadAiStreamState = async (conversation: AiConversation): Promise<Extract<AiStreamEvent, { type: "state" }>> => {
+type AiStreamSnapshot = {
+  state: Extract<AiStreamEvent, { type: "state" }>;
+  /** Internal id of the active turn in `state`. */
+  activeTurnId: string | null;
+};
+
+export const loadAiStreamState = async (conversation: AiConversation): Promise<Extract<AiStreamEvent, { type: "state" }>> =>
+  (await loadStreamSnapshot(conversation)).state;
+
+const loadStreamSnapshot = async (conversation: AiConversation): Promise<AiStreamSnapshot> => {
   const [page, active] = await Promise.all([
     aiConversations.listMessagesPage({ conversationId: conversation.id, limit: AI_STREAM_INITIAL_MESSAGE_LIMIT }),
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
@@ -129,11 +180,14 @@ export const loadAiStreamState = async (conversation: AiConversation): Promise<E
     }
   }
   return {
-    type: "state",
-    conversation: { ...conversation, id: conversation.shortId },
-    messages: await publicAiStoredMessages(page.messages, conversation),
-    hasMoreMessages: page.hasMore,
-    activeTurn: snapshot,
+    state: {
+      type: "state",
+      conversation: { ...conversation, id: conversation.shortId },
+      messages: await publicAiStoredMessages(page.messages, conversation),
+      hasMoreMessages: page.hasMore,
+      activeTurn: snapshot,
+    },
+    activeTurnId: snapshot ? active!.turn.id : null,
   };
 };
 
@@ -149,16 +203,71 @@ async function* streamSnapshotThenTail<TCursor, TSnapshot, TEvent>(input: {
   for await (const event of input.tail(cursor)) yield { kind: "event", value: event };
 }
 
+/** Position of the turn a stream follows: internal id, public id, and the newest event it passed on. */
+type StreamPosition = { turnId: string; publicTurnId: string; attempt: number; seq: number; finished: boolean };
+
+const positionOf = (snapshot: AiStreamSnapshot): StreamPosition | null => {
+  const active = snapshot.state.activeTurn;
+  if (!active || !snapshot.activeTurnId) return null;
+  return { turnId: snapshot.activeTurnId, publicTurnId: active.turnId, attempt: active.attempt, seq: active.seq, finished: false };
+};
+
+/**
+ * Whether the stream has to send the saved state before `event`: the event
+ * was too large for the live topic, events of the turn went missing, or the
+ * turn's start or the previous turn's end did not arrive. Each attempt numbers
+ * its events without holes, starts with `turn_started`, and a turn ends with
+ * `turn_finished` before the next one starts.
+ */
+const needsSavedState = (event: AiLiveTopicEvent, current: StreamPosition | null, reloadedTurns: ReadonlySet<string>): boolean => {
+  if (current?.turnId === event.turnId) {
+    if (current.finished || event.type === "turn_finished" || !isNewerWireEvent(event, current)) return false;
+    if (event.type === "oversized") return true;
+    if (event.type === "turn_started") return false;
+    return event.attempt > current.attempt || event.seq > current.seq + 1;
+  }
+  if (event.type === "turn_started") return Boolean(current && !current.finished);
+  return !reloadedTurns.has(event.turnId);
+};
+
+/** Whether `snapshot` already holds `event`: its turn ended, another turn runs, or the saved state reached it. */
+const holdsEvent = (active: { turn: { id: string; attempt: number }; liveSeq: number } | null, event: AiLiveTopicEvent): boolean =>
+  !active || active.turn.id !== event.turnId || !isNewerWireEvent(event, { attempt: active.turn.attempt, seq: active.liveSeq });
+
+const pause = (ms: number, signal: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+
+/** The saved state once it holds `event`, or the newest one after a bounded wait. */
+const loadStreamSnapshotWith = async (conversation: AiConversation, event: AiLiveTopicEvent, signal: AbortSignal) => {
+  for (let read = 1; read < AI_STREAM_CATCH_UP_READS && !signal.aborted; read++) {
+    if (holdsEvent(await aiConversations.getActiveTurn({ conversationId: conversation.id }), event)) break;
+    await pause(AI_LIVE_SNAPSHOT_INTERVAL_MS, signal);
+  }
+  return loadStreamSnapshot(conversation);
+};
+
 /**
  * Transport-neutral conversation stream: one `state` snapshot, then the live
  * tail. SSE and WebSocket adapters must both consume this feed.
  *
  * The topic cursor is grabbed before the snapshot is loaded, so every event
  * that races the snapshot is replayed from the tail and deduplicated via
- * (attempt, seq). Events of unknown turns are dropped until their
- * `turn_started` arrives, which makes stale retention entries harmless.
- * A memoized per-conversation hub preserves this snapshot race guarantee. While
- * a conversation has subscribers it costs one full-topic follower per process
+ * (attempt, seq). The saved snapshot can lag the live stream by one save
+ * interval, and a live event can be too large for the topic or get lost. The
+ * feed therefore checks that each turn's events follow without holes. When
+ * one is missing, it sends a fresh `state` once the saved state holds the
+ * event, and continues after it, so readers never see a hole. A memoized
+ * per-conversation hub preserves this snapshot race guarantee. While a
+ * conversation has subscribers it costs one full-topic follower per process
  * (Sync filters tenants locally); the hub retires when the last subscriber
  * leaves. live() has no subscription-ready barrier.
  */
@@ -166,37 +275,33 @@ export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;
   signal: AbortSignal;
 }): AsyncGenerator<AiStreamEvent> {
-  let current: { turnId: string; publicTurnId: string; attempt: number; seq: number } | null = null;
+  let current: StreamPosition | null = null;
+  // A turn whose start went missing is reloaded once; later events of a turn the state does not show are stale.
+  const reloadedTurns = new Set<string>();
   for await (const item of streamSnapshotThenTail({
     captureCursor: () => latestTopicCursor({ topic: aiStreamTopic(), resourceId: "cloud-ai-stream", tenantId: input.conversation.id }),
-    loadSnapshot: () => loadAiStreamState(input.conversation),
+    loadSnapshot: () => loadStreamSnapshot(input.conversation),
     tail: (after) => aiStreamTopic().hub({ tenantId: input.conversation.id }).subscribe({ after, signal: input.signal }),
   })) {
     if (item.kind === "snapshot") {
-      const state = item.value;
-      yield state;
-      const activeTurn = state.activeTurn
-        ? await aiConversations.getTurnByShortId({
-            conversationId: input.conversation.id,
-            shortId: state.activeTurn.turnId,
-          })
-        : null;
-      current =
-        state.activeTurn && activeTurn
-          ? {
-              turnId: activeTurn.id,
-              publicTurnId: state.activeTurn.turnId,
-              attempt: state.activeTurn.attempt,
-              seq: state.activeTurn.seq,
-            }
-          : null;
+      yield item.value.state;
+      current = positionOf(item.value);
       continue;
     }
 
-    const received = item.value;
-    const event = received.data;
+    const event = item.value.data;
+    if (needsSavedState(event, current, reloadedTurns)) {
+      reloadedTurns.add(event.turnId);
+      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal);
+      if (input.signal.aborted) return;
+      yield snapshot.state;
+      current = positionOf(snapshot);
+    }
+
     if (current?.turnId === event.turnId) {
-      if (!isNewerWireEvent(event, current)) continue;
+      if (current.finished) continue;
+      // A turn ends once; the sweep and a stop number its end from the saved state, which can lag the live events.
+      if (event.type !== "turn_finished" && !isNewerWireEvent(event, current)) continue;
     } else if (event.type !== "turn_started") {
       continue;
     }
@@ -205,7 +310,18 @@ export async function* streamAiConversationEvents(input: {
         ? current.publicTurnId
         : (await aiConversations.getTurn({ conversationId: input.conversation.id, turnId: event.turnId }))?.shortId;
     if (!publicTurnId) continue;
-    current = { turnId: event.turnId, publicTurnId, attempt: event.attempt, seq: event.seq };
+    // A turn end numbered behind the passed events leaves the position where it was.
+    const position = current?.turnId === event.turnId && !isNewerWireEvent(event, current) ? current : event;
+    current = {
+      turnId: event.turnId,
+      publicTurnId,
+      attempt: position.attempt,
+      seq: position.seq,
+      finished: event.type === "turn_finished",
+    };
+    // The saved state sent above holds what the marker replaced. Should the wait have run out, the stream still
+    // continues after this position instead of waiting for the same event again.
+    if (event.type === "oversized") continue;
     if (event.type === "turn_finished") {
       const messages = await aiConversations
         .listTurnMessages({ conversationId: event.conversationId, loopId: event.turnId })
@@ -228,7 +344,7 @@ export async function* streamAiConversationEvents(input: {
   }
 }
 
-export const __aiStreamTest = { streamSnapshotThenTail };
+export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 
 /** Conversation-scoped SSE adapter for the shared event feed. */
 export const createAiConversationStreamResponse = (input: {

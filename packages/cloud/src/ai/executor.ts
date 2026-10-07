@@ -29,6 +29,7 @@ import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
 import {
+  AI_TURN_LEASE_MS,
   type AiTurnBlock,
   type AiWireEvent,
   applyWireEventToBlocks,
@@ -49,7 +50,7 @@ import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool, loadSelectedAiSkills } from "./skill-tool";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
-import { publishAiWireEvent } from "./stream";
+import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
@@ -72,10 +73,8 @@ import { validateAiTurnRequest } from "./validate";
 
 const log = logger("ai:executor");
 
-const AI_TURN_LEASE_MS = 45_000;
 const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
-const AI_SNAPSHOT_INTERVAL_MS = 1_000;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 const AI_FINAL_TOOL_ROUND_PROMPT = `# Final response
 The configured tool-round budget has been reached, so no more tools are available in this turn. Answer the user's request now with the best result supported by the evidence already gathered. State any material uncertainty or incomplete part clearly.`;
@@ -1620,6 +1619,7 @@ class StreamPipeline {
   readonly timing: ReturnType<typeof createTurnTimingRecorder>;
   private lastSnapshotAt = 0;
   private snapshotDirty = false;
+  private snapshotTimer: ReturnType<typeof setTimeout> | undefined;
   private chain: Promise<void> = Promise.resolve();
 
   constructor(input: {
@@ -1651,6 +1651,8 @@ class StreamPipeline {
 
   private nextSeq(): number {
     this.seq += 1;
+    // The saved state follows every event, so a reader that reloads it catches up with the live stream.
+    this.snapshotDirty = true;
     return this.seq;
   }
 
@@ -1699,12 +1701,14 @@ class StreamPipeline {
       const seq = this.nextSeq();
       await this.publish(this.envelope({ type: "block_set" as const, seq, block }) as AiWireEvent);
     }
-    this.snapshotDirty = this.blocks.length > 0;
+    // A new attempt's baseline is saved at once: a stream that reloads the turn must not wait for the first model event.
+    await this.maybeSnapshot();
   }
 
   async emitMessage(message: AiStoredMessage): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "message_saved" as const, seq, message }));
+    await this.maybeSnapshot();
   }
 
   async emitTurnStarted(modelProfileId: string): Promise<void> {
@@ -1764,13 +1768,25 @@ class StreamPipeline {
     await this.publish(event);
   }
 
+  /**
+   * Saves the live state at most once per interval. A change inside the interval is saved when it ends, even if no
+   * event follows, so the saved state lags the live stream by at most one interval.
+   */
   private async maybeSnapshot(): Promise<void> {
     if (!this.snapshotDirty) return;
-    if (Date.now() - this.lastSnapshotAt < AI_SNAPSHOT_INTERVAL_MS) return;
+    const wait = AI_LIVE_SNAPSHOT_INTERVAL_MS - (Date.now() - this.lastSnapshotAt);
+    if (wait > 0) {
+      this.snapshotTimer ??= setTimeout(() => {
+        this.snapshotTimer = undefined;
+        void this.maybeSnapshot();
+      }, wait);
+      return;
+    }
     await this.persistSnapshot();
   }
 
   async persistSnapshot(): Promise<void> {
+    this.cancelSnapshotTimer();
     this.lastSnapshotAt = Date.now();
     this.snapshotDirty = false;
     await aiConversations
@@ -1796,6 +1812,7 @@ class StreamPipeline {
   async emitProviderRetry(): Promise<void> {
     const seq = this.nextSeq();
     await this.publish(this.envelope({ type: "provider_retry" as const, seq }));
+    await this.maybeSnapshot();
   }
 
   async emitTurnFinished(status: "completed" | "failed" | "aborted", error: string | null): Promise<void> {
@@ -1808,7 +1825,14 @@ class StreamPipeline {
     return this.ordered(() => publishAiWireEvent(event).catch(() => undefined));
   }
 
+  private cancelSnapshotTimer(): void {
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = undefined;
+  }
+
+  /** Waits for every publish. The attempt ends here: a later save would overwrite what suspension or the next attempt saved. */
   async flush(): Promise<void> {
+    this.cancelSnapshotTimer();
     await this.chain;
   }
 }
