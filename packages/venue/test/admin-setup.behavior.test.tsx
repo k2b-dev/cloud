@@ -193,6 +193,8 @@ describe("Venue setup behavior", () => {
       () => (
         <LocaleProvider locale="en">
           <ShiftTemplateDialog
+            timeZone="Europe/Berlin"
+            today="2030-05-17"
             submit={async (inputs) => {
               saved.push(inputs);
               return null;
@@ -238,6 +240,56 @@ describe("Venue setup behavior", () => {
         [1, 2, 3, 4, 5].map((weekday) => [weekday, "Counter", "14:00", "18:00"]),
       );
       expect(closed).toEqual([true]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("a one-off shift saves one shift for its date instead of weekdays", async () => {
+    const dom = createDomTestHarness();
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { ShiftTemplateDialog } = await import("../src/frontend/_components/venue-workspace/schedule");
+    const saved: ShiftTemplateInput[][] = [];
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <ShiftTemplateDialog
+            timeZone="Europe/Berlin"
+            today="2030-05-17"
+            submit={async (inputs) => {
+              saved.push(inputs);
+              return null;
+            }}
+            close={() => {}}
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      buttonNamed(dom.root, "Once").click();
+      await flush();
+      expect(dom.root.querySelector("[data-shift-weekdays]")).toBeNull();
+      expect(dom.root.textContent).toContain("A single shift on one date.");
+      const [title] = [...dom.root.querySelectorAll<HTMLInputElement>("input:not([type='checkbox'])")];
+      type(title!, "Summer party");
+      await flush();
+      buttonNamed(dom.root, "Add").click();
+      await flush();
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toEqual([
+        {
+          title: "Summer party",
+          date: "2030-05-17",
+          startTime: "09:00",
+          endTime: "13:00",
+          minPeople: 1,
+          maxPeople: null,
+          requireTargetForOpening: false,
+          active: true,
+        },
+      ]);
     } finally {
       dispose();
       dom.cleanup();
@@ -340,10 +392,10 @@ describe("Venue setup behavior", () => {
       const dialog = () => [...dom.document.querySelectorAll<HTMLElement>("dialog")].at(-1)!;
       buttonNamed(dialog(), "Add").click();
       await flush();
-      expect(dialog().textContent).toContain("This date already has an exception. Edit that one instead.");
+      expect(dialog().textContent).toContain("This date already has an opening-hour exception. Edit that one instead.");
       expect(writes).toEqual([]);
       buttonNamed(dialog(), "Cancel").click();
-      const edit = () => dom.root.querySelector<HTMLButtonElement>("button[aria-label='Edit exception']")!;
+      const edit = () => dom.root.querySelector<HTMLButtonElement>("button[aria-label='Edit opening-hour exception']")!;
       await settle(() => !edit().disabled);
 
       // Editing that exception keeps its own date.
@@ -366,6 +418,7 @@ describe("Venue setup behavior", () => {
       id,
       venueId: "Cafe01",
       weekday: 1,
+      date: null,
       title,
       startTime: "09:00",
       endTime: "12:00",

@@ -50,6 +50,10 @@ const dateKeyAfterDays = (date: string, days: number, timezone: string): string 
 
 const weekdayFor = (dateKey: string): number => new Date(`${dateKey}T12:00:00Z`).getUTCDay();
 
+/** A dated shift occurs once; weekly shifts occur on their weekday. */
+export const templateOccursOn = (template: Pick<ShiftTemplate, "date" | "weekday">, date: string): boolean =>
+  template.date === null ? template.weekday === weekdayFor(date) : template.date === date;
+
 /** The public page's one date and time format: `Tue, Sep 29, 11:00` and `11:00–18:00`, in the venue's time zone. */
 const formatTimeRange = (opening: PublicOpening, timezone: string, locale: string): string =>
   formatVenueTimeRange(opening.startsAt, opening.endsAt, timezone, locale);
@@ -135,7 +139,7 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
       const date = dateKeyAfterDays(today, offset, timezone);
       if (overridesByDate.get(date)?.kind === "closed") continue;
 
-      for (const template of activeTemplates.filter((entry) => entry.weekday === weekdayFor(date))) {
+      for (const template of activeTemplates.filter((entry) => templateOccursOn(entry, date))) {
         const startsAt = instantFor(date, template.startTime, timezone).toISOString();
         const assignedCount = assignmentsByTemplateStart.get(`${template.id}:${startsAt}`) ?? 0;
         const qualifies = template.requireTargetForOpening ? assignedCount >= Math.max(1, template.minPeople) : assignedCount > 0;

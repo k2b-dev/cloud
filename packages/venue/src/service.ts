@@ -29,7 +29,7 @@ import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { z } from "zod";
 import { permissionFromVenueScopes, type VenueAccessScope } from "./access-control";
-import { buildPublicAvailability } from "./availability";
+import { buildPublicAvailability, templateOccursOn } from "./availability";
 import type {
   DateOverride,
   DateOverrideInput,
@@ -55,7 +55,13 @@ import type {
   VenueTemplateCreateInput,
   VenueTemplateSummary,
 } from "./contracts";
-import { FEEDBACK_PAGE_SIZE, PUBLIC_EXCEPTION_DAYS, PublicSectionInputSchema, SCHEDULE_OUTLOOK_DAYS } from "./contracts";
+import {
+  FEEDBACK_PAGE_SIZE,
+  PUBLIC_EXCEPTION_DAYS,
+  PublicSectionInputSchema,
+  SCHEDULE_OUTLOOK_DAYS,
+  ShiftTemplateInputSchema,
+} from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
 import { filterPublicMenuSections } from "./public-menu";
@@ -117,6 +123,7 @@ type DbShiftTemplate = {
   short_id: string;
   venue_id: string;
   weekday: number;
+  date: string | Date | null;
   title: string;
   start_time: string;
   end_time: string;
@@ -281,6 +288,7 @@ const mapTemplate = (row: DbShiftTemplate): ShiftTemplate => ({
   id: row.id,
   venueId: row.venue_id,
   weekday: row.weekday,
+  date: row.date === null ? null : toDateKey(row.date),
   title: row.title,
   startTime: toTime(row.start_time) ?? "00:00",
   endTime: toTime(row.end_time) ?? "00:00",
@@ -745,17 +753,38 @@ const createOpeningRuleInTx = async (tx: SqlClient, venueId: string, input: Open
   return row ? ok(mapOpeningRule(row)) : fail(err.internal("Failed to create opening rule"));
 };
 
+/** Dates may be planned from today through 366 days ahead in the venue's time zone. */
+const validateTemplateDate = async (tx: SqlClient, venueId: string, date: string): Promise<Result<void>> => {
+  const [venue] = await tx<Pick<DbVenue, "timezone">[]>`SELECT timezone FROM venue.venues WHERE id = ${venueId}::uuid`;
+  if (!venue) return fail(err.notFound("Venue"));
+  const today = localDateKey(new Date(), venue.timezone);
+  if (date < today || date > dateKeyAfterDays(today, 366, venue.timezone)) {
+    return fail(err.badInput("A one-off shift must be from today through 366 days ahead in the venue's time zone"));
+  }
+  return ok();
+};
+
 const createTemplateInTx = async (tx: SqlClient, venueId: string, input: ShiftTemplateInput): Promise<Result<ShiftTemplate>> => {
+  const parsed = ShiftTemplateInputSchema.safeParse(input);
+  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid shift"));
+  input = parsed.data;
+  const date = input.date ?? null;
+  const weekday = date === null ? input.weekday : localWeekday(date);
+  if (weekday === undefined) return fail(err.badInput("Weekday is required for a weekly shift"));
+  if (date !== null) {
+    const valid = await validateTemplateDate(tx, venueId, date);
+    if (!valid.ok) return valid;
+  }
   const rows = await withShortIdDb(
     tx,
     "template",
     (db, shortId) => db<DbShiftTemplate[]>`
     INSERT INTO venue.shift_templates (
-      short_id, venue_id, weekday, title, start_time, end_time, min_people, max_people,
+      short_id, venue_id, weekday, date, title, start_time, end_time, min_people, max_people,
       require_target_for_opening, active
     )
     VALUES (
-      ${shortId}, ${venueId}::uuid, ${input.weekday}, ${input.title.trim()}, ${input.startTime}::time, ${input.endTime}::time,
+      ${shortId}, ${venueId}::uuid, ${weekday}, ${date}::date, ${input.title.trim()}, ${input.startTime}::time, ${input.endTime}::time,
       ${input.minPeople}, ${input.maxPeople ?? null}, ${input.requireTargetForOpening}, ${input.active}
     )
     RETURNING *
@@ -985,7 +1014,7 @@ const updateOverride = async (venueId: string, id: string, input: DateOverrideIn
     if (isUniqueViolation(error)) return null;
     throw error;
   });
-  if (!rows) return fail(err.conflict("Exception for this date"));
+  if (!rows) return fail(err.conflict("Opening-hour exception for this date"));
   const row = rows[0];
   return row ? ok(mapOverride(row)) : fail(err.notFound("Date override"));
 };
@@ -997,14 +1026,34 @@ const deleteOverride = async (venueId: string, id: string): Promise<Result<void>
 
 /**
  * The venue's shift templates, paused ones (`active: false`) included so admins can resume them; deleted ones
- * are gone. Every consumer that plans shifts or openings uses only the active ones.
+ * are gone. One-off shifts are bounded to seven days ago through 366 days ahead in the venue's time zone.
  */
 const listTemplates = async (venueId: string, options: { limit?: number } = {}): Promise<ShiftTemplate[]> => {
   const limit = options.limit === undefined ? null : Math.min(101, Math.max(1, options.limit));
   const rows = await sql<DbShiftTemplate[]>`
+    SELECT st.* FROM venue.shift_templates st
+    JOIN venue.venues v ON v.id = st.venue_id
+    WHERE st.venue_id = ${venueId}::uuid
+      AND st.deleted_at IS NULL
+      AND (st.date IS NULL OR st.date BETWEEN (now() AT TIME ZONE v.timezone)::date - 7 AND (now() AT TIME ZONE v.timezone)::date + 366)
+    ORDER BY st.weekday, st.start_time, st.id
+    LIMIT ${limit}
+  `;
+  return rows.map(mapTemplate);
+};
+
+/** Active weekly shifts and the one-off shifts in exactly the requested calendar range, including past weeks. */
+const listTemplatesForRange = async (
+  venue: Venue,
+  options: { startDate?: string; days?: number; limit?: number } = {},
+): Promise<ShiftTemplate[]> => {
+  const startDate = options.startDate ?? localDateKey(new Date(), venue.timezone);
+  const endDate = dateKeyAfterDays(startDate, Math.max(0, options.days ?? 14), venue.timezone);
+  const limit = options.limit === undefined ? null : Math.min(101, Math.max(1, options.limit));
+  const rows = await sql<DbShiftTemplate[]>`
     SELECT * FROM venue.shift_templates
-    WHERE venue_id = ${venueId}::uuid
-      AND deleted_at IS NULL
+    WHERE venue_id = ${venue.id}::uuid AND deleted_at IS NULL AND active = true
+      AND (date IS NULL OR (date >= ${startDate}::date AND date < ${endDate}::date))
     ORDER BY weekday, start_time, id
     LIMIT ${limit}
   `;
@@ -1037,21 +1086,41 @@ const createTemplates = async (venueId: string, inputs: ShiftTemplateInput[]): P
 };
 
 const updateTemplate = async (venueId: string, id: string, input: ShiftTemplateInput): Promise<Result<ShiftTemplate>> => {
-  const [row] = await sql<DbShiftTemplate[]>`
-    UPDATE venue.shift_templates
-    SET weekday = ${input.weekday},
-        title = ${input.title.trim()},
-        start_time = ${input.startTime}::time,
-        end_time = ${input.endTime}::time,
-        min_people = ${input.minPeople},
-        max_people = ${input.maxPeople ?? null},
-        require_target_for_opening = ${input.requireTargetForOpening},
-        active = ${input.active},
-        updated_at = now()
-    WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid AND deleted_at IS NULL
-    RETURNING *
-  `;
-  return row ? ok(mapTemplate(row)) : fail(err.notFound("Shift"));
+  const parsed = ShiftTemplateInputSchema.safeParse(input);
+  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid shift"));
+  input = parsed.data;
+  const date = input.date ?? null;
+  const weekday = date === null ? input.weekday : localWeekday(date);
+  if (weekday === undefined) return fail(err.badInput("Weekday is required for a weekly shift"));
+  return sql.begin(async (tx) => {
+    const [existing] = await tx<DbShiftTemplate[]>`
+      SELECT * FROM venue.shift_templates
+      WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid AND deleted_at IS NULL
+      FOR UPDATE
+    `;
+    if (!existing) return fail(err.notFound("Shift"));
+    if ((existing.date === null) !== (date === null)) return fail(err.badInput("Cannot switch a shift between weekly and one-off"));
+    if (date !== null && existing.date !== null && date !== toDateKey(existing.date)) {
+      const valid = await validateTemplateDate(tx, venueId, date);
+      if (!valid.ok) return valid;
+    }
+    const [row] = await tx<DbShiftTemplate[]>`
+      UPDATE venue.shift_templates
+      SET weekday = ${weekday},
+          date = ${date}::date,
+          title = ${input.title.trim()},
+          start_time = ${input.startTime}::time,
+          end_time = ${input.endTime}::time,
+          min_people = ${input.minPeople},
+          max_people = ${input.maxPeople ?? null},
+          require_target_for_opening = ${input.requireTargetForOpening},
+          active = ${input.active},
+          updated_at = now()
+      WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid AND deleted_at IS NULL
+      RETURNING *
+    `;
+    return row ? ok(mapTemplate(row)) : fail(err.notFound("Shift"));
+  });
 };
 
 /** Sign-ups keep their shift's name, so a deleted template stays as a row that no list, plan, or edit reaches. */
@@ -1193,7 +1262,7 @@ const slotWindow = async (venue: Venue, options: UpcomingSlotsOptions = {}): Pro
   const days = Math.max(0, options.days ?? 14);
   if (days === 0) return { slots: [], otherAssignments: [] };
 
-  const templates = (options.templates ?? (await listTemplates(venue.id))).filter((template) => template.active);
+  const templates = (options.templates ?? (await listTemplatesForRange(venue, options))).filter((template) => template.active);
   const startDate = options.startDate ?? localDateKey(new Date(), venue.timezone);
   const rangeStart = instantFor(startDate, "00:00", venue.timezone);
   // Local midnight after the last day: a day with a clock change is not 24 hours long.
@@ -1210,6 +1279,7 @@ const slotWindow = async (venue: Venue, options: UpcomingSlotsOptions = {}): Pro
     if (!weekdayTemplates) continue;
 
     for (const template of weekdayTemplates) {
+      if (!templateOccursOn(template, date)) continue;
       const startsAt = instantFor(date, template.startTime, venue.timezone).toISOString();
       const slotAssignments = assignmentsBySlot.get(`${template.id}:${startsAt}`) ?? [];
       for (const assignment of slotAssignments) slotted.add(assignment.id);
@@ -1229,7 +1299,7 @@ const upcomingSlotSummaries = async (
   const days = Math.max(0, options.days ?? 14);
   if (days === 0) return [];
 
-  const templates = (options.templates ?? (await listTemplates(venue.id))).filter((template) => template.active);
+  const templates = (options.templates ?? (await listTemplatesForRange(venue, options))).filter((template) => template.active);
   if (templates.length === 0) return [];
 
   const startDate = options.startDate ?? localDateKey(new Date(), venue.timezone);
@@ -1248,6 +1318,7 @@ const upcomingSlotSummaries = async (
     const weekdayTemplates = templatesForWeekday.get(localWeekday(date));
     if (!weekdayTemplates) continue;
     for (const template of weekdayTemplates) {
+      if (!templateOccursOn(template, date)) continue;
       const startsAt = instantFor(date, template.startTime, venue.timezone).toISOString();
       const endsAt = endInstantFor(date, template.startTime, template.endTime, venue.timezone).toISOString();
       const summary = summariesBySlot.get(`${template.id}:${startsAt}`);
@@ -1280,12 +1351,13 @@ const signupTemplate = async (
     const [template] = await tx<DbShiftTemplate[]>`
       SELECT * FROM venue.shift_templates
       WHERE id = ${templateId}::uuid AND venue_id = ${venue.id}::uuid AND active = true
+      FOR SHARE
     `;
     if (!template) return fail(err.notFound("Shift"));
 
     const startTime = toTime(template.start_time) ?? "00:00";
     const endTime = toTime(template.end_time) ?? "00:00";
-    if (localWeekday(input.date) !== template.weekday) {
+    if (!templateOccursOn(mapTemplate(template), input.date)) {
       return fail(err.badInput("The selected date does not match this shift's weekday"));
     }
     const start = instantFor(input.date, startTime, venue.timezone);
@@ -1339,6 +1411,11 @@ const signupTemplateWeeks = async (
   weeks: number,
   user: UserLike,
 ): Promise<Result<ShiftAssignment[]>> => {
+  const template = await getTemplate(templateId);
+  if (template && template.date !== null) {
+    const result = await signupTemplate(venue, templateId, { date }, user);
+    return result.ok ? ok([result.data]) : result;
+  }
   const created: ShiftAssignment[] = [];
   for (let week = 0; week < weeks; week++) {
     const nextDate = dates.formatDateKey(new Date(instantFor(date, "12:00", venue.timezone).getTime() + week * 7 * 86_400_000), {
@@ -1638,7 +1715,7 @@ const statusForVenue = async (venue: Venue, now = new Date(), includeSections = 
   const [openingRules, overrides, templates, assignments, sections] = await Promise.all([
     listOpeningRules(venue.id),
     listOverridesForDateRange(venue.id, startDate, dateKeyAfterDays(startDate, Math.max(days, PUBLIC_EXCEPTION_DAYS), venue.timezone)),
-    listTemplates(venue.id),
+    listTemplatesForRange(venue, { startDate, days }),
     assignmentSummariesForRange(venue.id, new Date(now.getTime() - 1), rangeEnd),
     includeSections ? publicSections(venue, now) : Promise.resolve([]),
   ]);
@@ -1729,7 +1806,7 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
       : Promise.resolve(0),
   ]);
   const [{ slots, otherAssignments }, outlook] = await Promise.all([
-    slotWindow(venue, { startDate: options.slotStartDate, days: slotDays, templates }),
+    slotWindow(venue, { startDate: options.slotStartDate, days: slotDays }),
     scheduleOutlook(venue, templates),
   ]);
 
@@ -1845,6 +1922,7 @@ export const venueService = {
   },
   templates: {
     list: listTemplates,
+    listRange: listTemplatesForRange,
     get: getTemplate,
     create: createTemplate,
     createMany: createTemplates,

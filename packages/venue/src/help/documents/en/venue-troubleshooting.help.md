@@ -10,7 +10,7 @@ order: 120
 
 :::reference
 - **The public page shows the wrong opening status:** Check regular hours, date overrides, timezone, and whether the venue is enabled for the intended date.
-- **A shift is missing:** Confirm the current week or month, recurring template, and any schedule filters.
+- **A shift is missing:** Confirm the current week or month, the shift's weekday or one-off date, whether it is paused, and any schedule filters. An opening-hour exception never creates a shift; plan a one-off shift for that date instead.
 - **A user cannot take a shift:** The user needs staff or admin access, the shift must allow another person, and it must not have ended.
 - **Someone does not see Venue settings or the section list:** Only admins see the settings and manage the public page; staff and read users get the page link only. Staff access allows shift work, not venue administration. Grant admin access only when that person should manage configuration.
 - **An old link to a section opens something else:** Sections no longer have pages of their own. An old section link opens **Public page** with that section marked for admins, and the schedule for everyone else.

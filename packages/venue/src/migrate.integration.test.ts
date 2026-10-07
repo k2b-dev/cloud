@@ -139,3 +139,51 @@ testFor("database")(
   },
   30_000,
 );
+
+testFor("database")(
+  "adds one-off dates idempotently, keeps weekly dates null, and enforces matching weekdays",
+  async () => {
+    await migrate();
+    await migrate();
+    const venue = crypto.randomUUID();
+    await sql`INSERT INTO venue.venues(id,short_id,slug,name) VALUES (${venue}::uuid,'TestV4',${venue},'one-off migration fixture')`;
+    try {
+      const [column] = await sql<{ data_type: string; is_nullable: string }[]>`
+        SELECT data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = 'venue' AND table_name = 'shift_templates' AND column_name = 'date'
+      `;
+      expect(column).toEqual({ data_type: "date", is_nullable: "YES" });
+      const [constraint] = await sql<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count FROM pg_constraint
+        WHERE conrelid = 'venue.shift_templates'::regclass AND conname = 'shift_templates_date_weekday_check'
+      `;
+      expect(constraint?.count).toBe(1);
+      const [index] = await sql<{ indexdef: string }[]>`
+        SELECT indexdef FROM pg_indexes WHERE schemaname = 'venue' AND indexname = 'idx_venue_shift_templates_venue_date'
+      `;
+      expect(index?.indexdef).toContain("(venue_id, date) WHERE (date IS NOT NULL)");
+      await sql`INSERT INTO venue.shift_templates(short_id,venue_id,weekday,title,start_time,end_time) VALUES
+        ('TestW4',${venue}::uuid,3,'weekly','09:00','12:00')`;
+      await sql`INSERT INTO venue.shift_templates(short_id,venue_id,weekday,date,title,start_time,end_time) VALUES
+        ('TestO4',${venue}::uuid,3,'2026-10-07','one-off','09:00','12:00')`;
+      await expect(
+        Promise.resolve(sql`INSERT INTO venue.shift_templates(short_id,venue_id,weekday,date,title,start_time,end_time) VALUES
+        ('TestX4',${venue}::uuid,4,'2026-10-07','mismatch','09:00','12:00')`),
+      ).rejects.toMatchObject({ errno: "23514" });
+      await expect(
+        Promise.resolve(sql`UPDATE venue.shift_templates SET weekday = 4 WHERE venue_id = ${venue}::uuid AND date IS NOT NULL`),
+      ).rejects.toMatchObject({ errno: "23514" });
+      await migrate();
+      const rows = await sql<{ title: string; date: string | null }[]>`
+        SELECT title, date::text FROM venue.shift_templates WHERE venue_id = ${venue}::uuid ORDER BY title
+      `;
+      expect(rows).toEqual([
+        { title: "one-off", date: "2026-10-07" },
+        { title: "weekly", date: null },
+      ]);
+    } finally {
+      await sql`DELETE FROM venue.venues WHERE id = ${venue}::uuid`;
+    }
+  },
+  30_000,
+);

@@ -24,6 +24,28 @@ describe("Venue public identities", () => {
 });
 
 describe("ShiftTemplateInputSchema", () => {
+  const oneOff = { date: "2026-10-07", title: "Special event", startTime: "09:00", endTime: "13:00" };
+
+  test("accepts a one-off date without a weekday and keeps the date", () => {
+    expect(ShiftTemplateInputSchema.parse(oneOff).date).toBe(oneOff.date);
+    expect(ShiftTemplateInputSchema.safeParse({ ...oneOff, weekday: 3 }).success).toBeTrue();
+  });
+
+  test("requires the weekday for weekly shifts and agreement for dated shifts", () => {
+    expect(ShiftTemplateInputSchema.safeParse({ ...oneOff, weekday: 4 }).success).toBeFalse();
+    expect(ShiftTemplateInputSchema.safeParse({ ...oneOff, date: null }).success).toBeFalse();
+    const { date: _date, ...weekly } = oneOff;
+    expect(ShiftTemplateInputSchema.safeParse(weekly).success).toBeFalse();
+    expect(ShiftTemplateInputSchema.safeParse({ ...weekly, weekday: 3 }).success).toBeTrue();
+    expect(ShiftTemplateInputSchema.safeParse({ ...weekly, date: null, weekday: 3 }).success).toBeTrue();
+  });
+
+  test("rejects invalid one-off dates", () => {
+    for (const date of ["2026-02-30", "2026-13-01", "tomorrow"]) {
+      expect(ShiftTemplateInputSchema.safeParse({ ...oneOff, date, weekday: 3 }).success).toBeFalse();
+    }
+  });
+
   test("accepts an optional max people value above the target", () => {
     expect(
       ShiftTemplateInputSchema.safeParse({

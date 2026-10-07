@@ -35,8 +35,13 @@ describe("Venue internationalization", () => {
   test("words shift work so it does not read as signing in", () => {
     const de = venueMessages.resolve(["de"]).t;
     const en = venueMessages.resolve(["en"]).t;
-    expect([en.signUp, en.leave, en.openSpots, en.exceptions]).toEqual(["Take shift", "Leave", "Free spots", "Exceptions"]);
-    expect([de.signUp, de.leave, de.openSpots, de.exceptions]).toEqual(["Schicht übernehmen", "Austreten", "Freie Plätze", "Ausnahmen"]);
+    expect([en.signUp, en.leave, en.openSpots, en.exceptions]).toEqual(["Take shift", "Leave", "Free spots", "Opening-hour exceptions"]);
+    expect([de.signUp, de.leave, de.openSpots, de.exceptions]).toEqual([
+      "Schicht übernehmen",
+      "Austreten",
+      "Freie Plätze",
+      "Abweichende Öffnungszeiten",
+    ]);
     expect(Object.values(de).filter((value) => typeof value === "string" && /\banmelden\b/i.test(value))).toEqual([]);
   });
 

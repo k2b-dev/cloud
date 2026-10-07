@@ -10,7 +10,7 @@ order: 120
 
 :::reference
 - **Die öffentliche Seite zeigt den falschen Öffnungsstatus:** Prüfe die regulären Öffnungszeiten, Abweichungen, Zeitzone und die Aktivierung des Standorts für das betreffende Datum.
-- **Eine Schicht fehlt:** Prüfe die ausgewählte Woche oder den Monat, die wiederkehrende Vorlage und aktive Zeitplanfilter.
+- **Eine Schicht fehlt:** Prüfe die ausgewählte Woche oder den Monat, den Wochentag oder das Datum der einmaligen Schicht, ob sie pausiert ist, und aktive Zeitplanfilter. Eine abweichende Öffnungszeit legt nie eine Schicht an; plane dafür eine einmalige Schicht an diesem Tag.
 - **Eine Person kann keine Schicht übernehmen:** Die Person benötigt Zugriff „Mitarbeit“ oder „Admin“. Außerdem muss die Schicht einen weiteren Platz haben und darf noch nicht beendet sein.
 - **Jemand sieht keine Standorteinstellungen oder keine Liste der Abschnitte:** Nur Admins sehen die Einstellungen und verwalten die öffentliche Seite; mit „Mitarbeit“ oder „Lesen“ gibt es nur den Link zur Seite. Zugriff „Mitarbeit“ erlaubt die Arbeit mit Schichten, aber keine Standortverwaltung. Vergib Zugriff „Admin“ nur an Personen, die die Konfiguration verwalten sollen.
 - **Ein alter Link auf einen Abschnitt öffnet etwas anderes:** Abschnitte haben keine eigenen Seiten mehr. Ein alter Abschnittslink öffnet für Admins **Öffentliche Seite** mit dem Abschnitt markiert und für alle anderen den Schichtplan.

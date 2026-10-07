@@ -27,6 +27,7 @@ const template = (overrides: Partial<ShiftTemplate>): ShiftTemplate => ({
   id: "Temp01",
   venueId: "Cafe01",
   weekday: 1,
+  date: null,
   title: "Morning counter",
   startTime: "09:00",
   endTime: "12:00",
@@ -130,10 +131,10 @@ describe("Venue settings: Schedule", () => {
     ];
     const html = render("admin", { tab: "schedule", data: { overrides } });
 
-    expect(html).toContain("Exceptions");
+    expect(html).toContain("Opening-hour exceptions");
     expect(html).toContain("Sat, 10/19/2030");
     expect(html).toContain("Special opening 18:00–23:00 · Long night");
-    expect(html).toContain("Past exceptions (1)");
+    expect(html).toContain("Past opening-hour exceptions (1)");
     expect(html).toContain("New exception");
     expect(html).not.toMatch(/<details[^>]*open/);
 
@@ -181,6 +182,22 @@ describe("Venue settings: Schedule", () => {
     expect(html.match(/>Paused</g)).toHaveLength(1);
     expect(html.match(/role="switch"/g)).toHaveLength(3);
     expect(html).toContain("“Monday bar” is active");
+  });
+
+  test("lists upcoming one-off shifts by date apart from the weekday groups and leaves past ones to the schedule", () => {
+    const templates = [
+      template({ id: "Temp01", weekday: 1, title: "Monday bar" }),
+      template({ id: "Temp02", weekday: 6, date: "2030-10-19", title: "Summer party", startTime: "18:00", endTime: "23:00" }),
+      template({ id: "Temp03", weekday: 2, date: "2020-03-03", title: "Old event" }),
+    ];
+    const html = render("admin", { tab: "schedule", data: { templates } });
+
+    const order = ["Monday", "Monday bar", "One-off shifts", "Summer party"].map((text) => html.indexOf(`>${text}<`));
+    expect(order.every((index) => index >= 0)).toBeTrue();
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+    expect(html).toContain("Sat, 10/19/2030 · 18:00–23:00");
+    expect(html).not.toContain(">Saturday<");
+    expect(html).not.toContain("Old event");
   });
 });
 

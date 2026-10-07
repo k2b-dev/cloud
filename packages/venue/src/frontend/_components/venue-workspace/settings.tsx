@@ -146,8 +146,8 @@ export function SettingsDialog(props: {
   const t = () => venueMessages.resolve([locale()]).t;
   const weekday = (value: number) =>
     new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + value)));
-  const exceptionDate = (entry: DateOverride) =>
-    formatDateKey(entry.date, locale(), { weekday: "short", day: "numeric", month: "numeric", year: "numeric" });
+  const longDate = (date: string) => formatDateKey(date, locale(), { weekday: "short", day: "numeric", month: "numeric", year: "numeric" });
+  const exceptionDate = (entry: DateOverride) => longDate(entry.date);
   const venue = props.dashboard.venue;
   const initialContext = {
     venue,
@@ -195,11 +195,16 @@ export function SettingsDialog(props: {
       .filter((entry) => entry.date < venueToday())
       .reverse();
   const shiftsByWeekday = () => {
-    const templates = sortShiftTemplates(settings().templates);
+    const templates = sortShiftTemplates(settings().templates.filter((template) => template.date === null));
     return WEEKDAY_ORDER.map((day) => ({ weekday: day, templates: templates.filter((template) => template.weekday === day) })).filter(
       (group) => group.templates.length > 0,
     );
   };
+  /** One-off shifts from today on, by date; past ones stay in the schedule. */
+  const upcomingOneOffShifts = () =>
+    settings()
+      .templates.filter((template): template is ShiftTemplate & { date: string } => template.date !== null && template.date >= venueToday())
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
   const zones = createMemo(() => timeZoneOptions(currentVenue().timezone));
 
   let disposed = false;
@@ -596,6 +601,8 @@ export function SettingsDialog(props: {
         <ShiftTemplateDialog
           close={close}
           guardDismiss={guardDismiss}
+          timeZone={currentVenue().timezone}
+          today={venueToday()}
           submit={(inputs) => {
             count = inputs.length;
             return submit(inputs);
@@ -623,6 +630,8 @@ export function SettingsDialog(props: {
         <ShiftTemplateDialog
           close={close}
           guardDismiss={guardDismiss}
+          timeZone={currentVenue().timezone}
+          today={venueToday()}
           initial={target.initial}
           submit={([input]) => (input ? submit({ id: target.id, input }) : Promise.resolve(t().updateShiftFailed))}
         />
@@ -762,6 +771,41 @@ export function SettingsDialog(props: {
       />
     </SettingsCollection.Item.Actions>
   );
+
+  const ShiftItem = (itemProps: { shift: ShiftTemplate }) => (
+    <SettingsCollection.Item
+      title={itemProps.shift.title}
+      description={[
+        ...(itemProps.shift.date ? [longDate(itemProps.shift.date)] : []),
+        `${itemProps.shift.startTime}–${itemProps.shift.endTime}`,
+        t().target({ min: itemProps.shift.minPeople, max: itemProps.shift.maxPeople }),
+      ].join(" · ")}
+      icon={<i class={itemProps.shift.active ? "ti ti-users" : "ti ti-player-pause"} aria-hidden="true" />}
+    >
+      <Show when={!itemProps.shift.active}>
+        <SettingsCollection.Item.Status>
+          <Tag size="sm">{t().paused}</Tag>
+        </SettingsCollection.Item.Status>
+      </Show>
+      <RowActions
+        row={`shift:${itemProps.shift.id}`}
+        editLabel={t().editShift}
+        deleteLabel={t().deleteShift}
+        onEdit={() => void openEditShift(itemProps.shift)}
+        onDelete={() => void confirmDeleteShift(itemProps.shift)}
+      >
+        <Tooltip.Anchor content={itemProps.shift.active ? t().pauseShift : t().resumeShift}>
+          <Switch
+            aria-label={t().shiftActiveLabel({ title: itemProps.shift.title })}
+            value={shiftSwitchValue(itemProps.shift)}
+            disabled={scheduleBusy()}
+            onValueChange={(active) => void setShiftActive(itemProps.shift, active)}
+          />
+        </Tooltip.Anchor>
+      </RowActions>
+    </SettingsCollection.Item>
+  );
+
   const ExceptionItem = (itemProps: { entry: DateOverride }) => (
     <SettingsCollection.Item
       title={exceptionDate(itemProps.entry)}
@@ -1143,47 +1187,22 @@ export function SettingsDialog(props: {
                   </Button>
                 </SettingsGroup.Action>
                 <Show
-                  when={shiftsByWeekday().length > 0}
+                  when={shiftsByWeekday().length > 0 || upcomingOneOffShifts().length > 0}
                   fallback={<Placeholder variant="compact" align="left" description={<>{t().noShifts}</>} />}
                 >
                   <div class="grid gap-4" data-settings-shifts="">
                     <For each={shiftsByWeekday()}>
                       {(group) => (
                         <SettingsCollection title={weekday(group.weekday)}>
-                          <For each={group.templates}>
-                            {(shift) => (
-                              <SettingsCollection.Item
-                                title={shift.title}
-                                description={`${shift.startTime}–${shift.endTime} · ${t().target({ min: shift.minPeople, max: shift.maxPeople })}`}
-                                icon={<i class={shift.active ? "ti ti-users" : "ti ti-player-pause"} aria-hidden="true" />}
-                              >
-                                <Show when={!shift.active}>
-                                  <SettingsCollection.Item.Status>
-                                    <Tag size="sm">{t().paused}</Tag>
-                                  </SettingsCollection.Item.Status>
-                                </Show>
-                                <RowActions
-                                  row={`shift:${shift.id}`}
-                                  editLabel={t().editShift}
-                                  deleteLabel={t().deleteShift}
-                                  onEdit={() => void openEditShift(shift)}
-                                  onDelete={() => void confirmDeleteShift(shift)}
-                                >
-                                  <Tooltip.Anchor content={shift.active ? t().pauseShift : t().resumeShift}>
-                                    <Switch
-                                      aria-label={t().shiftActiveLabel({ title: shift.title })}
-                                      value={shiftSwitchValue(shift)}
-                                      disabled={scheduleBusy()}
-                                      onValueChange={(active) => void setShiftActive(shift, active)}
-                                    />
-                                  </Tooltip.Anchor>
-                                </RowActions>
-                              </SettingsCollection.Item>
-                            )}
-                          </For>
+                          <For each={group.templates}>{(shift) => <ShiftItem shift={shift} />}</For>
                         </SettingsCollection>
                       )}
                     </For>
+                    <Show when={upcomingOneOffShifts().length > 0}>
+                      <SettingsCollection title={t().oneOffShifts}>
+                        <For each={upcomingOneOffShifts()}>{(shift) => <ShiftItem shift={shift} />}</For>
+                      </SettingsCollection>
+                    </Show>
                   </div>
                 </Show>
               </SettingsGroup>

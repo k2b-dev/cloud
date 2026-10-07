@@ -33,6 +33,7 @@ const shift = {
   id: "Temp01",
   venueId: "Cafe01",
   weekday: 1,
+  date: null,
   title: "Morning counter",
   startTime: "09:00",
   endTime: "12:00",

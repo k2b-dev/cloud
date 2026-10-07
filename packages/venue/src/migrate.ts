@@ -107,6 +107,20 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE venue.shift_templates ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_shift_templates_short_id ON venue.shift_templates(short_id)`.simple();
+  await sql`ALTER TABLE venue.shift_templates ADD COLUMN IF NOT EXISTS date DATE`.simple();
+  await sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'venue.shift_templates'::regclass AND conname = 'shift_templates_date_weekday_check'
+      ) THEN
+        ALTER TABLE venue.shift_templates ADD CONSTRAINT shift_templates_date_weekday_check
+          CHECK (date IS NULL OR weekday = EXTRACT(DOW FROM date));
+      END IF;
+    END $$;
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_venue_shift_templates_venue_date
+    ON venue.shift_templates(venue_id, date) WHERE date IS NOT NULL`.simple();
   await sql`
     ALTER TABLE IF EXISTS venue.shift_templates
     ADD COLUMN IF NOT EXISTS require_target_for_opening BOOLEAN NOT NULL DEFAULT false

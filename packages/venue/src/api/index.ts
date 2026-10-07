@@ -665,23 +665,35 @@ const venueRoutes = new Hono<AuthContext>()
     if (!resource.ok) return respond(c, resource);
     return respond(c, () => venueService.overrides.delete(venue.data.id, resource.data));
   })
-  .post("/:id/templates", v("param", VenueIdParamSchema), v("json", ShiftTemplateInputSchema), async (c) => {
-    const venue = await adminVenue(c, c.req.valid("param").id);
-    if (!venue.ok) return respond(c, venue);
-    const created = await venueService.templates.create(venue.data.id, c.req.valid("json"));
-    return respond(
-      c,
-      await projectResult(created, async (value) => (await venueService.publicResources.projectTemplates([value]))[0]!),
-      201,
-    );
-  })
+  .post(
+    "/:id/templates",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Create a weekly or one-off shift",
+      description:
+        "Omitted or null date repeats weekly and requires weekday. A date plans one shift and derives weekday; a supplied weekday must agree. One-off dates must be from today through 366 days ahead in the venue time zone. Requires admin permission.",
+      responses: { 201: jsonResponse(ShiftTemplateSchema, "Created shift"), 400: jsonResponse(ErrorResponseSchema, "Invalid shift") },
+    }),
+    v("param", VenueIdParamSchema),
+    v("json", ShiftTemplateInputSchema),
+    async (c) => {
+      const venue = await adminVenue(c, c.req.valid("param").id);
+      if (!venue.ok) return respond(c, venue);
+      const created = await venueService.templates.create(venue.data.id, c.req.valid("json"));
+      return respond(
+        c,
+        await projectResult(created, async (value) => (await venueService.publicResources.projectTemplates([value]))[0]!),
+        201,
+      );
+    },
+  )
   .post(
     "/:id/templates/batch",
     describeRoute({
       tags: ["Venues"],
-      summary: "Create several shift templates",
+      summary: "Create several weekly or one-off shifts",
       description:
-        "Create up to seven shift templates in one transaction, for example the same shift on several weekdays. When one template is invalid, none is created. Requires admin permission.",
+        "Create up to seven weekly or one-off shifts in one transaction, for example the same shift on several weekdays or specific dates. One-off dates must be from today through 366 days ahead in the venue time zone. When one template is invalid, none is created. Requires admin permission.",
       responses: {
         201: jsonResponse(z.array(ShiftTemplateSchema), "Created shift templates, in request order"),
         400: jsonResponse(ErrorResponseSchema, "Invalid shift template"),
@@ -698,15 +710,31 @@ const venueRoutes = new Hono<AuthContext>()
       return respond(c, await projectResult(created, (values) => venueService.publicResources.projectTemplates(values)), 201);
     },
   )
-  .patch("/:id/templates/:resourceId", v("param", ResourceParamSchema), v("json", ShiftTemplateInputSchema), async (c) => {
-    const param = c.req.valid("param");
-    const venue = await adminVenue(c, param.id);
-    if (!venue.ok) return respond(c, venue);
-    const resource = await resolveOwned("templates", venue.data.id, param.resourceId);
-    if (!resource.ok) return respond(c, resource);
-    const updated = await venueService.templates.update(venue.data.id, resource.data, c.req.valid("json"));
-    return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectTemplates([value]))[0]!));
-  })
+  .patch(
+    "/:id/templates/:resourceId",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Update a weekly or one-off shift",
+      description:
+        "Replace the shift settings without switching between weekly and one-off. Include the stored date for one-off shifts; changing it derives weekday and requires a date from today through 366 days ahead in the venue time zone. Requires admin permission.",
+      responses: {
+        200: jsonResponse(ShiftTemplateSchema, "Updated shift"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid shift"),
+        404: jsonResponse(ErrorResponseSchema, "Shift not found"),
+      },
+    }),
+    v("param", ResourceParamSchema),
+    v("json", ShiftTemplateInputSchema),
+    async (c) => {
+      const param = c.req.valid("param");
+      const venue = await adminVenue(c, param.id);
+      if (!venue.ok) return respond(c, venue);
+      const resource = await resolveOwned("templates", venue.data.id, param.resourceId);
+      if (!resource.ok) return respond(c, resource);
+      const updated = await venueService.templates.update(venue.data.id, resource.data, c.req.valid("json"));
+      return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectTemplates([value]))[0]!));
+    },
+  )
   .delete("/:id/templates/:resourceId", v("param", ResourceParamSchema), async (c) => {
     const param = c.req.valid("param");
     const venue = await adminVenue(c, param.id);

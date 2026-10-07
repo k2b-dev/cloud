@@ -59,6 +59,7 @@ const shift: UpcomingSlot = {
     id: "Temp01",
     venueId: "Cafe01",
     weekday: new Date(`${shiftDay}T12:00:00Z`).getUTCDay(),
+    date: null,
     title: "Lunch counter",
     startTime: "11:00",
     endTime: "14:00",
@@ -304,6 +305,29 @@ describe("Venue shift detail", () => {
       buttonNamed(page.detail(), "Close shift details")!.click();
       await flush();
       expect(page.detail().hidden).toBe(true);
+      dispose();
+    } finally {
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("a one-off shift says so in its detail and is taken for its date only", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    try {
+      const page = await harness(dom);
+      const oneOff: UpcomingSlot = { ...shift, template: { ...shift.template, date: shiftDay } };
+      const dispose = page.mount("write", { dashboard: board("write", oneOff) });
+      await flush();
+      await page.tap("Lunch counter");
+      expect(page.detail().textContent).toContain("One-off shift");
+      expect(page.detail().textContent).not.toContain("Also the next 4 weeks");
+      buttonNamed(page.detail(), "Take shift")!.click();
+      await flush();
+      expect(page.requests.filter((request) => request.method === "POST")).toEqual([
+        { method: "POST", path: "/api/venue/venues/Cafe01/templates/Temp01/signup", body: { date: shiftDay } },
+      ]);
       dispose();
     } finally {
       globalThis.fetch = originalFetch;

@@ -98,7 +98,11 @@ function useShiftDetail(props: ShiftDetailProps) {
     props.selection.kind === "slot"
       ? [props.selection.slot.startsAt, props.selection.slot.endsAt]
       : [props.selection.assignment.startsAt, props.selection.assignment.endsAt];
-  const span = () => formatVenueSpan(times()[0]!, times()[1]!, props.venue.timezone, locale());
+  /** The time span; a one-off shift says so, because it does not come back next week. */
+  const span = () => {
+    const formatted = formatVenueSpan(times()[0]!, times()[1]!, props.venue.timezone, locale());
+    return props.selection.kind === "slot" && props.selection.slot.template.date ? `${formatted} · ${t().oneOffShift}` : formatted;
+  };
   const icon = () => (props.selection.kind === "slot" ? "ti ti-calendar-event" : "ti ti-clock-plus");
   const hasActions = () => permissions().take || permissions().leave !== null;
 
@@ -108,12 +112,19 @@ function useShiftDetail(props: ShiftDetailProps) {
       <Show when={permissions().take && props.selection.kind === "slot" ? props.selection.slot : null}>
         {(slot) => (
           <>
-            <Checkbox label={t().alsoFollowingWeeks({ count: FOLLOWING_WEEKS })} value={followingWeeks} onValueChange={setFollowingWeeks} />
+            <Show when={slot().template.date === null}>
+              <Checkbox
+                label={t().alsoFollowingWeeks({ count: FOLLOWING_WEEKS })}
+                value={followingWeeks}
+                onValueChange={setFollowingWeeks}
+              />
+            </Show>
             <Button
               type="button"
               size={size}
+              class="ml-auto"
               loading={props.pending(slotActionKey(slot()))}
-              onClick={() => props.onTake(slot(), followingWeeks())}
+              onClick={() => props.onTake(slot(), slot().template.date === null && followingWeeks())}
             >
               <i class="ti ti-user-plus" aria-hidden="true" /> {t().join}
             </Button>

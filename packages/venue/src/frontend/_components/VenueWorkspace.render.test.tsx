@@ -353,6 +353,7 @@ const template: ShiftTemplate = {
   id: "Temp01",
   venueId: "Cafe01",
   weekday: 2,
+  date: null,
   title: "Theke",
   startTime: "11:00",
   endTime: "14:00",

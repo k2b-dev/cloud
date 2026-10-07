@@ -56,6 +56,7 @@ const template: ShiftTemplate = {
   id: "Temp01",
   venueId: "Cafe01",
   weekday: 1,
+  date: null,
   title: "Lunch counter",
   startTime: "11:00",
   endTime: "14:00",
@@ -711,7 +712,7 @@ describe("Venue clarity behavior", () => {
     };
     try {
       const special = await saveUnchanged(exception({ kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }));
-      expect(special.text).toContain("Edit exception");
+      expect(special.text).toContain("Edit opening-hour exception");
       expect(special.text).toContain("Special opening");
       expect(special.inputs).toEqual(expect.arrayContaining(["18:00", "22:00", "Long night"]));
       expect(special.saved).toEqual([{ date: "2030-10-17", kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }]);

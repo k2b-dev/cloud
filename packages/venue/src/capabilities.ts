@@ -209,6 +209,7 @@ const mapShift = (slot: UpcomingSlotSummary) => ({
   templateId: slot.template.id,
   title: slot.template.title.slice(0, 160),
   date: slot.date,
+  recurring: slot.template.date === null,
   startsAt: slot.startsAt,
   endsAt: slot.endsAt,
   assignedCount: slot.assignedCount,
@@ -226,7 +227,7 @@ const runShiftList = async (input: z.infer<typeof ShiftListInputSchema>, context
   if (!scope.ok) return scope;
   const venue = await requireVenue(input.venueId, scope.data, "read");
   if (!venue.ok) return venue;
-  const templates = await venueService.templates.list(venue.data.id, { limit: 101 });
+  const templates = await venueService.templates.listRange(venue.data, { startDate: input.startDate, days: input.days, limit: 101 });
   if (templates.length > 100) return fail(err.badInput("This Venue has too many active shift templates"));
   const internalSlots = await venueService.shifts.listSummary(venue.data, {
     startDate: input.startDate,
@@ -523,7 +524,7 @@ export const venueCapabilities = defineCapabilities({
     "shift.list": {
       title: "List Venue shifts",
       description:
-        "List dated shifts for a known Venue without participant identities. Get venueId from venue.list or venue.search; use each returned venueId, templateId, and date with shift.read or assignment.signup.",
+        "List weekly and one-off dated shifts for a known Venue without participant identities; recurring says whether the shift repeats weekly. Get venueId from venue.list or venue.search; use each returned venueId, templateId, and date with shift.read or assignment.signup.",
       input: ShiftListInputSchema,
       data: ShiftListDataSchema,
       openWorld: false,
@@ -532,7 +533,7 @@ export const venueCapabilities = defineCapabilities({
     "shift.read": {
       title: "Read Venue shift",
       description:
-        "Specialized occurrence lookup: read one dated Venue shift using the venueId, templateId, and date returned together by List Venue shifts.",
+        "Specialized occurrence lookup: read one weekly or one-off dated Venue shift using the venueId, templateId, and date returned together by List Venue shifts.",
       input: ShiftReadInputSchema,
       data: ShiftDataSchema,
       openWorld: false,
@@ -568,7 +569,7 @@ export const venueCapabilities = defineCapabilities({
   actions: {
     "assignment.signup": {
       title: "Take Venue shift",
-      description: "Create one non-idempotent assignment for a dated template occurrence returned by shift.list.",
+      description: "Create one non-idempotent assignment for a weekly or one-off dated shift returned by shift.list.",
       input: AssignmentSignupInputSchema,
       data: AssignmentActionDataSchema,
       destructive: false,
@@ -581,7 +582,7 @@ export const venueCapabilities = defineCapabilities({
         if (actor.data.venue.signupMode === "free") return fail(err.badInput("Template shift signup is disabled for this Venue"));
         const templateId = await venueService.publicResources.resolveOwned("templates", actor.data.venue.id, input.templateId);
         if (!templateId) return fail(err.notFound("Shift"));
-        const templates = await venueService.templates.list(actor.data.venue.id, { limit: 101 });
+        const templates = await venueService.templates.listRange(actor.data.venue, { startDate: input.date, days: 1, limit: 101 });
         if (templates.length > 100) return fail(err.badInput("This Venue has too many active shift templates"));
         const internalShifts = await venueService.shifts.listSummary(actor.data.venue, {
           startDate: input.date,
