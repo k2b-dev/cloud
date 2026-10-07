@@ -1277,10 +1277,11 @@ suite("AI conversation store integration", () => {
         allowAlways: false,
         resolvedEvent: null,
       });
-      // One answered approval of 90 s, and one that has waited 30 s so far.
+      // One answered approval of 90 s, and one that has waited 30 s so far. A gap keeps them two waits: touching waits
+      // count as one, and the two statements below can share a millisecond.
       await aiConversations.savePendingTurnAction(action("earlier"));
       await aiConversations.savePendingTurnAction(action("send-1"));
-      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '120 seconds', status = 'resolved', resolved_at = now() - interval '30 seconds' WHERE turn_id = ${turn.id} AND call_id = 'earlier'`;
+      await sql`UPDATE ai.pending_actions SET created_at = now() - interval '130 seconds', status = 'resolved', resolved_at = now() - interval '40 seconds' WHERE turn_id = ${turn.id} AND call_id = 'earlier'`;
       await sql`UPDATE ai.pending_actions SET created_at = now() - interval '30 seconds' WHERE turn_id = ${turn.id} AND call_id = 'send-1'`;
       await aiConversations.suspendTurn({
         conversationId: conversation.id,
