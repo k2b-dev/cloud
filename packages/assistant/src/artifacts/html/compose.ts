@@ -88,6 +88,13 @@ export function lintSource(path: string, raw: string, files: AppFiles): LintIssu
     "Studio apps have no network; use cloud.http.fetch for public HTTPS APIs",
     /(?<![\w.$])fetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b/,
   );
+  // WebKit connects for a preconnect hint despite the CSP, so link elements never enter an app document.
+  add(
+    "error",
+    "network",
+    "<link> elements load nothing in Studio apps, and Cloud removes them; put CSS into style.css",
+    /createElement\(\s*["'`]link["'`]|<link[\s/>]/i,
+  );
   add("warning", "worker", "Workers cannot load app files in Studio apps; keep the code in app modules", /\bnew\s+(Shared)?Worker\s*\(/);
   for (const { start, value: specifier } of moduleSpecifiers(raw)) {
     const where = `${path}:${raw.slice(0, start).split("\n").length}`;
@@ -120,11 +127,12 @@ function prepare(files: AppFiles) {
       link.replaceWith(style);
       continue;
     }
+    // Removed without exception: resource hints such as preconnect reach the network in WebKit despite the CSP.
     if (link.rel !== "icon")
       lint.push({
         severity: "error",
         kind: "network",
-        message: `<link href="${href}"> was removed: apps load nothing from the network; use style.css`,
+        message: `<link rel="${link.rel}" href="${href}"> was removed: apps load nothing from the network; use style.css`,
       });
     link.remove();
   }

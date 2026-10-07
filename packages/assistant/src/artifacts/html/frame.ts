@@ -3,6 +3,7 @@
 // errors, logs, readiness and the URL hash to the host, and turns natural
 // browser code that cannot work here into clear errors. Bundled to an IIFE.
 import "./no-eval";
+import "./no-hints";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { createCloud } from "../runtime/cloud";

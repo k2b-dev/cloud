@@ -55,7 +55,9 @@ every call; `cloud.money.*`, `cloud.chart()` and `cloud.html` are synchronous.
 
 - No network, no `fetch`, no `localStorage`; use `cloud.*`. `cloud.http.fetch`
   asks the person for every request.
-- `alert`, `confirm` and `prompt` throw; ask with a `<dialog>` (below).
+- `alert`, `confirm`, `prompt` and `document.write` throw; ask with a `<dialog>` (below).
+- Cloud removes every `<link>` element, also ones added from JavaScript. Put CSS
+  into `style.css`.
 - Inline handlers (`onclick="…"`, also inside generated markup) never run. Use
   `addEventListener`; for lists, one listener on the list:
   `list.addEventListener("click", (e) => { const row = e.target.closest("[data-id]"); … })`.

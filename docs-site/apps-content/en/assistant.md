@@ -537,20 +537,25 @@ read the Cloud page, cookies or browser storage, load anything from the network,
 navigate the page or open windows. Everything it needs goes through `cloud.*`: data,
 files, AI, PDFs, HTTP through Cloud and other apps' capabilities. Natural
 browser code that cannot work there fails with a clear message: `fetch`,
-`alert`, `confirm`, `prompt`, `print`, `localStorage`, and inline `on…`
-handlers. Forms never navigate. A link to an `https` address opens in a new tab
+`alert`, `confirm`, `prompt`, `print`, `localStorage`, `document.write`, and
+inline `on…` handlers. Forms never navigate, and Cloud removes every `<link>`
+element, from `index.html` and whenever the app adds one. A link to an `https` address opens in a new tab
 after the person confirms the full address; other links are ignored. Files the
 app hands out, with `cloud.download` or a download link, are saved as files of
 up to 50 MiB each and never opened on the Cloud domain. The address bar keeps
 the app's `#hash`, so a reload returns to the same view.
 
-One known gap: in Safari and every browser on iOS, which all use WebKit, an app
-can still make the browser open a connection to a host that the app names, with
-a `<link rel="preconnect">` hint. WebKit applies no content security rule to
-these hints, so the host name, and anything an app encodes in it, reaches that
-host's DNS server and the host itself. An app can send data that it can read
-this way, without a Cloud question. Other engines open no connection. Start an
-app that someone else manages only if you trust them.
+One known risk remains in Safari and every browser on iOS, which all use WebKit.
+WebKit opens a connection for a `<link rel="preconnect">` hint as soon as the
+element is in the page, and no content security rule stops it, so the host name,
+and anything an app encodes in it, would reach that host's DNS server and the
+host itself. Cloud therefore drops `<link>` elements before they enter an app's
+page, for every common way of adding elements or markup, and removes any that
+arrive another way right after. In tests with WebKit, none of these ways opened
+a connection. An app that adds a link through a way Cloud does not intercept can
+still win that race, and a determined app may find one. Only running apps on a
+separate domain closes the gap, which is planned. Until then, start an app that
+someone else manages only if you trust them.
 
 Whenever Cloud asks the person something for an app, an HTTP request, a
 capability or a link, the app is greyed out and cannot be clicked until they
@@ -990,6 +995,8 @@ Scripts, apps in chat and authenticated Studio apps can use
 These server-backed calculations return ordinary values and do not load chat
 history, files, memories or tools automatically. Supply the intended input.
 The executing user's model access and personal chat allowance apply, including
-when running a shared app or testing code. Public and local-only runners cannot
+when running a shared app or testing code. There is no separate AI budget per
+app and person: a shared app spends the allowance of the person running it, and
+at most 32 `cloud.*` calls of one running app are pending at once. Public and local-only runners cannot
 use these methods. Stopping a run cancels pending inference. The Code Mode skill's
 AI reference documents options, limits and examples.

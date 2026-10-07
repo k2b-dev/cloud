@@ -11,6 +11,9 @@ import type { AppFiles } from "./compose";
 
 const sinkHits: string[] = [];
 let sink: ReturnType<typeof Bun.serve>;
+/** Counts bare TCP connections: a preconnect hint opens one without sending a request. */
+let connections = 0;
+let listener: { port: number; stop(closeActive?: boolean): void };
 let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 const SINK = () => `http://127.0.0.1:${sink.port}`;
@@ -22,6 +25,16 @@ beforeAll(async () => {
     fetch(request) {
       sinkHits.push(new URL(request.url).pathname);
       return new Response("<h1>sink</h1>", { headers: { "content-type": "text/html" } });
+    },
+  });
+  listener = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      open: () => {
+        connections++;
+      },
+      data: () => {},
     },
   });
   const [prelude, baseCss, harness] = await Promise.all([
@@ -62,6 +75,7 @@ afterAll(async () => {
   await browser?.close();
   server?.stop(true);
   sink?.stop(true);
+  listener?.stop(true);
 });
 
 async function open(files: AppFiles, options: { hash?: string; answers?: boolean[]; download?: "capture" | "save" } = {}) {
@@ -122,6 +136,67 @@ document.querySelector("#out").textContent = JSON.stringify(results);
     await page.waitForTimeout(300);
     expect(sinkHits).not.toContain("/img");
     expect(sinkHits).not.toContain("/fetch");
+  } finally {
+    await close();
+  }
+});
+
+test("resource hints never reach the network, however an app inserts them", async () => {
+  connections = 0;
+  const target = `http://127.0.0.1:${listener.port}/`;
+  const { page, close } = await open({
+    "index.html": `<main><h1>Hints</h1><link rel="preconnect" href="${target}"><output id=out></output></main>`,
+    // WebKit connects the moment a preconnect link enters the document, so each insertion path must drop it before.
+    "app.js": `const target = ${JSON.stringify(target)};
+const hint = (rel = "preconnect") => Object.assign(document.createElement("link"), { rel, href: target });
+const markup = '<link rel="preconnect" href="' + target + '">';
+const box = () => document.body.appendChild(document.createElement("div"));
+const results = {};
+const attempt = (name, run) => { try { run(); results[name] = "ok"; } catch (error) { results[name] = error.code ?? error.name; } };
+attempt("append", () => document.head.append(hint()));
+attempt("appendChild", () => document.head.appendChild(hint("dns-prefetch")));
+attempt("replaceWith", () => box().replaceWith(hint()));
+attempt("innerHTML", () => (box().innerHTML = "<p>kept</p>" + markup));
+attempt("outerHTML", () => (box().outerHTML = markup));
+attempt("insertAdjacentHTML", () => document.body.insertAdjacentHTML("beforeend", markup));
+attempt("template", () => { const template = document.createElement("template"); template.innerHTML = markup; document.body.append(template.content.cloneNode(true)); });
+attempt("parser", () => document.head.append(document.adoptNode(new DOMParser().parseFromString(markup, "text/html").querySelector("link"))));
+attempt("shadow", () => (box().attachShadow({ mode: "closed" }).innerHTML = markup));
+attempt("range", () => { const range = document.createRange(); range.selectNodeContents(document.body); range.insertNode(range.createContextualFragment(markup)); });
+attempt("relLater", () => { const link = document.createElement("link"); document.head.append(link); link.href = target; link.rel = "preconnect"; });
+attempt("write", () => document.write(markup));
+attempt("restore", () => Object.defineProperty(Node.prototype, "appendChild", { value: () => null }));
+results.links = document.querySelectorAll("link").length;
+results.kept = document.querySelectorAll("p").length;
+document.querySelector("#out").textContent = JSON.stringify(results);`,
+  });
+  try {
+    await ready(page);
+    const results = JSON.parse((await text(page, "#out")) ?? "{}");
+    expect(results).toEqual({
+      append: "ok",
+      appendChild: "ok",
+      replaceWith: "ok",
+      innerHTML: "ok",
+      outerHTML: "ok",
+      insertAdjacentHTML: "ok",
+      template: "ok",
+      parser: "ok",
+      shadow: "ok",
+      range: "ok",
+      relLater: "ok",
+      write: "unavailable",
+      restore: "TypeError",
+      links: 0,
+      kept: 1,
+    });
+    // Connections open asynchronously; give a late one time to arrive.
+    await page.waitForTimeout(1000);
+    expect(connections).toBe(0);
+    const warnings = (await events(page)).filter(
+      (event) => event.type === "log" && String(event.text).startsWith("Cloud removed a <link>"),
+    );
+    expect(warnings).toHaveLength(1);
   } finally {
     await close();
   }

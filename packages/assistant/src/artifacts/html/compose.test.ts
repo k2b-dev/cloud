@@ -85,6 +85,7 @@ test("static checks name the traps of the sandbox before an app runs", () => {
       "fetch('/api');",
       "new Worker('w.js');",
       'list.innerHTML = `<li onclick="x()">x</li>`;',
+      'const hint = document.createElement("link");',
     ].join("\n"),
   });
   expect(issues.map((issue) => `${issue.severity} ${issue.kind}${issue.where ? ` ${issue.where}` : ""}`).sort()).toEqual(
@@ -103,11 +104,33 @@ test("static checks name the traps of the sandbox before an app runs", () => {
       "error storage app.js:5",
       "error network app.js:6",
       "warning worker app.js:7",
+      "error network app.js:9",
       "error import app.js:1",
       "error import app.js:2",
     ].sort(),
   );
   expect(lintApp({ "app.js": "" })).toEqual([{ severity: "error", kind: "missing", message: "An app needs index.html" }]);
+});
+
+test("resource hints never reach an app document, also inside other elements", () => {
+  const { wrapper, lint } = composeApp(
+    {
+      "index.html": `<link rel="preconnect" href="https://leak.example"><main><h1>Hi</h1><p><link rel="dns-prefetch" href="//leak.example"></p><noscript><link rel="prefetch" href="https://leak.example/x"></noscript></main>`,
+      "app.js": "document.body.insertAdjacentHTML('beforeend', '<link rel=preconnect href=https://leak.example>');",
+    },
+    options,
+  );
+  const { doc } = inner(wrapper);
+  expect(doc.querySelectorAll("link")).toHaveLength(0);
+  expect(doc.body.innerHTML).not.toContain("leak.example");
+  expect(
+    lint.map((issue) => `${issue.kind} ${/^<link( rel="[\w-]+")?/.exec(issue.message)?.[0]}${issue.where ? ` ${issue.where}` : ""}`).sort(),
+  ).toEqual([
+    "network <link app.js:1",
+    'network <link rel="dns-prefetch"',
+    'network <link rel="preconnect"',
+    'network <link rel="prefetch"',
+  ]);
 });
 
 test("import-like text in comments and strings is no import", () => {
