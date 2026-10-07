@@ -1,6 +1,6 @@
 import { type AdminMailApp, type AdminMailProfile, MailProfileInputSchema } from "../../contracts/outgoing-mail";
-import { arg, type CloudCliContext, command, confirmFlag, flag } from "../index";
-import { apiGet, apiJson, printJsonOrTable, readJsonInput } from "./shared";
+import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "../index";
+import { apiGet, apiJson, printJsonOrTable } from "./shared";
 
 const root = "/api/admin/core/outgoing-mail";
 const profilePath = (key: string) => `${root}/profiles/${encodeURIComponent(key)}`;
@@ -37,7 +37,13 @@ export const outgoingMailCommands = [
     args: keyArgs,
     flags: { config: flag.input({ required: true, description: "Profile JSON; SMTP passwords only via --config-file or --stdin" }) },
     async run({ ctx, args, flags }) {
-      const raw = await readJsonInput<unknown>(flags.config, "outgoing mail profile");
+      const input = await readCliInput(flags.config, { label: "outgoing mail profile", required: true });
+      let raw: unknown;
+      try {
+        raw = JSON.parse(input ?? "");
+      } catch {
+        throw new Error("Invalid outgoing mail profile JSON.");
+      }
       if (flags.config.source === "value" && raw && typeof raw === "object" && "smtpPassword" in raw)
         throw new Error("Pass smtpPassword only through --config-file or --stdin.");
       print(ctx, await apiJson(ctx, "PUT", profilePath(args.key), MailProfileInputSchema.parse(raw)));

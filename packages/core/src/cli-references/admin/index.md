@@ -529,3 +529,6 @@ SMTP passwords belong only in `--config-file` or `--stdin`, never inline
 `--config`. Replacements include the current revision; an omitted password is
 kept, and null clears it. Default access follows the current default profile;
 `--none` stores an empty selected set. Every app must declare `mail:send`.
+If a password is stored, changing the SMTP host requires supplying the password
+again or clearing it with null. Core's notification, sign-in, and password-reset
+emails always use the default profile; Core's access cannot be changed.

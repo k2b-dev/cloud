@@ -35,6 +35,8 @@ type Messages = ReturnType<typeof outgoingMailMessages.resolve>["t"];
 type AccessMode = "default" | "selected" | "none";
 
 const api = coreClient.admin.core["outgoing-mail"];
+/** Core's system email (sign-in, password reset, notifications) always uses the default profile. */
+const CORE_APP_ID = "core";
 const MB = 1024 * 1024;
 
 const messages = () => {
@@ -42,19 +44,29 @@ const messages = () => {
   return () => outgoingMailMessages.resolve([locale()]).t;
 };
 
-/** Reads the server's `{ code, message }` error body; falls back to the localized summary. */
-const failure = async (response: { json: () => Promise<unknown> }, fallback: string, known: Record<string, string> = {}) => {
+/**
+ * Reads the server's `{ code, message }` error body. Known codes get the reader's language; the
+ * server's own text stays only for codes without a translation, such as the SMTP answer of `smtp_failed`.
+ */
+const failure = async (response: { json: () => Promise<unknown> }, fallback: string, t: Messages) => {
   const body = await response.json().catch(() => null);
   if (!body || typeof body !== "object") return new Error(fallback);
   const code = "code" in body && typeof body.code === "string" ? body.code : undefined;
   const message = "message" in body && typeof body.message === "string" ? body.message : undefined;
+  const known: Record<string, string> = {
+    revision_conflict: t.conflict,
+    profile_exists: t.profileExists,
+    profile_unknown: t.profileUnknown,
+    profile_is_default: t.profileIsDefault,
+    invalid_profile: t.invalidEntries,
+  };
   return new Error((code ? known[code] : undefined) ?? message ?? fallback);
 };
 
 const loadState = async (signal: AbortSignal, t: Messages): Promise<OutgoingMailState> => {
   const [profiles, apps] = await Promise.all([api.profiles.$get({}, { init: { signal } }), api.apps.$get({}, { init: { signal } })]);
-  if (!profiles.ok) throw await failure(profiles, t.loadFailed);
-  if (!apps.ok) throw await failure(apps, t.loadFailed);
+  if (!profiles.ok) throw await failure(profiles, t.loadFailed, t);
+  if (!apps.ok) throw await failure(apps, t.loadFailed, t);
   return { profiles: (await profiles.json()).items, apps: await apps.json() };
 };
 
@@ -90,8 +102,18 @@ function ProfileDialog(props: {
   const [attachmentMb, setAttachmentMb] = createSignal<number | null>(initial ? initial.maxAttachmentBytes / MB : 15);
 
   const keyValid = () => /^[a-z0-9][a-z0-9-]{0,62}$/.test(key());
+  // A saved password never follows the profile to another server: a new host needs it again or without it.
+  const passwordNeeded = () =>
+    !!initial?.hasPassword && smtpHost().trim().toLowerCase() !== initial.smtpHost.toLowerCase() && !password() && !clearPassword();
   const complete = () =>
-    keyValid() && !!name().trim() && !!fromAddress().trim() && !!smtpHost().trim() && !!smtpPort() && !!pace() && !!attachmentMb();
+    keyValid() &&
+    !!name().trim() &&
+    !!fromAddress().trim() &&
+    !!smtpHost().trim() &&
+    !!smtpPort() &&
+    !!pace() &&
+    !!attachmentMb() &&
+    !passwordNeeded();
   const dirty = createMemo(() => {
     const before = {
       key: initial?.key ?? "",
@@ -141,7 +163,7 @@ function ProfileDialog(props: {
         ...(initial ? { revision: initial.revision } : {}),
       };
       const response = await api.profiles[":key"].$put({ param: { key: key() }, json }, { init: { signal: abortSignal } });
-      if (!response.ok) throw await failure(response, t().saveFailed, { revision_conflict: t().conflict });
+      if (!response.ok) throw await failure(response, t().saveFailed, t());
     },
     onSuccess: () => {
       props.onSaved();
@@ -196,6 +218,7 @@ function ProfileDialog(props: {
               onValueChange={setFromAddress}
               disabled={save.loading()}
               required
+              maxLength={320}
               placeholder="noreply@example.org"
             />
             <TextInput
@@ -215,6 +238,7 @@ function ProfileDialog(props: {
                 onValueChange={setSmtpHost}
                 disabled={save.loading()}
                 required
+                maxLength={253}
                 placeholder="smtp.example.org"
                 autocomplete="off"
               />
@@ -245,18 +269,21 @@ function ProfileDialog(props: {
               value={smtpUser()}
               onValueChange={setSmtpUser}
               disabled={save.loading()}
+              maxLength={320}
               autocomplete="off"
             />
             <TextInput
               label={t().password}
+              description={initial?.hasPassword ? t().passwordHostHint : undefined}
               password
               value={password()}
               onValueChange={(value) => {
                 setPassword(value);
                 if (value) setClearPassword(false);
               }}
-              placeholder={initial?.hasPassword ? t().passwordKeep : t().passwordNone}
+              placeholder={passwordNeeded() ? t().passwordReenter : initial?.hasPassword ? t().passwordKeep : t().passwordNone}
               disabled={save.loading() || clearPassword()}
+              maxLength={16384}
               autocomplete="new-password"
             />
             <Show when={initial?.hasPassword}>
@@ -327,7 +354,7 @@ function TestDialog(props: { profile: AdminMailProfile; close: () => void }) {
         { param: { key: props.profile.key }, json: { recipient: recipient().trim() } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw await failure(response, t().testFailed);
+      if (!response.ok) throw await failure(response, t().testFailed, t());
     },
     onSuccess: () => {
       toast.success(t().testSent({ recipient: recipient().trim() }));
@@ -367,7 +394,8 @@ function TestDialog(props: { profile: AdminMailProfile; close: () => void }) {
   );
 }
 
-function AccessDialog(props: { app: AdminMailApp; profiles: readonly AdminMailProfile[]; close: () => void; onSaved: () => void }) {
+/** Exported for the layout test: the dialog keeps one height through every mode and selection. */
+export function AccessDialog(props: { app: AdminMailApp; profiles: readonly AdminMailProfile[]; close: () => void; onSaved: () => void }) {
   const t = messages();
   const initialMode: AccessMode = props.app.mode === "default" ? "default" : props.app.profiles.length ? "selected" : "none";
   const [mode, setMode] = createSignal<AccessMode>(initialMode);
@@ -379,7 +407,7 @@ function AccessDialog(props: { app: AdminMailApp; profiles: readonly AdminMailPr
       const json =
         mode() === "default" ? { mode: "default" as const } : { mode: "selected" as const, profiles: mode() === "none" ? [] : selected() };
       const response = await api.apps[":appId"].$put({ param: { appId: props.app.appId }, json }, { init: { signal: abortSignal } });
-      if (!response.ok) throw await failure(response, t().accessFailed);
+      if (!response.ok) throw await failure(response, t().accessFailed, t());
     },
     onSuccess: () => {
       props.onSaved();
@@ -389,6 +417,18 @@ function AccessDialog(props: { app: AdminMailApp; profiles: readonly AdminMailPr
   onCleanup(() => save.abort());
   const toggle = (key: string, checked: boolean) =>
     setSelected((current) => (checked ? [...new Set([...current, key])] : current.filter((entry) => entry !== key)));
+  // Every mode shows the same profile list, read-only outside "Selected profiles", so the centered
+  // dialog never changes height while the administrator switches modes or toggles profiles.
+  const usable = (profile: AdminMailProfile) =>
+    mode() === "selected" ? selected().includes(profile.key) : mode() === "default" && profile.isDefault;
+  const hints = (): { mode: AccessMode; text: string }[] => [
+    {
+      mode: "default",
+      text: defaultProfile() ? t().accessDefaultHint({ name: defaultProfile()!.name }) : t().accessDefaultHintNone,
+    },
+    { mode: "selected", text: t().accessSelectedHint },
+    { mode: "none", text: t().accessNoneHint },
+  ];
   return (
     <form
       class="flex flex-col gap-4"
@@ -411,31 +451,30 @@ function AccessDialog(props: { app: AdminMailApp; profiles: readonly AdminMailPr
           { value: "none", label: t().accessNone },
         ]}
       />
-      <Show when={mode() === "default"}>
-        <p class="text-sm text-secondary">
-          {defaultProfile() ? t().accessDefaultHint({ name: defaultProfile()!.name }) : t().accessDefaultHintNone}
-        </p>
-      </Show>
-      <Show when={mode() === "none"}>
-        <p class="text-sm text-secondary">{t().accessNoneHint}</p>
-      </Show>
-      <Show when={mode() === "selected"}>
-        <div class="flex flex-col gap-2">
+      {/* The hints share one grid cell: the longest one reserves the space for all of them. */}
+      <div class="grid">
+        <For each={hints()}>
+          {(hint) => (
+            <p class="text-sm text-secondary [grid-area:1/1]" classList={{ invisible: mode() !== hint.mode }} data-access-hint={hint.mode}>
+              {hint.text}
+            </p>
+          )}
+        </For>
+      </div>
+      <Show when={props.profiles.length}>
+        <div class="flex flex-col gap-2" role="group" aria-label={t().profiles}>
           <For each={props.profiles}>
             {(profile) => (
               <CheckboxCard
                 variant="input"
                 label={profile.name}
                 description={profile.fromAddress}
-                value={selected().includes(profile.key)}
+                value={usable(profile)}
                 onValueChange={(checked) => toggle(profile.key, checked)}
-                disabled={save.loading()}
+                disabled={save.loading() || mode() !== "selected"}
               />
             )}
           </For>
-          <Show when={!selected().length}>
-            <p class="text-xs text-dimmed">{t().accessSelectedHint}</p>
-          </Show>
         </div>
       </Show>
       <Show when={save.error()}>{(error) => <NoticeCard tone="danger" title={t().accessFailed} detail={error().message} />}</Show>
@@ -488,7 +527,7 @@ export default function OutgoingMail(props: Props) {
     });
     if (!confirmed) return;
     const response = await api.profiles[":key"].default.$post({ param: { key: profile.key } });
-    if (!response.ok) return void toast.error((await failure(response, t().defaultFailed)).message);
+    if (!response.ok) return void toast.error((await failure(response, t().defaultFailed, t())).message);
     refresh();
   };
   const remove = async (profile: AdminMailProfile) => {
@@ -500,7 +539,7 @@ export default function OutgoingMail(props: Props) {
     });
     if (!confirmed) return;
     const response = await api.profiles[":key"].$delete({ param: { key: profile.key } });
-    if (!response.ok) return void toast.error((await failure(response, t().deleteFailed)).message);
+    if (!response.ok) return void toast.error((await failure(response, t().deleteFailed, t())).message);
     refresh();
   };
 
@@ -669,7 +708,13 @@ export default function OutgoingMail(props: Props) {
                 <div class="min-w-0">
                   <p class="truncate text-sm font-medium text-primary">{row.name}</p>
                   <p class="mt-0.5 text-xs text-dimmed">
-                    {!row.registered ? t().notRegistered : row.declared ? t().requested : t().notRequested}
+                    {row.appId === CORE_APP_ID
+                      ? t().systemMail
+                      : !row.registered
+                        ? t().notRegistered
+                        : row.declared
+                          ? t().requested
+                          : t().notRequested}
                   </p>
                   <p class="mt-0.5 text-xs text-secondary md:hidden">{accessLabel(row, data().profiles, t())}</p>
                 </div>
@@ -682,9 +727,11 @@ export default function OutgoingMail(props: Props) {
               );
             if (col.id === "actions")
               return (
-                <Button type="button" variant="ghost" size="sm" onClick={() => openAccess(row)} disabled={busy()}>
-                  {t().changeAccess}
-                </Button>
+                <Show when={row.appId !== CORE_APP_ID}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => openAccess(row)} disabled={busy()}>
+                    {t().changeAccess}
+                  </Button>
+                </Show>
               );
             return "";
           }}

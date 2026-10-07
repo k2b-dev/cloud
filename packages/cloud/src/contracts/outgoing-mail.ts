@@ -7,21 +7,23 @@ const headerText = z
   .string()
   .trim()
   .min(1)
+  .max(120)
   .refine((value) => !/[\r\n\0]/.test(value), "Header must not contain control characters");
 export const MailProfileInputSchema = z
   .object({
     name: headerText,
-    fromAddress: z.email(),
+    fromAddress: z.email().max(320),
     fromName: headerText.nullable(),
     smtpHost: z
       .string()
       .trim()
       .min(1)
+      .max(253)
       .refine((value) => !/[\s/@\0]/.test(value), "Use an SMTP hostname"),
     smtpPort: z.int().min(1).max(65535),
     smtpSecure: z.boolean(),
-    smtpUser: z.string().nullable(),
-    smtpPassword: z.string().nullable().optional(),
+    smtpUser: z.string().max(320).nullable(),
+    smtpPassword: z.string().max(16384).nullable().optional(),
     pacePerMinute: z.int().min(1).max(6000),
     dailyRecipientLimit: z.int().min(1).max(2147483647).nullable(),
     maxAttachmentBytes: z.int().min(1).max(26214400),

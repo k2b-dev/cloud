@@ -68,7 +68,7 @@ test("shows profiles, the default, and each app's effective access in English an
   expect(en).toContain("Sender profiles");
   expect(en).toContain("noreply@example.org");
   expect(en).toContain("Default");
-  expect(en).toContain("Sender name: app name");
+  expect(en).toContain("Sender name: Cloud name");
   expect(en).toContain("500 recipients/day");
   expect(en).toContain("Default profile (No-reply)");
   expect(en).toContain(">Billing<");
@@ -76,12 +76,17 @@ test("shows profiles, the default, and each app's effective access in English an
   expect(en).toContain("Does not request mail");
   expect(en).toContain("Not registered");
   expect(en).not.toContain("smtpPassword");
+  // Core's system email cannot be redirected or blocked, so its row offers no access change.
+  expect(en).toContain("System email, always the default profile");
+  expect(en.split(">Change access<")).toHaveLength(state.apps.items.length);
 
   const de = render("de", state);
   expect(de).toContain("Absenderprofile");
   expect(de).toContain("Standardprofil (No-reply)");
   expect(de).toContain("Kein Versand");
   expect(de).toContain("Fordert keine Mail an");
+  expect(de).toContain("Absendername: Cloud-Name");
+  expect(de).toContain("Systemmails, immer über das Standardprofil");
 });
 
 test("lists apps that request mail before the others", () => {

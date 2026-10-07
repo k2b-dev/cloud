@@ -30,18 +30,29 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     if (existing!.count) return;
     const rows = await tx<{ key: string; value: string }[]>`SELECT key, value FROM settings.entries WHERE key LIKE 'mail.noreply.%'`;
     const stored = new Map(rows.map((row) => [row.key, row.value]));
-    const read = async (key: string, fallback: unknown) => {
+    const read = async (key: string) => {
       const value = stored.get(`mail.noreply.${key}`);
-      return value === undefined ? fallback : await decryptValue(value);
+      if (value === undefined) return undefined;
+      try {
+        return await decryptValue(value);
+      } catch {
+        console.warn(`[setup] outgoing-mail: ignored undecryptable legacy setting mail.noreply.${key}`);
+        return undefined;
+      }
     };
-    const host = await read("smtp_host", "");
+    const host = await read("smtp_host");
     if (typeof host !== "string" || !host.trim()) return;
-    const port = Number(await read("smtp_port", 587));
-    const from = String(await read("from", ""));
-    const user = String(await read("user", ""));
+    // Like the former number setting, accept numeric strings; anything outside 1-65535 falls back to its default.
+    const storedPort = Number((await read("smtp_port")) ?? 587);
+    const port = Number.isInteger(storedPort) && storedPort >= 1 && storedPort <= 65535 ? storedPort : 587;
+    const from = await read("from");
+    const user = await read("user");
+    const decryptedPassword = await read("password");
+    if (decryptedPassword !== undefined && typeof decryptedPassword !== "string")
+      console.warn("[setup] outgoing-mail: ignored invalid legacy setting mail.noreply.password");
     // Both stores use encryptValue/decryptValue: copy the authenticated ciphertext, never plaintext.
-    const password = stored.get("mail.noreply.password") ?? null;
+    const password = typeof decryptedPassword === "string" ? (stored.get("mail.noreply.password") ?? null) : null;
     await tx`INSERT INTO outgoing_mail.profiles(id, key, name, from_address, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password_encrypted, is_default)
-      VALUES (${crypto.randomUUID()}::uuid, 'noreply', 'No-reply', ${from}, ${host}, ${port}, ${port === 465}, ${user || null}, ${password}, true)`;
+      VALUES (${crypto.randomUUID()}::uuid, 'noreply', 'No-reply', ${typeof from === "string" ? from : ""}, ${host}, ${port}, ${port === 465}, ${typeof user === "string" && user ? user : null}, ${password}, true)`;
   });
 };

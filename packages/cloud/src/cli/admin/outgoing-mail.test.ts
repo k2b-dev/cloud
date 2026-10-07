@@ -16,8 +16,12 @@ const input = {
   dailyRecipientLimit: null,
   maxAttachmentBytes: 15728640,
 };
-const invoke = async (args: string[], flags: CloudCliFlags = {}, result: unknown = {}) => {
-  const requests: { path: string; method: string; body: unknown }[] = [];
+const invoke = async (
+  args: string[],
+  flags: CloudCliFlags = {},
+  result: unknown = {},
+  requests: { path: string; method: string; body: unknown }[] = [],
+) => {
   const output: unknown[] = [];
   const ctx: CloudCliContext = {
     args: ["outgoing-mail", ...args],
@@ -115,6 +119,21 @@ test("stdin input forwards credentials without inline arguments", async () => {
   try {
     expect((await invoke(["profiles", "put", "alerts"], { stdin: true })).requests[0]?.body).toEqual(config);
     expect(stdin).toHaveBeenCalledTimes(1);
+  } finally {
+    stdin.mockRestore();
+  }
+});
+
+test("malformed profile JSON from stdin never exposes secrets or sends a request", async () => {
+  const { spyOn } = await import("bun:test");
+  const stdin = spyOn(Bun.stdin, "text").mockResolvedValue('{"smtpPassword":MySecret123}');
+  const requests: { path: string; method: string; body: unknown }[] = [];
+  try {
+    const error = await invoke(["profiles", "put", "noreply"], { stdin: true }, {}, requests).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ message: "Invalid outgoing mail profile JSON." });
+    expect(String(error)).not.toContain("MySecret123");
+    expect(requests).toHaveLength(0);
   } finally {
     stdin.mockRestore();
   }

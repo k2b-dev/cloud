@@ -130,6 +130,12 @@ const put = async (
       throw new OutgoingMailError("profile_exists", "Profile exists; provide its current revision.", 409);
     if (input.revision !== undefined && (!before || input.revision !== before.revision))
       throw new OutgoingMailError("revision_conflict", "Profile revision changed; reload before replacing it.", 409);
+    if (
+      before?.has_password &&
+      input.smtpPassword === undefined &&
+      before.smtp_host.trim().toLowerCase() !== input.smtpHost.trim().toLowerCase()
+    )
+      throw new OutgoingMailError("invalid_profile", "Enter the SMTP password again, or remove it, when you change the SMTP host.");
     const password =
       input.smtpPassword === undefined ? undefined : input.smtpPassword === null ? null : await encryptValue(input.smtpPassword);
     if (before) {
@@ -197,6 +203,7 @@ const appsState = async (
   return { defaultProfile: profile?.key ?? null, items };
 };
 const setAppAccess = async (appId: string, value: MailAppAccess, context: MailAuditContext): Promise<AdminMailApp> => {
+  if (appId === "core") throw new OutgoingMailError("invalid_profile", "Core's system email always uses the default profile.");
   if (!appId.trim()) throw new OutgoingMailError("invalid_profile", "Application id is required.");
   const parsed = MailAppAccessSchema.safeParse(value);
   if (!parsed.success) throw new OutgoingMailError("invalid_profile", "Invalid application access policy.");

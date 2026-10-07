@@ -110,6 +110,50 @@ test("validation reports only the first issue without echoing submitted secrets"
   expect(passwordBody.message).toContain("smtpPassword:");
   expect(JSON.stringify(passwordBody)).not.toContain("must-not-escape");
 });
+test("profile text limits reject oversized fields without echoing values and accept the maxima", async () => {
+  const maximum = {
+    name: "n".repeat(120),
+    fromName: "f".repeat(120),
+    fromAddress: `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(63)}.${"e".repeat(63)}`,
+    smtpHost: "h".repeat(253),
+    smtpUser: "u".repeat(320),
+    smtpPassword: "p".repeat(16384),
+  };
+  const put = spyOn(outgoingMailStore, "put").mockResolvedValue({ profile, created: true });
+  try {
+    for (const [field, value] of Object.entries(maximum)) {
+      const submitted = field === "fromAddress" ? value.replace("@", "a@") : `${value}x`;
+      const response = await request(authorized(), "/profiles/alerts", "PUT", { ...input, [field]: submitted });
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.code).toBe("invalid_profile");
+      expect(body.message).toStartWith(`${field}:`);
+      expect(JSON.stringify(body)).not.toContain(submitted);
+    }
+    expect(put).not.toHaveBeenCalled();
+    expect((await request(authorized(), "/profiles/alerts", "PUT", { ...input, ...maximum })).status).toBe(201);
+    expect(put).toHaveBeenCalledTimes(1);
+  } finally {
+    put.mockRestore();
+  }
+});
+test("Core access policies are rejected by the real store without an audit record", async () => {
+  const { audit } = await import("../services/audit");
+  const record = spyOn(audit, "record");
+  try {
+    for (const policy of [{ mode: "default" }, { mode: "selected", profiles: ["alerts"] }, { mode: "selected", profiles: [] }]) {
+      const response = await request(authorized(), "/apps/core", "PUT", policy);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: "invalid_profile",
+        message: "Core's system email always uses the default profile.",
+      });
+    }
+    expect(record).not.toHaveBeenCalled();
+  } finally {
+    record.mockRestore();
+  }
+});
 test("profile read, default, delete and test endpoints preserve the admin contract", async () => {
   const app = authorized();
   const list = spyOn(outgoingMailStore, "list").mockResolvedValue([profile]);

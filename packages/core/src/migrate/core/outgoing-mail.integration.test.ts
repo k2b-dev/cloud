@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { deleteLegacyKeys, listLegacyKeys } from "@k2b/cloud/services/settings/store";
 import { SQL } from "bun";
@@ -63,6 +63,91 @@ databaseSuite()("outgoing mail migration", () => {
     await seed("from", "noreply@example.org");
     await migrate(db);
     expect((await db`SELECT smtp_port, smtp_secure FROM outgoing_mail.profiles`)[0]).toEqual({ smtp_port: 587, smtp_secure: false });
+  });
+  test("an undecryptable legacy host does not prevent setup and imports no profile", async () => {
+    await db`INSERT INTO settings.entries(key, value) VALUES ('mail.noreply.smtp_host', 'deadbeef')`;
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(migrate(db)).resolves.toBeUndefined();
+      expect(await db`SELECT * FROM outgoing_mail.profiles`).toHaveLength(0);
+      expect(warn.mock.calls).toEqual([["[setup] outgoing-mail: ignored undecryptable legacy setting mail.noreply.smtp_host"]]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("deadbeef");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  test("an undecryptable legacy password is omitted without exposing stored values", async () => {
+    const host = await seed("smtp_host", "smtp.example.org");
+    const from = await seed("from", "noreply@example.org");
+    await db`INSERT INTO settings.entries(key, value) VALUES ('mail.noreply.password', 'deadbeef')`;
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(migrate(db)).resolves.toBeUndefined();
+      expect(await db<{ smtp_password_encrypted: string | null }[]>`SELECT smtp_password_encrypted FROM outgoing_mail.profiles`).toEqual([
+        { smtp_password_encrypted: null },
+      ]);
+      expect(warn.mock.calls).toEqual([["[setup] outgoing-mail: ignored undecryptable legacy setting mail.noreply.password"]]);
+      for (const value of ["deadbeef", host, from, "smtp.example.org", "noreply@example.org"])
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(value);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  test.each([0, "abc", 70000, 587.5])("invalid legacy port %s falls back to 587", async (port) => {
+    await seed("smtp_host", "smtp.example.org");
+    await seed("from", "noreply@example.org");
+    await seed("smtp_port", port);
+    await expect(migrate(db)).resolves.toBeUndefined();
+    expect(await db<{ smtp_port: number; smtp_secure: boolean }[]>`SELECT smtp_port, smtp_secure FROM outgoing_mail.profiles`).toEqual([
+      { smtp_port: 587, smtp_secure: false },
+    ]);
+  });
+  test("a legacy port stored as a numeric string keeps its value", async () => {
+    await seed("smtp_host", "smtp.example.org");
+    await seed("from", "noreply@example.org");
+    await seed("smtp_port", "2525");
+    await migrate(db);
+    expect((await db`SELECT smtp_port FROM outgoing_mail.profiles`)[0]).toEqual({ smtp_port: 2525 });
+  });
+  test("undecryptable legacy port, from and user fall back independently", async () => {
+    await seed("smtp_host", "smtp.example.org");
+    for (const key of ["smtp_port", "from", "user"])
+      await db`INSERT INTO settings.entries(key, value) VALUES (${`mail.noreply.${key}`}, 'deadbeef')`;
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(migrate(db)).resolves.toBeUndefined();
+      expect(
+        await db<
+          { smtp_port: number; smtp_secure: boolean; from_address: string; smtp_user: string | null }[]
+        >`SELECT smtp_port, smtp_secure, from_address, smtp_user FROM outgoing_mail.profiles`,
+      ).toEqual([{ smtp_port: 587, smtp_secure: false, from_address: "", smtp_user: null }]);
+      expect(warn.mock.calls).toEqual(
+        ["smtp_port", "from", "user"].map((key) => [`[setup] outgoing-mail: ignored undecryptable legacy setting mail.noreply.${key}`]),
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("deadbeef");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  test("non-string legacy sender, user and password values are omitted", async () => {
+    await seed("smtp_host", "smtp.example.org");
+    await seed("from", { address: "must-not-escape" });
+    await seed("user", 123);
+    const ciphertext = await seed("password", { secret: "must-not-escape" });
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await migrate(db);
+      expect(
+        await db<
+          { from_address: string; smtp_user: string | null; smtp_password_encrypted: string | null }[]
+        >`SELECT from_address, smtp_user, smtp_password_encrypted FROM outgoing_mail.profiles`,
+      ).toEqual([{ from_address: "", smtp_user: null, smtp_password_encrypted: null }]);
+      expect(warn.mock.calls).toEqual([["[setup] outgoing-mail: ignored invalid legacy setting mail.noreply.password"]]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("must-not-escape");
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(ciphertext);
+    } finally {
+      warn.mockRestore();
+    }
   });
   test("leaves unconfigured installations empty", async () => {
     await migrate(db);

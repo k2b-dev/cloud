@@ -11,6 +11,7 @@ import { audit } from "../audit";
 import { sendEmail } from "../notifications/email";
 import * as settings from "../settings";
 import { coreSettings } from "../settings/api";
+import { decryptValue } from "../settings/crypto";
 import { mail } from "./index";
 import { outgoingMailStore, resolveMailCredentials } from "./store";
 import { outgoingMailTest } from "./test-send";
@@ -90,6 +91,37 @@ databaseSuite()("outgoing mail store and delivery", () => {
     });
     await outgoingMailStore.put(a, { ...config, smtpPassword: null, revision: replaced.profile.revision }, context);
     expect((await outgoingMailStore.get(a)).hasPassword).toBe(false);
+  });
+  test("changing SMTP hosts requires replacing or removing a stored password", async () => {
+    const first = await outgoingMailStore.put(a, { ...config, smtpPassword: "original-secret" }, context);
+    const before = await sql`SELECT smtp_host, smtp_password_encrypted, revision FROM outgoing_mail.profiles WHERE key = ${a}`;
+    const replacement = { ...config, smtpHost: "new.example.org", revision: first.profile.revision };
+    await expect(outgoingMailStore.put(a, replacement, context)).rejects.toMatchObject({
+      code: "invalid_profile",
+      status: 400,
+      message: "Enter the SMTP password again, or remove it, when you change the SMTP host.",
+    });
+    expect(await sql`SELECT smtp_host, smtp_password_encrypted, revision FROM outgoing_mail.profiles WHERE key = ${a}`).toEqual(before);
+    const replaced = await outgoingMailStore.put(a, { ...replacement, smtpPassword: "new-secret" }, context);
+    const [stored] = await sql<
+      { smtp_host: string; smtp_password_encrypted: string }[]
+    >`SELECT smtp_host, smtp_password_encrypted FROM outgoing_mail.profiles WHERE key = ${a}`;
+    expect(stored!.smtp_host).toBe(replacement.smtpHost);
+    expect(await decryptValue(stored!.smtp_password_encrypted)).toBe("new-secret");
+    const sameHost = await outgoingMailStore.put(
+      a,
+      { ...replacement, smtpHost: "  NEW.EXAMPLE.ORG  ", revision: replaced.profile.revision },
+      context,
+    );
+    expect(sameHost.profile.hasPassword).toBe(true);
+    expect((await resolveMailCredentials(a)).smtpPassword).toBe("new-secret");
+    const cleared = await outgoingMailStore.put(
+      a,
+      { ...replacement, smtpHost: "another.example.org", smtpPassword: null, revision: sameHost.profile.revision },
+      context,
+    );
+    expect(cleared.profile.hasPassword).toBe(false);
+    expect((await resolveMailCredentials(a)).smtpPassword).toBeNull();
   });
   test("defaults remain unique and cannot be deleted, access follows default/selected/empty modes", async () => {
     await outgoingMailStore.put(a, config, context);

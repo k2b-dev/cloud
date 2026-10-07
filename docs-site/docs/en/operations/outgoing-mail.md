@@ -20,6 +20,8 @@ A profile has an immutable lowercase key, a display name, a sender address,
 and SMTP connection settings. Keys may contain lowercase letters, digits,
 and hyphens; they begin with a letter or digit and contain at most 63 characters.
 A null sender name uses the installation's `app.name` when sending.
+Profile and sender names are limited to 120 characters, sender addresses and
+SMTP usernames to 320, SMTP hosts to 253, and SMTP passwords to 16384.
 
 Save a configuration file such as `sender.json`:
 
@@ -60,6 +62,9 @@ For a replacement, include the current `revision` from `profiles get` and all
 configuration fields. A stale revision returns `revision_conflict`; creating
 an existing key without a revision returns `profile_exists`. Password omission
 keeps the stored password, `null` clears it, and a string replaces it.
+If a password is stored and you change the SMTP host, supply the password again
+or clear it with `null`; surrounding spaces and changes in letter case do not
+count as a host change.
 The API and CLI return only `hasPassword`, never the password.
 
 `--config` can submit a replacement that contains no password:
@@ -110,15 +115,19 @@ cld admin outgoing-mail apps set inventory --none --yes
 
 Choose exactly one of these modes. Applications still need to declare
 `platformPermissions: ["mail:send"]`; a stored grant does not replace that
-declaration. Core declares the same permission for its notification work.
+declaration. Core's notification, sign-in, and password-reset emails always use
+the default profile, and Core's access cannot be changed.
 
 ## Upgrade and rollback
 
 On upgrade, Core imports the stored `mail.noreply.*` settings when there are
 no profiles and the prior SMTP host is non-empty. The imported profile is
-`noreply`, named **No-reply**, and becomes default. Its missing port defaults
-to 587; port 465 selects implicit TLS. The password ciphertext is preserved
-in the same `APP_SECRET` encryption format. Repeating the migration does not
+`noreply`, named **No-reply**, and becomes default. Its missing or invalid port
+defaults to 587; port 465 selects implicit TLS. Undecryptable settings are treated
+as missing and logged by key only. A missing, unreadable, or invalid host leaves
+the installation unconfigured. The password ciphertext is preserved only when
+it decrypts to a string in the same `APP_SECRET` encryption format; otherwise
+the imported profile has no password. Repeating the migration does not
 change existing profiles. An unconfigured installation remains empty.
 
 The prior SMTP definitions, the **Mail** settings tab, and its test route are removed;
