@@ -21,6 +21,7 @@
       "import": "./dist/ssr/index.js",
       "default": "./dist/ssr/index.js"
     },
+    "./base.css": "./dist/base.css",
     "./global.css": "./dist/global.css",
     "./styles.css": "./dist/styles.css",
     "./fonts/plex.css": "./dist/plex.css",
@@ -59,6 +60,7 @@
     "@k2b/ssr": "0.14.0",
     "@types/babel__core": "7.20.5",
     "@types/bun": "1.4.2",
+    "axe-core": "4.11.0",
     "babel-preset-solid": "1.9.15",
     "bun-plugin-tailwind": "0.1.2",
     "happy-dom": "20.14.5",

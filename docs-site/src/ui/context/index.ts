@@ -68,6 +68,7 @@ import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text"
 import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
 import layoutWorkspace from "./layout/workspace.md" with { type: "text" };
 import inputMarkdownEditor from "./markdown-editor.md" with { type: "text" };
+import surfaceBaseStylesheet from "./surfaces/base-stylesheet.md" with { type: "text" };
 import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
 import surfaceCards from "./surfaces/cards.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
@@ -125,6 +126,7 @@ const catalogContextSources = {
   "layout/panel-dialog": { file: "layout/panel-dialog.md", content: layoutPanelDialog },
   "layout/floating-window": { file: "layout/floating-window.md", content: layoutFloatingWindow },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
+  "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
   "surfaces/details": { file: "surfaces/details.md", content: surfaceDetails },

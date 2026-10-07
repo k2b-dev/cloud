@@ -170,6 +170,12 @@ const portableSections = [
     icon: "ti ti-layout-cards",
     pages: [
       page("utilities", "Theme and styles", "ti ti-palette", "Scoped styles plus configurable font and semantic color tokens."),
+      page(
+        "base-stylesheet",
+        "Base stylesheet",
+        "ti ti-file-type-css",
+        "Classless styles that make a plain HTML page look like the components in light and dark.",
+      ),
       page("paper", "Paper", "ti ti-square", "Neutral semantic grouping for application-owned content."),
       page("empty-states", "Empty states", "ti ti-box-off", "Compact and panel placeholders plus route-level not-found states."),
       page("cards", "Cards and identity", "ti ti-id", "Links and portable avatar identity."),

@@ -8,7 +8,7 @@ export type CssRule = {
   body: string;
 };
 
-const splitTopLevel = (value: string, delimiter: string): string[] => {
+export const splitTopLevel = (value: string, delimiter: string): string[] => {
   const parts: string[] = [];
   let start = 0;
   let depth = 0;

@@ -18,11 +18,13 @@ import {
   ProgressBar,
   ProgressRing,
   RangePicker,
+  SegmentedControl,
   Select,
   StatCell,
   StatGrid,
   StatusBadge,
 } from "@k2b/ui";
+import baseCss from "@k2b/ui/base.css" with { type: "text" };
 import { createSignal, type JSX } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
@@ -102,6 +104,123 @@ const violetTheme = { /* --k2b-accent-50 through --k2b-accent-950 */ };
             Themed icon
           </Button>
         </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+/** A plain HTML page that uses no classes beyond the documented helpers. */
+const basePage = `<main>
+  <header class="row">
+    <h1>Travel expenses</h1>
+    <button type="button" class="primary">Export PDF</button>
+  </header>
+  <p class="muted">Receipts for October, paid back monthly.</p>
+  <form class="row">
+    <label>Purpose <input name="purpose" placeholder="Client visit"></label>
+    <label>Amount <input name="amount" type="number" step="0.01"></label>
+    <button>Add</button>
+  </form>
+  <p role="status" data-tone="success">Receipt saved.</p>
+  <nav aria-label="Filter">
+    <button type="button" aria-pressed="true">All</button>
+    <button type="button" aria-pressed="false">Open</button>
+    <button type="button" aria-pressed="false">Done</button>
+  </nav>
+  <ul>
+    <li><label><input type="checkbox" checked> Book the train</label><button type="button" class="danger" aria-label="Delete Book the train">✕</button></li>
+    <li><label><input type="checkbox"> Hand in the receipts</label><button type="button" class="danger" aria-label="Delete Hand in the receipts">✕</button></li>
+  </ul>
+  <section>
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="stat"><span>Total</span><strong>€237.40</strong></div>
+      <div class="stat"><span>Receipts</span><strong>3</strong></div>
+      <div class="stat"><span>Open</span><strong>1</strong></div>
+    </div>
+    <figure>
+      <table>
+        <thead><tr><th>Purpose</th><th>Status</th><th class="num">Amount</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          <tr><td>Train Berlin to Hamburg<br><small>Oct 2</small></td><td><span class="tag" data-tone="success">Paid</span></td><td class="num">€89.90</td><td><button type="button" class="danger" aria-label="Delete train receipt">✕</button></td></tr>
+          <tr><td>Hotel near the client<br><small>Oct 2</small></td><td><span class="tag" data-tone="warning">Open</span></td><td class="num">€124.00</td><td><button type="button" class="danger" aria-label="Delete hotel receipt">✕</button></td></tr>
+        </tbody>
+      </table>
+    </figure>
+    <details>
+      <summary>Cost center</summary>
+      <dl><dt>Number</dt><dd>4711</dd><dt>Approver</dt><dd>Jana Nowak</dd></dl>
+    </details>
+  </section>
+  <section>
+    <h2>Approval</h2>
+    <p role="alert">The amount must be a number.</p>
+    <progress value="2" max="3">2 of 3 approved</progress>
+  </section>
+</main>`;
+
+const BaseStylesheetDemo = () => {
+  const [theme, setTheme] = createSignal<"light" | "dark">("light");
+  const [width, setWidth] = createSignal<"phone" | "desktop">("desktop");
+  const srcdoc = () =>
+    `<!doctype html><html lang="en" data-theme="${theme()}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${baseCss}</style></head><body>${basePage}</body></html>`;
+
+  return (
+    <DemoCard
+      id="base-stylesheet"
+      chip={[{ kind: "asset", name: "base.css", from: "@k2b/ui/base.css" }]}
+      description="A plain HTML page without its own CSS. Switch the theme attribute and the width; the page keeps one rhythm, flat key figures, quiet row actions, and a header row with the action at the end."
+      code={`import baseCss from "@k2b/ui/base.css" with { type: "text" };
+
+const page = \`<!doctype html>
+<html lang="en" data-theme="\${theme}">
+  <head><style>\${baseCss}</style></head>
+  <body>
+    <main>
+      <header class="row"><h1>Travel expenses</h1><button type="button" class="primary">Export PDF</button></header>
+      <ul><li><label><input type="checkbox"> Hand in the receipts</label><button type="button" class="danger" aria-label="Delete">✕</button></li></ul>
+      <div class="grid"><div class="stat"><span>Total</span><strong>€237.40</strong></div></div>
+    </main>
+  </body>
+</html>\`;
+
+<iframe title="Base stylesheet example" sandbox="" srcdoc={page} />`}
+    >
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-wrap gap-3">
+          <SegmentedControl
+            ariaLabel="Theme"
+            size="sm"
+            value={theme}
+            onValueChange={setTheme}
+            options={[
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+            ]}
+          />
+          <SegmentedControl
+            ariaLabel="Width"
+            size="sm"
+            value={width}
+            onValueChange={setWidth}
+            options={[
+              { value: "phone", label: "390 px" },
+              { value: "desktop", label: "Full width" },
+            ]}
+          />
+        </div>
+        <iframe
+          title="Base stylesheet example"
+          sandbox=""
+          srcdoc={srcdoc()}
+          style={{
+            width: width() === "phone" ? "390px" : "100%",
+            "max-width": "100%",
+            height: "36rem",
+            border: "0",
+            "border-radius": "var(--k2b-radius-surface)",
+          }}
+        />
       </div>
     </DemoCard>
   );
@@ -686,6 +805,11 @@ const demos: DemoSection = {
   utilities: () => (
     <DemoGrid columns="one">
       <ThemeDemo />
+    </DemoGrid>
+  ),
+  "base-stylesheet": () => (
+    <DemoGrid columns="one">
+      <BaseStylesheetDemo />
     </DemoGrid>
   ),
   paper: () => (

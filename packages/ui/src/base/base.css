@@ -1,0 +1,1097 @@
+/* @k2b/ui base stylesheet: classless styles for a plain HTML page.
+   Semantic HTML (headings, lists, tables, forms, buttons, details, dialog,
+   progress) looks like @k2b/ui in light and dark without classes. A few
+   short helper classes cover layouts that HTML has no element for.
+
+   Every rule and token sits in `@layer k2b-base`, so any unlayered rule of
+   the page wins without a specificity fight. Four state rules are
+   `!important` on purpose and stay in force: `[hidden]`, the hidden label of
+   a busy button, reduced motion, and what print hides.
+   `<html data-theme="dark">` switches the theme; the default is light. The
+   tokens carry the same names and values as the `.k2b-ui` scope (a parity
+   test keeps them equal).
+
+   Spacing: only the flow rules below set block margins. Siblings in a flow
+   container, `div` included, are spaced from above; no element rule sets a
+   top or bottom margin, so no element can cancel the rhythm. `.row`, `.grid`
+   and `.stat` take the flow margin from their children; custom flex or grid
+   layouts set `gap` and `> * { margin: 0 }` themselves. */
+@layer k2b-base {
+  :root {
+    color-scheme: light;
+
+    --k2b-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --k2b-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --k2b-radius-control: 0.5rem;
+    --k2b-radius-surface: 0.75rem;
+    --k2b-radius-dialog: 0.875rem;
+    --k2b-focus-width: 2px;
+    --k2b-danger-500: #ef4444;
+    --stdlib-chart-c1: #3b82f6;
+    --stdlib-chart-c2: #10b981;
+    --stdlib-chart-c3: #f59e0b;
+    --stdlib-chart-c4: #8b5cf6;
+    --stdlib-chart-c5: #ec4899;
+    --stdlib-chart-c6: #06b6d4;
+    --stdlib-chart-c7: #84cc16;
+    --stdlib-chart-c8: #f97316;
+
+    --k2b-surface: light-dark(#ffffff, #11151b);
+    --k2b-surface-canvas: light-dark(#fafafa, #090d12);
+    --k2b-surface-muted: light-dark(#f4f4f5, #20242a);
+    --k2b-surface-elevated: light-dark(#ffffff, #181d24);
+    --k2b-text: light-dark(#09090b, #fafafa);
+    --k2b-text-secondary: light-dark(#3f3f46, #e4e4e7);
+    --k2b-text-muted: light-dark(#52525b, #a1a1aa);
+    --k2b-placeholder-color: light-dark(#71717a, color-mix(in srgb, #a1a1aa 70%, #71717a));
+    --k2b-border: light-dark(#e4e4e7, #29313a);
+    --k2b-border-strong: light-dark(#d4d4d8, #3a4552);
+    --k2b-hover: light-dark(#eff6ff, #252c35);
+    --k2b-selected: light-dark(#dbeafe, #172554);
+    --k2b-action: light-dark(#1d4ed8, #93c5fd);
+    --k2b-action-hover: light-dark(#1e40af, #bfdbfe);
+    --k2b-action-solid: light-dark(#1d4ed8, #2563eb);
+    --k2b-action-solid-hover: light-dark(#1e40af, #1d4ed8);
+    --k2b-selection: light-dark(rgb(29 78 216 / 0.35), rgb(147 197 253 / 0.35));
+    --k2b-focus-ring: light-dark(#3b82f6, #60a5fa);
+    --k2b-info-surface: light-dark(#eff6ff, #172554);
+    --k2b-info-text: light-dark(#1d4ed8, #93c5fd);
+    --k2b-success-surface: light-dark(#ecfdf5, #052e26);
+    --k2b-success-text: light-dark(#047857, #6ee7b7);
+    --k2b-warning-surface: light-dark(#fffbeb, #422006);
+    --k2b-warning-text: light-dark(#92400e, #fcd34d);
+    --k2b-danger-surface: light-dark(#fef2f2, #450a0a);
+    --k2b-danger-text: light-dark(#b91c1c, #fca5a5);
+    /* light-dark() only takes colors, so the shadow switches with the theme attribute. */
+    --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* The root keeps the browser's font size, so rem sizes (touch targets, spacing) match @k2b/ui. */
+  html {
+    background: var(--k2b-surface);
+    color: var(--k2b-text);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    accent-color: var(--k2b-action-solid);
+  }
+
+  ::selection {
+    background: var(--k2b-selection);
+  }
+
+  /* The body carries padding and the reading width, so pages without <main> look right too. */
+  body {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 1.5rem;
+    font: 400 0.9375rem/1.55 var(--k2b-font-sans);
+  }
+
+  @media (max-width: 40rem) {
+    body {
+      padding: 1rem;
+    }
+  }
+
+  /* Containers may shrink below their content, so one wide table never widens a whole grid or page. */
+  :where(main, section, article, aside, header, footer, nav, form, fieldset, figure, li, div) {
+    min-width: 0;
+  }
+
+  /* ---------------------------------------------------------------- flow
+     The only rules that set block margins. All of them have zero
+     specificity; a later, more specific flow rule wins by source order. */
+
+  :where(body, main, section, article, aside, header, footer, nav, form, fieldset, dialog, details, figure, blockquote, ul, ol, li, dd, td, th, div)
+    > * {
+    margin-block: 0;
+  }
+
+  :where(body, main, section, article, aside, header, footer, form, fieldset, dialog, details, blockquote, div) > * + * {
+    margin-block-start: 1rem;
+  }
+
+  :where(main, body) > :where(section, article) + :where(section, article, h2) {
+    margin-block-start: 2.5rem;
+  }
+
+  :where(body, main, section, article, form, div) > * + :where(h2, h3) {
+    margin-block-start: 2rem;
+  }
+
+  :where(h1, h2, h3, h4) + * {
+    margin-block-start: 0.5rem;
+  }
+
+  :where(ul, ol):where(:not(nav > *)) > * + * {
+    margin-block-start: 0.25rem;
+  }
+
+  :where(details > summary) + * {
+    margin-block-start: 0.5rem;
+  }
+
+  :where(dialog) :where(* + footer, * + menu) {
+    margin-block-start: 1.25rem;
+  }
+
+  /* Checklist rows carry their own height; they sit flush. */
+  :where(ul:has(> li > input[type="checkbox"], > li > label > input[type="checkbox"])) > * + * {
+    margin-block-start: 0;
+  }
+
+  /* ---------------------------------------------------------------- type */
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  h3 {
+    font-size: 1.0625rem;
+  }
+
+  h4,
+  h5,
+  h6 {
+    font-size: 0.9375rem;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  small,
+  figcaption,
+  caption {
+    color: var(--k2b-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  a {
+    color: var(--k2b-action);
+    text-decoration: none;
+    border-radius: 2px;
+  }
+
+  a:hover {
+    color: var(--k2b-action-hover);
+    text-decoration: underline;
+  }
+
+  strong,
+  b {
+    font-weight: 600;
+  }
+
+  mark {
+    padding: 0 0.15em;
+    border-radius: 0.25rem;
+    color: inherit;
+    background: var(--k2b-warning-surface);
+  }
+
+  blockquote {
+    margin-inline: 0;
+    padding: 0.75rem 1rem;
+    border-radius: var(--k2b-radius-control);
+    color: var(--k2b-text-secondary);
+    background: var(--k2b-surface-muted);
+  }
+
+  hr {
+    height: 0.5rem;
+    border: 0;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--k2b-font-mono);
+    font-size: 0.8125rem;
+  }
+
+  :not(pre) > code,
+  kbd {
+    padding: 0.1em 0.35em;
+    border-radius: 0.3rem;
+    background: var(--k2b-surface-muted);
+  }
+
+  pre {
+    overflow-x: auto;
+    padding: 0.75rem 1rem;
+    border-radius: var(--k2b-radius-control);
+    background: var(--k2b-surface-muted);
+    line-height: 1.5;
+  }
+
+  /* ---------------------------------------------------------------- lists */
+
+  ul,
+  ol {
+    padding-inline-start: 1.25rem;
+  }
+
+  /* Detail views: a key/value grid. */
+  dl {
+    display: grid;
+    grid-template-columns: minmax(6rem, max-content) 1fr;
+    gap: 0.375rem 1.5rem;
+  }
+
+  dt {
+    color: var(--k2b-text-muted);
+  }
+
+  dd {
+    margin-inline-start: 0;
+  }
+
+  /* A list item that starts with a checkbox, or holds a label with one, is a
+     checklist row: no bullet, the label grows, buttons trail, done is dimmed.
+     Put buttons next to the label, never inside it. */
+  ul:has(> li > input[type="checkbox"], > li > label > input[type="checkbox"]) {
+    padding-inline-start: 0;
+    list-style: none;
+  }
+
+  li:has(> input[type="checkbox"], > label > input[type="checkbox"]) {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-height: 2.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--k2b-radius-control);
+    list-style: none;
+  }
+
+  li:has(> input[type="checkbox"], > label > input[type="checkbox"]):hover {
+    background: var(--k2b-surface-muted);
+  }
+
+  li:has(> input[type="checkbox"], > label > input[type="checkbox"]) > label {
+    flex: 1;
+    min-width: 0;
+    padding-block: 0.25rem;
+    overflow-wrap: anywhere;
+  }
+
+  li:has(> input[type="checkbox"]:checked, > label > input[type="checkbox"]:checked) > label {
+    color: var(--k2b-text-muted);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+  }
+
+  /* ---------------------------------------------------------------- tables */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  caption {
+    padding-block-end: 0.5rem;
+    font-weight: 600;
+    text-align: start;
+  }
+
+  th,
+  td {
+    padding: 0.5rem 0.75rem;
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  th {
+    color: var(--k2b-text-muted);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  :is(th, td):first-child {
+    padding-inline-start: 0.5rem;
+  }
+
+  tbody tr:hover {
+    background: var(--k2b-surface-muted);
+  }
+
+  tbody tr > :first-child {
+    border-start-start-radius: var(--k2b-radius-control);
+    border-end-start-radius: var(--k2b-radius-control);
+  }
+
+  tbody tr > :last-child {
+    border-start-end-radius: var(--k2b-radius-control);
+    border-end-end-radius: var(--k2b-radius-control);
+  }
+
+  tfoot td,
+  tfoot th {
+    font-weight: 600;
+  }
+
+  /* Wide tables scroll inside a <figure> instead of the page. The relative
+     position keeps visually hidden headers inside the scroll box. */
+  figure:has(> table),
+  .scroll {
+    position: relative;
+    overflow-x: auto;
+  }
+
+  /* ---------------------------------------------------------------- forms */
+
+  label {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--k2b-text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  label:has(> input:is([type="checkbox"], [type="radio"])) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--k2b-text);
+    font-size: 0.9375rem;
+    font-weight: 400;
+  }
+
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="submit"], [type="button"], [type="reset"]),
+  select,
+  textarea {
+    width: 100%;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.625rem;
+    border: 1px solid transparent;
+    border-radius: var(--k2b-radius-control);
+    color: var(--k2b-text);
+    background: var(--k2b-surface-muted);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.25rem;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease;
+  }
+
+  textarea {
+    min-height: 5rem;
+    resize: vertical;
+  }
+
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="submit"], [type="button"], [type="reset"]):hover:not(:focus, :disabled),
+  select:hover:not(:focus, :disabled),
+  textarea:hover:not(:focus, :disabled) {
+    border-color: var(--k2b-border);
+  }
+
+  /* Fields draw the focus outline inside their box, also on mouse focus.
+     An outline, unlike a box-shadow, also paints on a native select in
+     WebKit. Every other control keeps the outline outside. */
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="submit"], [type="button"], [type="reset"]):focus,
+  select:focus,
+  textarea:focus {
+    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+    background: var(--k2b-surface);
+  }
+
+  ::placeholder {
+    color: var(--k2b-placeholder-color);
+    opacity: 1;
+  }
+
+  :is(input, select, textarea):user-invalid {
+    border-color: var(--k2b-danger-500);
+  }
+
+  input:is([type="checkbox"], [type="radio"]) {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin: 0;
+  }
+
+  input[type="range"] {
+    width: 100%;
+  }
+
+  input[type="file"] {
+    max-width: 100%;
+    color: var(--k2b-text-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+  }
+
+  input[type="file"]::file-selector-button {
+    margin-inline-end: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    border: 0;
+    border-radius: var(--k2b-radius-control);
+    color: var(--k2b-text);
+    background: var(--k2b-surface-muted);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  fieldset {
+    min-width: 0;
+    margin-inline: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  legend {
+    padding: 0 0 0.5rem;
+    font-weight: 600;
+  }
+
+  output {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------------------------------------------------------------- buttons */
+
+  button,
+  input:is([type="submit"], [type="button"], [type="reset"]),
+  ::file-selector-button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button,
+  input:is([type="submit"], [type="button"], [type="reset"]) {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border: 1px solid transparent;
+    border-radius: var(--k2b-radius-control);
+    color: var(--k2b-text);
+    background: var(--k2b-surface-muted);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+
+  button:hover:not(:disabled) {
+    background: var(--k2b-hover);
+  }
+
+  /* The submit button of a form and `.primary` are filled. Cancel buttons
+     (`value="cancel"`) and `type="button"` stay calm. */
+  .primary,
+  form :is(button:not([type]), button[type="submit"], input[type="submit"]):not(.danger, [value="cancel"]) {
+    color: #ffffff;
+    background: var(--k2b-action-solid);
+  }
+
+  .primary:hover:not(:disabled),
+  form :is(button:not([type]), button[type="submit"]):not(.danger, [value="cancel"]):hover:not(:disabled) {
+    background: var(--k2b-action-solid-hover);
+  }
+
+  .danger {
+    color: var(--k2b-danger-text);
+    background: transparent;
+  }
+
+  .danger:hover:not(:disabled) {
+    background: var(--k2b-danger-surface);
+  }
+
+  /* A delete action in every list or table row stays quiet until its row is
+     hovered or holds the focus. Touch screens keep it quiet and visible. */
+  :is(li, tr):not(:hover, :focus-within) .danger {
+    color: var(--k2b-text-muted);
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* Busy: a spinner over the hidden label, so the button keeps its size. */
+  button[aria-busy="true"] {
+    color: transparent !important;
+    pointer-events: none;
+  }
+
+  button[aria-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 1rem;
+    height: 1rem;
+    margin: auto;
+    border: 2px solid var(--k2b-text-muted);
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: k2b-base-spin 0.7s linear infinite;
+  }
+
+  .primary[aria-busy="true"]::after,
+  form button:not([type], .danger, [value="cancel"])[aria-busy="true"]::after,
+  form button[type="submit"][aria-busy="true"]::after {
+    border-color: #ffffff;
+    border-right-color: transparent;
+  }
+
+  @keyframes k2b-base-spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+
+  /* ---------------------------------------------------------------- layout helpers */
+
+  /* Fields and buttons side by side; fields grow, everything aligns at the bottom. */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .row > * {
+    margin: 0;
+  }
+
+  .row > :is(label, input, select, textarea):not(:has(> :is([type="checkbox"], [type="radio"]))) {
+    flex: 1 1 12rem;
+  }
+
+  /* A row with a heading, directly or in a title block such as
+     `<div><h1>…</h1><p class="muted">…</p></div>`, is a header: title first,
+     actions at the end, centered. Actions that wrap below a long title on a
+     phone stay at the end. */
+  .row:has(> :is(h1, h2, h3), > * > :is(h1, h2, h3)) {
+    align-items: center;
+  }
+
+  .row > :is(h1, h2, h3, :has(> :is(h1, h2, h3))) + * {
+    margin-inline-start: auto;
+  }
+
+  /* Fields or key figures in columns of at least 14rem. */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+    gap: 1rem;
+  }
+
+  .grid > * {
+    margin: 0;
+  }
+
+  /* Key figures are short, so they fit two or three to a phone row. */
+  .grid:has(> .stat) {
+    grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+  }
+
+  /* A key figure: a small muted label, the value large beneath it. Flat, without a surface. */
+  .stat {
+    display: grid;
+    gap: 0.125rem;
+  }
+
+  .stat > * {
+    margin: 0;
+  }
+
+  .stat > :first-child {
+    color: var(--k2b-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .stat strong {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .muted {
+    color: var(--k2b-text-muted);
+  }
+
+  .num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* Status tag: <span class="tag" data-tone="success">Paid</span>. */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.0625rem 0.5rem;
+    border-radius: 999px;
+    color: var(--k2b-text-secondary);
+    background: var(--k2b-surface-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* Inline feedback. role="alert" is an error surface, hidden while empty.
+     role="status" is muted text without a surface, so a message next to a
+     button never looks like a second button. <output> holds a result the
+     reader needs, so it keeps the text color. */
+  [role="alert"] {
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--k2b-radius-control);
+    color: var(--k2b-danger-text);
+    background: var(--k2b-danger-surface);
+  }
+
+  [role="alert"]:empty {
+    display: none;
+  }
+
+  [role="status"] {
+    color: var(--k2b-text-muted);
+  }
+
+  /* data-tone colors the surface of tags and alerts, and only the text of status messages and outputs. */
+  :is(.tag, [role="alert"])[data-tone="info"] {
+    color: var(--k2b-info-text);
+    background: var(--k2b-info-surface);
+  }
+
+  :is(.tag, [role="alert"])[data-tone="success"] {
+    color: var(--k2b-success-text);
+    background: var(--k2b-success-surface);
+  }
+
+  :is(.tag, [role="alert"])[data-tone="warning"] {
+    color: var(--k2b-warning-text);
+    background: var(--k2b-warning-surface);
+  }
+
+  :is(.tag, [role="alert"])[data-tone="danger"] {
+    color: var(--k2b-danger-text);
+    background: var(--k2b-danger-surface);
+  }
+
+  :is([role="status"], output)[data-tone="info"] {
+    color: var(--k2b-info-text);
+  }
+
+  :is([role="status"], output)[data-tone="success"] {
+    color: var(--k2b-success-text);
+  }
+
+  :is([role="status"], output)[data-tone="warning"] {
+    color: var(--k2b-warning-text);
+  }
+
+  :is([role="status"], output)[data-tone="danger"] {
+    color: var(--k2b-danger-text);
+  }
+
+  /* Tabs and filters: buttons or links in a nav; aria-current, aria-pressed or aria-selected marks the active one. */
+  nav,
+  nav > :is(ul, ol) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  nav :is(a, button) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: var(--k2b-radius-control);
+    color: var(--k2b-text-secondary);
+    background: transparent;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  nav :is(a, button):hover {
+    color: var(--k2b-text);
+    background: var(--k2b-surface-muted);
+    text-decoration: none;
+  }
+
+  nav :is(a, button):is([aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-selected="true"]) {
+    color: var(--k2b-text);
+    background: var(--k2b-selected);
+  }
+
+  /* ---------------------------------------------------------------- disclosure and dialog */
+
+  details > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    border-radius: var(--k2b-radius-control);
+    font-weight: 500;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details > summary::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    rotate: -45deg;
+    transition: rotate 150ms ease;
+  }
+
+  details[open] > summary::before {
+    rotate: 45deg;
+  }
+
+  dialog {
+    width: min(32rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    padding: 1.25rem;
+    border: 0;
+    border-radius: var(--k2b-radius-dialog);
+    color: var(--k2b-text);
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-float);
+  }
+
+  /* A modal dialog is centered in the top layer; no flow margin applies to it. */
+  dialog:modal {
+    margin: auto;
+  }
+
+  dialog::backdrop {
+    background: rgb(9 9 11 / 0.45);
+  }
+
+  dialog :is(footer, menu) {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0;
+  }
+
+  /* ---------------------------------------------------------------- feedback */
+
+  progress,
+  meter {
+    width: 100%;
+    height: 0.5rem;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    background: var(--k2b-surface-muted);
+    appearance: none;
+  }
+
+  progress::-webkit-progress-bar,
+  meter::-webkit-meter-inner-element,
+  meter::-webkit-meter-bar {
+    border: 0;
+    border-radius: 999px;
+    background: var(--k2b-surface-muted);
+  }
+
+  progress::-webkit-progress-value,
+  meter::-webkit-meter-optimum-value {
+    border-radius: 999px;
+    background: var(--k2b-action-solid);
+  }
+
+  progress::-moz-progress-bar,
+  meter::-moz-meter-bar {
+    border-radius: 999px;
+    background: var(--k2b-action-solid);
+  }
+
+  /* ---------------------------------------------------------------- media and charts */
+
+  img,
+  svg,
+  video,
+  canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  figure {
+    margin-inline: 0;
+  }
+
+  /* Chart markup as the @k2b/ui Chart renders it: `.k2b-chart` wraps
+     `.k2b-chart__svg` with `--k2b-chart-width` and `--k2b-chart-height` and
+     the @k2b/stdlib SVG. The page removes the `<style>` element stdlib embeds
+     in the SVG: its rules sit outside this layer and would override the
+     tokens below. Cartesian geometry (`data-stretch`, with
+     `preserveAspectRatio="none"` on the SVG and a `transform-origin` at each
+     text's x and y) fills the width; text and markers keep their pixel size.
+     These rules mirror the `.k2b-chart` rules of styles.css. */
+  .k2b-chart {
+    position: relative;
+    display: block;
+    min-width: 0;
+    color: var(--k2b-text);
+  }
+
+  .k2b-chart__svg {
+    display: block;
+    width: 100%;
+    height: var(--k2b-chart-height);
+    max-height: 70vh;
+  }
+
+  .k2b-chart__svg > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .k2b-chart__svg[data-stretch] {
+    container-type: size;
+    --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), 100cqw));
+    --k2b-chart-inverse-y: tan(atan2(var(--k2b-chart-height), 100cqh));
+  }
+
+  .k2b-chart__svg[data-stretch] text {
+    scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+  }
+
+  .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
+    transform-box: fill-box;
+    transform-origin: center;
+    scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+  }
+
+  /* The legend scales as one group, so its labels never overlap on a narrow screen. */
+  .k2b-chart__svg[data-stretch] .stdlib-chart-legend text {
+    scale: none;
+  }
+
+  .k2b-chart[data-chart-kind="scatter"] .k2b-chart__svg[data-stretch] .stdlib-chart-point {
+    scale: calc(var(--k2b-chart-inverse-x) * 1.75) calc(var(--k2b-chart-inverse-y) * 1.75);
+  }
+
+  .k2b-chart__svg[data-stretch] :is(path, line, rect, circle) {
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* Room for the sparkline's end markers, so a short sparkline never clips them. */
+  .k2b-chart[data-chart-kind="sparkline"] .k2b-chart__svg {
+    padding: 4px;
+  }
+
+  .k2b-chart__svg:not([data-stretch]) {
+    height: auto;
+    max-width: calc(var(--k2b-chart-width) * 1.5);
+    margin-inline: auto;
+  }
+
+  .stdlib-chart {
+    color: inherit;
+    overflow: visible;
+  }
+
+  .stdlib-chart text {
+    font-family: var(--k2b-font-sans);
+  }
+
+  .stdlib-chart :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value, .stdlib-chart-axis-label) {
+    font-family: var(--k2b-font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stdlib-chart-series-0 { fill: var(--stdlib-chart-c1); stroke: var(--stdlib-chart-c1); }
+  .stdlib-chart-series-1 { fill: var(--stdlib-chart-c2); stroke: var(--stdlib-chart-c2); }
+  .stdlib-chart-series-2 { fill: var(--stdlib-chart-c3); stroke: var(--stdlib-chart-c3); }
+  .stdlib-chart-series-3 { fill: var(--stdlib-chart-c4); stroke: var(--stdlib-chart-c4); }
+  .stdlib-chart-series-4 { fill: var(--stdlib-chart-c5); stroke: var(--stdlib-chart-c5); }
+  .stdlib-chart-series-5 { fill: var(--stdlib-chart-c6); stroke: var(--stdlib-chart-c6); }
+  .stdlib-chart-series-6 { fill: var(--stdlib-chart-c7); stroke: var(--stdlib-chart-c7); }
+  .stdlib-chart-series-7 { fill: var(--stdlib-chart-c8); stroke: var(--stdlib-chart-c8); }
+  .stdlib-chart-axis { stroke: currentColor; opacity: 0.25; fill: none; }
+  .stdlib-chart-tick-label { font-size: 11px; fill: currentColor; opacity: 0.65; }
+  .stdlib-chart-axis-label { font-size: 11px; fill: currentColor; opacity: 0.85; }
+  .stdlib-chart-grid { stroke: currentColor; opacity: 0.08; stroke-dasharray: 2 2; fill: none; }
+  .stdlib-chart-title { font-size: 14px; font-weight: 600; fill: currentColor; }
+  .stdlib-chart-subtitle { font-size: 11px; fill: currentColor; opacity: 0.7; }
+  .stdlib-chart-reference { stroke: currentColor; opacity: 0.5; stroke-dasharray: 4 4; fill: none; }
+  .stdlib-chart-reference-label { font-size: 10px; fill: currentColor; opacity: 0.7; }
+  .stdlib-chart-line { fill: none; stroke-width: 2; }
+  .stdlib-chart-area { fill-opacity: 0.18; stroke: none; }
+  .stdlib-chart-sparkline { fill: none; stroke-width: 1.5; stroke: currentColor; }
+  .stdlib-chart-sparkline-area { stroke: none; }
+  .stdlib-chart-sparkline-last { fill: currentColor; stroke: none; }
+  .stdlib-chart-sparkline-max { fill: var(--stdlib-chart-c2); stroke: none; }
+  .stdlib-chart-sparkline-min { fill: var(--k2b-danger-500); stroke: none; }
+  .stdlib-chart-point { stroke: var(--k2b-surface); stroke-width: 1.5; }
+  .stdlib-chart-slice { stroke: var(--k2b-surface); stroke-width: 2; stroke-linejoin: round; }
+  .stdlib-chart-label { font-size: 11px; fill: currentColor; }
+  .stdlib-chart-bar-value { font-size: 10px; fill: currentColor; opacity: 0.8; }
+  .stdlib-chart-errorbar { stroke: currentColor; opacity: 0.55; fill: none; stroke-width: 1; }
+  .stdlib-chart-error-band { fill-opacity: 0.15; stroke: none; }
+  .stdlib-chart-trendline { stroke: currentColor; opacity: 0.55; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+  .stdlib-chart-minor-tick { stroke: currentColor; opacity: 0.25; }
+  .stdlib-chart-legend-swatch { stroke: none; }
+  .stdlib-chart-legend-label { font-size: 11px; font-weight: 400; fill: currentColor; stroke: none; }
+  .stdlib-chart-empty-text { font-size: 11px; fill: currentColor; opacity: 0.5; }
+  .stdlib-chart-gauge-track { stroke: currentColor; stroke-width: 10; opacity: 0.12; fill: none; stroke-linecap: round; }
+  .stdlib-chart-gauge-fill { stroke-width: 10; fill: none; stroke-linecap: round; }
+  .stdlib-chart-gauge-gradient-segment { stroke-width: 10; fill: none; stroke-linecap: butt; }
+  .stdlib-chart-gauge-gradient-scale { opacity: 0.22; }
+  .stdlib-chart-gauge-needle { stroke-width: 2; fill: none; stroke-linecap: round; }
+  .stdlib-chart-gauge-hub { fill: currentColor; stroke: none; }
+  .stdlib-chart-gauge-value { font-size: 28px; font-weight: 700; fill: currentColor; }
+  .stdlib-chart-gauge-label { font-size: 12px; fill: currentColor; opacity: 0.72; }
+  .stdlib-chart-gauge-unit { font-size: 11px; fill: currentColor; opacity: 0.6; }
+
+  /* ---------------------------------------------------------------- states */
+
+  :focus-visible {
+    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+    outline-offset: 2px;
+  }
+
+  @media (pointer: coarse) {
+    button,
+    input:not([type="checkbox"], [type="radio"], [type="range"]),
+    select,
+    details > summary,
+    nav :is(a, button) {
+      min-height: 2.75rem;
+    }
+
+    /* Icon-only buttons such as a row's ✕ get the full width too. */
+    button,
+    input:is([type="submit"], [type="button"], [type="reset"]),
+    nav :is(a, button) {
+      min-width: 2.75rem;
+    }
+
+    /* The label is the tap target of a checklist row. */
+    li:has(> input[type="checkbox"], > label > input[type="checkbox"]) > label {
+      min-height: 2.75rem;
+    }
+
+    input:is([type="checkbox"], [type="radio"]) {
+      width: 1.375rem;
+      height: 1.375rem;
+    }
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0s !important;
+      animation-duration: 0s !important;
+    }
+  }
+
+  @media print {
+    /* Paper is white: a dark page prints with the light tokens. */
+    :root,
+    :root[data-theme="dark"] {
+      color-scheme: light;
+    }
+
+    html {
+      background: #ffffff;
+      color: #09090b;
+    }
+
+    body {
+      max-width: none;
+      padding: 0;
+      font-size: 10.5pt;
+    }
+
+    button,
+    input[type="file"],
+    nav,
+    dialog {
+      display: none !important;
+    }
+
+    tbody tr:hover {
+      background: none;
+    }
+
+    table,
+    figure,
+    .stat {
+      break-inside: avoid;
+    }
+
+    .k2b-chart__svg {
+      max-height: none;
+    }
+  }
+}
