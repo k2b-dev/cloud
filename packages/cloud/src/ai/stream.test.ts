@@ -122,7 +122,7 @@ describe("resolved action snapshot reconciliation", () => {
         { callId: "done-call", resolvedEvent: { type: "tool_result", callId: "done-call", result: "replacement" } },
       ]),
     ).toEqual([
-      { id: "approval", kind: "tool", callId: "approval-call", name: "send", status: "running", approval: undefined },
+      { id: "approval", kind: "tool", callId: "approval-call", name: "send", status: "running", approval: undefined, approved: true },
       {
         id: "client",
         kind: "tool",
@@ -192,5 +192,34 @@ describe("persisted tool outcomes", () => {
         presentation: undefined,
       },
     ]);
+  });
+
+  test("rebuilds an approved call with its decision, so history keeps the approval receipt", () => {
+    const [block] = buildBlocksFromMessages([
+      { seq: 1, message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "code_run", args: {} }] } },
+      {
+        seq: 2,
+        message: { role: "tool_result", callId: "call-1", name: "code_run", result: { ok: true }, isError: false },
+        meta: { toolOutcomes: { "call-1": "approved" } },
+      },
+    ]);
+    expect(block).toMatchObject({ kind: "tool", status: "completed", approved: true });
+  });
+
+  test("a resolved approval marks the waiting call as approved", () => {
+    const [block] = reconcileResolvedTurnActions(
+      [
+        {
+          id: toolBlockId("call-1"),
+          kind: "tool",
+          callId: "call-1",
+          name: "code_run",
+          status: "awaiting_approval",
+          approval: { allowAlways: false },
+        },
+      ],
+      [{ callId: "call-1", resolvedEvent: { type: "approval_response", callId: "call-1", approved: true } }],
+    );
+    expect(block).toMatchObject({ status: "running", approval: undefined, approved: true });
   });
 });

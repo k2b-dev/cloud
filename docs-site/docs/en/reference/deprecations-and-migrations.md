@@ -51,6 +51,38 @@ Update Core and Assistant together. While their versions differ, and when a
 turn resumes a call that an earlier release completed, a failed call can still
 reach the agent as a successful result, as in earlier releases.
 
+## Assistant turns fold finished work into one line
+
+The chat shows each Assistant turn in four places: one work line, the delivered
+results, the newest text, and receipts for actions and decisions. See
+[Chat interface](/en/docs/ai/chat-interface#four-places-per-turn).
+
+`AiChatActions.renderCodePresentation` now receives an accessor instead of a
+value. Cloud calls it once per `code_present` call, as soon as the call starts,
+so the host can reserve its frame and keep a running session when the turn
+ends. Replace `renderCodePresentation: (result) => <View result={result} />`
+with `renderCodePresentation: (result) => <View result={result()} />`, and
+treat `undefined` as "still running".
+
+The server records two facts it did not record before:
+
+- A turn that ends without a loop end of its own, such as a stop while an
+  approval waits or a turn the sweep finalizes, stores `aborted` after a stop,
+  or `error` when it failed or its wait expired, as the loop end of its last
+  assistant message. Turns that ended this way before the upgrade show as
+  finished.
+- The stored result of a call the user approved carries the decision, so the
+  approval stays visible as a receipt; a call that never returned keeps the
+  decision on the message that holds it. Approvals decided before the upgrade
+  show as ordinary steps, except Cloud actions, which always get a receipt.
+- The time a secret prompt in Studio waits for its answer now counts as
+  waiting instead of work, as approvals and survey answers do.
+
+The live turn snapshot carries `actionWaitMs` and `waitingSince`, so a client
+that reconnects shows the same work time. Both fields are optional: Core and
+Assistant can update in either order, and open Assistant tabs show the new view
+after a reload.
+
 ## Conversation streams announce provider retries
 
 The conversation stream now sends a `provider_retry` event while a model call

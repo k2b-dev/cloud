@@ -5,22 +5,19 @@ import { type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
 
 test("uses the shared message streaming state before the first model block", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
-  const blocksSource = readFileSync(resolve(import.meta.dir, "blocks.tsx"), "utf8");
+  const viewSource = readFileSync(resolve(import.meta.dir, "turn-view.tsx"), "utf8");
 
-  expect(presentationSource).toContain("id: `${turn.turnId}-pending`");
-  expect(presentationSource).toContain('kind: "message"');
-  expect(presentationSource).toContain('status: "streaming"');
+  expect(presentationSource).toContain("if (segments.length === 0 ||");
+  expect(presentationSource).toContain('status: turn.status === "running" && last ? "streaming" : "complete"');
   expect(presentationSource).not.toContain("Generating response");
-  expect(blocksSource).toContain("label={t().thinking}");
-  expect(blocksSource).toContain("label={t().showReasoning}");
+  expect(viewSource).toContain("t.stepThinking");
 });
 
-test("uses the full message width for every disclosure row, including persisted messages", () => {
+test("spans the message width for turns with work, live and in history", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
   const cloudStyles = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
 
-  expect(presentationSource).toContain('class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
-  expect(presentationSource).toContain('class: blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
+  expect(presentationSource.match(/class: isWideLayout\(layout\) \? "ai-chat-message-wide" : undefined/g)).toHaveLength(2);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{\s*width:\s*100%;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{[^}]*max-width:\s*none;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s+:where\([^}]+min-width:\s*0;/);

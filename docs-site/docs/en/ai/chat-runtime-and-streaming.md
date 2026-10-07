@@ -317,6 +317,9 @@ re-enqueues its continuation; a conflicting response for an already resolved
 call is rejected. On reconnect, the state snapshot reconciles durable action
 responses before rendering, so resolved approval controls do not reappear and
 plain browser tools are not executed again merely because the page reloaded.
+A call the user approved keeps `approved: true` on its tool block, and its
+stored result records the decision, as a rejection does, so history can show
+the decision after a reload.
 
 Do not maintain a second client-side chat state machine.
 
@@ -453,6 +456,24 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
+### Scheduled chat tasks
+
+A scheduled task belongs to one chat and runs as that chat's owner. Creating
+it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
+`grants` list names every capability the task may call. In a background run,
+every app capability needs a matching grant, Queries included, such as the
+reader Query behind a Project reference. A task without grants can use only
+built-in tools such as chat files. Fixed input values must
+match exactly, and the owner's current access still applies to each call.
+
+A background run cannot ask for approval. Remembered approvals from the chat
+do not apply, and an operation that needs an approval or a browser fails the
+run, which moves the task to `needs_attention`. Action grants are accepted only
+for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
+Actions that ask for every call cannot be scheduled. Before each run, Core
+checks that the owner is active, the chat is not archived, and the mandate is
+confirmed and unchanged.
+
 ### Scheduled Code Mode
 
 Scheduled turns can run Code Mode without a user tab. Core binds each call and
@@ -526,11 +547,27 @@ a path from the original filename.
 Chat timing uses the durable user turn's wall-clock interval. Each model request
 records its generation interval before tool execution; these measurements survive
 client actions and executor resumption. Tool execution and approval/browser waits
-use their durable audit timestamps. Overlapping phases are counted once. An older
-or incomplete trace has no aggregate timing or token-rate estimate; the chat can
-still display elapsed time from persisted messages. Live `message_saved` events
-carry usage after each model response, before its tools finish, without rendering
-a second copy of the active response.
+use their durable audit timestamps: an approval or an answer waits until the user
+gives it, a secret prompt included, and a tool the browser runs by itself waits
+only until it starts. Overlapping phases are counted once. An older or
+incomplete trace has no aggregate timing or token-rate estimate; the chat can
+still display elapsed time from persisted messages. The chat shows a turn's work
+time: wall time minus time spent waiting for approvals and other user actions.
+While a turn runs, its state snapshot carries `actionWaitMs`, the time already
+spent on answered waits, and `waitingSince`, the start of the wait that is still
+open, by the same rules, so a client that reconnects continues the same clock
+and the finished turn shows the same value. Older servers omit both fields.
+
+A turn that is finished without a loop end of its own, such as a stop while an
+approval waits or a turn the sweep finalizes, records `aborted` after a stop,
+or `error` when it failed or its wait expired, as `loopDoneReason` on its last
+assistant message. A failure also replaces the `aborted` that a loop cut off by
+its run time limit records, so the limit never looks like a user stop. History
+then shows the turn as stopped or interrupted, and a call that never ran as not
+run. A call the user approved that never returned keeps its decision as
+`toolOutcomes` on the message that holds the call, so history still shows its
+receipt. Live `message_saved` events carry usage after each model response,
+before its tools finish, without rendering a second copy of the active response.
 
 ### Run time budget
 

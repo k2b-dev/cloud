@@ -1235,6 +1235,20 @@ describe("assistant CLI", () => {
     expect(stdout.join("")).toContain("Release notes");
   });
 
+  test("says how the Assistant reads added Project knowledge and references", async () => {
+    const fetcher: CloudCliContext["fetch"] = async (path) =>
+      String(path) === "/api/ai/projects" ? json({ projects: [{ shortId: "proj12", name: "Finance" }] }) : json({ id: "abc123" }, 201);
+    const knowledge = createContext(["projects", "knowledge", "add", "Finance", "Guidelines"], fetcher, "json");
+    knowledge.ctx.flags.content = "Use EUR.";
+    await assistantCli.run(knowledge.ctx);
+    expect(knowledge.stderr.join("")).toContain("Knowledge is a copy");
+
+    const reference = createContext(["projects", "references", "add", "Finance", "notebooks.note", "note-1"], fetcher, "json");
+    await assistantCli.run(reference.ctx);
+    expect(reference.stderr.join("")).toContain("reads this resource live with each member's own access");
+    expect(JSON.parse(reference.stdout.join(""))).toEqual({ id: "abc123" });
+  });
+
   test("rejects ambiguous Project display names", async () => {
     const project = (shortId: string) => ({
       id: shortId,

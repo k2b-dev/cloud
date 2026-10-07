@@ -21,7 +21,7 @@ import { Chat } from "@k2b/ui";
 
 ## Cloud ownership
 
-- `createAiChatTimeline` reactively maps persisted messages and the active turn to `ChatTimelineItem[]`.
+- `createAiChatTimeline` reactively maps persisted messages and the active turn to `ChatTimelineItem[]`. Each assistant turn shows one work line, its results, its newest text, and its actions; the live turn and its history share item ids, so finishing a turn moves nothing.
 - `AiChatActionsProvider` binds approval, frontend-tool, retry, fork, message-feedback, and file behavior to rich Cloud blocks.
 - `aiChatModelOptions` and `aiChatAttachments` map Cloud records into portable values.
 - `aiComposerSendInput` maps `ChatSubmitInput` back to the Cloud controller input.

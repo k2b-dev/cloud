@@ -827,6 +827,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         { id: "block", kind: "tool", callId: "call", name: "code_open", args: { id }, status: "awaiting_client", frontendMode: "client" },
       ],
       liveSeq: 1,
+      actionWaitMs: 0,
+      waitingSince: null,
     });
     const first = { conversationId, turnId: "ghijkl", callId: "call", clientId: crypto.randomUUID(), input };
     const second = { ...first, turnId, clientId: crypto.randomUUID() };
@@ -1891,6 +1893,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         },
         liveBlocks: [],
         liveSeq: 1,
+        actionWaitMs: 0,
+        waitingSince: null,
       });
       try {
         const result = await evaluateCodeMode({ ...owner, conversationId, locale: "de", signal: AbortSignal.timeout(1_200_000) }, turnId);
@@ -2013,7 +2017,13 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       completedAt: null,
       error: null,
     };
-    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({ turn: activeTurn, liveBlocks: [], liveSeq: 1 });
+    const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
+      turn: activeTurn,
+      liveBlocks: [],
+      liveSeq: 1,
+      actionWaitMs: 0,
+      waitingSince: null,
+    });
     // authorizeCodeExecution reads the turn and its run config; a plain chat turn carries neither mandate nor background.
     // getTurn follows the active-turn stub so cancelling the turn below is seen by both readers.
     spyOn(aiConversations, "getTurn").mockImplementation(

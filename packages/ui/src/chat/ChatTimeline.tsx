@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "../layout/scroll-fade";
 import Placeholder from "../surfaces/Placeholder";
@@ -8,6 +8,7 @@ import type { ChatAction, ChatActivityTone, ChatAttachment, ChatMessageStatus, C
 
 export type ChatMessageItem = {
   kind: "message";
+  /** Unique within the timeline. A record with a known id updates its row in place instead of replacing it. */
   id: string;
   role: ChatRole;
   content?: JSX.Element;
@@ -24,6 +25,7 @@ export type ChatMessageItem = {
 
 export type ChatActivityItem = {
   kind: "activity";
+  /** Unique within the timeline. A record with a known id updates its row in place instead of replacing it. */
   id: string;
   label: string;
   description?: string;
@@ -83,6 +85,10 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   const canLoadOlder = () => Boolean(props.onLoadOlder && props.hasMore && !loadingOlder());
   const hasHistoryControls = () => loadingOlder() || historyError() !== null || canLoadOlder();
   const hasContent = () => props.items.length > 0;
+  const itemIds = createMemo(() => props.items.map((item) => item.id), undefined, {
+    equals: (previous, next) => previous.length === next.length && previous.every((id, index) => id === next[index]),
+  });
+  const itemsById = createMemo(() => new Map(props.items.map((item) => [item.id, item])));
   const threshold = () => Math.max(0, props.followThreshold ?? 96);
 
   const cancelFollow = () => {
@@ -306,45 +312,59 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
               />
             }
           >
-            <For each={props.items}>
-              {(item) => (
-                <Show
-                  when={item.kind === "message"}
-                  fallback={
-                    <ChatActivity
-                      label={(item as ChatActivityItem).label}
-                      description={(item as ChatActivityItem).description}
-                      icon={(item as ChatActivityItem).icon}
-                      leading={(item as ChatActivityItem).leading}
-                      accent={(item as ChatActivityItem).accent}
-                      tone={(item as ChatActivityItem).tone}
-                      busy={(item as ChatActivityItem).busy}
-                      trailing={(item as ChatActivityItem).trailing}
-                      defaultOpen={(item as ChatActivityItem).defaultOpen}
-                      anchorId={(item as ChatActivityItem).anchorId}
-                      class={(item as ChatActivityItem).class}
-                    >
-                      {(item as ChatActivityItem).content}
-                    </ChatActivity>
-                  }
-                >
-                  <ChatMessage
-                    role={(item as ChatMessageItem).role}
-                    label={(item as ChatMessageItem).label}
-                    createdAt={(item as ChatMessageItem).createdAt}
-                    timeLabel={(item as ChatMessageItem).timeLabel}
-                    status={(item as ChatMessageItem).status}
-                    attachments={(item as ChatMessageItem).attachments}
-                    actions={(item as ChatMessageItem).actions}
-                    actionDisplay={(item as ChatMessageItem).actionDisplay}
-                    anchorId={(item as ChatMessageItem).anchorId}
-                    onActionError={props.onActionError}
-                    class={(item as ChatMessageItem).class}
+            <For each={itemIds()}>
+              {(id) => {
+                // A row is keyed by its id, so an updated record with the same id keeps its DOM and component state.
+                const item = () => itemsById().get(id);
+                const message = () => {
+                  const value = item();
+                  return value?.kind === "message" ? value : undefined;
+                };
+                const activity = () => {
+                  const value = item();
+                  return value?.kind === "activity" ? value : undefined;
+                };
+                return (
+                  <Show
+                    when={message() !== undefined}
+                    fallback={
+                      <Show when={activity() !== undefined}>
+                        <ChatActivity
+                          label={activity()!.label}
+                          description={activity()!.description}
+                          icon={activity()!.icon}
+                          leading={activity()!.leading}
+                          accent={activity()!.accent}
+                          tone={activity()!.tone}
+                          busy={activity()!.busy}
+                          trailing={activity()!.trailing}
+                          defaultOpen={activity()!.defaultOpen}
+                          anchorId={activity()!.anchorId}
+                          class={activity()!.class}
+                        >
+                          {activity()!.content}
+                        </ChatActivity>
+                      </Show>
+                    }
                   >
-                    {(item as ChatMessageItem).content}
-                  </ChatMessage>
-                </Show>
-              )}
+                    <ChatMessage
+                      role={message()!.role}
+                      label={message()!.label}
+                      createdAt={message()!.createdAt}
+                      timeLabel={message()!.timeLabel}
+                      status={message()!.status}
+                      attachments={message()!.attachments}
+                      actions={message()!.actions}
+                      actionDisplay={message()!.actionDisplay}
+                      anchorId={message()!.anchorId}
+                      onActionError={props.onActionError}
+                      class={message()!.class}
+                    >
+                      {message()!.content}
+                    </ChatMessage>
+                  </Show>
+                );
+              }}
             </For>
           </Show>
         </div>

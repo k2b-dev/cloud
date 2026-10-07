@@ -25,6 +25,8 @@ export type ChatMessageProps = {
 
 export type ChatActivityProps = {
   label: string;
+  /** Spelled-out name for an expandable row whose visible text abbreviates, such as durations. */
+  ariaLabel?: string;
   description?: string;
   icon?: string;
   /** Optional host-owned leading visual rendered instead of the icon. */
@@ -355,7 +357,7 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
         }}
         aria-busy={props.busy ? "true" : undefined}
       >
-        <summary class="k2b-chat-activity__row">
+        <summary class="k2b-chat-activity__row" aria-label={props.ariaLabel}>
           <ActivityContent {...props} disclosure />
         </summary>
         <div class="k2b-chat-activity__body">

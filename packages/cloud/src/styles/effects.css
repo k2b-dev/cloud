@@ -27,6 +27,75 @@
   max-width: 100%;
 }
 
+/* One assistant turn in four fixed places: work line, results, newest text, actions. */
+.k2b-ui .ai-turn {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.k2b-ui .ai-turn__work {
+  min-width: 0;
+}
+
+.k2b-ui .ai-turn-work__meta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Phones keep the clock while the turn runs; the step count follows once it is finished. */
+@media (max-width: 40rem) {
+  .k2b-ui .ai-turn-work__live-steps {
+    display: none;
+  }
+}
+
+/* Expanded work: one indent, one size, no lines or boxes; intermediate texts are quiet paragraphs. */
+.k2b-ui .ai-turn-steps {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .ai-turn-steps__text {
+  padding-block: 0.25rem;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .ai-turn-steps__text .assistant-markdown-block,
+.k2b-ui .ai-turn-steps__text .assistant-markdown-block :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.k2b-ui .ai-turn-steps__text .assistant-markdown-block :where(p, ul, ol, pre, blockquote) {
+  margin-block: 0.375rem;
+}
+
+.k2b-ui .ai-turn-steps__thought {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A decided approval keeps focus on its receipt; the place only shows a ring for keyboard focus. */
+.k2b-ui .ai-turn__action {
+  min-width: 0;
+  border-radius: var(--k2b-radius-control);
+}
+
+.k2b-ui .ai-turn__action:focus {
+  outline: none;
+}
+
+.k2b-ui .ai-turn__action:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
 /* Result links sit inside an already padded activity row. Keep them inline so
    they do not make linked capability results taller than neighboring rows. */
 .k2b-ui .k2b-button.ai-chat-result-link[data-size="xs"] {

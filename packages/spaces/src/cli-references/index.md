@@ -127,7 +127,7 @@ Generate a fresh UUID for each worker's claim and keep it for progress, completi
 
 Use `release <item> --claim-id <id>` when stopping work. An administrator can recover an abandoned claim with `--force`, using the exact ID returned by `work`; a changed claim is rejected. Claims coordinate work; they are not credentials.
 
-`progress` saves the latest full handoff note (`--content` or `--from`). `done --result` or `--from` saves a completion result atomically with completion; `--commit` records a 7–64 digit hexadecimal SHA and needs a result. Include what changed, decisions, remaining work, and verification evidence. Notes are limited to 5,000 characters. A failed result write cannot leave the task done, and reopening keeps the last result. Earlier notes stay in `activity`; follow `nextCursor` with `--cursor`. Service accounts can record progress, results, and claims under their own identity; comments need a user-backed actor.
+`progress` saves the latest full handoff note (`--content` or `--from`). `done --result` or `--from` saves a completion result atomically with completion; `--commit` records a 7–64 digit hexadecimal SHA and needs a result. Include what changed, decisions, remaining work, and verification evidence. Notes are limited to 5,000 characters. A failed result write cannot leave the task done, and reopening keeps the last result. Earlier notes stay in `activity`; follow `nextCursor` with `--cursor`. Standalone and agent accounts can record progress, results, claims, and comments under their own identity; editing or deleting comments needs a person.
 
 ## Dependencies
 

@@ -1,9 +1,11 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
+import { createStore } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
 import { groupDisplayName } from "../shared/account-display";
+import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
 import PrincipalPicker from "./PrincipalPicker";
@@ -154,7 +156,9 @@ const getPrincipalIcon = (entry: AccessEntry, t: ReturnType<typeof accessMessage
 export default function PermissionEditor(props: PermissionEditorProps) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  const [entries, setEntries] = createSignal<AccessEntry[]>([...props.initialEntries]);
+  // A store keeps each row's identity across level changes, so an expanded member list stays open. It holds
+  // copies: store writes go into the objects themselves, and the caller's entries are not the editor's to change.
+  const [entries, setEntries] = createStore<AccessEntry[]>(props.initialEntries.map((entry) => ({ ...entry })));
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
@@ -178,7 +182,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       display: { displayName: string; serviceAccountKind?: ServiceAccountKind };
     }) => props.grantAccess(data.principal, data.permission, data.display),
     onSuccess: (newEntry) => {
-      setEntries([...entries(), newEntry as AccessEntry]);
+      setEntries(entries.length, { ...newEntry });
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -190,7 +194,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     },
     onSuccess: (result) => {
       if (result) {
-        setEntries(entries().map((e) => (e.id === result.accessId ? { ...e, permission: result.permission } : e)));
+        setEntries((entry) => entry.id === result.accessId, "permission", result.permission);
       }
     },
     onError: (err) => prompts.error(err.message),
@@ -208,14 +212,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       return entry.id;
     },
     onSuccess: (accessId) => {
-      if (accessId) setEntries(entries().filter((entry) => entry.id !== accessId));
+      if (accessId) setEntries((current) => current.filter((entry) => entry.id !== accessId));
     },
     onError: (err) => prompts.error(err.message),
   });
   const busy = () => grantMut.loading() || updateMut.loading() || revokeMut.loading();
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = () => {
-    const managers = entries().filter(isManagerEntry);
+    const managers = entries.filter(isManagerEntry);
     return managers.length === 1 ? managers[0]!.id : null;
   };
 
@@ -223,25 +227,30 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     <div class="flex flex-col gap-3">
       {/* Existing entries */}
       <div class="flex flex-col gap-1">
-        <For each={entries()}>
-          {(entry) => (
-            <AccessEntryRow
-              entry={entry}
-              canEdit={canEdit()}
-              disabled={busy()}
-              lastManager={entry.id === lastManagerId()}
-              allowed={allowed(entry.principal)}
-              singlePicker={allowed(entry.principal).length === 1}
-              onUpdatePermission={(permission) => {
-                if (!busy()) void updateMut.mutate({ accessId: entry.id, permission });
-              }}
-              onRevoke={() => {
-                if (!busy()) void revokeMut.mutate(entry);
-              }}
-            />
-          )}
+        <For each={entries}>
+          {(entry) => {
+            // A row keeps its principal, so its group coverage is created once per row.
+            const coverage = entry.principal.type === "group" ? createGroupCoverage(entry.principal.groupId) : undefined;
+            return (
+              <AccessEntryRow
+                entry={entry}
+                coverage={coverage}
+                canEdit={canEdit()}
+                disabled={busy()}
+                lastManager={entry.id === lastManagerId()}
+                allowed={allowed(entry.principal)}
+                singlePicker={allowed(entry.principal).length === 1}
+                onUpdatePermission={(permission) => {
+                  if (!busy()) void updateMut.mutate({ accessId: entry.id, permission });
+                }}
+                onRevoke={() => {
+                  if (!busy()) void revokeMut.mutate(entry);
+                }}
+              />
+            );
+          }}
         </For>
-        <Show when={entries().length === 0}>
+        <Show when={entries.length === 0}>
           <Placeholder align="left" class="px-1 py-2" description={t().noDirectGrants} />
         </Show>
       </div>
@@ -251,7 +260,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           a higher level. KISS: one decision per step. */}
       <Show when={canEdit()}>
         <PrincipalPicker
-          existing={entries().map((e) => e.principal)}
+          existing={entries.map((e) => e.principal)}
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
           allowServiceAccounts={props.allowServiceAccounts}
@@ -280,6 +289,8 @@ function AccessEntryRow(props: {
   /** When true the per-row picker collapses to a non-interactive badge
    *  (single-level mode — there's nothing to switch to). */
   singlePicker: boolean;
+  /** Present for group grants: who currently receives access through the group. */
+  coverage?: GroupCoverage;
   onUpdatePermission: (permission: GrantableLevel) => void;
   onRevoke: () => void;
 }) {
@@ -306,89 +317,98 @@ function AccessEntryRow(props: {
   );
 
   return (
-    <div class="group/access-row flex items-center gap-2 py-1.5">
-      <Show
-        when={props.entry.principal.type === "user"}
-        fallback={
-          <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-            <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
-          </div>
-        }
-      >
-        <CloudAvatar
-          username={displayName()}
-          userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
-          avatarHash={props.entry.avatarHash}
-          size="xs"
-          class="h-7 w-7"
-        />
-      </Show>
-
-      {/* Display name. Name and label share one line so every row keeps its height on phones:
-          when both do not fit, each gets an equal share and the shorter one stays whole. */}
-      <div class="grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1">
-        <span class="truncate text-sm">{displayName()}</span>
-        <Show when={props.entry.principal.type === "public"}>
-          <span class="truncate text-xs text-dimmed">({t().anyoneWithLink})</span>
-        </Show>
+    <div>
+      <div class="group/access-row flex items-center gap-2 py-1.5">
         <Show
-          when={
-            props.entry.principal.type === "service_account" &&
-            props.entry.serviceAccountKind &&
-            serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label
+          when={props.entry.principal.type === "user"}
+          fallback={
+            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+              <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
+            </div>
           }
         >
-          {(label) => <span class="truncate text-xs text-dimmed">({label()})</span>}
+          <CloudAvatar
+            username={displayName()}
+            userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
+            avatarHash={props.entry.avatarHash}
+            size="xs"
+            class="h-7 w-7"
+          />
+        </Show>
+
+        {/* Display name. Name and label share one line so every row keeps its height on phones:
+          when both do not fit, each gets an equal share and the shorter one stays whole. A group's
+          members toggle always stays whole; the name takes the rest. */}
+        <div
+          class="grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1"
+          classList={{ "grid-cols-[minmax(0,max-content)_max-content]": props.coverage !== undefined }}
+        >
+          <span class="truncate text-sm">{displayName()}</span>
+          <Show when={props.entry.principal.type === "public"}>
+            <span class="truncate text-xs text-dimmed">({t().anyoneWithLink})</span>
+          </Show>
+          <Show
+            when={
+              props.entry.principal.type === "service_account" &&
+              props.entry.serviceAccountKind &&
+              serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label
+            }
+          >
+            {(label) => <span class="truncate text-xs text-dimmed">({label()})</span>}
+          </Show>
+          <Show when={props.coverage}>{(coverage) => <GroupCoverageToggle coverage={coverage()} groupName={displayName()} />}</Show>
+        </div>
+
+        {/* Permission badge — interactive single-value picker when editable,
+          plain span otherwise. */}
+        <Show when={isInteractive()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
+          <SelectChip
+            aria-label={t().permissionFor({ name: displayName() })}
+            value={() => props.entry.permission as GrantableLevel}
+            options={props.allowed.map((option) => {
+              const locked = props.lastManager && option.level !== "admin";
+              return {
+                value: option.level,
+                label: option.label,
+                icon: `ti ${option.icon}`,
+                disabled: locked,
+                description: locked ? t().lastManagerOption({ level: manageLabel() }) : undefined,
+              };
+            })}
+            icon={`ti ${display().icon}`}
+            position="bottom-left"
+            onValueChange={(permission) => {
+              if (permission !== props.entry.permission) props.onUpdatePermission(permission);
+            }}
+          />
+        </Show>
+
+        {/* Destructive row actions stay quiet until the row is engaged. They
+          remain keyboard reachable and stay visible on touch-sized layouts. */}
+        <Show when={props.canEdit}>
+          <Tooltip.Anchor
+            content={removeLabel()}
+            class="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
+          >
+            <IconButton
+              type="button"
+              label={t().remove({ name: displayName() })}
+              variant="ghost"
+              size="xs"
+              onClick={props.onRevoke}
+              disabled={props.disabled || props.lastManager}
+              aria-label={t().remove({ name: displayName() })}
+              // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
+              aria-description={props.lastManager ? removeLabel() : undefined}
+              class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
+            >
+              <i class="ti ti-x text-sm" />
+            </IconButton>
+          </Tooltip.Anchor>
         </Show>
       </div>
-
-      {/* Permission badge — interactive single-value picker when editable,
-          plain span otherwise. */}
-      <Show when={isInteractive()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
-        <SelectChip
-          aria-label={t().permissionFor({ name: displayName() })}
-          value={() => props.entry.permission as GrantableLevel}
-          options={props.allowed.map((option) => {
-            const locked = props.lastManager && option.level !== "admin";
-            return {
-              value: option.level,
-              label: option.label,
-              icon: `ti ${option.icon}`,
-              disabled: locked,
-              description: locked ? t().lastManagerOption({ level: manageLabel() }) : undefined,
-            };
-          })}
-          icon={`ti ${display().icon}`}
-          position="bottom-left"
-          onValueChange={(permission) => {
-            if (permission !== props.entry.permission) props.onUpdatePermission(permission);
-          }}
-        />
-      </Show>
-
-      {/* Destructive row actions stay quiet until the row is engaged. They
-          remain keyboard reachable and stay visible on touch-sized layouts. */}
-      <Show when={props.canEdit}>
-        <Tooltip.Anchor
-          content={removeLabel()}
-          class="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
-        >
-          <IconButton
-            type="button"
-            label={t().remove({ name: displayName() })}
-            variant="ghost"
-            size="xs"
-            onClick={props.onRevoke}
-            disabled={props.disabled || props.lastManager}
-            aria-label={t().remove({ name: displayName() })}
-            // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
-            aria-description={props.lastManager ? removeLabel() : undefined}
-            class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
-          >
-            <i class="ti ti-x text-sm" />
-          </IconButton>
-        </Tooltip.Anchor>
-      </Show>
+      {/* Expanding pushes the rows below down, only on the viewer's own request. */}
+      <Show when={props.coverage}>{(coverage) => <GroupCoveragePanel coverage={coverage()} groupName={displayName()} />}</Show>
     </div>
   );
 }

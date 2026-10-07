@@ -395,6 +395,10 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
   const setRejectedCallIds = (items: Set<string>) => {
     rejectedCallIds = items;
   };
+  let approvedCallIds = new Set<string>();
+  const setApprovedCallIds = (items: Set<string>) => {
+    approvedCallIds = items;
+  };
   /** nessi stream block ids (turn-scoped) that belong to tool_call blocks — their deltas are raw args JSON. */
   const toolStreamIds = new Set<string>();
   /** kind per open Cloud stream block id, for delta create-if-missing. */
@@ -417,6 +421,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false } : approval,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
       presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
+      ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
     };
     toolBlocks.set(callId, block);
     return { type: "block_set", block };
@@ -521,6 +526,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
     setApprovalPolicies,
     setApprovalReviews,
     setRejectedCallIds,
+    setApprovedCallIds,
   };
 };
 
@@ -832,6 +838,7 @@ export class AiTurnExecutor {
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
+    const approvedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
     pipeline.setApprovalReviews(capabilityActionReviews);
     let turnInput = config.input;
@@ -871,17 +878,19 @@ export class AiTurnExecutor {
       turnInput,
       toolPresentations,
       rejectedToolCallIds,
+      approvedToolCallIds,
     });
 
     const { loopMessages, pendingRecords, resolvedRecords, turnSteers } =
       attemptState ?? (await loadChatAttemptState(conversationId, turnId));
     for (const action of resolvedRecords) {
-      if (action.resolvedEvent?.type !== "approval_response" || action.resolvedEvent.approved) continue;
-      rejectedToolCallIds.add(
-        action.kind === "custom_approval" ? (customApprovalParentCallId(action.callId) ?? action.callId) : action.callId,
-      );
+      if (action.resolvedEvent?.type !== "approval_response") continue;
+      // A decision on a custom approval belongs to the call that asked for it.
+      const callId = action.kind === "custom_approval" ? (customApprovalParentCallId(action.callId) ?? action.callId) : action.callId;
+      (action.resolvedEvent.approved ? approvedToolCallIds : rejectedToolCallIds).add(callId);
     }
     pipeline.setRejectedCallIds(rejectedToolCallIds);
+    pipeline.setApprovedCallIds(approvedToolCallIds);
     const assistantMessages = loopMessages.filter((message) => message.message.role !== "user");
     const isFresh = assistantMessages.length === 0 && resolvedRecords.length === 0 && !skipResolvedActions;
 
@@ -1679,6 +1688,10 @@ class StreamPipeline {
 
   setRejectedCallIds(callIds: Set<string>): void {
     this.mapper.setRejectedCallIds(callIds);
+  }
+
+  setApprovedCallIds(callIds: Set<string>): void {
+    this.mapper.setApprovedCallIds(callIds);
   }
 
   async emitBaseline(): Promise<void> {
