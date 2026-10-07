@@ -1,77 +1,93 @@
 import { expect, test } from "bun:test";
+import { createDomTestHarness } from "../../../ui/test/dom";
+import { html } from "../../src/artifacts/runtime/lib";
 
-type Row = { key: string; id: string; name: string; source: string };
-type Button = () => Promise<void>;
-const source = await Bun.file(new URL("./main.js", import.meta.url)).text();
+const page = await Bun.file(new URL("./index.html", import.meta.url)).text();
+const script = await Bun.file(new URL("./app.js", import.meta.url)).text();
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+};
+
+/** Runs the app's real HTML and module against fake capabilities. */
 async function harness(deny = false) {
-  const buttons = new Map<string, Button>();
-  const messages: string[] = [];
-  let selectRow = (_row: Row | undefined) => {};
-  let rows: Row[] = [];
+  const dom = createDomTestHarness();
+  dom.root.innerHTML = page;
   const calls: [string, unknown][] = [];
   const saved: { content: File; name: string }[] = [];
   const file = new File(["pdf"], "invoice.pdf", { type: "application/pdf" });
-  const ui = {
-    text: ({ value }: { value: string }) => {
-      messages.push(value);
-      return { setValue: (value: string) => messages.push(value) };
-    },
-    table: (options: { onSelect: (row: Row | undefined) => void }) => {
-      selectRow = options.onSelect;
-      return {
-        setData: (value: Row[]) => {
-          rows = value;
+  const cloud = {
+    html,
+    kv: { get: async () => ({ gridsTemplateId: "Tpl001", filesBaseId: "base" }) },
+    download: async (name: string, content: File) => saved.push({ content, name }),
+    capabilities: {
+      run: async (name: string, input: unknown) => {
+        calls.push([name, input]);
+        if (name === "grids.document.list")
+          return { data: [{ id: "same-id", filename: "invoice.pdf" }], page: { hasMore: true, nextCursor: "g-next" } };
+        if (name === "filesv2.entry.list") return { data: { items: [{ ref: { id: "same-id" }, name: "contract.pdf" }], next: null } };
+        if (deny) throw new Error("Access denied");
+        return { stream: { id: "current-run" } };
+      },
+      streams: {
+        read: async (stream: { id: string }) => {
+          expect(stream.id).toBe("current-run");
+          return file;
         },
-      };
-    },
-    button: (options: { label: string; onClick: Button }) => buttons.set(options.label, options.onClick),
-  };
-  const capabilities = {
-    run: async (name: string, input: unknown) => {
-      calls.push([name, input]);
-      if (name === "grids.document.list")
-        return { data: [{ id: "same-id", filename: "invoice.pdf" }], page: { hasMore: true, nextCursor: "g-next" } };
-      if (name === "filesv2.entry.list") return { data: { items: [{ ref: { id: "same-id" }, name: "contract.pdf" }], next: null } };
-      if (deny) throw new Error("Access denied");
-      return { stream: { id: "current-run" } };
-    },
-    streams: {
-      read: async (stream: { id: string }) => {
-        expect(stream.id).toBe("current-run");
-        return file;
       },
     },
   };
-  const run = new Function("ui", "cloud", source.replace("export default", "return"))(ui, {
-    kv: { get: async () => ({ gridsTemplateId: "Tpl001", filesBaseId: "base" }) },
-    capabilities,
-    download: async (name: string, content: File) => saved.push({ content, name }),
-  });
-  await run();
-  return { buttons, calls, saved, messages, rows: () => rows, select: (index: number) => selectRow(rows[index]) };
+  const AsyncFunction = (async () => {}).constructor as new (...args: string[]) => (...values: unknown[]) => Promise<void>;
+  await new AsyncFunction("cloud", "document", script)(cloud, dom.window.document);
+  const click = async (selector: string) => {
+    dom.root.querySelector<HTMLButtonElement>(selector)!.click();
+    await settle();
+  };
+  const select = (index: number) => {
+    const radio = dom.root.querySelectorAll<HTMLInputElement>('input[name="file"]')[index]!;
+    radio.checked = true;
+    radio.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  };
+  return {
+    calls,
+    saved,
+    click,
+    select,
+    keys: () => [...dom.root.querySelectorAll<HTMLInputElement>('input[name="file"]')].map((input) => input.value),
+    status: () => dom.root.querySelector("#status")!.textContent,
+    cleanup: () => dom.cleanup(),
+  };
 }
 
 test("combines source-local identities, paginates explicitly and downloads through each source's stream", async () => {
   const app = await harness();
-  expect(app.rows().map((row) => row.key)).toEqual(["grids:same-id", "files:same-id"]);
-  for (const index of [0, 1]) {
-    app.select(index);
-    await app.buttons.get("Download selected file")!();
+  try {
+    expect(app.keys()).toEqual(["grids:same-id", "files:same-id"]);
+    for (const index of [0, 1]) {
+      app.select(index);
+      await app.click("#download");
+    }
+    expect(app.calls.slice(2).map((call) => call[0])).toEqual(["grids.document.content.read", "filesv2.content.read"]);
+    expect(app.saved).toHaveLength(2);
+    expect(app.saved[0]!.name).toBe("invoice.pdf");
+    await app.click("#next-grids");
+    expect(app.calls.at(-1)).toEqual(["grids.document.list", { templateId: "Tpl001", limit: 100, cursor: "g-next" }]);
+    const count = app.calls.length;
+    await app.click("#next-files");
+    expect(app.calls).toHaveLength(count);
+    expect(app.status()).toBe("No further page for this source.");
+  } finally {
+    app.cleanup();
   }
-  expect(app.calls.slice(2).map((call) => call[0])).toEqual(["grids.document.content.read", "filesv2.content.read"]);
-  expect(app.saved).toHaveLength(2);
-  expect(app.saved[0]!.name).toBe("invoice.pdf");
-  await app.buttons.get("Next Grids page")!();
-  expect(app.calls.at(-1)).toEqual(["grids.document.list", { templateId: "Tpl001", limit: 100, cursor: "g-next" }]);
-  const count = app.calls.length;
-  await app.buttons.get("Next Files page")!();
-  expect(app.calls).toHaveLength(count);
 });
 
 test("denied reads never save bytes and explain the failure", async () => {
   const app = await harness(true);
-  app.select(0);
-  await app.buttons.get("Download selected file")!();
-  expect(app.saved).toHaveLength(0);
-  expect(app.messages.at(-1)).toBe("Download failed: Access denied");
+  try {
+    app.select(0);
+    await app.click("#download");
+    expect(app.saved).toHaveLength(0);
+    expect(app.status()).toBe("Download failed: Access denied");
+  } finally {
+    app.cleanup();
+  }
 });

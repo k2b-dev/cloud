@@ -729,12 +729,20 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const created = await artifactCodeHandlers.code_create({ title: "Agent test" }, context);
     if (!created.ok) throw new Error(created.error.message);
     const id = created.data.data.id;
-    const write = async (path: string, content: string) =>
+    // A new App starts as an index.html interface; static findings of its JavaScript come back on write.
+    expect((await artifacts.get(id, owner)).source.entry).toBe("index.html");
+    const write = async (path: string, content: string, entry?: string) =>
       artifactCodeHandlers.code_write(
-        { id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }] },
+        { id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }], entry },
         context,
       );
-    const intermediate = await write("main.ts", 'import {value} from "./helper.ts"; export default () => value;');
+    const html = await write("app.js", 'alert("hi"); import x from "lodash";');
+    if (!html.ok) throw new Error("Write failed");
+    expect(JSON.stringify(html.data.data)).toContain("alert, confirm and prompt do not work");
+    expect(JSON.stringify(html.data.data)).toContain('not \\"lodash\\"');
+    expect(await artifactCodeHandlers.code_remove({ id, path: "app.js" }, context)).toMatchObject({ ok: true });
+    // The same resource as a saved script: compiler diagnostics for the script entry.
+    const intermediate = await write("main.ts", 'import {value} from "./helper.ts"; export default () => value;', "main.ts");
     expect(intermediate).toMatchObject({ ok: true, data: { data: { saved: true } } });
     if (!intermediate.ok) throw new Error("Write failed");
     expect(z.object({ diagnostics: z.array(z.unknown()) }).parse(intermediate.data.data).diagnostics.length).toBeGreaterThan(0);
@@ -742,7 +750,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ok: true,
       data: { data: { saved: true, diagnostics: [] } },
     });
-    expect((await artifacts.get(id, owner)).source.files).toHaveLength(2);
+    expect((await artifacts.get(id, owner)).source.files).toHaveLength(3);
     const expectedRevision = (await artifacts.get(id, owner)).revision;
     const batch = await artifactCodeHandlers.code_write(
       {
@@ -760,7 +768,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(
       await artifactCodeHandlers.code_write({ id, expectedRevision, files: [{ path: "a.ts", content: "stale" }] }, context),
     ).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
-    expect((await artifacts.get(id, owner)).source.files).toHaveLength(4);
+    expect((await artifacts.get(id, owner)).source.files).toHaveLength(5);
     await write("main.ts", "export default !!!");
     expect(await artifactCodeHandlers.code_read({ id, path: "main.ts", offset: 0 }, context)).toMatchObject({
       ok: true,
@@ -776,7 +784,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ok: true,
       data: { data: { removed: true } },
     });
-    expect((await artifacts.get(id, owner)).source.files).toHaveLength(3);
+    expect((await artifacts.get(id, owner)).source.files).toHaveLength(4);
     expect(await write("main.ts", "export default () => 42;")).toMatchObject({ ok: true, data: { data: { diagnostics: [] } } });
   });
 
@@ -2334,10 +2342,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           const directory = new URL(`../../examples/studio-actions/${folder}/`, import.meta.url);
           const files = await Promise.all(
             (await readdir(directory))
-              .filter((path) => path.endsWith(".js") || path === "app.actions.json")
+              .filter((path) => path.endsWith(".js") || path === "index.html" || path === "app.actions.json")
               .map(async (path) => ({ path, content: await Bun.file(new URL(path, directory)).text() })),
           );
-          const example = await artifacts.create({ title: folder, source: { entry: "main.js", files } }, owner);
+          const entry = files.some((file) => file.path === "index.html") ? "index.html" : "main.js";
+          const example = await artifacts.create({ title: folder, source: { entry, files } }, owner);
           try {
             const setupFile = Bun.file(new URL("setup.json", directory));
             if (await setupFile.exists()) {
@@ -2374,11 +2383,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
                 status: "done",
                 result: { output: '{"linked":true,"unchanged":true}' },
               });
+            // The dashboard's interface passes the static checks and appears in the chat.
             if (folder === "dashboard")
-              expect(await wait({ ...call, callId: "dashboard-view", args: { id: example.id } })).toMatchObject({
-                status: "done",
-                result: { status: "ready" },
-              });
+              expect(
+                await wait({ ...call, name: "code_present" as const, callId: "dashboard-view", args: { id: example.id } }),
+              ).toMatchObject({ status: "done", result: { userVisible: true, title: "dashboard" } });
           } finally {
             await artifacts.remove(example.id, owner);
           }
