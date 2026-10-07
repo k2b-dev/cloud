@@ -100,6 +100,49 @@ describe("renderAiPlatformPrompt", () => {
     expect(renderAiPlatformPrompt({ user, memoryEnabled: false })).not.toContain("# Personalization rules");
   });
 
+  it("tells a followed turn what stays visible and how rarely to offer more", () => {
+    const prompt = renderAiPlatformPrompt({ user });
+    expect(prompt).toContain("Skip filler and generic closing offers.");
+    expect(prompt).toContain("never repeat a failed call with unchanged input");
+    expect(prompt.indexOf("# Workflow")).toBeLessThan(prompt.indexOf("# What the user sees"));
+    expect(prompt.indexOf("# What the user sees")).toBeLessThan(prompt.indexOf("# Suggestions"));
+
+    expect(prompt).toContain("only your newest text, as a live status");
+    expect(prompt).toContain("Never leave a result, decision, warning, or question only in status text");
+    expect(prompt).toContain("Finish every tool call, including memory, plan updates, and present, before you write the final message");
+    expect(prompt).toContain("Do not list delivered items the user can already see");
+    expect(prompt).toContain("A file the user needs is visible only after present.");
+
+    expect(prompt).toContain("Most replies need no offer.");
+    expect(prompt).toContain("Make at most one offer");
+    expect(prompt).toContain("offer to save it as a Skill or scheduled task");
+    expect(prompt).toContain("Do not search mail, chats, or other data only to justify an offer");
+    expect(prompt).toContain("Do not start the offered work until the user agrees");
+    expect(prompt).toContain("when your previous reply already ended with an offer");
+    expect(prompt).toContain("Organization, Project, and user instructions about suggestions take precedence");
+    expect(prompt).toContain("three to five concrete examples");
+  });
+
+  it("leaves visibility and suggestions out of background runs", () => {
+    const prompt = renderAiPlatformPrompt({ user, interactive: false });
+    expect(prompt).toContain("# Workflow");
+    expect(prompt).toContain("Skip filler and generic closing offers.");
+    expect(prompt).not.toContain("# What the user sees");
+    expect(prompt).not.toContain("# Suggestions");
+    expect(prompt).not.toContain("Make at most one offer");
+    expect(composeAiSystemPrompt({ globalInstructions: "", user, interactive: false })).not.toContain("# Suggestions");
+    expect(composeAiSystemPrompt({ globalInstructions: "", user })).toContain("# Suggestions");
+  });
+
+  it("keeps working files in the chat's temp folder and deliverables outside", () => {
+    const prompt = renderAiPlatformPrompt({ user, tools: [{ name: "write_file", hint: "write a file." }] });
+    expect(prompt).toContain("# Files");
+    expect(prompt).toContain("Keep intermediate and scratch files below /temp/, in one folder named after the result they serve");
+    expect(prompt).toContain("Save deliverables outside /temp/.");
+    expect(prompt).not.toContain("under /files");
+    expect(renderAiPlatformPrompt({ user })).not.toContain("/temp/");
+  });
+
   it("renders without a user (empty context) instead of throwing", () => {
     const prompt = renderAiPlatformPrompt({});
     expect(prompt).toContain("Cloud workspace");

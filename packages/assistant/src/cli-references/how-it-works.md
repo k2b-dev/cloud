@@ -270,9 +270,10 @@ Commands:
 ## Files
 
 Chat files belong to one chat and its owner. They are versioned, and the
-Assistant can read and write them (`cld assistant files`). Project files are
-read-only inside a chat. To use a Project file as a base, the Assistant copies
-the text into a chat file. Copy between chats, Projects, and Apps with
+Assistant can read and write them (`cld assistant files`). It keeps
+intermediate files below `/temp/` and saves results outside it. Project files
+are read-only inside a chat. To use a Project file as a base, the Assistant
+copies the text into a chat file. Copy between chats, Projects, and Apps with
 `cld assistant code file-copy`; the Assistant can do the same after approval,
 and copying into a Project needs Project `write`.
 

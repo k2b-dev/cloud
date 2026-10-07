@@ -10,6 +10,17 @@ updated: 2026-10-07
 
 # Deprecations and migrations
 
+## Assistant may end a reply with one offer
+
+The platform prompt now tells the model what the chat keeps visible and allows
+one concrete offer at the end of a reply, such as drafting an answer or saving
+recurring work as a Skill. It replaces the earlier rule against repeated offers.
+Scheduled task runs do not get these sections. Organization instructions that
+ask for no suggestions, or for a different closing, take precedence; review
+existing organization instructions that mention offers or follow-up questions.
+The model also keeps intermediate files below the chat folder `/temp/`. See
+[Files, Projects, Skills, and personalization](/en/docs/ai/files-projects-and-personalization#what-the-model-knows-about-the-chat).
+
 ## Failed Assistant turns say why and how to go on
 
 A failed Assistant turn now stays visible in the chat with a notice that says

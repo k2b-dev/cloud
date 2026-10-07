@@ -1286,6 +1286,78 @@ suite("AI executor integration", () => {
     }
   });
 
+  test("tells the model what the user sees only in turns a person follows", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const prompts = new Map<string, string>();
+    const runTurn = async (label: string, turnId: string) => {
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId,
+        leaseOwner: `${label}-exec`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      nextCompletion = textCompletion("Done");
+      onCompletionRequest = (body) => {
+        prompts.set(label, JSON.stringify(body));
+      };
+      await createExecutor(`${label}-exec`).run({
+        conversationId: conversation.id,
+        turnId,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+    };
+
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: "Summarize", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "none" } },
+        userMessage: userMessage("Summarize"),
+      });
+      await runTurn("interactive", turn.id);
+
+      const task = (await aiChatTasks.create({
+        userId,
+        chatId: conversation.shortId,
+        prompt: "Summarize",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      const occurrence = (await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: new Date().toISOString(),
+        trigger: "manual",
+        requestKey: `prompt:${task.id}`,
+      }))!;
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: MODEL_ID,
+        runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
+        userMessage: userMessage(task.prompt),
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Expected the scheduled run to start");
+      await runTurn("background", delivered.turnId);
+
+      const interactive = prompts.get("interactive") ?? "";
+      const background = prompts.get("background") ?? "";
+      expect(background).toContain("# Workflow");
+      for (const section of ["# What the user sees", "# Suggestions", "Most replies need no offer."]) {
+        expect(interactive).toContain(section);
+        expect(background).not.toContain(section);
+      }
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("uses the Project snapshot from the durable turn config", async () => {
     const userId = await insertUser();
     const project = await aiProjects.create({
