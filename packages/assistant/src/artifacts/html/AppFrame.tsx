@@ -89,7 +89,8 @@ export function AppFrame(props: {
       confirmOpen: (url, signal) => confirmLink(url, props.title, props.context.locale, signal),
       onHash: props.onHash,
       onEvent: (event) => {
-        if (event.type === "ready") setReady(true);
+        // A start that timed out shows the frame anyway; the loading layer must not keep covering it.
+        if (event.type === "ready" || event.type === "not-ready") setReady(true);
         props.onEvent(event);
       },
     });

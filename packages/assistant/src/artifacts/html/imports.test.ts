@@ -41,3 +41,10 @@ import { real } from "./real.js";`),
 test("a template expression with braces resumes the template afterwards", () => {
   expect(values('const t = `${ { a: 1 }.a } import "./no.js"`;\nimport "./yes.js";')).toEqual(["./yes.js"]);
 });
+
+test("a division after a postfix increment is no regular expression, after a prefix one it is", () => {
+  expect(values('let n = 0; const x = n++ / 2; const y = a[0]-- / 2; const helper = await import("./helper.js");')).toEqual([
+    "./helper.js",
+  ]);
+  expect(values('const z = ++ /import "\\.\\/no\\.js"/.lastIndex;\nimport "./yes.js";')).toEqual(["./yes.js"]);
+});

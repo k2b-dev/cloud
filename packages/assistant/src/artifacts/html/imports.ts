@@ -132,6 +132,11 @@ export function moduleSpecifiers(source: string): Specifier[] {
       }
       last = word;
       i = end;
+    } else if ((c === "+" || c === "-") && source[i + 1] === c) {
+      // After a value, `++` and `--` are postfix and the value continues: `n++ / 2` divides.
+      const value = !!last && (isIdStart(last[0]!) ? !BEFORE_REGEX.has(last) : last === ")" || last === "]");
+      i += 2;
+      last = value ? ")" : c;
     } else if (/\d/.test(c)) {
       for (i++; i < n && /[\w.]/.test(source[i]!); i++);
       last = ")";

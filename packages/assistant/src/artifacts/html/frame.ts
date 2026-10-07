@@ -135,10 +135,20 @@ addEventListener("message", (event: MessageEvent) => {
   if (message?.type === "result") bridge.result(message);
   else if (message?.type === "theme") document.documentElement.dataset.theme = message.value === "dark" ? "dark" : "light";
   else if (message?.type === "hash" && typeof message.value === "string" && location.hash !== message.value) location.hash = message.value;
-  else if (message?.type === "snapshot") send({ type: "snapshot", id: message.id, html: shown() });
+  else if (message?.type === "snapshot") void shown().then((html) => send({ type: "snapshot", id: message.id, html }));
 });
-/** The document as the person sees it: outerHTML keeps attributes only, so current form values move into attributes of a copy. */
-function shown() {
+const dataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+/**
+ * The document as the person sees it: outerHTML keeps attributes only, so current form values move into attributes
+ * of a copy, and images from blob URLs, which only this frame can read, are embedded as data URLs.
+ */
+async function shown() {
   const copy = document.documentElement.cloneNode(true) as HTMLElement;
   const copies = copy.querySelectorAll("input, textarea, select");
   document.querySelectorAll("input, textarea, select").forEach((element, index) => {
@@ -151,6 +161,17 @@ function shown() {
       for (const [position, option] of [...element.options].entries())
         target.options[position]?.toggleAttribute("selected", option.selected);
   });
+  const images = copy.querySelectorAll("img");
+  await Promise.all(
+    [...document.querySelectorAll("img")].map(async (image, index) => {
+      const target = images[index];
+      if (!target || !image.currentSrc.startsWith("blob:")) return;
+      try {
+        target.setAttribute("src", await dataUrl(await (await nativeFetch(image.currentSrc)).blob()));
+        target.removeAttribute("srcset");
+      } catch {}
+    }),
+  );
   return `<!doctype html>${copy.outerHTML}`;
 }
 const cloud = createCloud(rpc, config.context);
