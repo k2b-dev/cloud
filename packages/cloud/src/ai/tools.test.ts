@@ -188,7 +188,6 @@ describe("AI tools", () => {
       "code_action",
       "code_run",
       "code_inspect",
-      "code_interact",
       "code_stop",
       "code_open",
       "code_present",

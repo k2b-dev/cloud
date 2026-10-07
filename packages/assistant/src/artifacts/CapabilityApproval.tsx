@@ -51,15 +51,21 @@ export const approveInModal: ApproveCapability = async (request, signal) => {
       signal.addEventListener("abort", abort, { once: true });
       onCleanup(() => signal.removeEventListener("abort", abort));
       if (signal.aborted) close();
+      // An app asks from inside Cloud's page: its decision buttons arm late, so a click meant for the app cannot approve.
+      const [armed, setArmed] = createSignal(false);
+      const timer = setTimeout(() => setArmed(true), 500);
+      onCleanup(() => clearTimeout(timer));
       return (
-        <Approval
-          request={request}
-          respond={(value) => {
-            decision = value;
-            signal.removeEventListener("abort", abort);
-            close();
-          }}
-        />
+        <div inert={armed() ? undefined : true}>
+          <Approval
+            request={request}
+            respond={(value) => {
+              decision = value;
+              signal.removeEventListener("abort", abort);
+              close();
+            }}
+          />
+        </div>
       );
     },
     { title: request.resource ? `${request.resource.title} · ${request.title}` : request.title, size: "medium" },

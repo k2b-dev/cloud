@@ -1,9 +1,7 @@
 import { z } from "zod";
 import { LIMITS } from "../contracts";
-import { AnalyticsEvent, AnalyticsNode } from "./analytics-contracts";
-export const FileOpenOptions = z.object({ accept: z.string().max(LIMITS.text).optional() }).strict();
-export const UiNode = AnalyticsNode;
-export type UiNode = z.infer<typeof UiNode>;
+
+/** Messages a script worker sends to its host through the sandbox frame. */
 export const WorkerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cancel"), id: z.number().int().nonnegative() }),
   z.object({
@@ -13,7 +11,6 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     total: z.number().nonnegative().optional(),
     label: z.string().max(1000).optional(),
   }),
-  z.object({ type: z.literal("ui"), nodes: z.array(UiNode).max(LIMITS.nodes) }),
   z.object({
     type: z.literal("log"),
     level: z.enum(["log", "info", "warn", "error"]),
@@ -21,17 +18,12 @@ export const WorkerMessage = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("ready") }),
   z.object({ type: z.literal("output"), value: z.json() }),
-  z.object({ type: z.literal("settled"), id: z.number().int().nonnegative(), error: z.string().max(LIMITS.text).optional() }),
-  z.object({ type: z.literal("busy"), value: z.boolean() }),
   z.object({ type: z.literal("error"), text: z.string().max(LIMITS.text) }),
   z.object({
     type: z.literal("rpc"),
     id: z.number().int().nonnegative(),
     method: z.enum([
-      "ui.modal",
       "file.read",
-      "file.open",
-      "file.openMultiple",
       "file.save",
       "capabilities.run",
       "capabilities.stream",
@@ -45,11 +37,3 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     args: z.array(z.unknown()).max(4),
   }),
 ]);
-
-export const RuntimeEvent = z
-  .object({
-    id: z.string().min(1).max(80),
-    event: AnalyticsEvent.optional(),
-  })
-  .strict();
-export type RuntimeEvent = z.infer<typeof RuntimeEvent>;

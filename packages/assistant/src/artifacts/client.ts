@@ -236,6 +236,12 @@ export const artifactClient = {
     await checked(response);
     return response.json();
   },
+  /** Locale, time zone and name of the viewer, as an app's `cloud.locale`, `cloud.timeZone` and `cloud.user`. */
+  context: async () => {
+    const response = await client.runtime.context.$get();
+    await checked(response);
+    return ViewerContext.parse(await response.json());
+  },
   compile: async (source: ArtifactSource) => {
     const response = await client.runtime.compile.$post({ json: source });
     await checked(response);

@@ -78,7 +78,7 @@ register("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandler
 register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
 
-for (const name of ["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_export", "code_present"] as const) {
+for (const name of ["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present"] as const) {
   register(
     name,
     AgentHostRequest.refine((input) => input.name === name),

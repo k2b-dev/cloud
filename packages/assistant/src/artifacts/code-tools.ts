@@ -5,7 +5,7 @@ import { fail, ok, text } from "@k2b/stdlib";
 import { z } from "zod";
 import { ArtifactCompileError, sourceActions } from "./actions";
 import { readBinaryResponse } from "./binary";
-import { LIMITS } from "./contracts";
+import { LIMITS, PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { studioFiles } from "./file-transfer";
 import { artifactMessages } from "./messages";
@@ -290,6 +290,7 @@ export const artifactCodeHandlers = {
       if (input.accessId && !previous) throw new ArtifactError("NOT_FOUND");
       const principal = previous?.principal ?? input.principal;
       if (!principal) throw new ArtifactError("INVALID_INPUT");
+      if (principal.type === "public" && input.permission !== null && !PUBLIC_APP_SHARING) throw new ArtifactError("PUBLIC_SHARING_OFF");
       if (principal.type === "public" && input.permission !== null && input.permission !== "read")
         throw new ArtifactError("PUBLIC_READ_ONLY");
       if (context.review) {
@@ -404,7 +405,10 @@ export const artifactCodeHandlers = {
           title,
           description,
           icon,
-          source: { entry: "main.ts", files: [{ path: "main.ts", content: "export default () => {};\n" }] },
+          source: {
+            entry: "index.html",
+            files: [{ path: "index.html", content: `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n` }],
+          },
         },
         context,
       );

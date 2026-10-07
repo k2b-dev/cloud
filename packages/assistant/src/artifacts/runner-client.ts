@@ -1,6 +1,6 @@
 import { api } from "@k2b/cloud/browser";
 import type { runnerApi } from "./runner-api";
-import { RunnerCompiled, RunnerMetadata } from "./runner-contracts";
+import { RunnerApp, RunnerMetadata } from "./runner-contracts";
 
 const client = api.create<typeof runnerApi>({ baseUrl: "/api/assistant/runner" });
 async function checked(response: Pick<Response, "ok" | "status" | "json">) {
@@ -18,5 +18,5 @@ async function checked(response: Pick<Response, "ok" | "status" | "json">) {
 }
 export const runnerClient = {
   get: async (id: string) => RunnerMetadata.parse(await checked(await client[":id"].$get({ param: { id } }))),
-  compiled: async (id: string) => RunnerCompiled.parse(await checked(await client[":id"].compiled.$get({ param: { id } }))),
+  app: async (id: string) => RunnerApp.parse(await checked(await client[":id"].app.$get({ param: { id } }))),
 };

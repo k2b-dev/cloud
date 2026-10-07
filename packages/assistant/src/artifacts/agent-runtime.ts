@@ -4,13 +4,12 @@ import { onCleanup } from "solid-js";
 import { z } from "zod";
 import { ChatPresentationResult } from "./chat-presentation-contracts";
 import { artifactClient } from "./client";
-import { LIMITS } from "./contracts";
+import { hasInterface, LIMITS } from "./contracts";
+import { lintApp } from "./html/compose";
 import { type HttpHost, runHttp } from "./http-host";
-import { AnalyticsEvent } from "./runtime/analytics-contracts";
-import { inspectAnalytics } from "./runtime/analytics-inspect";
 import { type ApproveCapability, runCapability } from "./runtime/capabilities";
 import { type ArtifactSession, createArtifactSession } from "./runtime/session";
-import { RuntimeStorage, sharedStorage } from "./runtime/shared-storage";
+import { sharedStorage } from "./runtime/shared-storage";
 import { appTab, type WorkspaceTab } from "./workspace-state";
 
 const Claim = z.discriminatedUnion("status", [
@@ -20,8 +19,6 @@ const Claim = z.discriminatedUnion("status", [
   z.object({ status: z.literal("done"), result: z.json() }),
 ]);
 type Entry = {
-  code?: string;
-  inputs: { path: string; version: number }[];
   session: ArtifactSession;
   container: HTMLElement;
   artifactId?: string;
@@ -42,37 +39,25 @@ const failure = (error: unknown, guidance?: string): CodeToolFailure => {
   };
 };
 
-function inspect(runId: string, entry: Entry, options: { nodeId?: string; offset: number; limit: number } = { offset: 0, limit: 20 }) {
+function inspect(runId: string, entry: Entry) {
   const state = entry.session.snapshot();
   const invalidOutput =
-    entry.outputSchema &&
-    state.status === "ready" &&
-    !state.busy &&
-    state.work?.status !== "running" &&
-    !entry.outputSchema.safeParse(state.output).success;
+    entry.outputSchema && state.status === "ready" && state.work?.status !== "running" && !entry.outputSchema.safeParse(state.output).success;
   const output = state.output === undefined ? null : JSON.stringify(state.output);
-  const { offset, limit, nodeId } = options;
-  const selected = nodeId ? state.nodes.filter((node) => node.id === nodeId) : state.nodes.slice(offset, offset + limit);
-  if (nodeId && !selected.length) throw new Error("UI node not found");
   return {
     userVisible: false,
-    delivery: "Use code_present for a one-off visualization, code_export then present for files, or code_open for a saved app.",
+    delivery: "Return the result, use code_export then present for files, or show an HTML app with code_present or code_open.",
     runId,
     id: entry.artifactId,
     revision: entry.artifactId ? entry.revision : undefined,
     resourceId: entry.resourceId,
     status: invalidOutput ? "error" : state.status,
-    busy: state.busy,
     work: state.work,
     error: invalidOutput
       ? "Action output does not match its schema. Effects may have completed; inspect state before retrying."
       : state.error
         ? text(state.error, 6000)
         : null,
-    modal: state.modal ? { ...state.modal, id: state.modalId } : null,
-    totalNodes: state.nodes.length,
-    nextNodeOffset: !nodeId && offset + limit < state.nodes.length ? offset + limit : null,
-    nodes: selected.map((node) => ({ id: node.id, ...inspectAnalytics(node, offset, limit, Boolean(nodeId)) })),
     logs: state.logs.slice(-20).map((log) => ({ ...log, text: text(log.text, 2000) })),
     output: output === null ? null : text(output, 16000),
     outputTruncated: output !== null && output.length > 16000,
@@ -85,7 +70,6 @@ export function createArtifactAgentRuntime(
   approve?: ApproveCapability,
   execution: "chat-tool" | "standalone" = "chat-tool",
   httpHost?: HttpHost,
-  unattended = false,
 ) {
   const runs = new Map<string, Entry>();
   const clientId = crypto.randomUUID();
@@ -121,6 +105,36 @@ export function createArtifactAgentRuntime(
       }
       await pause(20);
     }
+  }
+  /** Saves an HTML app card after the static checks pass; the person starts it with a click. */
+  async function present(input: Extract<CodeRuntimeInput, { operation: "present" }>, conversationId: string, callId: string, signal: AbortSignal) {
+    const app = input.id ? await artifactClient.get(input.id, false, undefined, conversationId) : undefined;
+    if (app && !hasInterface(app.source)) throw new Error("This app has no index.html interface. Write one with code_write, or run a script with code_run.");
+    const files = input.files ?? app!.source.files;
+    const issues = lintApp(Object.fromEntries(files.map((file) => [file.path, file.content])));
+    const errors = issues.filter((issue) => issue.severity === "error");
+    if (errors.length)
+      throw new Error(
+        `The app was not presented; fix these problems first:\n${errors.map((issue) => `- ${issue.where ? `${issue.where}: ` : ""}${issue.message}`).join("\n")}`,
+      );
+    signal.throwIfAborted();
+    const response = await fetch("/api/assistant/artifacts/presentations", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId,
+        callId,
+        title: input.title ?? app!.title,
+        ...(app ? { artifactId: app.id } : { files }),
+      }),
+    });
+    if (!response.ok) throw new Error(`Could not present the app: HTTP ${response.status}`);
+    return {
+      ...ChatPresentationResult.parse(await response.json()),
+      userVisible: true,
+      warnings: issues.filter((issue) => issue.severity === "warning"),
+    };
   }
   async function execute(
     input: CodeRuntimeInput,
@@ -158,12 +172,9 @@ export function createArtifactAgentRuntime(
           if (
             entry.artifactId ||
             state.status !== "ready" ||
-            state.busy ||
             state.inputPending ||
             state.pendingRequests ||
             state.approvalPending ||
-            state.modal ||
-            state.nodes.length ||
             state.files.length ||
             state.work?.status === "running"
           )
@@ -207,11 +218,6 @@ export function createArtifactAgentRuntime(
         Object.defineProperty(inputFile, "webkitRelativePath", { value: file.path });
         return inputFile;
       };
-      const pickerInputs = async (readSignal: AbortSignal) => {
-        const files: File[] = [];
-        for (const file of selected) files.push(await readInput(file.path, readSignal));
-        return files;
-      };
       const compiled =
         invocation?.compiled ??
         (current
@@ -225,17 +231,15 @@ export function createArtifactAgentRuntime(
       let session: ArtifactSession;
       try {
         session = createArtifactSession(container, compiled, {
-          mode: "test",
-          unattended,
           ai: (request, signal) => artifactClient.ai(request, { resourceId: dataId, conversationId }, signal),
           pdf: (request, signal) => artifactClient.pdf(request, { resourceId: dataId, conversationId }, signal),
           http: (request, signal) => {
             if (!httpHost) throw new Error("Server HTTP unavailable");
             return runHttp(request, { resourceId: dataId, conversationId }, httpHost, signal);
           },
-          inputFiles: current?.kind === "app" ? [] : inputFiles,
+          // App actions never receive chat files; scripts read the explicitly selected ones.
+          inputFiles: invocation ? [] : inputFiles,
           readInput,
-          pickerInputs,
           changed: () => {},
           capability: (name, input, signal) => {
             if (!approve) throw new Error("Capability approval UI unavailable");
@@ -245,9 +249,9 @@ export function createArtifactAgentRuntime(
             if (!dataId) throw new Error("Database access requires a saved resource or resourceId");
             return artifactClient.database(dataId, request, conversationId, signal);
           },
-          storage: async (_method, args) => {
+          storage: async (request) => {
             if (!dataId) throw new Error("Shared storage requires a saved resource or resourceId");
-            return sharedStorage(dataId, RuntimeStorage.parse(args[0]), conversationId, Boolean(input.resourceId));
+            return sharedStorage(dataId, request, conversationId, Boolean(input.resourceId));
           },
         });
       } catch (error) {
@@ -256,8 +260,6 @@ export function createArtifactAgentRuntime(
       }
       const runId = callId;
       const entry = {
-        code: input.code,
-        inputs: selected.map(({ path, version }) => ({ path, version })),
         session,
         container,
         artifactId: input.id,
@@ -270,6 +272,7 @@ export function createArtifactAgentRuntime(
       await waitFor(entry, () => session.snapshot().status !== "starting" || session.snapshot().work?.status === "running");
       return inspect(runId, entry);
     }
+    if (input.operation === "present") return present(input, conversationId, callId, signal);
     const entry = runs.get(input.runId);
     if (!entry || entry.conversationId !== conversationId)
       throw new Error("Test run is no longer available in this conversation host. Inspect saved effects before starting a new run.");
@@ -281,7 +284,7 @@ export function createArtifactAgentRuntime(
       const until = Date.now() + input.waitMs;
       while (entry.session.snapshot().work?.status === "running" && Date.now() < until) {
         signal.throwIfAborted();
-        if (entry.session.snapshot().modal || entry.session.snapshot().approvalPending) break;
+        if (entry.session.snapshot().approvalPending) break;
         await pause(100);
       }
     }
@@ -291,83 +294,7 @@ export function createArtifactAgentRuntime(
       runs.delete(input.runId);
       return { runId: input.runId, stopped: true };
     }
-    if (input.operation === "interact") {
-      const steps = input.steps ?? [{ id: input.id, event: input.event, answer: input.answer }];
-      let completedSteps = 0;
-      for (const step of steps) {
-        try {
-          if (!step.id) throw new Error("Interaction requires a control or modal ID");
-          const state = entry.session.snapshot();
-          if (state.modal && step.id === state.modalId) {
-            if (step.event !== undefined || step.answer === undefined)
-              throw new Error("This is a modal. Supply answer with the requested value, or null to cancel.");
-            entry.session.respond(step.answer);
-            await waitFor(entry, () => {
-              const current = entry.session.snapshot();
-              return (
-                (current.status === "waiting" && current.modalId !== state.modalId) ||
-                (!["starting", "waiting"].includes(current.status) && !current.busy)
-              );
-            });
-          } else {
-            if (step.answer !== undefined)
-              throw new Error("This is a control. Supply event as an object, or omit it to activate a button.");
-            const event = AnalyticsEvent.parse(step.event ?? { type: "change", value: null });
-            let settled = false,
-              failure: unknown;
-            void entry.session.event({ id: step.id, event }).then(
-              () => {
-                settled = true;
-              },
-              (error) => {
-                failure = error;
-                settled = true;
-              },
-            );
-            await waitFor(
-              entry,
-              () => settled || entry.session.snapshot().status === "waiting" || entry.session.snapshot().work?.status === "running",
-            );
-            if (failure) throw failure;
-          }
-        } catch (error) {
-          if (!completedSteps) throw error;
-          // The tool error replaces the snapshot, so it carries what completedSteps would have said.
-          throw new Error(
-            `Step ${completedSteps + 1} of ${steps.length} failed after ${completedSteps} completed step${completedSteps === 1 ? "" : "s"}; later steps did not run. ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        completedSteps++;
-        const current = entry.session.snapshot();
-        if (current.error || current.modal || current.work?.status === "running") break;
-      }
-      return { ...inspect(input.runId, entry), completedSteps, nextStep: completedSteps < steps.length ? completedSteps : null };
-    } else if (input.operation === "present") {
-      const state = entry.session.snapshot();
-      if (!entry.code || entry.artifactId || entry.resourceId)
-        throw new Error("Present a one-off code run without app data. Use code_open for a saved app.");
-      if (
-        state.status !== "ready" ||
-        state.error ||
-        state.busy ||
-        state.inputPending ||
-        state.approvalPending ||
-        state.pendingRequests ||
-        state.work?.status === "running" ||
-        state.modal ||
-        !state.nodes.length ||
-        state.nodes.some((node) => node.loading || (node.type === "group" && node.error))
-      )
-        throw new Error("Wait for a successful, settled run with visible UI before presenting it.");
-      const response = await fetch("/api/assistant/artifacts/presentations", {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, callId, title: input.title, code: entry.code, nodes: state.nodes, inputs: entry.inputs }),
-      });
-      if (!response.ok) throw new Error(`Could not present visualization: HTTP ${response.status}`);
-      return { ...ChatPresentationResult.parse(await response.json()), userVisible: true };
-    } else if (input.operation === "export") {
+    if (input.operation === "export") {
       const file = entry.session.files().find((file) => file.name === input.name);
       if (!file) throw new Error("Captured output not found");
       const form = new FormData();
@@ -383,7 +310,7 @@ export function createArtifactAgentRuntime(
       const result = { path: stored.file.path, version: stored.file.version, size: file.size, mediaType: file.type };
       return result;
     }
-    return inspect(input.runId, entry, input.operation === "inspect" ? input : undefined);
+    return inspect(input.runId, entry);
   }
 
   const handler: AiFrontendToolHandler = async ({ name, args, callId, turnId, conversationId }) => {
@@ -464,7 +391,7 @@ export function createArtifactAgentRuntime(
     const bounded: unknown =
       new TextEncoder().encode(encoded).byteLength <= 256 * 1024
         ? JSON.parse(encoded)
-        : failure(`Inspection${runId ? ` of run ${runId}` : ""} exceeds 256 KiB. Use code_inspect with a nodeId and a smaller limit.`);
+        : failure(`Inspection${runId ? ` of run ${runId}` : ""} exceeds 256 KiB. Return a smaller output and hand out large results as files with cloud.download.`);
     if (execution === "chat-tool") await request("complete", { ...call, result: bounded });
     return bounded;
   };

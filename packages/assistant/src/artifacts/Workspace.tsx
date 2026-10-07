@@ -308,7 +308,9 @@ export function ArtifactWorkspace(props: {
                   tab.render()
                 ) : tab.kind === "app" ? (
                   <ArtifactPanel
-                    autoStart={state().tabs.some((candidate) => candidate.key === key && candidate.kind === "app" && candidate.autoStart)}
+                    start={
+                      state().tabs.some((candidate) => candidate.key === key && candidate.kind === "app" && candidate.autoStart) ? "now" : undefined
+                    }
                     refreshKey={props.refreshKey}
                     artifactId={tab.artifactId}
                     userId={props.userId}

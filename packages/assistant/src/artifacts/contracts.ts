@@ -35,14 +35,17 @@ export const ArtifactFile = z
   .strict();
 export const ArtifactSource = z
   .object({
-    entry: ArtifactPath.describe("JavaScript or TypeScript entry path; execution requires that file to export one function."),
+    entry: ArtifactPath.describe(
+      "index.html for an app with an interface; otherwise the JavaScript or TypeScript script that code_run executes (it exports one function).",
+    ),
     files: z.array(ArtifactFile).max(LIMITS.files).describe("Complete source bundle with unique relative paths."),
   })
   .strict()
   .superRefine((source, ctx) => {
     const paths = new Set(source.files.map((file) => file.path));
     if (paths.size !== source.files.length) ctx.addIssue({ code: "custom", message: "Duplicate file paths" });
-    if (!/\.(?:js|ts)$/.test(source.entry)) ctx.addIssue({ code: "custom", message: "Entry must be a JavaScript or TypeScript path" });
+    if (!/\.(?:js|ts)$/.test(source.entry) && source.entry !== "index.html")
+      ctx.addIssue({ code: "custom", message: "Entry must be index.html or a JavaScript or TypeScript path" });
     const encoder = new TextEncoder();
     let total = 0;
     for (const file of source.files) {
@@ -53,6 +56,16 @@ export const ArtifactSource = z
     if (total > LIMITS.sourceBytes) ctx.addIssue({ code: "custom", message: "Source exceeds byte budget" });
   });
 export type ArtifactSource = z.infer<typeof ArtifactSource>;
+/** An app has an interface when its source contains index.html; without one it only offers actions. */
+export const hasInterface = (source: Pick<ArtifactSource, "files">) => source.files.some((file) => file.path === "index.html");
+
+/**
+ * Public links to Studio apps, which let people without an account open a published app.
+ * Off until apps run on a domain of their own: an anonymous visitor would otherwise see app
+ * content, for example a convincing fake sign-in, on the Cloud domain. Set to true to turn
+ * anonymous runner access and new public grants back on.
+ */
+export const PUBLIC_APP_SHARING = false;
 
 export const ArtifactKind = z.literal("app");
 export type ArtifactKind = z.infer<typeof ArtifactKind>;

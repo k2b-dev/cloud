@@ -12,7 +12,8 @@ export default function Runner(props: { initial: RunnerMetadata; userId: string 
         userId={props.userId}
         runner={props.initial}
         onRunnerMetadata={setMetadata}
-        autoStart
+        start="auto"
+        mirrorHash
         actions={
           <RunnerActions
             id={props.initial.id}

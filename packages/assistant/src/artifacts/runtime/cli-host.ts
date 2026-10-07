@@ -5,7 +5,6 @@ import type { CapabilityDecision, CodeApproval } from "./capabilities";
 
 declare global {
   interface Window {
-    assistantCodeUnattended?: boolean;
     assistantCodeApprove: (request: CodeApproval) => Promise<CapabilityDecision>;
     assistantCodeExecute: (call: Parameters<AiFrontendToolHandler>[0]) => ReturnType<AiFrontendToolHandler>;
     assistantCodeCall: (call: Parameters<AiFrontendToolHandler>[0]) => ReturnType<AiFrontendToolHandler>;
@@ -23,14 +22,12 @@ createRoot(() => {
     (request) => window.assistantCodeApprove(request),
     "chat-tool",
     httpHost,
-    window.assistantCodeUnattended,
   );
   const standalone = createArtifactAgentRuntime(
     null,
     (request) => window.assistantCodeApprove(request),
     "standalone",
     httpHost,
-    window.assistantCodeUnattended,
   );
   window.assistantCodeExecute = (call) => {
     const handler = standalone[call.name];

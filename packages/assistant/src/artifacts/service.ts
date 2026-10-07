@@ -27,6 +27,7 @@ import {
   ArtifactSource,
   ArtifactUpdate,
   LIMITS,
+  PUBLIC_APP_SHARING,
   PublicationNote,
 } from "./contracts";
 import { databaseConfigLock } from "./database-lock";
@@ -50,7 +51,8 @@ export class ArtifactError extends Error {
       | "INVALID_INPUT"
       | "LAST_MANAGER"
       | "TOO_MANY_REQUESTS"
-      | "PUBLIC_READ_ONLY",
+      | "PUBLIC_READ_ONLY"
+      | "PUBLIC_SHARING_OFF",
   ) {
     super(code);
   }
@@ -254,6 +256,8 @@ export const artifacts = {
           if (!(error instanceof ArtifactError) || error.code !== "ACCESS_DENIED") throw error;
         }
       }
+      // Anonymous visitors reach a public grant only while public sharing is on.
+      if (!authorized && !PUBLIC_APP_SHARING) throw new ArtifactError("NOT_FOUND");
       const [row] = authorized
         ? [authorized.row]
         : await db<ArtifactRow[]>`
@@ -463,6 +467,7 @@ export const artifacts = {
   },
   async grant(id: string, principal: Principal, level: "read" | "admin", identity: ArtifactIdentity, expectedAccessRevision?: string) {
     z.enum(["read", "admin"]).parse(level);
+    if (principal.type === "public" && !PUBLIC_APP_SHARING) throw new ArtifactError("PUBLIC_SHARING_OFF");
     if (principal.type === "public" && level !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
     if (principal.type === "service_account") throw new ArtifactError("INVALID_INPUT");
     return sql.begin(async (db) => {

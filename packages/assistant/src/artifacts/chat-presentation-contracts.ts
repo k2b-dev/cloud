@@ -1,34 +1,34 @@
+import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import { z } from "zod";
-import { LIMITS } from "./contracts";
-import { validateTree } from "./runtime/host";
-import { UiNode } from "./runtime/protocol";
+import { ArtifactFile, LIMITS } from "./contracts";
 
-const PresentationFields = z
+/** An HTML app shown in a chat: one-off files without saved data, or a saved app that runs live with its data. */
+export const ChatPresentationInput = z
   .object({
     conversationId: z.string().min(1).max(80),
     callId: z.string().min(1).max(180),
     title: z.string().trim().min(1).max(120),
-    code: z.string().min(1).max(LIMITS.fileBytes),
-    nodes: z.array(UiNode).min(1).max(LIMITS.nodes),
-    inputs: z.array(z.object({ path: z.string().min(1).max(500), version: z.number().int().positive() }).strict()).max(LIMITS.files),
+    files: z.array(ArtifactFile).min(1).max(LIMITS.files).optional(),
+    artifactId: CodeResourceId.optional(),
   })
-  .strict();
-export const ChatPresentationInput = PresentationFields.superRefine((value, ctx) => {
-  if (new TextEncoder().encode(value.code).byteLength > LIMITS.fileBytes)
-    ctx.addIssue({ code: "custom", message: "Source exceeds file byte budget" });
-  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > LIMITS.rpcBytes)
-    ctx.addIssue({ code: "custom", message: "Presentation exceeds the runtime message budget" });
-  if (new Set(value.inputs.map((file) => file.path)).size !== value.inputs.length)
-    ctx.addIssue({ code: "custom", message: "Input paths must be unique" });
-  try {
-    validateTree(value.nodes);
-  } catch (error) {
-    ctx.addIssue({ code: "custom", message: String(error) });
-  }
-});
-export const ChatPresentation = PresentationFields.omit({ callId: true, inputs: true }).extend({
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.files === undefined) === (value.artifactId === undefined))
+      ctx.addIssue({ code: "custom", message: "Present either files or a saved app" });
+    if (!value.files) return;
+    if (!value.files.some((file) => file.path === "index.html")) ctx.addIssue({ code: "custom", message: "An app needs index.html" });
+    if (new Set(value.files.map((file) => file.path)).size !== value.files.length)
+      ctx.addIssue({ code: "custom", message: "Duplicate file paths" });
+    if (new TextEncoder().encode(JSON.stringify(value.files)).byteLength > LIMITS.sourceBytes)
+      ctx.addIssue({ code: "custom", message: "Source exceeds byte budget" });
+  });
+export const ChatPresentation = z.object({
   id: z.uuid(),
-  inputs: z.array(z.object({ path: z.string(), size: z.number(), mediaType: z.string() })),
+  conversationId: z.string(),
+  title: z.string(),
+  files: z.array(ArtifactFile).nullable(),
+  /** Short ID of the saved app, when the card shows one. */
+  artifactId: z.string().nullable(),
 });
 export type ChatPresentation = z.infer<typeof ChatPresentation>;
 export const ChatPresentationResult = z.object({ presentationId: z.uuid(), title: z.string() });

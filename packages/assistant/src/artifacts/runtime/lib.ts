@@ -1,4 +1,5 @@
-// Synchronous helpers for the isolated script/action worker. No DOM needed.
+// Synchronous parts of `cloud.*` for scripts, actions and app frames: cloud.html,
+// cloud.chart and cloud.money. No DOM needed.
 
 import { bar, donut, gauge, histogram, line, money, pie, scatter, sparkline } from "@k2b/stdlib";
 import { CloudError } from "./errors";
@@ -120,6 +121,11 @@ export function chartSvg(options: AnyOptions, locale: string, width: number, hei
   return KEEP_ASPECT.has(kind) ? svg : responsive(svg);
 }
 
+/** Options of recent stretched charts by id, so an app frame can redraw them at their measured width (bounded). */
+export const chartOptions = new Map<string, AnyOptions>();
+let chartSeq = 0;
+
+/** Markup of the @k2b/ui Chart component, which the base stylesheet styles in Cloud colors. */
 export function chart(options: AnyOptions, locale: string): Html {
   const kind = options?.kind as Kind;
   const render = RENDERERS[kind] as ((o: object) => string) | undefined;
@@ -134,8 +140,14 @@ export function chart(options: AnyOptions, locale: string): Html {
   const title = typeof options.title === "string" ? options.title : "";
   const subtitle = typeof options.subtitle === "string" ? options.subtitle : "";
   const label = ` role="img" aria-label="${escape([title, subtitle].filter(Boolean).join(" — ") || `${kind} chart`)}"`;
+  let id = "";
+  if (stretch && !options.width) {
+    id = `c${++chartSeq}`;
+    chartOptions.set(id, options);
+    if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
+  }
   return new Html(
-    `<div class="cloud-chart" data-chart-kind="${kind}"${stretch ? " data-stretch" : ""}${label} style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px${stretch ? "" : `;aspect-ratio:${width}/${height}`}">${svg}</div>`,
+    `<div class="k2b-chart" data-chart-kind="${kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${svg}</div></div>`,
   );
 }
 

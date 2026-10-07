@@ -111,7 +111,8 @@ export default function Apps(props: Props) {
                             userId={props.userId}
                             version={typeof version === "number" ? version : undefined}
                             published={typeof version !== "number" && !!selected().publishedRevision}
-                            autoStart
+                            start="auto"
+                            mirrorHash
                             onPublished={async () => {
                               setApp(await artifactClient.get(selected().id));
                             }}

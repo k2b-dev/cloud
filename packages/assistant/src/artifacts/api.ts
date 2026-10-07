@@ -21,6 +21,7 @@ import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { FlatDatabaseRequest } from "./database-runtime";
 import { studioFiles } from "./file-transfer";
 import { HttpPrepare, HttpScope, SecretSave } from "./http-contracts";
+import { appFrameAssets } from "./html/assets";
 import { HttpError, httpService } from "./http-service";
 import { artifactMessages } from "./messages";
 import { decodePdfRequest } from "./pdf-contracts";
@@ -182,22 +183,6 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         ),
       ),
     )
-    .get("/presentations/:presentationId/input", async (c) => {
-      const file = await chatPresentations.input(
-        z.uuid().parse(c.req.param("presentationId")),
-        z.string().min(1).parse(c.req.query("conversationId")),
-        z.string().min(1).parse(c.req.query("path")),
-        identity(c),
-      );
-      return new Response(new Uint8Array(file.data), {
-        headers: {
-          "Content-Type": file.mediaType,
-          "Content-Disposition": "attachment",
-          "X-Content-Type-Options": "nosniff",
-          "Cache-Control": "private, no-store",
-        },
-      });
-    })
     .post("/runtime/ai", v("json", z.object({ scope: HttpScope, request: AiTaskRequestSchema }).strict()), async (c) => {
       const input = c.req.valid("json");
       return c.json({ output: await runCodeAi(input.request, input.scope, identity(c), c.req.raw.signal) });
@@ -387,6 +372,8 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         "Cache-Control": "no-cache",
       }),
     )
+    .get("/runtime/app-assets", etag(), async (c) => c.json(await appFrameAssets(), 200, { "Cache-Control": "no-cache" }))
+    .get("/runtime/context", (c) => respond(c, ok(viewerContext(c))))
     .get("/runtime/host.js", async (c) => c.body(await cliHostBundle(), 200, { "Content-Type": "application/javascript; charset=utf-8" }))
     .post("/runtime/claim", v("json", ClientCall), async (c) => respond(c, ok(await clientCalls.claim(c.req.valid("json"), identity(c)))))
     .post("/runtime/complete", v("json", ClientCallResult), async (c) =>

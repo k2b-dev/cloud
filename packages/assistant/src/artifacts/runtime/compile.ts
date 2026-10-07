@@ -63,6 +63,10 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
   const action = invocation ? actions.find((action) => action.name === invocation.action) : undefined;
   if (invocation && !action) throw new ArtifactCompileError(`Unknown app action: ${invocation.action}`);
   const entry = action?.entry ?? source.entry;
+  if (entry.endsWith(".html"))
+    throw new ArtifactCompileError(
+      "This app has an index.html interface, which runs in the browser and is not compiled. Open it with code_open or show it with code_present; code_run and code_action run scripts.",
+    );
   const runtimeCode = await runtimeSource();
   const files = new Map(source.files.map((file) => [file.path, file.content]));
   // An action-only app needs no placeholder UI module. Its manifest and action
@@ -109,9 +113,9 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
   return { code: await build.outputs[0]!.text(), runtime: runtimeCode };
 }
 
-/** Compile every published handler without running any application code. */
+/** Compile the script entry and every published handler without running any application code. */
 export async function validateArtifact(source: ArtifactSource) {
-  await compileArtifact(source);
+  if (!source.entry.endsWith(".html")) await compileArtifact(source);
   for (const action of sourceActions(source)) {
     // code_action passes one JSON object. Saved revisions keep compiling; publication rejects uncallable actions.
     if (action.inputSchema.type !== "object")

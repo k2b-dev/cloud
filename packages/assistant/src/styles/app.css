@@ -5,8 +5,6 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-.artifact-runtime-root { container-type: inline-size; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem; }
-.artifact-node { min-width: 0; overflow-wrap: anywhere; }
 .assistant-apps-page { display: flex; flex-direction: column; gap: 1.5rem; width: 100%; min-width: 0; padding: 1.5rem; }
 .assistant-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 
@@ -321,8 +319,16 @@
 .k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] > .k2b-content-code-display { flex: none; }
 .k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] > .k2b-content-code-display > .k2b-content-code-display__header { justify-content: flex-end; padding-inline: 0; }
 .artifact-panel { display: flex; flex: 1; flex-direction: column; gap: .5rem; min-height: 0; min-width: 0; overflow: hidden; }
-.artifact-panel__preview { flex: 1; min-height: 0; overflow: auto; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface); }
-.artifact-panel__launch { display: grid; place-content: center; justify-items: center; gap: 1rem; min-height: 12rem; }
+.artifact-panel__preview { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 12rem; overflow: hidden; border-radius: var(--ui-radius-frame); background: var(--k2b-surface); }
+.artifact-panel__preview > .k2b-placeholder { flex: 1; }
+/* An HTML app fills its surface and scrolls inside its own frame; it stays invisible until it reports ready. */
+.studio-app { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.studio-app__frame { display: flex; flex: 1; min-width: 0; }
+.studio-app-frame { display: block; flex: 1; width: 100%; min-height: 0; border: 0; background: transparent; transition: opacity 120ms, filter 120ms; }
+/* While Cloud asks the person something for this app, the app cannot be clicked and steps back visually. */
+.studio-app-frame[inert] { filter: grayscale(1) opacity(.45); }
+.studio-app__loading { position: absolute; inset: 0; }
+@media (prefers-reduced-motion: reduce) { .studio-app-frame { transition: none; } }
 .artifact-panel__console { display: flex; flex-direction: column; gap: .5rem; flex: 0 1 auto; min-height: 0; max-height: 60%; }
 .artifact-panel__console > .k2b-inline-guidance, .artifact-console__header, .artifact-console__caption { flex-shrink: 0; }
 .artifact-console[hidden] { display: none; }
@@ -429,7 +435,7 @@
 .assistant-version-entry__actions { display: flex; gap: .25rem; flex-shrink: 0; }
 @media (max-width: 480px) { .assistant-version-entry { flex-wrap: wrap; } .assistant-version-entry__actions { margin-left: auto; } }
 
-.assistant-apps-page--runner .artifact-panel__preview { min-height: 0; overflow: auto; }
+.assistant-apps-page--runner .artifact-panel__preview { min-height: 0; }
 
 .assistant-studio-card__start { margin-left: auto; }
 
@@ -442,13 +448,6 @@
 .assistant-sql-hint { color:var(--k2b-text-muted); font-size:.75rem; }
 @media(max-width:540px) { .assistant-starters { grid-template-columns:1fr; } }
 
-.artifact-analysis-layout { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.artifact-analysis-row { flex-direction: row; flex-wrap: wrap; }
-.artifact-analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--analysis-min-width)), 1fr)); }
-.artifact-analysis-layout > header { grid-column: 1 / -1; }
-.artifact-analysis-context { font-size: .875rem; margin-block: .5rem; overflow-wrap: anywhere; }
-
-.artifact-analysis-context > strong { margin-inline-start: .5rem; }
 
 .k2b-ui .assistant-context-action { color: var(--k2b-text-muted); }
 
@@ -591,14 +590,17 @@
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }
 
-.assistant-chat-presentation { border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); padding: 1rem; min-width: 0; }
-.assistant-chat-presentation__body > header { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.assistant-chat-presentation__body > header { justify-content: space-between; margin-bottom: .75rem; }
-
-.assistant-chat-presentation { height: min(600px, 45vh); height: min(600px, 45dvh); box-sizing: border-box; display: flex; flex-direction: column; }
-.assistant-chat-presentation__body > header { flex: none; }
-.assistant-chat-presentation__body > header > strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-chat-presentation__body { flex: 1; min-height: 0; overflow: auto; }
+/* A Studio app in the chat: one surface with a quiet header and the app below it, at a fixed height so nothing moves. */
+.assistant-chat-presentation { display: flex; flex-direction: column; height: min(600px, 45vh); height: min(600px, 45dvh); min-width: 0; overflow: hidden; border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-surface); background: var(--k2b-surface); }
+.assistant-chat-presentation__header { display: flex; flex: none; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .25rem .5rem 0 1.5rem; }
+.assistant-chat-presentation__header > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 600; }
+.assistant-chat-presentation__header > small { flex: none; color: var(--k2b-text-muted); font-size: .6875rem; }
+.assistant-chat-presentation__icon { flex: none; color: var(--k2b-ai-accent); }
+.assistant-chat-presentation__actions { display: flex; flex: none; align-items: center; gap: .25rem; margin-inline-start: auto; }
+.assistant-chat-presentation__body { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.assistant-chat-presentation__body > .k2b-placeholder { flex: 1; }
+.assistant-chat-presentation__notice { position: absolute; inset-inline: .75rem; inset-block-end: .75rem; }
+@media (max-width: 640px) { .assistant-chat-presentation__header { padding-inline-start: 1rem; } }
 
 /* Task rows fill the shared Button label; the chevron owns the trailing edge. */
 .k2b-ui .assistant-task-row { width: 100%; justify-content: flex-start; text-align: left; }

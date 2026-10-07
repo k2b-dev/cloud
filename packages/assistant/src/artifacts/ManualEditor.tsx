@@ -139,7 +139,7 @@ export function ManualEditor(props: {
             {
               label: a().entry,
               icon: "ti ti-player-play",
-              disabled: !/\.(js|ts)$/.test(selected()) || source().entry === selected(),
+              disabled: (!/\.(js|ts)$/.test(selected()) && selected() !== "index.html") || source().entry === selected(),
               action: () => setSource({ ...source(), entry: selected() }),
             },
             { label: t().remove, icon: "ti ti-trash", action: remove },
@@ -232,6 +232,7 @@ export function ManualEditor(props: {
             artifactId={base().id}
             userId={props.userId}
             refreshKey={String(base().sourceRevision)}
+            files={source}
             unsavedChanges={dirty()}
             onPublished={async () => {
               props.onSaved(await artifactClient.get(base().id));

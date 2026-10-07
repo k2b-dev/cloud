@@ -29,7 +29,7 @@ export const AgentHostRequest = z
   .object({
     turnId: z.uuid(),
     callId: z.string().min(1).max(180),
-    name: z.enum(["code_run", "code_action", "code_inspect", "code_interact", "code_stop", "code_export", "code_present"]),
+    name: z.enum(["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present"]),
     args: z.unknown(),
     decision: z.object({ id: z.uuid(), approved: z.boolean() }).optional(),
   })
@@ -279,7 +279,6 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
           return { approved };
         },
         {
-          unattended: Boolean(config.background),
           ...(env.NODE_ENV === "production" ? { entry: new URL("./assistant-code-host-process.js", import.meta.url).pathname } : {}),
         },
       ),

@@ -12,7 +12,7 @@ export function isFailedTool(tool: Tool): boolean {
   if (tool.isError || tool.status === "failed") return true;
   const result = tool.result;
   return (
-    ["code_run", "code_inspect", "code_interact"].includes(tool.name) &&
+    ["code_run", "code_inspect"].includes(tool.name) &&
     result !== null &&
     typeof result === "object" &&
     "status" in result &&

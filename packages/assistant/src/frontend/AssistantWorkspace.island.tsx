@@ -1772,6 +1772,7 @@ export default function AssistantWorkspace(props: Props) {
                                       result={result()}
                                       conversationId={chat.activeConversationId()!}
                                       httpHost={browserHttpHost}
+                                      openApp={(id, title) => artifactWorkspace.open(appTab(id, title, true))}
                                     />
                                   ),
                                   actionDisabled: () => chat.runStatus() === "stopping",
