@@ -420,8 +420,9 @@ export const listPublicAttachmentLinks = async (
   const cursor = decodeAttachmentLinkCursor(input.cursor);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100);
-  const rows = await sql<DbAttachmentLink[]>`
-    SELECT ${linkColumns}
+  const rows = await sql<(DbAttachmentLink & { cursor_at: string })[]>`
+    SELECT ${linkColumns},
+           to_char(link.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM mail.attachment_links link
     WHERE link.mailbox_id = ${mailboxId}::uuid
       AND (
@@ -433,10 +434,10 @@ export const listPublicAttachmentLinks = async (
   `;
   const hasMore = rows.length > limit;
   const items = await mapLinks(hasMore ? rows.slice(0, limit) : rows);
-  const last = items.at(-1);
+  const last = rows[Math.min(limit, rows.length) - 1];
   return ok({
     items,
-    nextCursor: hasMore && last ? encodeAttachmentLinkCursor({ version: 1, createdAt: last.createdAt, id: last.id }) : null,
+    nextCursor: hasMore && last ? encodeAttachmentLinkCursor({ version: 1, createdAt: last.cursor_at, id: last.id }) : null,
   });
 };
 

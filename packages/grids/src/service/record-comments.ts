@@ -50,8 +50,8 @@ const mapRow = (row: CommentRow): RecordComment => ({
   updatedAt: iso(row.updated_at),
 });
 
-const cursorFor = (comment: RecordComment): string =>
-  Buffer.from(JSON.stringify([comment.createdAt, comment.id]), "utf8").toString("base64url");
+const cursorFor = (comment: { cursor_at: string; id: string }): string =>
+  Buffer.from(JSON.stringify([comment.cursor_at, comment.id]), "utf8").toString("base64url");
 
 const parseCursor = (cursor: string | null | undefined): [string, string] | null => {
   if (!cursor) return null;
@@ -87,12 +87,13 @@ export const list = async (params: {
   const limit = Math.min(Math.max(params.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const cursor = parseCursor(params.cursor);
   if (params.cursor && !cursor) return fail(err.badInput(messages.invalidCommentCursor));
-  const rows = await sql<CommentRow[]>`
+  const rows = await sql<(CommentRow & { cursor_at: string })[]>`
     SELECT comment.id::text, comment.short_id,
            comment.author_user_id::text,
            comment.body,
            comment.deleted_at,
            comment.created_at,
+           to_char(comment.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
            comment.updated_at,
            COALESCE(author.display_name, author.uid) AS author_display_name,
            author.avatar_hash AS author_avatar_hash
@@ -115,7 +116,7 @@ export const list = async (params: {
     LIMIT ${limit + 1}
   `;
   const items = rows.slice(0, limit).map(mapRow);
-  return ok({ items, nextCursor: rows.length > limit && items.length > 0 ? cursorFor(items[items.length - 1]!) : null });
+  return ok({ items, nextCursor: rows.length > limit && items.length > 0 ? cursorFor(rows[items.length - 1]!) : null });
 };
 
 export const create = async (params: {

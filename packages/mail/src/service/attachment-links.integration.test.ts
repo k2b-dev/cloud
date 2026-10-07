@@ -152,6 +152,41 @@ suite("public attachment links", () => {
       input,
     });
 
+  test("pages all attachment links within one millisecond exactly once", async () => {
+    const expected: string[] = [];
+    try {
+      for (const micros of [100, 200, 200, 300, 400]) {
+        const result = await createLink();
+        if (!result.ok) throw new Error(result.error.message);
+        expected.push(result.data.link.id);
+        await sql`UPDATE mail.attachment_links SET created_at = ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz
+          WHERE id = ${result.data.link.id}::uuid`;
+      }
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const result = await listPublicAttachmentLinks(adminContext, mailboxId, { limit: 2, cursor });
+        if (!result.ok) throw new Error(result.error.message);
+        seen.push(...result.data.items.filter((item) => expected.includes(item.id)).map((item) => item.id));
+        expect(
+          result.data.items.filter((item) => expected.includes(item.id)).every((item) => item.createdAt === "2026-01-01T00:00:00.000Z"),
+        ).toBe(true);
+        cursor = result.data.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeUndefined();
+      expect(seen.sort()).toEqual(expected.sort());
+      expect(new Set(seen).size).toBe(expected.length);
+      const legacy = Buffer.from(JSON.stringify({ version: 1, createdAt: "2027-01-01T00:00:00.000Z", id: crypto.randomUUID() })).toString(
+        "base64url",
+      );
+      const result = await listPublicAttachmentLinks(adminContext, mailboxId, { limit: 2, cursor: legacy });
+      expect(result.ok && result.data.items.length).toBe(2);
+    } finally {
+      for (const id of expected) await sql`DELETE FROM mail.attachment_links WHERE id = ${id}::uuid`;
+    }
+  });
+
   test("enforces Admin access, stores only hashes, and paginates every link", async () => {
     const first = await createLink({ password: " exact secret ", maxDownloads: 5, expiresAt: "2099-01-01T00:00:00.000Z" });
     const second = await createLink();

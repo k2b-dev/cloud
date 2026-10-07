@@ -12,6 +12,17 @@ const scope: ConversationCursorScope = {
 };
 
 describe("conversation pagination cursor", () => {
+  for (const date of ["2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000200Z"]) {
+    test(`decodes an existing cursor without changing timestamp precision: ${date}`, () => {
+      const cursor = Buffer.from(JSON.stringify({ version: 4, scope, date, id: "00000000-0000-4000-8000-000000000004" })).toString(
+        "base64url",
+      );
+      const decoded = decodeConversationCursor(cursor, scope);
+      expect(decoded.ok).toBe(true);
+      if (decoded.ok) expect(decoded.data?.date).toBe(date);
+    });
+  }
+
   test("round-trips within the original query scope", () => {
     const encoded = encodeConversationCursor({
       scope,

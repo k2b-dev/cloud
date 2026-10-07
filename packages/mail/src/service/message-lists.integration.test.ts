@@ -124,6 +124,57 @@ suite("mail message lists", () => {
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
+  test("pages grouped search timestamps with microseconds and accepts legacy millisecond cursors", async () => {
+    const folderId = await addFolder("Cursor", "inbox");
+    const expected: string[] = [];
+    const messageIds: string[] = [];
+    try {
+      for (const [index, micros] of [100, 200, 200, 300, 400].entries()) {
+        const subject = `Grouped cursor precision ${index}`;
+        const messageId = await addMessage({ subject, minutesAgo: index + 1, folderId });
+        messageIds.push(messageId);
+        const id = await addConversation({ subject, minutesAgo: index + 1, messageIds: [messageId] });
+        expected.push(id);
+        await sql`UPDATE mail.conversations SET latest_message_at = ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz WHERE id = ${id}::uuid`;
+      }
+      const page = (cursor?: string) =>
+        searchMessages({
+          context,
+          mailboxId,
+          groupByConversation: true,
+          request: { expression: { type: "folder_id", folderId }, sort: "newest", limit: 2, cursor },
+        });
+      const first = await page();
+      if (!first.ok) throw new Error(first.error.message);
+      expect(first.data.nextCursor).not.toBeNull();
+      const legacy = Buffer.from(
+        JSON.stringify({
+          ...JSON.parse(Buffer.from(first.data.nextCursor!, "base64url").toString("utf8")),
+          internalDate: "2027-01-01T00:00:00.000Z",
+          id: crypto.randomUUID(),
+        }),
+      ).toString("base64url");
+      const seen = first.data.items.map((item) => item.conversationId);
+      let cursor = first.data.nextCursor ?? undefined;
+      for (let index = 0; cursor && index < expected.length; index++) {
+        const result = await page(cursor);
+        if (!result.ok) throw new Error(result.error.message);
+        seen.push(...result.data.items.map((item) => item.conversationId));
+        expect(result.data.items.every((item) => item.latestMessageAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+        cursor = result.data.nextCursor ?? undefined;
+      }
+      expect(cursor).toBeUndefined();
+      expect(seen.toSorted()).toEqual(expected.toSorted());
+      expect(new Set(seen).size).toBe(expected.length);
+      const result = await page(legacy);
+      expect(result.ok && result.data.items.length).toBe(2);
+    } finally {
+      for (const id of expected) await sql`DELETE FROM mail.conversations WHERE id = ${id}::uuid`;
+      for (const id of messageIds) await sql`DELETE FROM mail.message_contents WHERE id = ${id}::uuid`;
+      await sql`DELETE FROM mail.folders WHERE id = ${folderId}::uuid`;
+    }
+  });
+
   // A conversation-only search must not spend page places on conversations the list cannot show:
   // one whose only copy was deleted in another client, and one that sits only in an excluded folder.
   test("fills every page of a conversation search and keeps the older matches reachable", async () => {

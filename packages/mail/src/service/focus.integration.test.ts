@@ -175,6 +175,48 @@ suite("cross-mailbox focus", () => {
     }
   });
 
+  test("pages Focus timestamps with microseconds and accepts legacy millisecond cursors", async () => {
+    const user = await createUser("cursor");
+    const context = contextFor(user);
+    const mailbox = await createFixtureMailbox(context, `Cursor ${suffix}`);
+    const expected: string[] = [];
+    try {
+      for (const micros of [100, 200, 200, 300, 400]) {
+        const id = await createConversation({
+          mailboxId: mailbox.id,
+          folderId: mailbox.folderId,
+          subject: "Focus cursor precision",
+          date: new Date("2026-01-01T00:00:00.000Z"),
+          status: "waiting",
+          assigneeUserId: user.id,
+        });
+        expected.push(id);
+        await sql`UPDATE mail.conversations SET latest_message_at = ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz WHERE id = ${id}::uuid`;
+      }
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < expected.length; page++) {
+        const result = await listFocusConversations({ context, view: "waiting", limit: 2, cursor });
+        if (!result.ok) throw new Error(result.error.message);
+        seen.push(...result.data.items.map((item) => item.id));
+        expect(result.data.items.every((item) => item.latestMessageAt === "2026-01-01T00:00:00.000Z")).toBe(true);
+        cursor = result.data.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeUndefined();
+      expect(seen.toSorted()).toEqual(expected.toSorted());
+      expect(new Set(seen).size).toBe(expected.length);
+      const legacy = Buffer.from(
+        JSON.stringify({ version: 1, view: "waiting", userId: user.id, date: "2027-01-01T00:00:00.000Z", id: crypto.randomUUID() }),
+      ).toString("base64url");
+      const result = await listFocusConversations({ context, view: "waiting", limit: 2, cursor: legacy });
+      expect(result.ok && result.data.items.length).toBe(2);
+    } finally {
+      await sql`DELETE FROM mail.message_contents WHERE mailbox_id = ${mailbox.id}::uuid`;
+      await sql`DELETE FROM mail.conversations WHERE mailbox_id = ${mailbox.id}::uuid`;
+    }
+  });
+
   test("aggregates readable mailboxes, personal queues, counts, and scoped cursors", async () => {
     const mine = await listFocusConversations({ context: ownerContext, view: "mine", limit: 1 });
     expect(mine.ok).toBe(true);

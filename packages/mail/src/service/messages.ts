@@ -299,7 +299,7 @@ export const listConversations = async (params: {
   if (!cursor.ok) return cursor;
   const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
-  const rows = await sql<DbConversation[]>`
+  const rows = await sql<(DbConversation & { cursor_at: string })[]>`
     SELECT
       c.id,
       primary_reference.value AS primary_reference,
@@ -313,6 +313,8 @@ export const listConversations = async (params: {
       c.revision,
       c.updated_at,
       CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END AS sort_date,
+      to_char((CASE WHEN ${view}::text = 'recently_active' THEN c.updated_at ELSE c.latest_message_at END)
+        AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
       cardinality(unread_state.folder_ids) > 0 AS unread,
       unread_state.folder_ids AS unread_folder_ids,
       active_state.folder_ids AS active_folder_ids,
@@ -525,8 +527,7 @@ export const listConversations = async (params: {
   const lastRow = pageRows.at(-1);
   return ok({
     items,
-    nextCursor:
-      hasMore && last && lastRow ? encodeConversationCursor({ scope: cursorScope, date: toIso(lastRow.sort_date), id: last.id }) : null,
+    nextCursor: hasMore && last && lastRow ? encodeConversationCursor({ scope: cursorScope, date: lastRow.cursor_at, id: last.id }) : null,
   });
 };
 
