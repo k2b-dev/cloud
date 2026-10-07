@@ -144,3 +144,64 @@ describe("PermissionEditor last manager in a browser", () => {
     }
   });
 });
+
+describe("PermissionEditor group coverage in a browser", () => {
+  const groupEntries = (name: string): AccessEntry[] => [
+    {
+      id: "user",
+      principal: { type: "user", userId: "user" },
+      permission: "admin",
+      createdAt: "2026-10-07T00:00:00.000Z",
+      displayName: "Quentin Dorn",
+    },
+    {
+      id: "group",
+      principal: { type: "group", groupId: "33333333-3333-4333-8333-333333333333" },
+      permission: "read",
+      createdAt: "2026-10-07T00:00:00.000Z",
+      displayName: name,
+    },
+  ];
+
+  // Loading the members changes nothing in the row (see the behavior test), so the server-rendered layout is final.
+  test("the members toggle stays whole beside a long group name on phones", async () => {
+    for (const name of ["Studierendenvertretung Vorstand", longName]) {
+      for (const [width, locale] of [
+        [320, "de"],
+        [375, "de"],
+        [390, "en"],
+        [1024, "de"],
+      ] as const) {
+        const tab = await open(width, locale, groupEntries(name));
+        try {
+          const layout = await tab.evaluate(() => {
+            const rows = Array.from(document.querySelectorAll(".group\\/access-row"));
+            const group = rows[1]!;
+            const texts = group.children[1]!;
+            const toggle = group.querySelector<HTMLElement>("button[aria-controls]:not([aria-haspopup])")!;
+            const label = toggle.querySelector("span")!;
+            const nameElement = texts.children[0]!;
+            return {
+              heights: rows.map((row) => row.getBoundingClientRect().height),
+              entry: group.parentElement!.getBoundingClientRect().height,
+              overflow: texts.scrollWidth - texts.clientWidth,
+              label: label.textContent,
+              labelWhole: label.scrollWidth <= label.clientWidth,
+              toggleInside: toggle.getBoundingClientRect().right <= texts.getBoundingClientRect().right,
+              nameWhole: nameElement.scrollWidth <= nameElement.clientWidth,
+            };
+          });
+          expect(layout.heights[1]).toBe(layout.heights[0]!);
+          // The collapsed member list takes no room.
+          expect(layout.entry).toBe(layout.heights[1]!);
+          expect(layout.overflow).toBeLessThanOrEqual(0);
+          expect(layout.label).toBe(locale === "de" ? "Mitglieder" : "Members");
+          expect(layout).toMatchObject({ labelWhole: true, toggleInside: true });
+          if (width === 1024) expect(layout.nameWhole).toBe(true);
+        } finally {
+          await tab.close();
+        }
+      }
+    }
+  });
+});
