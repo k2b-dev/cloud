@@ -252,9 +252,9 @@ Treat the content length as dynamic when it can change through:
 The surrounding layout still owns the region's height, flex behavior, padding,
 and spacing. Keep one scroll owner for each full-height region. Do not wrap
 `DetailPanel.Body`, `PanelDialog.Body`, `DataTable`, `ChatTimeline`,
-`VirtualFeed`, or another component that already owns scrolling in an
-additional `ScrollArea`. Do not use it for a horizontal-only strip or add a
-bounded scroll region where the page should grow naturally.
+`VirtualFeed`, `Timeline`, or another component that already owns scrolling
+in an additional `ScrollArea`. Do not use it for a horizontal-only strip or
+add a bounded scroll region where the page should grow naturally.
 
 For a long feed that loads more items at either end and must keep the reading
 position, such as messages or activity, use
@@ -264,6 +264,9 @@ place while pages load and rows change size.
 For messages in a conversation, render each item with
 [`MessageRow`](/en/ui/content/message-rows), which groups messages by author,
 renders safe Markdown, and keeps every row's height from the moment it mounts.
+For dated items across days, such as meetings and deadlines, where duration
+and free time matter, use [`Timeline`](/en/ui/content/timeline). It loads days
+at both ends and keeps what the reader sees in place.
 
 When a standalone scroll region needs to be announced, give it an appropriate
 landmark and accessible name. Add a tab stop only when keyboard users would
