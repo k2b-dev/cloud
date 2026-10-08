@@ -22,7 +22,9 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 61 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 62 });
+    // The platform prompt requires calculate for derived numbers; the catalog must not suggest answering directly.
+    expect(codeMode?.description).toContain("For plain arithmetic or date offsets, use calculate.");
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
     expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")).toMatchObject({
       key: "assistant:data-analysis",
@@ -83,7 +85,9 @@ describe("Cloud AI Skill seeds", () => {
     }
 
     const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
-    expect(assistant).toMatchObject({ key: "assistant:cloud-assistant", name: "cloud-assistant" });
+    expect(assistant).toMatchObject({ key: "assistant:cloud-assistant", name: "cloud-assistant", version: 3 });
+    // Phrasings like "like last time" match the user's words, not app names, so the description must name them.
+    expect(assistant?.description).toContain('Also use when a request refers to earlier work, such as "like last time"');
     for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message", "scheduled-tasks"]) {
       expect(assistant?.instructions).toContain(text);
     }

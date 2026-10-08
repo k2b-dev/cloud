@@ -511,6 +511,7 @@ describe("AI capability catalog", () => {
       "todo_write",
       "read_file",
       "fetch_file",
+      "calculate",
       "view_image",
       "transcribe_audio",
       "search_help",

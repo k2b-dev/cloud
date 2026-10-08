@@ -476,11 +476,10 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     references: [{ path: "references/query-tasks.md", content: CLOUD_GRIDS_QUERY_REFERENCE }],
   },
   {
-    version: 2,
+    version: 3,
     key: "assistant:cloud-assistant",
     name: "cloud-assistant",
-    description:
-      "Use for work involving Cloud Assistant itself: finding or reading earlier conversations, recovering resources used in chats, messaging another conversation, or creating and managing reminders and recurring scheduled chat work.",
+    description: `Use for work involving Cloud Assistant itself: finding or reading earlier conversations, recovering resources used in chats, messaging another conversation, or creating and managing reminders and recurring scheduled chat work. Also use when a request refers to earlier work, such as "like last time", "as last week", or "the report you made me".`,
     instructions: CLOUD_ASSISTANT_INSTRUCTIONS,
   },
   {

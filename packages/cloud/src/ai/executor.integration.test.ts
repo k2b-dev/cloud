@@ -433,9 +433,9 @@ suite("AI executor integration", () => {
         expect(prompt).toContain("# Skills");
         expect(prompt).toContain(skill.name);
       }
-      expect(interactive).toContain("Recurring work: a request is likely to recur");
+      expect(interactive).toContain("offer to save the approach as a personal Skill");
       expect(interactive).toContain("load skill-creator and draft from this conversation");
-      expect(background).not.toContain("Recurring work:");
+      expect(background).not.toContain("save the approach as a personal Skill");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
       expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
@@ -449,7 +449,7 @@ suite("AI executor integration", () => {
       const withoutCreatorPrompt = prompts.get("without-creator") ?? "";
       expect(withoutCreatorPrompt).toContain("# Skills");
       expect(withoutCreatorPrompt).toContain(skill.name);
-      expect(withoutCreatorPrompt).not.toContain("Recurring work:");
+      expect(withoutCreatorPrompt).not.toContain("save the approach as a personal Skill");
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
