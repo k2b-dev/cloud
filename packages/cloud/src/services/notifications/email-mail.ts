@@ -1,3 +1,5 @@
+import { domainToASCII } from "node:url";
+import type { ZodError } from "zod";
 import { type MailMessage, MailMessageSchema, type MailRecord } from "../../contracts/outgoing-mail";
 import { messageRecord, outgoingMailMessages } from "../outgoing-mail/messages";
 import { sendMail } from "../outgoing-mail/send";
@@ -12,14 +14,40 @@ export const notificationMailError = (error: unknown): Error & { code: string; r
   });
 };
 
+export const normalizeNotificationMail = (to: string, subject: string) => {
+  const separator = to.lastIndexOf("@");
+  const domain = separator < 0 ? "" : to.slice(separator + 1);
+  // URL conversion can discard invalid address characters; leave those for validation.
+  const ascii = domain && !/[^\p{L}\p{N}\p{M}.-]/u.test(domain) ? domainToASCII(domain) : "";
+  return {
+    to: [ascii ? `${to.slice(0, separator + 1)}${ascii}` : to],
+    subject: subject
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\0/g, "")
+      .trim()
+      .slice(0, 998),
+  };
+};
+
+export const notificationMailValidationError = (error: ZodError) =>
+  new OutgoingMailError(
+    "bad_input",
+    `Invalid notification email: ${error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}`,
+    400,
+  );
+
 const notificationMailMessage = async (
   to: string,
   subject: string,
   body: { content?: string; rawHtml?: string },
   key?: string,
 ): Promise<MailMessage> => {
-  const parsed = MailMessageSchema.safeParse({ to: [to], subject, ...(await prepareNotificationEmail(body)), ...(key ? { key } : {}) });
-  if (!parsed.success) throw new OutgoingMailError("bad_input", "Invalid notification email.", 400);
+  const parsed = MailMessageSchema.safeParse({
+    ...normalizeNotificationMail(to, subject),
+    ...(await prepareNotificationEmail(body)),
+    ...(key ? { key } : {}),
+  });
+  if (!parsed.success) throw notificationMailValidationError(parsed.error);
   return parsed.data;
 };
 

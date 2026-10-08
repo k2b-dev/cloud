@@ -19,8 +19,9 @@ is independent of the Mail application and its `cld mail` commands.
 A profile has an immutable lowercase key, a display name, a sender address,
 and SMTP connection settings. Keys may contain lowercase letters, digits,
 and hyphens; they begin with a letter or digit and contain at most 63 characters.
-A null sender name uses the registered application name for outgoing mail,
-including notifications sent as app `core`. Profile test sends use the installation's `app.name`.
+A null sender name uses the registered application name. Mail sent as app `core`
+(notifications, magic links, password resets, and notification batches) and
+profile test sends use the installation's `app.name`.
 Profile and sender names are limited to 120 characters, sender addresses and
 SMTP usernames to 320, SMTP hosts to 253, and SMTP passwords to 16384.
 
@@ -213,10 +214,13 @@ for application mail and notification email comes from Core only. Notifications
 and notification batches appear in the send log as app `core`; the direct-SMTP
 notification path has been removed.
 
-Notification batches use the default profile's bulk lane and pace. Tune that
-profile's `pacePerMinute` to the provider's limit. Individual notifications use
-the immediate lane, retain their HTML frame, and stay pending during temporary
-SMTP failures without spending notification attempts.
+Notification batches use the default profile's bulk lane and pace. They respect
+that profile's daily recipient limit for app `core` and continue as the rolling
+24-hour window frees capacity. Core's magic links, password resets, and other
+notification email share that limit: leave headroom or keep the default profile
+unlimited. Tune that profile's `pacePerMinute` to the provider's limit.
+Individual notifications use the immediate lane, retain their HTML frame, and
+stay pending during temporary SMTP failures without spending notification attempts.
 
 `mail.enqueue` uses the bulk lane. `pacePerMinute` (`pace_per_minute` in
 Postgres) spaces bulk attempts for one profile across all applications and Core

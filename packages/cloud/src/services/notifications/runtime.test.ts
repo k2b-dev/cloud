@@ -5,7 +5,7 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     import { mock } from "bun:test";
     import { strict as assert } from "node:assert";
     let processOptions, handler, declaration;
-    let starts = 0, stops = 0, drains = 0, recoveryCalls = 0;
+    let starts = 0, stops = 0, drains = 0, recoveryCalls = 0, reconciliations = 0;
     let result = { status: "delivered" };
     let failure;
     const submitted = [], batches = [], processed = [], continuations = [], spanKeys = [];
@@ -33,6 +33,7 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     }));
     mock.module(${JSON.stringify(new URL("./dispatcher.ts", import.meta.url).pathname)}, () => ({
       processNotificationDelivery: async id => { processed.push(id); if (failure) throw failure; return result; },
+      reconcileNotificationMessages: async () => { reconciliations++; },
       recoverNotificationDeliveries: async () => { recoveryCalls++; return ["persisted-before-migration"]; },
     }));
     const { startNotificationRuntime, stopNotificationRuntime, enqueueNotificationDelivery } =
@@ -42,7 +43,7 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     assert.equal(processOptions.concurrency, 7);
     assert.equal(declaration.id, "cloud-notification-deliveries");
     assert.equal(declaration.owner, "core");
-    assert.equal(recoveryCalls, 1);
+    assert.equal(recoveryCalls, 1); assert.equal(reconciliations, 1);
     assert.deepEqual(batches[0][0].input, { deliveryId: "persisted-before-migration" });
     assert.equal(batches[0][0].coalesce, undefined);
     await enqueueNotificationDelivery("delayed", 2000);

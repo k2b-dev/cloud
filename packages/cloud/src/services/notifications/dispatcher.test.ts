@@ -55,6 +55,16 @@ test("dispatcher persists mail outcomes, preserves attempts while pending, and s
     assert.equal(status, "delivered"); assert.equal(attempts, 1); assert.equal(mail, mailId);
     reset(); // Existing third-party/browser drivers return void.
     assert.equal((await processNotificationDelivery(id)).status, "delivered");
+    for (const retryAfterMs of [undefined, 0, -1, Infinity, NaN, "2000"]) {
+      reset(); result = { status: "pending", retryAfterMs, outgoingMailId: "invalid" };
+      assert.equal((await processNotificationDelivery(id)).status, "delivered");
+      assert.equal(attempts, 1); assert.equal(mail, null);
+    }
+    reset(); result = { status: "pending", retryAfterMs: 1, outgoingMailId: "invalid" };
+    assert.deepEqual(await processNotificationDelivery(id), { status: "pending", retryAfterMs: 2000 });
+    assert.equal(nextAttempt, 2000); assert.equal(attempts, 0); assert.equal(mail, null);
+    reset(); result = { status: "pending", retryAfterMs: 1e10 };
+    assert.deepEqual(await processNotificationDelivery(id), { status: "pending", retryAfterMs: 300000 });
     reset(); failure = Object.assign(new Error("550 Rejected"), { code: "smtp_failed", retryable: false, outgoingMailId: mailId });
     assert.equal((await processNotificationDelivery(id)).status, "failed");
     assert.equal(status, "failed"); assert.equal(attempts, 1); assert.equal(mail, mailId); assert.equal(errorCode, "smtp_failed");

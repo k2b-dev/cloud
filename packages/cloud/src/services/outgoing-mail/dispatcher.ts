@@ -5,6 +5,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { listApps } from "../../_internal/registry";
 import { parsePgJsonValue } from "../postgres";
+import { get } from "../settings";
 import { deleteMailObjects, verifyMailAttachment } from "./attachments";
 import { mailBackoffMs, mailEnvelope } from "./message";
 import { allowedMailProfile, type MessageRow, messageAttachmentRefs, messageRecord, outgoingMailMessages } from "./messages";
@@ -66,6 +67,8 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
       await cancelled(row, "profile_not_allowed", "The application no longer declares mail:send.");
       return;
     }
+    // Core mail speaks for the installation, as system email did before it used outgoing mail.
+    const senderName = row.app_id === "core" ? await get<string>("app.name") : app?.name || row.app_id;
     try {
       await sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
@@ -143,7 +146,7 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
       try {
         if (attempt.signal.aborted) throw new Error("SMTP attempt cancelled");
         const result = await transport.sendMail({
-          ...mailEnvelope(credentials, app?.name || row.app_id, row.from_name),
+          ...mailEnvelope(credentials, senderName, row.from_name),
           envelope: { from: credentials.fromAddress, to: row.to_addresses },
           to: row.to_addresses,
           subject: row.subject,

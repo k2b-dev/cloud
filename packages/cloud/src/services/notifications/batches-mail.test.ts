@@ -4,14 +4,16 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
   const script = `
     import { mock } from "bun:test";
     import { strict as assert } from "node:assert";
+    const mailHelpers = await import(${JSON.stringify(new URL("./email-mail.ts", import.meta.url).pathname)});
+    const { OutgoingMailError } = await import(${JSON.stringify(new URL("../outgoing-mail/store.ts", import.meta.url).pathname)});
     const batchId = "00000000-0000-4000-8000-000000000001";
     let sequence = 10;
     const nextId = () => "00000000-0000-4000-8000-" + String(sequence++).padStart(12, "0");
     const batch = { id: batchId, subject: "Batch", body_markdown: "Hello", body_html: "<p>Hello</p>", selection: {}, selection_hash: "hash", status: "ready", created_at: new Date() };
-    let recipients = [], failure, calls = [], loseAttachment = false;
+    let recipients = [], failure, calls = [], loseAttachment = false, quota = null, oversized = false;
     const history = new Map(), mails = new Map();
     const reset = () => {
-      batch.status = "ready"; history.clear(); mails.clear(); failure = undefined; calls = []; loseAttachment = false;
+      batch.status = "ready"; history.clear(); mails.clear(); failure = undefined; calls = []; loseAttachment = false; quota = null; oversized = false;
       recipients = [1, 2].map(n => ({ user_id: nextId(), recipient: "reader" + n + "@example.org", status: "pending", notification_id: null, outgoing_mail_id: null, attempt_count: 0 }));
     };
     const sql = async (parts, ...values) => {
@@ -31,7 +33,7 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
       }
       if (query.includes("RETURNING r.user_id, r.recipient")) {
         assert.ok(query.includes("outgoing_mail_id IS NULL"), "in-flight queued mail must not be reclaimed");
-        return recipients.filter(r => !r.outgoing_mail_id && (r.status === "pending" || r.status === "sending" && r.stale)).map(r => {
+        return recipients.filter(r => !r.outgoing_mail_id && (r.status === "pending" || r.status === "sending" && r.stale)).slice(0, values[1]).map(r => {
           r.status = "sending"; r.attempt_count++; r.stale = false;
           return { user_id: r.user_id, recipient: r.recipient, notification_id: r.notification_id };
         });
@@ -43,7 +45,7 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
       if (query.includes("SET outgoing_mail_id")) {
         if (loseAttachment) { loseAttachment = false; throw new Error("Database reply lost"); }
         const r = recipients.find(r => r.user_id === values[2]);
-        if (r.status === "sending" && r.notification_id === values[3]) r.outgoing_mail_id = values[0];
+        if (r.status === "sending" && r.notification_id === values[3]) { r.outgoing_mail_id = values[0]; history.get(r.notification_id).outgoing_mail_id = values[0]; }
         return [];
       }
       if (query.includes("WITH changed AS")) {
@@ -82,9 +84,9 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     mock.module(${JSON.stringify(new URL("../../shared/markdown.ts", import.meta.url).pathname)}, () => ({ markdown: {} }));
     mock.module(${JSON.stringify(new URL("../postgres.ts", import.meta.url).pathname)}, () => ({ parsePgJsonValue: v => v, toPgTextArray: v => v, toPgUuidArray: v => v }));
     mock.module(${JSON.stringify(new URL("../audit/index.ts", import.meta.url).pathname)}, () => ({ audit: { record: async () => {} } }));
-    mock.module(${JSON.stringify(new URL("./email-frame.ts", import.meta.url).pathname)}, () => ({ prepareNotificationEmail: async () => ({ html: "<!DOCTYPE html><html><body>Hello</body></html>", text: "Hello" }) }));
-    mock.module(${JSON.stringify(new URL("./email-mail.ts", import.meta.url).pathname)}, () => ({ notificationMailError: error => Object.assign(error, { retryable: ["mail_unavailable", "backlog_full", "quota_exceeded"].includes(error.code ?? "mail_unavailable") }) }));
-    mock.module(${JSON.stringify(new URL("../outgoing-mail/store.ts", import.meta.url).pathname)}, () => ({ OutgoingMailError: class extends Error { constructor(code, message) { super(message); this.code = code; } } }));
+    mock.module(${JSON.stringify(new URL("./email-frame.ts", import.meta.url).pathname)}, () => ({ prepareNotificationEmail: async () => ({ html: oversized ? "x".repeat(524289) : "<!DOCTYPE html><html><body>Hello</body></html>", text: "Hello" }) }));
+    mock.module(${JSON.stringify(new URL("./email-mail.ts", import.meta.url).pathname)}, () => mailHelpers);
+    mock.module(${JSON.stringify(new URL("../outgoing-mail/store.ts", import.meta.url).pathname)}, () => ({ outgoingMailStore: { profilesForApp: async () => quota ? [{ default: true, quota }] : [] }, OutgoingMailError }));
     mock.module(${JSON.stringify(new URL("../outgoing-mail/enqueue.ts", import.meta.url).pathname)}, () => ({ enqueueMail: async (app, messages, options) => {
       assert.equal(app, "core"); assert.deepEqual(options, { trustedHtml: true }); calls.push(messages);
       if (failure) throw failure;
@@ -99,6 +101,7 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     reset();
     assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 2, remaining: 2 });
     assert.equal(calls.length, 1); assert.equal(calls[0].length, 2); assert.equal(mails.size, 2);
+    assert.ok(recipients.every(r => history.get(r.notification_id).outgoing_mail_id === r.outgoing_mail_id));
     const firstKeys = calls[0].map(m => m.key);
     assert.ok(recipients.every(r => r.status === "sending" && r.outgoing_mail_id));
     assert.ok([...history.values()].every(m => !m.sent_at && !m.error));
@@ -115,7 +118,7 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     assert.equal((await retryRecipient({ id: batchId, userId: failedRecipient.user_id, actor: { userId: failedRecipient.user_id } })).ok, true);
     await hooks.processBatchChunk(batchId); assert.equal(mails.size, 3); assert.ok(!firstKeys.includes(calls.at(-1)[0].key));
     for (const code of ["backlog_full", "quota_exceeded", "mail_unavailable", "profile_not_allowed", "profile_unknown", "bad_input"]) {
-      reset(); failure = Object.assign(new Error(code), { code });
+      reset(); failure = new OutgoingMailError(code, code);
       const outcome = await hooks.processBatchChunk(batchId);
       const retryable = ["backlog_full", "quota_exceeded", "mail_unavailable"].includes(code);
       assert.equal(outcome.remaining, retryable ? 2 : 0); assert.equal(outcome.processed, 0);
@@ -131,6 +134,28 @@ test("batch chunks retain recipients through enqueue failures, reclaims, settlem
     assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 2, remaining: 0 });
     assert.equal(calls.length, 1); assert.equal(batch.status, "completed_with_errors");
     assert.ok([...history.values()].every(m => m.error === "Outgoing mail record is no longer available."));
+    reset(); recipients[0].recipient = "a b@example.org";
+    assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 2, remaining: 1 });
+    assert.equal(recipients[0].status, "error");
+    assert.equal(recipients[0].error, "Invalid notification email: to.0: Invalid email address");
+    assert.equal(history.get(recipients[0].notification_id).error, recipients[0].error);
+    assert.equal(recipients[1].status, "sending"); assert.ok(recipients[1].outgoing_mail_id);
+    assert.equal(calls[0].length, 1);
+    reset(); recipients.forEach(r => { r.recipient = "invalid"; });
+    assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 2, remaining: 0 }); assert.equal(calls.length, 0);
+    reset(); oversized = true;
+    await hooks.processBatchChunk(batchId); assert.equal(calls.length, 0);
+    assert.ok(recipients.every(r => r.status === "error" && r.error.includes("html:")));
+    reset(); batch.subject = "Batch\\nsubject"; recipients[0].recipient = "user@müller.de";
+    await hooks.processBatchChunk(batchId);
+    assert.equal(calls[0][0].subject, "Batch subject"); assert.equal(calls[0][0].to[0], "user@xn--mller-kva.de");
+    reset(); quota = { dailyRecipients: 1, usedLast24h: 0 };
+    assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 1, remaining: 2 });
+    assert.equal(calls[0].length, 1); assert.equal(recipients[1].status, "pending");
+    quota.usedLast24h = 1;
+    assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 0, remaining: 2 }); assert.equal(calls.length, 1);
+    quota.usedLast24h = 0;
+    assert.deepEqual(await hooks.processBatchChunk(batchId), { processed: 1, remaining: 2 }); assert.equal(calls.length, 2);
     reset(); loseAttachment = true;
     await hooks.processBatchChunk(batchId);
     assert.equal(mails.size, 2); assert.ok(recipients.every(r => r.status === "pending"));

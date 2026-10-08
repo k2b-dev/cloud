@@ -162,3 +162,24 @@ test("recovery follows the stored mail ID and never reaccepts expired mail", asy
   });
   expect(send).not.toHaveBeenCalled();
 });
+
+test("notification email normalizes subject newlines and internationalized domains", async () => {
+  const driver = getNotificationChannel("email");
+  if (!driver) throw new Error("Email driver missing");
+  await driver.deliver({ to: "user@müller.de", subject: "  Hello\r\nreader\0  ", content: "Hello" }, { deliveryId: id });
+  expect(send.mock.calls[0]?.[1]).toMatchObject({ to: ["user@xn--mller-kva.de"], subject: "Hello reader" });
+  await driver.deliver({ to: "reader@example.org", subject: "x".repeat(1000), content: "Hello" }, { deliveryId: id });
+  expect(send.mock.calls[1]?.[1].subject).toHaveLength(998);
+});
+test("invalid notification email identifies the field without accepting mail", async () => {
+  const driver = getNotificationChannel("email");
+  if (!driver) throw new Error("Email driver missing");
+  for (const to of ["a b@x.org", "a@x.org\n", "a@%78.org"]) {
+    await expect(driver.deliver({ to, subject: "Subject", content: "Hello" }, { deliveryId: id })).rejects.toMatchObject({
+      code: "bad_input",
+      retryable: false,
+      message: "Invalid notification email: to.0: Invalid email address",
+    });
+  }
+  expect(send).not.toHaveBeenCalled();
+});

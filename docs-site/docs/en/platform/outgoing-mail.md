@@ -73,12 +73,12 @@ to `mail.enqueue`; immediate `mail.send` delivery does not use it.
 
 | Field | Contract |
 | --- | --- |
-| `to` | 1–50 email addresses |
+| `to` | 1–50 addresses using HTML email syntax; write internationalized domains in ASCII/punycode form |
 | `subject` | At most 998 characters, without CR or LF |
 | `text` | Required plain text, at most 512 KiB in UTF-8, without NUL |
 | `html` | Optional HTML, at most 512 KiB in UTF-8; sanitized with Cloud's email sanitizer and sent without a frame |
 | `fromName` | Optional sender display name, at most 998 characters without CR, LF, or NUL; the sender address always comes from the profile |
-| `replyTo` | Optional email address |
+| `replyTo` | Optional address using HTML email syntax; write internationalized domains in ASCII/punycode form |
 | `profile` | Optional profile key |
 | `attachments` | Optional streamed attachments, at most 20 per message, within the profile's total byte limit |
 | `headers` | Optional custom headers from the allow-list below |
@@ -87,9 +87,10 @@ to `mail.enqueue`; immediate `mail.send` delivery does not use it.
 | `key` | Optional per-application idempotency key, at most 200 characters |
 
 The sender name uses `fromName`, then the profile's sender name, then the
-registered application name (or application ID if offline). The envelope sender is the
-profile address. Acceptance fixes `Message-ID` to `<record-id@sender-domain>`;
-retries retain that ID.
+registered application name (or application ID if offline). Mail sent as app
+`core` and profile test sends use the installation's `app.name` as the fallback.
+The envelope sender is the profile address. Acceptance fixes `Message-ID` to
+`<record-id@sender-domain>`; retries retain that ID.
 
 A failed result normally means no message was recorded. `mail_unavailable`
 can also mean the outcome is unknown, for example after a lost database reply;

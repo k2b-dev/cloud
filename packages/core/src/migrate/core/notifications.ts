@@ -17,6 +17,13 @@ export const migrate = async (): Promise<void> => {
       sent_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
     )
   `.simple();
+  await sql`ALTER TABLE notifications.messages ADD COLUMN IF NOT EXISTS outgoing_mail_id UUID`.simple();
+  await sql`ALTER TABLE notifications.messages ADD COLUMN IF NOT EXISTS mail_generation INT NOT NULL DEFAULT 0`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notification_messages_outgoing_mail
+    ON notifications.messages(outgoing_mail_id)
+    WHERE outgoing_mail_id IS NOT NULL AND sent_at IS NULL AND error IS NULL
+  `.simple();
   console.log("  ✓ notifications.messages table");
 
   await sql`

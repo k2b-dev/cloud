@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { z } from "zod";
 import { decryptSecret } from "../secrets";
 import { getNotificationChannel } from "./channels";
 
@@ -96,20 +97,28 @@ export const processNotificationDelivery = async (
       ...(signal ? { signal } : {}),
       ...(delivery.outgoing_mail_id ? { outgoingMailId: delivery.outgoing_mail_id } : {}),
     });
-    if (outcome?.status === "pending") {
+    // Third-party drivers may return provider bodies; only a UUID can name an outgoing mail.
+    const mailId = z.uuid().safeParse(outcome?.outgoingMailId).data ?? null;
+    if (
+      outcome?.status === "pending" &&
+      typeof outcome.retryAfterMs === "number" &&
+      Number.isFinite(outcome.retryAfterMs) &&
+      outcome.retryAfterMs > 0
+    ) {
+      const retryAfterMs = Math.round(Math.min(MAX_RETRY_MS, Math.max(BASE_RETRY_MS, outcome.retryAfterMs)));
       await sql`
         UPDATE notifications.deliveries
         SET status = 'pending', attempt_count = attempt_count - 1,
-            next_attempt_at = now() + (${outcome.retryAfterMs}::int * INTERVAL '1 millisecond'),
-            outgoing_mail_id = COALESCE(${outcome.outgoingMailId ?? null}::uuid, outgoing_mail_id),
-            error_code = NULL, error_message = ${outcome.errorMessage ?? null}, updated_at = now()
+            next_attempt_at = now() + (${retryAfterMs}::int * INTERVAL '1 millisecond'),
+            outgoing_mail_id = COALESCE(${mailId}::uuid, outgoing_mail_id),
+            error_code = NULL, error_message = ${typeof outcome.errorMessage === "string" ? outcome.errorMessage : null}, updated_at = now()
         WHERE id = ${delivery.id}::uuid
       `;
-      return { status: "pending", retryAfterMs: outcome.retryAfterMs };
+      return { status: "pending", retryAfterMs };
     }
     await sql`
       UPDATE notifications.deliveries
-      SET outgoing_mail_id = COALESCE(${outcome?.outgoingMailId ?? null}::uuid, outgoing_mail_id),
+      SET outgoing_mail_id = COALESCE(${mailId}::uuid, outgoing_mail_id),
           status = 'delivered', delivered_at = now(), next_attempt_at = NULL,
           error_code = NULL, error_message = NULL, payload_encrypted = NULL, updated_at = now()
       WHERE id = ${delivery.id}::uuid
@@ -120,9 +129,7 @@ export const processNotificationDelivery = async (
     const message = error instanceof Error ? error.message : "Notification delivery failed";
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "provider_error";
     const outgoingMailId =
-      error && typeof error === "object" && "outgoingMailId" in error && typeof error.outgoingMailId === "string"
-        ? error.outgoingMailId
-        : null;
+      error && typeof error === "object" && "outgoingMailId" in error ? (z.uuid().safeParse(error.outgoingMailId).data ?? null) : null;
     const retryable = !(error && typeof error === "object" && "retryable" in error && error.retryable === false);
     if (retryable && delivery.attempt_count < MAX_DELIVERY_ATTEMPTS) {
       const retryAfterMs = retryDelay(delivery.attempt_count);
@@ -162,4 +169,23 @@ export const recoverNotificationDeliveries = async (): Promise<string[]> => {
     LIMIT 500
   `;
   return rows.map((row) => row.id);
+};
+
+export const reconcileNotificationMessages = async (): Promise<void> => {
+  await sql`
+    WITH terminal AS (
+      SELECT m.id, m.outgoing_mail_id, mail.status, mail.sent_at,
+        COALESCE(mail.error_message, mail.smtp_response, 'Outgoing mail record is no longer available.') AS error
+      FROM notifications.messages m
+      LEFT JOIN outgoing_mail.messages mail ON mail.id = m.outgoing_mail_id
+      WHERE m.outgoing_mail_id IS NOT NULL AND m.sent_at IS NULL AND m.error IS NULL
+        AND (mail.status IN ('sent', 'bounced', 'failed', 'cancelled') OR mail.id IS NULL)
+      ORDER BY m.outgoing_mail_id, m.id LIMIT 500
+    )
+    UPDATE notifications.messages m
+    SET sent_at = CASE WHEN t.status IN ('sent', 'bounced') THEN t.sent_at ELSE NULL END,
+        error = CASE WHEN t.status IN ('sent', 'bounced') THEN NULL ELSE t.error END
+    FROM terminal t
+    WHERE m.id = t.id AND m.outgoing_mail_id = t.outgoing_mail_id AND m.sent_at IS NULL AND m.error IS NULL
+  `;
 };

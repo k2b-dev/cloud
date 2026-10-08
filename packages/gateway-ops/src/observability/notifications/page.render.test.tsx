@@ -34,12 +34,40 @@ const user = {
   managesGroupIds: [],
 } satisfies User;
 
+const delivery = (id: string, outgoingMailStatus: "sent" | "bounced" | "queued" | null) => ({
+  id,
+  eventId: id,
+  definitionId: "core.fixture",
+  appId: "core",
+  kind: "fixture",
+  label: "Fixture",
+  title: `Fixture ${id}`,
+  targetHref: null,
+  recipientLabel: "Book Reader",
+  recipientReference: "reader@example.test",
+  channel: "email",
+  destinationLabel: "r***@example.test",
+  required: false,
+  routePriority: 1,
+  status: outgoingMailStatus === "queued" ? ("pending" as const) : ("delivered" as const),
+  outgoingMailId: outgoingMailStatus ? `00000000-0000-4000-8000-00000000000${id}` : null,
+  outgoingMailStatus,
+  attemptCount: 1,
+  errorCode: null,
+  errorMessage: null,
+  createdAt: new Date("2026-09-14T00:00:00Z"),
+  updatedAt: new Date("2026-09-14T00:00:00Z"),
+  deliveredAt: null,
+});
+/** A delivered mail that bounced later, a queued mail, and a plain sent mail. */
+const deliveries = [delivery("1", "bounced"), delivery("2", "queued"), delivery("3", "sent")];
+
 test("notification delivery page renders charts inside the SSR and request-locale context", async () => {
   const spies = [
     stubRailSnapshot(),
     spyOn(cloud, "listApps").mockResolvedValue([]),
     spyOn(notificationsService, "facets").mockResolvedValue({ appIds: [], channels: [] }),
-    spyOn(notificationsService.delivery, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
+    spyOn(notificationsService.delivery, "list").mockResolvedValue({ items: deliveries, page: 1, perPage: 100, total: 3, hasNext: false }),
     spyOn(notificationsService.delivery, "summary").mockResolvedValue({ total: 0, active: 0, delivered: 0, suppressed: 0, failed: 0 }),
     spyOn(notificationsService.delivery, "timeseries").mockResolvedValue([
       { at: new Date("2026-09-14T00:00:00Z"), total: 3, active: 0, delivered: 3, suppressed: 0, failed: 0 },
@@ -66,6 +94,11 @@ test("notification delivery page renders charts inside the SSR and request-local
       expect(html).toContain("k2b-chart__svg");
       expect(html).toContain("<svg");
       expect(html).toContain(locale === "de" ? "Benachrichtigungen" : "Notifications");
+      // Mail status appears only where it adds to the delivery status.
+      expect(html).toContain(locale === "de" ? "E-Mail: Unzustellbar" : "Mail: Bounced");
+      expect(html).toContain(locale === "de" ? "E-Mail: In Warteschlange" : "Mail: Queued");
+      expect(html).not.toContain(locale === "de" ? "E-Mail: Gesendet" : "Mail: Sent");
+      expect(html).toContain('title="00000000-0000-4000-8000-000000000001"');
       for (const view of ["registry", "legacy"]) {
         const other = await server.request(`/admin/observability/notifications?view=${view}`, { headers: { "Accept-Language": locale } });
         expect(other.status, await other.text()).toBe(200);

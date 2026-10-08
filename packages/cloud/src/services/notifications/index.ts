@@ -107,6 +107,26 @@ type DbNotificationRow = {
   sent_by_name: string | null;
 };
 
+type LegacyMailRow = { id: string; type: NotificationType; recipient: string; subject: string; content: string; mail_generation: number };
+
+const deliverLegacyMail = async (row: LegacyMailRow, body: { content?: string; rawHtml?: string }) => {
+  const key = `notification-message:${row.id}${row.mail_generation ? `:${row.mail_generation}` : ""}`;
+  try {
+    const record = await sendNotificationMail(row.recipient, row.subject, body, key);
+    await sql`UPDATE notifications.messages SET outgoing_mail_id = ${record.id}::uuid, sent_at = NULL, error = NULL
+      WHERE id = ${row.id}::uuid AND mail_generation = ${row.mail_generation}`;
+    const outcome = await notificationMailOutcome(record);
+    if (outcome.status === "pending") return "pending" as const;
+    await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL
+      WHERE id = ${row.id}::uuid AND mail_generation = ${row.mail_generation}`;
+    return "sent" as const;
+  } catch (error) {
+    await sql`UPDATE notifications.messages SET sent_at = NULL, error = ${error instanceof Error ? error.message : String(error)}
+      WHERE id = ${row.id}::uuid AND mail_generation = ${row.mail_generation}`;
+    throw error;
+  }
+};
+
 /**
  * Send a notification. Persists to DB, attempts delivery (if autoSend=true), updates sent_at/error.
  */
@@ -130,18 +150,11 @@ const sendLegacy = async (params: SendNotificationParams): Promise<SendNotificat
 
   // Attempt delivery
   try {
-    if (type === "email") {
-      const outcome = await notificationMailOutcome(
-        await sendNotificationMail(recipient, subject, { content, rawHtml }, `notification-message:${id}`),
-      );
-      if (outcome.status === "pending") return { id, status: "pending" };
-    }
-    await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}`;
-    return { id, status: "sent" };
+    const status = await deliverLegacyMail({ id, type, recipient, subject, content: dbContent, mail_generation: 0 }, { content, rawHtml });
+    return { id, status };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     log.error("Failed to send", { type, recipient, error });
-    await sql`UPDATE notifications.messages SET error = ${error} WHERE id = ${id}`;
     return { id, status: "error", error };
   }
 };
@@ -485,27 +498,26 @@ export const getById = async (id: string): Promise<NotificationMessage | null> =
  * Resend a notification (retry delivery).
  */
 export const resend = async (id: string): Promise<{ ok: true } | { ok: false; code: "not_found" | "delivery_failed"; error: string }> => {
-  const notification = await getById(id);
-  if (!notification) {
-    return { ok: false, code: "not_found", error: "Notification not found" };
-  }
-
+  const notification = await sql.begin(async (tx): Promise<(LegacyMailRow & { current_mail_status: string | null }) | undefined> => {
+    const [row] = await tx<(LegacyMailRow & { outgoing_mail_id: string | null; current_mail_status: string | null })[]>`
+      SELECT m.*, mail.status AS current_mail_status FROM notifications.messages m
+      LEFT JOIN outgoing_mail.messages mail ON mail.id = m.outgoing_mail_id
+      WHERE m.id = ${id}::uuid FOR UPDATE OF m
+    `;
+    if (!row || row.current_mail_status === "queued" || row.current_mail_status === "sending" || !row.outgoing_mail_id) return row;
+    const [updated] = await tx<LegacyMailRow[]>`
+      UPDATE notifications.messages SET mail_generation = mail_generation + 1, outgoing_mail_id = NULL, sent_at = NULL, error = NULL
+      WHERE id = ${id}::uuid RETURNING *
+    `;
+    return updated ? { ...updated, current_mail_status: null } : undefined;
+  });
+  if (!notification) return { ok: false, code: "not_found", error: "Notification not found" };
+  if (["queued", "sending"].includes(notification.current_mail_status ?? "")) return { ok: true };
   try {
-    if (notification.type === "email") {
-      const outcome = await notificationMailOutcome(
-        await sendNotificationMail(notification.recipient, notification.subject, { rawHtml: notification.content }),
-      );
-      if (outcome.status === "pending") {
-        await sql`UPDATE notifications.messages SET sent_at = NULL, error = NULL WHERE id = ${id}`;
-        return { ok: true };
-      }
-    }
-    await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}`;
+    await deliverLegacyMail(notification, { rawHtml: notification.content });
     return { ok: true };
   } catch (e) {
-    const error = e instanceof Error ? e.message : String(e);
-    await sql`UPDATE notifications.messages SET sent_at = NULL, error = ${error} WHERE id = ${id}`;
-    return { ok: false, code: "delivery_failed", error };
+    return { ok: false, code: "delivery_failed", error: e instanceof Error ? e.message : String(e) };
   }
 };
 
@@ -542,7 +554,9 @@ export const update = async (
       subject = COALESCE(${data.subject ?? null}, subject),
       content = COALESCE(${data.content ?? null}, content),
       recipient = COALESCE(${data.recipient ?? null}, recipient),
-      error = CASE WHEN ${clearError} THEN NULL ELSE error END
+      error = CASE WHEN ${clearError} THEN NULL ELSE error END,
+      mail_generation = CASE WHEN ${clearError} THEN mail_generation + 1 ELSE mail_generation END,
+      outgoing_mail_id = CASE WHEN ${clearError} THEN NULL ELSE outgoing_mail_id END
     WHERE id = ${id}
   `;
 
@@ -555,7 +569,7 @@ export const update = async (
 export const getPendingSystemCount = async (): Promise<number> => {
   const rows = await sql`
     SELECT COUNT(*)::int as count FROM notifications.messages
-    WHERE sent_at IS NULL AND error IS NULL AND sent_by IS NULL
+    WHERE sent_at IS NULL AND error IS NULL AND sent_by IS NULL AND outgoing_mail_id IS NULL
   `;
   return rows[0]?.count ?? 0;
 };
@@ -570,10 +584,10 @@ export const sendAllPendingSystem = async (): Promise<{
   errors: { id: string; recipient: string; error: string }[];
 }> => {
   // Get all pending system notifications
-  const rows = await sql`
-    SELECT id, type, recipient, subject, content
+  const rows = await sql<LegacyMailRow[]>`
+    SELECT id, type, recipient, subject, content, mail_generation
     FROM notifications.messages
-    WHERE sent_at IS NULL AND error IS NULL AND sent_by IS NULL
+    WHERE sent_at IS NULL AND error IS NULL AND sent_by IS NULL AND outgoing_mail_id IS NULL
     ORDER BY created_at ASC
   `;
 
@@ -582,24 +596,13 @@ export const sendAllPendingSystem = async (): Promise<{
   const errors: { id: string; recipient: string; error: string }[] = [];
 
   for (const row of rows) {
-    const id = row.id as string;
-    const type = row.type as NotificationType;
-    const recipient = row.recipient as string;
-    const subject = row.subject as string;
-    const content = row.content as string;
+    const { id, recipient, content } = row;
 
     try {
-      if (type === "email") {
-        const outcome = await notificationMailOutcome(
-          await sendNotificationMail(recipient, subject, { rawHtml: content }, `notification-message:${id}`),
-        );
-        if (outcome.status === "pending") continue;
-      }
-      await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}`;
+      if ((await deliverLegacyMail(row, { rawHtml: content })) === "pending") continue;
       sent++;
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
-      await sql`UPDATE notifications.messages SET error = ${error} WHERE id = ${id}`;
       failed++;
       errors.push({ id, recipient, error });
     }

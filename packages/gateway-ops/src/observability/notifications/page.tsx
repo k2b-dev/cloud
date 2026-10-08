@@ -67,6 +67,19 @@ const deliveryStatusBadge = (status: NotificationDeliveryStatus, t: GatewayOpsMe
   return <StatusBadge {...config[status]} />;
 };
 
+// A delivered notification can still bounce later; `sent` adds nothing to the delivery status.
+const outgoingMailLine = (item: DeliveryItem, t: GatewayOpsMessages): JSX.Element => {
+  const status = item.outgoingMailStatus;
+  if (!status || status === "sent") return null;
+  const label = { queued: t.queued, sending: t.sending, sent: t.sent, failed: t.failed, bounced: t.bounced, cancelled: t.canceled }[status];
+  const problem = status === "failed" || status === "bounced" || status === "cancelled";
+  return (
+    <p class={`mt-0.5 truncate text-[10px] ${problem ? "text-red-500" : "text-dimmed"}`} title={item.outgoingMailId ?? undefined}>
+      {t.outgoingMailStatus({ status: label })}
+    </p>
+  );
+};
+
 const legacyStatusBadge = (status: LegacyItem["status"], t: GatewayOpsMessages): JSX.Element => {
   if (status === "sent") return deliveryStatusBadge("delivered", t);
   if (status === "error") return deliveryStatusBadge("failed", t);
@@ -279,9 +292,12 @@ export default ssr<AuthContext>(async (c) => {
                 }
                 if (col.id === "channel") {
                   return (
-                    <div class="flex flex-wrap items-center gap-1">
-                      {channelChip(item.channel, t)}
-                      {item.required && <span class="text-[9px] font-medium uppercase text-dimmed">{t.required}</span>}
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-1">
+                        {channelChip(item.channel, t)}
+                        {item.required && <span class="text-[9px] font-medium uppercase text-dimmed">{t.required}</span>}
+                      </div>
+                      {outgoingMailLine(item, t)}
                     </div>
                   );
                 }
