@@ -79,12 +79,12 @@ version and is listed separately.
 A case that ends before the model finishes on its own, through a provider
 error, the 25-minute limit or the 60-turn limit, is marked as not measured and
 left out of the totals. Neither number proves that the app looks good or
-calculates correctly: look at the first and final screenshots, including the
-filled states the steps may have deleted again, open the PDFs before you report
-a result, and compare calculated values with the source data. Report a case you
-could not see in its main state as unverified. Runs with different models,
-reasoning efforts or commits are not a controlled comparison; a commit ending in
-`-dirty` had uncommitted changes.
+calculates correctly: look at the first and final screenshots, open the PDFs
+before you report a result, and compare calculated values with the source data.
+A screenshot shows only the first viewport after the last step, so report a
+case whose requested main state it does not show as unverified. Runs with
+different models, reasoning efforts or commits are not a controlled comparison;
+a commit ending in `-dirty` had uncommitted changes.
 
 ## Evaluate HTML app checks
 
