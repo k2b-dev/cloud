@@ -155,19 +155,6 @@
   margin-block: 0.25rem;
 }
 
-.assistant-markdown-block :where(a) {
-  @apply text-blue-600 underline underline-offset-2 dark:text-blue-300;
-}
-
-.assistant-markdown-block :where(a.md-link-widget) {
-  color: inherit;
-  text-decoration: none;
-}
-
-.assistant-markdown-block :where(a.md-link-widget:hover) {
-  color: var(--ui-app-accent-text);
-}
-
 .assistant-markdown-block :where(code) {
   @apply rounded bg-zinc-100 px-1 py-0.5 text-[0.85em] text-primary dark:bg-zinc-900;
 }

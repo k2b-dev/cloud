@@ -6,9 +6,9 @@ import {
   renderHtmlToPdf,
 } from "@k2b/cloud/services/pdf";
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
-import { renderNotebookBook } from "../lib/book-renderer";
+import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
-import { resolveBookQueries } from "./book";
+import { resolveBookQueries, resolveBookReferences } from "./book";
 import type { NoteQueryResult } from "./note-query";
 
 /**
@@ -43,9 +43,7 @@ const NOTE_PRINT_CSS = `
 .notebook-book-toc li[data-depth="2"] { padding-left: 1.2em; }
 .notebook-book-toc li[data-depth="3"] { padding-left: 2.4em; }
 .notebook-book-toc li[data-depth="4"], .notebook-book-toc li[data-depth="5"], .notebook-book-toc li[data-depth="6"] { padding-left: 3.6em; }
-a.notebook-book-tag, a.notebook-book-note-link { text-decoration: none; }
-a.notebook-book-tag { color: #047857; }
-a.notebook-book-note-link { color: #1d4ed8; }
+a.notebook-book-tag { color: #047857; text-decoration: none; }
 i.ti { display: none; }
 .notebook-book-diagnostic { padding: .5em .8em; border-left: 3px solid #cbd5e1; color: #475569; }
 .notebook-book-empty, .notebook-book-image-label, .notebook-book-mermaid figcaption { color: #64748b; }
@@ -79,6 +77,7 @@ export type NotePdfHtmlInput = {
   templateId?: MarkdownPdfTemplateId;
   customCss?: string;
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
+  references?: BookReferences;
 };
 
 /** The reader's Book rendering of a note inside the chosen print preset. */
@@ -90,6 +89,7 @@ export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
     noteId: input.noteShortId,
     locale: input.locale,
     queryResults: input.queryResults,
+    references: input.references,
     print: true,
   });
   const css = html.includes("notebook-book-math") ? `${NOTE_PRINT_CSS}\n${KATEX_PRINT_CSS}` : NOTE_PRINT_CSS;
@@ -98,7 +98,7 @@ export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
 
 /** Render the caller's note snapshot as PDF, with query blocks resolved for the caller's access subject. */
 export const renderNotePdf = async (
-  params: Omit<NotePdfHtmlInput, "queryResults"> & {
+  params: Omit<NotePdfHtmlInput, "queryResults" | "references"> & {
     notebookId: string;
     noteId: string;
     userId: string | null;
@@ -108,6 +108,6 @@ export const renderNotePdf = async (
     title: string;
   },
 ): Promise<RenderHtmlToPdfResult> => {
-  const queryResults = await resolveBookQueries(params);
-  return renderHtmlToPdf({ html: buildNotePdfHtml({ ...params, queryResults }), title: params.title });
+  const [queryResults, references] = await Promise.all([resolveBookQueries(params), resolveBookReferences(params)]);
+  return renderHtmlToPdf({ html: buildNotePdfHtml({ ...params, queryResults, references }), title: params.title });
 };

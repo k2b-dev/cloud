@@ -67,5 +67,7 @@ test("numeric character references stay escaped text and cannot rebuild markup o
 test("a link label cannot hold another link", () => {
   const html = renderSafeMarkdown("[outer [inner](https://inner.example) text](https://outer.example)");
   expect(html).not.toMatch(/<a\b[^>]*>(?:(?!<\/a>)[\s\S])*<a\b/);
-  expect(html).toContain('<a href="https://inner.example">inner</a>');
+  expect(html).toContain(
+    '<a href="https://inner.example" class="k2b-text-link" data-link="web">inner<i class="k2b-text-link__external ti ti-arrow-up-right" aria-hidden="true"></i></a>',
+  );
 });

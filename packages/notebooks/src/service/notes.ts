@@ -692,6 +692,19 @@ export const resolveIdsToShortIds = async (params: { ids: string[] }): Promise<M
   return new Map(rows.map((row) => [row.id, row.short_id]));
 };
 
+/** Titles of the notes of one notebook with these public IDs; IDs of other notebooks are left out. */
+export const titlesByShortIds = async (params: { notebookId: string; shortIds: string[] }): Promise<Map<string, string>> => {
+  const shortIds = [...new Set(params.shortIds.filter(Boolean))];
+  if (shortIds.length === 0) return new Map();
+  const rows = await sql<{ short_id: string; title: string }[]>`
+    SELECT short_id, title
+    FROM notebooks.notes
+    WHERE notebook_id = ${params.notebookId}::uuid
+      AND short_id = ANY(${toPgTextArray(shortIds)}::text[])
+  `;
+  return new Map(rows.map((row) => [row.short_id, row.title]));
+};
+
 /**
  * Get a note with its Yjs content.
  */
@@ -755,7 +768,7 @@ export const getCurrentWithContent = async (params: { id: string }): Promise<Not
 /**
  * Batch-resolve note short-ids to `(noteShortId → notebookShortId)`
  * pairs. Used by the read-mode renderer to build the
- * `noteShortIdToHref` map handed to `transformNoteLinks` in one SQL
+ * `noteShortIdToHref` map in one SQL
  * roundtrip — avoids an N+1 lookup per `note://` link in a body.
  *
  * Notes / notebooks the caller can't see (cross-notebook references)

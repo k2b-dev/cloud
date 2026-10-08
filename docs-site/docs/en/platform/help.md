@@ -177,9 +177,15 @@ from `@k2b/cloud/shared` (pass `{ locale }` to name untitled callouts in the
 reader's language), Notebooks, and Markdown PDF exports. See
 [Markdown content](/en/ui/content/markdown#info-blocks) for the exact rules.
 
+By default these helpers render links like `MarkdownView`: a relative link is
+a reference pill with a type icon, and a web or mail link is quiet text with a
+thin accent underline (see
+[Markdown content](/en/ui/content/markdown#links-and-references)). A raw
+anchor inside a link's text stays text. A Notebooks `note://` or `attach://`
+link renders as its text, because only Notebooks resolves it.
 Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
-email. Each link then renders as an ordinary anchor around its text instead of
-the bracketed Cloud link label. Email drops the screen-reader styling, so an
+email. Each link then renders as an ordinary anchor around its text instead.
+Email drops the screen-reader styling, so an
 untitled callout shows its type name there as text. HTML that Cloud renders
 without one reader's locale, such as notification batches, announcements, and
 messages written in Mail, names untitled callouts in English; give those

@@ -1,6 +1,7 @@
 import { Marked, Renderer, type Tokens } from "marked";
 import { useLocale } from "../intl/locale";
 import { markdownInfoBlocks } from "./markdown-info-blocks";
+import { markdownLinkReference, renderMarkdownLink } from "./markdown-links";
 
 type CommonProps = MarkdownRenderOptions & {
   /** Optional additional CSS classes */
@@ -87,9 +88,14 @@ export const createSafeRenderer = (options: MarkdownRenderOptions = {}): Rendere
         return body;
       }
     }
-    const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
-    const target = options.linkTarget === "_blank" ? ' target="_blank" rel="noopener noreferrer"' : "";
-    return `<a href="${escapeHtml(url)}"${titleAttribute}${target}>${body}</a>`;
+    return renderMarkdownLink({
+      href: url,
+      html: body,
+      title: title ?? undefined,
+      target: options.linkTarget,
+      reference: markdownLinkReference(url),
+      locale: options.locale,
+    });
   };
   renderer.image = ({ href, title, text }: Tokens.Image) => {
     const url = safeUrl(href);

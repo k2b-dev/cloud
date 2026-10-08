@@ -4,7 +4,7 @@
  *
  * Markdown encodes attachment references as `attach://<shortId>` (6-char
  * readable ID). Resolution to the real download URL happens at render
- * time (see `transformAttachments`) and inside CodeMirror image/file
+ * time (see `renderNotebookBook`) and inside CodeMirror image/file
  * widgets (client-side). The scheme is `attach://` (not `attachment://`
  * or `file://`) — the latter clashes with RFC 8089 filesystem URIs that
  * some markdown sanitizers / mail clients block.
@@ -17,8 +17,6 @@ import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { fileIcons } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateUniqueShortId } from "../lib/short-id";
-
-const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export type AttachmentKind = "image" | "file";
 
@@ -265,35 +263,4 @@ export const reindexAttachmentRefs = async (params: { noteId: string; notebookId
       ON CONFLICT DO NOTHING
     `;
   });
-};
-
-// =============================================================================
-// HTML post-processor — analogous to `transformNoteLinks`. Run AFTER
-// `markdown.render(...)` to swap `attach://<shortId>` references for real
-// download URLs and render non-image links as file pills.
-// =============================================================================
-
-/**
- * Notebook-scoped content URL using the public notebook and attachment IDs.
- */
-const buildContentUrl = (notebookId: string, attachmentId: string) =>
-  `/api/notebooks/${notebookId}/attachments/${attachmentId}/content?v=1`;
-
-export const transformAttachments = (html: string, params: { notebookId: string; shortIdToFilename?: Map<string, string> }): string => {
-  const { notebookId, shortIdToFilename } = params;
-
-  // 1) <img src="attach://<shortId>"> → rewrite src to API content URL
-  let out = html.replace(/(<img[^>]*\bsrc=")attach:\/\/([0-9a-zA-Z]{6})("[^>]*>)/g, (_m, head: string, shortId: string, tail: string) => {
-    return `${head}${buildContentUrl(notebookId, shortId)}${tail}`;
-  });
-
-  // 2) <a href="attach://<shortId>">label</a> → render as file pill
-  out = out.replace(/<a[^>]*\bhref="attach:\/\/([0-9a-zA-Z]{6})"[^>]*>([^<]*)<\/a>/g, (_m, shortId: string, label: string) => {
-    const filename = shortIdToFilename?.get(shortId) ?? label;
-    const icon = fileIcons.getFileIcon({ name: filename, type: "file" });
-    const href = buildContentUrl(notebookId, shortId);
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="cm-attachment-pill inline-flex items-center gap-1 rounded-md bg-zinc-100/80 px-1.5 py-0.5 text-zinc-700 no-underline shadow-[var(--ui-shadow-surface)] hover:bg-zinc-200/80 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-700/80" title="${escapeHtml(filename)}"><i class="ti ${icon} text-xs"></i><span>${escapeHtml(label)}</span></a>`;
-  });
-
-  return out;
 };
