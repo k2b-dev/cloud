@@ -111,9 +111,18 @@ write.
 load. The error still appears in the browser console, reported through
 `reportError()` like any uncaught error.
 
+The notice has the same compact size wherever it appears, so a failing small
+island, such as a control in the header, takes more room than the control did.
+
 `defineApp` sets this for every application. Do not wrap an island's root in an
 `ErrorBoundary` for protection. Add one inside an island only when a part of it
 needs its own recovery; the nearest boundary handles the error.
+
+Dialogs from `prompts` and `dialogCore` and windows from `openFloatingWindow`
+render outside the island that opens them. `@k2b/ui` gives each of them its
+own boundary: failing content shows "This content could not be displayed."
+inside the dialog or window, and the island keeps working. See
+[Prompts](/en/ui/feedback/prompts#runtime).
 
 Errors in event handlers and async callbacks outside a Solid computation do not
 reach a boundary. Handle them where they happen, for example with a mutation's

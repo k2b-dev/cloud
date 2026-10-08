@@ -30,6 +30,11 @@ Options include `title`, `icon`, `accent`, initial width and height, minimum wid
 
 The helper restores focus to the previously focused element when the window closes.
 
+The window is a Solid root of its own with its own error boundary. When the
+`view` throws while it opens or on a later update, the window keeps its title
+bar and shows "This content could not be displayed." in its body, and the
+error goes to `reportError()`. The rest of the page keeps working.
+
 Use `FloatingWindow` directly when reactive JSX already owns whether the
 window is mounted. Pass `resolveScope={() => owner}` when the portal must stay
 inside a specific `.k2b-ui` application shell. `openFloatingWindow` creates

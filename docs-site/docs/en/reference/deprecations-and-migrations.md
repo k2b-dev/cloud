@@ -17,6 +17,9 @@ inside its own error boundary, and `defineApp` gives it Cloud's localized
 notice with **Try again**. See
 [When an island fails](/en/docs/frontend/islands-and-hydration#when-an-island-fails).
 Remove root `ErrorBoundary` wrappers that an island only had for protection.
+Dialogs and floating windows from `@k2b/ui` get their own boundary and notice.
+A dialog whose content throws while it opens no longer closes and rejects its
+promise; it shows the notice and resolves `undefined` once closed.
 
 Query and mutation state now describes only the load or the write. A component
 that throws while it renders a query's or mutation's data no longer sets

@@ -114,8 +114,8 @@ SolidJS library remains independent of Cloud and application domains.
 
 ## Keep server and browser behavior coherent
 
-- SSR owns the authorized initial snapshot; Solid islands own only browser interaction and
-  fail alone behind Cloud's retry notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
+- SSR owns the authorized initial snapshot; Solid islands own only browser interaction. Islands, dialogs, and
+  floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
 - Invalidate the canonical read after writes instead of maintaining a second
   client-side domain model.
 - Keep reloadable state in the URL; automatic reloads use `reloadOnce()`. Live updates
