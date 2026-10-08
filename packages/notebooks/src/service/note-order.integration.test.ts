@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
-import { create, get, getTree, list, move, type Note, type NotePlacement, resetOrder, update } from "./notes";
+import { create, get, getTree, list, move, type Note, type NotePlacement, remove, resetOrder, update } from "./notes";
 import * as workspaceEvents from "./workspace-events";
 
 const postgresTest = testFor("database");
@@ -29,12 +29,14 @@ const withNotebook = async (run: (notebookId: string) => Promise<void>) => {
   const created = spyOn(workspaceEvents, "noteCreated").mockResolvedValue(undefined);
   const updated = spyOn(workspaceEvents, "noteUpdated").mockResolvedValue(undefined);
   const invalidated = spyOn(workspaceEvents, "invalidated").mockResolvedValue(undefined);
+  const deleted = spyOn(workspaceEvents, "noteDeleted").mockResolvedValue(undefined);
   try {
     await run(await notebook());
   } finally {
     created.mockRestore();
     updated.mockRestore();
     invalidated.mockRestore();
+    deleted.mockRestore();
   }
 };
 
@@ -99,8 +101,13 @@ postgresTest("places before, after, first, last, and at a clamped index without 
     });
     await placed(c.id, { before: b.id });
     await expectOrder(notebookId, [a.id, c.id, b.id]);
+    const rowVersion = async (id: string) =>
+      (await sql<{ xmin: string }[]>`SELECT xmin::text FROM notebooks.notes WHERE id = ${id}::uuid`)[0]?.xmin;
+    const keptPlace = await rowVersion(b.id);
     await placed(a.id, { after: c.id });
     await expectOrder(notebookId, [c.id, a.id, b.id]);
+    // A sibling that keeps its place is not rewritten.
+    expect(await rowVersion(b.id)).toBe(keptPlace);
     await placed(b.id, { position: "first" });
     await expectOrder(notebookId, [b.id, c.id, a.id]);
     await placed(b.id, { position: "last" });
@@ -191,6 +198,41 @@ postgresTest("parallel moves and create plus move retain every note with unique 
     expect(new Set(afterCreate.map((note) => note.id))).toEqual(new Set([...notes.map((note) => note.id), created.id]));
     await Promise.all([newNote(notebookId, "Placed new", undefined, 0), placed(notes[1]!.id, { position: "first" })]);
     expect((await level(notebookId)).map((note) => note.position)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  }),
+);
+
+postgresTest("moves between levels never deadlock with creates, reorders, resets, or deletes in either level", async () =>
+  withNotebook(async (notebookId) => {
+    // Row IDs are random, so the rounds cover both lock orders between a folder and its notes.
+    const failures: unknown[] = [];
+    const settle = async (operations: Promise<{ ok: boolean }>[], expectOk = true) => {
+      for (const outcome of await Promise.allSettled(operations)) {
+        if (outcome.status === "rejected") failures.push(outcome.reason);
+        else if (expectOk && !outcome.value.ok) failures.push(outcome.value);
+      }
+    };
+    for (let round = 0; round < 12; round++) {
+      const folder = await newNote(notebookId, `Folder ${round}`);
+      const inside = await newNote(notebookId, `Inside ${round}`, folder.id);
+      const sibling = await newNote(notebookId, `Sibling ${round}`, folder.id);
+      const top = await newNote(notebookId, `Top ${round}`);
+      // Out of the folder while its level changes, then into it while the top level changes.
+      await settle([
+        move({ id: inside.id, parentId: null, locale: "en" }),
+        move({ id: sibling.id, placement: { position: "first" }, locale: "en" }),
+        create({ data: { notebookId, parentId: folder.id, contentMd: "# New" }, creatorId: null, locale: "en" }),
+        resetOrder({ notebookId, parentId: folder.id }),
+      ]);
+      await settle([
+        move({ id: top.id, parentId: folder.id, locale: "en" }),
+        move({ id: inside.id, placement: { position: "first" }, locale: "en" }),
+        create({ data: { notebookId, contentMd: "# New top" }, creatorId: null, locale: "en" }),
+        resetOrder({ notebookId, parentId: null }),
+      ]);
+      // Either may win; a move into the deleted folder answers 404 instead of failing.
+      await settle([move({ id: inside.id, parentId: sibling.id, locale: "en" }), remove({ id: folder.id, permission: "admin" })], false);
+    }
+    expect(failures).toEqual([]);
   }),
 );
 

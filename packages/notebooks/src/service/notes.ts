@@ -299,17 +299,13 @@ const initialContentForNote = async (params: {
   return createInitialNoteMarkdown(renderNoteTitleTemplate(notebook.default_note_title_template, context), params.contentMd);
 };
 
-const lockLevel = async (tx: TransactionSQL, notebookId: string, parentId: string | null, movedId?: string): Promise<void> => {
-  await tx`SELECT pg_advisory_xact_lock(hashtextextended(
-    'notebooks.note-order:' || ${notebookId}::text || ':' || coalesce(${parentId}::text, 'top'), 0
-  ))`;
-  // Parent first, then its children, as a cascading delete of the parent locks them; a
-  // different order could deadlock with it. Moves share sibling rows and the parent's foreign-key lock.
-  if (parentId) await tx`SELECT id FROM notebooks.notes WHERE id = ${parentId}::uuid FOR UPDATE`;
-  await tx`SELECT id FROM notebooks.notes
-    WHERE id = ${movedId ?? null}::uuid
-      OR (notebook_id = ${notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${parentId}::uuid)
-    ORDER BY id FOR UPDATE`;
+/**
+ * Changes to a notebook's tree (create, move, reorder, reset, delete) run one at a time. A move
+ * touches two levels and a delete a whole subtree, so row locks per level could be taken in
+ * opposite orders and deadlock; one lock per notebook leaves nothing to order.
+ */
+const lockTree = async (tx: TransactionSQL, notebookId: string): Promise<void> => {
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended('notebooks.note-tree:' || ${notebookId}::text, 0))`;
 };
 
 type LevelNote = Pick<DbNote, "id" | "short_id" | "title" | "position">;
@@ -342,9 +338,10 @@ const placeInLevel = async (
   ordered.splice(index, 0, { ...note, shortId: note.short_id });
   const ids = toPgUuidArray(ordered.map((note) => note.id));
   const positions = `{${ordered.map((_, index) => index + 1).join(",")}}`;
+  // Unchanged rows keep their version, so their search index and concurrent saves are left alone.
   await tx`UPDATE notebooks.notes AS note SET position = ordered.position
     FROM unnest(${ids}::uuid[], ${positions}::int[]) AS ordered(id, position)
-    WHERE note.id = ordered.id`;
+    WHERE note.id = ordered.id AND note.position <> ordered.position`;
   note.position = index + 1;
 };
 
@@ -853,7 +850,7 @@ export const create = async (params: {
     const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc));
     doc.destroy();
     const row = await sql.begin(async (tx) => {
-      await lockLevel(tx, data.notebookId, data.parentId ?? null);
+      await lockTree(tx, data.notebookId);
       const level = await readLevel(tx, data.notebookId, data.parentId ?? null);
       const position = appendPosition(level);
       const [row] = await tx<DbNote[]>`
@@ -947,15 +944,21 @@ export const remove = async (params: { id: string; permission: PermissionLevel }
   // Below write permission no rule allows deleting; the admin-only reason would mislead.
   if (!mayDeleteOrLockNotes(params.permission, "write")) return fail(err.forbidden());
   const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
-  // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
-  const [deleted] = await sql<{ id: string; notebook_id: string; short_id: string }[]>`
-    DELETE FROM notebooks.notes n
-    USING notebooks.notebooks nb
-    WHERE n.id = ${params.id}::uuid
-      AND nb.id = n.notebook_id
-      AND nb.note_delete_permission = ANY(${toPgTextArray(allowedRules)}::text[])
-    RETURNING n.id, n.notebook_id, n.short_id
-  `;
+  const [target] = await sql<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE id = ${params.id}::uuid`;
+  if (!target) return fail(err.notFound("Note"));
+  const deleted = await sql.begin(async (tx) => {
+    await lockTree(tx, target.notebook_id);
+    // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
+    const [deleted] = await tx<{ id: string; notebook_id: string; short_id: string }[]>`
+      DELETE FROM notebooks.notes n
+      USING notebooks.notebooks nb
+      WHERE n.id = ${params.id}::uuid
+        AND nb.id = n.notebook_id
+        AND nb.note_delete_permission = ANY(${toPgTextArray(allowedRules)}::text[])
+      RETURNING n.id, n.notebook_id, n.short_id
+    `;
+    return deleted;
+  });
 
   if (!deleted) {
     const [exists] = await sql<{ id: string }[]>`SELECT id FROM notebooks.notes WHERE id = ${params.id}::uuid`;
@@ -988,10 +991,11 @@ export const move = async (params: {
   const parentId = params.parentId === undefined ? (anchor ? anchor.parentId : existing.parentId) : params.parentId;
   let changed = false;
   const result = await sql.begin(async (tx): Promise<MutationResult<Note>> => {
-    await lockLevel(tx, existing.notebookId, parentId, params.id);
+    await lockTree(tx, existing.notebookId);
+    // The row lock keeps a concurrent lock() from slipping in between the check and the move.
     const [row] = await tx<DbNote[]>`SELECT n.*,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
-      FROM notebooks.notes n WHERE n.id = ${params.id}::uuid`;
+      FROM notebooks.notes n WHERE n.id = ${params.id}::uuid FOR NO KEY UPDATE OF n`;
     if (!row) return { ok: false, error: "Note not found", status: 404 };
     const level = await readLevel(tx, existing.notebookId, parentId);
     if (anchorId && !level.some((note) => note.id === anchorId)) {
@@ -1031,7 +1035,7 @@ export const move = async (params: {
 
 export const resetOrder = async (params: { notebookId: string; parentId: string | null }): Promise<Result<void>> => {
   const result = await sql.begin(async (tx) => {
-    await lockLevel(tx, params.notebookId, params.parentId);
+    await lockTree(tx, params.notebookId);
     if (params.parentId) {
       const [parent] =
         await tx`SELECT id FROM notebooks.notes WHERE id = ${params.parentId}::uuid AND notebook_id = ${params.notebookId}::uuid`;
