@@ -1,6 +1,6 @@
 ---
 name: assistant-code-mode
-description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, answer directly or use calculate.
+description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate.
 ---
 # Assistant code mode
 

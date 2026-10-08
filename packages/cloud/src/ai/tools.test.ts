@@ -252,6 +252,8 @@ describe("AI tools", () => {
     expect(prepared.tools.find((tool) => tool.def.name === "web_extract")?.kind).toBe("server");
     expect(prepared.tools.find((tool) => tool.def.name === "fetch_file")?.kind).toBe("server");
     expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("fetch_file")).toBe(false);
+    // Weaker models skip a load_tools detour and estimate sums mentally, so calculate is always callable.
+    expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("calculate")).toBe(false);
     expect(prepared.approvalPolicies.get("fetch_file")).toBe("never");
     expect(prepared.approvalPolicies.get("web_search")).toBe("never");
     expect(prepared.approvalPolicies.get("web_extract")).toBe("never");
