@@ -138,6 +138,8 @@ domain payload schema. `render()` returns:
 | `title` | Yes | Trimmed, non-empty, and at most 200 characters |
 | `body` | No | Trimmed and at most 4,000 characters; an empty body is omitted |
 | `targetHref` | No | Canonical same-origin absolute path beginning with `/` |
+| `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace |
+| `badge` | No | Non-negative safe integer for the app badge; `0` clears it |
 
 `targetHref` must point to a route on the same Cloud origin. External URLs are
 rejected.
@@ -239,6 +241,24 @@ Notifications show the rendered title and Cloud icon. The presentation body
 stays out of the push payload. Clicking a notification opens or focuses its
 Cloud destination, where normal authentication and authorization apply.
 
+Set `group` in `render()` to replace notifications for the same topic on each
+device. Cloud prefixes the key with the application's ID: `inventory` and
+`group: "stock:item-42"` use the tag `inventory:stock:item-42`. Other
+applications cannot collide with that tag. Each new notification in the group
+replaces the previous one and requests a fresh alert with `renotify: true`;
+the browser and operating system control the alert. The push service also
+keeps only the newest undelivered push for the group. Without `group`,
+notifications keep their event ID as the tag and derive the push topic from it.
+
+Set `badge` to the application's current unread count. A positive count calls
+the Badging API; `0` clears the badge. Omitting it leaves the badge unchanged.
+Badge support is optional: unsupported browsers and rejected badge requests
+silently leave it absent or unchanged, and the notification still appears.
+The badge belongs to the installed Cloud application, so applications that
+set it must decide which count to use. Email ignores `group` and `badge`.
+Neither field is stored on the notification event; both travel only in the
+browser delivery payload. The presentation body still stays out of that payload.
+
 Without an active endpoint, Cloud records `no_endpoint` for that browser
 delivery. A later configured recommended channel can still receive the event.
 There is no in-app notification card or separate notification WebSocket.
@@ -265,6 +285,28 @@ Use `state()` to inspect support, permission, and subscription state. Use
 `disable()` to disable the endpoint and unsubscribe this browser. Before sending
 a queued browser delivery, Cloud checks that its endpoint is still active.
 Disabling or rebinding that endpoint prevents later attempts from sending to it.
+
+After reading a group's content, close its notifications on the current device
+and update the badge from the open tab:
+
+```ts
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
+
+await browserNotificationClient.closeGroup("inventory", "stock:item-42");
+await browserNotificationClient.setBadge(remainingUnreadCount);
+// Use setBadge(0) to clear the badge.
+```
+
+`closeGroup(appId, group)` closes only notifications with that application's
+group tag on the existing Cloud service-worker registration (scope `/`).
+It never registers a worker or prompts for permission. Unsupported browsers,
+missing registrations, and invalid inputs silently do nothing.
+`setBadge(count)` also silently does nothing when unsupported, refused, or
+given a count that is not a non-negative safe integer.
+
+Closing a group affects only the reading device. Web Push cannot reliably
+close notifications on other devices, and closing notifications does not
+change the badge automatically.
 
 Browser delivery requires a secure context, service-worker and Push API support.
 On iPhone and iPad, Cloud must run as an installed Home Screen application.
@@ -424,7 +466,7 @@ failures before event creation include:
 - an empty or overlong idempotency key;
 - payload data rejected by the Zod schema;
 - an error from `render()`;
-- an empty or overlong title, overlong body, or unsafe `targetHref`;
+- an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, or invalid `badge`;
 - a user ID that does not exist;
 - an invalid direct email address.
 

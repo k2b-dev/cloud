@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "bun";
 import webpush from "web-push";
 import { z } from "zod";
+import { notificationGroupTag } from "../../contracts/notification-group";
 import { isSafeNotificationTargetHref } from "../../contracts/notification-types";
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../../contracts/user-notifications";
 import { decryptSecret, encryptSecret } from "../secrets";
@@ -22,6 +23,8 @@ type BrowserDeliveryPayload = {
   eventId: string;
   title: string;
   targetHref?: string;
+  group?: string;
+  badge?: number;
 };
 
 const BrowserDeliveryPayloadSchema = z.object({
@@ -30,6 +33,11 @@ const BrowserDeliveryPayloadSchema = z.object({
   eventId: z.uuid(),
   title: z.string().min(1).max(200),
   targetHref: z.string().max(4_000).refine(isSafeNotificationTargetHref).optional(),
+  group: z
+    .string()
+    .regex(/^[A-Za-z0-9._:-]+$/)
+    .optional(),
+  badge: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 });
 
 const BrowserDestinationContextSchema = z.object({
@@ -142,12 +150,17 @@ const browserDriver = {
   },
   createPayload: ({ presentation, destination, event }) => {
     const context = BrowserDestinationContextSchema.parse(destination.context);
+    const group =
+      presentation.group === undefined ? undefined : notificationGroupTag(event.definitionId.split(".", 1)[0] ?? "", presentation.group);
+    if (group === null) throw new Error("Invalid notification group tag");
     return BrowserDeliveryPayloadSchema.parse({
       endpointId: context.endpointId,
       subscription: context.subscription,
       eventId: event.id,
       title: presentation.title,
       targetHref: presentation.targetHref,
+      ...(group !== undefined ? { group } : {}),
+      ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
     });
   },
   deliver: async (value: unknown) => {
@@ -173,11 +186,16 @@ const browserDriver = {
           eventId: payload.eventId,
           title: payload.title,
           targetHref: payload.targetHref,
+          ...(payload.group !== undefined ? { group: payload.group } : {}),
+          ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
         }),
         {
           TTL: 24 * 60 * 60,
           urgency: "normal",
-          topic: createHash("sha256").update(payload.eventId).digest("base64url").slice(0, 32),
+          topic: createHash("sha256")
+            .update(payload.group ?? payload.eventId)
+            .digest("base64url")
+            .slice(0, 32),
         },
       );
     } catch (error) {

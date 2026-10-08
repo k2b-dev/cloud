@@ -19,7 +19,9 @@ const parsePayload = (event) => {
       value?.type !== PAYLOAD_TYPE ||
       typeof value.eventId !== "string" ||
       typeof value.title !== "string" ||
-      (value.targetHref !== undefined && safeTargetHref(value.targetHref) === null)
+      (value.targetHref !== undefined && safeTargetHref(value.targetHref) === null) ||
+      (value.group !== undefined && (typeof value.group !== "string" || !/^[A-Za-z0-9._:-]+$/.test(value.group))) ||
+      (value.badge !== undefined && (!Number.isSafeInteger(value.badge) || value.badge < 0))
     ) {
       return null;
     }
@@ -34,16 +36,29 @@ const targetHref = (value) => safeTargetHref(value) ?? "/";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
+const setBadge = async (count) => {
+  try {
+    if (count === 0) await self.navigator?.clearAppBadge?.();
+    else await self.navigator?.setAppBadge?.(count);
+  } catch {
+    // Badging support and permission must never prevent notification display.
+  }
+};
+
 self.addEventListener("push", (event) => {
   const payload = parsePayload(event);
   if (!payload) return;
 
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      icon: "/branding/logo",
-      tag: payload.eventId,
-      data: { targetHref: targetHref(payload.targetHref) },
-    }),
+    Promise.all([
+      self.registration.showNotification(payload.title, {
+        icon: "/branding/logo",
+        tag: payload.group ?? payload.eventId,
+        ...(payload.group !== undefined ? { renotify: true } : {}),
+        data: { targetHref: targetHref(payload.targetHref), ...(payload.group !== undefined ? { group: payload.group } : {}) },
+      }),
+      ...(payload.badge !== undefined ? [setBadge(payload.badge)] : []),
+    ]),
   );
 });
 

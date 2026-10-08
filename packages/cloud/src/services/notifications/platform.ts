@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { output, ZodType } from "zod";
+import { isNotificationGroup } from "../../contracts/notification-group";
 import type {
   BoundNotificationDefinition,
   EmailNotificationPresentation,
@@ -76,7 +77,21 @@ const validatePresentation = (presentation: NotificationPresentation): Notificat
   if (title.length > 200) throw new Error("Notification title must not exceed 200 characters");
   if (body && body.length > 4_000) throw new Error("Notification body must not exceed 4000 characters");
   const targetHref = presentation.targetHref ? validateNotificationTargetHref(presentation.targetHref) : undefined;
-  return { title, ...(body ? { body } : {}), ...(targetHref ? { targetHref } : {}) };
+  if (presentation.group !== undefined && !isNotificationGroup(presentation.group)) {
+    throw new Error(
+      "Notification group must contain 1 to 128 characters using only letters, digits, dots, underscores, colons, or hyphens",
+    );
+  }
+  if (presentation.badge !== undefined && (!Number.isSafeInteger(presentation.badge) || presentation.badge < 0)) {
+    throw new Error("Notification badge must be a non-negative safe integer");
+  }
+  return {
+    title,
+    ...(body ? { body } : {}),
+    ...(targetHref ? { targetHref } : {}),
+    ...(presentation.group !== undefined ? { group: presentation.group } : {}),
+    ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
+  };
 };
 
 const resolveRecipient = async (

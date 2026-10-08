@@ -31,6 +31,10 @@ export const validateNotificationTargetHref = (value: string): `/${string}` => {
 export type NotificationPresentation = {
   title: string;
   body?: string;
+  /** Stable app-chosen browser group key, namespaced by Cloud per application. */
+  group?: string;
+  /** Non-negative safe integer for the app badge; zero clears it. Browser-only. */
+  badge?: number;
   /** Same-origin absolute path. Validated again before persistence and navigation. */
   targetHref?: `/${string}`;
 };
