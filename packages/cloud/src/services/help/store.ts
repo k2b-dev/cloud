@@ -1,5 +1,6 @@
 import { type SQL, sql } from "bun";
 import { APP_REGISTRY_TTL_MS } from "../../_internal/registry";
+import { ensureSchema } from "../postgres";
 import type { HelpCorpus, HelpMetadata } from "./types";
 
 // One expired app lease of grace after an app can no longer be discovered.
@@ -10,7 +11,7 @@ const searchConfigs = ["english", "german", "simple"] as const;
 export const migrateHelp = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('cloud:help:migrate'))`;
-    await tx`CREATE SCHEMA IF NOT EXISTS help`.simple();
+    await ensureSchema(tx, "help");
     await tx`CREATE TABLE IF NOT EXISTS help.corpora (
     app_id text NOT NULL, manifest_hash text NOT NULL, base_locale text NOT NULL,
     last_seen_at timestamptz NOT NULL DEFAULT now(),

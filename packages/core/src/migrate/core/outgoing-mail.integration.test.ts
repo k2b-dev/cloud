@@ -27,6 +27,58 @@ databaseSuite()("outgoing mail migration", () => {
     await db`INSERT INTO settings.entries(key, value) VALUES (${`mail.noreply.${key}`}, ${ciphertext})`;
     return ciphertext;
   };
+  test("creates the schema when a waiting migrator cached it as missing", async () => {
+    const first = new SQL({ url: disposable.url, max: 1 });
+    const stale = new SQL({ url: disposable.url, max: 1 });
+    const holder = new SQL({ url: disposable.url, max: 1 });
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const pending: Promise<unknown>[] = [];
+    const waitForLock = async (pid: number, locktype: "relation" | "advisory") => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const [row] = await db<{ waiting: boolean }[]>`SELECT EXISTS (
+          SELECT FROM pg_locks WHERE pid = ${pid} AND locktype = ${locktype} AND NOT granted
+            AND (${locktype} = 'advisory' OR relation = 'settings.entries'::regclass)
+        ) AS waiting`;
+        if (row?.waiting) return;
+        await Bun.sleep(10);
+      }
+      throw new Error(`Migrator ${pid} did not wait on the ${locktype} lock before the deadline`);
+    };
+    try {
+      const [firstBackend] = await first<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      const [staleBackend] = await stale<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!firstBackend || !staleBackend) throw new Error("Missing migrator backend PID");
+      // Keep the negative schema-cache entry on the connection that will lose the lock race.
+      await stale`DROP SCHEMA IF EXISTS outgoing_mail CASCADE`.simple();
+      await seed("smtp_host", "smtp.example.org");
+      const holding = holder.begin(async (tx) => {
+        await tx`LOCK TABLE settings.entries IN ACCESS EXCLUSIVE MODE`.simple();
+        locked.resolve();
+        await release.promise;
+      });
+      pending.push(holding);
+      void holding.catch(() => {});
+      await Promise.race([locked.promise, holding]);
+      const migratingFirst = migrate(first);
+      pending.push(migratingFirst);
+      void migratingFirst.catch(() => {});
+      // The first migrator has created the schema but cannot commit until its legacy read finishes.
+      await waitForLock(firstBackend.pid, "relation");
+      const migratingStale = migrate(stale);
+      pending.push(migratingStale);
+      void migratingStale.catch(() => {});
+      await waitForLock(staleBackend.pid, "advisory");
+      release.resolve();
+      await Promise.all([holding, migratingFirst, migratingStale]);
+      expect(await db<{ key: string }[]>`SELECT key FROM outgoing_mail.profiles`).toEqual([{ key: "noreply" }]);
+    } finally {
+      release.resolve();
+      await Promise.allSettled(pending);
+      await Promise.all([first.close(), stale.close(), holder.close()]);
+    }
+  }, 15_000);
   test("imports legacy SMTP settings once and preserves authenticated password ciphertext", async () => {
     await seed("smtp_host", "smtp.example.org");
     await seed("smtp_port", 465);

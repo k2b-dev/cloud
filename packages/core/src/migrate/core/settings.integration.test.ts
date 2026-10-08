@@ -24,6 +24,55 @@ suite("account request opt-in migration", () => {
     await db`CREATE SCHEMA settings`.simple();
     await db`CREATE TABLE settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())`.simple();
   };
+  test("creates the schema when a waiting migrator cached it as missing", async () => {
+    const stale = new SQL({ url: disposable.url, max: 1 });
+    const holder = new SQL({ url: disposable.url, max: 1 });
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const pending: Promise<unknown>[] = [];
+    const waitForLock = async (pid: number) => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const [row] = await db<{ waiting: boolean }[]>`SELECT EXISTS (
+          SELECT FROM pg_locks WHERE pid = ${pid} AND locktype = 'advisory' AND NOT granted
+        ) AS waiting`;
+        if (row?.waiting) return;
+        await Bun.sleep(10);
+      }
+      throw new Error(`Migrator ${pid} did not wait on the advisory lock before the deadline`);
+    };
+    try {
+      // Warm statements and catalog caches first, then cache the missing schema on this backend.
+      await migrate(stale);
+      await stale`DROP SCHEMA IF EXISTS settings CASCADE`.simple();
+      await stale`DROP SCHEMA IF EXISTS settings CASCADE`.simple();
+      const [staleBackend] = await stale<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!staleBackend) throw new Error("Missing migrator backend PID");
+      const holding = holder.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.settings.migrations', 0))`;
+        await tx`CREATE SCHEMA settings`.simple();
+        await tx`CREATE TABLE settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
+        locked.resolve();
+        await release.promise;
+      });
+      pending.push(holding);
+      void holding.catch(() => {});
+      await Promise.race([locked.promise, holding]);
+      const migratingStale = migrate(stale);
+      pending.push(migratingStale);
+      void migratingStale.catch(() => {});
+      await waitForLock(staleBackend.pid);
+      release.resolve();
+      await Promise.all([holding, migratingStale]);
+      expect(await db<{ name: string }[]>`SELECT name FROM settings.migrations`).toEqual([{ name: "account-request-opt-in-v1" }]);
+      // The waiting migrator must also see the holder's entries table as an existing installation.
+      expect(await accountRequestsEnabled(db)).toBe(true);
+    } finally {
+      release.resolve();
+      await Promise.allSettled(pending);
+      await Promise.all([stale.close(), holder.close()]);
+    }
+  }, 15_000);
   test("fresh installs opt in, including after concurrent restarts", async () => {
     await Promise.all([migrate(db), migrate(db)]);
     expect(await accountRequestsEnabled(db)).toBe(false);

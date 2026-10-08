@@ -1,3 +1,4 @@
+import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { invalidateSettingsCache } from "@k2b/cloud/services/settings";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { sql } from "bun";
@@ -5,8 +6,8 @@ import { sql } from "bun";
 export const migrate = async (db: typeof sql = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.settings.migrations', 0))`;
+    await ensureSchema(tx, "settings");
     const [before] = await tx<{ existing: boolean }[]>`SELECT to_regclass('settings.entries') IS NOT NULL AS existing`;
-    await tx`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     console.log("  ✓ settings schema");
 
     await tx`
