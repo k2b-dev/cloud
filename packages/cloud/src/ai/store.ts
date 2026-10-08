@@ -1985,13 +1985,31 @@ export const aiConversations: AiConversationService = {
   },
 
   restoreConversation: async (input) => {
+    // Restore never backfills: everything completed beforehand counts as considered,
+    // including chats archived before archiving retired pending learning work.
     const rows = await sql<{ id: string }[]>`
-      UPDATE ai.conversations
-      SET archived_at = NULL
-      WHERE id = ${input.conversationId}
-        AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
-        AND archived_at IS NOT NULL
-      RETURNING id
+      WITH restored AS (
+        UPDATE ai.conversations
+        SET archived_at = NULL
+        WHERE id = ${input.conversationId}
+          AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
+          AND archived_at IS NOT NULL
+        RETURNING id
+      ), considered_turns AS (
+        UPDATE ai.turns
+        SET memory_learned_at = completed_at,
+            memory_learn_failed_at = NULL,
+            memory_learn_fail_count = 0
+        WHERE conversation_id IN (SELECT id FROM restored)
+          AND status = 'completed'
+          AND memory_learned_at IS NULL
+      ), reviewed_evidence AS (
+        UPDATE ai.memory_workflow_evidence
+        SET reviewed_at = now()
+        WHERE conversation_id IN (SELECT id FROM restored)
+          AND reviewed_at IS NULL
+      )
+      SELECT id FROM restored
     `;
     return rows[0] ? loadConversationSummary(input) : null;
   },

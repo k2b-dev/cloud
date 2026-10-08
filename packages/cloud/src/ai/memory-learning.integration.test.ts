@@ -556,6 +556,34 @@ databaseSuite()("AI memory learning (integration)", () => {
     }
   });
 
+  test("restore never backfills turns or receipts left pending by an earlier archive", async () => {
+    const userId = await insertLearningUser();
+    try {
+      const first = await insertLearningTurn(userId);
+      await insertLearningTurn(userId, first.conversationId);
+      await insertLearningTurn(userId, first.conversationId);
+      expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(true);
+
+      await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${first.conversationId}::uuid`;
+      expect(await aiConversations.restoreConversation({ conversationId: first.conversationId, ownerUserId: userId })).not.toBeNull();
+
+      expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.userId === userId)).toBe(false);
+      expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(false);
+      const turns = await sql<{ learned: boolean }[]>`
+        SELECT memory_learned_at = completed_at AS learned FROM ai.turns WHERE conversation_id = ${first.conversationId}::uuid
+      `;
+      expect(turns).toEqual([{ learned: true }, { learned: true }, { learned: true }]);
+      const receipts = await sql<{ reviewed: boolean }[]>`
+        SELECT reviewed_at IS NOT NULL AS reviewed FROM ai.memory_workflow_evidence WHERE user_id = ${userId}::uuid
+      `;
+      expect(receipts).toEqual([{ reviewed: true }, { reviewed: true }, { reviewed: true }]);
+    } finally {
+      await sql`DELETE FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   for (const timing of [
     "after-list",
     "before-model",
@@ -600,6 +628,12 @@ databaseSuite()("AI memory learning (integration)", () => {
           },
         });
         expect(summary).toMatchObject({ scanned: 1, learned: 0, skipped: 1, failed: 0 });
+        if (timing === "before-model") {
+          const runs = await sql<{ status: string; accounted_tokens: number }[]>`
+            SELECT status, accounted_tokens FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid
+          `;
+          expect(runs).toEqual([{ status: "skipped", accounted_tokens: 0 }]);
+        }
         expect(calls).toBe(timing.endsWith("during-model") ? 1 : 0);
         expect(await aiMemories.list({ userId })).toEqual([]);
         const rows = await sql<
@@ -668,6 +702,12 @@ databaseSuite()("AI memory learning (integration)", () => {
           },
         });
         expect(summary).toMatchObject({ learned: 0, skipped: 1, failed: 0 });
+        if (timing === "before-model") {
+          const runs = await sql<{ status: string; accounted_tokens: number }[]>`
+            SELECT status, accounted_tokens FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid
+          `;
+          expect(runs).toEqual([{ status: "skipped", accounted_tokens: 0 }]);
+        }
         expect(calls).toBe(timing.endsWith("during-model") ? 1 : 0);
         expect(await aiMemories.list({ userId })).toEqual([]);
         expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(false);

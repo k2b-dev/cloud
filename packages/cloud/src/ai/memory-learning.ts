@@ -493,6 +493,7 @@ export const learnAiMemoriesFromPrivateChats = async (
         accountedTokens: reservedTokens,
       });
       // Claiming the run also awaits the database: recheck immediately before inference.
+      // runAiStructured may still wait for background admission; checks after the call discard results for chats that became ineligible.
       if (!(await turnEligible(candidate))) {
         await markLearned(candidate);
         if (runId)
@@ -638,6 +639,7 @@ export const learnAiMemoriesFromPrivateChats = async (
         resolveModel: async () => resolved,
       });
       let changes: AiMemoryLearningChange[] = [];
+      // The write locks only the source chat; check the other examples right before it.
       if (result.output.workflow && (await learningEnabled(pattern.userId)) && (await isAiWorkflowPatternEligible(pattern))) {
         const memoryIds = result.output.workflow.memoryIds;
         const action = memoryIds.length > 1 ? "merge" : memoryIds.length === 1 ? "replace" : "add";

@@ -447,7 +447,10 @@ background model and stays within the budgets below.
 
 Archived and deleted chats are never used for learning. Archiving stops pending
 learning from that chat, including workflow evidence. After restore, learning
-considers only turns that finish after the chat is restored.
+considers only turns that finish after the chat is restored. A turn or workflow
+pattern that is already waiting for background model capacity can still reach
+the model after you archive or delete the chat or turn learning off; Cloud
+discards that result and saves nothing from it.
 
 Learning does not replay a conversation after later Assistant or tool updates.
 The bounded input contains the new user-authored text, sanitized receipts for
