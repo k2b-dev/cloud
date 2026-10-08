@@ -1,7 +1,7 @@
 import { sql } from "bun";
 import type { MailMessage, MailRecord } from "../../contracts/outgoing-mail";
 import { cancelMailStreams, deleteMailObjects, uploadMailAttachments } from "./attachments";
-import { allowedMailProfile, messageRecord, outgoingMailMessages, recordMailSend } from "./messages";
+import { allowedMailProfile, MailQuotaError, mailQuotaUsed, messageRecord, outgoingMailMessages, recordMailSend } from "./messages";
 import { OutgoingMailError } from "./store";
 import { mailAttachments, mailSendJob, mailSettled, submitMail } from "./sync";
 
@@ -65,13 +65,21 @@ export const waitForMail = async (appId: string, initial: MailRecord, signal?: A
 export const sendMail = async (appId: string, message: MailMessage, signal?: AbortSignal): Promise<MailRecord> => {
   const existing = await outgoingMailMessages.known(appId, message.key);
   if (existing) {
-    await cancelMailStreams(message.attachments);
+    cancelMailStreams(message.attachments);
     await recordMailSend(appId, message, existing).catch(() => {});
     return messageRecord(existing);
   }
   // Ensure coordination storage is reachable before accepting durable mail.
   await Promise.all([mailSendJob().ready(), mailSettled().ready(), mailAttachments().ready()]);
-  const profile = await sql.begin((tx) => allowedMailProfile(tx, appId, message.profile));
+  const profile = await sql.begin(async (tx) => {
+    const profile = await allowedMailProfile(tx, appId, message.profile);
+    if (profile.daily_recipient_limit !== null) {
+      const used = await mailQuotaUsed(tx, appId, profile.id);
+      if (used + message.to.length > profile.daily_recipient_limit)
+        throw new MailQuotaError(profile.daily_recipient_limit, used, message.to.length);
+    }
+    return profile;
+  });
   const id = crypto.randomUUID();
   const uploaded = await uploadMailAttachments(id, message.attachments ?? [], profile.max_attachment_bytes);
   let accepted: Awaited<ReturnType<typeof outgoingMailMessages.accept>>;
@@ -84,8 +92,10 @@ export const sendMail = async (appId: string, message: MailMessage, signal?: Abo
       (await outgoingMailMessages.read(id, appId).catch(() => undefined)) ??
       (await outgoingMailMessages.known(appId, message.key).catch(() => undefined));
     if (recovered) {
-      if (recovered.id !== id) await deleteMailObjects(uploaded.refs).catch(() => {});
-      await recordMailSend(appId, message, recovered).catch(() => {});
+      if (recovered.id !== id) {
+        await deleteMailObjects(uploaded.refs).catch(() => {});
+        await recordMailSend(appId, message, recovered).catch(() => {});
+      }
       const record = messageRecord(recovered);
       void submitMail(recovered.id).catch(() => {});
       return waitForMail(appId, record, signal).catch(() => record);
@@ -95,8 +105,8 @@ export const sendMail = async (appId: string, message: MailMessage, signal?: Abo
     if (error instanceof OutgoingMailError) await deleteMailObjects(uploaded.refs).catch(() => {});
     throw error;
   }
-  await recordMailSend(appId, message, accepted.row).catch(() => {});
   if (!accepted.created) {
+    await recordMailSend(appId, message, accepted.row).catch(() => {});
     await deleteMailObjects(uploaded.refs).catch(() => {});
     return messageRecord(accepted.row);
   }

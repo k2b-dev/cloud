@@ -49,21 +49,21 @@ export const mail = {
   async send(message: MailMessage, options?: { signal?: AbortSignal }): Promise<Result<MailRecord, MailServiceError>> {
     const caller = identity();
     if (!caller.ok) {
-      await cancelMailStreams(message?.attachments);
+      cancelMailStreams(message?.attachments);
       const appId = getProcessApplicationId();
       if (appId) await recordMailSend(appId, message, undefined, undefined, caller.error.code).catch(() => {});
       return caller;
     }
     const parsed = MailMessageSchema.safeParse(message);
     if (!parsed.success) {
-      await cancelMailStreams(message?.attachments);
+      cancelMailStreams(message?.attachments);
       await recordMailSend(caller.data, message, undefined, undefined, "bad_input").catch(() => {});
       return fail({ code: "bad_input", message: "Invalid outgoing mail message.", status: 400 });
     }
     try {
       return ok(await sendMail(caller.data, parsed.data, options?.signal));
     } catch (error) {
-      await cancelMailStreams(message?.attachments);
+      cancelMailStreams(message?.attachments);
       const issue = failure(error);
       await recordMailSend(caller.data, parsed.data, undefined, undefined, issue.code).catch(() => {});
       return fail(issue);

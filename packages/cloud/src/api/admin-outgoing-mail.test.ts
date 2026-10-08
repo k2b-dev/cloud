@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { SQL, sql } from "bun";
-import { type AdminMailProfile, MailProfileInputSchema } from "../contracts/outgoing-mail";
+import { type AdminMailProfile, MailProfileInputSchema, MailRetentionSchema } from "../contracts/outgoing-mail";
 import { audit } from "../services/audit";
 import { OutgoingMailError, outgoingMailStore } from "../services/outgoing-mail/store";
 import { outgoingMailTest } from "../services/outgoing-mail/test-send";
@@ -91,6 +91,8 @@ test("retention PUT rejects incomplete, non-integer, non-positive, reversed and 
       { contentDays: 30, recordDays: -1 },
       { contentDays: 1.5, recordDays: 90 },
       { contentDays: 30, recordDays: 90.5 },
+      { contentDays: 90, recordDays: 36501 },
+      { contentDays: 36501, recordDays: 36501 },
       { contentDays: "30", recordDays: 90 },
       { contentDays: 90, recordDays: 30 },
       { contentDays: 30, recordDays: 90, extra: true },
@@ -107,6 +109,9 @@ test("retention PUT rejects incomplete, non-integer, non-positive, reversed and 
     set.mockRestore();
     record.mockRestore();
   }
+});
+test("retention schema accepts at most 36500 whole days", () => {
+  expect(MailRetentionSchema.safeParse({ contentDays: 36500, recordDays: 36500 }).success).toBe(true);
 });
 test("retention PUT writes both settings and the old/new audit in one transaction, then invalidates cache", async () => {
   const get = spyOn(settings, "get").mockResolvedValueOnce(90).mockResolvedValueOnce(365);
@@ -375,6 +380,11 @@ test("send-log routes validate filters, return metadata and forward audited cont
       "/messages/not-a-uuid",
     ])
       expect((await app.request(path)).status).toBe(400);
+    for (const ref of ["x".repeat(201), `order:${"x".repeat(201)}`, `${"x".repeat(201)}:42`]) {
+      const response = await app.request(`/messages?ref=${ref}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "bad_input" });
+    }
     expect(list).toHaveBeenCalledTimes(1);
   } finally {
     for (const mock of [list, get, content, cancel]) mock.mockRestore();

@@ -266,9 +266,11 @@ const profilesForApp = async (appId: string): Promise<MailProfile[]> => {
 export const outgoingMailStore = { list, get, put, setDefault, delete: remove, apps: appsState, setAppAccess, profilesForApp };
 
 /** Platform email send path only. Never use this helper to shape API or CLI responses. */
-export const resolveMailCredentials = async (key?: string) => {
+export const resolveMailCredentials = async (key?: string | { id: string }) => {
   const [row] = await sql<(ProfileRow & { smtp_password_encrypted: string | null })[]>`
-    SELECT ${columns(sql)}, smtp_password_encrypted FROM outgoing_mail.profiles WHERE ${key === undefined ? sql`is_default` : sql`key = ${keyValue(key)}`}`;
+    SELECT ${columns(sql)}, smtp_password_encrypted FROM outgoing_mail.profiles WHERE ${
+      key === undefined ? sql`is_default` : typeof key === "string" ? sql`key = ${keyValue(key)}` : sql`id = ${key.id}::uuid`
+    }`;
   if (!row)
     throw new OutgoingMailError(
       "profile_unknown",

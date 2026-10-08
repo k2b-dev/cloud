@@ -166,8 +166,8 @@ Open **Administration → Outgoing mail**, then choose **Retention** in the
 
 | Setting | Default | Constraint |
 | --- | --- | --- |
-| `outgoing_mail.content_retention_days` | 90 days | Positive whole number |
-| `outgoing_mail.record_retention_days` | 365 days | Positive whole number, at least content retention |
+| `outgoing_mail.content_retention_days` | 90 days | Whole days from 1 to 36500 |
+| `outgoing_mail.record_retention_days` | 365 days | Whole days from 1 to 36500, at least content retention |
 
 The CLI offers the same settings:
 
@@ -180,8 +180,8 @@ Both day flags are required for `set`. Administrators can also use
 `GET /api/admin/core/outgoing-mail/retention` and
 `PUT /api/admin/core/outgoing-mail/retention` with JSON
 `{ "contentDays": 90, "recordDays": 365 }`. Updates through this API require
-positive whole days and record retention at least as long as content retention;
-they save both values together and audit the old and new values as
+whole days from 1 to 36500 and record retention at least as long as content
+retention; they save both values together and audit the old and new values as
 `outgoing_mail.retention.update`.
 
 Core runs daily retention in batches of at most 1000 rows,
@@ -248,7 +248,8 @@ default changes, test sends, and application policy changes produce
 mutations commit together with their audit entries. Each application send
 call also writes `outgoing_mail.send` with application, actor, profile,
 recipient count, and record ID; it omits subject, body, addresses, and
-attachment content.
+attachment content. The entry for an accepted message commits together with
+the message.
 
 Passwords are encrypted at rest using `APP_SECRET`, never returned by the API,
 CLI, or `mail.profiles()`, and decrypted only on the platform email send path.

@@ -7,8 +7,15 @@ import { messageAttachmentRefs } from "./messages";
 
 /** One bounded batch, callable without starting a scheduler. */
 export const retainOutgoingMailBatch = async (contentDays: number, recordDays: number) => {
-  if (!Number.isSafeInteger(contentDays) || contentDays < 1 || !Number.isSafeInteger(recordDays) || recordDays < 1)
-    throw new RangeError("Mail content and record retention must both be positive whole days.");
+  if (
+    !Number.isSafeInteger(contentDays) ||
+    contentDays < 1 ||
+    contentDays > 36500 ||
+    !Number.isSafeInteger(recordDays) ||
+    recordDays < 1 ||
+    recordDays > 36500
+  )
+    throw new RangeError("Mail content and record retention must both be whole days from 1 to 36500.");
   return sql.begin(async (tx) => {
     // Compare created_at with a constant so the created_at index bounds every batch.
     const rows = await tx<{ id: string; attachment_refs: unknown; expired: boolean }[]>`SELECT id, attachment_refs,

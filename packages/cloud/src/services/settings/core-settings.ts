@@ -35,6 +35,7 @@ export const CORE_SETTINGS = {
     description: "Purge message bodies and custom headers after this many days.",
     default: 90,
     min: 1,
+    max: 36500,
     integer: true,
   },
   "outgoing_mail.record_retention_days": {
@@ -43,6 +44,7 @@ export const CORE_SETTINGS = {
     description: "Delete send log records after this many days.",
     default: 365,
     min: 1,
+    max: 36500,
     integer: true,
   },
   "observability.web_vitals.enabled": {

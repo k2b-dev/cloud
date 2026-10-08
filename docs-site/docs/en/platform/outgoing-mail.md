@@ -80,18 +80,20 @@ reserved for bulk delivery and does not affect this immediate API.
 | `fromName` | Optional sender display name, at most 998 characters without CR, LF, or NUL; the sender address always comes from the profile |
 | `replyTo` | Optional email address |
 | `profile` | Optional profile key |
-| `attachments` | Optional streamed attachments, within the profile's total byte limit |
+| `attachments` | Optional streamed attachments, at most 20 per message, within the profile's total byte limit |
 | `headers` | Optional custom headers from the allow-list below |
-| `ref` | Optional `{ scope, id }` for domain lookup; not unique |
+| `ref` | Optional `{ scope, id }` for domain lookup; scope and id at most 200 characters each; not unique |
 | `actor` | Optional `RequestActor`; the log keeps a type, ID, and name snapshot |
 | `key` | Optional per-application idempotency key, at most 200 characters |
 
-The sender name uses `fromName`, then the profile's name, then the registered
-application name (or application ID if offline). The envelope sender is the
+The sender name uses `fromName`, then the profile's sender name, then the
+registered application name (or application ID if offline). The envelope sender is the
 profile address. Acceptance fixes `Message-ID` to `<record-id@sender-domain>`;
 retries retain that ID.
 
-A failed result means no new message was recorded. Once accepted, the result
+A failed result normally means no message was recorded. `mail_unavailable`
+can also mean the outcome is unknown, for example after a lost database reply;
+retry with the same `key` to avoid a duplicate. Once accepted, the result
 is successful even when delivery fails: inspect `data.status` and `data.error`.
 `send` waits up to 30 seconds for an attempt to settle, following wakeups and
 reading the durable log every two seconds. A timeout can return `queued` or
@@ -100,8 +102,10 @@ for delivery. Read its status with `list`.
 
 Core retries temporary SMTP errors, connection failures, and timeouts after
 one minute, doubling to at most one hour, until the 24-hour delivery deadline.
-Permanent SMTP errors fail the record. If some recipients are accepted and
-others rejected, status is `sent`, with the rejected recipients in `failures`.
+Permanent SMTP errors fail the record. When every recipient is rejected, the
+record retries if any rejection was temporary (4xx); otherwise it fails.
+If some recipients are accepted and others rejected, status is `sent`, with
+the rejected recipients in `failures`.
 Delivery is **at least once**: a crash after SMTP acceptance but before the log
 update can send the same message again. `sent` means SMTP accepted it, not that
 it reached the recipient's inbox.
@@ -111,10 +115,11 @@ it reached the recipient's inbox.
 Each `MailAttachment` has `filename`, `contentType`, and `content` as a
 `Uint8Array`, `Blob`, or `ReadableStream<Uint8Array>`. A stream is consumed once.
 Attachment filenames and content types must be non-empty, at most 998
-characters each, without CR, LF, or NUL. Cloud counts bytes and computes
-SHA-256 while uploading; oversized input stops
-the upload. A stalled upload has a 60-second budget. An attachment is stored
-outside Postgres, and the record keeps only filename, content type, byte size,
+characters each, without CR, LF, or NUL. Access and the recipient quota are
+checked before attachments are uploaded. Cloud counts bytes and computes
+SHA-256 while uploading; oversized input stops the upload. All attachments of
+one call share one 60-second upload budget. An attachment is stored outside
+Postgres, and the record keeps only filename, content type, byte size,
 and SHA-256. Core verifies size and checksum before delivery. Missing or
 changed attachments fail the record with `attachment_lost`. Terminal records
 release stored attachment objects.

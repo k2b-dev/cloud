@@ -5,7 +5,8 @@ import { OutgoingMailError } from "./store";
 import { mailAttachments } from "./sync";
 
 export type UploadedAttachments = { metadata: MailRecord["attachments"]; refs: ObjectRef[] };
-export const cancelMailStreams = async (attachments: unknown = []): Promise<void> => {
+export const MAIL_ATTACHMENT_UPLOAD_MS = 60_000;
+export const cancelMailStreams = (attachments: unknown = []): void => {
   if (!Array.isArray(attachments)) return;
   for (const attachment of attachments) {
     if (
@@ -15,7 +16,7 @@ export const cancelMailStreams = async (attachments: unknown = []): Promise<void
       attachment.content instanceof ReadableStream &&
       !attachment.content.locked
     )
-      await attachment.content.cancel().catch(() => {});
+      void attachment.content.cancel().catch(() => {});
   }
 };
 export const deleteMailObjects = async (refs: readonly ObjectRef[]): Promise<void> => {
@@ -39,14 +40,14 @@ export const uploadMailAttachments = async (
 ): Promise<UploadedAttachments> => {
   const result: UploadedAttachments = { metadata: [], refs: [] };
   let total = 0;
+  const controller = new AbortController();
+  // The caller's signal cancels the wait only. All attachments share one bounded upload.
+  const timer = setTimeout(() => controller.abort(new Error("Attachment upload timed out")), MAIL_ATTACHMENT_UPLOAD_MS);
   try {
     for (const [index, attachment] of attachments.entries()) {
       const hash = createHash("sha256");
       let size = 0;
       let exceeded = false;
-      const controller = new AbortController();
-      // The caller's signal cancels the wait only. An unresponsive source still has a bounded upload.
-      const timer = setTimeout(() => controller.abort(new Error("Attachment upload timed out")), 60_000);
       const key = `${id}-${index}`;
       try {
         const stream = contentStream(attachment.content).pipeThrough(
@@ -82,16 +83,16 @@ export const uploadMailAttachments = async (
         )
           throw new OutgoingMailError("attachment_storage_full", "Outgoing mail attachment storage is full.");
         throw error;
-      } finally {
-        clearTimeout(timer);
-        controller.abort();
       }
     }
     return result;
   } catch (error) {
     await deleteMailObjects(result.refs).catch(() => {});
-    await cancelMailStreams(attachments);
+    cancelMailStreams(attachments);
     throw error;
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
   }
 };
 

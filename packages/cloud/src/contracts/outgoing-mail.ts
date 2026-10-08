@@ -4,7 +4,7 @@ import { type RequestActor, ServiceAccountSchema, UserSchema } from "./shared";
 
 export const PlatformPermissionSchema = z.enum(["mail:send"]);
 export type PlatformPermission = z.infer<typeof PlatformPermissionSchema>;
-export const MailRetentionSchema = z.object({ contentDays: z.int().min(1), recordDays: z.int().min(1) }).strict();
+export const MailRetentionSchema = z.object({ contentDays: z.int().min(1).max(36500), recordDays: z.int().min(1).max(36500) }).strict();
 export type MailRetention = z.infer<typeof MailRetentionSchema>;
 
 export const MailProfileKeySchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
@@ -129,6 +129,7 @@ export const MailHeadersSchema = z.record(z.string(), safeHeader).refine((header
 const referenceText = z
   .string()
   .min(1)
+  .max(200)
   .refine((value) => !value.includes("\0"), "Reference must not contain NUL");
 const ref = z.object({ scope: referenceText, id: referenceText }).strict();
 export const MailMessageSchema = z
@@ -151,6 +152,7 @@ export const MailMessageSchema = z
           })
           .strict(),
       )
+      .max(20)
       .optional(),
     headers: MailHeadersSchema.optional(),
     profile: MailProfileKeySchema.optional(),

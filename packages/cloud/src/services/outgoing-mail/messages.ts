@@ -190,7 +190,7 @@ export const recordMailSend = async (
     db,
   );
 };
-class MailQuotaError extends OutgoingMailError {
+export class MailQuotaError extends OutgoingMailError {
   constructor(
     public readonly limit: number,
     public readonly used: number,
@@ -199,6 +199,11 @@ class MailQuotaError extends OutgoingMailError {
     super("quota_exceeded", "The profile's rolling 24-hour recipient quota is exhausted.");
   }
 }
+export const mailQuotaUsed = async (db: SQL, appId: string, profileId: string): Promise<number> => {
+  const [usage] = await db<{ used: number }[]>`SELECT COALESCE(sum(recipient_count), 0)::int AS used FROM outgoing_mail.messages
+    WHERE app_id = ${appId} AND profile_id = ${profileId}::uuid AND status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
+  return usage?.used ?? 0;
+};
 const accept = async (
   appId: string,
   id: string,
@@ -217,9 +222,7 @@ const accept = async (
     if (uploaded.metadata.reduce((bytes, item) => bytes + item.size, 0) > profile.max_attachment_bytes)
       throw new OutgoingMailError("attachments_too_large", "Attachments exceed the profile's total byte limit.");
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([appId, profile.id])}, 2))`;
-    const [usage] = await tx<{ used: number }[]>`SELECT COALESCE(sum(recipient_count), 0)::int AS used FROM outgoing_mail.messages
-      WHERE app_id = ${appId} AND profile_id = ${profile.id}::uuid AND status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
-    const used = usage?.used ?? 0;
+    const used = await mailQuotaUsed(tx, appId, profile.id);
     if (profile.daily_recipient_limit !== null && used + message.to.length > profile.daily_recipient_limit)
       throw new MailQuotaError(profile.daily_recipient_limit, used, message.to.length);
     const actor = mailActorSnapshot(message.actor);
@@ -231,10 +234,11 @@ const accept = async (
     ) VALUES (${id}::uuid, ${appId}, ${profile.id}::uuid, ${profile.key}, 'immediate', ${message.key ?? null},
       ${message.ref?.scope ?? null}, ${message.ref?.id ?? null}, ${toPgTextArray(message.to)}::text[], ${message.to.length},
       ${message.subject}, ${message.text}, ${message.html === undefined ? null : sanitizeEmailHtml(message.html)},
-      ${message.headers ? JSON.stringify(message.headers) : null}::jsonb, ${message.fromName ?? null}, ${message.replyTo ?? null},
-      ${mailMessageId(id, profile.from_address)}, ${JSON.stringify(uploaded.metadata)}::jsonb, ${JSON.stringify(uploaded.refs)}::jsonb, 'queued',
+      ${message.headers ? JSON.stringify(message.headers) : null}::text::jsonb, ${message.fromName ?? null}, ${message.replyTo ?? null},
+      ${mailMessageId(id, profile.from_address)}, ${JSON.stringify(uploaded.metadata)}::text::jsonb, ${JSON.stringify(uploaded.refs)}::text::jsonb, 'queued',
       ${new Date(created.getTime() + 24 * 60 * 60_000)}, ${actor?.type ?? null}, ${actor?.id ?? null}, ${actor?.name ?? null}, ${created})
       ON CONFLICT (app_id, idempotency_key) DO NOTHING RETURNING *, created_at::text AS cursor_created_at`;
+    if (row) await recordMailSend(appId, message, row, tx);
     const winner = row ?? (await known(appId, message.key, tx));
     if (!winner) throw new Error("Outgoing mail insert returned no row");
     return { row: winner, created: !!row };

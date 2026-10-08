@@ -12,14 +12,17 @@ import * as registry from "../../_internal/registry";
 import { createAdminOutgoingMailRoutes } from "../../api/admin-outgoing-mail";
 import type { MailMessage, MailRecord } from "../../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../../contracts/registry";
+import { audit } from "../audit";
 import { buildProjectedUser } from "../session/user";
 import * as settings from "../settings";
 import { outgoingMailLog } from "./admin";
+import * as attachments from "./attachments";
 import { processOutgoingMail, recoverOutgoingMail } from "./dispatcher";
 import { mail } from "./index";
 import { messageAttachmentRefs, outgoingMailMessages } from "./messages";
 import { retainOutgoingMail, retainOutgoingMailBatch } from "./retention";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "./runtime";
+import * as store from "./store";
 import { outgoingMailStore } from "./store";
 import { mailAttachments } from "./sync";
 
@@ -96,7 +99,7 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
     await sql.close();
     await fresh?.drop();
   });
-  const configure = async (changes: { dailyRecipientLimit?: number; maxAttachmentBytes?: number } = {}) => {
+  const configure = async (changes: { dailyRecipientLimit?: number; maxAttachmentBytes?: number; smtpPort?: number } = {}) => {
     const profiles = await outgoingMailStore.list();
     const current = profiles.find((profile) => profile.key === "alerts");
     await outgoingMailStore.put(
@@ -128,6 +131,26 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
     await processOutgoingMail(record.id);
     return (await outgoingMailMessages.read(record.id))!;
   };
+
+  test("custom headers deliver and message JSON columns store objects and arrays", async () => {
+    const record = await accept({
+      ...input,
+      headers: { "X-Order": "42" },
+      attachments: [{ filename: "order.txt", contentType: "text/plain", content: new Uint8Array([42]) }],
+    });
+    expect(record.status).toBe("queued");
+    const [queuedTypes] = await sql`SELECT jsonb_typeof(headers) AS headers, jsonb_typeof(attachments) AS attachments,
+      jsonb_typeof(attachment_refs) AS attachment_refs FROM outgoing_mail.messages WHERE id = ${record.id}::uuid`;
+    expect(queuedTypes).toEqual({ headers: "object", attachments: "array", attachment_refs: "array" });
+    expect((await delivery(record)).status).toBe("sent");
+    expect(sink.messages).toHaveLength(1);
+    expect(sink.messages[0]!.raw).toContain("X-Order: 42");
+    const [sentTypes] = await sql`SELECT jsonb_typeof(headers) AS headers, jsonb_typeof(attachments) AS attachments,
+      jsonb_typeof(failures) AS failures FROM outgoing_mail.messages WHERE id = ${record.id}::uuid`;
+    expect(sentTypes).toEqual({ headers: "object", attachments: "array", failures: "array" });
+    const plain = await accept();
+    expect((await outgoingMailMessages.read(plain.id))?.headers).toBeNull();
+  });
 
   test("stream attachment reaches SMTP once, with correct metadata, identity and sanitized unframed HTML", async () => {
     await startOutgoingMailRuntime();
@@ -275,6 +298,47 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
     await sql`UPDATE outgoing_mail.messages SET created_at = now() - INTERVAL '25 hours'`;
     expect(await mail.profiles()).toMatchObject({ ok: true, data: [{ quota: { usedLast24h: 0 } }] });
   });
+  test("exhausted recipient quota rejects attachments before reading or storing them", async () => {
+    await configure({ dailyRecipientLimit: 1 });
+    await accept();
+    let pulls = 0;
+    const content = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls++;
+          controller.enqueue(new Uint8Array([1]));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const put = spyOn(mailAttachments(), "put");
+    try {
+      expect(
+        await mail.send({ ...input, attachments: [{ filename: "unread", contentType: "text/plain", content }] }, { signal: stopWaiting }),
+      ).toMatchObject({ ok: false, error: { code: "quota_exceeded", limit: 1, used: 1, requested: 1 } });
+      expect(pulls).toBe(0);
+      // No object can exist for this attachment: acceptance never attempted a store write.
+      expect(put).not.toHaveBeenCalled();
+      expect(await sql`SELECT id FROM outgoing_mail.messages`).toHaveLength(1);
+    } finally {
+      put.mockRestore();
+    }
+  });
+  test("an acceptance audit failure rolls back the message and never sends SMTP", async () => {
+    const record = spyOn(audit, "record").mockRejectedValue(new Error("Audit unavailable"));
+    try {
+      expect(await mail.send({ ...input, key: "audit-failure" }, { signal: stopWaiting })).toMatchObject({
+        ok: false,
+        error: { code: "mail_unavailable" },
+      });
+      expect(await sql`SELECT id FROM outgoing_mail.messages`).toHaveLength(0);
+      expect(await recoverOutgoingMail()).toEqual([]);
+      expect(sink.messages).toHaveLength(0);
+    } finally {
+      record.mockRestore();
+    }
+  });
   test("lost commit replies and failed acceptance races each audit the recovered send exactly once", async () => {
     const original = outgoingMailMessages.accept;
     const acceptCall = spyOn(outgoingMailMessages, "accept").mockImplementation(async (...args) => {
@@ -344,6 +408,40 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
     await sql`DELETE FROM outgoing_mail.profiles`;
     expect((await delivery(removed)).error_code).toBe("profile_removed");
     expect(sink.messages).toHaveLength(0);
+  });
+  test("replacing a profile during attachment verification cancels without resolving credentials by key", async () => {
+    await outgoingMailStore.setAppAccess("inventory", { mode: "selected", profiles: ["alerts"] }, context);
+    const queued = await accept({ ...input, attachments: [{ filename: "a", contentType: "text/plain", content: new Uint8Array([1]) }] });
+    const before = (await outgoingMailMessages.read(queued.id))!;
+    const profileId = before.profile_id;
+    if (!profileId) throw new Error("Expected the accepted profile ID");
+    const replacement = smtpSink();
+    const verify = attachments.verifyMailAttachment;
+    let replaced = false;
+    const verification = spyOn(attachments, "verifyMailAttachment").mockImplementation(async (...args) => {
+      if (!replaced) {
+        replaced = true;
+        await sql`DELETE FROM outgoing_mail.profiles WHERE key = 'alerts'`;
+        await configure({ smtpPort: replacement.port });
+      }
+      return verify(...args);
+    });
+    const resolve = store.resolveMailCredentials;
+    const credentials = spyOn(store, "resolveMailCredentials").mockImplementation((...args) => resolve(...args));
+    try {
+      const row = await delivery(queued);
+      expect(replaced).toBe(true);
+      expect(row.status).toBe("cancelled");
+      expect(row.error_code).toBe("profile_removed");
+      expect(sink.messages).toHaveLength(0);
+      expect(replacement.messages).toHaveLength(0);
+      expect(credentials).toHaveBeenCalledTimes(1);
+      expect(credentials.mock.calls[0]?.[0]).toEqual({ id: profileId });
+    } finally {
+      credentials.mockRestore();
+      verification.mockRestore();
+      replacement.stop();
+    }
   });
   test("lost attachments permanently fail before SMTP, while stale sending rows recover", async () => {
     const queued = await accept({ ...input, attachments: [{ filename: "a", contentType: "text/plain", content: new Uint8Array([1]) }] });

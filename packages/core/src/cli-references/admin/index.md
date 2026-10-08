@@ -580,7 +580,7 @@ needs `--yes` and accepts only queued records; other states return 409,
 `message_not_queued`. Record retention deletes idempotency keys with their rows.
 
 `retention show` returns the effective `{ contentDays, recordDays }` settings.
-`retention set` requires both day flags and `--yes`. Values must be positive
-whole numbers, with record retention at least as long as content retention.
+`retention set` requires both day flags and `--yes`. Values must be whole days
+from 1 to 36500, with record retention at least as long as content retention.
 The API saves both settings in one transaction and audits their old and new
 values as `outgoing_mail.retention.update`.

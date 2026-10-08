@@ -61,13 +61,14 @@ const logQuery = z
     ref: z
       .string()
       .min(1)
+      .max(200)
       .optional()
       .transform((value) => {
         if (value === undefined) return undefined;
         const colon = value.indexOf(":");
         return colon < 0 ? { scope: value } : { scope: value.slice(0, colon), id: value.slice(colon + 1) };
       })
-      .pipe(z.object({ scope: z.string().min(1), id: z.string().min(1).optional() }).optional()),
+      .pipe(z.object({ scope: z.string().min(1).max(200), id: z.string().min(1).max(200).optional() }).optional()),
     recipient: z.string().max(320).optional(),
     cursor: z.string().max(1024).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),

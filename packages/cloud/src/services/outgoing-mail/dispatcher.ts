@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { sql } from "bun";
 import { z } from "zod";
 import { listApps } from "../../_internal/registry";
+import { parsePgJsonValue } from "../postgres";
 import { deleteMailObjects, verifyMailAttachment } from "./attachments";
 import { mailBackoffMs, mailEnvelope } from "./message";
 import { allowedMailProfile, type MessageRow, messageAttachmentRefs, messageRecord, outgoingMailMessages } from "./messages";
@@ -21,9 +22,14 @@ export const cleanupMailAttachments = async (id: string): Promise<void> => {
 export const publishMailSettled = async (id: string): Promise<void> => {
   await mailSettled().publish({ tenantId: id, data: id });
 };
-export const smtpRetryable = (error: unknown): boolean => {
+const smtpResponseRetryable = (error: unknown): boolean => {
   const responseCode = error && typeof error === "object" && "responseCode" in error ? Number(error.responseCode) : undefined;
   return responseCode === undefined || !Number.isFinite(responseCode) || responseCode < 500;
+};
+export const smtpRetryable = (error: unknown): boolean => {
+  if (error && typeof error === "object" && "rejectedErrors" in error && Array.isArray(error.rejectedErrors) && error.rejectedErrors.length)
+    return error.rejectedErrors.some(smtpResponseRetryable);
+  return smtpResponseRetryable(error);
 };
 const rejectReason = (error: unknown, fallback: string): string =>
   error && typeof error === "object" && "response" in error && typeof error.response === "string" ? error.response : fallback;
@@ -110,7 +116,8 @@ export const processOutgoingMail = async (id: string, signal?: AbortSignal): Pro
         streams.push(stream);
         attachments.push({ filename: item.filename, contentType: item.contentType, content: stream });
       }
-      credentials = await resolveMailCredentials(row.profile_key);
+      // Load the checked profile by ID: a profile deleted (or recreated under its key) since the check is profile_removed.
+      credentials = await resolveMailCredentials({ id: row.profile_id });
       const socket = new Socket();
       // DNS can complete after cancellation; tear down a late connection too.
       socket.once("connect", () => {
@@ -134,7 +141,7 @@ export const processOutgoingMail = async (id: string, signal?: AbortSignal): Pro
           html: row.html_body ?? undefined,
           replyTo: row.reply_to ?? undefined,
           messageId: row.message_id_header,
-          headers: row.headers === null ? undefined : z.record(z.string(), z.string()).parse(row.headers),
+          headers: row.headers === null ? undefined : z.record(z.string(), z.string()).parse(parsePgJsonValue(row.headers)),
           attachments,
           disableFileAccess: true,
           disableUrlAccess: true,
@@ -145,7 +152,7 @@ export const processOutgoingMail = async (id: string, signal?: AbortSignal): Pro
           at: new Date().toISOString(),
         }));
         await sql`UPDATE outgoing_mail.messages SET status = 'sent', sent_at = now(), next_attempt_at = NULL, error_code = NULL, error_message = NULL,
-          smtp_response = ${result.response}, failures = ${JSON.stringify(failures)}::jsonb, updated_at = now()
+          smtp_response = ${result.response}, failures = ${JSON.stringify(failures)}::text::jsonb, updated_at = now()
           WHERE id = ${id}::uuid AND status = 'sending' AND attempt_count = ${row.attempt_count}`;
       } finally {
         attempt.signal.removeEventListener("abort", stop);

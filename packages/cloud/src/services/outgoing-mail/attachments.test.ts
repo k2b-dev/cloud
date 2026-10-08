@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import type { ObjectStore } from "@k2b/sync";
-import { cancelMailStreams, uploadMailAttachments, verifyMailAttachment } from "./attachments";
+import { cancelMailStreams, MAIL_ATTACHMENT_UPLOAD_MS, uploadMailAttachments, verifyMailAttachment } from "./attachments";
 import * as sync from "./sync";
 
 const fakeStore = () => {
@@ -98,8 +98,22 @@ test("duplicate stream cancellation never reads source attachments", async () =>
     },
     { highWaterMark: 0 },
   );
-  await cancelMailStreams([attachment(source)]);
+  cancelMailStreams([attachment(source)]);
   expect(reads).toBe(0);
+  expect(cancelled).toBe(true);
+});
+test("stream cancellation returns immediately even when the source never settles", () => {
+  let cancelled = false;
+  const source = new ReadableStream<Uint8Array>(
+    {
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => {});
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  expect(cancelMailStreams([attachment(source)])).toBeUndefined();
   expect(cancelled).toBe(true);
 });
 test("attachment store exhaustion has a stable acceptance error", async () => {
@@ -114,5 +128,38 @@ test("attachment store exhaustion has a stable acceptance error", async () => {
     });
   } finally {
     factory.mockRestore();
+  }
+});
+test("all attachment puts share one upload deadline, including an already expired budget", async () => {
+  const { objects, store } = fakeStore();
+  const put = store.put;
+  const signals: (AbortSignal | undefined)[] = [];
+  const timer = spyOn(globalThis, "setTimeout");
+  store.put = async (options) => {
+    signals.push(options.signal);
+    if (signals.length === 1) {
+      const ref = await put(options);
+      // Expire the whole call's budget after the first upload, without a wall-clock wait.
+      const expire = timer.mock.calls.find(([, delay]) => delay === MAIL_ATTACHMENT_UPLOAD_MS)?.[0];
+      if (!expire) throw new Error("Expected an upload deadline");
+      expire();
+      return ref;
+    }
+    expect(options.signal?.aborted).toBe(true);
+    throw options.signal?.reason;
+  };
+  const factory = spyOn(sync, "mailAttachments").mockReturnValue(store);
+  try {
+    expect(MAIL_ATTACHMENT_UPLOAD_MS).toBe(60_000);
+    await expect(uploadMailAttachments("id", [attachment(new Uint8Array(1)), attachment(new Uint8Array(1))], 5)).rejects.toThrow(
+      "Attachment upload timed out",
+    );
+    expect(timer.mock.calls.filter(([, delay]) => delay === MAIL_ATTACHMENT_UPLOAD_MS)).toHaveLength(1);
+    expect(signals).toHaveLength(2);
+    expect(signals[1]).toBe(signals[0]);
+    expect(objects.size).toBe(0);
+  } finally {
+    factory.mockRestore();
+    timer.mockRestore();
   }
 });

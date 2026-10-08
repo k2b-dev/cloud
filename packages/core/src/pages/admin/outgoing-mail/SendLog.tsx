@@ -119,6 +119,7 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
         value={contentDays()}
         onValueChange={setContentDays}
         min={1}
+        max={36500}
         disabled={save.loading()}
         required
         autofocus
@@ -129,6 +130,7 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
         value={recordDays()}
         onValueChange={setRecordDays}
         min={1}
+        max={36500}
         disabled={save.loading()}
         required
         error={() => (contentDays() && recordDays() && recordDays()! < contentDays()! ? t().retentionOrder : undefined)}
@@ -312,6 +314,7 @@ export function SendLog(props: { initial: SendLogState; apps: readonly AdminMail
   const [more, setMore] = createSignal<{ items: AdminMailRecord[]; nextCursor?: string } | null>(null);
   const [loadingMore, setLoadingMore] = createSignal(false);
   let first = true;
+  let generation = 0;
 
   const fetchPage = async (current: SendLogFilter, cursor: string | undefined, signal?: AbortSignal) => {
     const response = await api.messages.$get(
@@ -324,6 +327,7 @@ export function SendLog(props: { initial: SendLogState; apps: readonly AdminMail
   const page = query.create({
     source: () => ({ filter: filter(), revision: revision() }),
     load: async (source, { abortSignal }) => {
+      generation++;
       setMore(null);
       if (first) {
         first = false;
@@ -334,16 +338,22 @@ export function SendLog(props: { initial: SendLogState; apps: readonly AdminMail
   });
   const current = () => page.data() ?? props.initial.page;
   const rows = () => [...current().items, ...(more()?.items ?? [])];
-  const nextCursor = () => (more() ? more()!.nextCursor : current().nextCursor);
+  const nextCursor = () =>
+    page.loading() || page.refreshing() || page.stale() ? undefined : more() ? more()!.nextCursor : current().nextCursor;
   const loadMore = async () => {
     const cursor = nextCursor();
     if (!cursor || loadingMore()) return;
+    const requestGeneration = generation;
+    const requestFilter = filter();
+    const requestRevision = revision();
+    const isCurrent = () => generation === requestGeneration && filter() === requestFilter && revision() === requestRevision;
     setLoadingMore(true);
     try {
-      const next = await fetchPage(filter(), cursor);
+      const next = await fetchPage(requestFilter, cursor);
+      if (!isCurrent()) return;
       setMore((previous) => ({ items: [...(previous?.items ?? []), ...next.items], nextCursor: next.nextCursor }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().logFailed);
+      if (isCurrent()) toast.error(error instanceof Error ? error.message : t().logFailed);
     } finally {
       setLoadingMore(false);
     }

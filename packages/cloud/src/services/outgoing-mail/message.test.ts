@@ -42,6 +42,23 @@ test("headers use a case-insensitive allow-list and an 8 KiB aggregate bound", (
     expect(MailMessageSchema.safeParse({ ...message, headers: { [name]: "value" } }).success).toBe(false);
   expect(MailMessageSchema.safeParse({ ...message, headers: { "X-A": "é".repeat(4096) } }).success).toBe(false);
 });
+test("message and filter references are bounded to 200 characters per part", () => {
+  for (const ref of [
+    { scope: "order", id: "x".repeat(201) },
+    { scope: "x".repeat(201), id: "42" },
+  ]) {
+    expect(MailMessageSchema.safeParse({ ...message, ref }).success).toBe(false);
+    expect(MailFilterSchema.safeParse({ ref }).success).toBe(false);
+  }
+  const ref = { scope: "x".repeat(200), id: "x".repeat(200) };
+  expect(MailMessageSchema.safeParse({ ...message, ref }).success).toBe(true);
+  expect(MailFilterSchema.safeParse({ ref }).success).toBe(true);
+});
+test("messages allow at most 20 attachments", () => {
+  const attachment = { filename: "empty.txt", contentType: "text/plain", content: new Uint8Array() };
+  expect(MailMessageSchema.safeParse({ ...message, attachments: Array(21).fill(attachment) }).success).toBe(false);
+  expect(MailMessageSchema.safeParse({ ...message, attachments: Array(20).fill(attachment) }).success).toBe(true);
+});
 test("mail error and filter contracts cover acceptance, delivery, and bounded log reads", () => {
   for (const code of [
     "bad_input",
@@ -88,6 +105,20 @@ test("SMTP failures distinguish permanent responses from retryable connection an
   expect(smtpRetryable(Object.assign(new Error("451"), { responseCode: 451 }))).toBe(true);
   expect(smtpRetryable(Object.assign(new Error("550"), { responseCode: 550 }))).toBe(false);
   expect(smtpRetryable(new Error("Connection lost"))).toBe(true);
+});
+test("all-rejected SMTP errors retry any temporary recipient regardless of order", async () => {
+  const { smtpRetryable } = await import("./dispatcher");
+  for (const codes of [
+    [451, 550],
+    [550, 451],
+    [550, 553],
+  ]) {
+    const error = Object.assign(new Error("All recipients were rejected"), {
+      responseCode: codes.at(-1),
+      rejectedErrors: codes.map((responseCode) => ({ responseCode })),
+    });
+    expect(smtpRetryable(error)).toBe(codes.includes(451));
+  }
 });
 
 test("custom header byte limits include names and separators", () => {
