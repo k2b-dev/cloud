@@ -15,10 +15,14 @@ const videos: Record<string, Uint8Array<ArrayBuffer>> = {
 /** An iPhone reel as the camera records it by default: HEVC with AAC sound in QuickTime. */
 const hevcReel = new Uint8Array(readFileSync(resolve(ui, "test/media/hevc-aac-180x320.mov")));
 /**
- * A chunked answer carries at most this many bytes, so playing a test video takes several range requests. Real servers
- * answer the whole requested range; WebKit's media stack cannot seek against shortened answers.
+ * The expiring lease answers at most this many bytes at a time, so Chromium needs more requests than the lease allows
+ * before it has the video's metadata. Real servers answer the whole requested range, as every other route does: WebKit's
+ * media stack on Linux does not ask for the rest of a shortened answer and plays on only with bytes an earlier answer
+ * brought.
  */
 const CHUNK = 8 * 1024;
+/** Where the test video's first frames start; everything before is its header. */
+const firstCluster = Buffer.from(videos.landscape!).indexOf(Buffer.from([0x1f, 0x43, 0xb6, 0x75]));
 
 // Starting a page and playing real media takes longer than a unit test; this is the budget of the other browser tests.
 setDefaultTimeout(30_000);
@@ -114,7 +118,7 @@ const script = await build.outputs[0]!.text();
 
 type Logged = { path: string; range: string | null; status: number };
 const requests: Logged[] = [];
-/** Leases that answer only their first requests, as a signed URL that expires during playback. */
+/** Leases that answer only their first requests, as a signed URL that expires. */
 const leaseLimits = new Map<string, number>([["expiring", 2]]);
 const leaseUses = new Map<string, number>();
 let held: Promise<void> = Promise.resolve();
@@ -162,8 +166,8 @@ beforeAll(async () => {
         return new Response("This is no video at all.", { headers: { "content-type": "video/mp4" } });
       }
       if (path === "/reel.mov") return ranged(request, hevcReel, path, false);
-      // /video/<name>.webm, /chunked/<name>.webm, /held/<name>.webm, and /lease/<lease>/<name>.webm, which is chunked
-      const match = /^\/(video|chunked|held|lease\/([a-z]+))\/([a-z]+)\.webm$/.exec(path);
+      // /video/<name>.webm, /held/<name>.webm, and /lease/<lease>/<name>.webm
+      const match = /^\/(video|held|lease\/([a-z]+))\/([a-z]+)\.webm$/.exec(path);
       const bytes = match ? videos[match[3]!] : undefined;
       if (!match || !bytes) return new Response("Not found", { status: 404 });
       if (match[1] === "held") await held;
@@ -176,7 +180,7 @@ beforeAll(async () => {
           return new Response("Lease expired", { status: 403 });
         }
       }
-      return ranged(request, bytes, path, match[1] === "chunked" || Boolean(lease));
+      return ranged(request, bytes, path, lease === "expiring");
     },
   });
   browser = await launchBrowser();
@@ -296,23 +300,23 @@ describe(`VideoPlayer (${browserName})`, () => {
 
   test("plays to the end through range requests answered with 206", async () => {
     requests.length = 0;
-    const page = await open({ src: "/chunked/landscape.webm", host: "width:640px;height:360px" });
+    const page = await open({ src: "/video/landscape.webm", host: "width:640px;height:360px" });
     try {
       await metadata(page);
+      // The video plays at its own speed: WebKit on Linux changes the speed with a seek, which can leave it waiting for good.
       await page.$eval(".k2b-video-player__video", (element) => {
         const video = element as HTMLVideoElement;
         video.muted = true;
-        video.playbackRate = 2;
         return video.play();
       });
       await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
         timeout: 15_000,
       });
-      const media = requests.filter((request) => request.path === "/chunked/landscape.webm");
-      const partial = media.filter((request) => request.status === 206);
-      // The test video is larger than one answer, so the engine had to ask for the rest by range.
-      expect(partial.length).toBeGreaterThanOrEqual(Math.ceil(videos.landscape!.length / CHUNK) - 1);
-      expect(partial.some((request) => request.range !== "bytes=0-")).toBe(true);
+      const media = requests.filter((request) => request.path === "/video/landscape.webm");
+      // A 206 answer brought the frames, not only the index at the end: Chromium asks for the whole video by range,
+      // WebKit for everything from the first frames once it has read the index.
+      const start = (range: string | null) => Number(/^bytes=(\d+)-/.exec(range ?? "")?.[1]);
+      expect(media.some((request) => request.status === 206 && start(request.range) <= firstCluster)).toBe(true);
       expect(media.every((request) => request.status === 200 || request.status === 206)).toBe(true);
     } finally {
       await page.close();
@@ -423,7 +427,7 @@ describe(`VideoPlayer (${browserName})`, () => {
     }
   });
 
-  test("an address that expires during playback is renewed and playback continues where it stopped", async () => {
+  test("an address that expires while the video loads is renewed, and the renewed address plays to the end", async () => {
     leaseUses.clear();
     const page = await open({
       src: "/lease/expiring/landscape.webm",
@@ -431,19 +435,62 @@ describe(`VideoPlayer (${browserName})`, () => {
       host: "width:640px;height:360px",
     });
     try {
+      // Both engines need more answers than the lease gives before they show the first frame: Chromium for the metadata,
+      // WebKit for its seek to that frame. The test plays once the renewed address shows that frame, so its play()
+      // overlaps neither the switch of the address, which aborts a pending play(), nor the player's seeks.
+      await page.waitForFunction(() => {
+        const video = document.querySelector(".k2b-video-player__video") as HTMLVideoElement | null;
+        const events = (window as unknown as { mediaEvents: { type: string; src: string }[] }).mediaEvents;
+        const shown = events.some((event) => event.type === "seeked" && event.src.includes("/lease/fresh/"));
+        return video !== null && video.currentSrc.includes("/lease/fresh/") && !video.seeking && shown;
+      });
+      await page.$eval(".k2b-video-player__video", (element) => {
+        const video = element as HTMLVideoElement;
+        video.muted = true;
+        return video.play();
+      });
+      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
+        timeout: 15_000,
+      });
+      expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 0 });
+      expect(leaseUses.get("expiring")).toBeGreaterThan(2);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("an address that expires during playback is renewed and playback continues where it stopped", async () => {
+    const page = await open({
+      src: "/video/landscape.webm",
+      renew: "/video/landscape.webm?renewal=RENEWAL",
+      host: "width:640px;height:360px",
+    });
+    try {
       await metadata(page);
       await page.$eval(".k2b-video-player__video", (element) => {
         const video = element as HTMLVideoElement;
         video.muted = true;
-        video.playbackRate = 2;
         return video.play();
       });
+      await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).currentTime >= 1);
+      // The engines fetch this short video whole while it loads, so a real expiry could not happen this late. The video
+      // element's own error event is what an expired address causes, here at the point the test chooses.
+      const stopped = await page.$eval(".k2b-video-player__video", (element) => {
+        const time = (element as HTMLVideoElement).currentTime;
+        element.dispatchEvent(new Event("error"));
+        return time;
+      });
+      // Nobody presses play again: the renewed address continues by itself.
       await page.waitForFunction(() => (document.querySelector(".k2b-video-player__video") as HTMLVideoElement).ended, undefined, {
-        timeout: 20_000,
+        timeout: 15_000,
       });
       expect(await counters(page)).toEqual({ renewals: 1, fallbacks: 0 });
-      expect((await state(page)).src).toContain("/lease/fresh/landscape.webm");
-      expect(leaseUses.get("expiring")).toBeGreaterThan(2);
+      expect((await state(page)).src).toContain("renewal=1");
+      const events = await page.evaluate(
+        () => (window as unknown as { mediaEvents: { type: string; src: string; time: number }[] }).mediaEvents,
+      );
+      // It showed the point where the first address stopped instead of starting over.
+      expect(events.some((event) => event.type === "seeked" && event.src.includes("renewal=1") && event.time >= stopped - 0.05)).toBe(true);
     } finally {
       await page.close();
     }
