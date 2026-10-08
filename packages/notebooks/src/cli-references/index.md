@@ -315,11 +315,16 @@ Content comes from `--from <file|->` or `--content <text>`. Preconditions: `--if
 cld notebooks mv <note> "Docs:betrieb"                     # into an existing note
 cld notebooks mv <note> "Docs:betrieb/Backup und Restore"  # move and rename
 cld notebooks mv <note> "Docs:"                            # to the top level
+cld notebooks mv kolb-docs:betrieb/backup --after kolb-docs:betrieb/setup
+cld notebooks mv ns98Kq --first
+cld notebooks mv ns98Kq --position 0                        # 0-based place
 cld notebooks cp <note> "Archive:2026"                     # copy into another notebook
 cld notebooks rm <note> --yes                              # delete with all children
 cld notebooks lock <note> --yes                            # permanent lock
 cld notebooks favorites add <note>
 ```
+
+Each level starts alphabetically, with every note at position 0. Placing a note with `--first`, `--last`, `--before`, `--after`, or `--position` renumbers that level to 1..n in hand order, which the sidebar, Book, `ls`, and `tree` follow. New notes join the end of a hand-ordered level. Without a target, exactly one placement flag is required; an anchor supplies its parent, and first/last/position keep the current parent. With a target and no placement, the target level keeps its order mode. Reset to alphabetical order in the web UI.
 
 `mv` moves into the target when it names an existing note, like `mv file dir/`. Otherwise the last target segment becomes the new title below its parent path. Moving between notebooks is not supported; use `cp` and `rm`. `rm` and `lock` ask for confirmation in a terminal and require `--yes` otherwise. A lock is permanent. A notebook admin can reserve deleting and locking notes for admins with `cld notebooks update <notebook> --note-delete-permission admin` (`write` restores the default). Then `rm` and `lock` by anyone else fail with status 403 and the message that deleting or locking is reserved for admins (API codes `NOTE_DELETE_ADMIN_ONLY` and `NOTE_LOCK_ADMIN_ONLY`); editing, including removing content, still works. Do not work around the rule by emptying the note; ask an admin instead.
 
@@ -410,7 +415,7 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 | `write <note>` | Replace content or create the note; `--from`, `--content`, `--parents`, `--if-content-hash`. |
 | `edit <note>` | One precise edit with preconditions and `--dry-run`. |
 | `preview <note>` | Validate query and TOC blocks of the saved page or a draft. |
-| `mv <note> <target>` | Move and/or rename. |
+| `mv <note> [target] [--before <note> \| --after <note> \| --first \| --last \| --position <n>]` | Move, rename, or order (position is 0-based). |
 | `cp <note> <notebook>[:<path>]` | Copy into another notebook. |
 | `rm <note>` | Delete with children; confirmation or `--yes`. |
 | `lock <note>` | Permanent lock; confirmation or `--yes`. |

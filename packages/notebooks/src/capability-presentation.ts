@@ -217,7 +217,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             notebookId: "Beschreibbares Notizbuch ID.",
             parentId: "Optionale Elternnotiz ID im selben Notizbuch.",
-            position: "Optionale Geschwisterposition; Standardmäßig wird angehängt.",
+            position:
+              "Optionale 0-basierte Position; Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge. Ohne Position folgt die Notiz dem Ordnungsmodus der Ebene.",
             content: "Ursprüngliche Markdown-Quelle; Ein Titel wird vom Notizbuch abgeleitet oder generiert.",
           },
         },
@@ -236,11 +237,18 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.move": {
           title: "Notiz verschieben",
-          description: "Verschieben Sie eine Notiz in das Notizbuch und lehnen Sie gleichzeitig ungültige Eltern und Zyklen ab.",
+          description:
+            "Eine Notiz unter eine andere übergeordnete Notiz verschieben und/oder unter ihren Geschwistern einordnen. Einordnen stellt die Ebene auf eine manuelle Reihenfolge um, der Seitenleiste und Buch folgen.",
           input: {
             noteId: "Stabiler beschreibbarer Notizzettel ID.",
-            parentId: "Neue übergeordnete Notiz ID im selben Notizbuch oder null für eine Stammnote.",
-            position: "Neue Geschwisterposition.",
+            parentId:
+              "Optionale ID der neuen übergeordneten Notiz im selben Notizbuch oder null für die oberste Ebene. Ohne Angabe bleibt die übergeordnete Notiz erhalten; bei before/after gilt die Ebene der Ankernotiz.",
+            position:
+              "Optionale 0-basierte Position: 0 ist die erste, ein Wert ab der Anzahl der Geschwister die letzte. Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge, der Seitenleiste und Buch folgen. Ohne Platzierung bleibt der Ordnungsmodus erhalten.",
+            before:
+              "Direkt vor dieser Notiz im selben Notizbuch einordnen. Bei parentId muss die Ankernotiz zu dieser Ebene gehören. Stellt die Ebene auf manuelle Reihenfolge um.",
+            after:
+              "Direkt nach dieser Notiz im selben Notizbuch einordnen. Bei parentId muss die Ankernotiz zu dieser Ebene gehören. Stellt die Ebene auf manuelle Reihenfolge um.",
           },
         },
       },

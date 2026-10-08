@@ -2,7 +2,9 @@ import { afterAll, afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CloudCliContext, CloudCliFlags } from "@k2b/cloud/cli";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+import notebooksCli from "./cli";
 
 /** The notebooks module as a package plugin in a private config home; cld loads it like any installed module. */
 const cliHome = await mkdtemp(join(tmpdir(), "cld-notebooks-cli-"));
@@ -618,4 +620,123 @@ test("help lists the new command set in English and German", async () => {
   expect(english.stdout).not.toContain("create-note");
   const german = await runCli("http://127.0.0.1:9", ["--locale", "de", "notebooks", "help"]);
   expect(german.stdout).toContain("Notizbuch");
+});
+
+const commandContext = (args: string[], flags: CloudCliFlags = {}, locale = "en") => {
+  const lines: string[] = [];
+  const writes: unknown[] = [];
+  const ctx: CloudCliContext = {
+    args,
+    flags,
+    options: { profile: "test", server: "http://example.test", token: "token", output: "json", locale },
+    getDefault: async () => undefined,
+    setDefault: async () => undefined,
+    createApiClient: () => {
+      throw new Error("Not used by these commands");
+    },
+    fetch: async (path, init) => {
+      if (init?.method && init.method !== "GET") {
+        if (typeof init.body !== "string") throw new Error("Expected JSON body");
+        const body: unknown = JSON.parse(init.body);
+        writes.push(body);
+        return Response.json(noteFixture);
+      }
+      if (path === "/api/notebooks/wiki01") return Response.json(notebookFixture);
+      if (path.endsWith("/anchor")) return Response.json({ ...noteFixture, id: "anchor", title: "Setup" });
+      if (path.endsWith("/other1")) return Response.json({ ...noteFixture, id: "other1", notebookId: "other2" });
+      if (path.includes("/resolve?")) return Response.json({ ...noteFixture, id: "anchor", title: "Setup" });
+      return Response.json({ ...noteFixture, position: 7 });
+    },
+    readJson: async (response) => response.json(),
+    print: (value = "") => {
+      lines.push(value);
+    },
+    write: async (value) => {
+      lines.push(value);
+    },
+    error: (value) => {
+      lines.push(value);
+    },
+    json: (value) => {
+      lines.push(JSON.stringify(value));
+    },
+    jsonLine: (value) => {
+      lines.push(JSON.stringify(value));
+    },
+    table: () => undefined,
+  };
+  return { ctx, lines, writes };
+};
+
+test("mv sends only the requested placement and omits parent without a target", async () => {
+  for (const [flags, expected] of [
+    [{ first: true }, { position: "first" }],
+    [{ last: true }, { position: "last" }],
+    [{ position: "0" }, { position: 0 }],
+    [{ before: "anchor" }, { before: "anchor" }],
+    [{ after: "anchor" }, { after: "anchor" }],
+    [{ after: "wiki01:setup" }, { after: "anchor" }],
+  ] satisfies [CloudCliFlags, unknown][]) {
+    const { ctx, writes } = commandContext(["mv", "note01"], flags);
+    await notebooksCli.run(ctx);
+    expect(writes).toEqual([expected]);
+  }
+});
+
+test("mv with a target preserves the level mode unless placement is supplied", async () => {
+  const target = commandContext(["mv", "note01", "anchor"]);
+  await notebooksCli.run(target.ctx);
+  expect(target.writes).toEqual([{ parentId: "anchor" }]);
+  const placement = commandContext(["mv", "note01", "wiki01:"], { last: true });
+  await notebooksCli.run(placement.ctx);
+  expect(placement.writes).toEqual([{ parentId: null, position: "last" }]);
+});
+
+test("mv refuses missing or ambiguous placements and anchors from another notebook", async () => {
+  const missing = commandContext(["mv", "note01"]);
+  await expect(notebooksCli.run(missing.ctx)).rejects.toThrow("exactly one placement flag");
+  expect(missing.writes).toEqual([]);
+  const german = commandContext(["mv", "note01"], {}, "de");
+  await expect(notebooksCli.run(german.ctx)).rejects.toThrow("genau eine Platzierung");
+  const ambiguousFlags: CloudCliFlags[] = [
+    { first: true, last: true },
+    { before: "anchor", position: "0" },
+    { before: "anchor", after: "anchor" },
+  ];
+  for (const flags of ambiguousFlags) {
+    const ambiguous = commandContext(["mv", "note01", "anchor"], flags);
+    await expect(notebooksCli.run(ambiguous.ctx)).rejects.toThrow("at most one placement");
+    expect(ambiguous.writes).toEqual([]);
+  }
+  const other = commandContext(["mv", "note01"], { after: "other1" });
+  await expect(notebooksCli.run(other.ctx)).rejects.toThrow("same notebook");
+  expect(other.writes).toEqual([]);
+});
+
+test("ls and tree display hand order and numeric alphabetical order", async () => {
+  const outline = [
+    { id: "ten001", parentId: null, title: "Chapter 10", position: 0, hasChildren: false, updatedAt: "" },
+    { id: "two001", parentId: null, title: "Chapter 2", position: 0, hasChildren: false, updatedAt: "" },
+    { id: "first1", parentId: null, title: "Zebra", position: 0, hasChildren: true, updatedAt: "" },
+    { id: "child1", parentId: "first1", title: "Z", position: 1, hasChildren: false, updatedAt: "" },
+    { id: "child2", parentId: "first1", title: "A", position: 2, hasChildren: false, updatedAt: "" },
+  ];
+  for (const command of ["ls", "tree"]) {
+    const { ctx, lines } = commandContext([command, "wiki01"]);
+    ctx.fetch = async (path) =>
+      path.includes("/outline?") ? Response.json({ data: outline, pagination: { has_next: false } }) : Response.json(notebookFixture);
+    await notebooksCli.run(ctx);
+    const alphabetical = lines.join("");
+    expect(alphabetical.indexOf('"two001"')).toBeLessThan(alphabetical.indexOf('"ten001"'));
+    if (command === "tree") expect(alphabetical.indexOf('"child1"')).toBeLessThan(alphabetical.indexOf('"child2"'));
+    outline[2]!.position = 1;
+    outline[0]!.position = 2;
+    outline[1]!.position = 3;
+    lines.length = 0;
+    await notebooksCli.run(ctx);
+    const hand = lines.join("");
+    expect(hand.indexOf('"first1"')).toBeLessThan(hand.indexOf('"ten001"'));
+    expect(hand.indexOf('"ten001"')).toBeLessThan(hand.indexOf('"two001"'));
+    for (const note of outline.filter((note) => note.parentId === null)) note.position = 0;
+  }
 });

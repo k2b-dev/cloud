@@ -91,7 +91,6 @@ const createNotes = async (
         data: {
           notebookId: notebook.id,
           parentId: parent?.id,
-          position: item.position,
         },
         creatorId: actorId,
       }),

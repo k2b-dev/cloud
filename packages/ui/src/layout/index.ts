@@ -14,6 +14,7 @@ export type {
   AppWorkspaceMainPaneProps,
   AppWorkspaceMainProps,
   AppWorkspaceNavTreeItemProps,
+  AppWorkspaceNavTreeMove,
   AppWorkspaceNavTreeProps,
   AppWorkspaceProps,
   AppWorkspaceSidebarAccessoryVisibility,

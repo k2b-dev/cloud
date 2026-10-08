@@ -2,12 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NoteTreeNode } from "./types";
 
-const note = (id: string, title: string, createdAt: string, updatedAt: string, children: NoteTreeNode[] = []): NoteTreeNode => ({
+const note = (
+  id: string,
+  title: string,
+  createdAt: string,
+  updatedAt: string,
+  children: NoteTreeNode[] = [],
+  position = 0,
+): NoteTreeNode => ({
   id,
   notebookId: "Book01",
   parentId: null,
   title,
-  position: 0,
+  position,
   hasChildren: children.length > 0,
   yjsSnapshotAt: null,
   contentMd: null,
@@ -34,12 +41,26 @@ describe("sortNoteTree", () => {
     ["created", ["Alpha2", "Bravo1"], ["Alpha1", "Delta1"]],
     ["updated", ["Bravo1", "Alpha2"], ["Alpha1", "Delta1"]],
   ])("sorts %s recursively without flattening the hierarchy", (mode, roots, children) => {
-    const sorted = sortNoteTree(source, mode);
+    const sorted = sortNoteTree(source, mode, "en");
 
     expect(ids(sorted)).toEqual(roots);
     expect(ids(sorted.find((item) => item.id === "Bravo1")?.children ?? [])).toEqual(children);
     expect(ids(source)).toEqual(["Bravo1", "Alpha2"]);
     expect(ids(source[0]!.children)).toEqual(["Delta1", "Alpha1"]);
+  });
+});
+
+describe("notebook order in the sidebar", () => {
+  const day = "2026-01-01T00:00:00.000Z";
+  test("a level arranged by hand keeps that order, the others read by title with numbers as numbers", () => {
+    const source = [
+      note("Chap10", "Chapter 10", day, day),
+      note("Guide1", "Guides", day, day, [note("Setup1", "Setup", day, day, [], 1), note("Intro1", "Intro", day, day, [], 2)]),
+      note("Chap02", "Chapter 2", day, day),
+    ];
+    const sorted = sortNoteTree(source, "title", "de");
+    expect(ids(sorted)).toEqual(["Chap02", "Chap10", "Guide1"]);
+    expect(ids(sorted[2]!.children)).toEqual(["Setup1", "Intro1"]);
   });
 });
 

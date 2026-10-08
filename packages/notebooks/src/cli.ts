@@ -47,6 +47,7 @@ import {
   noteContentHash,
   summarizeNoteEditBlocks,
 } from "./lib/note-edit";
+import { compareNoteOrder } from "./lib/note-order";
 import { noteSlug } from "./lib/note-path";
 import { hasNoteTitleHeading } from "./lib/note-title";
 import { PRESENTATION_MODES } from "./lib/presentation-mode";
@@ -420,15 +421,13 @@ function notebooksCommands(locale?: string) {
     const build = (parentId: string | null, depth: number): TreeNode[] =>
       depth > 64
         ? []
-        : (byParent.get(parentId) ?? [])
-            .sort((a, b) => a.title.toLocaleLowerCase().localeCompare(b.title.toLocaleLowerCase()) || a.id.localeCompare(b.id))
-            .map((entry) => ({
-              id: entry.id,
-              title: entry.title,
-              hasChildren: entry.hasChildren,
-              updatedAt: entry.updatedAt,
-              children: build(entry.id, depth + 1),
-            }));
+        : (byParent.get(parentId) ?? []).sort(compareNoteOrder(locale ?? "en", (note) => note.id)).map((entry) => ({
+            id: entry.id,
+            title: entry.title,
+            hasChildren: entry.hasChildren,
+            updatedAt: entry.updatedAt,
+            children: build(entry.id, depth + 1),
+          }));
     return build(rootId, 0);
   };
 
@@ -1245,19 +1244,23 @@ function notebooksCommands(locale?: string) {
         },
       }),
       command("mv", {
-        summary: t({ en: "Move and/or rename a note", de: "Eine Notiz verschieben und/oder umbenennen" }),
+        summary: t({ en: "Move, rename, or order a note", de: "Eine Notiz verschieben, umbenennen oder einordnen" }),
         description: t({
-          en: "An existing target note becomes the new parent, like `mv file dir/`. Otherwise the last target segment is the new title below its parent. `<notebook>:` moves to the top level.",
-          de: "Eine vorhandene Zielnotiz wird die neue übergeordnete Notiz, wie `mv datei ordner/`. Sonst ist das letzte Zielsegment der neue Titel unter dessen übergeordneter Notiz. `<notizbuch>:` verschiebt auf die oberste Ebene.",
+          en: "An existing target note becomes the new parent, like `mv file dir/`. Otherwise the last target segment is the new title below its parent. `<notebook>:` moves to the top level. Omit target to place a note with exactly one of --before, --after, --first, --last, or --position (0-based). Placing switches the level to hand order; without placement its order mode stays unchanged.",
+          de: "Eine vorhandene Zielnotiz wird die neue übergeordnete Notiz, wie `mv datei ordner/`. Sonst ist das letzte Zielsegment der neue Titel unter dessen übergeordneter Notiz. `<notizbuch>:` verschiebt auf die oberste Ebene. Ohne Ziel genau eine Platzierung angeben: --before, --after, --first, --last oder --position (0-basiert). Einordnen stellt die Ebene auf manuelle Reihenfolge um; ohne Platzierung bleibt der Ordnungsmodus erhalten.",
         }),
         args: {
           ...noteArg,
-          target: arg.required({
+          target: arg.optional({
             valueLabel: "target",
             description: t({ en: "New parent or new path", de: "Neue übergeordnete Notiz oder neuer Pfad" }),
           }),
         },
         flags: {
+          before: flag.string({ valueLabel: "note", description: t({ en: "Place before this note", de: "Vor dieser Notiz einordnen" }) }),
+          after: flag.string({ valueLabel: "note", description: t({ en: "Place after this note", de: "Nach dieser Notiz einordnen" }) }),
+          first: flag.boolean({ description: t({ en: "Place first in the level", de: "An erster Stelle der Ebene einordnen" }) }),
+          last: flag.boolean({ description: t({ en: "Place last in the level", de: "An letzter Stelle der Ebene einordnen" }) }),
           position: flag.int({
             min: 0,
             description: t({ en: "0-based position among the new siblings", de: "0-basierte Position unter den neuen Geschwistern" }),
@@ -1265,14 +1268,48 @@ function notebooksCommands(locale?: string) {
         },
         examples: [
           "cld notebooks mv kolb-docs:alt/backup kolb-docs:betrieb",
+          "cld notebooks mv kolb-docs:betrieb/backup --after kolb-docs:betrieb/setup",
+          "cld notebooks mv ns98Kq --first",
           'cld notebooks mv ns98Kq "kolb-docs:betrieb/Backup und Restore"',
         ],
         async run({ ctx, args, flags }) {
+          const placements = [flags.before, flags.after, flags.first || undefined, flags.last || undefined, flags.position].filter(
+            (value) => value !== undefined,
+          );
+          if (placements.length > 1)
+            throw new Error(
+              t({
+                en: "Pass at most one placement: --before, --after, --first, --last, or --position.",
+                de: "Gib höchstens eine Platzierung an: --before, --after, --first, --last oder --position.",
+              }),
+            );
+          if (!args.target && placements.length !== 1)
+            throw new Error(
+              t({
+                en: "Without a target, exactly one placement flag is required: --before, --after, --first, --last, or --position.",
+                de: "Ohne Ziel ist genau eine Platzierung erforderlich: --before, --after, --first, --last oder --position.",
+              }),
+            );
           const source = await resolveNote(ctx, args.note);
           const note = await loadNote(ctx, source);
-          let parentId: string | null;
+          let before: string | undefined;
+          let after: string | undefined;
+          const anchorRef = flags.before ?? flags.after;
+          if (anchorRef !== undefined) {
+            const anchor = await resolveNote(ctx, anchorRef);
+            if (anchor.notebookId !== source.notebookId)
+              throw new Error(
+                t({ en: "The anchor note must be in the same notebook.", de: "Die Ankernotiz muss im selben Notizbuch sein." }),
+              );
+            if (flags.before !== undefined) before = anchor.noteId;
+            else after = anchor.noteId;
+          }
+          const position = flags.first ? "first" : flags.last ? "last" : flags.position;
+          let parentId: string | null | undefined;
           let title: string | undefined;
-          if (!looksLocal(args.target) && NOTE_ID.test(args.target)) {
+          if (args.target === undefined) {
+            parentId = undefined;
+          } else if (!looksLocal(args.target) && NOTE_ID.test(args.target)) {
             const into = await resolveNote(ctx, args.target);
             if (into.notebookId !== source.notebookId)
               throw new Error(
@@ -1352,12 +1389,12 @@ function notebooksCommands(locale?: string) {
                 .catch(rethrowConflict)
             ).note;
           }
-          if (parentId !== note.parentId || flags.position !== undefined)
+          if ((parentId !== undefined && parentId !== note.parentId) || placements.length > 0)
             current = await ctx.readJson<Note>(
               await ctx.fetch(noteApi(source, "/move"), {
                 method: "POST",
                 headers: JSON_HEADERS,
-                body: JSON.stringify({ parentId, position: flags.position ?? note.position }),
+                body: JSON.stringify({ parentId, position, before, after }),
               }),
             );
           const synced = source.mirror ? await refreshMirror(ctx, source.mirror) : null;

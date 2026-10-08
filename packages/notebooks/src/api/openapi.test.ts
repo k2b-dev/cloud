@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
 import app from "./index";
 
@@ -35,4 +36,22 @@ test("a notebook created from a template documents the same fields as every othe
   const notebook = fields(responseSchema(spec, "/{id}"));
   expect(notebook).toContain("noteDeletePermission");
   expect(fields(responseSchema(spec, "/templates/{templateId}", "post", "201"))).toEqual(notebook);
+});
+
+test("alphabetical reset and outline positions are documented", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  expect(responseSchema(spec, "/{id}/note-order/reset", "post")?.properties).toHaveProperty("message");
+  expect(responseSchema(spec, "/{id}/outline")?.properties?.data?.items?.properties).toHaveProperty("position");
+});
+
+test("the typed client exposes alphabetical reset with its parent selection", async () => {
+  const requests: { url: string; body: unknown }[] = [];
+  const client = hc<typeof app>("http://example.test", {
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined });
+      return Response.json({ message: "Notes sorted alphabetically." });
+    },
+  });
+  await client[":id"]["note-order"].reset.$post({ param: { id: "abc123" }, json: { parentId: null } });
+  expect(requests).toEqual([{ url: "http://example.test/abc123/note-order/reset", body: { parentId: null } }]);
 });

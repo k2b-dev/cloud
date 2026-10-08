@@ -252,6 +252,27 @@ Optional drag event handlers on `NavTree.Item` are forwarded to the tree item
 container. Applications still own drag payloads, permission checks, drop
 effects, and mutations.
 
+Set `onMove` on the tree and `movable` on items when people may arrange items
+among their siblings, such as notes in a notebook. A movable item can be
+dragged on fine pointers, where a line in the gap between rows marks the new
+place without moving any row, and moved one place with Alt+ArrowUp or
+Alt+ArrowDown while it has focus. Moves stay within the item's level; offer a
+separate action to move an item under another parent. Items without `movable`
+keep their place and nothing moves past them, so a pinned first item stays
+first. The tree reports the requested place as the neighbours `beforeId` and
+`afterId`; the application saves it and renders the new order, and the tree
+keeps focus on an item moved by keyboard. Offer the same moves in the item's
+menu, because touch devices do not drag tree rows. Every item reports its
+place with `aria-posinset` and `aria-setsize`.
+
+```tsx
+<AppWorkspace.NavTree ariaLabel="Chapters" onMove={(move) => saveChapterPlace(move)}>
+  <For each={chapters()}>
+    {(chapter) => <AppWorkspace.NavTree.Item id={chapter.id} label={chapter.title} movable={canEdit()} />}
+  </For>
+</AppWorkspace.NavTree>
+```
+
 ```tsx
 const [selected, setSelected] = createSignal("inbox");
 const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
@@ -379,8 +400,11 @@ type AppWorkspaceSidebarItemActionsProps = {
 type AppWorkspaceNavTreeProps = {
   children: JSX.Element; ariaLabel: string; selectedId?: string | null; expandedIds?: readonly string[];
   defaultExpandedIds?: readonly string[]; onSelectedIdChange?: (id: string) => void;
-  onExpandedIdsChange?: (ids: readonly string[]) => void; indented?: boolean; class?: string;
+  onExpandedIdsChange?: (ids: readonly string[]) => void; indented?: boolean;
+  onMove?: (move: AppWorkspaceNavTreeMove) => void; class?: string;
 };
+
+type AppWorkspaceNavTreeMove = { id: string; parentId: string | null; beforeId: string | null; afterId: string | null };
 
 type AppWorkspaceNavTreeItemProps = {
   id: string; label: JSX.Element; children?: JSX.Element; href?: string; navigation?: "enhanced" | "document";
@@ -388,7 +412,7 @@ type AppWorkspaceNavTreeItemProps = {
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onSelect?: (event: MouseEvent) => void;
   disabled?: boolean; icon?: string; iconLabel?: string; expandedIcon?: string; meta?: JSX.Element;
   metaVisibility?: AppWorkspaceSidebarAccessoryVisibility; actions?: JSX.Element;
-  tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string; class?: string;
+  tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string; class?: string; movable?: boolean;
   onDragEnter?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragOver?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragLeave?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;

@@ -1,27 +1,28 @@
 import type { BookTreeNode } from "../frontend/[id]/_components/book/BookNavigator.island";
+import { compareNoteOrder, type OrderedNote } from "./note-order";
 
 /**
- * The reading order of a Book: the start page first, then every level by title.
+ * The reading order of a Book: the start page first, then every level in the
+ * notebook order, the same one the sidebar shows (see `note-order.ts`).
  *
- * Titles compare in the reader's locale with digit runs as numbers. Notes with
- * equal titles keep the order they arrive in. A start page that lives below
- * another note moves to the top level with its sub-pages and leaves its parent.
+ * A start page that lives below another note moves to the top level with its
+ * sub-pages and leaves its parent.
  */
-export const orderBookTree = <Source extends { title: string; children: Source[] }>(
+export const orderBookTree = <Source extends OrderedNote & { children: Source[] }>(
   nodes: Source[],
   options: { id: (node: Source) => string; homeId: string | null; locale: string },
 ): BookTreeNode[] => {
-  const collator = new Intl.Collator(options.locale, { numeric: true });
+  const compare = compareNoteOrder(options.locale, options.id);
   let home: BookTreeNode | undefined;
   const order = (level: Source[]): BookTreeNode[] =>
-    level
+    [...level]
+      .sort(compare)
       .map((node) => ({ id: options.id(node), title: node.title, children: order(node.children) }))
       .filter((node) => {
         if (node.id !== options.homeId) return true;
         home = node;
         return false;
-      })
-      .sort((left, right) => collator.compare(left.title.trim(), right.title.trim()));
+      });
   const rest = order(nodes);
   return home ? [home, ...rest] : rest;
 };

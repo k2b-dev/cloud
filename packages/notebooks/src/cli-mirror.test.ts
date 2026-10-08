@@ -94,10 +94,10 @@ describe("mirror file format", () => {
 describe("mirror layout", () => {
   test("leaf notes are files, notes with children are folders with index.md", () => {
     const layout = mirrorLayout([
-      { id: "root01", parentId: null, title: "Betrieb", hasChildren: true, updatedAt: "" },
-      { id: "dup001", parentId: "root01", title: "Backup", hasChildren: false, updatedAt: "" },
-      { id: "dup002", parentId: "root01", title: "Backup", hasChildren: true, updatedAt: "" },
-      { id: "kid001", parentId: "dup002", title: "Restore", hasChildren: false, updatedAt: "" },
+      { position: 0, id: "root01", parentId: null, title: "Betrieb", hasChildren: true, updatedAt: "" },
+      { position: 0, id: "dup001", parentId: "root01", title: "Backup", hasChildren: false, updatedAt: "" },
+      { position: 0, id: "dup002", parentId: "root01", title: "Backup", hasChildren: true, updatedAt: "" },
+      { position: 0, id: "kid001", parentId: "dup002", title: "Restore", hasChildren: false, updatedAt: "" },
     ]);
     expect(Object.fromEntries(layout)).toEqual({
       root01: "betrieb/index.md",

@@ -486,5 +486,61 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
       expect(occupied.exitCode).toBe(1);
       expect(occupied.stderr).toContain("is not empty");
     }, 60_000);
+
+    test("mv placements switch only the selected level to hand order, and target-only moves preserve its mode", async () => {
+      const book = await cldJson<{ id: string }>(["notebooks", "create", "Ordering"]);
+      const write = async (path: string, title: string) =>
+        (
+          await cldJson<{ note: { id: string; position: number } }>([
+            "notebooks",
+            "write",
+            `Ordering:${path}`,
+            "--content",
+            `# ${title}\n`,
+            "--parents",
+          ])
+        ).note;
+      const ten = await write("chapter-10", "Chapter 10");
+      const two = await write("chapter-2", "Chapter 2");
+      const parent = await write("parent", "Parent");
+      const readLevel = async (scope = "Ordering") =>
+        (await cldJson<{ data: { id: string }[] }>(["notebooks", "ls", scope])).data.map((note) => note.id);
+      expect([ten.position, two.position, parent.position]).toEqual([0, 0, 0]);
+      expect(await readLevel()).toEqual([two.id, ten.id, parent.id]);
+      const { getByShortId } = await import("./service/notebooks");
+      const { latestCursor } = await import("./service/workspace-events");
+      const internal = (await getByShortId({ shortId: book.id }))!;
+      const before = await latestCursor({ notebookId: internal.id });
+      const placed = await cldJson<{ note: { position: number; updatedAt: string } }>([
+        "notebooks",
+        "mv",
+        ten.id,
+        "--before",
+        "Ordering:chapter-2",
+      ]);
+      expect(placed.note.position).toBe(1);
+      expect(await latestCursor({ notebookId: internal.id })).not.toBe(before);
+      expect(await readLevel()).toEqual([ten.id, two.id, parent.id]);
+      await cldJson(["notebooks", "mv", parent.id, "--first"]);
+      expect(await readLevel()).toEqual([parent.id, ten.id, two.id]);
+      await cldJson(["notebooks", "mv", ten.id, "--last"]);
+      expect(await readLevel()).toEqual([parent.id, two.id, ten.id]);
+      await cldJson(["notebooks", "mv", two.id, "--after", ten.id]);
+      expect(await readLevel()).toEqual([parent.id, ten.id, two.id]);
+      await cldJson(["notebooks", "mv", two.id, "--position", "0"]);
+      expect(await readLevel()).toEqual([two.id, parent.id, ten.id]);
+      const moved = await cldJson<{ note: { position: number } }>(["notebooks", "mv", ten.id, parent.id]);
+      expect(moved.note.position).toBe(0);
+      expect(await readLevel("Ordering:parent")).toEqual([ten.id]);
+      await cldJson(["notebooks", "mv", ten.id, "Ordering:"]);
+      expect(await readLevel()).toEqual([two.id, parent.id, ten.id]);
+      const reset = await fetch(`${serverUrl}/api/notebooks/${book.id}/note-order/reset`, {
+        method: "POST",
+        headers: { authorization: "Bearer cli-test", "content-type": "application/json" },
+        body: JSON.stringify({ parentId: null }),
+      });
+      expect(reset.status).toBe(200);
+      expect(await readLevel()).toEqual([two.id, ten.id, parent.id]);
+    }, 60_000);
   });
 }

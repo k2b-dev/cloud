@@ -37,19 +37,17 @@ export type MaterializedTemplateNote = {
   key: string;
   content?: TemplateContent;
   parentKey: string | null;
-  position: number;
 };
 
 const resolveText = (value: string | ((ctx: TemplateContext) => string) | undefined, ctx: TemplateContext): string | undefined =>
   typeof value === "function" ? value(ctx) : value;
 
 const walkNotes = (notes: TemplateNote[], ctx: TemplateContext, parentKey: string | null, out: MaterializedTemplateNote[]) => {
-  notes.forEach((note, position) => {
+  notes.forEach((note) => {
     out.push({
       key: note.key,
       content: note.content,
       parentKey,
-      position,
     });
     if (note.children) walkNotes(note.children, ctx, note.key, out);
   });

@@ -13,9 +13,9 @@ import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "
 import type * as activity from "./activity";
 import { create, get, type Note } from "./notes";
 
-type PathNode = NotePathNode & { updatedAt: string };
+type PathNode = NotePathNode & { updatedAt: string; position: number };
 
-export type NoteOutlineEntry = Pick<Note, "id" | "shortId" | "parentId" | "title" | "hasChildren" | "updatedAt">;
+export type NoteOutlineEntry = Pick<Note, "id" | "shortId" | "parentId" | "title" | "position" | "hasChildren" | "updatedAt">;
 
 export type NotePathCandidate = { shortId: string; title: string; path: string };
 
@@ -26,8 +26,8 @@ export type NotePathProblem =
 
 /** One lightweight row per note; no Markdown is loaded. */
 const loadNodes = async (notebookId: string): Promise<PathNode[]> => {
-  const rows = await sql<{ id: string; short_id: string; parent_id: string | null; title: string; updated_at: Date }[]>`
-    SELECT id, short_id, parent_id, title, updated_at
+  const rows = await sql<{ id: string; short_id: string; parent_id: string | null; title: string; position: number; updated_at: Date }[]>`
+    SELECT id, short_id, parent_id, title, position, updated_at
     FROM notebooks.notes
     WHERE notebook_id = ${notebookId}::uuid
   `;
@@ -36,6 +36,7 @@ const loadNodes = async (notebookId: string): Promise<PathNode[]> => {
     shortId: row.short_id,
     parentId: row.parent_id,
     title: row.title,
+    position: row.position,
     updatedAt: row.updated_at.toISOString(),
   }));
 };
@@ -98,6 +99,7 @@ export const createAtPath = async (params: {
   parentPath: string;
   createParents: boolean;
   contentMd: string | undefined;
+  position?: number;
   creatorId: string | null;
   actor?: activity.NotebookActivityIdentity;
   dateConfig?: DateContext;
@@ -121,9 +123,9 @@ export const createAtPath = async (params: {
     if (existing.length > 0) return { ok: false, problem: { kind: "title-exists", title, candidates: candidatesOf(existing, paths) } };
   }
 
-  const createNote = async (contentMd: string | undefined) => {
+  const createNote = async (contentMd: string | undefined, position?: number) => {
     const result = await create({
-      data: { notebookId: params.notebookId, parentId: parentId ?? undefined, contentMd },
+      data: { notebookId: params.notebookId, parentId: parentId ?? undefined, contentMd, position },
       creatorId: params.creatorId,
       actor: params.actor,
       dateConfig: params.dateConfig,
@@ -135,7 +137,7 @@ export const createAtPath = async (params: {
     const folder = await createNote(createInitialNoteMarkdown(segment));
     if (!folder.ok) return { ok: false, problem: { kind: "failed", error: folder.error, status: folder.status } };
   }
-  const created = await createNote(params.contentMd);
+  const created = await createNote(params.contentMd, params.position);
   if (!created.ok) return { ok: false, problem: { kind: "failed", error: created.error, status: created.status } };
   return { ok: true, note: created.data };
 };

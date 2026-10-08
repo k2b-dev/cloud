@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser } from "../../../../../../ui/test/browser";
+import { compareNoteOrder } from "../../../../lib/note-order";
 import type { NotebookContext, NoteTreeNode } from "./types";
 
 // Icon size, row alignment, theme colours and the accessible names of the tree need real layout and a real
@@ -47,12 +48,12 @@ const buildCss = async (entry: string): Promise<string> => {
   return build.outputs[0]!.text();
 };
 
-const note = (id: string, title: string, children: NoteTreeNode[] = [], parentId: string | null = null): NoteTreeNode => ({
+const note = (id: string, title: string, children: NoteTreeNode[] = [], parentId: string | null = null, position = 0): NoteTreeNode => ({
   id,
   notebookId: "Book01",
   parentId,
   title,
-  position: 0,
+  position,
   hasChildren: children.length > 0,
   yjsSnapshotAt: null,
   contentMd: `Notes about ${title}.`,
@@ -97,6 +98,58 @@ const ctx = (sidebarMode: "simple" | "navigator", homepageNoteId: string | null 
   navigatorQuery: {},
 });
 
+/**
+ * The notebook API the sidebar talks to, with the server's order rules: placing a note renumbers the named level
+ * 1..n, a neighbour outside that level is refused, sorting alphabetically sets the level back to 0, and the
+ * workspace state returns the result.
+ */
+const api = {
+  notebook: ctx("simple").notebook,
+  tree: [] as NoteTreeNode[],
+  requests: [] as { path: string; body: unknown }[],
+};
+const levelOf = (nodes: NoteTreeNode[], id: string | null): NoteTreeNode[] | null => {
+  if (id === null) return nodes;
+  for (const node of nodes) {
+    if (node.id === id) return node.children;
+    const found = levelOf(node.children, id);
+    if (found) return found;
+  }
+  return null;
+};
+const parentOf = (nodes: NoteTreeNode[], id: string): string | null => {
+  const walk = (level: NoteTreeNode[], parent: string | null): string | null | undefined => {
+    for (const node of level) {
+      if (node.id === id) return parent;
+      const found = walk(node.children, node.id);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  return walk(nodes, null) ?? null;
+};
+const handleApi = async (request: Request, path: string): Promise<Response> => {
+  if (path === "workspace-state")
+    return Response.json({ notebook: api.notebook, tree: api.tree, favoriteNoteIds: [], tags: [], attachmentCount: 0 });
+  const body = (await request.json()) as { before?: string; after?: string; parentId?: string | null };
+  api.requests.push({ path, body });
+  const moved = /^notes\/(\w+)\/move$/u.exec(path)?.[1];
+  const anchor = body.before ?? body.after;
+  const level = levelOf(api.tree, moved && !("parentId" in body) ? parentOf(api.tree, anchor!) : (body.parentId ?? null));
+  if (!level) return new Response("Not found", { status: 404 });
+  if (moved && !level.some((node) => node.id === anchor))
+    return Response.json({ message: "The anchor note is not in the target level" }, { status: 400 });
+  if (moved) {
+    const order = level.filter((node) => node.id !== moved).sort(compareNoteOrder("en", (node: NoteTreeNode) => node.id));
+    const index = order.findIndex((node) => node.id === anchor);
+    order.splice(body.before ? index : index + 1, 0, level.find((node) => node.id === moved)!);
+    order.forEach((node, index) => {
+      node.position = index + 1;
+    });
+  } else for (const node of level) node.position = 0;
+  return Response.json({ message: "ok" });
+};
+
 const harness = await buildHarness();
 const css =
   (await buildCss(resolve(import.meta.dir, "../../../../../../../styles.css"))) +
@@ -106,6 +159,7 @@ const server = Bun.serve({
   hostname: "127.0.0.1",
   fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/notebooks/Book01/")) return handleApi(request, url.pathname.slice("/api/notebooks/Book01/".length));
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     return new Response(
@@ -259,6 +313,178 @@ describe("Notebook sidebar homepage in the tree", () => {
       // The note rows share one width, so the homepage row ends where the others do.
       const [overview, , , examples] = rows.slice(1);
       expect(overview!.width).toBe(examples!.width);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe("Notebook sidebar order by hand", () => {
+  // Top level: the homepage leads, the rest reads by title until someone arranges it.
+  const writable = (tree: NoteTreeNode[]): NotebookContext => {
+    api.tree = structuredClone(tree);
+    api.requests = [];
+    return { ...ctx("simple"), tree, permission: "write" };
+  };
+  const startTree = () => [
+    note("Reels1", "Reels"),
+    note("Rules1", "Content rules", [note("Lang01", "Language", [], "Rules1"), note("Tone01", "Tone", [], "Rules1")]),
+    note("Home01", "Overview"),
+    note("Exam01", "Examples"),
+  ];
+  const order = (page: Page, parent: string | null = null) =>
+    page.evaluate(
+      (parent) =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>(
+            parent ? `[data-k2b-nav-tree-parent-id="${parent}"]` : '[role="tree"] > [role="treeitem"]',
+          ),
+        ).map((row) => row.dataset.k2bNavTreeId),
+      parent,
+    );
+  const rowBoxes = (page: Page) =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]')).map((row) => {
+        const box = row.getBoundingClientRect();
+        return [row.dataset.k2bNavTreeId, box.top, box.height];
+      }),
+    );
+  const row = (page: Page, id: string) => page.locator(`[data-k2b-nav-tree-id="${id}"] > :first-child`);
+
+  test("a writer drags a note to a new place; a line marks the gap without moving any row, and the tree shows the saved order", async () => {
+    const page = await open(desktop, writable(startTree()));
+    try {
+      expect(await order(page)).toEqual(["Home01", "Rules1", "Exam01", "Reels1"]);
+      const before = await rowBoxes(page);
+      const source = await row(page, "Reels1").boundingBox();
+      const target = await row(page, "Rules1").boundingBox();
+      await page.mouse.move(source!.x + 40, source!.y + source!.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(target!.x + 40, target!.y + 6, { steps: 8 });
+      await page.mouse.move(target!.x + 40, target!.y + 4, { steps: 2 });
+      await expect(page.locator('[data-k2b-nav-tree-drop="before"]').getAttribute("data-k2b-nav-tree-id")).resolves.toBe("Rules1");
+      expect(await rowBoxes(page)).toEqual(before);
+      await page.mouse.up();
+      await page.waitForFunction(
+        () => document.querySelector('[role="tree"] > [role="treeitem"]:nth-child(2)')?.getAttribute("data-k2b-nav-tree-id") === "Reels1",
+      );
+      expect(api.requests).toEqual([{ path: "notes/Reels1/move", body: { parentId: null, before: "Rules1" } }]);
+      expect(await order(page)).toEqual(["Home01", "Reels1", "Rules1", "Exam01"]);
+      await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("nothing moves above the homepage or into another level", async () => {
+    const page = await open(desktop, writable(startTree()));
+    try {
+      await expect(page.locator('[data-k2b-nav-tree-id="Home01"]').getAttribute("draggable")).resolves.toBeNull();
+      const source = await row(page, "Exam01").boundingBox();
+      const home = await row(page, "Home01").boundingBox();
+      const child = await row(page, "Lang01").boundingBox();
+      await page.mouse.move(source!.x + 40, source!.y + source!.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(home!.x + 40, home!.y + 4, { steps: 8 });
+      await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
+      await page.mouse.move(child!.x + 40, child!.y + 4, { steps: 8 });
+      await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
+      await page.mouse.up();
+      expect(api.requests).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Alt+Arrow moves the focused note within its level and keeps the focus on it", async () => {
+    const page = await open(desktop, writable(startTree()));
+    try {
+      await page.locator('[data-k2b-nav-tree-id="Tone01"]').focus();
+      await page.keyboard.press("Alt+ArrowUp");
+      await page.waitForFunction(
+        () => document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"]')?.getAttribute("data-k2b-nav-tree-id") === "Tone01",
+      );
+      expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
+      expect(await order(page, "Rules1")).toEqual(["Tone01", "Lang01"]);
+      await expect(page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).resolves.toBe("Tone01");
+      await expect(page.locator('[data-k2b-nav-tree-id="Tone01"]').getAttribute("aria-posinset")).resolves.toBe("1");
+
+      // The first note has no place further up, and plain arrows still only move the focus.
+      await page.keyboard.press("Alt+ArrowUp");
+      await page.keyboard.press("ArrowDown");
+      expect(api.requests.length).toBe(1);
+      await expect(page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).resolves.toBe("Lang01");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a neighbour that left the level on screen moves nothing; the tree reloads and says why", async () => {
+    const page = await open(desktop, writable(startTree()), "de");
+    try {
+      // Someone else moved Language to the top level; this sidebar still shows it under Content rules.
+      const rules = api.tree.find((node) => node.id === "Rules1")!;
+      api.tree.push({ ...rules.children.shift()!, parentId: null });
+      await page.locator('[data-k2b-nav-tree-id="Tone01"]').focus();
+      await page.keyboard.press("Alt+ArrowUp");
+      await expect(
+        page.getByText("Diese Ebene wurde inzwischen geändert. Sie zeigt jetzt die aktuelle Reihenfolge.").waitFor(),
+      ).resolves.toBeUndefined();
+      await page.waitForFunction(() => !document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"][data-k2b-nav-tree-id="Lang01"]'));
+      expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
+      expect(await order(page, "Rules1")).toEqual(["Tone01"]);
+      expect(await order(page)).toContain("Lang01");
+      expect(api.tree.find((node) => node.id === "Rules1")!.children.map((node) => node.position)).toEqual([0]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the folder menu sorts a level arranged by hand back into title order", async () => {
+    const tree = startTree();
+    tree[1]!.children = [note("Tone01", "Tone", [], "Rules1", 1), note("Lang01", "Language", [], "Rules1", 2)];
+    const page = await open(desktop, writable(tree), "de");
+    try {
+      expect(await order(page, "Rules1")).toEqual(["Tone01", "Lang01"]);
+      await page.locator('[data-k2b-nav-tree-id="Rules1"] > :first-child').hover();
+      await page.getByRole("button", { name: "Aktionen für Content rules" }).click();
+      await page.getByRole("menuitem", { name: "Unternotizen alphabetisch sortieren" }).click();
+      await page.waitForFunction(
+        () => document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"]')?.getAttribute("data-k2b-nav-tree-id") === "Lang01",
+      );
+      expect(api.requests).toEqual([{ path: "note-order/reset", body: { parentId: "Rules1" } }]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("readers see the order but cannot change it", async () => {
+    const page = await open(desktop, { ...writable(startTree()), permission: "read" });
+    try {
+      await expect(page.locator('[role="treeitem"][draggable="true"]').count()).resolves.toBe(0);
+      await page.locator('[data-k2b-nav-tree-id="Exam01"]').focus();
+      await page.keyboard.press("Alt+ArrowUp");
+      await page.waitForTimeout(200);
+      expect(api.requests).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("on a phone the note menu moves a note up", async () => {
+    const page = await open(phone, writable(startTree()));
+    try {
+      await page.evaluate(() => window.mountPhoneMenu("en", true));
+      const menu = page.locator("#phone-menu");
+      await menu
+        .getByRole("button", { name: /Examples/ })
+        .first()
+        .click();
+      await page.getByRole("menuitem", { name: "Move up" }).click();
+      await page.waitForFunction(
+        () => document.querySelector('[role="tree"] > [role="treeitem"]:nth-child(2)')?.getAttribute("data-k2b-nav-tree-id") === "Exam01",
+      );
+      expect(api.requests).toEqual([{ path: "notes/Exam01/move", body: { parentId: null, before: "Rules1" } }]);
     } finally {
       await page.context().close();
     }

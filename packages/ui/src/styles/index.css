@@ -938,6 +938,33 @@
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
+/* Reordering: the dragged row fades and a line in the gap between rows marks its new place, so nothing shifts. */
+.k2b-ui .k2b-app-workspace__nav-tree-node[data-k2b-nav-tree-dragging] > .k2b-app-workspace__nav-tree-row {
+  opacity: 0.5;
+}
+
+.k2b-ui .k2b-app-workspace__nav-tree-node[data-k2b-nav-tree-drop] {
+  position: relative;
+}
+
+.k2b-ui .k2b-app-workspace__nav-tree-node[data-k2b-nav-tree-drop]::after {
+  content: "";
+  position: absolute;
+  inset-inline: calc(0.5625rem + var(--k2b-nav-tree-depth, 0) * 0.75rem) 0.5625rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--k2b-app-workspace-active, var(--k2b-focus-ring));
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-app-workspace__nav-tree-node[data-k2b-nav-tree-drop="before"]::after {
+  top: calc(-0.0625rem - 1px);
+}
+
+.k2b-ui .k2b-app-workspace__nav-tree-node[data-k2b-nav-tree-drop="after"]::after {
+  bottom: calc(-0.0625rem - 1px);
+}
+
 .k2b-ui .k2b-app-workspace__nav-tree-toggle {
   display: grid;
   width: 1.5rem;

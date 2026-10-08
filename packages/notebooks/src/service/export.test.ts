@@ -158,3 +158,22 @@ test("preserves an incomplete-history warning with exported note content", () =>
   expect(complete).not.toContain("historyIncomplete");
   expect(complete).not.toContain("could not be recovered");
 });
+
+test("export trees follow hand order, numeric titles, and public IDs", () => {
+  const base = notes[0]!;
+  const siblings = [
+    { ...base, id: "internal-a", shortId: "noteZ1", title: "Chapter 10" },
+    { ...base, id: "internal-z", shortId: "noteA1", title: "Chapter 2" },
+    { ...base, id: "internal-b", shortId: "noteB1", title: "Chapter 2" },
+  ];
+  const tree = (items: Note[]) => {
+    const files = buildNotebookExportFiles({ notebook, notes: items, attachments: [] });
+    return JSON.parse(String(files.find((file) => file.path === "tree.json")!.content)) as { id: string }[];
+  };
+  expect(tree(siblings).map((note) => note.id)).toEqual(["noteA1", "noteB1", "noteZ1"]);
+  expect(tree(siblings.map((note, index) => ({ ...note, position: index + 1 }))).map((note) => note.id)).toEqual([
+    "noteZ1",
+    "noteA1",
+    "noteB1",
+  ]);
+});
