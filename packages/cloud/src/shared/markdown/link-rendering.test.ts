@@ -2,14 +2,35 @@ import { describe, expect, test } from "bun:test";
 import { renderHelpMarkdown, renderMarkdownSync } from ".";
 
 describe("markdown links", () => {
-  test("makes the label and external-link icon one accessible link", () => {
+  test("a web link is quiet prose text with a small arrow, one accessible link", () => {
     const html = renderMarkdownSync("[Cloud](https://example.com)");
 
     expect(html.match(/<a\b/g)).toHaveLength(1);
-    expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer" class="md-link-widget">');
-    expect(html).toContain('<span class="md-link-label">[Cloud]</span>');
-    expect(html).toContain('class="md-link-icon ti ti-arrow-up-right text-xs" aria-hidden="true"');
-    expect(html).not.toContain('<span class="md-link-widget');
+    expect(html).toContain(
+      '<a href="https://example.com" class="k2b-text-link" data-link="web" target="_blank" rel="noopener noreferrer">Cloud<i class="k2b-text-link__external ti ti-arrow-up-right" aria-hidden="true"></i></a>',
+    );
+    expect(html).not.toContain("[Cloud]");
+  });
+
+  test("a mail link has no arrow, and the link text keeps its formatting", () => {
+    const html = renderMarkdownSync("Write to ada@example.test about [the **offer**](https://example.com/offer).");
+
+    expect(html).toContain(
+      '<a href="mailto:ada@example.test" class="k2b-text-link" data-link="mail" target="_blank" rel="noopener noreferrer">ada@example.test</a>',
+    );
+    expect(html).toContain(">the <strong>offer</strong><i ");
+  });
+
+  test("a relative link is a reference pill named with its type in the reader's language", () => {
+    const html = renderMarkdownSync("Siehe [Vertrag 2026.pdf](/app/files/Vertrag%202026.pdf) und [Board](/app/spaces/Board1).", {
+      locale: "de",
+    });
+
+    expect(html).toContain(
+      '<a href="/app/files/Vertrag%202026.pdf" class="k2b-reference" data-reference="pdf" aria-label="PDF: Vertrag 2026.pdf" target="_blank" rel="noopener noreferrer"><i class="k2b-reference__icon ti ti-file-type-pdf" aria-hidden="true"></i>Vertrag 2026.pdf</a>',
+    );
+    expect(html).toContain('data-reference="page" aria-label="Seite: Board"');
+    expect(html).toContain('<i class="k2b-reference__icon ti ti-link" aria-hidden="true"></i>Board</a>');
   });
 
   test("renders plain links as ordinary anchors around their text", () => {
@@ -21,7 +42,6 @@ describe("markdown links", () => {
     expect(renderMarkdownSync(":::note\nHi\n:::\n[Cloud](https://example.com)", { links: "plain" })).toContain(
       '<a href="https://example.com">Cloud</a>',
     );
-    expect(renderMarkdownSync("[Cloud](https://example.com)")).toContain('<span class="md-link-label">[Cloud]</span>');
   });
 
   test("a link label cannot hold another link", () => {
@@ -43,10 +63,17 @@ describe("markdown links", () => {
     expect(html).not.toMatch(/<(?:script|img|a)\b/i);
   });
 
+  test("a link label with markup cannot break out of its accessible name", () => {
+    const html = renderMarkdownSync('[x" onmouseover="alert(1)](/app/notes/x)');
+
+    expect(html).not.toMatch(/<a\b[^>]*\sonmouseover="/);
+    expect(html).toContain('aria-label="Page: x&quot; onmouseover=&quot;alert(1)"');
+  });
+
   test("keeps help links in the current browsing context", () => {
     const html = renderHelpMarkdown("[Next](/docs/next)");
 
-    expect(html).toContain('<a href="/docs/next" class="md-link-widget">');
+    expect(html).toContain('<a href="/docs/next" class="k2b-reference" data-reference="page" aria-label="Page: Next">');
     expect(html).not.toContain('target="_blank"');
   });
 });

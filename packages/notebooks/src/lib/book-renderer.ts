@@ -1,7 +1,14 @@
 import { dates, highlight, text } from "@k2b/stdlib";
-import { renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
+import {
+  type MarkdownReference,
+  markdownLinkReference,
+  markStandaloneLinks,
+  renderMarkdownInfoBlock,
+  renderMarkdownLink,
+  scanMarkdownInfoBlock,
+} from "@k2b/ui";
 import katex from "katex";
-import { Marked, Renderer } from "marked";
+import { Marked, Renderer, type Tokens } from "marked";
 import sanitizeHtml from "sanitize-html";
 import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
@@ -13,6 +20,18 @@ import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } fr
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
 
 export type BookHeading = { id: string; depth: number; text: string; line?: number };
+
+/**
+ * What the reader may know about the notes and attachments a note links to. A heading link to another note shows
+ * that note's title first, and an attachment shows its file type from its name and, alone on its line, its size.
+ * Notes and attachments outside the map render from the link text alone.
+ */
+export type BookReferences = {
+  /** Titles of linked notes in this notebook, by short ID. */
+  notes?: ReadonlyMap<string, string>;
+  /** Attachments of this notebook, by short ID. */
+  attachments?: ReadonlyMap<string, { filename: string; sizeBytes: number }>;
+};
 
 export type NotebookBookInput = {
   markdown: string;
@@ -28,6 +47,7 @@ export type NotebookBookInput = {
   noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
+  references?: BookReferences;
 };
 
 const escape = highlight.escape;
@@ -146,7 +166,7 @@ export const renderNotebookBook = (
     if (!result.items.length) return `<p class="notebook-book-empty">${escape(t.emptyQuery)}</p>`;
     const link = (item: NoteQueryResult["items"][number]) => {
       const href = resolveUrl(item.href);
-      return href ? `<a href="${escape(href)}">${escape(item.title)}</a>` : escape(item.title);
+      return href ? renderMarkdownLink({ href, html: escape(item.title), reference: { kind: "note" }, locale }) : escape(item.title);
     };
     const body =
       query.columns.length === 0
@@ -178,6 +198,24 @@ export const renderNotebookBook = (
     return `<div class="notebook-book-query">${body}${count}</div>`;
   };
 
+  // Links to notes, headings and attachments are references; any other relative URL is a page or file of Cloud.
+  const standaloneLinks = new WeakSet<Tokens.Link>();
+  const markStandalone = (token: Parameters<typeof markStandaloneLinks>[0]) => markStandaloneLinks(token, standaloneLinks);
+  const reference = (href: string, url: string): MarkdownReference | null => {
+    const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(href)?.[1];
+    if (attachmentId) {
+      const attachment = input.references?.attachments?.get(attachmentId);
+      return attachment
+        ? { kind: "file", fileName: attachment.filename, size: text.pprintBytes(attachment.sizeBytes, { mode: "si", locale }) }
+        : { kind: "file" };
+    }
+    const note = parseNoteLink(href);
+    if (!note) return markdownLinkReference(url);
+    if (!note.anchor) return { kind: "note" };
+    // A heading in another note names that note first; in the same note the heading alone says where it goes.
+    if (note.noteId === input.noteId) return { kind: "heading" };
+    return { kind: "heading", document: input.references?.notes?.get(note.noteId) };
+  };
   let insideLink = false;
   // Display ligatures stay out of front matter; a link label renders like its editor pill, without them.
   const literalText = new WeakSet<object>();
@@ -214,7 +252,8 @@ export const renderNotebookBook = (
     headings.push({ id, depth, text: title, ...(line === undefined ? {} : { line }) });
     return `<h${depth} id="${id}">${body}</h${depth}>\n`;
   };
-  renderer.link = function ({ href, title, tokens }) {
+  renderer.link = function (token) {
+    const { href, title, tokens } = token;
     const wasInsideLink = insideLink;
     insideLink = true;
     const body = this.parser.parseInline(tokens);
@@ -222,9 +261,15 @@ export const renderNotebookBook = (
     if (wasInsideLink) return body;
     const url = resolveUrl(href);
     if (!url) return body;
-    if (parseNoteLink(href))
-      return `<a class="notebook-book-note-link" href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}><i class="ti ti-connection" aria-hidden="true"></i>${body}</a>`;
-    return `<a href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}${/^https?:/i.test(url) ? ' rel="noopener noreferrer"' : ""}>${body}</a>`;
+    return renderMarkdownLink({
+      href: url,
+      html: body,
+      title: title ?? undefined,
+      rel: /^https?:/i.test(url) ? "noopener noreferrer" : undefined,
+      reference: reference(href, url),
+      standalone: standaloneLinks.has(token),
+      locale,
+    });
   };
   const imageLabel = (alt: string) => `<span class="notebook-book-image-label">${escape(t.image({ alt }))}</span>`;
   // An attached image links to its file, so a reader can open it from the keyboard too; Book shows it in the lightbox.
@@ -431,6 +476,7 @@ export const renderNotebookBook = (
         if (!notice) return "";
         // The body starts on the line after its opener; its own headings keep their source line.
         const bodyTokens = marked.lexer(body);
+        marked.walkTokens(bodyTokens, markStandalone);
         let bodyLine = start + 2;
         for (const token of bodyTokens) {
           if (token.type === "heading") headingSource.set(token, bodyLine);
@@ -443,6 +489,7 @@ export const renderNotebookBook = (
     );
   }
   const tokens = marked.lexer(prepared.join("\n"));
+  marked.walkTokens(tokens, markStandalone);
   const frontMatter = frontMatterLength(markdown);
   for (let index = 0, position = 0; position < frontMatter && index < tokens.length; position += tokens[index]!.raw.length, index++) {
     marked.walkTokens([tokens[index]!], (token) => {
@@ -458,7 +505,7 @@ export const renderNotebookBook = (
   html = html.replace(/<div data-book-toc="(\d+)"><\/div>/g, (_raw, line: string) => {
     const toc = tocs.get(Number(line))!;
     const items = headings.filter((heading) => heading.depth >= toc.minDepth && heading.depth <= toc.maxDepth);
-    const rendered = `<nav class="notebook-book-toc" aria-label="${escape(t.toc)}">${items.length ? `<ol>${items.map((heading) => `<li data-depth="${heading.depth}"><a href="#${heading.id}">${escape(heading.text)}</a></li>`).join("")}</ol>` : `<p class="notebook-book-empty">${escape(t.emptyToc)}</p>`}</nav>`;
+    const rendered = `<nav class="notebook-book-toc" aria-label="${escape(t.toc)}">${items.length ? `<ol>${items.map((heading) => `<li data-depth="${heading.depth}"><a class="k2b-text-link" href="#${heading.id}">${escape(heading.text)}</a></li>`).join("")}</ol>` : `<p class="notebook-book-empty">${escape(t.emptyToc)}</p>`}</nav>`;
     blockHtml.set(Number(line), rendered);
     return rendered;
   });
@@ -470,7 +517,12 @@ export const renderNotebookBook = (
       allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del"],
       allowedAttributes: {
         "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
-        a: ["href", "rel"],
+        a: [
+          "href",
+          "rel",
+          { name: "data-link", multiple: false, values: ["web", "mail"] },
+          { name: "data-reference", multiple: false, values: ["pdf", "image", "design", "file", "note", "heading", "task", "page"] },
+        ],
         img: ["src", "alt", "loading", "width", "height"],
         input: ["type", "disabled", "checked"],
         span: ["style"],

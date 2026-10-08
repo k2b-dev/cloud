@@ -104,6 +104,19 @@ export {
   renderMarkdownInfoBlock,
   scanMarkdownInfoBlock,
 } from "./markdown-info-blocks";
+export {
+  type MarkdownLinkInput,
+  type MarkdownReference,
+  type MarkdownReferenceKind,
+  type MarkdownReferenceType,
+  markdownFileType,
+  markdownLinkReference,
+  markdownReferenceIcon,
+  markdownReferenceType,
+  markdownReferenceTypeLabel,
+  markStandaloneLinks,
+  renderMarkdownLink,
+} from "./markdown-links";
 export { Pagination, type PaginationProps } from "./Pagination";
 export type { PdfPreviewProps, PdfPreviewRequest } from "./PdfPreview";
 export { default as PdfPreview } from "./PdfPreview";

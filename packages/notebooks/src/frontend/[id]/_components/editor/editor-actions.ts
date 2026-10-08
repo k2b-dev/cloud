@@ -335,7 +335,7 @@ export const insertNoteLink = async (view: EditorView, notebookId: string, local
 
   const linkText = selectedText.length > 0 ? selectedText : picked.title;
   // `note://<shortId>` is our internal scheme — the read-mode HTML
-  // renderer (`transformNoteLinks`) rewrites it into a navigable
+  // renderer (`renderNotebookBook`) turns it into a navigable
   // `<a>`, and the page-handler resolves the short-id back to a UUID.
   // Carrying short-ids in markdown bodies (instead of full URLs)
   // means link references survive notebook renames / URL refactors

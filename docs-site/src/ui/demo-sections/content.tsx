@@ -1220,6 +1220,7 @@ const MarkdownDemo = (props: { html: string }) => {
     [
       "# Hello @auth.name",
       "Read the [receipt guide](https://example.com/receipts) and run `bun test` before you share the bill.",
+      "Attach [receipt-2026-03.pdf](/files/receipt-2026-03.pdf), see [Split rules](/notes/split-rules) and [Tips](#tips), or write to billing@example.com.",
       "| Item | Note | Amount |\n| --- | --- | ---: |\n| Subtotal | Two dinners and one dessert, shared by both guests | 123.00 |\n| Tip | | 12.30 |",
       "| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |",
       "> Prices include VAT.",
@@ -1234,7 +1235,7 @@ const MarkdownDemo = (props: { html: string }) => {
         { kind: "component", name: "MarkdownView", from: "@k2b/ui" },
         { kind: "component", name: "MarkdownEditor", from: "@k2b/ui" },
       ]}
-      description="Untrusted Markdown is safe by default. Known authoring tokens can be emphasized without crossing the trusted-HTML boundary."
+      description="Untrusted Markdown is safe by default. Relative links are calm reference pills, web and mail links quiet text. Known authoring tokens can be emphasized without crossing the trusted-HTML boundary."
       code={`<MarkdownView markdown={value()} inlineTokens={["@auth.name"]} headingScale="compact" />
 <MarkdownView markdown={value()} />
 <MarkdownView markdown={value()} headingScale="large" />

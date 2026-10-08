@@ -2,7 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { fileIcons } from "@k2b/stdlib";
+import { markdownFileType, markdownReferenceIcon, markdownReferenceType } from "@k2b/ui";
 import { anchorHash, parseNoteLink } from "../../../lib/heading-anchors";
 import { openAttachmentById } from "../attachment-preview";
 import { navigateToNotebookNote } from "../soft-navigation";
@@ -15,6 +15,8 @@ type LinkData = {
   /** Resolved final href (rewritten for attachment URLs, identity otherwise). */
   resolvedUrl: string;
   isNoteLink: boolean;
+  /** The note link names a heading of the note. */
+  isHeadingLink: boolean;
   /** Set if the link is an `attach://<shortId>` reference to a non-image blob. */
   attachmentId: string | null;
   notebookId: string;
@@ -26,23 +28,26 @@ class LinkWidget extends WidgetType {
   }
 
   override toDOM() {
-    const { attachmentId } = this.linkData;
-    if (attachmentId) {
-      // File-attachment pill: file icon + filename. Click opens the preview,
-      // or asks to download a file without one — keeping the editor untouched.
+    const { attachmentId, isNoteLink, label } = this.linkData;
+    if (attachmentId || isNoteLink) {
+      // A reference renders as the shared calm pill of rendered Markdown: icon
+      // and text, no brackets. The whole pill acts — an attachment opens its
+      // preview (or asks to download), a note link navigates — while the editor
+      // keeps its cursor. The pill is drawn by `.k2b-reference`, so hover only
+      // darkens its fill and nothing moves.
+      const type = attachmentId
+        ? markdownFileType(label)
+        : markdownReferenceType({ kind: this.linkData.isHeadingLink ? "heading" : "note" }, label);
       const el = document.createElement("span");
-      el.className =
-        "cm-attachment-pill inline-flex cursor-pointer items-center gap-1 rounded-md bg-zinc-100/80 px-1.5 py-0.5 text-zinc-700 shadow-[var(--ui-shadow-surface)] hover:bg-zinc-200/80 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-700/80";
-      el.title = this.linkData.label;
+      el.className = `k2b-reference ${attachmentId ? "cm-attachment-pill" : "cm-note-link"}`;
+      el.dataset.reference = type;
+      el.title = attachmentId ? label : this.linkData.url;
 
       const icon = document.createElement("i");
-      icon.className = `ti ${fileIcons.getFileIcon({ name: this.linkData.label, type: "file" })} text-xs`;
+      icon.className = `k2b-reference__icon ti ${markdownReferenceIcon(type, label)}`;
+      icon.setAttribute("aria-hidden", "true");
 
-      const label = document.createElement("span");
-      label.textContent = this.linkData.label;
-
-      el.appendChild(icon);
-      el.appendChild(label);
+      el.append(icon, label);
 
       el.onmousedown = (e) => {
         e.preventDefault();
@@ -51,71 +56,38 @@ class LinkWidget extends WidgetType {
       el.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        void openAttachmentById(this.linkData.notebookId, attachmentId, this.linkData.label);
+        // `note://<shortId>` is internal and not navigable; `resolvedUrl`
+        // carries the full path. The shared helper uses client-side editor
+        // navigation when mounted and falls back to SSR navigation otherwise.
+        if (attachmentId) void openAttachmentById(this.linkData.notebookId, attachmentId, label);
+        else void navigateToNotebookNote(this.linkData.resolvedUrl);
       };
 
       return el;
     }
 
-    if (this.linkData.isNoteLink) {
-      // Pill-style note link: ti-connection icon + title, no [] brackets, the
-      // whole pill is clickable and navigates same-window.
-      const el = document.createElement("span");
-      el.className =
-        "cm-note-link inline-flex cursor-pointer items-center gap-1 rounded-md bg-blue-50/80 px-1.5 py-0.5 text-blue-700 shadow-[var(--ui-shadow-surface)] hover:bg-blue-100/80 dark:bg-blue-950/35 dark:text-blue-300 dark:hover:bg-blue-900/35";
-      el.title = this.linkData.url;
-
-      const icon = document.createElement("i");
-      icon.className = "ti ti-connection text-xs";
-
-      const label = document.createElement("span");
-      label.textContent = this.linkData.label;
-
-      el.appendChild(icon);
-      el.appendChild(label);
-
-      // Block CM's default cursor-positioning on widget click — our onclick
-      // handler navigates instead.
-      el.onmousedown = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-      el.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // Navigate to the resolved URL — `note://<shortId>` is internal
-        // and not navigable; `resolvedUrl` carries the full path. The
-        // shared helper uses client-side editor navigation when mounted and
-        // falls back to normal SSR navigation otherwise.
-        void navigateToNotebookNote(this.linkData.resolvedUrl);
-      };
-
-      return el;
-    }
-
-    // External link: keep the established `[Label] ↗` rendering — only the
-    // icon opens (in a new tab); clicking the label positions the cursor.
+    // Web and mail links read like rendered ones: prose text with a thin
+    // accent underline. Clicking the text positions the cursor for editing;
+    // the small ↗ of a web link opens it in a new tab.
     const container = document.createElement("span");
     container.className = "cm-link-widget";
 
     const labelSpan = document.createElement("span");
-    labelSpan.className = "cm-link-label font-bold text-gray-800 dark:text-gray-200";
-    labelSpan.textContent = `[${this.linkData.label}]`;
-
-    const iconSpan = document.createElement("span");
-    iconSpan.className =
-      "cm-link-icon cursor-pointer mb-0.25 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-500 hover:underline";
-    iconSpan.innerHTML = '<i class="ti ti-arrow-up-right text-xs"></i>';
-    iconSpan.title = this.linkData.url;
-
-    iconSpan.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      window.open(this.linkData.url, "_blank", "noopener,noreferrer");
-    };
-
+    labelSpan.className = "cm-link-label k2b-text-link";
+    labelSpan.textContent = label;
     container.appendChild(labelSpan);
-    container.appendChild(iconSpan);
+
+    if (!/^(?:mailto|tel):/i.test(this.linkData.url)) {
+      const iconSpan = document.createElement("i");
+      iconSpan.className = "cm-link-icon k2b-text-link__external ti ti-arrow-up-right";
+      iconSpan.title = this.linkData.url;
+      iconSpan.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(this.linkData.url, "_blank", "noopener,noreferrer");
+      };
+      container.appendChild(iconSpan);
+    }
     return container;
   }
 
@@ -125,6 +97,7 @@ class LinkWidget extends WidgetType {
       other.linkData.label === this.linkData.label &&
       other.linkData.url === this.linkData.url &&
       other.linkData.isNoteLink === this.linkData.isNoteLink &&
+      other.linkData.isHeadingLink === this.linkData.isHeadingLink &&
       other.linkData.attachmentId === this.linkData.attachmentId
     );
   }
@@ -163,6 +136,7 @@ const parseLinkSyntax = (text: string, notebookId: string): LinkData | null => {
     url,
     resolvedUrl,
     isNoteLink: note !== null,
+    isHeadingLink: Boolean(note?.anchor),
     attachmentId,
     notebookId,
   };
@@ -198,27 +172,11 @@ export const linksExtension = (notebookId: string): Extension => {
   const stateField = cursorZoneStateField((state) => findLinks(state, notebookId));
 
   const theme = EditorView.theme({
-    ".cm-link-widget": {
-      display: "inline-flex",
-      alignItems: "center",
-      verticalAlign: "baseline",
-    },
-    ".cm-link-label": {
-      fontFamily: "inherit",
-      fontSize: "inherit",
-    },
     ".cm-link-icon": {
-      display: "inline-flex",
-      alignItems: "center",
-      opacity: "0.7",
-      transition: "opacity 0.2s",
-    },
-    ".cm-link-widget:hover .cm-link-icon": {
-      opacity: "1",
+      cursor: "pointer",
     },
     ".cm-note-link, .cm-attachment-pill": {
-      verticalAlign: "baseline",
-      transition: "background-color 0.15s",
+      cursor: "pointer",
     },
   });
 

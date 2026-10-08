@@ -36,7 +36,7 @@ describe("Markdown info blocks", () => {
   test("the body is ordinary Markdown with the renderer's own links and sanitization", () => {
     const html = renderMarkdownSync(":::info\nSee [the guide](https://example.com).\n\n- one\n- two\n\n<script>alert(1)</script>\n:::");
 
-    expect(html).toContain('class="md-link-widget"');
+    expect(html).toContain('class="k2b-text-link" data-link="web"');
     expect(html).toContain('<li class="custom-list custom-list-bullet">one</li>');
     expect(html).not.toContain("<script");
   });

@@ -142,14 +142,9 @@
 .notebook-book-content li > :is(ul, ol) {
   margin-block: 0.25rem;
 }
-.notebook-book-content a {
-  color: var(--color-blue-600);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
-.dark .notebook-book-content a {
-  color: var(--color-blue-400);
-}
+/* Links come from the shared Markdown link contract of @k2b/ui: references
+   are calm pills, web and mail links and the table of contents are prose
+   text with a thin accent underline. */
 .notebook-book-content a:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
@@ -210,7 +205,7 @@
 .notebook-book-content th {
   font-weight: 600;
 }
-.notebook-book-content a:is(.notebook-book-tag, .notebook-book-note-link) {
+.notebook-book-content a.notebook-book-tag {
   display: inline-flex;
   align-items: baseline;
   gap: 0.25rem;
@@ -221,26 +216,12 @@
   vertical-align: baseline;
   overflow-wrap: anywhere;
 }
-.notebook-book-content a.notebook-book-note-link {
-  color: var(--color-blue-700);
-  background: color-mix(in srgb, var(--color-blue-50) 80%, transparent);
-}
-.notebook-book-content a.notebook-book-note-link:hover {
-  background: color-mix(in srgb, var(--color-blue-100) 80%, transparent);
-}
 .notebook-book-content a.notebook-book-tag {
   color: var(--color-emerald-700);
   background: var(--color-emerald-50);
 }
 .notebook-book-content a.notebook-book-tag:hover {
   background: var(--color-emerald-100);
-}
-.dark .notebook-book-content a.notebook-book-note-link {
-  color: var(--color-blue-300);
-  background: color-mix(in srgb, var(--color-blue-950) 35%, transparent);
-}
-.dark .notebook-book-content a.notebook-book-note-link:hover {
-  background: color-mix(in srgb, var(--color-blue-900) 35%, transparent);
 }
 .dark .notebook-book-content a.notebook-book-tag {
   color: var(--color-emerald-300);

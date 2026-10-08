@@ -1,4 +1,4 @@
-import { markdownInfoBlocks } from "@k2b/ui";
+import { markdownInfoBlocks, markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
 import { Marked, Renderer, type Tokens } from "marked";
 import postcss from "postcss";
 import {
@@ -70,6 +70,7 @@ h1, h2, h3, h4, h5, h6 { color: #111827; line-height: 1.2; margin: 1.4em 0 .55em
 h1 { margin-top: 0; font-size: 2em; } h2 { font-size: 1.5em; } h3 { font-size: 1.2em; }
 p, ul, ol, blockquote, pre, table { margin: 0 0 1em; }
 a { color: #2563eb; text-decoration: underline; }
+:root { --link-accent: #2563eb; }
 blockquote { margin-left: 0; padding-left: 1em; border-left: 3px solid #cbd5e1; color: #475569; }
 code { border-radius: 3px; background: #f1f5f9; padding: .08em .28em; font: .9em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 pre { overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; border-radius: 6px; background: #f8fafc; padding: 1em; }
@@ -91,6 +92,7 @@ h2 { margin: 1.6em 0 .6em; padding-bottom: .2em; border-bottom: 1px solid #b8c7d
 h3 { margin: 1.35em 0 .5em; font-size: 1.15em; }
 p, ul, ol, blockquote, pre, table { margin: 0 0 1em; }
 a { color: #245a86; }
+:root { --link-accent: #245a86; }
 blockquote { margin-left: 0; padding: .7em 1em; border-left: 4px solid #4f799d; background: #f4f7fa; color: #41566c; }
 code { border-radius: 3px; background: #edf2f7; padding: .08em .28em; font: .88em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 pre { overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; background: #f4f7fa; padding: 1em; }
@@ -111,6 +113,7 @@ h1 { margin-top: 0; font-size: 1.65em; } h2 { font-size: 1.3em; } h3 { font-size
 p, ul, ol, blockquote, pre, table { margin: 0 0 .58em; }
 ul, ol { padding-left: 1.5em; }
 a { color: #1d4ed8; }
+:root { --link-accent: #1d4ed8; }
 blockquote { margin-left: 0; padding-left: .7em; border-left: 2px solid #9ca3af; color: #4b5563; }
 code { background: #f3f4f6; padding: .05em .2em; font: .88em/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
 pre { overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; background: #f7f7f8; padding: .65em; }
@@ -140,6 +143,22 @@ const INFO_BLOCK_PRINT_CSS = `
 .k2b-notice-card__title { margin: 0 0 .25em; font-weight: 600; }
 .k2b-notice-card__body > :first-child { margin-top: 0; }
 .k2b-notice-card__body > :last-child { margin-bottom: 0; }
+`;
+
+/**
+ * Links print as Cloud's calm links: a web link is text with a thin underline
+ * in the preset's link colour and a small ↗, a mail link has no arrow, and a
+ * reference to Cloud content is a light grey pill with text in the preset's
+ * colour. Print has no hover, and PDFs load no icon font, so the type icons
+ * and the screen arrow give way to the printed ↗.
+ */
+const LINK_PRINT_CSS = `
+a.k2b-text-link { color: inherit; text-decoration: underline; text-decoration-thickness: .06em; text-underline-offset: .2em; text-decoration-color: var(--link-accent, #2563eb); }
+a.k2b-text-link[data-link="web"]::after { content: "\\2197"; display: inline-block; margin-left: .12em; color: var(--link-accent, #2563eb); font-size: .75em; text-decoration: none; }
+a.k2b-reference { padding: .05em .3em; border-radius: .3em; background: #eeeff2; color: inherit; font-weight: 500; text-decoration: none; box-decoration-break: clone; -webkit-box-decoration-break: clone; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.k2b-reference__document, .k2b-reference__size { color: #555c68; font-weight: 400; }
+.k2b-reference__size { margin-left: .35em; font-size: .85em; }
+.k2b-reference__icon, .k2b-text-link__external { display: none; }
 `;
 
 const byteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
@@ -172,8 +191,7 @@ const renderMarkdown = (source: string): string => {
     const body = this.parser.parseInline(tokens);
     const safeHref = safeLink(href);
     if (!safeHref) return body;
-    const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
-    return `<a href="${escapeHtml(safeHref)}"${titleAttribute}>${body}</a>`;
+    return renderMarkdownLink({ href: safeHref, html: body, title: title ?? undefined, reference: markdownLinkReference(safeHref) });
   };
 
   const parser = new Marked({ breaks: true, gfm: true, renderer }, markdownInfoBlocks());
@@ -236,7 +254,7 @@ export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
   const suppliedCustomCss = input.customCss?.trim() ?? "";
   const customCss = suppliedCustomCss ? validateCustomCss(input.customCss ?? "") : "";
   const presetCss = templateId ? TEMPLATE_CSS[templateId] : customCss ? "" : TEMPLATE_CSS.document;
-  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
+  const baseCss = [presetCss, INFO_BLOCK_PRINT_CSS, LINK_PRINT_CSS, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
   const stylesheet = `${baseCss}${baseCss && customCss ? `\n/* Custom CSS overrides */\n` : ""}${customCss}`;
   return `<!doctype html>
 <html lang="en">

@@ -1,4 +1,3 @@
-import { markdown } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -6,7 +5,6 @@ import {
   Avatar,
   Button,
   IconButtonLink,
-  MarkdownView,
   openSpotlightSearch,
   Placeholder,
   prompts,
@@ -17,6 +15,7 @@ import {
 import { diffLines } from "diff";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { renderNotebookBook } from "@/lib/book-renderer";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { buildDiffRows, type DiffRow, orderComparison, summarizeDiff } from "./version-history";
@@ -293,7 +292,16 @@ export default function VersionHistory(props: Props) {
   });
   const diffSummary = createMemo(() => summarizeDiff(diffRows()));
 
-  const selectedContentHtml = createMemo(() => markdown.renderSync(selectedVersionData()?.contentMd ?? "", { locale: locale() }));
+  // A version reads as Book did: note, heading and attachment links are references, without query results.
+  const selectedContentHtml = createMemo(
+    () =>
+      renderNotebookBook({
+        markdown: selectedVersionData()?.contentMd ?? "",
+        notebookId: props.notebookId,
+        noteId: props.noteId,
+        locale: locale(),
+      }).html,
+  );
 
   return (
     <div class="flex min-h-0 flex-1 flex-col gap-2">
@@ -509,7 +517,7 @@ export default function VersionHistory(props: Props) {
                     }
                   >
                     <div class="mx-auto w-full max-w-4xl p-4">
-                      <MarkdownView trustedHtml={selectedContentHtml()} />
+                      <article class="notebook-book-content" innerHTML={selectedContentHtml()} />
                     </div>
                   </Show>
                 </Show>

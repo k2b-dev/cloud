@@ -65,7 +65,9 @@ describe("MarkdownView info blocks", () => {
 
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).not.toContain("javascript:");
-    expect(html).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">docs</a>');
+    expect(html).toContain(
+      '<a href="https://example.com" class="k2b-text-link" data-link="web" target="_blank" rel="noopener noreferrer">docs<i class="k2b-text-link__external ti ti-arrow-up-right" aria-hidden="true"></i></a>',
+    );
     expect(html).toContain("<li>one</li>");
   });
 

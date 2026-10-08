@@ -27,10 +27,3 @@ export const IMAGE_STYLES = {
   img: "block max-h-[400px] rounded border border-gray-200 dark:border-gray-700",
   caption: "text-sm text-gray-500 dark:text-gray-400 mt-2 italic",
 } as const;
-
-/** Link widget styles */
-export const LINK_STYLES = {
-  link: "md-link-widget",
-  label: "md-link-label",
-  icon: "md-link-icon",
-} as const;

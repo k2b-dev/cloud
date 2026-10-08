@@ -60,6 +60,19 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
+  /* Underline and arrow of web and mail links in content. An optional host
+     hook, as for the workspace accent; Cloud maps it to the app accent. */
+  --k2b-link-accent: var(--k2b-action);
+  /* Reference pills: a neutral fill that follows any surface below it, and
+     one icon colour per type. Icons keep at least 3:1 on the hover fill. */
+  --k2b-reference-surface: rgb(9 9 11 / 0.045);
+  --k2b-reference-surface-hover: rgb(9 9 11 / 0.1);
+  --k2b-reference-pdf: #dc2626;
+  --k2b-reference-image: #7c3aed;
+  --k2b-reference-design: #c2410c;
+  --k2b-reference-note: #64748b;
+  --k2b-reference-heading: var(--k2b-neutral-500);
+  --k2b-reference-task: #047857;
   --k2b-action-solid: var(--k2b-accent-700);
   --k2b-action-solid-hover: var(--k2b-accent-800);
   --k2b-selection: rgb(29 78 216 / 0.35);
@@ -131,6 +144,14 @@
   --k2b-action-solid-hover: var(--k2b-accent-700);
   --k2b-selection: rgb(147 197 253 / 0.35);
   --k2b-focus-ring: var(--k2b-accent-400);
+  --k2b-reference-surface: rgb(255 255 255 / 0.07);
+  --k2b-reference-surface-hover: rgb(255 255 255 / 0.13);
+  --k2b-reference-pdf: #f87171;
+  --k2b-reference-image: #a78bfa;
+  --k2b-reference-design: #fb923c;
+  --k2b-reference-note: #94a3b8;
+  --k2b-reference-heading: var(--k2b-neutral-400);
+  --k2b-reference-task: #34d399;
   --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 55%, var(--k2b-surface));
   --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
   --k2b-info-surface: var(--k2b-accent-950);

@@ -288,7 +288,6 @@ export const notebooksService = {
     count: attachments.count,
     usageCount: attachments.usageCount,
     extractIds: attachments.extractIds,
-    transformHtml: attachments.transformAttachments,
   },
   exporter: {
     exportNotebookZip: exporter.exportNotebookZip,

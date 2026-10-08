@@ -86,7 +86,7 @@ describe("note PDF HTML", () => {
       ].join("\n\n"),
       { noteShortId: "DEF456" },
     );
-    expect(html).toContain('<a class="notebook-book-note-link" href="#heading-restore">');
+    expect(html).toContain('<a class="k2b-reference" data-reference="heading" aria-label="Heading: Steps" href="#heading-restore">');
     expect(html).toContain('<h2 id="heading-restore">Restore</h2>');
     // A heading the note does not have opens its top, like the bare link: the PDF has no `#heading-nope` to jump to.
     expect(html.match(/href="#top"/g)).toHaveLength(3);

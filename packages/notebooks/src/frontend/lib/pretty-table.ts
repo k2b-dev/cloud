@@ -10,6 +10,7 @@ import {
   parseProgressValue,
 } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
+import { renderMarkdownLink } from "@k2b/ui";
 import { anchorHash, parseNoteLink } from "../../lib/heading-anchors";
 import { notebookWorkspaceMessages } from "../[id]/messages";
 import { prettyTableMessages } from "./pretty-table-messages";
@@ -74,15 +75,12 @@ const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string)
       const note = parseNoteLink(link);
       if (!note) return match;
       const href = notebookId ? `/app/notebooks/${notebookId}/notes/${note.noteId}${anchorHash(note.anchor)}` : link;
-      const html =
-        `<a class="cm-note-link note-link inline-flex items-center gap-1 rounded-md bg-blue-50/80 px-1.5 py-0.5 text-blue-700 no-underline align-baseline font-medium shadow-[var(--ui-shadow-surface)] hover:bg-blue-100/80 dark:bg-blue-950/35 dark:text-blue-300 dark:hover:bg-blue-900/35" href="${escapeHtml(href)}">` +
-        `<i class="ti ti-connection text-xs"></i><span>${escapeHtml(label)}</span></a>`;
-      return stashHtml(html, placeholders);
+      const reference = { kind: note.anchor ? ("heading" as const) : ("note" as const) };
+      return stashHtml(renderMarkdownLink({ href, html: escapeHtml(label), text: label, reference, locale }), placeholders);
     })
-    .replace(MARKDOWN_LINK_RE, (_match, label: string, href: string) => {
-      const html = `<a href="${escapeHtml(href)}" rel="noopener noreferrer" target="_blank">${escapeHtml(label)}</a>`;
-      return stashHtml(html, placeholders);
-    })
+    .replace(MARKDOWN_LINK_RE, (_match, label: string, href: string) =>
+      stashHtml(renderMarkdownLink({ href, html: escapeHtml(label), text: label, target: "_blank", locale }), placeholders),
+    )
     .replace(INLINE_CODE_RE, (_match, code: string) => stashHtml(`<code>${escapeHtml(code)}</code>`, placeholders));
 
   const escaped = escapeHtml(withProtectedLinks);
