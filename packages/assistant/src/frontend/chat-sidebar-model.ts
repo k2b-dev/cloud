@@ -42,17 +42,20 @@ export const calendarDay = (iso: string, timeZone: string): string => {
 const dayNumber = (day: string): number =>
   Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))) / 86_400_000;
 
+/** Whole calendar days between an instant and `now` in a time zone; 0 for today and for the future. */
+export const calendarDaysBefore = (iso: string, now: string, timeZone: string): number =>
+  Math.max(0, dayNumber(calendarDay(now, timeZone)) - dayNumber(calendarDay(iso, timeZone)));
+
 /**
  * Groups items newest first: one group per day for the last seven days, one per month before that. The order of
  * `items` inside a group follows the input.
  */
 export const groupByTime = <T>(items: readonly T[], at: (item: T) => string, now: string, timeZone: string): TimeGroup<T>[] => {
-  const today = dayNumber(calendarDay(now, timeZone));
   const groups = new Map<string, TimeGroup<T>>();
   const sorted = [...items].sort((a, b) => Date.parse(at(b)) - Date.parse(at(a)));
   for (const item of sorted) {
     const day = calendarDay(at(item), timeZone);
-    const daysAgo = Math.max(0, today - dayNumber(day));
+    const daysAgo = calendarDaysBefore(at(item), now, timeZone);
     const group: Omit<TimeGroup<T>, "items"> = daysAgo < DAY_GROUP_DAYS
       ? { key: `day:${day}`, kind: "day", date: day, daysAgo }
       : { key: `month:${day.slice(0, 7)}`, kind: "month", date: day.slice(0, 7), daysAgo };

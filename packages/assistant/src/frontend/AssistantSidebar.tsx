@@ -8,7 +8,6 @@ import {
   createNavigation,
   Dropdown,
   dialogCore,
-  Format,
   IconButton,
   type NavigationItem,
   PanelDialog,
@@ -17,7 +16,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { type Accessor, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { artifactMessages } from "../artifacts/messages";
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
@@ -30,13 +29,14 @@ import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
-import { ConversationStatusMeta } from "./conversation-status";
-import { conversationStatusPresentation } from "./conversation-view";
+import { type ConversationAgeGroup, conversationStatusPresentation, groupConversationsByAge } from "./conversation-view";
 import { assistantMessages } from "./messages";
 import { useAssistantText } from "./ui-copy";
 
 type AssistantSidebarProps = {
   conversations: Accessor<AiConversation[]>;
+  /** The viewer's time zone from the request, so the server and the browser put chats in the same day sections. */
+  timeZone: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
   activeView?: "chat" | "all" | "apps";
@@ -126,34 +126,28 @@ function ConversationSidebarItem(props: {
       .catch(() => navigateTo(target));
   };
 
+  const status = () => conversationStatusPresentation(props.conversation, locale(), props.active);
+  const marker = () => {
+    const current = status();
+    if (current) return current;
+    return props.conversation.hasActiveSchedule ? { label: text("Active schedule"), icon: "ti ti-clock", tone: "muted" as const } : null;
+  };
+
   return (
     <AppWorkspace.SidebarItem
       href={href()}
-      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}${!props.conversation.isDone && !props.conversation.pinnedAt ? " assistant-chat-sidebar-item--done-action" : ""}`}
-      variant={props.conversation.isDone ? "row" : "card"}
-      context={
-        !props.conversation.isDone ? (
-          <span>
-            <Show when={props.conversation.pinnedAt} fallback={<i class={props.project?.icon || "ti ti-message"} aria-hidden="true" />}>
-              <i class="ti ti-pin text-accent" role="img" aria-label={assistantMessages.resolve([locale()]).t.pinnedLabel} />
-            </Show>{" "}
-            {props.project?.name ?? text("Chat")}
-          </span>
-        ) : undefined
-      }
-      contextMeta={
-        !props.conversation.isDone ? (
-          <span class="inline-flex items-center gap-1.5">
-            <Format.RelativeTime value={props.conversation.lastUsedAt} />
-          </span>
-        ) : undefined
-      }
+      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}`}
       onClick={handleClick}
       active={props.active}
-      description={
-        !props.conversation.isDone && conversationStatusPresentation(props.conversation, locale(), props.active) ? (
-          <ConversationStatusMeta conversation={props.conversation} active={props.active} labels hidePin />
-        ) : undefined
+      meta={
+        <Show when={marker()}>
+          {(item) => (
+            <span class="assistant-chat-marker" data-tone={item().tone} title={item().label}>
+              <i class={item().icon} aria-hidden="true" />
+              <span class="sr-only">{item().label}</span>
+            </span>
+          )}
+        </Show>
       }
       preview={{
         label: text("Chat details"),
@@ -169,17 +163,7 @@ function ConversationSidebarItem(props: {
         ),
       }}
     >
-      <AppWorkspace.SidebarItemLabel marquee={false}>
-        {props.conversation.title}
-        <Show when={props.conversation.hasActiveSchedule}>
-          <i
-            class="assistant-chat-schedule-icon ti ti-clock"
-            role="img"
-            aria-label={text("Active schedule")}
-            title={text("Active schedule")}
-          />
-        </Show>
-      </AppWorkspace.SidebarItemLabel>
+      <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
       <Show when={!props.conversation.pinnedAt}>
         <AppWorkspace.SidebarItemAction
           icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
@@ -191,15 +175,23 @@ function ConversationSidebarItem(props: {
                 : text("Mark chat done")
           }
           disabled={saving() || (!props.conversation.isDone && busy())}
-          visibility={props.conversation.isDone ? "hover" : "always"}
+          visibility="hover"
           onSelect={() => void toggleDone()}
         >
-          <Show when={!props.conversation.isDone} fallback={<i class="ti ti-arrow-back-up" aria-hidden="true" />}>
-            <i
-              class={props.donePhase === "saving" ? "ti ti-loader-2 animate-spin motion-reduce:animate-none" : "ti ti-check"}
-              aria-hidden="true"
-            />
-            <span role="status">{text("Done")}</span>
+          <i
+            class={
+              props.donePhase === "saving"
+                ? "ti ti-loader-2 animate-spin motion-reduce:animate-none"
+                : props.conversation.isDone && !props.donePhase
+                  ? "ti ti-arrow-back-up"
+                  : "ti ti-check"
+            }
+            aria-hidden="true"
+          />
+          <Show when={props.donePhase === "confirmed"}>
+            <span class="sr-only" role="status">
+              {text("Done")}
+            </span>
           </Show>
         </AppWorkspace.SidebarItemAction>
       </Show>
@@ -285,6 +277,22 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       .toSorted((left, right) => Date.parse(right.pinnedAt!) - Date.parse(left.pinnedAt!));
   const unpinnedConversations = () => activeConversations().filter((conversation) => !conversation.pinnedAt);
   const chatConversations = () => [...pinnedConversations(), ...unpinnedConversations()];
+  // Day sections follow the clock: a minute tick moves chats into "Yesterday" after midnight.
+  const [now, setNow] = createSignal(new Date().toISOString());
+  onMount(() => {
+    const timer = window.setInterval(() => setNow(new Date().toISOString()), 60_000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+  const chatGroups = createMemo(() => groupConversationsByAge(chatConversations(), now(), props.timeZone));
+  const groupLabel = (group: ConversationAgeGroup) =>
+    ({
+      pinned: t().pinned,
+      today: t().today,
+      yesterday: t().yesterday,
+      week: t().previousWeek,
+      month: t().previousMonth,
+      older: t().older,
+    })[group];
   const openProject = async (project: AiProject) => {
     if (activeProjectId() === project.id) return;
     const href = assistantProjectHref("/app/assistant", project.id);
@@ -641,27 +649,36 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
-            <AppWorkspace.SidebarSection>
-              <Show
-                when={chatConversations().length > 0}
-                fallback={<Placeholder variant="inline" align="left" description={t().noChats} />}
-              >
-                <For each={chatConversations()}>
-                  {(conversation) => (
-                    <ConversationSidebarItem
-                      conversation={conversation}
-                      donePhase={doneFeedback().get(conversation.id)?.phase}
-                      toggleDone={toggleDone}
-                      active={conversation.id === activeConversationId()}
-                      open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
-                      edit={(item) => void openEditor(item)}
-                      project={props.projects?.find((project) => project.id === conversation.projectId)}
-                      update={(item) => props.onConversationUpdated?.(item)}
-                    />
-                  )}
-                </For>
-              </Show>
-            </AppWorkspace.SidebarSection>
+            <Show
+              when={chatConversations().length > 0}
+              fallback={
+                <AppWorkspace.SidebarSection>
+                  <Placeholder variant="inline" align="left" description={t().noChats} />
+                </AppWorkspace.SidebarSection>
+              }
+            >
+              {/* Keyed by section name, so a status change re-renders one row, not the whole list. */}
+              <For each={chatGroups().map((entry) => entry.group)}>
+                {(group) => (
+                  <AppWorkspace.SidebarSection title={groupLabel(group)}>
+                    <For each={chatGroups().find((entry) => entry.group === group)?.conversations ?? []}>
+                      {(conversation) => (
+                        <ConversationSidebarItem
+                          conversation={conversation}
+                          donePhase={doneFeedback().get(conversation.id)?.phase}
+                          toggleDone={toggleDone}
+                          active={conversation.id === activeConversationId()}
+                          open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
+                          edit={(item) => void openEditor(item)}
+                          project={props.projects?.find((project) => project.id === conversation.projectId)}
+                          update={(item) => props.onConversationUpdated?.(item)}
+                        />
+                      )}
+                    </For>
+                  </AppWorkspace.SidebarSection>
+                )}
+              </For>
+            </Show>
             <DoneSection />
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter sidebarMode="expanded">

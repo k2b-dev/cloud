@@ -28,7 +28,7 @@ export function ConversationStatusMeta(props: {
       </Show>
       <Show when={status()} fallback={props.labels ? props.fallbackLabel : undefined}>
         {(item) => (
-          <span class={`inline-flex min-w-0 items-center gap-1 ${item().class}`} title={item().label}>
+          <span class="assistant-chat-marker inline-flex min-w-0 items-center gap-1" data-tone={item().tone} title={item().label}>
             <i class={`${item().icon} text-xs`} aria-hidden="true" />
             <Show when={props.labels}>
               <span class="assistant-conversation-status-label truncate">

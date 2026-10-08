@@ -6,6 +6,7 @@ import { assistantApi } from "../api/client";
 import { openAssistantCreateProjectDialog } from "../frontend/AssistantProjectsDialog";
 import AssistantSidebar from "../frontend/AssistantSidebar";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
+import { assistantMessages } from "../frontend/messages";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { createArtifactActions } from "./artifact-actions";
 import { artifactClient } from "./client";
@@ -16,6 +17,7 @@ import type { ArtifactBundle } from "./service";
 
 type Props = {
   userId: string;
+  timeZone: string;
   doneCount: number;
   conversations: AiConversation[];
   projects: AiProject[];
@@ -47,6 +49,7 @@ export default function Apps(props: Props) {
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
           conversations={() => sidebar().conversations}
+          timeZone={props.timeZone}
           doneCount={sidebar().doneCount}
           projects={sidebar().projects}
           onConversationUpdated={() => void reloadSidebar()}
@@ -56,7 +59,11 @@ export default function Apps(props: Props) {
           live={live}
           creatingConversation={busy}
           onNewConversation={() =>
-            action(async () => navigateTo(`/app/assistant?conversation=${(await assistantApi.createConversation()).shortId}`))
+            action(async () =>
+              navigateTo(
+                `/app/assistant?conversation=${(await assistantApi.createConversation({ title: assistantMessages.resolve([locale()]).t.newChat })).shortId}`,
+              ),
+            )
           }
           onCreateProject={async () => {
             const project = await openAssistantCreateProjectDialog();

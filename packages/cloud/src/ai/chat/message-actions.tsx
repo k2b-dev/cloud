@@ -7,8 +7,6 @@ import {
   PanelDialog,
   panelDialogFixedOptions,
   prompts,
-  StatCell,
-  StatGrid,
   TextInput,
   useLocale,
 } from "@k2b/ui";
@@ -77,6 +75,7 @@ const formatDateTime = (value: string, locale: string) =>
   new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 
 const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
+  const t = aiChatMessages(locale);
   const assistantEntries = entries.filter((entry) => entry.kind === "message" && entry.message.role === "assistant");
   const entry = assistantEntries.findLast((candidate) => candidate.loopAggregate) ?? assistantEntries.at(-1) ?? entries.at(-1);
   if (!entry) return null;
@@ -88,18 +87,18 @@ const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
   const timing = aggregate?.timing;
 
   const meta = [
-    { label: "Provider model", value: entry.providerModel ?? "Unknown" },
-    { label: "Model profile", value: entry.modelProfileId ?? "Unknown" },
-    { label: "Loop id", value: entry.loopId ?? "Legacy message" },
-    { label: "Finished", value: `${entry.loopDoneReason ?? "unknown"} · ${entry.stopReason ?? "unknown"}` },
-    { label: "Created", value: formatDateTime(entry.createdAt, locale) },
+    { label: t.infoProviderModel, value: entry.providerModel ?? t.infoUnknown },
+    { label: t.infoModelProfile, value: entry.modelProfileId ?? t.infoUnknown },
+    { label: t.infoLoopId, value: entry.loopId ?? t.infoLegacy },
+    { label: t.infoFinished, value: `${entry.loopDoneReason ?? t.infoUnknown} · ${entry.stopReason ?? t.infoUnknown}` },
+    { label: t.infoCreated, value: formatDateTime(entry.createdAt, locale) },
   ];
 
   const issues = [
-    { label: "errors", count: aggregate?.toolErrorCount ?? 0 },
-    { label: "stream issues", count: aggregate?.toolIssueCount ?? 0 },
-    { label: "malformed", count: aggregate?.toolMalformedCount ?? 0 },
-    { label: "cancelled", count: aggregate?.toolCancelledCount ?? 0 },
+    { label: t.infoIssueErrors, count: aggregate?.toolErrorCount ?? 0 },
+    { label: t.infoIssueStream, count: aggregate?.toolIssueCount ?? 0 },
+    { label: t.infoIssueMalformed, count: aggregate?.toolMalformedCount ?? 0 },
+    { label: t.infoIssueCancelled, count: aggregate?.toolCancelledCount ?? 0 },
   ].filter((issue) => issue.count > 0);
 
   const toolCounts = new Map<string, number>();
@@ -122,6 +121,27 @@ const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
   };
 };
 
+/** Label and value pairs in one quiet list; a hint explains a value in muted text below it. */
+function InfoRows(props: { rows: readonly { label: string; value: string; hint?: string }[] }) {
+  return (
+    <dl class="ai-response-info__rows">
+      <For each={props.rows}>
+        {(row) => (
+          <div>
+            <dt>
+              {row.label}
+              <Show when={row.hint}>
+                <span>{row.hint}</span>
+              </Show>
+            </dt>
+            <dd title={row.value}>{row.value}</dd>
+          </div>
+        )}
+      </For>
+    </dl>
+  );
+}
+
 const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
   const info = assistantResponseInfo(entries, locale);
   if (!info) return;
@@ -135,85 +155,70 @@ const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) =
   void dialogCore.open<void>(
     (close) => (
       <PanelDialog>
-        <PanelDialog.Header title="Message info" subtitle="Assistant response metadata" icon="ti ti-info-circle" close={close} />
+        <PanelDialog.Header title={t.actionMessageInfo} subtitle={t.infoSubtitle} icon="ti ti-info-circle" close={close} />
         <PanelDialog.Body>
-          <PanelDialog.Section title="Details" icon="ti ti-list-details">
-            <dl class="grid grid-cols-[auto_1fr] items-baseline gap-x-6 gap-y-1.5 text-sm">
-              <For each={info.meta}>
-                {(row) => (
-                  <>
-                    <dt class="text-dimmed">{row.label}</dt>
-                    <dd class="min-w-0 truncate text-right text-primary" title={row.value}>
-                      {row.value}
-                    </dd>
-                  </>
-                )}
-              </For>
-            </dl>
+          <PanelDialog.Section title={t.infoDetails} icon="ti ti-list-details">
+            <InfoRows rows={info.meta} />
           </PanelDialog.Section>
 
           <Show when={info.timing}>
             {(timing) => (
-              <StatGrid title="Timing" columns={3} surface="muted">
-                {/* Worked = generation + tool execution; waiting for approvals/client tools is listed separately. */}
-                <StatCell label="Worked" value={formatWorkedDuration(timing().totalElapsedMs)} sub="generation + tools" />
-                <StatCell label="Generation" value={formatWorkedDuration(timing().generationMs)} />
-                <StatCell
-                  label="Tool execution"
-                  value={timing().toolExecutionMs > 0 ? formatWorkedDuration(timing().toolExecutionMs) : "–"}
+              <PanelDialog.Section title={t.infoTiming} icon="ti ti-clock">
+                {/* Worked = writing + tool execution; waiting for approvals and answers is listed separately. */}
+                <InfoRows
+                  rows={[
+                    { label: t.infoWorked, value: formatWorkedDuration(timing().totalElapsedMs), hint: t.infoWorkedHint },
+                    { label: t.infoGeneration, value: formatWorkedDuration(timing().generationMs) },
+                    { label: t.infoToolTime, value: timing().toolExecutionMs > 0 ? formatWorkedDuration(timing().toolExecutionMs) : "–" },
+                    {
+                      label: t.infoWaiting,
+                      value: timing().actionWaitMs > 0 ? formatWorkedDuration(timing().actionWaitMs) : "–",
+                      hint: t.infoWaitingHint,
+                    },
+                    { label: t.infoWallClock, value: formatWorkedDuration(timing().wallMs) },
+                    {
+                      label: t.infoSpeed,
+                      value:
+                        timing().outputTokensPerSecond !== undefined
+                          ? t.infoTokensPerSecond({
+                              value: timing().outputTokensPerSecond!.toLocaleString(locale, { maximumFractionDigits: 1 }),
+                            })
+                          : "–",
+                    },
+                  ]}
                 />
-                <StatCell
-                  label="Waiting for user"
-                  value={timing().actionWaitMs > 0 ? formatWorkedDuration(timing().actionWaitMs) : "–"}
-                  sub="approvals & inputs"
-                />
-                <StatCell label="Wall clock" value={formatWorkedDuration(timing().wallMs)} />
-                <StatCell
-                  label="Output speed"
-                  value={
-                    timing().outputTokensPerSecond !== undefined
-                      ? `${timing().outputTokensPerSecond?.toLocaleString(locale, { maximumFractionDigits: 1 })} tok/s`
-                      : "–"
-                  }
-                />
-              </StatGrid>
+              </PanelDialog.Section>
             )}
           </Show>
 
-          <StatGrid title="Usage" columns={3} surface="muted">
-            <StatCell label="Input tokens" value={tokens(info.usage.input)} />
-            <StatCell label="Output tokens" value={tokens(info.usage.output)} />
-            <StatCell label="Total tokens" value={tokens(info.usage.total)} />
-            <StatCell label={t.assistantTurns} value={number(info.turns)} />
-            <StatCell label={t.toolCalls} value={number(info.toolCallCount)} />
-            <Show
-              when={info.issues.length > 0}
-              fallback={<StatCell label={t.toolIssues} value={t.none} accent={{ tone: "emerald", icon: "ti ti-check", text: "ok" }} />}
-            >
-              <StatCell
-                label={t.toolIssues}
-                value={number(issueTotal)}
-                sub={issueSummary}
-                accent={{ tone: "red", icon: "ti ti-alert-triangle" }}
-              />
-            </Show>
-          </StatGrid>
+          <PanelDialog.Section title={t.infoUsage} icon="ti ti-chart-bar">
+            <InfoRows
+              rows={[
+                { label: t.infoInputTokens, value: tokens(info.usage.input) },
+                { label: t.infoOutputTokens, value: tokens(info.usage.output) },
+                { label: t.infoTotalTokens, value: tokens(info.usage.total) },
+                { label: t.assistantTurns, value: number(info.turns) },
+                { label: t.toolCalls, value: number(info.toolCallCount) },
+                { label: t.toolIssues, value: info.issues.length > 0 ? `${number(issueTotal)} · ${issueSummary}` : t.none },
+              ]}
+            />
+          </PanelDialog.Section>
 
           <Show when={info.tools.length > 0}>
-            <PanelDialog.Section title="Tools" icon="ti ti-tool" subtitle="Tools requested by this assistant loop.">
-              <div class="flex flex-wrap gap-1.5">
+            <PanelDialog.Section title={t.infoTools} icon="ti ti-tool" subtitle={t.infoToolsHint}>
+              <ul class="ai-response-info__tools">
                 <For each={info.tools}>
                   {(tool) => (
-                    <span class="inline-flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-1 text-xs text-secondary dark:bg-zinc-900">
-                      <i class={`${aiToolIcon(tool.name)} text-sm`} aria-hidden="true" />
+                    <li>
+                      <i class={aiToolIcon(tool.name)} aria-hidden="true" />
                       {displayToolName(tool.name)}
                       <Show when={tool.count > 1}>
-                        <span class="rounded bg-white px-1 font-medium tabular-nums text-dimmed dark:bg-zinc-950">×{tool.count}</span>
+                        <span class="text-dimmed tabular-nums">×{tool.count}</span>
                       </Show>
-                    </span>
+                    </li>
                   )}
                 </For>
-              </div>
+              </ul>
             </PanelDialog.Section>
           </Show>
         </PanelDialog.Body>
@@ -223,12 +228,12 @@ const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) =
   );
 };
 
-const forkTitleFromText = (text: string): string => {
+const forkTitleFromText = (text: string, fallback: string): string => {
   const firstLine = text
     .split("\n")
     .map((line) => line.trim())
     .find(Boolean);
-  if (!firstLine) return "Forked chat";
+  if (!firstLine) return fallback;
   return firstLine.length > 80 ? `${firstLine.slice(0, 77).trim()}...` : firstLine;
 };
 
@@ -236,17 +241,19 @@ const openForkMessageDialog = async (
   entry: AiStoredMessage,
   copyText: string,
   onForkMessage: (entry: AiStoredMessage, input?: AiForkMessageInput) => void | Promise<void>,
+  locale: string,
 ) => {
+  const t = aiChatMessages(locale);
   const result = await prompts.form({
-    title: "Fork chat",
+    title: t.forkTitle,
     icon: "ti ti-git-fork",
-    confirmText: "Fork",
+    confirmText: t.forkConfirm,
     size: "medium",
     fields: {
       title: {
         type: "text",
-        label: "Chat name",
-        default: forkTitleFromText(copyText),
+        label: t.forkName,
+        default: forkTitleFromText(copyText, t.forkDefaultName),
         required: true,
         maxLength: 120,
       },
@@ -256,16 +263,18 @@ const openForkMessageDialog = async (
   if (title) await onForkMessage(entry, { title });
 };
 
-const feedbackReasons: readonly { id: AiMessageFeedbackReason; label: string; description: string }[] = [
-  { id: "incorrect", label: "Incorrect", description: "Facts or conclusions were wrong." },
-  { id: "did_not_follow_request", label: "Did not follow request", description: "The response missed important instructions." },
-  { id: "incomplete", label: "Incomplete", description: "Important information or work was missing." },
-  { id: "poor_tool_choice", label: "Poor tool choice", description: "A capability was missing, unnecessary, or used badly." },
-  { id: "too_slow", label: "Too slow", description: "The response took too long for the result." },
-  { id: "other", label: "Other", description: "Something else should be improved." },
+const feedbackReasons = (
+  t: ReturnType<typeof aiChatMessages>,
+): readonly { id: AiMessageFeedbackReason; label: string; description: string }[] => [
+  { id: "incorrect", label: t.feedbackIncorrect, description: t.feedbackIncorrectHint },
+  { id: "did_not_follow_request", label: t.feedbackIgnoredRequest, description: t.feedbackIgnoredRequestHint },
+  { id: "incomplete", label: t.feedbackIncomplete, description: t.feedbackIncompleteHint },
+  { id: "poor_tool_choice", label: t.feedbackWrongApp, description: t.feedbackWrongAppHint },
+  { id: "too_slow", label: t.feedbackSlow, description: t.feedbackSlowHint },
+  { id: "other", label: t.feedbackOther, description: t.feedbackOtherHint },
 ];
 
-const openNegativeFeedbackDialog = () =>
+const openNegativeFeedbackDialog = (t: ReturnType<typeof aiChatMessages>) =>
   prompts.dialog<{ reasons: AiMessageFeedbackReason[]; comment: string | null } | undefined>(
     (close) => {
       const [selected, setSelected] = createSignal<AiMessageFeedbackReason[]>([]);
@@ -275,9 +284,9 @@ const openNegativeFeedbackDialog = () =>
       const valid = () => selected().length > 0 || comment().trim().length > 0;
       return (
         <div class="flex min-h-0 flex-col gap-4">
-          <p class="text-sm text-secondary">What should be improved? Choose all that apply or leave a short note.</p>
+          <p class="text-sm text-secondary">{t.feedbackIntro}</p>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <For each={feedbackReasons}>
+            <For each={feedbackReasons(t)}>
               {(reason) => (
                 <CheckboxCard
                   label={reason.label}
@@ -289,8 +298,8 @@ const openNegativeFeedbackDialog = () =>
             </For>
           </div>
           <TextInput
-            label="Additional details"
-            description="Optional. Do not include sensitive information."
+            label={t.feedbackDetails}
+            description={t.feedbackDetailsHint}
             multiline
             lines={3}
             maxLength={1_000}
@@ -299,7 +308,7 @@ const openNegativeFeedbackDialog = () =>
           />
           <div class="flex justify-end gap-2">
             <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button
               size="sm"
@@ -307,13 +316,13 @@ const openNegativeFeedbackDialog = () =>
               disabled={!valid()}
               onClick={() => close({ reasons: selected(), comment: comment().trim() || null })}
             >
-              Send feedback
+              {t.feedbackSend}
             </Button>
           </div>
         </div>
       );
     },
-    { title: "Help improve this response", icon: "ti ti-message-report", size: "large" },
+    { title: t.feedbackTitle, icon: "ti ti-message-report", size: "large" },
   );
 
 export function createAssistantMessageActions(props: {
@@ -323,13 +332,14 @@ export function createAssistantMessageActions(props: {
   actions: AiChatActions;
 }): ChatAction[] {
   const locale = useLocale();
+  const t = aiChatMessages(locale());
   const actions = props.actions;
   const result: ChatAction[] = [
     ...(actions.onMessageFeedback
       ? [
           {
             id: "feedback-up",
-            label: props.entry.feedback?.rating === "up" ? "Remove positive feedback" : "Helpful",
+            label: props.entry.feedback?.rating === "up" ? t.actionHelpfulRemove : t.actionHelpful,
             icon: "ti ti-thumb-up",
             pressed: props.entry.feedback?.rating === "up",
             pressedTone: "success" as const,
@@ -341,13 +351,13 @@ export function createAssistantMessageActions(props: {
           },
           {
             id: "feedback-down",
-            label: props.entry.feedback?.rating === "down" ? "Remove negative feedback" : "Needs improvement",
+            label: props.entry.feedback?.rating === "down" ? t.actionImproveRemove : t.actionImprove,
             icon: "ti ti-thumb-down",
             pressed: props.entry.feedback?.rating === "down",
             pressedTone: "danger" as const,
             onSelect: async () => {
               if (props.entry.feedback?.rating === "down") return actions.onMessageFeedback!(props.entry, null);
-              const feedback = await openNegativeFeedbackDialog();
+              const feedback = await openNegativeFeedbackDialog(t);
               if (feedback) await actions.onMessageFeedback!(props.entry, { rating: "down", ...feedback });
             },
           },
@@ -355,7 +365,7 @@ export function createAssistantMessageActions(props: {
       : []),
     {
       id: "info",
-      label: "Message info",
+      label: t.actionMessageInfo,
       icon: "ti ti-info-circle",
       onSelect: () => openAssistantResponseInfo(props.entries, locale()),
     },
@@ -363,7 +373,7 @@ export function createAssistantMessageActions(props: {
   if (props.copyText) {
     result.push({
       id: "copy",
-      label: "Copy",
+      label: t.actionCopy,
       icon: "ti ti-copy",
       copyText: props.copyText,
     });
@@ -371,9 +381,9 @@ export function createAssistantMessageActions(props: {
   if (actions.onForkMessage) {
     result.push({
       id: "fork",
-      label: "Fork conversation",
+      label: t.actionFork,
       icon: "ti ti-git-fork",
-      onSelect: () => openForkMessageDialog(props.entry, props.copyText, actions.onForkMessage!),
+      onSelect: () => openForkMessageDialog(props.entry, props.copyText, actions.onForkMessage!, locale()),
     });
   }
   return result;

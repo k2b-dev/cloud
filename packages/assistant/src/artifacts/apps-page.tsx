@@ -1,5 +1,5 @@
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
-import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
@@ -28,6 +28,7 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullPage title={[{ title: t.apps, href: "/app/assistant?studio=1" }, { title: app.title }]}>
         <Apps
           userId={user.id}
+          timeZone={getTimeZone(c)}
           conversations={sidebar.conversations}
           doneCount={sidebar.doneCount}
           projects={sidebar.projects}

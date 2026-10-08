@@ -124,7 +124,7 @@ export const chatSidebarMessages = i18n.define({
       appRunFailed: ({ title }: { title: string }) => `Der letzte Lauf von „${title}“ ist fehlgeschlagen`,
 
       results: "Ergebnisse",
-      resultsEmpty: "Dateien, Apps und Visualisierungen, die der Assistant für dich erstellt, erscheinen hier.",
+      resultsEmpty: "Dateien, Apps und Visualisierungen, die der Assistent für dich erstellt, erscheinen hier.",
       newResults: ({ count }: { count: number }) => `Neu · ${count}`,
       showNewResults: ({ count }: { count: number }) => `${count} ${count === 1 ? "neues Ergebnis" : "neue Ergebnisse"} anzeigen`,
       updates: "Aktualisieren",
@@ -158,7 +158,7 @@ export const chatSidebarMessages = i18n.define({
       workingFiles: "Arbeitsdateien",
       workingFor: ({ title }: { title: string }) => `für ${title}`,
       workingOther: "Weitere",
-      workingHint: "Zwischenschritte des Assistant, im Chat-Ordner temp/.",
+      workingHint: "Zwischenschritte des Assistenten, im Chat-Ordner temp/.",
       storage: ({ used, max }: { used: string; max: string }) => `${used} von ${max} belegt`,
       deleteGroup: "Gruppe löschen",
       deleteGroupNamed: ({ name }: { name: string }) => `Gruppe „${name}“ löschen?`,

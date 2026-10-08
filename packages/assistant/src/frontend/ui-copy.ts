@@ -111,7 +111,7 @@ const germanText: Record<string, string> = {
   "Voice inputs": "Spracheingaben",
   "Scheduled AI task": "Geplante KI-Aufgabe",
   "AI conversation": "KI-Chat",
-  "Assistant app": "Assistant-App",
+  "Assistant app": "Assistent-App",
   "A reference with this name already exists.": "Eine Referenz mit diesem Namen ist bereits vorhanden.",
   "Add a durable fact about you or a preference for future answers. New entries start pinned.":
     "Füge eine dauerhafte Tatsache über dich oder eine Präferenz für künftige Antworten hinzu. Neue Einträge sind zunächst angeheftet.",
@@ -512,6 +512,27 @@ const germanText: Record<string, string> = {
   Memory: "Personalisierung",
   "Previous value": "Vorheriger Wert",
   tokens: "Tokens",
+  Unpin: "Lösen",
+  Pin: "Anheften",
+  Pending: "Geplant",
+  "Could not load access": "Zugriff konnte nicht geladen werden",
+  "Loading access": "Zugriff wird geladen",
+  "Skill enabled for you": "Skill für dich aktiviert",
+  "Skill disabled for you": "Skill für dich deaktiviert",
+  "No matching skills. Try a different search.": "Keine passenden Skills. Versuch es mit einem anderen Suchbegriff.",
+  "No skills yet. Create or import one to get started.": "Noch keine Skills. Erstelle oder importiere einen, um loszulegen.",
+  Disable: "Deaktivieren",
+  Enable: "Aktivieren",
+  "Create reference": "Referenz erstellen",
+  "View supporting context for this Skill.": "Zusatzinformationen zu diesem Skill ansehen.",
+  "Add supporting context Assistant can read when needed.": "Zusatzinformationen hinzufügen, die der Assistent bei Bedarf liest.",
+  "Skill saved": "Skill gespeichert",
+  "Skill created": "Skill erstellt",
+  "You can view and export this shared Skill.": "Du kannst diesen geteilten Skill ansehen und exportieren.",
+  "Define reusable instructions and optional supporting references.":
+    "Lege fest, wie der Assistent eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
+  "Save skill": "Skill speichern",
+  "For example, IT support": "Zum Beispiel IT-Support",
 };
 
 export const missingAssistantGermanText = (values: Iterable<string>): string[] =>
@@ -544,8 +565,9 @@ const copy = i18n.define({
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
       restoreNamed: ({ name }: { name: string }) => `Restore ${name}`,
       restoringNamed: ({ name }: { name: string }) => `Restoring ${name}`,
-      updatedAt: ({ value }: { value: string }) => `Updated ${value}`,
       searchChatsIn: ({ project }: { project: string }) => `Search chats in ${project}`,
+      learningRunsPage: ({ count, page, pages }: { count: number; page: number; pages: number }) =>
+        `${count === 1 ? "1 run" : `${count} runs`} · page ${page} of ${pages}`,
     },
     de: {
       text: ({ value }: { value: string }) => germanText[value] ?? value,
@@ -572,8 +594,9 @@ const copy = i18n.define({
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,
       restoreNamed: ({ name }: { name: string }) => `${name} wiederherstellen`,
       restoringNamed: ({ name }: { name: string }) => `${name} wird wiederhergestellt`,
-      updatedAt: ({ value }: { value: string }) => `Aktualisiert ${value}`,
       searchChatsIn: ({ project }: { project: string }) => `Chats in ${project} durchsuchen`,
+      learningRunsPage: ({ count, page, pages }: { count: number; page: number; pages: number }) =>
+        `${count === 1 ? "1 Lauf" : `${count} Läufe`} · Seite ${page} von ${pages}`,
     },
   },
 });

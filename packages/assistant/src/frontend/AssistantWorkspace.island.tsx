@@ -142,6 +142,8 @@ type Props = {
   models: AiPublicModelProfile[];
   /** Model of the user's most recent turn (any chat) — preselected for new chats. */
   lastModelId: string;
+  /** The viewer's time zone from the request; the chat list's day sections use it on the server and in the browser. */
+  timeZone: string;
   initialLiveCursor: string;
   initialConversations: AiConversation[];
   initialDoneCount: number;
@@ -542,7 +544,7 @@ export default function AssistantWorkspace(props: Props) {
   };
   const newConversation = mutation.create<AiConversation | null, { focus: boolean; projectId?: string; navigate?: boolean }>({
     mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
-      const conversation = await chat.createConversation(projectId ? { projectId } : undefined);
+      const conversation = await chat.createConversation({ title: t().newChat, ...(projectId ? { projectId } : {}) });
       if (conversation && chat.activeConversationId() === conversation.id) {
         if (shouldNavigate) {
           setProjectView(null);
@@ -583,7 +585,26 @@ export default function AssistantWorkspace(props: Props) {
     }, 2_000);
     onCleanup(() => window.clearTimeout(timer));
   });
-  const createAndFocusConversation = () => createConversation(true);
+  // "New chat" on a chat that is still empty keeps it: another empty chat would only crowd the list.
+  const activeChatIsBlank = () => {
+    const conversationId = chat.activeConversationId();
+    return Boolean(
+      conversationId &&
+        !activeProject() &&
+        !activeConversation()?.projectId &&
+        chat.messages().length === 0 &&
+        !chat.hasMoreHistory() &&
+        !chat.activeTurn() &&
+        !composerDraft(conversationId).trim() &&
+        composerAttachmentsFor(conversationId).length === 0 &&
+        mentionsFor(conversationId).length === 0,
+    );
+  };
+  const createAndFocusConversation = async () => {
+    if (!activeChatIsBlank()) return createConversation(true);
+    focusComposer();
+    return chat.conversation();
+  };
   onMount(() => {
     onCleanup(
       registerCommandHandler("assistant.chat.compose", ChatComposeInputSchema, async (input) => {
@@ -1569,7 +1590,8 @@ export default function AssistantWorkspace(props: Props) {
               : []
           }
           contextPopupAction={
-            !projectComposer() && activeConversation()
+            // An empty chat has nothing to summarize; the usage control appears with the first message.
+            !projectComposer() && activeConversation() && chat.messages().length > 0
               ? {
                   id: "compact-context",
                   label: t().compactContext,
@@ -1727,6 +1749,7 @@ export default function AssistantWorkspace(props: Props) {
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
           conversations={conversations}
+          timeZone={props.timeZone}
           doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
           activeConversationId={chat.activeConversationId}
           activeView="chat"

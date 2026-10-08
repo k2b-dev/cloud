@@ -1,8 +1,7 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { formatDateTime as formatUpdatedAt } from "@k2b/cloud/shared";
 import { Link, type LinkNavigateEvent, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { IconButton, Placeholder, prompts, StatusBadge, Tooltip } from "@k2b/ui";
+import { Format, IconButton, Placeholder, prompts, StatusBadge, Tooltip } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
@@ -19,7 +18,6 @@ type Props = {
 };
 
 function ConversationSummary(props: { conversation: AiConversation; projectName?: string }) {
-  const copy = useAssistantCopy();
   return (
     <>
       <span class="min-w-0 flex-1">
@@ -29,9 +27,9 @@ function ConversationSummary(props: { conversation: AiConversation; projectName?
             {(name) => <StatusBadge tone="neutral" variant="chip" icon={null} label={name()} class="shrink-0" />}
           </Show>
         </span>
-        <span class="block truncate text-xs text-dimmed">
-          {props.conversation.description || copy().updatedAt({ value: formatUpdatedAt(props.conversation.updatedAt) })}
-        </span>
+        <Show when={props.conversation.description}>
+          <span class="block truncate text-xs text-dimmed">{props.conversation.description}</span>
+        </Show>
       </span>
     </>
   );
@@ -108,7 +106,7 @@ export default function AssistantAllChatsList(props: Props) {
               </Link>
             </Show>
             <ConversationStatusMeta conversation={conversation} labels />
-            <span class="hidden shrink-0 text-xs text-dimmed sm:block">{formatUpdatedAt(conversation.updatedAt)}</span>
+            <Format.RelativeTime class="hidden shrink-0 text-xs text-dimmed sm:block" value={conversation.lastUsedAt} />
             <Tooltip.Anchor content={text(props.archived ? "Restore chat" : "Edit chat")}>
               <IconButton
                 size="sm"

@@ -8,9 +8,10 @@
 .assistant-apps-page { display: flex; flex-direction: column; gap: 1.5rem; width: 100%; min-width: 0; padding: 1.5rem; }
 .assistant-apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 
-.k2b-ui .assistant-empty-project-trigger > .k2b-button__label {
-  width: 100%;
-}
+/* The Project choice sits under the composer, its icon in line with the composer's own controls. */
+.assistant-empty-project { display: flex; margin-block-start: .375rem; padding-inline: .5rem; }
+.k2b-ui .assistant-empty-project-trigger { max-width: 100%; color: var(--k2b-text-secondary); }
+.k2b-ui .assistant-empty-project-trigger > .k2b-button__label { min-width: 0; gap: .375rem; }
 
 .k2b-ui .assistant-project-link-choice > .k2b-button__label {
   width: 100%;
@@ -471,18 +472,9 @@
   color: var(--k2b-text);
 }
 
-/* Keep chat titles primary and every secondary status aligned. */
+/* Chat titles stay regular weight; the active row alone carries emphasis. */
 .k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item[data-variant] .k2b-app-workspace__sidebar-item-label-text {
   font-weight: 400;
-}
-.k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status {
-  font-size: 0.6875rem;
-  line-height: 1rem;
-  font-weight: 400;
-  color: var(--k2b-text-muted);
-}
-.k2b-ui .assistant-chat-sidebar-item .assistant-conversation-status i {
-  order: 1;
 }
 
 /* Reserve the chat list's scroll track in the surrounding inset, so rows and
@@ -508,40 +500,6 @@
   .assistant-standalone-page .assistant-standalone-runner { padding: var(--ui-space-section); }
 }
 
-/* Complete a chat from its context row, without squeezing its title. */
-.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--done-action > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
-  position: absolute;
-  z-index: 1;
-  inset-block-start: .375rem;
-  inset-inline-end: .625rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: .25rem;
-  width: auto;
-  height: 1.5rem;
-  padding-inline: .25rem;
-  color: var(--k2b-success-text);
-  font-size: .6875rem;
-  font-weight: 600;
-}
-@media (hover: hover) and (pointer: fine) {
-  .k2b-ui .assistant-chat-sidebar-item--done-action > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
-    opacity: 0;
-    pointer-events: none;
-  }
-  .k2b-ui .assistant-chat-sidebar-item--done-action:is(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-.k2b-ui .assistant-chat-sidebar-item--done-action:is(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)) .k2b-app-workspace__sidebar-item-context-meta {
-  visibility: hidden;
-}
-@media (hover: none), (pointer: coarse) {
-  .k2b-ui .assistant-chat-sidebar-item--done-action .k2b-app-workspace__sidebar-item-context-meta { visibility: hidden; }
-}
-
 /* Keep the scroll thumb visible alongside the standard ScrollArea edge fade. */
 .k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog) {
   scrollbar-width: auto;
@@ -559,14 +517,11 @@
   height: min(450px, 60dvh);
 }
 
-/* Keep completion feedback visible even after the cursor leaves the card. */
+/* Keep completion feedback visible even after the pointer leaves the row. */
 .k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--saving, .assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
   opacity: 1;
 }
-.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--saving, .assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) .k2b-app-workspace__sidebar-item-context-meta {
-  visibility: hidden;
-}
-.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) .k2b-app-workspace__sidebar-item-context {
+.k2b-ui .assistant-chat-sidebar-item:is(.assistant-chat-sidebar-item--confirmed, .assistant-chat-sidebar-item--leaving) > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger) {
   color: var(--k2b-success-text);
 }
 .k2b-ui .assistant-chat-sidebar-item--leaving {
@@ -574,18 +529,12 @@
   pointer-events: none;
   transition: opacity 150ms ease-out;
 }
-.k2b-ui .assistant-chat-schedule-icon {
-  position: absolute;
-  inset-inline-end: .75rem;
-  inset-block-end: .625rem;
-  color: var(--k2b-text-muted);
-  font-size: .875rem;
-  pointer-events: none;
-}
-.k2b-ui .assistant-chat-sidebar-item:has(.assistant-chat-schedule-icon) .k2b-app-workspace__sidebar-item-label {
-  padding-inline-end: 1.5rem;
-}
-.k2b-ui .assistant-chat-sidebar-item[data-variant="row"] .assistant-chat-schedule-icon { inset-inline-end: 2rem; }
+/* One quiet status per chat at the row's end; the label is in the tooltip and for screen readers. */
+.k2b-ui .assistant-chat-marker { display: inline-flex; align-items: center; color: var(--k2b-text-muted); }
+.k2b-ui .assistant-chat-marker[data-tone="progress"] { color: var(--k2b-text-muted); }
+.k2b-ui .assistant-chat-marker[data-tone="attention"] { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-chat-marker[data-tone="danger"] { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-chat-marker[data-tone="accent"] { color: var(--k2b-action); }
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }
@@ -626,3 +575,6 @@
 .assistant-activity-row__preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-overflow: ellipsis; font-size: .8125rem; line-height: 1.5; color: var(--k2b-text-muted); }
 .assistant-activity-row__meta { font-size: .75rem; color: var(--k2b-text-muted); }
 .assistant-activity-unread { width: .375rem; height: .375rem; flex: none; border-radius: 50%; background: var(--k2b-action); }
+
+/* All chats: search and one filter share a row; the filter keeps a readable width on phones. */
+.assistant-all-chats-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(9rem, 13rem); gap: .5rem; align-items: start; }

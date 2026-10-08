@@ -23,8 +23,10 @@ import { Chat } from "@k2b/ui";
 Pass the latest request through `usage`, an optional multi-step total through
 `loopUsage`, and the configured limit through `contextWindow`. The compact
 trigger shows only the percentage; the popup exposes model, input, output,
-loop total, window, and remaining tokens. Number output is SSR-stable by
-default. Localized hosts can pass `formatNumber` explicitly.
+the whole response, the context window, and remaining tokens. Numbers group
+whole values in the inherited render locale, such as 128,000 in English and
+128.000 in German; the server render and the browser use the same locale. Pass
+`formatNumber` to format them differently.
 
 ## API reference
 

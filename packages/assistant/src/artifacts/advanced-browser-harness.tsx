@@ -36,6 +36,7 @@ render(
     ) : (
       <Apps
         userId="test"
+        timeZone="UTC"
         conversations={[]}
         doneCount={0}
         projects={[]}

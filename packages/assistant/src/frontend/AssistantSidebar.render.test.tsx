@@ -62,29 +62,33 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 });
 
 describe("Assistant sidebar", () => {
-  test("shows compact progress for an unopened running chat", () => {
+  test("marks a running chat with one quiet status at the row end instead of a second line", () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
+        timeZone: "UTC",
         conversations: () => [
           {
             ...conversation("working", "Import", null),
             runStatus: "running",
             activity: { completed: 1, total: 3, step: "Check totals", tool: "Read file" },
           },
+          { ...conversation("waiting", "Approval", null), runStatus: "needs_attention" },
         ],
         activeConversationId: () => null,
         live,
       }),
     );
-    expect(html).toContain("Check totals");
-    expect(html).toContain('role="progressbar"');
-    expect(html).toContain('aria-valuenow="33"');
+    expect(html).toContain('class="assistant-chat-marker" data-tone="progress" title="Running"');
+    expect(html).toContain('class="assistant-chat-marker" data-tone="attention" title="Waiting for you"');
+    expect(html).not.toContain('role="progressbar"');
+    expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
   });
 
   test("selects only the visible project or Studio despite a retained chat", () => {
     for (const activeView of ["chat", "apps"] as const) {
       const html = renderToString(() =>
         createComponent(AssistantSidebar, {
+          timeZone: "UTC",
           conversations: () => [conversation("retained", "Retained chat", null)],
           projects: [project],
           activeConversationId: () => "retained",
@@ -101,34 +105,34 @@ describe("Assistant sidebar", () => {
     }
   });
 
-  test("puts projects in footer previews and lists pinned chats first without section headings", () => {
+  test("lists open chats as flat rows under day headings, pinned chats first", () => {
+    const today = new Date().toISOString();
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },
-      { ...conversation("chatprojectpinned", "Pinned project chat", project.id), pinnedAt: "2026-08-12T09:00:00.000Z" },
-      conversation("chatproject", "Project chat", project.id),
-      ...Array.from({ length: 17 }, (_, index) => conversation(`chat${index + 1}`, `General chat ${index + 1}`, null)),
+      { ...conversation("chatproject", "Project chat", project.id), lastUsedAt: today },
+      ...Array.from({ length: 17 }, (_, index) => ({
+        ...conversation(`chat${index + 1}`, `General chat ${index + 1}`, null),
+        lastUsedAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+      })),
     ]);
-    const html = renderToString(() => createComponent(AssistantSidebar, { conversations, projects: [project], live }));
+    const rendered = renderToString(() => createComponent(AssistantSidebar, { timeZone: "UTC", conversations, projects: [project], live }));
+    // The desktop list, without hydration markers, after the mobile navigation snapshot that lists the same chats.
+    const html = rendered.slice(rendered.indexOf("<aside")).replaceAll(/<!--[^>]*-->/g, "");
 
-    expect(html).not.toContain('aria-expanded="true"');
-    expect(html).toContain("Project chat");
-    expect(html).not.toContain(">Pinned</");
-    expect(html).toContain("Pinned chat");
-    expect(html).not.toContain('title="Pinned chat"');
-    expect(html).not.toContain('title="Pinned project chat"');
+    expect(html.indexOf("<h2>Pinned</h2>")).toBeGreaterThan(-1);
+    const row = (id: string) => html.indexOf(`href="/app/assistant?conversation=${id}"`);
+    expect(html.indexOf("<h2>Pinned</h2>")).toBeLessThan(row("chatpinned"));
+    expect(row("chatpinned")).toBeLessThan(html.indexOf("<h2>Today</h2>"));
+    expect(html.indexOf("<h2>Today</h2>")).toBeLessThan(row("chatproject"));
+    expect(row("chatproject")).toBeLessThan(html.indexOf("<h2>Older</h2>"));
+    expect(html.indexOf("<h2>Older</h2>")).toBeLessThan(row("chat1"));
+    expect(html).toContain("General chat 17");
     expect(html).toContain("Chat settings");
     expect(html).toContain("Mark chat done");
-    expect(html).toContain("assistant-chat-sidebar-item--done-action");
-    expect(html).toContain('role="status">Done</span>');
-    expect(html).not.toContain(">Chats</");
-    expect(html).toContain("General chat 15");
-    expect(html).toContain("General chat 17");
-    expect(html).not.toContain(">See all<");
     expect(html).toContain("All chats");
-    expect(html).not.toContain("Today");
-    expect(html).not.toContain("This Week");
-    expect(html).not.toContain("This Month");
-    expect(html).toContain('data-variant="card"');
+    // No context header with project name and time above each title, and no cards.
+    expect(html).not.toContain('data-variant="card"');
+    expect(html).not.toContain("k2b-app-workspace__sidebar-item-context");
     expect(html).toContain('data-marquee="false"');
   });
 
@@ -136,6 +140,7 @@ describe("Assistant sidebar", () => {
     const done = { ...conversation("finished", "Completed work", project.id), done: true, isDone: true, pinnedAt: null };
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
+        timeZone: "UTC",
         conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
         projects: [project],
         doneCount: 21,
@@ -153,21 +158,22 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("overflow-y-auto");
   });
 
-  test("pinned cards expose their status without a Done action or Ready filler", () => {
+  test("pinned chats sit under their heading without a Done action or Ready filler", () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
+        timeZone: "UTC",
         conversations: () => [{ ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" }],
         live,
       }),
     );
-    expect(html).toContain('aria-label="Pinned"');
+    expect(html.replaceAll(/<!--[^>]*-->/g, "")).toContain("<h2>Pinned</h2>");
     expect(html).not.toContain("Mark chat done");
     expect(html).not.toContain(">Ready<");
     expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
   });
 
   test("shows empty chat, Done, Studio, and Project lists as inline lines where their first rows would be", async () => {
-    const html = renderToString(() => createComponent(AssistantSidebar, { conversations: () => [], projects: [], live }));
+    const html = renderToString(() => createComponent(AssistantSidebar, { timeZone: "UTC", conversations: () => [], projects: [], live }));
     const inline = await selectHtml(html, '.k2b-placeholder[data-variant="inline"][data-align="left"]');
     const icons = await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i');
 
@@ -188,9 +194,9 @@ describe("Assistant sidebar", () => {
 
   test("keeps New Chat text and icon stable while creation is pending", () => {
     const [conversations] = createSignal<AiConversation[]>([]);
-    const idle = renderToString(() => createComponent(AssistantSidebar, { conversations, projects: [project], live }));
+    const idle = renderToString(() => createComponent(AssistantSidebar, { timeZone: "UTC", conversations, projects: [project], live }));
     const pending = renderToString(() =>
-      createComponent(AssistantSidebar, { conversations, projects: [project], creatingConversation: () => true, live }),
+      createComponent(AssistantSidebar, { timeZone: "UTC", conversations, projects: [project], creatingConversation: () => true, live }),
     );
 
     expect(idle.match(/New Chat|New chat/g)?.length).toBe(pending.match(/New Chat|New chat/g)?.length);

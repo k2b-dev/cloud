@@ -2,22 +2,23 @@
 id: assistant-workflow
 title: Chats und Aktionen
 icon: ti ti-messages
-description: Chats finden, Metadaten verwalten, Anfragen wiederholen, Chats abzweigen, Kontext komprimieren, Antworten beenden und Aktionen bearbeiten.
+description: Chats finden, Metadaten verwalten, Anfragen wiederholen, in neuen Chats fortsetzen, Kontext kürzen, Antworten beenden und Aktionen bearbeiten.
 order: 110
 ---
 
-Der Assistent trennt Projekt-Chats und allgemeine Chats in der Seitenleiste. Erstelle über die Plus-Schaltfläche neben **Projekte** ein Projekt. Projekte sind zunächst aufgeklappt und zeigen ihre zehn zuletzt aktiven Chats. Wähle das Projekt selbst, um einen Chat zu beginnen oder seinen vollständigen Chatverlauf zu durchsuchen.
+Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Chats zuerst, danach nach dem Tag, an dem du sie zuletzt genutzt hast (**Heute**, **Gestern**, **Letzte 7 Tage**, **Letzte 30 Tage**, **Älter**). Über **Projekte** unten in der Seitenleiste wählst, suchst oder erstellst du ein Projekt. Wähle ein Projekt, um darin einen Chat zu beginnen oder seinen vollständigen Chatverlauf zu durchsuchen.
 
 ## Zwischen Chats wechseln {icon="layout-list"}
 
 :::reference
-- **Projekte:** Der Bereich **Projekte** bleibt auch ohne Projekte sichtbar. Erstelle über die Plus-Schaltfläche ein Projekt mit einem Namen und optionalen Anweisungen.
+- **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Symbol am Zeilenende zeigt, dass ein Chat läuft, auf dich wartet, fehlgeschlagen ist, eine neue Antwort hat oder einen aktiven Zeitplan; der Tooltip nennt den Zustand.
+- **Projekte:** Erstelle über die Plus-Schaltfläche im Fenster **Projekte** ein Projekt mit einem Namen und optionalen Anweisungen.
+- **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt der Assistent in diesem Chat, statt einen weiteren anzulegen.
 - **Leerer Chat:** Wähle unter dem mittig angeordneten Eingabefeld optional ein Projekt aus, bevor du die erste Nachricht sendest. Vorschlagskarten füllen eine bearbeitbare Anfrage aus, senden sie aber nicht automatisch.
 - **Projektseite:** Gib die erste Nachricht in das normale Eingabefeld ein und füge bei Bedarf Dateien hinzu. Der Assistent erstellt einen privaten Projekt-Chat, sendet die Nachricht und öffnet anschließend die normale Chatansicht. Unter dem Eingabefeld kannst du vorhandene Projekt-Chats durchsuchen und durchblättern.
 - **Projektkontext:** Die Projektseite zeigt Anweisungen, Wissen, Bilder, Dateien und Referenzen des Projekts. Personen mit Schreibzugriff können diesen gemeinsamen Kontext dort ergänzen oder bearbeiten.
-- **Allgemeine Chats:** Bis zu 15 Chats ohne Projekt erscheinen im Bereich **Chats** unter den Projekten. Über **Alle Chats anzeigen** öffnest du den vollständigen Verlauf.
 - **Alle Chats durchsuchen:** Nutze die Suchschaltfläche in der Seitenleiste, um alle gespeicherten Chats zu durchsuchen.
-- **Alle Chats:** Projekt-Badges kennzeichnen Projekt-Chats im seitenweise geladenen Verlauf. **Alle Chats** bietet außerdem eine serverseitige Suche und Bearbeitungsaktionen.
+- **Alle Chats:** Projekt-Badges kennzeichnen Projekt-Chats im seitenweise geladenen Verlauf. Durchsuche Titel und Nachrichten und filtere über ein Menü: alle Chats, neue Antworten, läuft, wartet auf dich, fehlgeschlagen, fertig oder archiviert.
 - **In diesem Chat:** Die Seitenleiste rechts neben einem Chat zeigt, was der Chat enthält. Auf großen Bildschirmen ist sie offen. Schließt du sie über die Schaltfläche in ihrem Kopf, bleibt sie geschlossen, bis du sie mit der Schaltfläche oben rechts im Chat wieder öffnest. In schmaleren Fenstern öffnet diese Schaltfläche sie über dem Rand des Chats, auf dem Telefon als Sheet, das du mit Zurück schließt.
 - **Ergebnisse zuerst:** Dateien, Studio-Apps und Visualisierungen, die der Assistent für dich erstellt hat, stehen oben, die neuesten mit dem Satz, den der Assistent dazu geschrieben hat. Öffne oder lade sie direkt herunter, oder wähle einen Titel, um zur Stelle im Chat zu springen, an der sie übergeben wurden. Ältere Ergebnisse sind nach Tagen und nach einer Woche nach Monaten gruppiert.
 - **Nichts verschiebt sich beim Lesen:** Solange Zeiger oder Fokus in der Seitenleiste sind, zeigen neue Ergebnisse nur **Neu · N** in der Überschrift, andere Änderungen **Aktualisieren**. Sie erscheinen, wenn du die Seitenleiste verlässt oder die Schaltfläche wählst. Auf einem Touchscreen bleibt die Seitenleiste ruhig, bis du außerhalb von ihr tippst.
@@ -39,7 +40,8 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Ö
 :::reference
 - **Beenden:** Beendet die laufende Antwort des Assistenten im geöffneten Chat.
 - **Erneut versuchen:** Führt eine Benutzernachricht erneut aus und ersetzt spätere Nachrichten dieses Chat-Zweigs.
-- **Abzweigen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Nachricht kopiert wird.
+- **In neuem Chat fortsetzen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Antwort kopiert wird.
+- **Details zur Antwort:** Zeigt Modell, Zeit und Token-Verbrauch einer Antwort.
 - **Kontext kürzen:** Öffne die Kontextanzeige beim Eingabefeld und wähle **Kontext kürzen**, um den bisherigen Chat-Kontext zusammenzufassen. Alternativ kannst du `/compact` verwenden. Hover zeigt die Details; ein Klick hält sie offen. Escape oder ein Klick außerhalb schließt sie.
 - **Projekte:** Die Projekteinstellungen zeigen gemeinsame Anweisungen und Kontext entsprechend deiner Lese-, Schreib- oder Administratorberechtigung. Projekt-Chats bleiben privat.
 :::

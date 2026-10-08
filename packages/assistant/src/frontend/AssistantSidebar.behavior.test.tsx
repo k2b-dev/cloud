@@ -63,6 +63,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
   const dispose = render(
     () => (
       <AssistantSidebar
+        timeZone="UTC"
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
         activeConversationId={selected}
         activeProjectId={project()}
@@ -116,7 +117,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
   }
 });
 
-test("footer project popup and mobile group share search and creation; pinned chats lead a heading-free list", async () => {
+test("footer project popup and mobile group share search and creation; pinned chats lead the list under their heading", async () => {
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
   const { registerGlobalSearchHost } = await import("@k2b/cloud/browser/testing");
@@ -141,6 +142,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
   const dispose = render(
     () => (
       <AssistantSidebar
+        timeZone="UTC"
         projects={[project]}
         live={live}
         onCreateProject={() => {
@@ -156,15 +158,17 @@ test("footer project popup and mobile group share search and creation; pinned ch
   );
   try {
     const body = dom.root.querySelector<HTMLElement>('.k2b-app-workspace__sidebar-body[data-sidebar-mode="expanded"]')!;
-    const cards = Array.from(body.querySelectorAll<HTMLElement>('[data-variant="card"]'));
-    expect(cards.map((card) => card.querySelector(".k2b-app-workspace__sidebar-item-label-text")?.textContent)).toEqual([
+    const rows = Array.from(body.querySelectorAll<HTMLElement>(".assistant-chat-sidebar-item"));
+    expect(rows.map((row) => row.querySelector(".k2b-app-workspace__sidebar-item-label-text")?.textContent)).toEqual([
       "Pinned work",
       "Normal",
     ]);
-    expect(cards[0]!.querySelector(".k2b-app-workspace__sidebar-item-context-label .ti-pin.text-accent")).not.toBeNull();
-    expect(cards[0]!.querySelector(".k2b-app-workspace__sidebar-item-context-label")?.textContent).toContain("Work");
-    expect(cards[0]!.querySelector(".k2b-app-workspace__sidebar-item-context-meta .ti-pin")).toBeNull();
-    expect(Array.from(body.querySelectorAll("h2")).map((heading) => heading.textContent)).not.toContain("Chats");
+    // Flat rows: the title alone, without a context line for the project or the time.
+    expect(body.querySelector('[data-variant="card"]')).toBeNull();
+    expect(body.querySelector(".k2b-app-workspace__sidebar-item-context")).toBeNull();
+    const headings = Array.from(body.querySelectorAll("h2")).map((heading) => heading.textContent);
+    expect(headings[0]).toBe("Pinned");
+    expect(headings).not.toContain("Chats");
     const footer = dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
     const panel = footer.querySelector<HTMLElement>('[role="dialog"][aria-label="Projects"]')!;
     const projects = footer.querySelector<HTMLButtonElement>(`button[aria-controls="${panel.id}"]`)!;
@@ -211,7 +215,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
   }
 });
 
-test("Done keeps its card through live updates, confirms success, then fades without blocking", async () => {
+test("Done keeps its row through live updates, confirms success, then fades without blocking", async () => {
   const dom = createDomTestHarness();
   const live = createAssistantLiveHub();
   const original = { ...conversation("finish", "Finish this", null), hasActiveSchedule: true };
@@ -225,13 +229,15 @@ test("Done keeps its card through live updates, confirms success, then fades wit
       }),
   );
   const dispose = render(
-    () => <AssistantSidebar conversations={items} live={live} onConversationUpdated={(item) => setItems([item])} />,
+    () => <AssistantSidebar timeZone="UTC" conversations={items} live={live} onConversationUpdated={(item) => setItems([item])} />,
     dom.root,
   );
   delegateEvents(["click"]);
-  const card = () => dom.root.querySelector<HTMLElement>('.assistant-chat-sidebar-item[data-variant="card"]');
+  // Open chats, not the collapsed Done section that receives the chat afterwards.
+  const card = () =>
+    dom.root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-section:not([data-collapsible]) .assistant-chat-sidebar-item");
   try {
-    expect(card()?.querySelector('[aria-label="Active schedule"]')).not.toBeNull();
+    expect(card()?.querySelector('.assistant-chat-marker[title="Active schedule"]')).not.toBeNull();
     card()!.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
     expect(card()?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(true);
     setItems([completed]);
@@ -261,12 +267,15 @@ test("failed Done request leaves the chat available and clears its pending feedb
   const dom = createDomTestHarness();
   const live = createAssistantLiveHub();
   const save = spyOn(assistantApi, "setConversationDone").mockRejectedValue(new Error("Offline"));
-  const dispose = render(() => <AssistantSidebar conversations={() => [conversation("fail", "Keep this", null)]} live={live} />, dom.root);
+  const dispose = render(
+    () => <AssistantSidebar timeZone="UTC" conversations={() => [conversation("fail", "Keep this", null)]} live={live} />,
+    dom.root,
+  );
   delegateEvents(["click"]);
   try {
     dom.root.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')!.click();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    const card = dom.root.querySelector('.assistant-chat-sidebar-item[data-variant="card"]');
+    const card = dom.root.querySelector(".k2b-app-workspace__sidebar-section:not([data-collapsible]) .assistant-chat-sidebar-item");
     expect(card).not.toBeNull();
     expect(card?.classList.contains("assistant-chat-sidebar-item--saving")).toBe(false);
     expect(card?.querySelector<HTMLButtonElement>('[aria-label="Mark chat done"]')?.disabled).toBe(false);

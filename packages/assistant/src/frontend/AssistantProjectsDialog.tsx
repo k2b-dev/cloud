@@ -18,7 +18,7 @@ export const openAssistantCreateProjectDialog = async (): Promise<AiProject | nu
       name: {
         type: "text",
         label: text("Name"),
-        placeholder: "IT support",
+        placeholder: text("For example, IT support"),
         required: true,
         maxLength: 120,
       },

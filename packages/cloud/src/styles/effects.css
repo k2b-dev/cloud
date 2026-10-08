@@ -894,3 +894,12 @@ dialog:has(.launchpad-panel)::backdrop {
     linear-gradient(180deg, var(--rim-top-hover), var(--rim-bottom-hover)) border-box;
   color: var(--glyph-hover);
 }
+
+/* Response details: one quiet label/value list per section, one type size, no grid lines. */
+.k2b-ui .ai-response-info__rows { display: grid; gap: 0.375rem; margin: 0; font-size: 0.8125rem; }
+.k2b-ui .ai-response-info__rows > div { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 1.5rem; }
+.k2b-ui .ai-response-info__rows dt { display: flex; min-width: 0; flex-direction: column; color: var(--k2b-text-muted); }
+.k2b-ui .ai-response-info__rows dt > span { font-size: 0.75rem; }
+.k2b-ui .ai-response-info__rows dd { min-width: 0; margin: 0; overflow: hidden; color: var(--k2b-text); text-align: end; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k2b-ui .ai-response-info__tools { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0; padding: 0; list-style: none; font-size: 0.8125rem; color: var(--k2b-text-secondary); }
+.k2b-ui .ai-response-info__tools > li { display: inline-flex; align-items: center; gap: 0.375rem; }

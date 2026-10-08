@@ -131,6 +131,8 @@ SolidJS library remains independent of Cloud and application domains.
   Setting presentation inherits the application's base locale; notification
   senders pass locale metadata so `render` and `email` produce final text from
   the same canonical locale without adding locale to the domain payload.
+  Format dates, times, and numbers in that locale too, with `Format.*` from
+  `@k2b/ui`; a formatter called without a locale renders English in every language.
   Keep product text calm and precise; localizations preserve meaning, while code, identifiers,
   paths, and external labels stay verbatim. Show group names via `groupDisplayName()` (`@k2b/cloud/shared`).
   `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR locale provider.

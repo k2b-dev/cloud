@@ -97,6 +97,7 @@ type ResizeHandleProps = {
 };
 
 function ResizeHandle(props: ResizeHandleProps): JSX.Element {
+  const messages = useUiMessages();
   return (
     <button
       type="button"
@@ -105,12 +106,12 @@ function ResizeHandle(props: ResizeHandleProps): JSX.Element {
       aria-label={
         props.label ??
         (props.kind === "sidebar"
-          ? "Resize navigation"
+          ? messages().resizeNavigation
           : props.kind === "pane"
-            ? "Resize workspace pane"
+            ? messages().resizeWorkspacePane
             : props.kind === "detail"
-              ? "Resize detail panel"
-              : "Resize bottom drawer")
+              ? messages().resizeDetailPanel
+              : messages().resizeBottomDrawer)
       }
       aria-controls={props.controls}
       aria-orientation={props.kind === "drawer" ? "horizontal" : "vertical"}

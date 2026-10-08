@@ -685,8 +685,10 @@ remains mounted so local input state is preserved.
 
 ### Context cards
 
-Use `SidebarItem variant="card"` for work that benefits from context above its
-title. `context` holds a project or category; `contextMeta` holds a short time
+Use `SidebarItem variant="card"` only when the context above the title is
+needed to tell items apart. A plain row with a section heading is calmer and
+usually enough; Assistant lists its chats as rows under day headings with one
+status icon in `meta`. `context` holds a project or category; `contextMeta` holds a short time
 or secondary value. Both accept reactive JSX. Keep commands in actions or the
 preview. Cards truncate titles with an ellipsis by default. Set
 `SidebarItemLabel marquee={false}` for the same truncation in ordinary rows.
