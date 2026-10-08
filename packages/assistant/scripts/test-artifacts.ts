@@ -8,13 +8,14 @@ if (Bun.argv.includes("--help")) {
 
 Runs the Assistant integration tests. The artifact service suite runs on disposable Postgres and rsql Docker containers.
 Every other integration file runs in its own process against the CLOUD_TEST_* targets, as in scripts/run-tests.ts.
-eval-code-mode.ts sets ASSISTANT_EVAL_* for the model evaluation; the variables are forwarded to the service suite.
+eval-code-mode.ts sets ASSISTANT_EVAL_* for the model evaluation; then only the evaluation test of the service suite runs.
 `);
   process.exit(0);
 }
 const packageRoot = new URL("../", import.meta.url).pathname;
 const testInfra = new URL("../../../scripts/fixtures/test-infra.ts", import.meta.url).pathname;
 const serviceSuite = join(packageRoot, "src/artifacts/service.integration.test.ts");
+const evaluation = Boolean(process.env.ASSISTANT_EVAL_URL);
 const name = `assistant-artifact-test-${crypto.randomUUID()}`;
 async function docker(...args: string[]) {
   const child = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe" });
@@ -87,24 +88,27 @@ try {
     CLOUD_TEST_DATABASE_URL: `postgres://postgres@127.0.0.1:${port}/cloud_assistant_artifacts_test`,
     CLOUD_TEST_RSQL_URL: rsqlUrl,
     CLOUD_TEST_VALKEY_URL: process.env.CLOUD_TEST_VALKEY_URL,
+    // Evaluated apps render PDFs with cloud.pdf.render.
+    ...(evaluation ? { CLOUD_TEST_GOTENBERG_URL: process.env.CLOUD_TEST_GOTENBERG_URL } : {}),
   };
-  const child = Bun.spawn([process.execPath, "--no-env-file", "test", "--preload", testInfra, "--timeout", "20000", serviceSuite], {
-    env: {
-      PATH: process.env.PATH,
-      ASSISTANT_EVAL_FILES: process.env.ASSISTANT_EVAL_FILES,
-      ASSISTANT_EVAL_URL: process.env.ASSISTANT_EVAL_URL,
-      ASSISTANT_EVAL_TOKEN: process.env.ASSISTANT_EVAL_TOKEN,
-      ASSISTANT_EVAL_MODEL: process.env.ASSISTANT_EVAL_MODEL,
-      NODE_ENV: "test",
-      CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:1",
-      ...testTargets,
-      // Bun binds its default `redis` handle to REDIS_URL before the preload runs (#39).
-      ...testRuntimeEnv(testTargets),
-      APP_SECRET: "51".repeat(32),
+  const only = evaluation ? ["--test-name-pattern", "real model builds the Studio"] : [];
+  const child = Bun.spawn(
+    [process.execPath, "--no-env-file", "test", "--preload", testInfra, "--timeout", "20000", ...only, serviceSuite],
+    {
+      env: {
+        PATH: process.env.PATH,
+        ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("ASSISTANT_EVAL_"))),
+        NODE_ENV: "test",
+        CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:1",
+        ...testTargets,
+        // Bun binds its default `redis` handle to REDIS_URL before the preload runs (#39).
+        ...testRuntimeEnv(testTargets),
+        APP_SECRET: "51".repeat(32),
+      },
+      stdout: "inherit",
+      stderr: "inherit",
     },
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  );
   process.exitCode = await child.exited;
 } catch (error) {
   if (rsqlCreated) console.error(await docker("logs", name + "-rsql"));
@@ -116,6 +120,7 @@ try {
 
 // The other integration files need only the CLOUD_TEST_* targets, such as the Code Mode PDF test on
 // Gotenberg. Each runs in a process of its own with the runtime aliases exported before Bun starts.
+if (evaluation) process.exit();
 const env: Record<string, string | undefined> = { ...process.env };
 applyTestRuntimeEnv(env);
 for (const file of await listIntegrationFiles(packageRoot)) {
