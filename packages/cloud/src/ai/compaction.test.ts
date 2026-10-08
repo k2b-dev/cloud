@@ -294,5 +294,40 @@ for (const finishReason of ["error", "interrupted", "aborted"] as const)
     });
     await expect(fixture.compact(fixture.context)).rejects.toThrow();
     expect(fixture.compactMessages).not.toHaveBeenCalled();
-    expect(fixture.record).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(fixture.record).toHaveBeenCalledTimes(1);
+    expect(fixture.record).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", usage }));
   });
+
+test("compaction persists only summary text without reasoning", async () => {
+  const fixture = setup(true);
+  fixture.complete.mockResolvedValue({
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "secret plan", signature: "s" },
+        { type: "text", text: "Real summary" },
+      ],
+    },
+    finishReason: "stop",
+    usage,
+  });
+  await fixture.compact(fixture.context);
+  expect(fixture.compactMessages).toHaveBeenCalledTimes(1);
+  expect(fixture.compactMessages.mock.calls[0]?.[0].summary).toMatchObject({
+    role: "assistant",
+    content: [{ type: "text", text: "Conversation summary:\nReal summary" }],
+  });
+});
+
+test("thinking-only compaction leaves provider history unchanged", async () => {
+  const fixture = setup(true);
+  fixture.complete.mockResolvedValue({
+    message: { role: "assistant", content: [{ type: "thinking", thinking: "secret plan", signature: "s" }] },
+    finishReason: "stop",
+    usage,
+  });
+  await fixture.compact(fixture.context);
+  expect(fixture.compactMessages).not.toHaveBeenCalled();
+  expect(fixture.record).toHaveBeenCalledTimes(1);
+  expect(fixture.record).toHaveBeenCalledWith(expect.objectContaining({ status: "ok", usage }));
+});

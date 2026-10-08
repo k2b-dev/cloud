@@ -6,7 +6,7 @@ import { aiChatMessages } from "./messages";
  * turn the same way; the reason then names the next step itself.
  */
 export const aiTurnErrorCanContinue = (error: AiTurnError): boolean =>
-  error.code !== "context_full" && error.code !== "quota_exhausted" && error.code !== "not_allowed" && error.code !== "provider_stopped";
+  error.code !== "context_full" && error.code !== "quota_exhausted" && error.code !== "not_allowed";
 
 /** What the chat shows under the title: the reason, and that the results so far are kept when the work can go on. */
 export const aiTurnErrorDescription = (error: AiTurnError, locale: string): string => {

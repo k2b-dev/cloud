@@ -143,10 +143,8 @@ export const describeResponseEnd = (entry: Pick<AiStoredMessage, "loopDoneReason
     aborted: t.infoEndStopped,
     interrupted: t.infoEndInterrupted,
     error: t.infoEndFailed,
-    content_filter: t.infoEndProviderStopped,
-    refusal: t.infoEndProviderStopped,
   };
-  const stopped = entry.stopReason && ["error", "aborted", "interrupted", "content_filter", "refusal"].includes(entry.stopReason);
+  const stopped = entry.stopReason && ["error", "aborted", "interrupted"].includes(entry.stopReason);
   const parts = [
     entry.loopDoneReason && !(entry.loopDoneReason === "stop" && stopped) ? run[entry.loopDoneReason] : null,
     entry.stopReason ? (Object.hasOwn(message, entry.stopReason) ? message[entry.stopReason] : entry.stopReason) : null,

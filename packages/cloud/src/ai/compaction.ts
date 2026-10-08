@@ -1,5 +1,6 @@
-import type { CompactFn, Message, StoreEntry } from "@k2b/nessi";
+import type { CompactFn, Message, StoreEntry, Usage } from "@k2b/nessi";
 import { truncateMiddle } from "@k2b/nessi";
+import { taskReasoningEffort } from "./provider";
 import { aiConversations } from "./store";
 import { safelyRecordStructuredRun } from "./structured-runs";
 import { buildAiTaskPrompt } from "./task-prompt";
@@ -159,6 +160,7 @@ export const createCloudCompactFn = (input: {
         modelProfileId: input.modelProfileId,
         providerModel: ctx.provider.model,
       };
+      let usage: Usage | undefined;
       const result = await ctx.provider
         .complete({
           systemPrompt: prompt.systemPrompt,
@@ -166,9 +168,10 @@ export const createCloudCompactFn = (input: {
           tools: [],
           maxOutputTokens: input.maxOutputTokens,
           signal: input.signal,
-          reasoningEffort: "none",
+          reasoningEffort: taskReasoningEffort(ctx.provider),
         })
         .then((result) => {
+          usage = result.usage;
           if (result.finishReason === "error" || result.finishReason === "interrupted" || result.finishReason === "aborted") {
             throw new AiTurnFailure(
               result.finishReason === "error" ? "provider_stopped" : "interrupted",
@@ -182,12 +185,18 @@ export const createCloudCompactFn = (input: {
             ...accounting,
             status: "failed",
             durationMs: Date.now() - startedAt,
+            usage,
             error: error instanceof Error ? error.message : String(error),
           });
           throw error;
         });
       await safelyRecordStructuredRun({ ...accounting, status: "ok", durationMs: Date.now() - startedAt, usage: result.usage });
-      const summaryText = textFromAssistant(result.message).trim();
+      const summaryText = result.message.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .filter(Boolean)
+        .join("\n\n")
+        .trim();
       if (!summaryText) return;
 
       await aiConversations.compactMessages({

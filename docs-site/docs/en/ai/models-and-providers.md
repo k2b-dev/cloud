@@ -165,10 +165,11 @@ Omitting it or clearing it preserves the model's default behavior.
 
 The profile level applies to chat and tool loops, including background agents,
 scheduled chat tasks and workflow chat actions. Structured calls, including
-titles, summaries and workflow calculations, and context compaction request
-`reasoningEffort: "none"` for every provider. Choose models that support disabling
-reasoning for those tasks. Unsupported levels produce provider errors; Gemini 3
-cannot fully disable thinking, and some Anthropic models reject `none`.
+titles, summaries and workflow calculations, and context compaction keep their
+previous reasoning requests: `low` for OpenAI, OpenRouter, vLLM and
+OpenAI-compatible profiles, a zero thinking budget for Gemini, and no thinking
+field for Anthropic, Mistral and Ollama, which keep their model defaults. The
+profile thinking level does not apply to these tasks.
 
 Without an explicit output limit, Anthropic uses 8,192 output tokens, including
 thinking tokens. Cloud uses that same default for budget reservations. Set

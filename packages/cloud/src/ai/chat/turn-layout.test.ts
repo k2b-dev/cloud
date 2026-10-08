@@ -226,7 +226,7 @@ describe("turn layout", () => {
 
 test("partial failed and interrupted history cannot become a completed answer without a loop ending", () => {
   expect(storedPhase([{ loopDoneReason: null, stopReason: "error" }])).toBe("failed");
-  expect(storedPhase([{ loopDoneReason: "stop", stopReason: "content_filter" }])).toBe("failed");
+  expect(storedPhase([{ loopDoneReason: "error", stopReason: "error" }])).toBe("failed");
   expect(storedPhase([{ loopDoneReason: null, stopReason: "interrupted" }])).toBe("stopped");
   expect(storedPhase([{ loopDoneReason: "error", stopReason: "interrupted" }])).toBe("failed");
 });

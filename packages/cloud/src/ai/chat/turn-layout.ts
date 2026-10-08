@@ -147,7 +147,7 @@ export const storedPhase = (entries: readonly Pick<AiStoredMessage, "loopDoneRea
   if (reason === "aborted") return "stopped";
   if (reason && reason !== "stop") return "failed";
   const stop = entries.findLast((entry) => entry.stopReason)?.stopReason;
-  if (stop === "error" || stop === "content_filter" || stop === "refusal") return "failed";
+  if (stop === "error") return "failed";
   if (stop === "interrupted" || stop === "aborted") return "stopped";
   return "completed";
 };

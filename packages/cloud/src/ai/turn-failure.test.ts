@@ -128,12 +128,12 @@ test("a provider-stopped answer keeps its reason through nessi's loop-only issue
   expect(reasons).toEqual([null, { error: { code: "provider_stopped" } }, null, { error: { code: "provider_stopped" } }]);
 });
 
-test("provider-stopped answers explain the stop in EN and DE without offering Continue", () => {
+test("provider-stopped answers explain the stop in EN and DE and offer Continue", () => {
   expect(aiTurnErrorText({ code: "provider_stopped" }, "en")).toBe(
-    "The model provider stopped this answer. Adjust your request before trying again.",
+    "The model provider ended this answer early. The results so far are kept. Send a new message to continue.",
   );
   expect(aiTurnErrorText({ code: "provider_stopped" }, "de")).toBe(
-    "Der KI-Anbieter hat diese Antwort gestoppt. Passe deine Anfrage an, bevor du es erneut versuchst.",
+    "Der KI-Anbieter hat diese Antwort vorzeitig beendet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
   );
 });
 
