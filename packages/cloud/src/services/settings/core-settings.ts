@@ -29,6 +29,24 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "outgoing_mail.content_retention_days": {
+    kind: "number",
+    label: "Mail content retention (days)",
+    description: "Purge message bodies and custom headers after this many days.",
+    default: 90,
+    min: 1,
+    max: 36500,
+    integer: true,
+  },
+  "outgoing_mail.record_retention_days": {
+    kind: "number",
+    label: "Mail record retention (days)",
+    description: "Delete send log records after this many days.",
+    default: 365,
+    min: 1,
+    max: 36500,
+    integer: true,
+  },
   "observability.web_vitals.enabled": {
     kind: "boolean",
     label: "Record browser page performance",

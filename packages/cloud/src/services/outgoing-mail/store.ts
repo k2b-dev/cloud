@@ -244,9 +244,12 @@ const profilesForApp = async (appId: string): Promise<MailProfile[]> => {
       is_default: boolean;
       max_attachment_bytes: number;
       daily_recipient_limit: number | null;
+      used: number;
     }[]
   >`
-    SELECT p.key, p.name, p.from_address, p.is_default, p.max_attachment_bytes, p.daily_recipient_limit
+    SELECT p.key, p.name, p.from_address, p.is_default, p.max_attachment_bytes, p.daily_recipient_limit,
+      (SELECT COALESCE(sum(m.recipient_count), 0)::int FROM outgoing_mail.messages m WHERE m.app_id = ${appId}
+        AND m.profile_id = p.id AND m.status <> 'cancelled' AND m.created_at > now() - INTERVAL '24 hours') AS used
     FROM outgoing_mail.profiles p WHERE
       CASE WHEN EXISTS(SELECT 1 FROM outgoing_mail.app_access WHERE app_id = ${appId} AND mode = 'selected')
       THEN EXISTS(SELECT 1 FROM outgoing_mail.app_profiles WHERE app_id = ${appId} AND profile_id = p.id)
@@ -257,15 +260,17 @@ const profilesForApp = async (appId: string): Promise<MailProfile[]> => {
     from: row.from_address,
     default: row.is_default,
     maxAttachmentBytes: row.max_attachment_bytes,
-    quota: { dailyRecipients: row.daily_recipient_limit, usedLast24h: 0 },
+    quota: { dailyRecipients: row.daily_recipient_limit, usedLast24h: row.used },
   }));
 };
 export const outgoingMailStore = { list, get, put, setDefault, delete: remove, apps: appsState, setAppAccess, profilesForApp };
 
 /** Platform email send path only. Never use this helper to shape API or CLI responses. */
-export const resolveMailCredentials = async (key?: string) => {
+export const resolveMailCredentials = async (key?: string | { id: string }) => {
   const [row] = await sql<(ProfileRow & { smtp_password_encrypted: string | null })[]>`
-    SELECT ${columns(sql)}, smtp_password_encrypted FROM outgoing_mail.profiles WHERE ${key === undefined ? sql`is_default` : sql`key = ${keyValue(key)}`}`;
+    SELECT ${columns(sql)}, smtp_password_encrypted FROM outgoing_mail.profiles WHERE ${
+      key === undefined ? sql`is_default` : typeof key === "string" ? sql`key = ${keyValue(key)}` : sql`id = ${key.id}::uuid`
+    }`;
   if (!row)
     throw new OutgoingMailError(
       "profile_unknown",

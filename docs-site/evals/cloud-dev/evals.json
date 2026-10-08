@@ -201,6 +201,18 @@
         "Identity comes from app.start(); callers cannot supply another application id.",
         "SMTP credentials stay out of application-facing results and app-owned SMTP configuration."
       ]
+    },
+    {
+      "id": 18,
+      "prompt": "Our inventory application needs to send order-ready email with a stream attachment and let us inspect its delivery status. Use Cloud's operator-managed senders; do not configure application SMTP.",
+      "expected_output": "Declares mail:send, waits for app.start(), then uses mail.send with a ref and idempotency key. Treats a successful result as a recorded message whose status may still be queued or failed, uses mail.list for the calling app's log, and preserves streamed attachment and at-least-once delivery contracts.",
+      "files": [],
+      "expectations": [
+        "It uses mail.send and mail.list from @k2b/cloud/services with process-derived application identity.",
+        "It distinguishes an acceptance failure from delivery status, and states that aborting the wait does not cancel mail.",
+        "It treats stream attachments as consumed once and keeps SMTP credentials in operator-managed profiles.",
+        "It uses the idempotency key to deduplicate acceptance while retaining the at-least-once SMTP caveat."
+      ]
     }
   ]
 }

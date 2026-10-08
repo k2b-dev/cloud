@@ -1,9 +1,12 @@
 import { expect, spyOn, test } from "bun:test";
-import { type AdminMailProfile, MailProfileInputSchema } from "../contracts/outgoing-mail";
+import { SQL, sql } from "bun";
+import { type AdminMailProfile, MailProfileInputSchema, MailRetentionSchema } from "../contracts/outgoing-mail";
+import { audit } from "../services/audit";
 import { OutgoingMailError, outgoingMailStore } from "../services/outgoing-mail/store";
 import { outgoingMailTest } from "../services/outgoing-mail/test-send";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
+import * as settings from "../services/settings";
 import settingsRoutes from "./admin-core-settings";
 import { createAdminOutgoingMailRoutes } from "./admin-outgoing-mail";
 
@@ -46,6 +49,12 @@ const request = (app: ReturnType<typeof authorized>, path: string, method: strin
 test("every outgoing mail route requires administrator authentication", async () => {
   const app = createAdminOutgoingMailRoutes();
   for (const [path, method] of [
+    ["/retention", "GET"],
+    ["/retention", "PUT"],
+    ["/messages", "GET"],
+    [`/messages/${crypto.randomUUID()}`, "GET"],
+    [`/messages/${crypto.randomUUID()}/content`, "GET"],
+    [`/messages/${crypto.randomUUID()}/cancel`, "POST"],
     ["/profiles", "GET"],
     ["/profiles/alerts", "GET"],
     ["/profiles/alerts", "PUT"],
@@ -56,6 +65,92 @@ test("every outgoing mail route requires administrator authentication", async ()
     ["/apps/inventory", "PUT"],
   ]) {
     expect((await request(app, path!, method!, {})).status).toBe(401);
+  }
+});
+test("retention reads effective settings even when record deletion precedes content purge", async () => {
+  const get = spyOn(settings, "get").mockResolvedValueOnce(90).mockResolvedValueOnce(30);
+  try {
+    const response = await authorized().request("/retention");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ contentDays: 90, recordDays: 30 });
+    expect(get.mock.calls).toEqual([["outgoing_mail.content_retention_days"], ["outgoing_mail.record_retention_days"]]);
+  } finally {
+    get.mockRestore();
+  }
+});
+test("retention PUT rejects incomplete, non-integer, non-positive, reversed and extra input before writing", async () => {
+  const set = spyOn(settings, "set");
+  const record = spyOn(audit, "record");
+  try {
+    for (const input of [
+      {},
+      { contentDays: 30 },
+      { recordDays: 90 },
+      { contentDays: 0, recordDays: 90 },
+      { contentDays: 30, recordDays: -1 },
+      { contentDays: 1.5, recordDays: 90 },
+      { contentDays: 30, recordDays: 90.5 },
+      { contentDays: 90, recordDays: 36501 },
+      { contentDays: 36501, recordDays: 36501 },
+      { contentDays: "30", recordDays: 90 },
+      { contentDays: 90, recordDays: 30 },
+      { contentDays: 30, recordDays: 90, extra: true },
+    ]) {
+      const response = await request(authorized(), "/retention", "PUT", input);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "bad_input", message: expect.any(String) });
+    }
+    const reversed = await request(authorized(), "/retention", "PUT", { contentDays: 90, recordDays: 30 });
+    expect(await reversed.json()).toMatchObject({ message: expect.stringContaining("at least content retention") });
+    expect(set).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  } finally {
+    set.mockRestore();
+    record.mockRestore();
+  }
+});
+test("retention schema accepts at most 36500 whole days", () => {
+  expect(MailRetentionSchema.safeParse({ contentDays: 36500, recordDays: 36500 }).success).toBe(true);
+});
+test("retention PUT writes both settings and the old/new audit in one transaction, then invalidates cache", async () => {
+  const get = spyOn(settings, "get").mockResolvedValueOnce(90).mockResolvedValueOnce(365);
+  const set = spyOn(settings, "set").mockResolvedValue();
+  const record = spyOn(audit, "record").mockResolvedValue();
+  const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
+  // Lazy, unused connection: all writers are mocked; nothing queries this client.
+  const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
+    savepoint: () => {
+      throw new Error("Unexpected savepoint");
+    },
+  });
+  const begin = spyOn(sql, "begin").mockImplementation(async (run) => {
+    if (typeof run !== "function") throw new Error("Expected transaction callback");
+    await run(tx);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+  try {
+    const next = { contentDays: 30, recordDays: 30 };
+    const response = await request(authorized(), "/retention", "PUT", next);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(next);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(set.mock.calls).toEqual([
+      ["outgoing_mail.content_retention_days", 30, tx],
+      ["outgoing_mail.record_retention_days", 30, tx],
+    ]);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0]).toEqual([
+      expect.objectContaining({
+        action: "outgoing_mail.retention.update",
+        actor: expect.objectContaining({ userId: user.id }),
+        metadata: { old: { contentDays: 90, recordDays: 365 }, new: next },
+      }),
+      tx,
+    ]);
+    expect(invalidate).toHaveBeenCalledWith(["outgoing_mail.content_retention_days", "outgoing_mail.record_retention_days"]);
+  } finally {
+    for (const mock of [get, set, record, invalidate, begin]) mock.mockRestore();
   }
 });
 test("PUT validates and reports create/replace status without credentials", async () => {
@@ -214,6 +309,10 @@ test("authenticated non-admins cannot read or mutate outgoing mail", async () =>
   const app = createAdminOutgoingMailRoutes();
   try {
     for (const [path, method] of [
+      ["/messages", "GET"],
+      [`/messages/${crypto.randomUUID()}`, "GET"],
+      [`/messages/${crypto.randomUUID()}/content`, "GET"],
+      [`/messages/${crypto.randomUUID()}/cancel`, "POST"],
       ["/profiles", "GET"],
       ["/profiles/alerts", "GET"],
       ["/profiles/alerts", "PUT"],
@@ -229,5 +328,65 @@ test("authenticated non-admins cannot read or mutate outgoing mail", async () =>
     }
   } finally {
     authenticate.mockRestore();
+  }
+});
+
+test("send-log routes validate filters, return metadata and forward audited content/cancellation context", async () => {
+  const { outgoingMailLog } = await import("../services/outgoing-mail/admin");
+  const id = crypto.randomUUID();
+  const metadata = {
+    id,
+    appId: "inventory",
+    profile: "alerts",
+    to: ["reader@example.org"],
+    subject: "Hello",
+    attachments: [],
+    status: "queued" as const,
+    failures: [],
+    attempts: 0,
+    createdAt: "2026-10-07T00:00:00.000Z",
+  };
+  const page = { items: [metadata], page: 1, perPage: 20, total: 1, hasNext: false };
+  const list = spyOn(outgoingMailLog, "list").mockResolvedValue(page);
+  const get = spyOn(outgoingMailLog, "get").mockResolvedValue(metadata);
+  const content = spyOn(outgoingMailLog, "content").mockResolvedValue({ purged: false, text: "Hello", html: null, headers: null });
+  const cancel = spyOn(outgoingMailLog, "cancel").mockResolvedValue({ ...metadata, status: "cancelled" });
+  try {
+    const app = authorized();
+    const response = await app.request(
+      "/messages?app=inventory&profile=alerts&status=queued&status=failed&ref=order:42&recipient=%40example.org&limit=20&cursor=abc",
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual(page);
+    expect(list).toHaveBeenCalledWith(
+      { app: "inventory", profile: "alerts", status: ["queued", "failed"], ref: { scope: "order", id: "42" }, recipient: "@example.org" },
+      { perPage: 20, cursor: "abc" },
+    );
+    expect(await (await app.request(`/messages/${id}`)).json()).toEqual(metadata);
+    expect(await (await app.request(`/messages/${id}/content`)).json()).toMatchObject({ text: "Hello" });
+    expect(content.mock.calls[0]?.[1]).toMatchObject({ actor: { userId: user.id } });
+    expect((await request(app, `/messages/${id}/cancel`, "POST")).status).toBe(200);
+    expect(cancel.mock.calls[0]?.[1]).toMatchObject({ actor: { userId: user.id } });
+    cancel.mockRejectedValue(new OutgoingMailError("message_not_queued", "Only queued mail can be cancelled.", 409));
+    const conflict = await request(app, `/messages/${id}/cancel`, "POST");
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({ code: "message_not_queued" });
+    for (const path of [
+      "/messages?limit=101",
+      "/messages?status=unknown",
+      "/messages?since=yesterday",
+      "/messages?ref=:id",
+      "/messages/not-a-uuid",
+    ])
+      expect((await app.request(path)).status).toBe(400);
+    for (const ref of ["x".repeat(201), `order:${"x".repeat(201)}`, `${"x".repeat(201)}:42`]) {
+      const response = await app.request(`/messages?ref=${ref}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "bad_input" });
+    }
+    expect(list).toHaveBeenCalledTimes(1);
+  } finally {
+    for (const mock of [list, get, content, cancel]) mock.mockRestore();
   }
 });

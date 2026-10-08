@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # API surface
@@ -106,7 +106,7 @@ log.info("Import completed", { itemCount: 42 });
 Use the capability guide to choose the narrow API:
 
 - [Settings](/en/docs/platform/settings)
-- [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()` from `@k2b/cloud/services`, with `MailProfile` and `PlatformPermission` from `@k2b/cloud/contracts`.
+- [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, and `mail.list()` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging)
 - [App capabilities](/en/docs/platform/capabilities)

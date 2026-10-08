@@ -26,6 +26,27 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       app_id TEXT NOT NULL, profile_id UUID NOT NULL REFERENCES outgoing_mail.profiles(id) ON DELETE CASCADE,
       PRIMARY KEY(app_id, profile_id)
     )`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS outgoing_mail.messages (
+      id UUID PRIMARY KEY, app_id TEXT NOT NULL,
+      profile_id UUID REFERENCES outgoing_mail.profiles(id) ON DELETE SET NULL, profile_key TEXT NOT NULL,
+      batch_id UUID, lane TEXT NOT NULL CHECK(lane IN ('immediate','bulk')), idempotency_key TEXT,
+      ref_scope TEXT, ref_id TEXT, to_addresses TEXT[] NOT NULL, recipient_count INTEGER NOT NULL,
+      subject TEXT NOT NULL, text_body TEXT, html_body TEXT, headers JSONB,
+      from_name TEXT, reply_to TEXT, message_id_header TEXT NOT NULL UNIQUE,
+      attachments JSONB NOT NULL DEFAULT '[]', attachment_refs JSONB,
+      status TEXT NOT NULL CHECK(status IN ('queued','sending','sent','failed','bounced','cancelled')),
+      error_code TEXT, error_message TEXT, smtp_response TEXT, failures JSONB NOT NULL DEFAULT '[]',
+      attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ, deadline_at TIMESTAMPTZ NOT NULL,
+      actor_type TEXT, actor_id TEXT, actor_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), sent_at TIMESTAMPTZ, bounced_at TIMESTAMPTZ,
+      content_purged_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(app_id, idempotency_key)
+    )`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_ref ON outgoing_mail.messages(app_id, ref_scope, ref_id)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_due ON outgoing_mail.messages(status, lane, profile_id, next_attempt_at)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_quota ON outgoing_mail.messages(app_id, profile_id, created_at)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_log ON outgoing_mail.messages(app_id, created_at DESC, id)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_created ON outgoing_mail.messages(created_at, id)`.simple();
     const [existing] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM outgoing_mail.profiles`;
     if (existing!.count) return;
     const rows = await tx<{ key: string; value: string }[]>`SELECT key, value FROM settings.entries WHERE key LIKE 'mail.noreply.%'`;

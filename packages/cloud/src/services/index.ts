@@ -206,4 +206,14 @@ export { railShortcuts } from "./rail-shortcuts";
 export type { WebVitalsOverview, WebVitalsQuery, WebVitalMetric, WebVitalName } from "./logging/web-vitals";
 
 export { mail } from "./outgoing-mail";
-export type { MailProfile } from "../contracts/outgoing-mail";
+export type {
+  MailProfile,
+  MailAttachment,
+  MailMessage,
+  MailFilter,
+  MailRecord,
+  MailStatus,
+  MailPageParams,
+  MailPage,
+  MailServiceError,
+} from "../contracts/outgoing-mail";

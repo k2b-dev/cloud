@@ -58,6 +58,29 @@ databaseSuite()("outgoing mail migration", () => {
     expect(await listLegacyKeys()).toEqual([]);
     expect(await db`SELECT * FROM settings.entries`).toHaveLength(5);
   });
+  test("adds an idempotent send log even when profiles already exist", async () => {
+    await seed("smtp_host", "smtp.example.org");
+    await seed("from", "noreply@example.org");
+    await migrate(db);
+    await db`DROP TABLE IF EXISTS outgoing_mail.messages`.simple();
+    await Promise.all([migrate(db), migrate(db)]);
+    const [table] = await db<{ name: string | null }[]>`SELECT to_regclass('outgoing_mail.messages')::text AS name`;
+    expect(table?.name).toBe("outgoing_mail.messages");
+    const [profile] = await db<{ id: string }[]>`SELECT id FROM outgoing_mail.profiles`;
+    const insert = async (
+      id: string,
+    ) => db`INSERT INTO outgoing_mail.messages(id, app_id, profile_id, profile_key, lane, idempotency_key, to_addresses, recipient_count, subject, message_id_header, status, deadline_at)
+      VALUES (${id}::uuid, 'inventory', ${profile!.id}::uuid, 'noreply', 'immediate', 'key', ARRAY['reader@example.org'], 1, 'Hello', ${`<${id}@example.org>`}, 'queued', now() + INTERVAL '24 hours')`;
+    await insert(crypto.randomUUID());
+    await expect(insert(crypto.randomUUID())).rejects.toThrow();
+    await db`DELETE FROM outgoing_mail.profiles`;
+    expect((await db`SELECT profile_id, profile_key, attachments, attempt_count FROM outgoing_mail.messages`)[0]).toMatchObject({
+      profile_id: null,
+      profile_key: "noreply",
+      attachments: [],
+      attempt_count: 0,
+    });
+  });
   test("uses port 587 when it was not stored", async () => {
     await seed("smtp_host", "smtp.example.org");
     await seed("from", "noreply@example.org");

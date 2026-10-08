@@ -1,4 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
+import { Socket } from "node:net";
+import * as nodemailer from "nodemailer";
 import { sendEmail } from "../notifications/email";
 import * as settings from "../settings";
 import { coreSettings } from "../settings/api";
@@ -114,5 +116,53 @@ test("profile test failures expose the SMTP answer and audit no credentials", as
   } finally {
     for (const mock of [resolve, send, builder, record, failed, read]) mock.mockRestore();
     smtp.close();
+  }
+});
+
+const profile = {
+  smtpHost: "smtp.example.org",
+  smtpPort: 465,
+  smtpSecure: true,
+  smtpUser: null,
+  smtpPassword: null,
+  fromAddress: "sender@example.org",
+  fromName: null,
+};
+test("worker transport accepts an owned socket while keeping implicit TLS and SMTP timeout configuration", () => {
+  const create = spyOn(nodemailer, "createTransport");
+  const socket = new Socket();
+  const smtp = transport.buildMailTransport(profile, socket);
+  try {
+    expect(create).toHaveBeenCalledWith({
+      socket,
+      host: profile.smtpHost,
+      port: 465,
+      secure: true,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 60000,
+    });
+    expect(socket.connecting).toBe(false);
+  } finally {
+    smtp.close();
+    socket.destroy();
+    create.mockRestore();
+  }
+});
+test("existing transport callers retain the original socket configuration", () => {
+  const create = spyOn(nodemailer, "createTransport");
+  const smtp = transport.buildMailTransport(profile);
+  try {
+    expect(create).toHaveBeenCalledWith({
+      host: profile.smtpHost,
+      port: 465,
+      secure: true,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 60000,
+    });
+  } finally {
+    smtp.close();
+    create.mockRestore();
   }
 });
