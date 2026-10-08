@@ -69,3 +69,18 @@ test("the same rejection follows the request locale", async () => {
   expect(body.message).toStartWith("Die KI-Einstellungen wurden nicht gespeichert.");
   expect(body.errors["ai.vision_model_id"]).toStartWith("Das Modell für das Bildwerkzeug verweist noch auf „TensorX Standard“.");
 });
+
+test("a newly uploaded model logo with malformed JPEG bytes returns 422 before any settings write", async () => {
+  const response = await routes.request("/", {
+    method: "PUT",
+    headers: { Accept: "application/json", "Content-Type": "application/json", Cookie: "session_token=test" },
+    body: JSON.stringify({
+      "ai.model_profiles_json": JSON.stringify([
+        { ...profile("tensorx", "TensorX Standard"), image: "data:image/jpeg;base64,/9j/2wA=" },
+        profile("cortecs", "Cortecs"),
+      ]),
+    }),
+  });
+  expect(response.status).toBe(422);
+  expect(await response.json()).toMatchObject({ code: "MALFORMED_IMAGE" });
+});

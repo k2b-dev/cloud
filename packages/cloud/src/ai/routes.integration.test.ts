@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
+import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { accounts } from "../services/accounts";
@@ -50,6 +51,31 @@ suite("global AI conversation boundaries", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("image upload API sanitizes stored bytes and reports malformed images as 422", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const token = await createTestSession(userId);
+    try {
+      const jpeg = await tinyJpeg();
+      const input = withCameraMetadata(jpeg, 1);
+      const upload = (bytes: Uint8Array) => {
+        const form = new FormData();
+        form.set("file", new File([new Uint8Array(bytes)], "photo.jpg", { type: "image/jpeg" }));
+        return aiRoutes.request(`/conversations/${chat.shortId}/files`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+      };
+      expect((await upload(input)).status).toBe(200);
+      expect((await aiFileStore.read({ conversationId: chat.id, path: "/photo.jpg" }))?.bytes).toEqual(jpeg);
+      expect((await upload(input.subarray(0, 30))).status).toBe(422);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("assigns a Project only once even when two requests race", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };

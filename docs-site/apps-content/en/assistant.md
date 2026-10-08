@@ -1025,3 +1025,15 @@ app and person: a shared app spends the allowance of the person running it, and
 at most 32 `cloud.*` calls of one running app are pending at once. Public and local-only runners cannot
 use these methods. Stopping a run cancels pending inference. The Code Mode skill's
 AI reference documents options, limits and examples.
+
+## Image upload privacy
+
+New JPEG, PNG, and WebP image uploads remove location and device metadata
+without changing image quality. JPEG orientation, colour profiles,
+transparency, and supported animation data remain. Malformed containers are
+rejected with HTTP 422. This applies to conversation uploads, Project files, and shared App files.
+
+Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
+formats remain unchanged and can retain metadata. Previously uploaded images
+are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
+for the supported formats and limits.

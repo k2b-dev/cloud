@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { coreSettings } from "../services";
+import { stripImageDataUrlMetadata } from "../services/image-metadata";
 import { AiModelPricingSchema } from "../shared/ai-costs";
 import {
   AI_REQUEST_HEADERS_PROVIDER_ERROR,
@@ -150,6 +151,18 @@ const normalizeProfile = (raw: z.infer<typeof ModelProfileSchema>): AiModelProfi
     capabilities: normalizeCapabilities(capabilities),
     dataBoundary: normalizeDataBoundary(dataBoundary ?? legacyDataPolicy, raw.provider),
   };
+};
+
+/** Sanitize newly submitted model logos without changing already stored profiles. */
+export const prepareAiModelProfileImages = (rawJson: string): string => {
+  const raw: unknown = JSON.parse(rawJson);
+  if (!Array.isArray(raw)) return rawJson;
+  return JSON.stringify(
+    raw.map((profile: unknown) => {
+      if (typeof profile !== "object" || profile === null || !("image" in profile) || typeof profile.image !== "string") return profile;
+      return { ...profile, image: stripImageDataUrlMetadata(profile.image) };
+    }),
+  );
 };
 
 export const parseAiModelProfiles = (rawJson: string): { profiles: AiModelProfile[]; error?: AiSettingsError } => {

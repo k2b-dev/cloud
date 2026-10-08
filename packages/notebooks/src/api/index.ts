@@ -2928,6 +2928,7 @@ const appWithAttachments = app
         400: jsonResponse(ErrorResponseSchema, "No file or invalid form"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         413: jsonResponse(ErrorResponseSchema, "File too large"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     async (c) => {

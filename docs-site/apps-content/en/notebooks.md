@@ -362,3 +362,15 @@ Use **New note** in Cloud search to choose a writable notebook and create a note
 Available keyboard shortcuts appear next to actions and in Layout Help.
 
 Cmd/Ctrl+Shift+K searches titles and content in the current notebook. Cmd/Ctrl+Alt+N creates a note there when you can write. Selected-note actions offer Markdown and PDF export and, when available, editing with Assistant. Note titles continue to come from their content. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+
+## Image upload privacy
+
+New JPEG, PNG, and WebP image uploads remove location and device metadata
+without changing image quality. JPEG orientation, colour profiles,
+transparency, and supported animation data remain. Malformed containers are
+rejected with HTTP 422. This applies to notebook attachments.
+
+Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
+formats remain unchanged and can retain metadata. Previously uploaded images
+are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
+for the supported formats and limits.

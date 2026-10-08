@@ -998,6 +998,7 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Task not found"),
         409: jsonResponse(ErrorResponseSchema, "Attachment limit reached"),
         413: jsonResponse(ErrorResponseSchema, "File too large"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     bodyLimit({

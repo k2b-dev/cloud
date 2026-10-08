@@ -1,4 +1,5 @@
 import { type SQL, sql } from "bun";
+import { stripImageMetadata } from "../services/image-metadata";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 
 export { guessAiMediaType } from "./file-media-type";
@@ -79,9 +80,11 @@ export const createUniqueAiFileInTransaction = async (
     throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
   }
 
+  const bytes = (input.mediaType ?? "application/octet-stream").startsWith("image/") ? stripImageMetadata(input.bytes) : input.bytes;
+
   await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
   const total = await aiConversationStoredBytes(tx, input.conversationId);
-  if (total + input.bytes.byteLength > maxConversation) {
+  if (total + bytes.byteLength > maxConversation) {
     throw new AiFileWriteError("STORAGE_FULL", `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
   }
 
@@ -89,7 +92,7 @@ export const createUniqueAiFileInTransaction = async (
     const path = numberedAiFilePath(input.path, number);
     const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at)
-        SELECT ${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, ${input.dictationRecordedAt ?? null}, now()
+        SELECT ${input.conversationId}, ${path}, ${bytes}, ${input.mediaType ?? "application/octet-stream"}, ${bytes.byteLength}, ${input.origin}, ${input.dictationRecordedAt ?? null}, now()
         WHERE NOT EXISTS (
           SELECT 1 FROM ai.files WHERE conversation_id = ${input.conversationId} AND normalize(path, NFC) = ${path.normalize("NFC")}
         )
@@ -364,6 +367,8 @@ export const aiFileStore = {
       throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
     }
 
+    const bytes = (input.mediaType ?? "application/octet-stream").startsWith("image/") ? stripImageMetadata(input.bytes) : input.bytes;
+
     return sql.begin(async (tx) => {
       const [conversation] = await tx<
         { id: string; created_by_user_id: string; archived_at: Date | null }[]
@@ -384,7 +389,7 @@ export const aiFileStore = {
         if (version !== input.expectedVersion) throw new AiFileVersionConflict();
       }
       const otherBytes = await aiConversationStoredBytes(tx, input.conversationId, path);
-      if (otherBytes + input.bytes.byteLength > maxConversation) {
+      if (otherBytes + bytes.byteLength > maxConversation) {
         throw new AiFileWriteError(
           "STORAGE_FULL",
           `Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`,
@@ -394,7 +399,7 @@ export const aiFileStore = {
         if (input.allowUserOverwrite) {
           const written = await tx<{ id: string }[]>`
             UPDATE ai.files
-            SET dictation_recorded_at = NULL, bytes = ${input.bytes}, media_type = ${input.mediaType ?? "application/octet-stream"}, size = ${input.bytes.byteLength}, updated_at = now(), version = version + 1
+            SET dictation_recorded_at = NULL, bytes = ${bytes}, media_type = ${input.mediaType ?? "application/octet-stream"}, size = ${bytes.byteLength}, updated_at = now(), version = version + 1
             WHERE conversation_id = ${input.conversationId} AND path = ${path} AND origin = 'user'
             RETURNING id
           `;
@@ -402,13 +407,13 @@ export const aiFileStore = {
         } else {
           await tx`
             INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-            VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'user', now())
+            VALUES (${input.conversationId}, ${path}, ${bytes}, ${input.mediaType ?? "application/octet-stream"}, ${bytes.byteLength}, 'user', now())
           `;
         }
       } else {
         const written = await tx<{ id: string }[]>`
           INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-          VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'assistant', now())
+          VALUES (${input.conversationId}, ${path}, ${bytes}, ${input.mediaType ?? "application/octet-stream"}, ${bytes.byteLength}, 'assistant', now())
           ON CONFLICT (conversation_id, path) DO UPDATE SET
             bytes = EXCLUDED.bytes,
             media_type = EXCLUDED.media_type,

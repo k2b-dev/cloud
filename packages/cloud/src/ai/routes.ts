@@ -18,6 +18,7 @@ import {
   v,
 } from "../server";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
+import { ImageMetadataError } from "../services/image-metadata";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
@@ -1316,6 +1317,7 @@ export const aiRoutes = (() => {
           });
           return respond(c, ok({ file: stat }));
         } catch (error) {
+          if (error instanceof ImageMetadataError) return respond(c, { ok: false, error: error.message, status: 422, code: error.code });
           logger("ai:files").warn("Conversation upload failed", {
             code: "file_upload_failed",
             conversationId: conversation.id,
@@ -1376,6 +1378,7 @@ export const aiRoutes = (() => {
             allowUserOverwrite: existing?.origin === "user",
           });
         } catch (error) {
+          if (error instanceof ImageMetadataError) return respond(c, { ok: false, error: error.message, status: 422, code: error.code });
           return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Failed to write file")));
         }
         return respond(c, ok({ file: await aiFileStore.stat({ conversationId: conversation.id, path }) }));

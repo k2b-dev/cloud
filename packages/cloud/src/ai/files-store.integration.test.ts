@@ -1,5 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiFileContentVersion } from "./file-content-version";
 import { createCloudAiReadFileTool } from "./file-tools";
@@ -26,6 +27,25 @@ suite("aiFileStore integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("complete image uploads and overwrites strip metadata and use the stored size", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const jpeg = await tinyJpeg();
+      const input = { conversationId: conversation.id, path: "/photo.jpg", bytes: withCameraMetadata(jpeg, 1), mediaType: "image/png" };
+      const uploaded = await aiFileStore.createUserUpload(input);
+      expect(uploaded.size).toBe(jpeg.length);
+      expect((await aiFileStore.read(input))?.bytes).toEqual(jpeg);
+      await aiFileStore.write({ ...input, origin: "user", allowUserOverwrite: true });
+      expect((await aiFileStore.read(input))?.bytes).toEqual(jpeg);
+      await expect(aiFileStore.createUserUpload({ ...input, bytes: input.bytes.subarray(0, 30) })).rejects.toMatchObject({ status: 422 });
+      await expect(aiFileStore.write({ ...input, bytes: input.bytes.subarray(0, 30) })).rejects.toMatchObject({ status: 422 });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("versioned chat file transfers protect user uploads and resolve concurrent writes", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

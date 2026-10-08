@@ -52,6 +52,7 @@
     "./cli/admin": "./src/cli/admin/index.ts",
     "./shared": "./src/shared/index.ts",
     "./services": "./src/services/index.ts",
+    "./services/image-metadata": "./src/services/image-metadata.ts",
     "./services/document-extraction": "./src/services/document-extraction.ts",
     "./services/ipa/service-account": null,
     "./services/*": "./src/services/*",

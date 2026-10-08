@@ -15,6 +15,7 @@ import {
   updateAccess,
   userFromActor,
 } from "@k2b/cloud/server";
+import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { type SQL, sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
@@ -603,6 +604,7 @@ export const artifacts = {
         bytes = new TextEncoder().encode(request.content).byteLength;
       } else {
         if (!fileData || fileData.byteLength > STORAGE_FILE_MAX_BYTES) throw new ArtifactError("INVALID_INPUT");
+        if (request.mediaType.startsWith("image/")) fileData = stripImageMetadata(fileData);
         bytes = fileData.byteLength;
       }
     }

@@ -942,3 +942,15 @@ additive changes; the shared compatibility check remains enabled.
   approval scoped to one table; document issuance still needs individual approval.
 - Timestamps use ISO 8601 with an explicit UTC offset; consumers must accept
   offsets as well as `Z`.
+
+## Image upload privacy
+
+New JPEG, PNG, and WebP image uploads remove location and device metadata
+without changing image quality. JPEG orientation, colour profiles,
+transparency, and supported animation data remain. Malformed containers are
+rejected with HTTP 422. This applies to record files and Form title images.
+
+Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
+formats remain unchanged and can retain metadata. Previously uploaded images
+are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
+for the supported formats and limits.

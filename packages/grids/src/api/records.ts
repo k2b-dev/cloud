@@ -607,6 +607,7 @@ export const recordsRoutes = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Not found"),
         409: jsonResponse(ErrorResponseSchema, "Record is finalized"),
         413: jsonResponse(ErrorResponseSchema, "File too large"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     async (c) => {
@@ -660,6 +661,7 @@ export const recordsRoutes = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Not found"),
         409: jsonResponse(ErrorResponseSchema, "Record is finalized"),
         413: jsonResponse(ErrorResponseSchema, "File too large"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     async (c) => {

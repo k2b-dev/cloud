@@ -10,6 +10,7 @@ import {
   type PermissionLevel,
   type Principal,
 } from "../server/services/access";
+import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { mountAiProjectFilePath } from "./file-mount";
@@ -819,6 +820,8 @@ export const aiProjects = {
     if (!(await requireProject(projectId, subject, "write"))) return null;
     if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES)
       throw new AiFileWriteError("STORAGE_FULL", "Project file exceeds the size limit; nothing was written.");
+    const mimeType = input.mediaType.trim() || "application/octet-stream";
+    const bytes = mimeType.startsWith("image/") ? stripImageMetadata(input.bytes) : input.bytes;
     const path = normalizeProjectPath(input.path);
     return sql.begin(async (tx) => {
       const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;
@@ -836,7 +839,7 @@ export const aiProjects = {
         "idx_ai_project_files_short_id",
         (attempt, shortId) => attempt<FileRow[]>`
         INSERT INTO ai.project_files (short_id, project_id, path, media_type, bytes, size, created_by_user_id)
-        VALUES (${shortId}, ${projectId}::uuid, ${path}, ${input.mediaType.trim() || "application/octet-stream"}, ${input.bytes}, ${input.bytes.byteLength}, ${actorUserId(subject)}::uuid)
+        VALUES (${shortId}, ${projectId}::uuid, ${path}, ${mimeType}, ${bytes}, ${bytes.byteLength}, ${actorUserId(subject)}::uuid)
         ON CONFLICT (project_id, path) DO UPDATE SET
           media_type = EXCLUDED.media_type, bytes = EXCLUDED.bytes, size = EXCLUDED.size, updated_at = now()
         RETURNING id, short_id, project_id, path, media_type, size, updated_at
