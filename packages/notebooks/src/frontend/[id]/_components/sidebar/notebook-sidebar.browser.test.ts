@@ -427,8 +427,12 @@ describe("Notebook sidebar order by hand", () => {
       api.tree.push({ ...rules.children.shift()!, parentId: null });
       await page.locator('[data-k2b-nav-tree-id="Tone01"]').focus();
       await page.keyboard.press("Alt+ArrowUp");
+      // The toast's screen-reader line ("Fehler: …") carries the same words 100 ms later, so look in the visible toast.
       await expect(
-        page.getByText("Diese Ebene wurde inzwischen geändert. Sie zeigt jetzt die aktuelle Reihenfolge.").waitFor(),
+        page
+          .locator("[data-k2b-toast]")
+          .getByText("Diese Ebene wurde inzwischen geändert. Sie zeigt jetzt die aktuelle Reihenfolge.", { exact: true })
+          .waitFor(),
       ).resolves.toBeUndefined();
       await page.waitForFunction(() => !document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"][data-k2b-nav-tree-id="Lang01"]'));
       expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
