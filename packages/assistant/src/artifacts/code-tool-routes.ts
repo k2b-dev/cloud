@@ -1,5 +1,6 @@
 import { aiConversations, CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
+import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -40,6 +41,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
           conversationId: conversation.id,
           locale: getLocale(c),
           timeZone: getTimeZone(c),
+          theme: readThemeFromCookieHeader(c.req.header("cookie")),
           review: envelope.review,
           signal: c.req.raw.signal,
           capabilityToken: c.req.header(CODE_CAPABILITY_TOKEN_HEADER),
@@ -78,7 +80,7 @@ register("code_create", CODE_SOURCE_TOOLS.code_create.input, artifactCodeHandler
 register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.code_write);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
 
-for (const name of ["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present"] as const) {
+for (const name of ["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present", "code_check"] as const) {
   register(
     name,
     AgentHostRequest.refine((input) => input.name === name),

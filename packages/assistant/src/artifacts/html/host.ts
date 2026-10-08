@@ -20,6 +20,7 @@ export type MountEvent =
   /** The app did not report ready within `seconds`; its frame is shown anyway. */
   | { type: "not-ready"; seconds: number }
   | { type: "ready"; height: number }
+  | { type: "call"; method: string; ok: boolean }
   | { type: "stopped"; reason: StopReason };
 
 /**
@@ -131,11 +132,20 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
   let asking = false;
   let refusals = 0;
   let snapshots = 0;
+  const checks = new Map<
+    number,
+    { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
+  >();
   const waiting = new Map<number, (html: string) => void>();
 
   const stop = (reason: StopReason) => {
     if (lifetime.signal.aborted) return;
     lifetime.abort();
+    for (const item of checks.values()) {
+      clearTimeout(item.timer);
+      item.reject(new Error("App stopped"));
+    }
+    checks.clear();
     removeEventListener("message", receive);
     themes.disconnect();
     clearTimeout(readyTimer);
@@ -178,8 +188,10 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
       } else if (APPROVAL_METHODS.has(method) && asking)
         throw new CloudError("limit", "Another Cloud confirmation for this app is still open; wait for its answer.");
       else value = await call(method, args, signal);
+      emit({ type: "call", method, ok: true });
       post({ type: "result", id, value });
     } catch (error) {
+      emit({ type: "call", method, ok: false });
       const mapped = cloudError(error);
       post({ type: "result", id, error: mapped.message, code: mapped.code });
     } finally {
@@ -241,6 +253,16 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
       case "notice":
         if (isNoticeCode(message.code)) emit({ type: "notice", code: message.code });
         return;
+      case "check-result": {
+        const item = checks.get(message.id);
+        if (!item) return;
+        checks.delete(message.id);
+        clearTimeout(item.timer);
+        if (typeof message.error === "string") item.reject(new Error(text(message.error)));
+        else if (argumentsFit([message.value], LIMITS.rpcBytes)) item.resolve(message.value);
+        else item.reject(new Error("Inspection exceeds the RPC budget"));
+        return;
+      }
       case "snapshot":
         if (typeof message.html === "string" && message.html.length <= FRAME_LIMITS.snapshotChars) waiting.get(message.id)?.(message.html);
         waiting.delete(message.id);
@@ -282,6 +304,21 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
 
   return {
     frame,
+    /** Trusted host inspection; app messages cannot initiate it. */
+    check: (input: unknown) =>
+      new Promise<unknown>((resolve, reject) => {
+        if (lifetime.signal.aborted) {
+          reject(new Error("App stopped"));
+          return;
+        }
+        const id = ++snapshots;
+        const timer = setTimeout(() => {
+          checks.delete(id);
+          reject(new Error("App inspection timed out"));
+        }, FRAME_LIMITS.readyMs);
+        checks.set(id, { resolve, reject, timer });
+        post({ type: "check", id, input });
+      }),
     lint: composed.lint as LintIssue[],
     /** Moves the app to `hash` after the host URL changed (back and forward). */
     hash: (value: string) => post({ type: "hash", value }),

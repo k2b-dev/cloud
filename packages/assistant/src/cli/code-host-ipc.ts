@@ -35,20 +35,27 @@ export function hostIpc(send: (message: Message) => void, handle: (request: Host
       if (closed) return Promise.reject(closed);
       return new Promise((resolve, reject) => {
         const id = sequence++;
+        // Checks acknowledge cancellation only after their pages and copies
+        // are gone. Other operations retain their immediate IPC cancellation.
+        const waitForCleanup = (request.operation === "execute" || request.operation === "call") && request.call.name === "code_check";
+        const cancelled = () => new DOMException("Request cancelled", "AbortError");
         const cancel = () => {
-          pending.delete(id);
           send({ id, cancel: true });
-          reject(new DOMException("Request cancelled", "AbortError"));
+          if (!waitForCleanup) {
+            pending.delete(id);
+            reject(cancelled());
+          }
         };
         const clean = () => signal?.removeEventListener("abort", cancel);
         pending.set(id, {
           resolve: (value) => {
             clean();
-            resolve(value);
+            if (signal?.aborted) reject(cancelled());
+            else resolve(value);
           },
           reject: (error) => {
             clean();
-            reject(error);
+            reject(signal?.aborted ? cancelled() : error);
           },
         });
         signal?.addEventListener("abort", cancel, { once: true });

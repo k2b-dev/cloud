@@ -27,3 +27,21 @@ export function appFrameAssets(): Promise<AppFrameAssets> {
   });
   return assets;
 }
+
+let checkAssets: Promise<AppFrameAssets> | undefined;
+/** Inspection is bundled only into code_check's prelude, pinned by its own hash. */
+export function checkFrameAssets(): Promise<AppFrameAssets> {
+  checkAssets ??= (async () => {
+    const [normal, prelude] = await Promise.all([
+      appFrameAssets(),
+      env.NODE_ENV === "production"
+        ? Bun.file(new URL("./assistant-check-prelude.js", import.meta.url)).text()
+        : import("./build-assets").then(({ buildCheckPrelude }) => buildCheckPrelude()),
+    ]);
+    return { ...normal, prelude, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'` };
+  })().catch((error) => {
+    checkAssets = undefined;
+    throw error;
+  });
+  return checkAssets;
+}

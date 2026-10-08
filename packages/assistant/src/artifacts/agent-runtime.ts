@@ -109,7 +109,7 @@ export function createArtifactAgentRuntime(
       await pause(20);
     }
   }
-  /** Saves an HTML app card after the static checks pass; the person starts it with a click. */
+  /** Saves an HTML app card after the server checks its current passing self-test. */
   async function present(
     input: Extract<CodeRuntimeInput, { operation: "present" }>,
     conversationId: string,
@@ -138,7 +138,10 @@ export function createArtifactAgentRuntime(
         ...(app ? { artifactId: app.id } : { files }),
       }),
     });
-    if (!response.ok) throw new Error(`Could not present the app: HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = z.object({ message: z.string().optional() }).parse(await response.json());
+      throw new Error(error.message ?? `Could not present the app: HTTP ${response.status}`);
+    }
     return {
       ...ChatPresentationResult.parse(await response.json()),
       userVisible: true,
@@ -167,7 +170,7 @@ export function createArtifactAgentRuntime(
       );
     }
     if (input.operation === "open") {
-      const app = await artifactClient.get(input.id);
+      const app = z.object({ id: z.string(), title: z.string() }).parse(await request("check/gate", { id: input.id, conversationId }));
       signal.throwIfAborted();
       if (abort.signal.aborted) throw new Error("Browser workspace disconnected");
       if (!open) return { href: `/app/assistant/apps/${app.id}`, started: false };
@@ -281,6 +284,7 @@ export function createArtifactAgentRuntime(
       await waitFor(entry, () => session.snapshot().status !== "starting" || session.snapshot().work?.status === "running");
       return inspect(runId, entry);
     }
+    if (input.operation === "check") throw new Error("code_check requires the managed Chromium host");
     if (input.operation === "present") return present(input, conversationId, callId, signal);
     const entry = runs.get(input.runId);
     if (!entry || entry.conversationId !== conversationId)

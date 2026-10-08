@@ -15,6 +15,7 @@ test("code tools accept flat arguments and reject legacy envelopes", () => {
     { id },
     { runId: "run", name: "report.csv" },
     { id },
+    { id },
     { name: "crm", origin: "https://api.example.com" },
   ];
   for (const [index, name] of CODE_RUNTIME_TOOL_NAMES.entries()) {
@@ -56,4 +57,11 @@ test("code_present takes a saved app or one-off files with index.html", () => {
   expect(() => parseCodeToolInput("code_present", { files: [{ path: "app.js", content: "" }], title: "Overview" })).toThrow();
   expect(() => parseCodeToolInput("code_present", { files: [{ path: "../index.html", content: "" }], title: "Overview" })).toThrow();
   expect(() => parseCodeToolInput("code_present", { runId: "run", title: "Overview" })).toThrow();
+});
+
+test("code_check is flat, accepts a saved app or one-off files without a title", () => {
+  expect(parseCodeToolInput("code_check", { id })).toEqual({ operation: "check", id });
+  expect(parseCodeToolInput("code_check", { files: [{ path: "index.html", content: "<h1>Hello</h1>" }] }).operation).toBe("check");
+  expect(() => parseCodeToolInput("code_check", { id, files: [] })).toThrow();
+  expect(() => parseCodeToolInput("code_check", { id, steps: [] })).toThrow();
 });

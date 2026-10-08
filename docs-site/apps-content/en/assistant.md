@@ -596,8 +596,9 @@ the app appears only in the console.
 
 `code_write` reports static problems in an app's JavaScript and CSS, and
 `code_present` refuses an app with errors such as CDN scripts, missing imports
-or inline handlers. Apps do not run in `code_run`; a rendered self-check of an
-app is not available yet.
+or inline handlers. Apps do not run in `code_run`. Before an agent opens,
+presents or publishes an app, `code_check` renders it on desktop and phone,
+replays its main flow on throwaway data and returns screenshots and findings.
 
 ### Store data and combine Cloud actions
 

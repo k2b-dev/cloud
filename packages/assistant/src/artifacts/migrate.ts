@@ -165,4 +165,13 @@ export async function migrateArtifacts() {
     PRIMARY KEY(turn_id,call_id,id),
     FOREIGN KEY(turn_id,call_id) REFERENCES assistant.artifact_agent_calls(turn_id,call_id) ON DELETE CASCADE
   )`;
+  await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS check_scratch BOOLEAN NOT NULL DEFAULT false`;
+  await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS check_conversation_id UUID`;
+  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_checks (
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+    resource_key TEXT NOT NULL, hash TEXT NOT NULL, passed BOOLEAN NOT NULL, height INTEGER NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(user_id,conversation_id,resource_key,hash)
+  )`;
 }

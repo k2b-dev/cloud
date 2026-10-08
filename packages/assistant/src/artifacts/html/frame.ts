@@ -331,3 +331,14 @@ async function start() {
 }
 if (document.readyState === "loading") addEventListener("DOMContentLoaded", () => void start(), { once: true });
 else void start();
+
+// The check-only entry point shares this realm and bridge, without adding
+// inspection code or a check message listener to the normal app prelude.
+export { clip, host, send, show };
+export async function settleRequests() {
+  const until = performance.now() + 10000;
+  while (inflight || performance.now() - lastSettled < 100) {
+    if (performance.now() > until) throw new Error("cloud.* requests did not settle");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}

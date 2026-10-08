@@ -1,7 +1,11 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { CodeResourceId, parseCodeToolInput } from "@k2b/cloud/ai/browser";
 import { arg, command, flag, readCliInput } from "@k2b/cloud/cli";
 import { z } from "zod";
 import { DatabaseSql } from "../artifacts/database-contracts";
+import { CHECK_LIMITS, CheckReport } from "../artifacts/html/check-contracts";
 import type { ArtifactBundle } from "../artifacts/service";
 import { createCliCodeHost } from "./code-host";
 import { jsonRequest, parseJson, printValue, queryString, readAssistantApi, requireConfirmation } from "./shared";
@@ -81,6 +85,79 @@ const runtimeCommand = (name: "run" | "action") =>
   });
 
 export const assistantCodeCommands = [
+  command("code check", {
+    summary: "Test an HTML app on disposable data in local Chromium; save screenshots and downloads locally",
+    args: { id: arg.optional({ valueLabel: "resource-id" }) },
+    flags: {
+      chat: flag.string({ required: true, description: "Existing chat ID for check records, screenshots and uploads" }),
+      input: flag.input({ description: "One-off {files} JSON instead of resource-id; steps belong in steps.json" }),
+      out: flag.string({
+        valueLabel: "dir",
+        description: "Directory for screenshots and downloads; default: a new printed temp directory",
+      }),
+    },
+    async run({ ctx, args, flags }) {
+      if (!flags.chat) throw new Error("Provide --chat with an existing chat ID.");
+      if (flags.out !== undefined && !flags.out.trim()) throw new Error("Provide a non-empty directory for --out.");
+      const text = await readCliInput(flags.input, { label: "One-off check files" });
+      if (args.id && text) throw new Error("Provide resource-id OR --input-file, not both.");
+      const input = args.id ? { id: CodeResourceId.parse(args.id) } : parseJson(text ?? "", "check files");
+      parseCodeToolInput("code_check", input);
+      const conversation = await resolveConversation(ctx, { conversationId: flags.chat });
+      const out = flags.out === undefined ? await mkdtemp(join(tmpdir(), "cloud-code-check-")) : resolve(flags.out);
+      await mkdir(out, { recursive: true });
+      const host = await createCliCodeHost(ctx);
+      try {
+        const result: unknown = await host.execute({
+          name: "code_check",
+          args: input,
+          conversationId: conversation.id,
+          turnId: crypto.randomUUID(),
+          callId: crypto.randomUUID(),
+        });
+        const failure = z.object({ failed: z.literal(true), error: z.string() }).safeParse(result);
+        if (failure.success) throw new Error(failure.data.error);
+        const report = CheckReport.parse(result);
+        let bytes = 0;
+        const localPaths = new Map<string, string>();
+        for (const file of [...report.screenshots, ...report.downloads]) {
+          const response = await ctx.fetch(
+            `/api/ai/conversations/${encodeURIComponent(conversation.id)}/files/content${queryString({ path: file.path })}`,
+          );
+          if (!response.ok) {
+            await ctx.readJson(response);
+            throw new Error(`Could not read check output: ${file.path}`);
+          }
+          // The check stored these files within its own budget; re-check before writing locally.
+          // (Not artifacts/binary: it pulls the server AI barrel into the CLI plugin.)
+          const content = new Uint8Array(await response.arrayBuffer());
+          if (content.byteLength > Math.min(CHECK_LIMITS.fileBytes, CHECK_LIMITS.outputBytes - bytes))
+            throw new Error(`Check output exceeds the local output budget: ${file.path}`);
+          bytes += content.byteLength;
+          const localPath = join(out, basename(file.path));
+          // Never overwrite an existing local file in an explicitly chosen directory.
+          await writeFile(localPath, content, { flag: "wx" });
+          localPaths.set(file.path, localPath);
+        }
+        const localReport = {
+          ...report,
+          out,
+          screenshots: report.screenshots.map((file) => ({ ...file, localPath: localPaths.get(file.path)! })),
+          downloads: report.downloads.map((file) => ({ ...file, localPath: localPaths.get(file.path)! })),
+        };
+        const lines = [
+          `code_check ${report.passed ? "PASSED" : "FAILED"} (${report.hash})`,
+          `Output directory: ${out}`,
+          ...report.issues.map((issue) => `${issue.severity}: ${issue.view ?? ""} ${issue.kind}: ${issue.message}`),
+          ...localReport.screenshots.map((shot) => `${shot.view} (${shot.theme}): ${shot.localPath} (chat: ${shot.path})`),
+          ...localReport.downloads.map((file) => `${file.name} (${file.size} B): ${file.localPath} (chat: ${file.path})`),
+        ];
+        printValue(ctx, localReport, lines.join("\n"));
+      } finally {
+        await host.close();
+      }
+    },
+  }),
   command("code actions", {
     summary: "Discover published App actions and input/output schemas",
     args: { id: resource },

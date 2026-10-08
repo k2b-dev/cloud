@@ -14,6 +14,7 @@ export const CODE_RUNTIME_TOOL_NAMES = [
   "code_open",
   "code_export",
   "code_present",
+  "code_check",
   "code_secret",
 ] as const;
 export const CodeRunInput = z
@@ -115,6 +116,11 @@ export const CodePresentInput = z
   .refine((input) => Number(input.id !== undefined) + Number(input.files !== undefined) === 1, "Provide exactly one of id or files")
   .refine((input) => input.id !== undefined || input.title !== undefined, "A one-off app needs a title")
   .refine((input) => !input.files || input.files.some((file) => file.path === "index.html"), "files must contain index.html");
+export const CodeCheckInput = z
+  .object({ id: id.optional(), files: CodePresentInput.shape.files })
+  .strict()
+  .refine((input) => Number(input.id !== undefined) + Number(input.files !== undefined) === 1, "Provide exactly one of id or files")
+  .refine((input) => !input.files || input.files.some((file) => file.path === "index.html"), "files must contain index.html");
 export const CodeExportInput = z
   .object({ runId, name: z.string().min(1).max(180).describe("Captured output filename returned by the snapshot.") })
   .strict();
@@ -147,6 +153,7 @@ export const CodeRuntimeInput = z.discriminatedUnion("operation", [
   CodeOpenInput.extend({ operation: z.literal("open") }),
   CodeSecretInput.extend({ operation: z.literal("secret") }),
   CodePresentInput.safeExtend({ operation: z.literal("present") }),
+  CodeCheckInput.safeExtend({ operation: z.literal("check") }),
   CodeExportInput.extend({ operation: z.literal("export") }),
 ]);
 export type CodeRuntimeInput = z.infer<typeof CodeRuntimeInput>;
@@ -164,6 +171,8 @@ export function parseCodeToolInput(name: string, args: unknown): CodeRuntimeInpu
       return { operation: "stop", ...CodeStopInput.parse(args) };
     case "code_open":
       return { operation: "open", ...CodeOpenInput.parse(args) };
+    case "code_check":
+      return { operation: "check", ...CodeCheckInput.parse(args) };
     case "code_present":
       return { operation: "present", ...CodePresentInput.parse(args) };
     case "code_export":

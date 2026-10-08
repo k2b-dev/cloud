@@ -100,7 +100,11 @@ export const runManagedCodeTool =
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });
       headers.set(CODE_CAPABILITY_TOKEN_HEADER, callback.token);
       if (context.locale) headers.set(LOCALE_HEADER, context.locale);
-      if (context.timeZone) headers.set("cookie", `${TIMEZONE_COOKIE}=${encodeURIComponent(context.timeZone)}`);
+      const timeZone = runConfig.timeZone ?? context.timeZone;
+      headers.set(
+        "cookie",
+        [`theme=${runConfig.theme ?? "light"}`, ...(timeZone ? [`${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}`] : [])].join("; "),
+      );
       const response = await fetch(new URL(`/_internal/assistant/tools/${name}`, app.baseUrl), {
         method: "POST",
         headers,

@@ -190,9 +190,15 @@ describe("AI tools", () => {
       "code_inspect",
       "code_stop",
       "code_open",
+      "code_check",
       "code_present",
       "code_export",
     ]);
+    const check = browser.tools.find((tool) => tool.def.name === "code_check");
+    expect(check?.kind).toBe("server");
+    expect(browser.frontendModes.get("code_check")).toBeUndefined();
+    expect(browser.approvalPolicies.get("code_check")).toBe("never");
+    expect(check?.def.description).toContain("EVERY screenshot");
     const presentation = browser.tools.find((tool) => tool.def.name === "code_present");
     expect(presentation?.kind).toBe("server");
     expect(browser.frontendModes.get("code_present")).toBeUndefined();

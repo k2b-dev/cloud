@@ -3,8 +3,9 @@
 Use `cloud.http.fetch` to call a public HTTPS API from code. Requests run on the
 Assistant server. The worker's native `fetch` still has no network access.
 Every request asks the user to confirm its destination, method, headers, and
-body preview. Test runs make real requests too. For a Cloud app, prefer its
-existing capabilities and their domain-specific authorization.
+body preview. Script test runs make real requests too. HTML `code_check` never
+executes HTTP. For a Cloud app, prefer its existing capabilities and their
+domain-specific authorization.
 
 ## Store a secret without exposing its value
 

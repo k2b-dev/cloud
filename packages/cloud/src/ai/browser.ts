@@ -1,6 +1,7 @@
 export {
   CODE_RUNTIME_TOOL_NAMES,
   CodeActionInput,
+  CodeCheckInput,
   CodeResourceId,
   CodeRuntimeInput,
   CodeToolFailure,

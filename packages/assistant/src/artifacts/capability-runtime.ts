@@ -11,6 +11,8 @@ import { CapabilityActionReviewSchema, CapabilityStreamSchema } from "@k2b/cloud
 import { sql } from "bun";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
+import { CHECK_UNAVAILABLE } from "./html/check-contracts";
+import { CloudError } from "./runtime/errors";
 import { ArtifactError, type ArtifactIdentity, artifacts, user } from "./service";
 
 export const RuntimeCapabilityRequest = z
@@ -83,6 +85,31 @@ async function operation(name: string, locale?: string | null) {
 }
 
 export const runtimeCapabilities = {
+  async check(
+    input: { name: string; input: z.infer<ReturnType<typeof z.json>>; conversationId: string; artifactId?: string },
+    identity: ArtifactIdentity,
+    caller: CapabilityCaller,
+  ) {
+    const request = RuntimeCapabilityRequest.parse({ ...input, id: crypto.randomUUID() });
+    const resource = await authorize(request, identity);
+    if (resource && resource.permission !== "admin") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
+    // Discover first. Never prepare an action: even a review may have effects.
+    const target = await operation(input.name, caller.locale);
+    if (target.kind !== "query") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
+    const response = await this.prepare(request, identity, caller);
+    if (response.status !== "completed") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
+    const result = z
+      .object({ ok: z.boolean(), data: z.unknown().optional(), error: z.object({ message: z.string() }).optional() })
+      .parse(response.result);
+    if (!result.ok) throw new Error(result.error?.message ?? "Read-only capability failed");
+    const envelope = result.data;
+    if (envelope && typeof envelope === "object" && "stream" in envelope && envelope.stream) {
+      const stream = CapabilityStreamSchema.parse(envelope.stream);
+      if (stream.direction !== "read") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
+      return { ...envelope, stream: { ...stream, callId: request.id } };
+    }
+    return envelope;
+  },
   async stream(
     id: string,
     verb: "read" | "write" | "status" | "abort",

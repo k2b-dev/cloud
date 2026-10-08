@@ -1,8 +1,98 @@
 import { expect, jest, test } from "bun:test";
+import { buildBaseCss, buildCheckPrelude } from "../artifacts/html/build-assets";
 import { ChunkName, chunkSource } from "../artifacts/runtime/chunks";
 import { cliHostBundle } from "../artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../artifacts/runtime/compile";
 import { createCliCodeHost } from "./code-host";
+
+test.each(["signal", "code_stop"])(
+  "cancelling a check through %s discards its scope and keeps the host alive",
+  async (via) => {
+    const [bundle, prelude, baseCss] = await Promise.all([cliHostBundle(), buildCheckPrelude(), buildBaseCss()]);
+    let entered!: () => void, discarded!: () => void;
+    const storageEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const scopeDiscarded = new Promise<void>((resolve) => {
+      discarded = resolve;
+    });
+    const scopes: string[] = [],
+      requests: string[] = [];
+    const host = await createCliCodeHost({
+      fetch: async (input, init) => {
+        const path = String(input);
+        requests.push(path);
+        if (path.endsWith("host.js")) return new Response(bundle);
+        if (path.endsWith("/check/start"))
+          return Response.json({
+            artifactId: "abc234",
+            scopeId: "Scp234",
+            hash: "a".repeat(64),
+            steps: [],
+            warnings: [],
+            source: {
+              entry: "index.html",
+              files: [
+                { path: "index.html", content: "<main><h1>Waiting</h1></main>" },
+                { path: "app.js", content: 'await cloud.kv.get("wait");' },
+              ],
+            },
+            context: { locale: "en", timeZone: "UTC", user: null },
+            theme: "light",
+            assets: { prelude, baseCss, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'` },
+          });
+        if (new URL(path, "http://localhost").pathname.endsWith("/storage")) {
+          entered();
+          return new Promise<Response>((_, reject) => {
+            const cancel = () => reject(new DOMException("Request cancelled", "AbortError"));
+            if (init?.signal?.aborted) cancel();
+            else init?.signal?.addEventListener("abort", cancel, { once: true });
+          });
+        }
+        if (path.endsWith("/check/discard")) {
+          scopes.push(JSON.parse(await new Response(init?.body).text()).id);
+          discarded();
+          return Response.json({ discarded: true });
+        }
+        throw new Error(`Unexpected request ${path}`);
+      },
+    });
+    const abort = new AbortController();
+    const ids = { conversationId: crypto.randomUUID(), turnId: crypto.randomUUID() };
+    try {
+      const operation = host.execute({ ...ids, name: "code_check", callId: "check", args: { id: "abc234" } }, abort.signal);
+      // Surface initialization failures instead of hanging until the test deadline.
+      const reachedStorage = await Promise.race([
+        storageEntered.then(() => true),
+        // The losing branch must consume cancellation, even while code_stop
+        // waits for cleanup before we attach the rejection assertion below.
+        operation.then(
+          () => false,
+          () => false,
+        ),
+      ]);
+      if (!reachedStorage) {
+        await operation;
+        throw new Error("Check never reached storage");
+      }
+      if (via === "signal") abort.abort();
+      else expect(await host.execute({ ...ids, name: "code_stop", callId: "stop", args: { runId: "check" } })).toEqual({ stopped: true });
+      await expect(operation).rejects.toThrow(via === "signal" ? "Request cancelled" : "Check stopped");
+      await scopeDiscarded;
+      expect(scopes).toEqual(["Scp234"]);
+      expect(requests.map((path) => new URL(path, "http://localhost").pathname.split("/").pop())).toEqual([
+        "host.js",
+        "start",
+        "storage",
+        "discard",
+      ]);
+      await host.health();
+    } finally {
+      await host.close();
+    }
+  },
+  60000,
+);
 
 test("published actions execute in the isolated host and validate their returned value", async () => {
   const source = {

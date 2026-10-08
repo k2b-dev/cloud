@@ -4,9 +4,17 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-export async function buildPrelude(): Promise<string> {
+export function buildPrelude(): Promise<string> {
+  return buildFrame("frame.ts");
+}
+
+export function buildCheckPrelude(): Promise<string> {
+  return buildFrame("check-frame.ts");
+}
+
+async function buildFrame(entry: string): Promise<string> {
   const build = await Bun.build({
-    entrypoints: [join(import.meta.dir, "frame.ts")],
+    entrypoints: [join(import.meta.dir, entry)],
     target: "browser",
     format: "iife",
     minify: true,

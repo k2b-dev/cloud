@@ -166,7 +166,7 @@ host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
 
 The default tool source also offers the server-run Code Mode tools `code_run`,
-`code_action`, `code_inspect`, `code_stop`, `code_export`, and `code_present`
+`code_action`, `code_inspect`, `code_stop`, `code_export`, `code_present`, and `code_check`
 in every turn, whichever client submits it, including API
 clients, `cld assistant --detach`, and scheduled tasks. They load on demand
 and run JavaScript in an isolated Assistant-owned host. That code can call
@@ -766,3 +766,18 @@ running provider calls may finish and exceed the allowance.
 The feature is disabled by default and does not limit generic application AI,
 workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets)
 for accounting, wildcard precedence and reset behavior.
+
+### HTML app self-tests
+
+`code_check` is a server-managed tool available to web, CLI, API and background
+turns. Write main-flow steps in the app's `steps.json`, check, inspect every
+screenshot with `view_image`, and fix before showing or publishing. The agent's
+open/present/publish operations require a passing check for the current source,
+steps and table definitions in that user/conversation. Human Studio publication
+and scripts have no check gate. The self-test is not a security mechanism.
+
+Desktop and phone run a saved app on separate disposable copies of its data;
+one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
+capability effects are unavailable, and background checks reject all
+capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+for step matching, copy/output budgets, cancellation and the report contract.

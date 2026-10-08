@@ -17,7 +17,10 @@ There are two kinds of code:
   scheduled runs. One JavaScript module, run with `code_run`.
 - **HTML apps** are interfaces: `index.html` plus optional `style.css` and
   `app.js`, shown with `code_open` or `code_present`. Read
-  [HTML apps](references/apps.md) before writing one.
+  [HTML apps](references/apps.md) before writing one. Write `steps.json`, run
+  `code_check`, inspect every screenshot with `view_image`, fix and check again
+  before `code_open`, `code_present` or `code_publish`. The check uses throwaway
+  data; scripts still use real data.
 
 ## Start from the contract
 

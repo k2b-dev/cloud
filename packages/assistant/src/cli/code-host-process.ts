@@ -8,7 +8,7 @@ export function startCliCodeHostProcess() {
   let starting: ReturnType<typeof createBrowserCodeHost> | undefined;
   const ipc = hostIpc(
     (message) => process.send!(message),
-    async (request) => {
+    async (request, signal) => {
       if (request.operation === "start") {
         if (starting) throw new Error("CLI browser host already started");
         starting = createBrowserCodeHost(
@@ -30,7 +30,7 @@ export function startCliCodeHostProcess() {
       }
       if (request.operation === "call" || request.operation === "execute") {
         if (!host) throw new Error("CLI browser host not started");
-        return host[request.operation](request.call);
+        return host[request.operation](request.call, signal);
       }
       throw new Error("Unsupported CLI browser request");
     },

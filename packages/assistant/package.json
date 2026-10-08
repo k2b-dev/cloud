@@ -30,7 +30,8 @@
     "read-excel-file": "9.3.10",
     "solid-js": "catalog:",
     "zod": "catalog:",
-    "@typescript/typescript6": "catalog:"
+    "@typescript/typescript6": "catalog:",
+    "axe-core": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

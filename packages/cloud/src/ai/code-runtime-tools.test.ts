@@ -205,7 +205,7 @@ test("a failed code call reaches the model as a tool error, while a failed run s
   ]);
 });
 
-test("managed code forwards trusted locale and timezone to the Assistant host", async () => {
+test("managed code forwards trusted locale and persisted browser preferences to the Assistant host", async () => {
   const user = {
     id: "11111111-1111-4111-8111-111111111111",
     uid: "test",
@@ -226,7 +226,13 @@ test("managed code forwards trusted locale and timezone to the Assistant host", 
     managesGroupIds: [],
   };
   const actor = { kind: "user" as const, user };
-  const config = { kind: "chat" as const, input: "Run", toolSource: { kind: "none" as const } };
+  const config = {
+    kind: "chat" as const,
+    input: "Run",
+    toolSource: { kind: "none" as const },
+    theme: "dark" as const,
+    timeZone: "Pacific/Honolulu",
+  };
   try {
     spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
     spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
@@ -287,7 +293,7 @@ test("managed code forwards trusted locale and timezone to the Assistant host", 
         async (_url: RequestInfo | URL, init?: RequestInit) => {
           const headers = new Headers(init?.headers);
           expect(headers.get("x-cloud-locale")).toBe("de-DE");
-          expect(headers.get("cookie")).toBe("cloud.timezone=Europe%2FBerlin");
+          expect(headers.get("cookie")).toBe("theme=dark; cloud.timezone=Pacific%2FHonolulu");
           return Response.json({ ok: true, data: { status: "done", result: { answer: 42 }, approvals: [] } });
         },
         { preconnect: fetch.preconnect },

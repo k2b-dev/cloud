@@ -10,6 +10,8 @@ export const LIMITS = {
   logs: 200,
   text: 16000,
   pendingRequests: 32,
+  // Matches the default Core worker concurrency before Chromium allocation.
+  codeHosts: 8,
   rpcBytes: 16 * 1024 * 1024,
   // Match the existing Assistant chat-file defaults (checked in contracts.test).
   inputFileBytes: 50 * 1024 * 1024,

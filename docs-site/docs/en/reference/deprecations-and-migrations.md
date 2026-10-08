@@ -64,7 +64,7 @@ rebuilt, for example with **Edit**, and its published actions keep working.
 | `ui.*` controls, layouts, Chart Explorer, `ui.modal.*` | HTML elements styled by the base stylesheet; `<dialog>` for questions; `cloud.chart` for charts |
 | `ui.filePicker` | `<input type="file">` |
 | A GUI entry that default-exports a function | `index.html`; `code_create` starts with one |
-| `code_interact` | removed, and `clientToolIds` no longer accepts the name; scripts are tested with `code_run`, apps have no rendered self-check yet |
+| `code_interact` | removed, and `clientToolIds` no longer accepts the name; scripts are tested with `code_run`, HTML apps with `code_check` |
 | `code_inspect` with `nodeId`, `offset`, `limit` | `code_inspect({runId, waitMs?})` |
 | `code_present({runId, title})` | `code_present({title, files})` for a one-off app, `code_present({id})` for a saved app |
 | `code_run({id})` on an app with a GUI | `code_open` or `code_present`; `code_run` refuses an `index.html` entry |
