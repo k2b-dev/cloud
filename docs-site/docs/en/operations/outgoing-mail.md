@@ -356,20 +356,22 @@ its 24-hour deadline fails. Choose a pace the provider and this sequential
 sender can sustain. Batch uploads run sequentially within one shared
 60-second upload budget.
 
-Reserve JetStream capacity for the Core-owned object store
-`cloud-outgoing-mail-attachments`: **2 GiB**, plus replication overhead,
-25 MiB maximum per object, and 48-hour object expiry. Bulk mail keeps its
-attachment objects until its attempt, so large paced batches with attachments
+Reserve JetStream storage for the Core-owned object store
+`cloud-outgoing-mail-attachments`: **2 GiB** on every node that holds one of
+its replicas, 25 MiB maximum per object, and 48-hour object expiry. Bulk mail
+keeps its attachment objects until its attempt, so large paced batches with attachments
 can fill the shared store for hours. While it is full, every application's
 sends and enqueues with attachments fail with `attachment_storage_full`.
 The store limit is fixed, so send links instead of large attachments in bulk
 mail.
 
 The settled topic `cloud-outgoing-mail-settled` retains message-ID wakeups for
-five minutes with a 2 MiB stream limit (plus its dead-letter stream and
-replication overhead). The send and `cloud-outgoing-mail-drain` jobs use Sync's
-default bounded job retention. Losing a wakeup does not remove the durable mail
-row.
+five minutes with a 2 MiB stream limit; with its dead-letter stream it reserves
+4 MiB. The jobs `cloud-outgoing-mail-send` and `cloud-outgoing-mail-drain` use
+Sync's default bounded job retention, 66 MiB each. Together, outgoing mail adds
+about 2.1 GiB to Core's reservation per replica; see
+[Reserve JetStream storage](/en/docs/operations/deployment-requirements#reserve-jetstream-storage).
+Losing a wakeup does not remove the durable mail row.
 
 Every 30 seconds, Core recovers attempts stuck in `sending` for more than five
 minutes in both lanes and resubmits due immediate rows and bulk profile drains.
@@ -406,6 +408,13 @@ must run this version to process bulk rows. Before rolling back to a version
 without the drainer, stop accepting new bulk mail and finish or cancel its
 queued batches; older Core workers cannot deliver that lane. No new
 configuration variables are required.
+
+Since 0.34.0, outgoing mail adds about 2.1 GiB to Core's JetStream reservation
+on every NATS node that holds its replicas. Before you upgrade from an older
+release, make sure `max_file_store` on every node fits Core's new total; see
+[Reserve JetStream storage](/en/docs/operations/deployment-requirements#reserve-jetstream-storage).
+Otherwise NATS refuses the new streams with
+`insufficient storage resources available`, and Core does not start.
 
 On upgrade, Core imports the stored `mail.noreply.*` settings when there are
 no profiles and the prior SMTP host is non-empty. The imported profile is
