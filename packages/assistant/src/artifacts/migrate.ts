@@ -3,16 +3,6 @@ import { sql } from "bun";
 
 export async function migrateArtifacts() {
   await sql`CREATE SCHEMA IF NOT EXISTS assistant`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.chat_presentations (
-    id UUID PRIMARY KEY, conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
-    call_id TEXT NOT NULL, title TEXT NOT NULL, code TEXT NOT NULL, nodes JSONB NOT NULL,
-    bytes BIGINT NOT NULL CHECK(bytes >= 0), created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(conversation_id,call_id)
-  )`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.chat_presentation_inputs (
-    presentation_id UUID NOT NULL REFERENCES assistant.chat_presentations(id) ON DELETE CASCADE,
-    path TEXT NOT NULL, data BYTEA NOT NULL, media_type TEXT NOT NULL, PRIMARY KEY(presentation_id,path)
-  )`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
@@ -22,6 +12,21 @@ export async function migrateArtifacts() {
   )`.simple();
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS assistant_artifacts_short_id_key ON assistant.artifacts(short_id)`.simple();
+  // Chat presentations were UI-tree snapshots until HTML apps replaced them; those cannot be shown anymore and are cleared once.
+  await sql`DROP TABLE IF EXISTS assistant.chat_presentation_inputs`.simple();
+  await sql`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_schema='assistant' AND table_name='chat_presentations' AND column_name='nodes') THEN
+      DROP TABLE assistant.chat_presentations;
+    END IF;
+  END $$`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.chat_presentations (
+    id UUID PRIMARY KEY, conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+    call_id TEXT NOT NULL, title TEXT NOT NULL, files JSONB,
+    artifact_id UUID REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
+    bytes BIGINT NOT NULL CHECK(bytes >= 0), created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(conversation_id,call_id), CHECK((files IS NULL) <> (artifact_id IS NULL))
+  )`.simple();
   const missing = await sql<{ id: string }[]>`SELECT id FROM assistant.artifacts WHERE short_id IS NULL`;
   for (const row of missing)
     await withAiShortIdForDb(

@@ -59,7 +59,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
       yield { type: "usage", usage: result.usage ?? { input: 0, output: 0, total: 0 }, finishReason: result.finishReason };
     },
   };
-  const runtime = async (name: "code_run" | "code_inspect" | "code_interact" | "code_export", args: unknown, callId?: string) => {
+  const runtime = async (name: "code_run" | "code_inspect" | "code_export" | "code_present", args: unknown, callId?: string) => {
     if (!callId) throw new Error("Missing tool call ID");
     for (;;) {
       context.signal.throwIfAborted();
@@ -136,14 +136,14 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     }).server((args, ctx) => runtime("code_run", args, ctx.callId)),
     defineTool({
       name: "code_inspect",
-      description: "Inspect bounded UI state and returned control event examples",
+      description: "Inspect a script run: status, logs, output and captured files",
       inputSchema: getCodeToolInputSchema("code_inspect"),
     }).server((args, ctx) => runtime("code_inspect", args, ctx.callId)),
     defineTool({
-      name: "code_interact",
-      description: "Interact with exact control ID and typed event, or a batch of up to three steps",
-      inputSchema: getCodeToolInputSchema("code_interact"),
-    }).server((args, ctx) => runtime("code_interact", args, ctx.callId)),
+      name: "code_present",
+      description: "Show a saved HTML app or one-off HTML files as a card in this chat after static checks",
+      inputSchema: getCodeToolInputSchema("code_present"),
+    }).server((args, ctx) => runtime("code_present", args, ctx.callId)),
     defineTool({
       name: "code_export",
       description:
@@ -155,7 +155,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     provider,
     systemPrompt: `You are the Assistant. Follow the available skills and inspect their relevant references. Build and verify the user's requested dashboard. Use exact file paths. Current chat files: ${JSON.stringify(await listAiConversationFiles(context.conversationId))}. Local source code and export data are persisted in this disposable workspace.`,
     input:
-      "Erstelle aus den drei CSV-Dateien ein interaktives Umsatz-Dashboard mit Umsatz, Marge und Zielerreichung, Monatsverlauf, Datumsbereich, Mehrfachauswahl der Regionen und Reset. Nutze die Code- und Daten-Skills. Übernimm Daten deterministisch, prüfe die Kennzahlen unabhängig und teste die echte gespeicherte App einschließlich Filter und Reset. Berichte die getestete Revision und Grenzen.",
+      "Erstelle aus den drei CSV-Dateien ein interaktives Umsatz-Dashboard als Studio-App mit Umsatz, Marge und Zielerreichung, Monatsverlauf, Datumsbereich, Mehrfachauswahl der Regionen und Reset. Nutze die Code- und Daten-Skills. Übernimm Daten deterministisch, prüfe die Kennzahlen unabhängig mit einem Skript und zeige die gespeicherte App im Chat. Berichte die Revision und Grenzen.",
     tools,
     maxTurns: 40,
     maxOutputTokens: 12000,

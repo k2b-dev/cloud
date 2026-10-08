@@ -13,6 +13,7 @@ render(
         publishedVersion: 1,
         serverAccess: authorized,
         canManage: new URLSearchParams(location.search).has("manager"),
+        hasInterface: true,
       }}
     />
   ),

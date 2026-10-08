@@ -2,49 +2,19 @@ import { expect, test } from "bun:test";
 import { CODE_RUNTIME_TOOL_NAMES, parseCodeToolInput } from "./browser-code-contracts";
 
 const id = "aBc234";
-test("interaction batches are bounded and cannot mix top-level actions", () => {
-  expect(
-    parseCodeToolInput("code_interact", {
-      runId: "run",
-      steps: [{ id: "apply" }, { id: "view", event: { type: "view", value: "table" } }],
-    }),
-  ).toMatchObject({ steps: [{ id: "apply" }, { id: "view" }] });
-  for (const input of [
-    { runId: "run", steps: [] },
-    { runId: "run", steps: Array.from({ length: 4 }, () => ({ id: "apply" })) },
-    { runId: "run", id: "apply", steps: [{ id: "apply" }] },
-    { runId: "run", steps: [{ id: "apply", answer: null, event: { type: "refresh" } }] },
-  ])
-    expect(() => parseCodeToolInput("code_interact", input)).toThrow();
-});
-test("UI interactions use structured events without legacy list action fields", () => {
-  expect(parseCodeToolInput("code_interact", { runId: "run", id: "count", event: { type: "change", value: 7 } })).toMatchObject({
-    event: { type: "change", value: 7 },
-  });
-  expect(() => parseCodeToolInput("code_interact", { runId: "run", id: "tasks", action: "delete", item: "one" })).toThrow();
-  expect(() => parseCodeToolInput("code_interact", { runId: "run", id: "count", event: '{"type":"change","value":7}' })).toThrow();
-  expect(() =>
-    parseCodeToolInput("code_interact", {
-      runId: "run",
-      id: "date",
-      event: { type: "change", value: { start: "2026-01", end: "2026-08" } },
-    }),
-  ).toThrow();
-  expect(() =>
-    parseCodeToolInput("code_interact", { runId: "run", id: "count", event: { type: "change", value: 7 }, answer: 7 }),
-  ).toThrow();
-  expect(parseCodeToolInput("code_interact", { runId: "run", id: "dialog", answer: "Example" })).toMatchObject({ answer: "Example" });
+test("code_interact and node inspection no longer exist", () => {
+  expect(() => parseCodeToolInput("code_interact", { runId: "run", id: "count" })).toThrow();
+  expect(() => parseCodeToolInput("code_inspect", { runId: "run", nodeId: "table" })).toThrow();
 });
 test("code tools accept flat arguments and reject legacy envelopes", () => {
   const inputs = [
     { id },
     { id, action: "double", publishedVersion: 1, input: { value: 2 } },
     { runId: "run" },
-    { runId: "run", id: "@modal:1", answer: { count: 2 } },
     { runId: "run" },
     { id },
     { runId: "run", name: "report.csv" },
-    { runId: "run", title: "Overview" },
+    { id },
     { name: "crm", origin: "https://api.example.com" },
   ];
   for (const [index, name] of CODE_RUNTIME_TOOL_NAMES.entries()) {
@@ -75,4 +45,15 @@ test("action input is an object, never JSON text", () => {
   expect(parseCodeToolInput("code_action", call)).toMatchObject({ input: {} });
   expect(parseCodeToolInput("code_action", { ...call, input: { value: 2 } })).toMatchObject({ input: { value: 2 } });
   for (const input of ["{}", '{"value":2}', 2, [2], null]) expect(() => parseCodeToolInput("code_action", { ...call, input })).toThrow();
+});
+
+test("code_present takes a saved app or one-off files with index.html", () => {
+  expect(parseCodeToolInput("code_present", { id })).toMatchObject({ operation: "present", id });
+  const files = [{ path: "index.html", content: "<h1>Hi</h1>" }];
+  expect(parseCodeToolInput("code_present", { files, title: "Overview" })).toMatchObject({ operation: "present", files });
+  expect(() => parseCodeToolInput("code_present", { files })).toThrow();
+  expect(() => parseCodeToolInput("code_present", { id, files, title: "Overview" })).toThrow();
+  expect(() => parseCodeToolInput("code_present", { files: [{ path: "app.js", content: "" }], title: "Overview" })).toThrow();
+  expect(() => parseCodeToolInput("code_present", { files: [{ path: "../index.html", content: "" }], title: "Overview" })).toThrow();
+  expect(() => parseCodeToolInput("code_present", { runId: "run", title: "Overview" })).toThrow();
 });

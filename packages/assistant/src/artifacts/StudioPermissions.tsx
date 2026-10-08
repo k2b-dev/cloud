@@ -3,9 +3,10 @@ import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { Button, InlineGuidance, NoticeCard, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
 import type { artifactClient } from "./client";
+import { PUBLIC_APP_SHARING } from "./contracts";
 import { artifactMessages } from "./messages";
 
-/** The same public-access contract in Studio and operator administration. */
+/** The same access contract in Studio and operator administration; public links follow PUBLIC_APP_SHARING. */
 export function StudioPermissions(props: {
   entries: AccessEntry[];
   loadProjects: () => ReturnType<typeof artifactClient.projects>;
@@ -38,12 +39,17 @@ export function StudioPermissions(props: {
         </NoticeCard>
       </Show>
       <Show when={addingPublic() || publicIds().length}>
-        <NoticeCard tone="warning" title={t().publicAccessTitle} detail={t().publicAccessHelp} />
+        <Show
+          when={PUBLIC_APP_SHARING}
+          fallback={<NoticeCard tone="warning" title={t().publicSharingOffTitle} detail={t().publicSharingOffHelp} />}
+        >
+          <NoticeCard tone="warning" title={t().publicAccessTitle} detail={t().publicAccessHelp} />
+        </Show>
       </Show>
       <PermissionEditor
         initialEntries={props.entries}
         canEdit
-        allowPublic
+        allowPublic={PUBLIC_APP_SHARING}
         allowServiceAccounts={false}
         allowedLevels={(principal) =>
           principal.type === "public"

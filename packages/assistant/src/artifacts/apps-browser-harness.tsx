@@ -21,7 +21,11 @@ render(
       conversations={[]}
       doneCount={0}
       projects={[]}
-      initialApp={{ ...item, sourceRevision: 2, source: { entry: "main.js", files: [] } }}
+      initialApp={{
+        ...item,
+        sourceRevision: 2,
+        source: { entry: "index.html", files: [{ path: "index.html", content: "<main><p>Published calculator</p></main>" }] },
+      }}
     />
   ),
   document.getElementById("root")!,

@@ -1,10 +1,14 @@
+// The standalone runner with real HTML app frames: who starts automatically, access changes,
+// stable controls during a restart, hash mirroring and safe mode.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { type Browser, chromium } from "playwright";
-import { compileArtifact } from "./runtime/compile";
+import type { Browser, Page } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
+import { appAssetsJson } from "./html/test-assets";
 
 let browser: Browser;
 let code: string;
 let appCss: string;
+let assets: string;
 beforeAll(async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./runner-browser-harness.tsx"], {
     stdout: "pipe",
@@ -21,261 +25,181 @@ beforeAll(async () => {
   const css = await Bun.build({ entrypoints: [new URL("../styles/app.css", import.meta.url).pathname], plugins: [tailwind] });
   if (!css.success) throw new Error(css.logs.join("\n"));
   appCss = await css.outputs[0]!.text();
-  browser = await chromium.launch({ headless: true, timeout: 10000 });
-}, 30000);
+  assets = await appAssetsJson();
+  browser = await launchBrowser({ timeout: 10000 });
+}, 120_000);
 afterAll(async () => {
   await browser?.close();
 });
 
-test("standalone public runner starts local code and blocks every server bridge without Assistant requests", async () => {
-  const compiled = await compileArtifact({
-    entry: "main.js",
-    files: [
-      {
-        path: "main.js",
-        content: `export default async (_input, {files,signal,progress}) => {
-    ui.text({value:"Local calculation: " + (6*7)});
-    for (const [name,call] of [
-      ["database",()=>cloud.db.list("records")],
-      ["files",()=>cloud.files.list()],
-      ["kv",()=>cloud.kv.keys()],
-      ["http",()=>cloud.http.fetch("https://example.com")],
-      ["capabilities",()=>cloud.capabilities.run("core.entities.search",{})]
-    ]) { try {await call();ui.text({value:"UNEXPECTED: " + name});} catch(error) {ui.text({value:"Blocked: " + name});if(name==="database") ui.text({value:"Database error: "+error.code});} }
-    ui.filePicker({label:"Choose file",onChange:async ([selected])=>ui.text({value:"Local file: "+await selected.text()})});
-  }`,
-      },
-    ],
-  });
-  const metadata = {
-    id: "Run001",
-    title: "Public calculator",
-    sourceRevision: 1,
-    publishedVersion: 1,
-    serverAccess: false,
-    canManage: false,
-  };
+const COUNTER = {
+  "index.html": '<main><h1>Counter</h1><p id="count"></p><button id="ping" type="button">Ping</button></main>',
+  "app.js": `const out = document.querySelector("#count");
+try {
+  const count = ((await cloud.kv.user.get("count")) ?? 0) + 1;
+  await cloud.kv.user.set("count", count);
+  out.textContent = "Counter: " + count;
+} catch (error) {
+  out.textContent = "Personal storage: " + error.code;
+}
+document.querySelector("#ping").addEventListener("click", () => (location.hash = "#pinged"));`,
+};
+type Server = { url: URL; requests: string[]; stop: () => void; state: { serverAccess: boolean; revoked: boolean; canManage: boolean } };
+function serve(files: Record<string, string>, state = { serverAccess: true, revoked: false, canManage: true }): Server {
+  const personal = new Map<string, unknown>();
   const requests: string[] = [];
-  const server = Bun.serve({
-    port: 0,
-    fetch(request) {
-      const path = new URL(request.url).pathname;
-      requests.push(path);
-      if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "application/javascript" } });
-      if (path === "/api/assistant/runner/Run001") return Response.json(metadata);
-      if (path === "/api/assistant/runner/Run001/compiled") return Response.json({ ...compiled, metadata });
-      if (path.startsWith("/api/")) return new Response("Unexpected protected request", { status: 403 });
-      return new Response('<html><meta charset="utf-8"><body><div id="root"></div><script src="/bundle.js"></script></body></html>', {
-        headers: { "content-type": "text/html" },
-      });
-    },
-  });
-  const context = await browser.newContext();
-  context.setDefaultTimeout(10000);
-  try {
-    const page = await context.newPage();
-    const chooser = page.waitForEvent("filechooser");
-    await page.goto(server.url.href);
-    await page.getByText("Local calculation: 42", { exact: true }).waitFor();
-    for (const name of ["database", "files", "kv", "http", "capabilities"])
-      await page.getByText(`Blocked: ${name}`, { exact: true }).waitFor();
-    await page.getByText("Database error: denied", { exact: true }).waitFor();
-    await page.getByRole("button", { name: "Choose file" }).click();
-    await (await chooser).setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("works") });
-    await page.getByText("Local file: works", { exact: true }).waitFor();
-    expect(requests.filter((path) => path.startsWith("/api/") && !path.startsWith("/api/assistant/runner/"))).toEqual([]);
-    expect(await page.getByRole("link", { name: "Manage", exact: true }).count()).toBe(0);
-    expect(await page.getByText("UNEXPECTED:", { exact: false }).count()).toBe(0);
-    expect(await page.locator(".k2b-app-workspace__sidebar").count()).toBe(0);
-  } finally {
-    await context.close();
-    server.stop(true);
-  }
-}, 60000);
-
-test("runner explains access changes, denies personal storage after public restart, and stops after revocation", async () => {
-  const compiled = await compileArtifact({
-    entry: "main.js",
-    files: [
-      {
-        path: "main.js",
-        content: `export default async (_input, {files,signal,progress}) => {
-    try {
-      const count=(await cloud.kv.user.get("count") ?? 0)+1;
-      await cloud.kv.user.set("count",count);
-      ui.text({value:"Counter: "+count});
-    } catch(error) {ui.text({value:"Personal storage: "+error.code});}
-    ui.button({label:"Ping",onClick:()=>console.info("pong")});
-  }`,
-      },
-    ],
-  });
-  let serverAccess = true,
-    revoked = false,
-    starts = 0;
   const metadata = () => ({
     id: "Run001",
-    title: "Public calculator",
+    title: "Counter",
     sourceRevision: 1,
     publishedVersion: 1,
-    serverAccess,
-    canManage: false,
+    serverAccess: state.serverAccess,
+    canManage: state.canManage,
+    hasInterface: true,
   });
-  const personal = new Map<string, unknown>();
   const server = Bun.serve({
     port: 0,
+    hostname: "127.0.0.1",
     async fetch(request) {
-      const path = new URL(request.url).pathname;
+      const url = new URL(request.url);
+      const path = url.pathname;
+      requests.push(path);
+      if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "application/javascript" } });
+      if (path === "/app.css") return new Response(appCss, { headers: { "content-type": "text/css" } });
+      if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
+      if (path === "/api/assistant/runner/app-assets") return new Response(assets, { headers: { "content-type": "application/json" } });
       if (path === "/api/assistant/artifacts/Run001/storage") {
+        if (!state.serverAccess) return Response.json({ message: "No access" }, { status: 403 });
         const input = await request.json();
-        expect(input.scope).toBe("user");
+        if (input.scope !== "user") return Response.json({ message: "Wrong scope" }, { status: 400 });
         if (input.operation === "write") {
           personal.set(input.key, JSON.parse(input.content));
           return Response.json({ written: true });
         }
         return Response.json({ item: personal.has(input.key) ? { content: JSON.stringify(personal.get(input.key)) } : null });
       }
-      if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "application/javascript" } });
       if (path.startsWith("/api/assistant/runner/Run001")) {
-        if (revoked) return Response.json({ message: "Unavailable" }, { status: 404 });
-        if (path.endsWith("/compiled")) {
-          starts++;
-          return Response.json({ ...compiled, metadata: metadata() });
-        }
+        if (state.revoked) return Response.json({ message: "Unavailable" }, { status: 404 });
+        if (path.endsWith("/app"))
+          return Response.json({
+            metadata: metadata(),
+            files: Object.entries(files).map(([path, content]) => ({ path, content })),
+            context: { locale: "en-US", timeZone: "UTC", user: state.serverAccess ? { id: "u1", name: "Runner User" } : null },
+          });
         return Response.json(metadata());
       }
       if (path.startsWith("/api/")) return new Response("Unexpected protected request", { status: 403 });
-      return new Response('<html><meta charset="utf-8"><body><div id="root"></div><script src="/bundle.js"></script></body></html>', {
-        headers: { "content-type": "text/html" },
-      });
-    },
-  });
-  const context = await browser.newContext();
-  context.setDefaultTimeout(10000);
-  try {
-    const page = await context.newPage();
-    await page.goto(new URL("?authorized=1", server.url).href);
-    await page.getByText("Counter: 1", { exact: true }).waitFor();
-    expect(await page.getByRole("button", { name: "Ping", exact: true }).isEnabled()).toBe(true);
-    serverAccess = false;
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await page.getByRole("alert").filter({ hasText: "App access changed" }).waitFor();
-    expect(await page.getByRole("button", { name: "Ping", exact: true }).isDisabled()).toBe(true);
-    await page.getByRole("button", { name: "Restart", exact: true }).click();
-    await page.waitForFunction(() => {
-      const button = Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Ping");
-      return button && !button.disabled && !document.querySelector('[role="alert"]');
-    });
-    expect(starts).toBe(2);
-    expect(await page.getByText("Personal storage: denied", { exact: true }).count()).toBe(1);
-    revoked = true;
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await page.getByRole("alert").filter({ hasText: "no longer available" }).waitFor();
-    expect(await page.getByRole("button", { name: "Ping", exact: true }).isDisabled()).toBe(true);
-  } finally {
-    await context.close();
-    server.stop(true);
-  }
-}, 60000);
-
-test("standalone runner fades scroll edges and keeps footer controls stable during restart", async () => {
-  const compiled = await compileArtifact({
-    entry: "main.js",
-    files: [
-      {
-        path: "main.js",
-        content: `export default () => {
-    for (let i=0;i<80;i++) ui.text({value:"Dashboard row " + i});
-  }`,
-      },
-    ],
-  });
-  const mutations: string[] = [];
-  const metadata = { id: "Run001", title: "Long dashboard", sourceRevision: 1, publishedVersion: 1, serverAccess: true, canManage: true };
-  const server = Bun.serve({
-    port: 0,
-    fetch(request) {
-      const path = new URL(request.url).pathname;
-      if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "application/javascript" } });
-      if (path === "/api/assistant/artifacts/Run001/fork") {
-        mutations.push("fork");
-        return Response.json({ id: "Copy01" });
-      }
-      if (path === "/api/assistant/artifacts/Copy01/edit-chat") {
-        mutations.push(new URL(request.url).search);
-        return Response.json({ href: "/copied" });
-      }
-      if (path === "/app.css") return new Response(appCss, { headers: { "content-type": "text/css" } });
-      if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
-      if (path === "/api/assistant/runner/Run001") return Response.json(metadata);
-      if (path === "/api/assistant/runner/Run001/compiled") return Response.json({ ...compiled, metadata });
       return new Response(
-        '<html><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/ui.css"><style>body{margin:0;overflow:hidden}#root{display:flex;height:100dvh;min-height:0}</style><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script></body></html>',
+        '<html class="light"><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/ui.css"><style>body{margin:0;overflow:hidden}#root{display:flex;height:100dvh;min-height:0}</style><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script></body></html>',
         { headers: { "content-type": "text/html" } },
       );
     },
   });
+  return { url: server.url, requests, stop: () => server.stop(true), state };
+}
+const app = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
+const query = (state: Server["state"], extra = "") =>
+  `?${state.serverAccess ? "authorized=1&" : ""}${state.canManage ? "manager=1&" : ""}${extra}`;
+
+test("the runner starts an app its viewer manages, mirrors its hash and keeps controls still during a restart", async () => {
+  const server = serve(COUNTER);
   const context = await browser.newContext();
+  context.setDefaultTimeout(10000);
   try {
-    for (const width of [1200, 390]) {
-      const page = await context.newPage();
-      await page.setViewportSize({ width, height: 700 });
-      await page.goto(new URL("?authorized=1&manager=1", server.url).href);
-      await page.getByText("Dashboard row 79", { exact: true }).waitFor();
-      expect(await page.locator("h1").count()).toBe(0);
-      expect(await page.locator(".artifact-console__header").getByRole("button", { name: "Manage", exact: true }).count()).toBe(1);
-      const manage = page.getByRole("button", { name: "Manage", exact: true });
-      const before = await manage.boundingBox();
-      const preview = page.locator(".artifact-panel__preview");
-      // The hidden sandbox host adds no gap above the preview.
-      expect((await preview.boundingBox())?.y).toBe((await page.locator(".artifact-panel").boundingBox())?.y);
-      const dimensions = await preview.evaluate((el) => ({
-        height: el.clientHeight,
-        scrollHeight: el.scrollHeight,
-        width: el.clientWidth,
-        scrollWidth: el.scrollWidth,
-      }));
-      expect(dimensions.height).toBeGreaterThan(0);
-      expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.height);
-      expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width);
-      await page.waitForFunction(() => document.querySelector(".artifact-panel__preview")?.getAttribute("data-scroll-fade") === "bottom");
-      expect(await preview.evaluate((el) => getComputedStyle(el).maskImage)).not.toBe("none");
-      await preview.hover();
-      await page.mouse.wheel(0, 10000);
-      await page.waitForFunction(() => document.querySelector(".artifact-panel__preview")!.scrollTop > 0);
-      expect(await manage.boundingBox()).toEqual(before);
-      await page.waitForFunction(() => document.querySelector(".artifact-panel__preview")?.getAttribute("data-scroll-fade") === "top");
-      await page.route("**/api/assistant/runner/Run001/compiled", async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        await route.continue();
-      });
-      const restart = page.getByRole("button", { name: "Restart", exact: true });
-      const previewBefore = await preview.boundingBox();
-      await restart.click();
-      await page.waitForFunction(() => document.querySelector('button[aria-busy="true"]'));
-      expect(await manage.boundingBox()).toEqual(before);
-      expect(await preview.boundingBox()).toEqual(previewBefore);
-      expect(await page.getByText("Loading", { exact: true }).count()).toBe(0);
-      await page.waitForFunction(() => !document.querySelector('button[aria-busy="true"]'));
-      expect(await manage.boundingBox()).toEqual(before);
-      await page.getByRole("button", { name: "Actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Copy app link", exact: true }).waitFor();
-      expect(await page.getByRole("menuitem", { name: "Secrets", exact: true }).count()).toBe(0);
-      await page.getByRole("menuitem", { name: "Create your own copy", exact: true }).click();
-      await page.getByRole("dialog").waitFor();
-      expect(await page.getByRole("dialog").textContent()).toContain("Data, secrets and sharing settings are not copied");
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      expect(mutations).toEqual([]);
-      await page.getByRole("button", { name: "Actions", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Create your own copy", exact: true }).click();
-      await page.getByRole("dialog").getByRole("button", { name: "Create your own copy", exact: true }).click();
-      await page.waitForURL("**/copied");
-      expect(mutations).toEqual(["fork", "?intent=customize"]);
-      mutations.length = 0;
-      await page.close();
-    }
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1200, height: 700 });
+    await page.goto(new URL(query(server.state), server.url).href);
+    await app(page).getByText("Counter: 1", { exact: true }).waitFor();
+    await app(page).getByRole("button", { name: "Ping" }).click();
+    await page.waitForFunction(() => location.hash === "#pinged");
+    const manage = page.getByRole("button", { name: "Manage", exact: true });
+    const preview = page.locator(".artifact-panel__preview");
+    const [manageBefore, previewBefore] = [await manage.boundingBox(), await preview.boundingBox()];
+    await page.route("**/api/assistant/runner/Run001/app", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "Restart", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('button[aria-busy="true"]'));
+    expect(await manage.boundingBox()).toEqual(manageBefore);
+    expect(await preview.boundingBox()).toEqual(previewBefore);
+    await app(page).getByText("Counter: 2", { exact: true }).waitFor();
+    expect(await manage.boundingBox()).toEqual(manageBefore);
+    expect(await preview.boundingBox()).toEqual(previewBefore);
   } finally {
     await context.close();
-    server.stop(true);
+    server.stop();
+  }
+}, 60000);
+
+test("an app someone else manages waits for Start, and a start that never got ready is not repeated", async () => {
+  const server = serve(COUNTER, { serverAccess: true, revoked: false, canManage: false });
+  const context = await browser.newContext();
+  context.setDefaultTimeout(10000);
+  try {
+    const page = await context.newPage();
+    await page.goto(new URL(query(server.state), server.url).href);
+    const start = page.locator(".artifact-panel__preview").getByRole("button", { name: "Start", exact: true });
+    await start.waitFor();
+    expect(server.requests).not.toContain("/api/assistant/runner/Run001/app");
+    await start.click();
+    await app(page).getByText("Counter: 1", { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector(".studio-app") && !document.querySelector(".studio-app[aria-busy]"));
+
+    // A manager's autostart is skipped once when the previous start of this revision never became ready.
+    server.state.canManage = true;
+    await page.evaluate(() => sessionStorage.setItem("assistant-app-starting:Run001:1", "1"));
+    await page.goto(new URL(query(server.state), server.url).href);
+    await page.getByText("did not respond the last time it started", { exact: false }).waitFor();
+    await page.locator(".artifact-panel__preview").getByRole("button", { name: "Start", exact: true }).click();
+    await app(page).getByText("Counter: 2", { exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector(".studio-app") && !document.querySelector(".studio-app[aria-busy]"));
+    expect(await page.evaluate(() => sessionStorage.getItem("assistant-app-starting:Run001:1"))).toBeNull();
+  } finally {
+    await context.close();
+    server.stop();
+  }
+}, 60000);
+
+test("a reload while a manager's app still starts keeps it from starting again", async () => {
+  const server = serve({ "index.html": "<main><h1>Hangs</h1></main>", "app.js": "await new Promise(() => {});" });
+  const context = await browser.newContext();
+  context.setDefaultTimeout(10000);
+  try {
+    const page = await context.newPage();
+    await page.goto(new URL(query(server.state), server.url).href);
+    await page.locator("iframe.studio-app-frame").waitFor({ state: "attached" });
+    // Leaving the page is no evidence that the start finished: the next load offers Start instead.
+    await page.reload();
+    await page.getByText("did not respond the last time it started", { exact: false }).waitFor();
+    expect(await page.locator("iframe.studio-app-frame").count()).toBe(0);
+  } finally {
+    await context.close();
+    server.stop();
+  }
+}, 60000);
+
+test("the runner explains access changes, stops after revocation and denies personal storage without access", async () => {
+  const server = serve(COUNTER);
+  const context = await browser.newContext();
+  context.setDefaultTimeout(10000);
+  try {
+    const page = await context.newPage();
+    await page.goto(new URL(query(server.state), server.url).href);
+    await app(page).getByText("Counter: 1", { exact: true }).waitFor();
+    server.state.serverAccess = false;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.getByRole("alert").filter({ hasText: "App access changed" }).waitFor();
+    expect(await page.locator("iframe.studio-app-frame").count()).toBe(0);
+    await page.getByRole("button", { name: "Restart", exact: true }).click();
+    await app(page).getByText("Personal storage: denied", { exact: true }).waitFor();
+    expect(server.requests.filter((path) => path === "/api/assistant/artifacts/Run001/storage")).toHaveLength(2);
+    server.state.revoked = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.getByRole("alert").filter({ hasText: "no longer available" }).waitFor();
+    expect(await page.locator("iframe.studio-app-frame").count()).toBe(0);
+  } finally {
+    await context.close();
+    server.stop();
   }
 }, 60000);

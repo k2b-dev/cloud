@@ -9,6 +9,8 @@ export const RunnerMetadata = z.object({
   publishedVersion: z.number().int().positive(),
   serverAccess: z.boolean(),
   canManage: z.boolean(),
+  /** The app has an index.html interface; apps without one only offer actions. */
+  hasInterface: z.boolean(),
 });
 export type RunnerMetadata = z.infer<typeof RunnerMetadata>;
 export const ViewerContext = z.object({
@@ -16,10 +18,9 @@ export const ViewerContext = z.object({
   timeZone: z.string(),
   user: z.object({ id: z.string(), name: z.string() }).nullable(),
 });
-export const RunnerCompiled = z.object({
+export const RunnerApp = z.object({
   metadata: RunnerMetadata,
-  code: z.string(),
-  runtime: z.string(),
-  context: ViewerContext.optional(),
+  files: z.array(z.object({ path: z.string(), content: z.string() })),
+  context: ViewerContext,
 });
 export const runnerHref = (id: string) => `/app/assistant/apps/${encodeURIComponent(id)}/run`;

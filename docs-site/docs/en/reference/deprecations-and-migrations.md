@@ -39,6 +39,36 @@ as a stop while an approval waited, no longer fails its next turn at providers
 that reject such a history. No setting changes. Core and Assistant can update
 in either order; Assistant shows **Continue** once both run this release.
 
+## Studio apps are plain HTML
+
+This breaking Assistant change replaces the `ui` tree with HTML apps. An app's
+interface is now `index.html`, optional `style.css` and `app.js`, and further
+JavaScript modules, running in a locked frame with the same `cloud` library as
+scripts. See [Assistant](/en/apps/assistant#build-apps-as-html). Existing app
+source is not migrated: an app without `index.html` has no interface until it is
+rebuilt, for example with **Edit**, and its published actions keep working.
+
+| Previous | Replacement |
+| --- | --- |
+| `ui.*` controls, layouts, Chart Explorer, `ui.modal.*` | HTML elements styled by the base stylesheet; `<dialog>` for questions; `cloud.chart` for charts |
+| `ui.filePicker` | `<input type="file">` |
+| A GUI entry that default-exports a function | `index.html`; `code_create` starts with one |
+| `code_interact` | removed, and `clientToolIds` no longer accepts the name; scripts are tested with `code_run`, apps have no rendered self-check yet |
+| `code_inspect` with `nodeId`, `offset`, `limit` | `code_inspect({runId, waitMs?})` |
+| `code_present({runId, title})` | `code_present({title, files})` for a one-off app, `code_present({id})` for a saved app |
+| `code_run({id})` on an app with a GUI | `code_open` or `code_present`; `code_run` refuses an `index.html` entry |
+| Runner route `GET /api/assistant/runner/:id/compiled` | `GET /api/assistant/runner/:id/app` returns published files and the viewer context |
+| Public links to apps | switched off for now; see [Assistant](/en/apps/assistant#standalone-apps-and-public-links) |
+
+Chat presentations saved as UI-tree snapshots cannot be shown anymore. The
+Assistant startup migration clears them once and stores new presentations as
+app files or a reference to a saved app; the `chat_presentation_inputs` table is
+removed. Operators deploy the app frame prelude and base stylesheet with the
+Assistant image; see [Build and deploy](/en/docs/operations/build-and-deploy).
+`cloud.chart` returns the `@k2b/ui` chart markup (`.k2b-chart` with
+`.k2b-chart__svg`) instead of `.cloud-chart`, and `cloud.pdf.render` styles PDFs
+with the same base stylesheet as apps.
+
 ## Assistant offers Skills for recurring work
 
 In chats a person follows, Assistant now recognizes recurring work and may
@@ -55,8 +85,8 @@ Scheduled task runs are unaffected. See
 ## Assistant offers code tools in every turn and says why a tool is missing
 
 Every Assistant turn with the default tool source now offers the server-run code
-tools `code_run`, `code_action`, `code_inspect`, `code_interact`, `code_stop`,
-`code_export`, and `code_present`. Before, only turns whose client listed them
+tools `code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`,
+and `code_present`. Before, only turns whose client listed them
 in `clientToolIds` had them, so `cld assistant --detach`, API clients, and
 scheduled tasks could not run code. Scheduled tasks now run them with their
 task grants, as [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
@@ -99,13 +129,13 @@ tables gain nullable audit columns on first access, without backfill.
 | files.shared | cloud.files |
 | files.local / store / opfs | removed; no personal file store or browser-local runtime storage |
 | files.list/read for run inputs | script context files with path/size/type/file() |
-| files.open/openMultiple/openFolder/path | removed; transitional UI filePicker stays until HTML apps |
+| files.open/openMultiple/openFolder/path | removed; HTML apps use `<input type="file">` |
 | files.save(data,name) | cloud.download(name,data) |
 | sheet.fromCsv / openExcel / openOds | cloud.sheet.parseCsv / read (detected from bytes) |
 | sheet.toCsv | await cloud.sheet.toCsv before downloading |
 | pdf.open / facturX | cloud.pdf.read / render({facturX}) |
 | work.* | script context signal/progress |
-| ui.* | transitional; remains until HTML apps replace it |
+| ui.* | removed; see [Studio apps are plain HTML](#studio-apps-are-plain-html) |
 
 Lists return at most 1,000 rows and raise `limit` when paging is needed. The
 server sets created_by/updated_by and enforces each table’s everyone/own/managers

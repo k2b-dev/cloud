@@ -86,8 +86,15 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/pwa-auth src/status-bar.behavior.test.ts")?.command).toContain("--conditions=browser");
     expect(byName.has("@k2b/cloud-app-spaces src/frontend/[id]/_components/kanban/kanban-board.browser.test.ts")).toBeTrue();
     expect(suites.some((suite) => suite.name.includes("consent-browser.integration"))).toBeFalse();
-    // Assistant's artifact suites run nightly in Google Chrome, not through the shared launcher; its chat sidebar uses it.
-    expect(suites.some((suite) => suite.name.startsWith("@k2b/cloud-app-assistant src/artifacts/"))).toBeFalse();
+    // Assistant's artifact suites run nightly in Google Chrome; only the HTML app frame suites use the shared launcher.
+    expect(suites.filter((suite) => suite.name.startsWith("@k2b/cloud-app-assistant src/artifacts/")).map((suite) => suite.name)).toEqual(
+      expect.arrayContaining([
+        "@k2b/cloud-app-assistant src/artifacts/chat-presentation.browser.test.ts",
+        "@k2b/cloud-app-assistant src/artifacts/html/html-app.browser.test.ts",
+        "@k2b/cloud-app-assistant src/artifacts/runner.browser.test.ts",
+      ]),
+    );
+    expect(byName.has("@k2b/cloud-app-assistant src/artifacts/workspace.browser.test.ts")).toBeFalse();
     expect(byName.has("@k2b/cloud-app-assistant src/frontend/AssistantChatSidebar.browser.test.ts")).toBeTrue();
   });
 

@@ -9,7 +9,6 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 export async function createBrowserCodeHost(
   endpoint: { origin: string; token: string },
   approve?: (request: CodeApproval) => Promise<CapabilityDecision>,
-  unattended = false,
   progress: (step: string) => void = () => {},
 ) {
   progress(appEnv.CLOUD_CLI_CHROMIUM ? `launching Chromium at ${appEnv.CLOUD_CLI_CHROMIUM}` : "launching Playwright's Chromium");
@@ -64,9 +63,6 @@ export async function createBrowserCodeHost(
     });
     if (!response.ok) throw new Error(`Code host unavailable: HTTP ${response.status}`);
     progress("initializing the host runtime");
-    await page.evaluate((value) => {
-      window.assistantCodeUnattended = value;
-    }, unattended);
     await page.addScriptTag({ content: await response.text() });
     if (startupErrors.length) throw new Error(`Code host failed to initialize: ${startupErrors.join("; ")}`);
     return {

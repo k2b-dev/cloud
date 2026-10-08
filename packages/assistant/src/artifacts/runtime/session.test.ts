@@ -9,14 +9,13 @@ function session() {
   let hooks: host.RuntimeHooks | undefined;
   const start = spyOn(host, "startArtifactRun").mockImplementation((_container, _source, value) => {
     hooks = value;
-    return { stop: async () => {}, stopped: false, event: async () => {} };
+    return { stop: async () => {}, stopped: false };
   });
   // The mocked host owns the container; requests exercise the real session boundary.
   const run = createArtifactSession(
     dom.root,
     { runtime: "", code: "" },
     {
-      mode: "test",
       changed() {},
       inputFiles: [{ name: "missing.csv", size: 1, type: "text/csv" }],
       readInput: async () => {
@@ -76,28 +75,17 @@ test("session host reports a manifest input whose bytes are missing as not_found
   let hooks: host.RuntimeHooks | undefined;
   const start = spyOn(host, "startArtifactRun").mockImplementation((_container, _source, value) => {
     hooks = value;
-    return { stop: async () => {}, stopped: false, event: async () => {} };
+    return { stop: async () => {}, stopped: false };
   });
   const run = createArtifactSession(
     dom.root,
     { runtime: "", code: "" },
-    { mode: "test", changed() {}, inputFiles: [{ name: "missing.csv", size: 1, type: "text/csv" }] },
+    { changed() {}, inputFiles: [{ name: "missing.csv", size: 1, type: "text/csv" }] },
   );
   try {
     if (!hooks) throw new Error("Host not initialized");
     await expect(hooks.request("file.read", ["missing.csv"], new AbortController().signal)).rejects.toMatchObject({ code: "not_found" });
-    const controller = new AbortController();
-    const aborted = hooks.request("ui.modal", [{ kind: "confirm", title: "Continue?", message: "Continue this run?" }], controller.signal);
-    controller.abort();
-    await expect(aborted).rejects.toMatchObject({ code: "cancelled" });
-    const pending = hooks.request(
-      "ui.modal",
-      [{ kind: "confirm", title: "Continue?", message: "Continue this run?" }],
-      new AbortController().signal,
-    );
-    const rejection = pending.catch((error: unknown) => error);
-    await run.stop();
-    expect(await rejection).toMatchObject({ code: "cancelled" });
+    await expect(hooks.request("ui.modal", [{ title: "Gone" }], new AbortController().signal)).rejects.toMatchObject({ code: "invalid" });
   } finally {
     await run.stop();
     start.mockRestore();

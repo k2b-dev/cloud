@@ -8,104 +8,98 @@ export default () => ({ answer: 42 });
 
 ## Inspect a supplied CSV and produce a copy
 
+Run with `code_run({ code, inputPaths: ["/sales.csv"] })`:
+
 ```js
-export default async (_input, {files}) => {
-  const inputs = files;
-  if (!inputs.length) throw new Error("Supply a CSV file first.");
-  const rows = await cloud.sheet.parseCsv(await inputs[0].file());
+export default async (_input, { files }) => {
+  if (!files.length) throw new Error("Supply a CSV file first.");
+  const rows = await cloud.sheet.parseCsv(await files[0].file());
   await cloud.download("export.csv", await cloud.sheet.toCsv(rows));
   return { rows: rows.length, columns: Object.keys(rows[0] ?? {}) };
 };
 ```
 
-## Interactive table with a modal
+## Dashboard from a CSV file
 
-```js
-export default () => {
-  let rows = [];
-  let selected = null;
-  const tasks = ui.table({
-    id:"tasks", rows, rowKey:"id", columns:[{key:"title",label:"Task"}],
-    onSelect(row) { selected = row?.id ?? null; }
-  });
-  const add = ui.button({label:"Add task", id:"add", variant:"primary", async onClick() {
-    const title = await ui.modal.text({title:"Add task", label:"Task", required:true, maxLength:200});
-    if (title === null) return;
-    rows = [...rows, {id:crypto.randomUUID(), title}];
-    tasks.setData(rows);
-  }});
-  const complete = ui.button({label:"Complete selected", onClick() {
-    rows = rows.filter(row => row.id !== selected);
-    selected = null;
-    tasks.setData(rows);
-  }});
-  ui.column({children:[add, tasks, complete]});
-};
+The person uploads a bank export or sales CSV; the app sums it by category,
+keeps the last file in `cloud.files`, and reads it again on the next start.
+Copy a CSV the user gave you into the app with `code_file_copy`, so the app
+starts with it.
+
+`index.html`:
+
+```html
+<main>
+  <header class="row"><h1>Spending</h1></header>
+  <label>CSV file <input id="file" type="file" accept=".csv,text/csv"></label>
+  <p id="error" role="alert"></p>
+  <div class="grid"><div class="stat"><span>Total</span><strong id="total">–</strong></div></div>
+  <figure id="chart"></figure>
+  <details><summary>Values</summary><figure><table><thead><tr><th>Category</th><th class="num">Amount</th></tr></thead><tbody id="rows"></tbody></table></figure></details>
+</main>
 ```
 
-## CSV dashboard with a KPI, date range, region filter, Explorer and reset
-
-Save `sales.csv` and `main.ts` in one `code_write` batch. These three rows are
-**fixture data**, not a business result. For real data, copy the validated chat
-file with `fromFile`, inspect its schema, and record the actual snapshot time.
-The date range below includes months by their first day, inclusively.
-
-`sales.csv`:
-
-```csv
-month,region,revenue
-2026-01,North,100
-2026-01,South,200
-2026-02,North,300
-```
-
-`main.ts`:
+`app.js`:
 
 ```js
-import csv from "./sales.csv";
-export default async (_input, {files}) => {
-  const rows = (await cloud.sheet.parseCsv(csv)).map(row => ({
-    month: String(row.month), region: String(row.region), revenue: Number(row.revenue)
-  }));
-  if (rows.some(row => !/^\d{4}-\d{2}$/.test(row.month) || !Number.isFinite(row.revenue)))
-    throw new Error("Expected month, region, and numeric revenue columns.");
-  const initial = { start: "2026-01-01", end: "2026-02-28" };
-  const currency = { type: "currency", currency: "EUR", maximumFractionDigits: 2 };
-  const regions = ui.multiSelect({ id: "regions", label: "Regions", value: [],
-    options: [...new Set(rows.map(row => row.region))].map(value => ({value,label:value})),
-    onChange: () => update() });
-  const dates = ui.dateRange({ id: "dates", label: "Months", value: initial, onChange: () => update() });
-  const revenue = ui.stat({ id: "revenue", label: "Revenue", value: 0, format: currency });
-  const chart = ui.chartExplorer({ id: "monthly", label: "Monthly revenue",
-    data: {rowKey:"id",rows:[],chart:{kind:"bar",category:"id",value:"revenue"}},
-    columns: [{key:"id",label:"Month"},{key:"revenue",label:"Revenue",format:currency}] });
-  function update() {
-    const selected = regions.getValue(), range = dates.getValue();
-    const visible = rows.filter(row => (!selected.length || selected.includes(row.region)) &&
-      (!range.start || row.month + "-01" >= range.start) && (!range.end || row.month + "-01" <= range.end));
-    const totals = new Map();
-    for (const row of visible) totals.set(row.month, (totals.get(row.month) ?? 0) + row.revenue);
-    revenue.setValue(visible.reduce((sum,row) => sum + row.revenue,0));
-    chart.setData({rowKey:"id",rows:[...totals].sort().map(([id,revenue])=>({id,revenue})),
-      chart:{kind:"bar",category:"id",value:"revenue"},
-      context:{mode:"snapshot",asOf:"2026-01-01T00:00:00Z",status:"fixture",
-        note:"Three illustrative rows; replace with validated source data.",sources:[{label:"sales.csv fixture"}]}});
+const [input, error, total, chart, rows] = ["#file", "#error", "#total", "#chart", "#rows"].map((selector) => document.querySelector(selector));
+const euro = new Intl.NumberFormat(cloud.locale, { style: "currency", currency: "EUR" });
+
+async function show(file) {
+  error.textContent = "";
+  try {
+    const sums = new Map();
+    for (const row of await cloud.sheet.parseCsv(file))
+      if (typeof row.Amount === "number") sums.set(row.Category, (sums.get(row.Category) ?? 0) + row.Amount);
+    const data = [...sums].map(([label, value]) => ({ label, value }));
+    total.textContent = euro.format(data.reduce((sum, item) => sum + item.value, 0));
+    chart.innerHTML = cloud.chart({ kind: "bar", title: "Spending by category", data, yAxis: { format: (v) => euro.format(v) } });
+    rows.innerHTML = cloud.html`${data.map((item) => cloud.html`<tr><td>${item.label}</td><td class="num">${euro.format(item.value)}</td></tr>`)}`;
+  } catch (failure) {
+    error.textContent = failure.message;
   }
-  const reset = ui.button({id:"reset",label:"Reset",onClick:()=>{
-    regions.setValue([]);dates.setValue(initial);update();
-  }});
-  ui.column({children:[ui.row({children:[regions,dates,reset]}),revenue,chart]});
-  update();
-};
+}
+input.addEventListener("change", async () => {
+  const [file] = input.files;
+  if (!file) return;
+  await cloud.files.write("last.csv", file);
+  await show(file);
+});
+const saved = await cloud.files.read("last.csv");
+if (saved) await show(saved);
 ```
 
-Run the saved resource. Initial revenue is 600. Test
-`code_interact({runId,steps:[{id:"regions",event:{type:"change",value:["North"]}},{id:"dates",event:{type:"change",value:{start:"2026-02-01",end:"2026-02-28"}}}]})`:
-revenue must be 300. Then `{runId,id:"reset"}` restores 600. Finally switch
-`{runId,id:"monthly",event:{type:"view",value:"table"}}` and inspect both months.
-The `runId` always identifies the saved revision being tested.
+Before writing such an app around a real file, run a script over the file and
+compare its totals with an independent sum.
 
-## Reusable procedures beyond a GUI
+## Form to PDF
+
+`index.html` has a form with `customer` and `amount` fields and a
+`<p id="status" role="status">` after it.
+
+```js
+const form = document.querySelector("form");
+const status = document.querySelector("#status");
+form.addEventListener("submit", async () => {
+  const button = form.querySelector("button");
+  const { customer, amount } = Object.fromEntries(new FormData(form));
+  const price = cloud.money.format(cloud.money.fromDecimal(amount, { currency: "EUR" }));
+  button.disabled = true;
+  button.ariaBusy = "true";
+  try {
+    const pdf = await cloud.pdf.render({ title: "Quote", html: cloud.html`<h1>Quote</h1><p>For ${customer}: ${price}</p>` });
+    await cloud.download("Quote.pdf", pdf);
+    status.textContent = "Quote created.";
+  } catch (failure) {
+    status.textContent = failure.message;
+  } finally {
+    button.disabled = false;
+    button.ariaBusy = "false";
+  }
+});
+```
+
+## Reusable procedures beyond an interface
 
 - **Stateless converter:** publish a `convert` action taking explicit CSV text,
   save a JSON output with `cloud.download`, then let the agent export it. No database
@@ -113,7 +107,7 @@ The `runId` always identifies the saved revision being tested.
 - **Agent-only importer:** publish an `importItems` action with stable business
   keys. Initialize schema with Manage before sharing; Use-level callers reuse
   the same App data across chats. Unique keys prevent silent duplicate records.
-- **Display-only dashboard:** the GUI reads results; separate published actions
+- **Display-only dashboard:** the interface reads results; separate published actions
   maintain them. Do not add configuration controls just to let the agent work.
 - **Invoice matcher:** inspect a spreadsheet and selected invoice pages, ask for
   ambiguous matches, copy exactly the chosen file through [File transfers](files.md),

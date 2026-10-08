@@ -5,7 +5,6 @@ import {
   CodeActionInput,
   CodeExportInput,
   CodeInspectInput,
-  CodeInteractInput,
   CodeOpenInput,
   CodePresentInput,
   CodeRunInput,
@@ -110,7 +109,7 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_secret",
     description:
-      "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey, app controls or code_interact. Personal secrets are scoped to this chat or resource and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
+      "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey or app fields. Personal secrets are scoped to this chat or resource and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
     inputSchema: CodeSecretInput,
     outputSchema: z.object({ configured: z.boolean(), name: z.string() }),
     approval: "never",
@@ -128,27 +127,18 @@ export const createCloudAiCodeTools = () => [
     promptHint:
       "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
-      "Run a saved resource id OR one-off code in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts accept current chat inputPaths; app test runs use them only as explicit picker fixtures. Returns output, logs and UI state for agent inspection only; use code_present to show a one-off visualization to the user. Test runs use the app’s real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
+      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. Includes cloud.capabilities.run(name,input) to chain Cloud capabilities in JavaScript; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs and captured files for agent inspection only. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
     inputSchema: CodeRunInput,
     outputSchema: z.json(),
     approval: "never",
   }).server(runManagedCodeTool("code_run")),
   defineAiTool({
     name: "code_inspect",
-    description:
-      "Inspect a test run: errors, logs, output, controls and pending modal. Use nodeId to inspect table rows or list items; follow pagination only as needed.",
+    description: "Inspect a script run: status, progress, errors, logs, output and captured files. Use waitMs to wait for background work.",
     inputSchema: CodeInspectInput,
     outputSchema: z.json(),
     approval: "never",
   }).server(runManagedCodeTool("code_inspect")),
-  defineAiTool({
-    name: "code_interact",
-    description:
-      "Operate a control or answer a pending modal using its exact snapshot ID. Buttons need only id; controls use event:{type:change,value:...} or event:{type:select,key:...}. Use answer for modal replies, or answer:null to cancel. Copy an interactions example from code_inspect; never send JSON as a string. Use steps:[{id,event?},...] for up to three known sequential interactions; stops on errors, modals or background work. Returns one resulting state with completedSteps and nextStep.",
-    inputSchema: CodeInteractInput,
-    outputSchema: z.json(),
-    approval: "never",
-  }).server(runManagedCodeTool("code_interact")),
   defineAiTool({
     name: "code_stop",
     description: "Stop and release an isolated test run.",
@@ -166,7 +156,7 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_present",
     description:
-      "Present a successful one-off run as a persistent interactive visualization in this chat. Requires code_run with code, without resourceId or saved app id. Saves source, selected inputs and UI preview. Users can activate controls and download the current view. Test runs are not visible until this succeeds. For reusable apps use code_open instead.",
+      "Show an HTML app as a card in this chat. Pass files (index.html plus optional style.css and app.js) for a one-off app without saved data, or the id of a saved app to run it live with its data. The person starts the card with a click. Static problems such as CDN scripts, inline handlers or a missing index.html are rejected before anything is saved. For a reusable app beside the chat use code_open.",
     inputSchema: CodePresentInput,
     outputSchema: z.json(),
     approval: "never",

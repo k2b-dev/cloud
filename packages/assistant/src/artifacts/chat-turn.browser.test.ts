@@ -1,25 +1,26 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, chromium, type Page } from "playwright";
-import { compileArtifact } from "./runtime/compile";
+import { appRuntimeRoute } from "./html/test-assets";
 
 // Where things stand when a long turn ends needs a real layout engine. The harness scripts one live turn with a Studio
 // preview, a delivered file, an approval, and a final answer, and turns it into history the way the server does.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
-const code = `export default () => {
-  const total = ui.stat({id:"total",label:"Total",value:20});
-  ui.row({id:"metrics",children:[total,ui.stat({id:"maintenance",label:"Maintenance",value:4})]});
-  ui.slider({id:"quantity",label:"Quantity",min:1,max:20,value:2,onChange:value=>total.setValue(value*10)});
-}`;
-const nodes = [
-  { id: "total", type: "stat", label: "Total", value: 20 },
-  { id: "maintenance", type: "stat", label: "Maintenance", value: 4 },
-  { id: "metrics", type: "layout", layout: "row", children: ["total", "maintenance"] },
-  { id: "quantity", type: "slider", label: "Quantity", min: 1, max: 20, value: 2 },
+const files = [
+  {
+    path: "index.html",
+    content:
+      '<main><div class="grid"><div class="stat"><span>Total</span><strong id="total">20</strong></div><div class="stat"><span>Maintenance</span><strong>4</strong></div></div><label>Quantity <input id="quantity" type="range" min="1" max="20" value="2"></label></main>',
+  },
+  {
+    path: "app.js",
+    content: `document.querySelector("#quantity").addEventListener("input", (event) => (document.querySelector("#total").textContent = String(event.target.value * 10)));`,
+  },
 ];
+const app = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
-const counts = { presentation: 0, compile: 0 };
+const counts = { presentation: 0, start: 0 };
 
 beforeAll(async () => {
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", ui))).default;
@@ -27,12 +28,11 @@ beforeAll(async () => {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [bundle, buildError, styles, appStyles, source] = await Promise.all([
+  const [bundle, buildError, styles, appStyles] = await Promise.all([
     new Response(build.stdout).text(),
     new Response(build.stderr).text(),
     Bun.build({ entrypoints: [new URL("../../../../styles.css", import.meta.url).pathname], plugins: [tailwind] }),
     Bun.build({ entrypoints: [new URL("../styles/app.css", import.meta.url).pathname], plugins: [tailwind] }),
-    compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] }),
   ]);
   if (await build.exited) throw new Error(buildError);
   if (!styles.success || !appStyles.success) throw new AggregateError([...styles.logs, ...appStyles.logs], "Stylesheets did not build.");
@@ -40,22 +40,20 @@ beforeAll(async () => {
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       const path = new URL(request.url).pathname;
       if (path === "/bundle.js") return new Response(bundle, { headers: { "content-type": "application/javascript" } });
-      if (path === "/api/assistant/artifacts/runtime/compile") {
-        counts.compile++;
-        return Response.json(source);
-      }
+      if (path === "/api/assistant/artifacts/runtime/context") counts.start++;
+      const runtime = await appRuntimeRoute(path);
+      if (runtime) return runtime;
       if (path.startsWith("/api/assistant/artifacts/presentations/")) {
         counts.presentation++;
         return Response.json({
           id: "00000000-0000-4000-8000-000000000001",
           conversationId: "abc234",
           title: "Inventory",
-          code,
-          nodes,
-          inputs: [],
+          files,
+          artifactId: null,
         });
       }
       if (path !== "/") return new Response(null, { status: 404 });
@@ -109,7 +107,7 @@ for (const viewport of [
 ]) {
   test(`a finished turn keeps every place and the running Studio session at ${viewport.width} px`, async () => {
     counts.presentation = 0;
-    counts.compile = 0;
+    counts.start = 0;
     const page = await browser.newPage({ viewport, hasTouch: viewport.width < 600 });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -130,17 +128,16 @@ for (const viewport of [
       expect(await page.locator(".ai-turn__text").getAttribute("aria-live")).toBe("off");
       await announced(page, "I read the four files first.");
       await step(page, "present");
-      await page.getByRole("button", { name: "Interagieren", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Starten", exact: true }).waitFor();
       expect((await placeholder.boundingBox())!.height).toBe(reserved);
       expect(counts.presentation).toBe(1);
 
-      // Start the session and change a filter inside it.
-      await page.getByRole("button", { name: "Interagieren", exact: true }).click();
-      await page.locator('[data-artifact-id="quantity"] input:not([disabled])').waitFor();
-      expect(counts.compile).toBe(1);
-      await page.getByRole("slider").focus();
-      await page.getByRole("slider").press("ArrowRight");
-      await page.waitForFunction(() => document.querySelector('[data-artifact-id="total"]')?.textContent?.includes("30"));
+      // Start the app and change a value inside it.
+      await page.getByRole("button", { name: "Starten", exact: true }).click();
+      await app(page).getByRole("slider").focus();
+      expect(counts.start).toBe(1);
+      await app(page).getByRole("slider").press("ArrowRight");
+      await app(page).getByText("30", { exact: true }).waitFor();
       await placeholder.evaluate((element) => element.setAttribute("data-harness-view", "kept"));
 
       // Approve in place: the card becomes its receipt where it stood, and focus stays there without scrolling.
@@ -173,9 +170,9 @@ for (const viewport of [
       expect(after).toEqual(before);
       expect(await page.locator('[data-harness-view="kept"]').count()).toBe(1);
       expect(counts.presentation).toBe(1);
-      expect(counts.compile).toBe(1);
+      expect(counts.start).toBe(1);
       expect(await page.getByRole("button", { name: "Stoppen", exact: true }).count()).toBe(1);
-      expect(await page.locator('[data-artifact-id="total"]').textContent()).toContain("30");
+      expect(await app(page).locator("#total").textContent()).toBe("30");
       expect(await page.locator(".ai-turn-work > summary").textContent()).toBe("3 Min. gearbeitet6 Schritte");
       expect(await page.locator(".ai-turn").textContent()).not.toContain("Now I build the dashboard.");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
@@ -194,7 +191,7 @@ test("a new version of a view takes the earlier place without a frame of its own
     await page.getByText("Build an inventory dashboard").waitFor();
     await step(page, "start");
     await step(page, "present");
-    await page.getByRole("button", { name: "Interagieren", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Starten", exact: true }).waitFor();
     const frames = page.locator(".assistant-chat-presentation");
     const before = await measure(page);
     for (const name of ["revise", "reviseArgs"]) {

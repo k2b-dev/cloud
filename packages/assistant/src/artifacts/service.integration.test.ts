@@ -22,6 +22,7 @@ import { chatPresentations } from "./chat-presentations";
 import { clientCalls } from "./client-calls";
 import { evaluateCodeMode } from "./code-mode.eval";
 import { artifactCodeHandlers } from "./code-tools";
+import { PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase } from "./database";
 import { studioFiles } from "./file-transfer";
 import { HttpPrepare } from "./http-contracts";
@@ -84,18 +85,19 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  test("public runner exposes only the publication and never grants server or management access", async () => {
+  test("the runner reads only the publication, and public links grant nothing while public sharing is off", async () => {
+    // PUBLIC_APP_SHARING is off: turning it back on restores anonymous runner reads and needs its own tests again.
+    expect(PUBLIC_APP_SHARING).toBe(false);
     const resource = await artifacts.create({ title: "Published name", source }, owner);
-    const publicGrant = await artifacts.grant(resource.id, { type: "public" }, "read", owner);
-    expect(publicGrant?.principal.type).toBe("public");
-    await expect(artifacts.runner(resource.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(artifacts.grant(resource.id, { type: "public" }, "read", owner)).rejects.toMatchObject({ code: "PUBLIC_SHARING_OFF" });
+    // A public grant from before the switch stays listed so managers can remove it, but it opens nothing.
+    const [legacy] = await sql<{ id: string }[]>`INSERT INTO auth.access(permission) VALUES('read') RETURNING id`;
+    await sql`INSERT INTO assistant.artifact_access VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}),${legacy!.id}::uuid)`;
     await artifacts.publish(resource.id, 1, owner, "Initial release");
     await artifacts.metadata(resource.id, { title: "Secret draft name" }, owner);
     await artifacts.writeFile(resource.id, "main.js", "export default () => 'unpublished secret'", owner);
-    const anonymous = await artifacts.runner(resource.id, {});
-    expect(anonymous).toMatchObject({ title: "Published name", sourceRevision: 1, serverAccess: false, canManage: false });
-    expect(JSON.stringify(anonymous)).not.toContain("unpublished secret");
-    expect(await artifacts.runner(resource.id, stranger)).toMatchObject({ serverAccess: false, canManage: false });
+    await expect(artifacts.runner(resource.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(artifacts.runner(resource.id, stranger)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(await artifacts.runner(resource.id, owner)).toMatchObject({
       title: "Published name",
       sourceRevision: 1,
@@ -107,36 +109,29 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       code: "ACCESS_DENIED",
     });
     await expect(artifactDatabase.status(resource.id, stranger)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
-    await expect(artifacts.grant(resource.id, { type: "public" }, "admin", owner)).rejects.toMatchObject({ code: "PUBLIC_READ_ONLY" });
-    await expect(artifacts.changeGrant(resource.id, publicGrant!.id, "admin", owner)).rejects.toMatchObject({ code: "PUBLIC_READ_ONLY" });
     const grants = await artifacts.access(resource.id, owner);
+    expect(grants.some((grant) => grant.principal.type === "public")).toBe(true);
     expect(
       await artifactCodeHandlers.code_access_change(
-        { id: resource.id, accessId: publicGrant!.id, permission: "admin", expectedAccessRevision: accessRevision(grants) },
+        { id: resource.id, principal: { type: "public" }, permission: "read", expectedAccessRevision: accessRevision(grants) },
         { ...owner, locale: "en", timeZone: "UTC", signal: new AbortController().signal, review: true },
       ),
-    ).toMatchObject({ ok: false, error: { code: "PUBLIC_READ_ONLY" } });
+    ).toMatchObject({ ok: false, error: { code: "PUBLIC_SHARING_OFF" } });
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
     expect(await artifacts.runner(resource.id, reader)).toMatchObject({ serverAccess: true, canManage: false });
-    const { createRunnerRoutes } = await import("./runner-api");
+    const { createRunnerRoutes, runnerApp } = await import("./runner-api");
+    const published = await runnerApp(resource.id, reader);
+    expect(published.metadata).toMatchObject({ sourceRevision: 1, title: "Published name", hasInterface: false });
+    expect(JSON.stringify(published.files)).not.toContain("unpublished secret");
     const api = createRunnerRoutes();
-    const meta = await api.request(`/${resource.id}`);
-    expect(meta.status).toBe(200);
-    expect(await meta.json()).toMatchObject({ serverAccess: false, title: "Published name" });
-    const compiled = await api.request(`/${resource.id}/compiled?revision=2`);
-    expect(compiled.status).toBe(200);
-    const output = await compiled.json();
-    expect(output.metadata.sourceRevision).toBe(1);
-    expect(output.code).not.toContain("unpublished secret");
-    expect(output.metadata.source).toBeUndefined();
+    expect((await api.request(`/${resource.id}`)).status).toBe(404);
+    expect((await api.request(`/${resource.id}/app`)).status).toBe(404);
     expect((await api.request(`/${resource.id}/storage`, { method: "POST" })).status).toBe(404);
     expect((await api.request(`/${resource.id}/access`)).status).toBe(404);
     await artifacts.unpublish(resource.id, owner);
-    expect((await api.request(`/${resource.id}`)).status).toBe(404);
-    await artifacts.publish(resource.id, (await artifacts.get(resource.id, owner)).revision, owner, "Second publication");
-    await artifacts.changeGrant(resource.id, publicGrant!.id, null, owner);
-    expect((await api.request(`/${resource.id}/compiled`)).status).toBe(404);
-    expect(await artifacts.runner(resource.id, reader)).toMatchObject({ serverAccess: true });
+    await expect(artifacts.runner(resource.id, reader)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await artifacts.changeGrant(resource.id, legacy!.id, null, owner);
+    expect((await artifacts.access(resource.id, owner)).some((grant) => grant.principal.type === "public")).toBe(false);
     await artifacts.remove(resource.id, owner);
   });
 
@@ -734,12 +729,20 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const created = await artifactCodeHandlers.code_create({ title: "Agent test" }, context);
     if (!created.ok) throw new Error(created.error.message);
     const id = created.data.data.id;
-    const write = async (path: string, content: string) =>
+    // A new App starts as an index.html interface; static findings of its JavaScript come back on write.
+    expect((await artifacts.get(id, owner)).source.entry).toBe("index.html");
+    const write = async (path: string, content: string, entry?: string) =>
       artifactCodeHandlers.code_write(
-        { id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }] },
+        { id, expectedRevision: (await artifacts.get(id, owner)).revision, files: [{ path, content }], entry },
         context,
       );
-    const intermediate = await write("main.ts", 'import {value} from "./helper.ts"; export default () => value;');
+    const html = await write("app.js", 'alert("hi"); import x from "lodash";');
+    if (!html.ok) throw new Error("Write failed");
+    expect(JSON.stringify(html.data.data)).toContain("alert, confirm and prompt do not work");
+    expect(JSON.stringify(html.data.data)).toContain('not \\"lodash\\"');
+    expect(await artifactCodeHandlers.code_remove({ id, path: "app.js" }, context)).toMatchObject({ ok: true });
+    // The same resource as a saved script: compiler diagnostics for the script entry.
+    const intermediate = await write("main.ts", 'import {value} from "./helper.ts"; export default () => value;', "main.ts");
     expect(intermediate).toMatchObject({ ok: true, data: { data: { saved: true } } });
     if (!intermediate.ok) throw new Error("Write failed");
     expect(z.object({ diagnostics: z.array(z.unknown()) }).parse(intermediate.data.data).diagnostics.length).toBeGreaterThan(0);
@@ -747,7 +750,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ok: true,
       data: { data: { saved: true, diagnostics: [] } },
     });
-    expect((await artifacts.get(id, owner)).source.files).toHaveLength(2);
+    expect((await artifacts.get(id, owner)).source.files).toHaveLength(3);
     const expectedRevision = (await artifacts.get(id, owner)).revision;
     const batch = await artifactCodeHandlers.code_write(
       {
@@ -765,7 +768,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(
       await artifactCodeHandlers.code_write({ id, expectedRevision, files: [{ path: "a.ts", content: "stale" }] }, context),
     ).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
-    expect((await artifacts.get(id, owner)).source.files).toHaveLength(4);
+    expect((await artifacts.get(id, owner)).source.files).toHaveLength(5);
     await write("main.ts", "export default !!!");
     expect(await artifactCodeHandlers.code_read({ id, path: "main.ts", offset: 0 }, context)).toMatchObject({
       ok: true,
@@ -781,7 +784,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ok: true,
       data: { data: { removed: true } },
     });
-    expect((await artifacts.get(id, owner)).source.files).toHaveLength(3);
+    expect((await artifacts.get(id, owner)).source.files).toHaveLength(4);
     expect(await write("main.ts", "export default () => 42;")).toMatchObject({ ok: true, data: { data: { diagnostics: [] } } });
   });
 
@@ -2136,10 +2139,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         const runs = result.history
           .filter((entry) => entry.message.role === "tool_result")
           .map((entry) => (entry.message.role === "tool_result" ? entry.message.result : null));
-        expect(runs).toContainEqual(expect.objectContaining({ id: app.id, revision: app.revision, status: "ready" }));
-        expect(
-          result.history.filter((entry) => entry.message.role === "tool_result" && entry.message.name === "code_interact").length,
-        ).toBeGreaterThanOrEqual(3);
+        expect(app.source.files.some((file) => file.path === "index.html")).toBe(true);
+        expect(runs).toContainEqual(expect.objectContaining({ status: "ready" }));
+        expect(runs).toContainEqual(expect.objectContaining({ userVisible: true, presentationId: expect.any(String) }));
       } finally {
         await agentHost.close();
         conversation.mockRestore();
@@ -2148,7 +2150,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     },
     1_230_000,
   );
-  test("chat presentations retain input bytes, deduplicate and enforce chat ownership", async () => {
+  test("chat presentations store one-off files or a saved app, deduplicate and enforce chat ownership", async () => {
     const conversationId = crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
     const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
@@ -2178,31 +2180,31 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           },
     );
     try {
-      await sql`INSERT INTO ai.files(conversation_id,path,bytes,size,media_type,origin,version) VALUES(${conversationId}::uuid,'/data.csv',${new TextEncoder().encode("value\n12")},8,'text/csv','user',1)`;
-      const input = {
-        conversationId,
-        callId: "present-once",
-        title: "Report",
-        code: "export default () => ui.stat({label:'Value',value:12})",
-        nodes: [{ id: "value", type: "stat", label: "Value", value: 12 }],
-        inputs: [{ path: "/data.csv", version: 1 }],
-      };
+      const files = [
+        { path: "index.html", content: "<main><h1>Report</h1></main>" },
+        { path: "app.js", content: "document.querySelector('h1').textContent = cloud.locale;" },
+      ];
+      const input = { conversationId, callId: "present-once", title: "Report", files };
       const [first, duplicate] = await Promise.all([chatPresentations.save(input, owner), chatPresentations.save(input, owner)]);
       expect(first).toEqual(duplicate);
-      await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("changed")},version=2 WHERE conversation_id=${conversationId}::uuid`;
-      const saved = await chatPresentations.read(first.presentationId, conversationId, owner);
-      expect(saved.nodes[0]).toMatchObject({ type: "stat", value: 12 });
-      expect(new TextDecoder().decode((await chatPresentations.input(first.presentationId, conversationId, "/data.csv", owner)).data)).toBe(
-        "value\n12",
-      );
+      expect(await chatPresentations.read(first.presentationId, conversationId, owner)).toMatchObject({
+        title: "Report",
+        files,
+        artifactId: null,
+        conversationId: "abc234",
+      });
+      // A saved app is referenced, not copied: the card loads it with the viewer's access when it starts.
+      const app = await chatPresentations.save({ conversationId, callId: "present-app", title: "Analysis", artifactId: id }, owner);
+      expect(await chatPresentations.read(app.presentationId, conversationId, owner)).toMatchObject({ files: null, artifactId: id });
+      await expect(
+        chatPresentations.save({ conversationId, callId: "foreign-app", title: "Analysis", artifactId: id }, stranger),
+      ).rejects.toThrow();
+      await expect(chatPresentations.save({ ...input, callId: "no-index", files: [files[1]!] }, owner)).rejects.toThrow("index.html");
+      await expect(chatPresentations.save({ ...input, callId: "both", artifactId: id }, owner)).rejects.toThrow();
       await expect(chatPresentations.read(first.presentationId, conversationId, stranger)).rejects.toThrow();
       await expect(chatPresentations.read(first.presentationId, crypto.randomUUID(), owner)).rejects.toThrow();
-      await expect(chatPresentations.save({ ...input, callId: "stale" }, owner)).rejects.toThrow("version");
       await sql`DELETE FROM ai.conversations WHERE id=${conversationId}::uuid`;
       expect((await sql`SELECT id FROM assistant.chat_presentations WHERE id=${first.presentationId}::uuid`).length).toBe(0);
-      expect(
-        (await sql`SELECT path FROM assistant.chat_presentation_inputs WHERE presentation_id=${first.presentationId}::uuid`).length,
-      ).toBe(0);
     } finally {
       conversation.mockRestore();
     }
@@ -2292,31 +2294,23 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const result = observers[0]!;
       expect(result).toMatchObject({ status: "done", result: { status: "ready", output: '{"answer":42,"serverProcess":"undefined"}' } });
       expect(await wait(call)).toEqual(result);
-      const visual = await wait({
-        ...call,
-        callId: "visual-run",
-        args: {
-          code: "export default () => { const n=ui.stat({id:'total',label:'Total',value:20}); ui.button({id:'double',label:'Double',onClick:()=>n.setValue(40)}); }",
-        },
-      });
-      expect(visual).toMatchObject({ status: "done", result: { status: "ready", userVisible: false } });
       const presentCall = {
         ...call,
         name: "code_present" as const,
         callId: "visual-present",
-        args: { runId: "visual-run", title: "Interactive result" },
+        args: { title: "Interactive result", files: [{ path: "index.html", content: "<main><p>Total <strong>20</strong></p></main>" }] },
       };
       const shown = await wait(presentCall);
       expect(shown).toMatchObject({ status: "done", result: { title: "Interactive result", userVisible: true } });
       expect(await wait(presentCall)).toEqual(shown);
       const [presentation] =
-        await sql`SELECT title,nodes FROM assistant.chat_presentations WHERE conversation_id=${conversationId}::uuid AND call_id='visual-present'`;
+        await sql`SELECT title,files FROM assistant.chat_presentations WHERE conversation_id=${conversationId}::uuid AND call_id='visual-present'`;
       expect(presentation?.title).toBe("Interactive result");
-      expect(presentation?.nodes[0]).toMatchObject({ id: "total", value: 20 });
+      expect(presentation?.files[0]).toMatchObject({ path: "index.html" });
       const [count] = await sql<
         { count: number }[]
       >`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid`;
-      expect(count!.count).toBe(3);
+      expect(count!.count).toBe(2);
       const syntax = await wait({ ...call, callId: "syntax-error", args: { code: "export default () => { const broken = ; }" } });
       expect(syntax).toMatchObject({ status: "done", result: { failed: true, error: expect.stringContaining("Unexpected") } });
       expect(JSON.stringify(syntax)).not.toContain("artifact request failed");
@@ -2348,10 +2342,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           const directory = new URL(`../../examples/studio-actions/${folder}/`, import.meta.url);
           const files = await Promise.all(
             (await readdir(directory))
-              .filter((path) => path.endsWith(".js") || path === "app.actions.json")
+              .filter((path) => path.endsWith(".js") || path === "index.html" || path === "app.actions.json")
               .map(async (path) => ({ path, content: await Bun.file(new URL(path, directory)).text() })),
           );
-          const example = await artifacts.create({ title: folder, source: { entry: "main.js", files } }, owner);
+          const entry = files.some((file) => file.path === "index.html") ? "index.html" : "main.js";
+          const example = await artifacts.create({ title: folder, source: { entry, files } }, owner);
           try {
             const setupFile = Bun.file(new URL("setup.json", directory));
             if (await setupFile.exists()) {
@@ -2388,11 +2383,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
                 status: "done",
                 result: { output: '{"linked":true,"unchanged":true}' },
               });
+            // The dashboard's interface passes the static checks and appears in the chat.
             if (folder === "dashboard")
-              expect(await wait({ ...call, callId: "dashboard-view", args: { id: example.id } })).toMatchObject({
-                status: "done",
-                result: { status: "ready" },
-              });
+              expect(
+                await wait({ ...call, name: "code_present" as const, callId: "dashboard-view", args: { id: example.id } }),
+              ).toMatchObject({ status: "done", result: { userVisible: true, title: "dashboard" } });
           } finally {
             await artifacts.remove(example.id, owner);
           }

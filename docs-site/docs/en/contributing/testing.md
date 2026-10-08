@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Testing
@@ -122,7 +122,8 @@ engine of Safari and of every browser on iOS. `bun run check` fails when a test
 starts a Playwright browser type directly, or when a Playwright test does not
 import the launcher directly as `.../test/browser`, without a file extension:
 `bun run test --browser` finds the tests by that import. The Assistant artifact
-suites are the only exception: they run nightly in Google Chrome.
+suites are the only exception: they run nightly in Google Chrome, except the
+HTML app frame, runner and chat card suites, which use the launcher.
 
 `bun run test --browser` runs only these tests, each file in a process of its
 own, and fails when it finds none. Files that also need `CLOUD_TEST_*`

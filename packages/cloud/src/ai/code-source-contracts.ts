@@ -41,7 +41,7 @@ const DatabaseSql = z.object({
 
 const CodeWriteInput = Id.extend({
   expectedRevision: z.number().int().positive(),
-  entry: ArtifactPath.optional(),
+  entry: ArtifactPath.optional().describe("index.html for an app with an interface, or the script that code_run executes."),
   files: z
     .array(z.union([ArtifactFile, z.object({ path: ArtifactPath, fromFile: AiFileReference }).strict()]))
     .min(1)
@@ -302,7 +302,7 @@ export const CODE_SOURCE_TOOLS = {
   },
   code_create: {
     description:
-      "Create a private reusable App with an optional UI, published actions and optional persistence. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
+      "Create a private reusable App: an index.html interface with optional style.css and app.js, published actions and optional persistence. Starts with a minimal index.html. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
     input: ArtifactCreate.pick({ title: true, description: true, icon: true }),
   },
   code_write: {

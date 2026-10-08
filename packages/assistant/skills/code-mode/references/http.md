@@ -16,7 +16,7 @@ Load the `code_secret` tool and pass metadata only:
 
 The trusted Assistant dialog sends the user's input directly to encrypted
 storage. The tool returns only `{ configured, name }`. Never ask for a key in
-chat, `survey`, `ui.modal`, app controls, source, or `code_interact`.
+chat, `survey`, app fields or source.
 The user can change the proposed metadata. Use the returned name, and handle
 cancellation without asking for the value another way.
 

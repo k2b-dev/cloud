@@ -49,5 +49,5 @@ grants access automatically.
 To withdraw a publication, read `code_manage_read({id})` and then request
 `code_unpublish({id,expectedPublishedVersion})` with its exact publication number.
 This requires Manage and fresh review. It returns `{unpublished:true}` and
-preserves source, history and data; Use-level users can no longer start the GUI
+preserves source, history and data; Use-level users can no longer start the app
 or its actions. A newer publication rejects the stale request.

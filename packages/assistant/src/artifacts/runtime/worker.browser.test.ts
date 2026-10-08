@@ -7,7 +7,7 @@ import type {} from "./browser-harness";
 import { ChunkName, chunkSource } from "./chunks";
 import { compileArtifact } from "./compile";
 
-test("real opaque worker returns data, reuses table selection callbacks and remains terminable", async () => {
+test("real opaque worker returns data, reads inputs, captures downloads and remains terminable", async () => {
   const directory = await mkdtemp(join(tmpdir(), "assistant-worker-test-"));
   const output = join(directory, "harness.js");
   const build = Bun.spawn(
@@ -28,10 +28,7 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
   const harness = await Bun.file(output).text();
   await rm(directory, { recursive: true });
   const compile = (content: string) => compileArtifact({ entry: "main.js", files: [{ path: "main.js", content }] });
-  const invalidLayoutSource = await compile(
-    'export default () => { const text=ui.text({value:"Input"}); ui.column({children:[text,text]}); };',
-  );
-  const invalidOutputSource = await compile('export default () => ui.text({value:"Output"});');
+  const uiSource = await compile("export default () => typeof ui;");
   const invalidEntrySource = await compile("export default { answer: 42 };");
   const undefinedOutputSource = await compile("export default () => ({missingColumn:undefined});");
   const headlessSource = await compile("export default () => ({ answer: 42 });");
@@ -47,35 +44,16 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     await cloud.download("totals.csv", await cloud.sheet.toCsv(Object.entries(totals).map(([name,amount]) => ({name,amount}))));
     return {people: Object.keys(totals).length, total: Object.values(totals).reduce((a,b)=>a+b,0)};
   };`);
-  const listSource = await compile(`export default () => {
-    let count=0;
-    const table=ui.table({id:"tasks",rowKey:"id",columns:[{key:"title",label:"Count"}],rows:[{id:"one",title:"0"}],onSelect(item){
-      if(item){count++;table.setData([{id:item.id,title:String(count)}]);}
-    }});
-  };`);
   const errorSource = await compile('export default () => { throw new Error("deliberate"); };');
-  const recoverySource = await compile(`export default () => {
-    let attempts=0;
-    const message=ui.text({value:"Waiting"});
-    ui.button({label:"Retry",id:"retry",onClick(){ if(++attempts===1) throw new Error("First attempt failed"); message.setValue("Recovered"); }});
-  };`);
   const infiniteSource = await compile("export default () => { while(true){} };");
   const sessionSource = await compile(`export default async (_input, {files,signal,progress}) => {
-    const result = await ui.modal.dialog({title:"Quantity",fields:{count:{type:"number",label:"Count",required:true,min:1}}});
     const before = await cloud.kv.user.get("count");
-    await cloud.kv.user.set("count",result.count);
-    const inputs = files;
-    const input = await inputs[0].file();
+    await cloud.kv.user.set("count", 3);
+    const input = await files[0].file();
     await cloud.download("copy.csv", await input.text());
     return {before, count:await cloud.kv.user.get("count")};
   };`);
-  const agentSource = await compile(`export default () => {
-    const rows=[]; const tasks=ui.table({id:"tasks",rows,rowKey:"id",columns:[{key:"title",label:"Task"}]});
-    ui.button({label:"Add",id:"add",onClick:async()=>{
-      const title=await ui.modal.text({title:"Add task",label:"Task",required:true});
-      if(title!==null && await ui.modal.confirm({title:"Confirm task",message:"Add this task?"})) {rows.push({id:crypto.randomUUID(),title}); tasks.setData(rows);}
-    }});
-  };`);
+  const agentSource = await compile("export default () => ({ answer: 42 });");
   const pdfBytes = Buffer.from(await Bun.file(new URL("./fixtures/invoice.pdf", import.meta.url)).arrayBuffer()).toString("base64");
   const xlsxBytes = Buffer.from(await Bun.file(new URL("./fixtures/ledger.xlsx", import.meta.url)).arrayBuffer()).toString("base64");
   const documentsSource = await compile(`export default async (_input, {files,signal,progress}) => {
@@ -100,12 +78,6 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     try { await cloud.sheet.read(new Blob([malicious])); failures.push("unexpected success"); }
     catch (error) { failures.push(error.message); }
     return {page, names, rows, failures};
-  };`);
-  const folderSource = await compile(`export default (_input,{files}) => {
-    ui.filePicker({id:"pick",label:"Select files",multiple:true,onChange:async selected=>{
-      await cloud.download("result.csv","done");
-      ui.text({id:"result",value:JSON.stringify({count:selected.length,total:selected.reduce((sum,file)=>sum+file.size,0),names:[selected[0].name,selected[2999].name],hidden:files.length})});
-    }});
   };`);
   const workSource = await compile(`export default async (_input,{signal,progress}) => {
     for(let i=0;i<17;i++) {
@@ -164,7 +136,6 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
     const headless = await page.evaluate((source) => runArtifactScenario({ source }), headlessSource);
     expect(headless.errors).toEqual([]);
     expect(headless.output).toEqual({ answer: 42 });
-    expect(headless.nodes).toHaveLength(0);
     expect(headless.errors).toEqual([]);
     const documents = await page.evaluate((source) => runArtifactScenario({ source }), documentsSource);
     expect(documents.errors).toEqual([]);
@@ -182,94 +153,51 @@ test("real opaque worker returns data, reuses table selection callbacks and rema
       failures: ["PDF is closed", expect.any(String), expect.stringContaining("XLSX ZIP"), expect.stringContaining("128 MiB")],
     });
     expect(JSON.stringify(documents.output)).not.toContain("unexpected success");
-    for (const mode of ["user", "test"] as const) {
-      const folder = await page.evaluate(({ source, mode }) => runArtifactFolderScenario(source, mode), { source: folderSource, mode });
-      expect(folder.output).toEqual({
-        count: 3000,
-        total: 3000 * 8192,
-        names: ["folder-0/ledger.csv", "folder-2999/ledger.csv"],
-        hidden: 0,
-      });
-      expect(folder.files).toHaveLength(mode === "user" ? 0 : 1);
-    }
     const jobs = await page.evaluate((source) => runArtifactWorkScenario(source), workSource);
     expect(jobs.finished.work?.status).toBe("completed");
     expect(jobs.finished.output).toBe("finished");
     expect(jobs.cancelled.work?.status).toBe("cancelled");
-    expect(jobs.cancelled.busy).toBe(false);
     const csv = await page.evaluate((source) => runArtifactCsvScenario(source), csvSource);
     expect(csv.state.output).toEqual({ people: 2, total: 25 });
     expect(csv.state.logs).toHaveLength(200);
     expect(csv.state.logs.at(-1)?.text).toBe("late diagnostic");
-    expect(csv.state.nodes).toHaveLength(0);
     expect(csv.content).toContain("Alice;17");
     expect(csv.content).toContain("Bob;8");
-    const list = await page.evaluate(
-      (source) =>
-        runArtifactScenario({
-          source,
-          events: Array.from({ length: 320 }, () => ({ id: "tasks", event: { type: "select" as const, key: "one" } })),
-        }),
-      listSource,
-    );
-    expect(list.nodes).toHaveLength(1);
-    expect(list.nodes[0]).toMatchObject({ type: "table", rows: [{ id: "one", title: "320" }] });
-    expect(list.errors).toEqual([]);
+    const ui = await page.evaluate((source) => runArtifactScenario({ source }), uiSource);
+    // Scripts have no UI tree anymore; interfaces are HTML apps.
+    expect(ui.output).toBe("undefined");
     const failure = await page.evaluate((source) => runArtifactScenario({ source }), errorSource);
     expect(failure.errors.join(" ")).toContain("deliberate");
-    const invalidLayout = await page.evaluate((source) => runArtifactScenario({ source }), invalidLayoutSource);
-    expect(invalidLayout.errors.join(" ")).toContain("exactly one layout");
-    const invalidOutput = await page.evaluate((source) => runArtifactScenario({ source }), invalidOutputSource);
-    expect(invalidOutput.errors.join(" ")).toContain("Do not return UI handles");
     const invalidEntry = await page.evaluate((source) => runArtifactScenario({ source }), invalidEntrySource);
     expect(invalidEntry.errors.join(" ")).toContain("must default-export a function");
     const undefinedOutput = await page.evaluate((source) => runArtifactScenario({ source }), undefinedOutputSource);
     expect(undefinedOutput.errors.join(" ")).toContain("Replace undefined values with null");
-    const recovery = await page.evaluate((source) => runArtifactRecoveryScenario(source), recoverySource);
-    expect(recovery.failed.status).toBe("error");
-    expect(recovery.recovered.status).toBe("ready");
-    expect(recovery.recovered.error).toBeUndefined();
-    expect(recovery.recovered.logs.some((log) => log.text.includes("First attempt failed"))).toBe(true);
-    expect(recovery.recovered.nodes.some((node) => node.type === "text" && node.value === "Recovered")).toBe(true);
     const infinite = await page.evaluate((source) => runArtifactScenario({ source, stopAfterMs: 150 }), infiniteSource);
     expect(infinite.responsive).toBe(true);
     expect(infinite.stopped).toBe(true);
     for (let iteration = 0; iteration < 2; iteration++) {
       const session = await page.evaluate((source) => runArtifactSessionScenario(source), sessionSource);
-      expect(session.invalidRejected).toBe(true);
       expect(session.state.output).toEqual({ before: null, count: 3 });
       expect(session.content).toBe("name\nAlice");
       expect(session.state.files[0]?.name).toBe("copy.csv");
     }
     const agent = await page.evaluate((source) => runArtifactAgentScenario(source), agentSource);
-    expect(agent[0]).toMatchObject({ runId: "start", status: "ready" });
-    expect(agent[1]).toMatchObject({ status: "waiting", modal: { kind: "text", title: "Add task" } });
-    expect(agent[2]).toEqual(agent[3]);
-    expect(agent[2]).toMatchObject({ status: "waiting", modal: { id: "@modal:2", kind: "confirm" } });
-    expect(agent[4]).toMatchObject({ nodes: [{ id: "tasks", totalRows: 1, rows: [{ title: "Example" }] }] });
-    expect(agent[5]).toEqual({ runId: "start", stopped: true });
-    expect(agent[6]).toHaveLength(1);
-    const pickerSource = await compile(
-      `export default () => {ui.filePicker({id:"pick",label:"Choose file",onChange:async ([file])=>ui.text({id:"result",value:JSON.stringify({name:file.name,text:await file.text()})})});}`,
-    );
-    await page.evaluate((source) => prepareLocalScriptPicker(source), pickerSource);
-    const chooserPromise = page.waitForEvent("filechooser");
-    await page.click("#start-local-script");
-    const chooser = await chooserPromise;
-    // Choosing a local file is human waiting time, not a 15-second startup budget.
-    await new Promise((resolve) => setTimeout(resolve, 16000));
-    expect(await page.evaluate(() => localScriptPickerResult?.status)).toBe("waiting");
-    await chooser.setFiles({ name: "local.csv", mimeType: "text/csv", buffer: Buffer.from("amount\n42") });
-    await page.waitForFunction(() => localScriptPickerResult?.status === "ready");
-    expect(
-      await page.evaluate(() => {
-        const node = localScriptPickerResult?.nodes.find((node) => node.id === "result");
-        return node?.type === "text" ? JSON.parse(node.value) : null;
-      }),
-    ).toEqual({ name: "local.csv", text: "amount\n42" });
+    expect(agent[0]).toMatchObject({ runId: "start", status: "ready", output: '{"answer":42}' });
+    expect(agent[1]).toMatchObject({ runId: "start", status: "ready" });
+    expect(agent[2]).toEqual({ runId: "start", stopped: true });
+    expect(agent[3]).toHaveLength(1);
+    // code_present rejects static problems before saving anything, and saves one-off files otherwise.
+    const rejected = agent[4] as { failed: boolean; error: string };
+    expect(rejected.failed).toBe(true);
+    expect(rejected.error).toContain("<h1 onclick> never runs");
+    expect(rejected.error).toContain("cdn.example.com");
+    expect(agent[5]).toMatchObject({ title: "Overview", userVisible: true });
+    expect(agent[6]).toEqual([
+      expect.objectContaining({ title: "Overview", files: expect.arrayContaining([expect.objectContaining({ path: "index.html" })]) }),
+    ]);
   } finally {
     await browser.close();
     await server.stop(true);
   }
-  // Includes 3,000-file storage fixtures and deliberate 17s job / 16s picker waits.
+  // Includes a deliberate 17s progress job.
 }, 180000);

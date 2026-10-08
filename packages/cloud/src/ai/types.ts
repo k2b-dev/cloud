@@ -460,7 +460,6 @@ export type AiClientToolId =
   | "code_run"
   | "code_action"
   | "code_inspect"
-  | "code_interact"
   | "code_stop"
   | "code_open"
   | "code_present"

@@ -23,14 +23,21 @@ test("fullscreen runner stacks its preview surface and control bar directly unde
   const html = renderToString(() =>
     createComponent(Runner, {
       userId: "RunnerUser",
-      initial: { id: "Run001", title: "Gutter probe", sourceRevision: 1, publishedVersion: 1, serverAccess: true, canManage: true },
+      initial: {
+        id: "Run001",
+        title: "Gutter probe",
+        sourceRevision: 1,
+        publishedVersion: 1,
+        serverAccess: true,
+        canManage: true,
+        hasInterface: true,
+      },
     }),
   );
   const tag = (name: string) => new RegExp(`<[a-z]+[^>]*class="[^"]*\\b${name}\\b[^"]*"[^>]*>`).exec(html)?.[0];
   expect(tag("assistant-standalone-runner")).toContain('aria-label="Gutter probe"');
-  // The sandbox host renders first but hidden, so the panel's flex gap never
-  // pushes the preview below the shell's own gutter.
-  expect(html).toMatch(/<div class="artifact-panel"><div hidden><\/div><div[^>]*class="k2b-scroll-area artifact-panel__preview\b/);
+  // The preview is the panel's first child, so no flex gap pushes it below the shell's own gutter.
+  expect(html).toMatch(/<div class="artifact-panel"><div class="artifact-panel__preview">/);
   const order = ["assistant-standalone-runner", "artifact-panel__preview", "artifact-panel__console", "artifact-console__header"].map(
     (name) => html.indexOf(tag(name) ?? `missing ${name}`),
   );

@@ -1,28 +1,39 @@
-import { files } from "@k2b/stdlib/browser";
-import { Dropdown, NoticeCard, ScrollArea, SplitButton, useLocale } from "@k2b/ui";
-import { createEffect, createResource, createSignal, ErrorBoundary, onCleanup, Show } from "solid-js";
-import { pickFiles } from "./ArtifactPanel";
+import { Button, Dropdown, IconButton, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
+import { createEffect, createResource, createSignal, ErrorBoundary, on, onCleanup, Show } from "solid-js";
 import { approveInModal } from "./CapabilityApproval";
 import { ChatPresentationResult, ChatPresentation as PresentationSchema } from "./chat-presentation-contracts";
 import { artifactClient } from "./client";
+import { AppFrame, loadAppAssets } from "./html/AppFrame";
+import type { AppFrameAssets } from "./html/assets";
+import type { AppFiles } from "./html/compose";
+import { type Confirm, type Mount, saveDownload } from "./html/host";
 import { type HttpHost, runHttp } from "./http-host";
 import { artifactMessages } from "./messages";
-import { openArtifactModal } from "./modal-host";
-import { presentationChartSvg, presentationHtml } from "./presentation-export";
-import { RuntimeView } from "./RuntimeView";
-import { analyticsInteractions } from "./runtime/analytics-inspect";
 import { runCapability } from "./runtime/capabilities";
-import { type ArtifactSession, createArtifactSession, type RunSnapshot } from "./runtime/session";
+import type { RuntimeContext } from "./runtime/cloud";
+import type { RuntimeServices } from "./runtime/services";
 
-/** A saved chat visualization. `result` is undefined while its `code_present` call runs; the frame is reserved meanwhile. */
-export function ChatPresentation(props: { result: unknown; conversationId: string; httpHost: HttpHost }) {
+type Running = {
+  files: AppFiles;
+  context: RuntimeContext;
+  assets: AppFrameAssets;
+  services: (confirm: Confirm) => RuntimeServices;
+};
+
+/**
+ * An HTML app in the chat: one-off files without saved data, or a saved app with its data. It starts on a
+ * click, never while scrolling past, and keeps a fixed height so nothing below it moves.
+ * `result` is undefined while its `code_present` call runs; the card is reserved meanwhile.
+ */
+export function ChatPresentation(props: {
+  result: unknown;
+  conversationId: string;
+  httpHost: HttpHost;
+  /** Opens a saved app beside the chat. */
+  openApp?: (id: string, title: string) => void;
+}) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
-  const [error, setError] = createSignal("");
-  const [loading, setLoading] = createSignal(false);
-  const [downloading, setDownloading] = createSignal(false);
-  const [state, setState] = createSignal<RunSnapshot>();
-  const [active, setActive] = createSignal(false);
   const descriptor = () => ChatPresentationResult.safeParse(props.result);
   const abort = new AbortController();
   const [data] = createResource(
@@ -40,182 +51,219 @@ export function ChatPresentation(props: { result: unknown; conversationId: strin
       return PresentationSchema.parse(await response.json());
     },
   );
-  let session: ArtifactSession | undefined;
-  let container!: HTMLDivElement;
+  const title = () => data()?.title ?? (descriptor().success ? ChatPresentationResult.parse(props.result).title : t().visualization);
+  const [running, setRunning] = createSignal<Running>();
+  const [loading, setLoading] = createSignal(false);
+  const [ready, setReady] = createSignal(false);
+  const [downloading, setDownloading] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [notice, setNotice] = createSignal("");
+  let mount: Mount | undefined;
   let generation = 0;
   const stop = () => {
     generation++;
-    void session?.stop();
-    session = undefined;
-    setActive(false);
+    mount = undefined;
+    setRunning(undefined);
+    setReady(false);
     setLoading(false);
+    setNotice("");
   };
   onCleanup(() => {
     abort.abort();
     stop();
   });
   // A conversation switch must never retain executable state from another chat.
-  createEffect(() => {
-    props.conversationId;
-    stop();
-    setState(undefined);
-  });
-  const unsettled = () =>
-    Boolean(
-      loading() ||
-        (active() &&
-          (state()?.status !== "ready" ||
-            state()?.busy ||
-            state()?.pendingRequests ||
-            state()?.inputPending ||
-            state()?.approvalPending ||
-            state()?.work?.status === "running")),
-    );
-  const nodes = () => (state()?.nodes.length ? state()!.nodes : (data()?.nodes ?? []));
-  const interactive = () => data()?.nodes.some((node) => analyticsInteractions(node).length > 0);
-  const downloads = () => [
-    ...(["pdf", "html"] as const).map((format) => ({
-      label: format.toUpperCase(),
-      icon: `ti ti-file-type-${format}`,
-      disabled: unsettled() || downloading(),
-      action: () => {
-        void download(format);
-      },
-    })),
-    ...nodes()
-      .filter((node) => node.type === "chart" || node.type === "explorer")
-      .map((node, index) => ({
-        label: `SVG · ${node.label || (node.type === "chart" && "title" in node.data.options ? node.data.options.title : undefined) || `${t().visualizationChart} ${index + 1}`}`,
-        icon: "ti ti-file-type-svg",
-        disabled: unsettled() || downloading(),
-        action: () => {
-          void download("html", node.id);
-        },
-      })),
-  ];
+  createEffect(on(() => props.conversationId, stop, { defer: true }));
+
   async function start() {
     stop();
     const token = generation;
+    const saved = data();
+    if (!saved) return;
     setError("");
     setLoading(true);
-    setState(undefined);
     try {
-      const saved = data();
-      if (!saved) throw new Error(t().visualizationUnavailable);
-      const compiled = await artifactClient.compile({ entry: "main.ts", files: [{ path: "main.ts", content: saved.code }] });
-      if (abort.signal.aborted || token !== generation) return;
-      session = createArtifactSession(container, compiled, {
-        mode: "user",
-        changed: (value) => {
-          if (token === generation) setState(value);
-        },
-        inputFiles: saved.inputs.map((input) => ({ name: input.path, size: input.size, type: input.mediaType })),
-        readInput: async (path, signal) => {
-          const response = await fetch(
-            `/api/assistant/artifacts/presentations/${saved.id}/input?${new URLSearchParams({ conversationId: props.conversationId, path })}`,
-            { signal },
-          );
-          if (!response.ok) throw new Error(t().visualizationInputUnavailable);
-          const file = new File([await response.blob()], path.split("/").pop()!, { type: response.headers.get("Content-Type") ?? "" });
-          Object.defineProperty(file, "webkitRelativePath", { value: path });
-          return file;
-        },
-        pick: pickFiles,
-        modal: (request, signal) => openArtifactModal(request, signal, locale()),
-        capability: (name, input, signal) => runCapability(name, input, { conversationId: props.conversationId }, approveInModal, signal),
-        http: (request, signal) => runHttp(request, { conversationId: props.conversationId }, props.httpHost, signal),
-        ai: (request, signal) => artifactClient.ai(request, { conversationId: props.conversationId }, signal),
-        pdf: (request, signal) => artifactClient.pdf(request, { conversationId: props.conversationId }, signal),
-        save: async (file, signal) => {
-          if (!signal.aborted) files.downloadFileFromContent(file, file.name, file.type);
-        },
+      const scope = { conversationId: props.conversationId };
+      const [files, context, assets, server] = await Promise.all([
+        saved.files ??
+          artifactClient.get(saved.artifactId!).then((app) => {
+            if (!app.source.files.some((file) => file.path === "index.html")) throw new Error(t().noInterface);
+            return app.source.files;
+          }),
+        artifactClient.context(),
+        loadAppAssets("/api/assistant/artifacts/runtime"),
+        saved.artifactId ? import("./runtime/browser-server") : undefined,
+      ]);
+      if (token !== generation) return;
+      setRunning({
+        files: Object.fromEntries(files.map((file) => [file.path, file.content])),
+        context,
+        assets,
+        services: (confirm) =>
+          server && saved.artifactId
+            ? server.browserServerOptions(saved.artifactId, confirm)
+            : {
+                ai: (request, signal) => artifactClient.ai(request, scope, signal),
+                pdf: (request, signal) => artifactClient.pdf(request, scope, signal),
+                capability: (name, input, signal) =>
+                  runCapability(
+                    name,
+                    input,
+                    scope,
+                    (request, signal) =>
+                      confirm(
+                        () => approveInModal(request, signal),
+                        (decision) => decision.approved,
+                      ),
+                    signal,
+                  ),
+                http: (request, signal) =>
+                  runHttp(
+                    request,
+                    scope,
+                    {
+                      ...props.httpHost,
+                      approve: (review, signal) =>
+                        confirm(
+                          () => props.httpHost.approve(review, signal),
+                          (ok) => ok,
+                        ),
+                    },
+                    signal,
+                  ),
+              },
       });
-      setActive(true);
-    } catch (error) {
-      if (token === generation) setError(String(error));
+    } catch (failure) {
+      if (token === generation) setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       if (token === generation) setLoading(false);
     }
   }
-  async function download(format: "html" | "pdf", nodeId?: string) {
-    if (unsettled() || downloading()) return;
-    setError("");
+  async function download(format: "html" | "pdf") {
+    if (!mount || downloading()) return;
     setDownloading(true);
     try {
-      const title = data()?.title ?? t().visualization;
-      const node = nodes().find((node) => node.id === nodeId);
-      const content = node ? presentationChartSvg(node, locale()) : presentationHtml(nodes(), title, locale());
-      const blob = node
-        ? new Blob([content], { type: "image/svg+xml" })
-        : format === "pdf"
-          ? await artifactClient.pdf({ operation: "render", html: content }, { conversationId: props.conversationId }, abort.signal)
-          : new Blob([content], { type: "text/html" });
-      if (!abort.signal.aborted) files.downloadFileFromContent(blob, `${title}.${node ? "svg" : format}`, blob.type);
-    } catch (error) {
-      if (!abort.signal.aborted) setError(String(error));
+      const html = await mount.snapshot();
+      const file =
+        format === "pdf"
+          ? await artifactClient.pdf({ operation: "render", html }, { conversationId: props.conversationId }, abort.signal)
+          : new Blob([html], { type: "text/html" });
+      if (!abort.signal.aborted) saveDownload(`${title()}.${format}`, file);
+    } catch (failure) {
+      if (!abort.signal.aborted) setNotice(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setDownloading(false);
     }
   }
+
   return (
-    <ErrorBoundary fallback={(error) => <NoticeCard tone="danger" title={t().visualizationUnavailable} detail={String(error)} />}>
+    <ErrorBoundary fallback={(failure) => <Placeholder state="error" title={t().visualizationUnavailable} description={String(failure)} />}>
       <section
         data-presentation-id={descriptor().success ? ChatPresentationResult.parse(props.result).presentationId : undefined}
         class="assistant-chat-presentation"
-        aria-label={descriptor().success ? ChatPresentationResult.parse(props.result).title : t().visualization}
+        aria-label={title()}
         aria-busy={props.result === undefined ? "true" : undefined}
       >
-        <div ref={container} />
-        <ScrollArea class="assistant-chat-presentation__body" scrollFade>
+        <header class="assistant-chat-presentation__header">
+          <i class="ti ti-layout-dashboard assistant-chat-presentation__icon" aria-hidden="true" />
+          <strong>{title()}</strong>
+          <small>{t().studioApp}</small>
+          <div class="assistant-chat-presentation__actions">
+            <Show when={running()}>
+              <Dropdown.Root
+                position="bottom-right"
+                items={(["pdf", "html"] as const).map((format) => ({
+                  label: format.toUpperCase(),
+                  icon: `ti ti-file-type-${format}`,
+                  disabled: !ready() || downloading(),
+                  action: () => void download(format),
+                }))}
+              >
+                <Dropdown.Trigger variant="ghost" iconOnly label={t().visualizationDownloads} loading={downloading()}>
+                  <i class="ti ti-download" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
+              <IconButton size="sm" label={t().stop} onClick={stop}>
+                <i class="ti ti-player-stop" aria-hidden="true" />
+              </IconButton>
+            </Show>
+            <Show when={props.openApp && data()?.artifactId}>
+              {(id) => (
+                <Button size="sm" variant="ghost" onClick={() => props.openApp?.(id(), title())}>
+                  <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                  {t().open}
+                </Button>
+              )}
+            </Show>
+          </div>
+        </header>
+        <div class="assistant-chat-presentation__body">
           <Show
-            when={data()}
+            when={running()}
+            keyed
             fallback={
-              <p role="status">
-                {props.result !== undefined && !descriptor().success
-                  ? t().visualizationInvalid
-                  : data.error
-                    ? String(data.error)
-                    : t().visualizationLoading}
-              </p>
-            }
-          >
-            <header>
-              <strong>{data()?.title}</strong>
               <Show
-                when={interactive()}
+                when={data()}
                 fallback={
-                  <Dropdown.Root items={downloads()} position="bottom-right">
-                    <Dropdown.Trigger variant="ghost" iconOnly label={t().visualizationDownloads} loading={downloading()}>
-                      <i class="ti ti-download" aria-hidden="true" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
+                  <Placeholder
+                    variant="panel"
+                    state={data.error || (props.result !== undefined && !descriptor().success) ? "error" : "loading"}
+                    title={
+                      props.result !== undefined && !descriptor().success
+                        ? t().visualizationInvalid
+                        : data.error
+                          ? t().visualizationLoadFailed
+                          : undefined
+                    }
+                  />
                 }
               >
-                <SplitButton
-                  variant="ghost"
-                  loading={loading()}
-                  onClick={() => (active() ? stop() : void start())}
-                  items={downloads()}
-                  menuLabel={t().visualizationDownloads}
-                  menuIcon={<i class="ti ti-dots" aria-hidden="true" />}
-                  menuPosition="bottom-right"
-                >
-                  {active() ? t().stop : t().visualizationInteract}
-                </SplitButton>
+                <Placeholder
+                  variant="panel"
+                  state={error() ? "error" : "empty"}
+                  title={error() ? t().visualizationUnavailable : undefined}
+                  description={error() || undefined}
+                  action={
+                    <Button loading={loading()} onClick={() => void start()}>
+                      <Show when={!loading()}>
+                        <i class="ti ti-player-play" aria-hidden="true" />
+                      </Show>
+                      {t().start}
+                    </Button>
+                  }
+                />
               </Show>
-            </header>
-            <RuntimeView
-              nodes={nodes()}
-              busy={!active() || unsettled()}
-              event={(event) => {
-                if (active()) void session?.event(event).catch((error) => setError(String(error)));
-              }}
-            />
+            }
+          >
+            {(app) => (
+              <AppFrame
+                files={app.files}
+                title={title()}
+                context={app.context}
+                assets={app.assets}
+                services={app.services}
+                onMount={(created) => {
+                  mount = created;
+                }}
+                onEvent={(event) => {
+                  if (event.type === "ready") setReady(true);
+                  else if (event.type === "notice") setNotice(t().appNotice({ code: event.code }));
+                  // The card has no console: a start that failed says so, in Cloud's words and never the app's.
+                  else if (event.type === "not-ready" || (event.type === "error" && !ready())) setNotice((shown) => shown || t().appFailed);
+                  else if (event.type === "stopped" && event.reason !== "request") {
+                    stop();
+                    setError(event.reason === "refusals" ? t().appStoppedRefusals : t().appStoppedFlood);
+                  }
+                }}
+              />
+            )}
           </Show>
-          <Show when={error() || state()?.error}>
-            <NoticeCard tone="danger" title={t().visualization} detail={error() || state()?.error} />
+          <Show when={notice()}>
+            <InlineGuidance class="assistant-chat-presentation__notice" tone="danger" role="alert">
+              {notice()}
+            </InlineGuidance>
           </Show>
-        </ScrollArea>
+        </div>
       </section>
     </ErrorBoundary>
   );

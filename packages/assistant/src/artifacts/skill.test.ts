@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { money } from "@k2b/stdlib";
+import { createDomTestHarness } from "../../../ui/test/dom";
+import { lintApp } from "./html/compose";
 import { compileArtifact } from "./runtime/compile";
+import { chart } from "./runtime/lib";
 
 test("money reference computes tax and preserves the allocated total", async () => {
   const document = await Bun.file(new URL("../../skills/code-mode/references/money.md", import.meta.url)).text();
@@ -17,58 +20,75 @@ test("bundled code mode skill matches its canonical Markdown files", async () =>
   expect(await process.exited, error).toBe(0);
 });
 
-test("code mode reference examples compile with the artifact runtime", async () => {
-  const document = await Bun.file(new URL("../../skills/code-mode/references/examples.md", import.meta.url)).text();
-  const examples = [...document.matchAll(/```js\n([\s\S]*?)\n```/g)].map((match) => match[1]!);
-  expect(examples).toHaveLength(4);
-  const csv = document.match(/```csv\n([\s\S]*?)\n```/)?.[1];
-  expect(csv).toBeDefined();
-  for (const content of examples) {
-    const compiled = await compileArtifact({
-      entry: "main.js",
-      files: [
-        { path: "main.js", content },
-        { path: "sales.csv", content: csv! },
-      ],
-    });
+/** Code blocks of a reference, in order, with their fence language. */
+const blocks = async (name: string) => {
+  const document = await Bun.file(new URL(`../../skills/code-mode/references/${name}`, import.meta.url)).text();
+  return [...document.matchAll(/```(\w+)\n([\s\S]*?)\n```/g)].map((match) => ({ language: match[1]!, code: match[2]! }));
+};
+/** Static findings of an app the way code_write and code_present check it. */
+const appErrors = (files: Record<string, string>) => {
+  const dom = createDomTestHarness();
+  const globals = globalThis as unknown as { DOMParser?: unknown };
+  globals.DOMParser = dom.window.DOMParser;
+  try {
+    return lintApp(files).filter((issue) => issue.severity === "error");
+  } finally {
+    delete globals.DOMParser;
+    dom.cleanup();
+  }
+};
+
+test("code mode script examples compile and app examples pass the static app checks", async () => {
+  const examples = await blocks("examples.md");
+  const scripts = examples.filter((block) => block.language === "js" && block.code.includes("export default"));
+  expect(scripts).toHaveLength(2);
+  for (const { code } of scripts) {
+    const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: code }] });
     expect(compiled.code).toContain("__artifactStart");
   }
+  const html = examples.filter((block) => block.language === "html");
+  const apps = examples.filter((block) => block.language === "js" && !block.code.includes("export default"));
+  expect(apps).toHaveLength(2);
+  expect(appErrors({ "index.html": html[0]!.code, "app.js": apps[0]!.code })).toEqual([]);
+  expect(
+    appErrors({
+      "index.html": "<main><form><input name=customer><input name=amount><button>Create</button></form></main>",
+      "app.js": apps[1]!.code,
+    }),
+  ).toEqual([]);
 });
 
-test("chart reference uses accepted chart options", async () => {
-  const { ChartOptions } = await import("./runtime/chart-schema");
-  const document = await Bun.file(new URL("../../skills/code-mode/references/charts.md", import.meta.url)).text();
-  const source = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
-  expect(source).toBeDefined();
-  const { createAnalyticsUi } = await import("./runtime/analytics-ui");
-  const runtime = createAnalyticsUi(() => {});
-  new Function("ui", source!.replace("export default", "return"))(runtime.ui)();
-  const before = runtime.snapshot().find((node) => node.type === "chart");
-  expect(before?.type).toBe("chart");
-  const button = runtime.snapshot().find((node) => node.type === "button")!;
-  await runtime.event(button.id, { type: "change", value: null });
-  const after = runtime.snapshot().find((node) => node.type === "chart");
-  expect(after?.type === "chart" && ChartOptions.safeParse(after.data.options).success).toBe(true);
-  expect(after).not.toEqual(before);
+test("the apps reference todo example and confirm snippet pass the static app checks", async () => {
+  const examples = await blocks("apps.md");
+  const html = examples.filter((block) => block.language === "html").map((block) => block.code);
+  const js = examples.filter((block) => block.language === "js").map((block) => block.code);
+  expect(html).toHaveLength(2);
+  expect(js).toHaveLength(2);
+  expect(appErrors({ "index.html": html.join("\n"), "app.js": js.join("\n") })).toEqual([]);
+  // The same checks catch the traps the reference warns about.
+  expect(
+    appErrors({ "index.html": '<button onclick="go()">Go</button>', "app.js": 'alert("x"); localStorage.x = 1; fetch("/a");' }).map(
+      (issue) => issue.kind,
+    ),
+  ).toEqual(["inline-handler", "dialog", "storage", "network"]);
 });
 
-test("first-file skill entry compiles without loading GUI references", async () => {
+test("chart reference draws Cloud chart markup", async () => {
+  const [example] = await blocks("charts.md");
+  const element = { innerHTML: "", addEventListener: () => {} };
+  new Function("cloud", "document", example!.code)(
+    { chart: (options: Parameters<typeof chart>[0]) => chart(options, "en-US") },
+    { querySelector: () => element },
+  );
+  expect(element.innerHTML).toStartWith('<div class="k2b-chart" data-chart-kind="bar" role="img" aria-label="Orders by region">');
+});
+
+test("first-file skill entry compiles without loading app references", async () => {
   const document = await Bun.file(new URL("../../skills/code-mode/SKILL.md", import.meta.url)).text();
   const content = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
   expect(content).toBeDefined();
   const compiled = await compileArtifact({ entry: "main.js", files: [{ path: "main.js", content: content! }] });
   expect(compiled.code).toContain("__artifactStart");
-});
-
-test("analytics reference executes its example with the real UI builder", async () => {
-  const { createAnalyticsUi } = await import("./runtime/analytics-ui");
-  const document = await Bun.file(new URL("../../skills/code-mode/references/analytics.md", import.meta.url)).text();
-  const code = document.match(/```js\n([\s\S]*?)\n```/)?.[1];
-  expect(code).toBeDefined();
-  const runtime = createAnalyticsUi(() => {});
-  new Function("ui", code!.replace("export default", "return"))(runtime.ui)();
-  expect(runtime.snapshot().filter((node) => node.type === "explorer")).toHaveLength(1);
-  await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code! }] });
 });
 
 test("every code-mode reference is directly routed and local links resolve", async () => {

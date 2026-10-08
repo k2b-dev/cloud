@@ -127,7 +127,7 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (["code_write", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
-  if (["code_inspect", "code_interact"].includes(name)) return t.stepCheckingApp;
+  if (name === "code_inspect") return t.stepCheckingApp;
   if (name.startsWith("code_")) return t.stepCode;
   if (["markdown_to_pdf", "html_to_pdf"].includes(name)) return withTarget(t.stepPdf);
   if (["load_skill", "load_tools", "search_tools", "list_apps"].includes(name)) return t.stepLoading;

@@ -1,14 +1,25 @@
 import type { ArtifactSource } from "./contracts";
-import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
+import { lintSource } from "./html/compose";
+import { compilationDiagnostic, compileArtifact, validateArtifact } from "./runtime/compile";
 import type { ArtifactBundle } from "./service";
 
+/** Compiler messages for scripts and actions; for an HTML app also the static findings of its JavaScript and CSS. */
 export async function sourceDiagnostics(source: ArtifactSource) {
-  try {
-    await compileArtifact(source);
-    return [];
-  } catch (error) {
-    return [compilationDiagnostic(error)];
+  const diagnostics: string[] = [];
+  if (source.entry.endsWith(".html")) {
+    const files = Object.fromEntries(source.files.map((file) => [file.path, file.content]));
+    for (const file of source.files)
+      if (/\.(?:js|mjs|css)$/.test(file.path))
+        for (const issue of lintSource(file.path, file.content, files))
+          diagnostics.push(`${issue.severity} ${issue.where ?? file.path}: ${issue.message}`);
   }
+  try {
+    // An HTML interface is not compiled; its actions are.
+    await (source.entry.endsWith(".html") ? validateArtifact(source) : compileArtifact(source));
+  } catch (error) {
+    diagnostics.push(compilationDiagnostic(error));
+  }
+  return diagnostics;
 }
 
 export function sourceManifest(bundle: ArtifactBundle) {

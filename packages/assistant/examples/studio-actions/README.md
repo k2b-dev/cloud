@@ -5,9 +5,10 @@ folder contains a complete source bundle and an `app.actions.json` manifest.
 They need no package imports. The integration suite executes their published
 handlers in the real isolated runtime against disposable storage.
 
-To install an example, create a private App, save the folder's files together
-with `code_write` using its current `expectedRevision`, and set `entry:"main.js"`.
-Only the dashboard has a GUI entry; the other Apps deliberately have none.
+To install an example, create a private App and save the folder's files together
+with `code_write` using its current `expectedRevision`. Only the dashboard has an
+`index.html` interface; for the other Apps, which deliberately have none, set
+`entry:"main.js"`.
 For the importer and invoice matcher, `setup.json` contains `code_database`
 tool inputs, not runtime source. List tables first, then pass each missing
 schema definition with the new App's `id` while holding Manage. Normal users
@@ -51,12 +52,13 @@ transaction or an invented upsert API.
 
 ## 3. Display-only dashboard with agent maintenance
 
-`dashboard/main.js` displays the current shared status. It has no upload,
-configuration, or maintenance controls. The separate `setStatus({message})`
-action replaces the complete status value and returns `{saved:true}`. Open the
-GUI again to read the updated value. The example deliberately has no polling or
-subscription machinery. Ordinary Use access allows the GUI and its published
-action; editing source or permissions still requires Manage.
+`dashboard/index.html` and `app.js` display the current shared status. The app
+has no upload, configuration, or maintenance controls. The separate
+`setStatus({message})` action replaces the complete status value and returns
+`{saved:true}`. Restart the app to read the updated value. The example
+deliberately has no polling or subscription machinery. Ordinary Use access
+allows the app and its published action; editing source or permissions still
+requires Manage.
 
 ## 4. Invoice matching after a user's explicit choice
 

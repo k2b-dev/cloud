@@ -55,8 +55,10 @@ test("HTML render forwards page options, assets, tagging and offline policy", as
         }
         expect(await files[0]!.text()).toStartWith('<!doctype html><meta charset="utf-8">');
         expect(await files[0]!.text()).toContain("h1{color:red}");
-        expect(await files[0]!.text()).toContain(".cloud-chart");
-        expect(await files[0]!.text()).toContain("--stdlib-chart-c1:#3b82f6");
+        // The app's base stylesheet with its fonts comes first, so a PDF looks like the app and its own CSS wins.
+        expect(await files[0]!.text()).toContain("@layer k2b-base");
+        expect(await files[0]!.text()).toContain(".k2b-chart__svg");
+        expect(await files[0]!.text()).toContain("font/woff2;base64");
         return new Response("%PDF-ok", { headers: { "Content-Type": "application/pdf" } });
       },
     },

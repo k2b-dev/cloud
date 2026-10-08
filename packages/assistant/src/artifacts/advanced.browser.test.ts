@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { chromium } from "playwright";
+import { appRuntimeRoute } from "./html/test-assets";
 import { renameSource } from "./rename-source";
-import { compileArtifact } from "./runtime/compile";
 
 test("Studio editor keeps pending edits and file sessions; SQL and local data are reachable without replacing navigation", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./advanced-browser-harness.tsx"], {
@@ -34,8 +34,7 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       console.error(e.message);
     });
     let revision = 1,
-      publishedRevision = 1,
-      compileCalls = 0;
+      publishedRevision = 1;
     let hasTables = true;
     const personal = new Map([["personal-fixture", "42"]]);
     const otherViewer = new Map([["private-fixture", "99"]]);
@@ -48,16 +47,18 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       resolve();
     }
     let source = {
-      entry: "main.ts",
+      entry: "index.html",
       files: [
-        { path: "main.ts", content: 'export default () => { ui.text({value:"Hello"}); };' },
-        { path: "other.ts", content: "export const amount = 10;" },
+        { path: "index.html", content: "<main><p>Hello</p></main>" },
+        { path: "other.js", content: "export const amount = 10;" },
       ],
     };
     await page.route("**/api/**", async (route) => {
       const request = route.request(),
         path = new URL(request.url()).pathname;
       let data: unknown = {};
+      const runtime = await appRuntimeRoute(path);
+      if (runtime) return route.fulfill({ status: runtime.status, contentType: "application/json", body: await runtime.text() });
       if (path.endsWith("/storage/manage")) {
         const input = request.postDataJSON();
         expect(input.scope).toBe("user");
@@ -71,9 +72,6 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       } else if (path.endsWith("/runtime/rename")) {
         const input = request.postDataJSON();
         data = renameSource(input.source, input.from, input.to);
-      } else if (path.endsWith("/compiled")) {
-        compileCalls++;
-        data = { ...(await compileArtifact(source)), revision };
       } else if (path.endsWith("/versions")) data = { items: [] };
       else if (path.endsWith("/publish")) {
         expect(request.postDataJSON().expectedRevision).toBe(revision);
@@ -126,23 +124,30 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
         bottom: getComputedStyle(el).borderBottomRightRadius,
       })),
     ).toEqual({ top: "0px", bottom: "0px" });
-    const editor = page.getByRole("textbox", { name: "main.ts", exact: true });
+    const editor = page.getByRole("textbox", { name: "index.html", exact: true });
+    const app = page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
     expect(await page.getByRole("button", { name: "Publish", exact: true }).isDisabled()).toBe(true);
     await editor.fill(
-      'export default () => { ui.text({value:"Changed"}); ui.filePicker({label:"Pick", onChange: selected => { if(selected[0]) ui.text({value:selected[0].name}); }}); ui.button({label:"Ask", onClick: async () => { setTimeout(() => console.info("Waiting"), 30); if(await ui.modal.confirm({title:"Test dialog",message:"Continue?"})) await cloud.download("result.txt", "ok"); }}); };',
+      `<main><p>Changed</p><label>Pick <input id="pick" type="file"></label><p id="picked"></p><button id="ask" type="button">Ask</button>
+<dialog id="confirm"><form method="dialog"><p>Continue?</p><footer><button value="cancel">Cancel</button><button value="ok">Confirm</button></footer></form></dialog></main>
+<script type="module">
+const dialog = document.querySelector("#confirm");
+document.querySelector("#pick").addEventListener("change", (event) => (document.querySelector("#picked").textContent = event.target.files[0].name));
+document.querySelector("#ask").addEventListener("click", () => dialog.showModal());
+dialog.addEventListener("close", async () => { if (dialog.returnValue === "ok") await cloud.download("result.txt", "ok"); });
+</script>`,
     );
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[aria-busy="true"]') !== null);
-    await editor.fill('export default () => { ui.text({value:"Typed while saving"}); };');
+    await editor.fill("<main><p>Typed while saving</p></main>");
     await finishSave();
     await page.getByText("Unsaved changes", { exact: true }).waitFor();
     expect(await editor.inputValue()).toContain("Typed while saving");
-    expect(compileCalls).toBe(0);
     await page.getByRole("button", { name: "File path" }).click();
-    await page.getByRole("menuitem", { name: "other.ts", exact: true }).click();
-    await page.getByRole("textbox", { name: "other.ts", exact: true }).fill("export const amount = 20;");
+    await page.getByRole("menuitem", { name: "other.js", exact: true }).click();
+    await page.getByRole("textbox", { name: "other.js", exact: true }).fill("export const amount = 20;");
     await page.getByRole("button", { name: "File path" }).click();
-    await page.getByRole("menuitem", { name: "main.ts", exact: true }).click();
+    await page.getByRole("menuitem", { name: "index.html", exact: true }).click();
     expect(await editor.inputValue()).toContain("Typed while saving");
     await editor.press("Control+z");
     expect(await editor.inputValue()).toContain("Changed");
@@ -154,28 +159,23 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       return b?.disabled && b.getAttribute("aria-busy") !== "true";
     });
     expect(publishedRevision).toBe(revision);
-    expect(compileCalls).toBe(0);
+    // The preview runs the editor's files; a native file input and a <dialog> work inside the app frame.
     await page.getByRole("button", { name: "Start", exact: true }).click();
-    await page.getByText("Changed", { exact: true }).waitFor();
-    expect(compileCalls).toBe(1);
-    const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Pick", exact: true }).click();
-    await (await chooser).setFiles({ name: "local-example.csv", mimeType: "text/csv", buffer: Buffer.from("a;b\n1;2") });
-    const selectedFile = page.getByText("local-example.csv", { exact: true });
-    await selectedFile.nth(1).waitFor();
-    expect(await selectedFile.count()).toBe(2);
-    await page.getByRole("button", { name: "Ask", exact: true }).click();
-    await page.getByText("Continue?", { exact: true }).waitFor();
+    await app.getByText("Changed", { exact: true }).waitFor();
+    await app.locator("#pick").setInputFiles({ name: "local-example.csv", mimeType: "text/csv", buffer: Buffer.from("a;b\n1;2") });
+    await app.getByText("local-example.csv", { exact: true }).waitFor();
+    await app.getByRole("button", { name: "Ask", exact: true }).click();
+    await app.getByText("Continue?", { exact: true }).waitFor();
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    await app.getByRole("button", { name: "Confirm", exact: true }).click();
     expect((await download).suggestedFilename()).toBe("result.txt");
     await page.screenshot({ path: "/tmp/assistant-advanced-editor.png" });
     await page.setViewportSize({ width: 800, height: 900 });
     await page.getByRole("tab", { name: "Code", exact: true }).click();
     expect(await editor.isVisible()).toBe(true);
-    expect(await page.getByText("Changed", { exact: true }).isVisible()).toBe(false);
+    expect(await page.locator("iframe.studio-app-frame").isVisible()).toBe(false);
     await page.getByRole("tab", { name: "Execution", exact: true }).click();
-    expect(await page.getByText("Changed", { exact: true }).isVisible()).toBe(true);
+    expect(await page.locator("iframe.studio-app-frame").isVisible()).toBe(true);
     await page.setViewportSize({ width: 1400, height: 900 });
     page.on("dialog", (dialog) => void dialog.accept());
     await page.goto(server.url + "app/assistant/apps/00000000-0000-4000-8000-000000000001/database");

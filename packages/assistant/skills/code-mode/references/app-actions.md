@@ -14,10 +14,9 @@ mismatch returns `ACTION_INPUT_INVALID` naming each rejected field, for example
 whose `inputSchema` is not an object cannot be called; tell the user that its
 App must be published again with an object schema. The result is the normal
 run snapshot: `runId`, `status`, `output` (JSON text), `outputTruncated`, `logs`,
-`files`, `work` and optional error or modal. Output is checked against the
+`files`, `work` and optional error. Output is checked against the
 published output schema when execution completes. Use `code_inspect` for a
 running job, `code_export` for captured files, and `code_stop` to release a run.
-A pending modal follows the normal `code_interact` contract.
 
 Use access is enough for a published action. It gives no draft, publication, or
 administration rights. A changed or withdrawn publication rejects the call;
@@ -71,12 +70,11 @@ The manifest accepts 1–64 actions and no other fields. Schemas use the same JS
 Schema support as Cloud capabilities; unsupported features reject publication.
 The normal source byte and file budgets also include the manifest.
 
-An App can have GUI, actions, or both. An action-only App may omit the source's
-GUI entry file (normally `main.ts`); no empty dashboard is needed. Persistence is
-optional: this example has no database. Each action is compiled at publication
-without evaluating it. Code, manifest, and schemas publish together. Calling the
-published action does not start the GUI entry. Use `code_run({id})` to test the
-GUI. For an unpublished handler, discover with `code_actions({id,draft:true})`
+An App can have an HTML interface, actions, or both. An action-only App needs no
+`index.html`; no empty dashboard is needed. Persistence is optional: this example
+has no database. Each action is compiled at publication without evaluating it.
+Code, manifest, and schemas publish together. Calling the published action does
+not start the interface. For an unpublished handler, discover with `code_actions({id,draft:true})`
 and call `code_action({id,action,revision,input})` using its exact draft revision.
 This requires Manage. Supply either `revision` or `publishedVersion`, never both.
 Test effects remain real. After testing, publish and use its `publishedVersion`.

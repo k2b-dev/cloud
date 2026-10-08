@@ -166,8 +166,8 @@ host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
 
 The default tool source also offers the server-run Code Mode tools `code_run`,
-`code_action`, `code_inspect`, `code_interact`, `code_stop`, `code_export`,
-and `code_present` in every turn, whichever client submits it, including API
+`code_action`, `code_inspect`, `code_stop`, `code_export`, and `code_present`
+in every turn, whichever client submits it, including API
 clients, `cld assistant --detach`, and scheduled tasks. They load on demand
 and run JavaScript in an isolated Assistant-owned host. That code can call
 Cloud capabilities, databases, and external HTTPS endpoints with the user's

@@ -292,6 +292,10 @@ export const browserHttpHost: HttpHost = {
         signal.addEventListener("abort", abort, { once: true });
         onCleanup(() => signal.removeEventListener("abort", abort));
         if (signal.aborted) close();
+        // A click that was meant for the app underneath cannot approve: the button arms late.
+        const [armed, setArmed] = createSignal(false);
+        const timer = setTimeout(() => setArmed(true), 500);
+        onCleanup(() => clearTimeout(timer));
         return (
           <div class="flex flex-col gap-3">
             <NoticeCard tone="warning" title={request.resourceTitle ?? t().httpRequest} detail={t().httpConsent} />
@@ -311,6 +315,7 @@ export const browserHttpHost: HttpHost = {
                 {t().stop}
               </Button>
               <Button
+                disabled={!armed()}
                 onClick={() => {
                   approved = true;
                   close();

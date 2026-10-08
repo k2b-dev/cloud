@@ -20,8 +20,8 @@ App action needs Use, not Manage, and does not need access-management tools.
    Read grants again to verify the result. A conflict means the grants changed:
    inspect and prepare a new review. Do not retry an unknown mutation blindly.
 
-Studio Apps support users, groups, `{type:"authenticated"}` and
-`{type:"public"}`. Public only accepts `permission:"read"`; public Manage and
+Studio Apps support users, groups and `{type:"authenticated"}`. Public grants
+are switched off for now (see "Standalone apps and public links" below);
 service-account grants are rejected. Never replace an unavailable recipient
 with a broader one. The last manager cannot be removed.
 Publishing and sharing remain separate; Use executes only published source.
@@ -43,25 +43,18 @@ current grants revision, and preserve the last administrator.
 Tell the user when recipients can access only one of a linked Skill and App.
 Prepare each requested grant separately; never implicitly share the other.
 
-## Public and standalone apps
+## Standalone apps and public links
 
-`code_access_read` also returns `runnerHref` and `publicLevels:["read"]`.
-The standalone URL is `/app/assistant/apps/ID/run`. It always runs the current
-publication, including for managers. Share this URL, not a chat workspace URL.
-A private app requires sign-in and app access. Publication never grants access.
+`code_access_read` also returns `runnerHref`. The standalone URL is
+`/app/assistant/apps/ID/run`. It always runs the current publication, including
+for managers. Share this URL, not a chat workspace URL. It requires sign-in and
+app access; publication never grants access. People who manage the app see it
+start at once; everyone else presses Start.
 
-Before requesting a public grant, explain that visitors can use local computation,
-transitional UI file pickers and downloads, but cannot use personal storage, the app database,
-server files/KV, personal secrets, server HTTP/PDF or protected Cloud actions.
-Being signed in does not remove these restrictions: server features require an
-explicit user, group or authenticated grant. Never execute as the app owner.
-Source and data embedded in the published code become public; do not embed secrets.
-A public grant does not expose the app's draft, history or administration.
-Removing the grant or unpublishing prevents new loads; downloaded code cannot be recalled.
-
-For a public calculator, use local inputs and downloads. For an internal dashboard
-using shared data, grant the intended users or groups access instead. Explain when
-an existing app depends on server features before sharing it publicly.
+Public links for people without an account are switched off for now: a public
+grant is refused with `PUBLIC_SHARING_OFF`, and an existing public entry opens
+nothing until public sharing returns. Grant the intended users, groups or all
+signed-in people instead. A manager can still remove an old public entry.
 
 Cloud administrators can add the runner URL as a Link shortcut in the navigation
 settings. Shortcut audience controls visibility and never grants app access.

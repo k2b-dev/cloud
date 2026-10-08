@@ -1,54 +1,50 @@
 # Run and debug
 
-Load the required `code_*` tools with `load_tools`. Run, inspect, interact, stop,
-and export execute on the Assistant server, independently of the user's tab.
+Load the required `code_*` tools with `load_tools`. Run, inspect, stop, export
+and present execute on the Assistant server, independently of the user's tab.
 `code_open` and `code_secret` use the user interface. Use the exact tool names
 without `assistant.`; they are direct tools, not app capabilities. If execution
 is unavailable, report that state rather than claiming the code ran.
 
 | Tool | Input | Result |
 | --- | --- | --- |
-| `code_run` | `id` or `code`, optional `inputPaths`, `version`; one-off `code` may bind `resourceId` | Starts saved source or a one-off entry; returns `runId` and snapshot |
-| `code_inspect` | `runId`, optional `nodeId`, `offset`, `limit`, `waitMs` | UI, logs, errors, modal, output, and files |
-| `code_interact` | `runId`, `id`, optional `event` or modal `answer` | Performs an interaction and returns the resulting state |
-| `code_stop` | `runId` | Stops and releases a test run |
+| `code_run` | `id` or `code`, optional `inputPaths`, `version`; one-off `code` may bind `resourceId` | Starts a saved script or a one-off entry; returns `runId` and a snapshot |
+| `code_inspect` | `runId`, optional `waitMs` | Status, progress, logs, errors, output and captured files |
+| `code_stop` | `runId` | Stops and releases a run |
 | `code_export` | `runId`, `name` | Copies a captured output file into the chat; returns its path and version |
-| `code_open` | `id` | Opens the user's app tab without starting code |
+| `code_present` | `files` and `title`, or a saved app `id` | Shows an HTML app as a card in the chat after its static checks |
+| `code_open` | `id` | Opens the user's app tab without starting it |
 
 ## Test the result
 
 Write source, run it, and inspect the returned snapshot. For calculations,
 verify the returned values with representative inputs and inspect output files.
-For interactive apps, exercise the main action and invalid input. Fix source
-and start another run when needed. Check the returned `revision` against the
-saved revision you intend to deliver; runs have no revision input argument.
+Fix source and start another run when needed. Check the returned `revision`
+against the saved revision you intend to deliver; runs have no revision input
+argument.
 
-Use IDs returned in the snapshot. A button needs only its control `id`; an input
-or select uses `event: {type:"change", value:...}`. Table/chart selection uses
-`event: {type:"select", key:...}`. See [Analytics UI](analytics.md) for all events.
-Each inspected control includes `interactions` examples. Add the current `runId`
-and adjust the event value; send the object directly, not JSON encoded as text.
-Do not guess IDs from visible labels.
+HTML apps do not run in `code_run`; a saved app whose entry is `index.html`
+fails there with a hint. Test their calculations in scripts, then read the
+diagnostics that `code_write` returns for the app's JavaScript and CSS, and the
+errors and warnings of `code_present`. In Studio, an app's errors and `console`
+output appear in its console, and a failed `cloud.*` call the app did not handle
+shows a notice outside the app. A chat card has no console: when the app fails
+while starting, the card shows a short notice without the error text, and you do
+not see it. Catch failures in the app and show `error.message` in the page.
+Console lines past a per-second budget are dropped, and a blocked resource is
+reported once per kind and origin.
 
-A pending modal has its own `id` and schema. Answer it through `code_interact`
-with that ID and an `answer`: boolean for confirm, scalar for text/number, a field
-object for a form, or null to cancel. Invalid answers leave the dialog open for
-correction. Do not reuse an ID from an earlier modal.
-
-Run and Interact already include a compact snapshot. Inspect only when you need
-more detail. Nodes are paginated (20 by default); follow `nextNodeOffset`.
-Use `nodeId` to page through rows or options. Counts describe the full
-collection. Logs include the latest 20 entries; long text and output previews
-are truncated. Use `cloud.download` and `code_export` for complete deliverables,
-then inspect/present them with the normal chat file tools.
+Run already includes a compact snapshot; inspect only when you need more
+detail. Logs include the latest 20 entries; long text and output previews are
+truncated. Use `cloud.download` and `code_export` for complete deliverables,
+then inspect or present them with the normal chat file tools.
 
 ## Isolation and interruptions
 
 Each agent run has fresh local memory and captures downloads. It cannot read
-the user’s persistent browser storage or open a native file picker. Scripts
-receive selected chat files through `inputPaths`; app tests use those paths
-only as isolated picker fixtures. Shared storage, database writes, and capabilities affect real resources,
-even in agent runs. Read the corresponding reference before using them.
+the user’s browser storage. Scripts receive selected chat files through
+`inputPaths`. Shared storage, database writes, and capabilities affect real
+resources, even in agent runs. Read the corresponding reference before using them.
 
 The server owns one isolated host per active conversation. Calls and ordered
 approval decisions are durable: reconnecting continues the same call without
@@ -59,17 +55,14 @@ idle minutes after it finishes. Saved source and exported files remain durable.
 The server admits eight hosts; a full host pool returns an availability error.
 A server-run call that does not complete (rejected arguments, a timeout, an
 unavailable run, a lost host) is a tool error with its reason and next step.
-A `code_interact` step that fails (an unknown control, a throwing callback) is
-a tool error too; in a batch it names the failed step, and earlier steps ran, so
-inspect the run before repeating any of them. A `code_run` or `code_action`
+A `code_run` or `code_action`
 whose code fails completes the call: its snapshot has `status: "error"` and
 `error`. A failed `code_open` returns `{failed: true, error}` as its result.
 
 The deadlines protect different boundaries:
 
-- Startup and short callbacks: 15 seconds of readiness/execution time. Pending
-  input reads pause startup; file reads/pickers and database/shared-storage
-  requests pause callback timers.
+- Startup: 15 seconds until a script returns or reports progress. Input reads,
+  database and shared-storage requests, AI, PDF and capability calls pause it.
 - The agent host has a 20-second readiness guard, also paused during input, database and shared-storage
   requests and capability waits. It must not expire just because input downloads
   exceed 15 seconds.
@@ -88,6 +81,6 @@ If copying output had an uncertain outcome, inspect the returned or
 deterministic chat path before requesting another copy. Never report an
 unexecuted or incomplete test as successful.
 
-A test run is separate from the user’s open app. Saving or running code does
-not replace that app’s running version. Users can restart after the new-version
-notice appears; never claim their open app has updated solely because a test passed.
+A run is separate from the user’s open app. Saving code does not replace an
+app that is already running. Users can restart after the new-version notice
+appears; never claim their open app has updated solely because you saved it.

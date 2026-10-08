@@ -1,16 +1,17 @@
-The script/action worker contract is self-contained; read it before writing code.
+The `cloud` contract of HTML apps, scripts and actions is self-contained; read it before writing code.
 
 ```ts
 // The one global a Studio app or script gets: `cloud`.
 // Agent-facing reference, self-contained (no imports).
-// The same cloud global is available in scripts and app actions.
+// The same cloud global is available in HTML apps (index.html), scripts and app actions.
 //
 // Rules for agents
 // - Await every cloud.* call. cloud.money.*, cloud.chart(), cloud.html`` and
 //   cloud.http.secret() are synchronous helpers (awaiting them is harmless).
 // - Every failed call rejects with a CloudError: `error.code` is one of the
-//   CloudErrorCode values, `error.message` is a human sentence. Scripts have no
-//   page; report failures in the returned error or log.
+//   CloudErrorCode values, `error.message` is a human sentence. An app shows
+//   failures in the page (role="alert"); an unhandled failure also makes Cloud
+//   show a notice outside the app. Scripts report them in the returned error or log.
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Scalar = string | number | boolean | null;
@@ -274,7 +275,7 @@ type PdfText = {
 };
 
 interface CloudPdf {
-  /** HTML can contain <style>. headerHtml/footerHtml are separate small documents with their own style. HTML (a fragment is enough) to PDF on the server, with Cloud chart colors. With `facturX`: Factur-X PDF/A-3b. */
+  /** HTML can contain <style>. headerHtml/footerHtml are separate small documents with their own style. HTML (a fragment is enough) to PDF on the server, styled by the Cloud base stylesheet like an app. With `facturX`: Factur-X PDF/A-3b. */
   render(
     options: {
       html: string | Html;

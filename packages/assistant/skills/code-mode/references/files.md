@@ -27,7 +27,7 @@ After a conflict, inspect current state and prepare a new review before retrying
 
 App file reads and writes require Use, not Manage. Project files require Read
 for sources and Write for destinations. Chat files require ownership. Transfers
-work without a running UI and do not mount other chat attachments implicitly.
+work without a running app and do not mount other chat attachments implicitly.
 
 For example, inspect an invoice attachment, copy its reference into the target
 App's shared file store, then call the App's published `importFiles` action with

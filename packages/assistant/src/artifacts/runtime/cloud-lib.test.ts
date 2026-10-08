@@ -12,8 +12,10 @@ test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
 test("cloud.chart drops stdlib's fixed colors and sizes text in pixels", () => {
   const markup = String(chart({ kind: "bar", title: "Umsatz", data: [{ label: "Jan", value: 1200.5 }] }, "de-DE"));
   expect(markup).not.toContain("<style>");
-  expect(markup).toStartWith('<div class="cloud-chart" data-chart-kind="bar"');
-  expect(markup).toContain('role="img" aria-label="Umsatz"');
+  // The @k2b/ui Chart markup, which the base stylesheet colors in light and dark.
+  expect(markup).toStartWith(
+    '<div class="k2b-chart" data-chart-kind="bar" role="img" aria-label="Umsatz"><div class="k2b-chart__svg" data-stretch',
+  );
   expect(markup).toContain("1.200");
   expect(markup).toMatch(/<text\b[^>]* style="transform-origin:-?[\d.]+px -?[\d.]+px[^"]*">/);
   expect(() => chart({ kind: "map" }, "de-DE")).toThrow(/unknown kind "map"/);
