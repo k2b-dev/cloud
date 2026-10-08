@@ -184,7 +184,12 @@ const portableSections = [
       ),
       page("paper", "Paper", "ti ti-square", "Neutral semantic grouping for application-owned content."),
       page("empty-states", "Empty states", "ti ti-box-off", "Compact and panel placeholders plus route-level not-found states."),
-      page("cards", "Cards and identity", "ti ti-id", "Links and portable avatar identity."),
+      page(
+        "cards",
+        "Cards and identity",
+        "ti ti-id",
+        "Links, element cards that keep their size in every state, and portable avatar identity.",
+      ),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
       page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),

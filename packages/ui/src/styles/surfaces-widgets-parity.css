@@ -1,6 +1,6 @@
 /* Cloud-faithful surface and widget contracts — the single owner of every
  * `.k2b-avatar`, `.k2b-link-card`, `.k2b-not-found`, `.k2b-notice-*`,
- * `.k2b-paper`, `.k2b-placeholder`, `.k2b-progress*`, `.k2b-stat*`, `.k2b-status-badge*` and
+ * `.k2b-paper`, `.k2b-placeholder`, `.k2b-progress*`, `.k2b-resource-card*`, `.k2b-stat*`, `.k2b-status-badge*` and
  * `.k2b-widget*` rule in this package. index.css must not redeclare them: two
  * partial rulesets at equal specificity merge into a third geometry that
  * matches neither Cloud nor either file.
@@ -205,6 +205,124 @@
 .k2b-ui[data-theme="dark"] .k2b-link-card[data-color="rose"] .k2b-link-card__icon,
 .k2b-ui.k2b-dark .k2b-link-card[data-color="rose"] .k2b-link-card__icon,
 .dark .k2b-ui .k2b-link-card[data-color="rose"] .k2b-link-card__icon { color: #fb7185; }
+
+/* ---------------------------------------------------------- ResourceCard -- */
+/* One size in every state: a fixed width and three fixed lines, so a card that
+   resolves, loses access, or is deleted moves nothing around it. The fill is
+   the reference fill, so the card follows any surface below it. */
+.k2b-ui .k2b-resource-card {
+  display: grid;
+  box-sizing: border-box;
+  width: 22rem;
+  max-width: 100%;
+  height: 4.625rem;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.75rem;
+  overflow: hidden;
+  padding: 0 0.875rem 0 0.625rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: var(--k2b-reference-surface);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  /* Only a card that opens changes its fill. The transition lives here, at the
+     specificity of the reduced-motion rule below, so that rule can turn it off. */
+  transition: background-color 120ms ease;
+}
+
+.k2b-ui :is(a, button).k2b-resource-card {
+  cursor: pointer;
+}
+
+/* Cards never move on hover; only the fill responds. */
+.k2b-ui :is(a, button).k2b-resource-card:hover {
+  background: var(--k2b-reference-surface-hover);
+}
+
+.k2b-ui :is(a, button).k2b-resource-card:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-resource-card__icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface);
+  font-size: 1.25rem;
+}
+
+.k2b-ui .k2b-resource-card__copy {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+}
+
+.k2b-ui :is(.k2b-resource-card__title, .k2b-resource-card__meta, .k2b-resource-card__preview, .k2b-resource-card__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-resource-card__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-resource-card__meta {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-resource-card__preview {
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+/* An element that cannot be shown reads as one quiet line. */
+.k2b-ui .k2b-resource-card__label {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-resource-card:is([data-state="no-access"], [data-state="deleted"], [data-state="unavailable"]) .k2b-resource-card__icon {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-resource-card[data-state="loading"] :is(.k2b-resource-card__icon, .k2b-resource-card__bar) {
+  animation: k2b-parity-pulse 1.6s ease-in-out infinite;
+}
+
+.k2b-ui .k2b-resource-card__bar {
+  display: block;
+  width: 60%;
+  height: 0.625rem;
+  margin-block: 0.3125rem;
+  border-radius: 999px;
+  background: var(--k2b-reference-surface-hover);
+}
+
+.k2b-ui .k2b-resource-card__bar + .k2b-resource-card__bar {
+  width: 40%;
+}
+
+/* Fills disappear in forced colours; an outline keeps the card's edge without
+   changing its size. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-resource-card {
+    outline: 1px solid CanvasText;
+  }
+}
 
 /* --------------------------------------------------------- NotFoundState -- */
 .k2b-ui .k2b-not-found {
@@ -886,6 +1004,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-placeholder[data-state="loading"] .k2b-placeholder__icon i,
+  .k2b-ui .k2b-resource-card[data-state="loading"] :is(.k2b-resource-card__icon, .k2b-resource-card__bar),
   .k2b-ui .k2b-status-badge[data-tone="running"] i,
   .k2b-ui .k2b-status-badge[data-tone="running"] .k2b-status-badge__dot {
     animation: none;
@@ -894,6 +1013,7 @@
   .k2b-ui .k2b-progress-ring__value,
   .k2b-ui .k2b-link-card,
   .k2b-ui .k2b-link-card__chevron,
+  .k2b-ui .k2b-resource-card,
   .k2b-ui .k2b-stat-cell--link,
   .k2b-ui .k2b-stat-cell__link-icon,
   .k2b-ui a.k2b-stat-cell__accent,
