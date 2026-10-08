@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createSignal, For } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
+import type { AppWorkspaceNavTreeMove } from "../src/layout/AppWorkspace";
 import { createDomTestHarness } from "./dom";
 
 describe("@k2b/ui AppWorkspace.NavTree behavior", () => {
@@ -155,6 +156,94 @@ describe("@k2b/ui AppWorkspace.NavTree behavior", () => {
       expect(icon("home")?.hasAttribute("aria-hidden")).toBe(false);
       expect(icon("child")?.getAttribute("aria-hidden")).toBe("true");
       expect(icon("child")?.hasAttribute("role")).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+  test("reorders movable items among their siblings by keyboard and keeps focus on the moved item", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    // Solid delegates keydown to the document the module first rendered into; this test has a new one.
+    delegateEvents(["keydown"], dom.document);
+    type Row = { id: string; pinned?: boolean; children?: Row[] };
+    const [rows, setRows] = createSignal<Row[]>([
+      { id: "home", pinned: true },
+      { id: "a" },
+      { id: "b", children: [{ id: "b1" }, { id: "b2" }] },
+      { id: "c" },
+    ]);
+    const moves: AppWorkspaceNavTreeMove[] = [];
+    // Like an application that saves the move and renders fresh rows from the server.
+    const apply = (move: AppWorkspaceNavTreeMove) => {
+      moves.push(move);
+      const place = (level: Row[]): Row[] => {
+        const moved = level.find((row) => row.id === move.id);
+        if (!moved) return level.map((row) => ({ ...row, children: row.children && place(row.children) }));
+        const rest = level.filter((row) => row !== moved).map((row) => ({ ...row }));
+        const at = move.beforeId ? rest.findIndex((row) => row.id === move.beforeId) : rest.length;
+        rest.splice(at, 0, { ...moved });
+        return rest;
+      };
+      setRows(place(rows()));
+    };
+    const Items = (props: { rows: Row[] }) => (
+      <For each={props.rows}>
+        {(row) => (
+          <AppWorkspace.NavTree.Item id={row.id} label={row.id} movable={!row.pinned}>
+            {row.children && <Items rows={row.children} />}
+          </AppWorkspace.NavTree.Item>
+        )}
+      </For>
+    );
+    const dispose = render(
+      () => (
+        <AppWorkspace.NavTree ariaLabel="Notes" defaultExpandedIds={["b"]} onMove={apply}>
+          <Items rows={rows()} />
+        </AppWorkspace.NavTree>
+      ),
+      dom.root,
+    );
+    const item = (id: string) => dom.root.querySelector<HTMLElement>(`[data-k2b-nav-tree-id="${id}"]`)!;
+    const order = (parent: Element) =>
+      Array.from(parent.querySelectorAll(":scope > [role='treeitem']")).map((node) => node.getAttribute("data-k2b-nav-tree-id"));
+    const press = (id: string, key: string, init: { altKey?: boolean } = { altKey: true }) => {
+      item(id).focus();
+      const event = new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }) as unknown as Event;
+      item(id).dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const tree = () => dom.root.querySelector('[role="tree"]')!;
+    try {
+      expect(item("a").getAttribute("draggable")).toBe("true");
+      expect(item("home").hasAttribute("draggable")).toBe(false);
+      expect(item("c").getAttribute("aria-posinset")).toBe("4");
+      expect(item("c").getAttribute("aria-setsize")).toBe("4");
+      expect(item("b2").getAttribute("aria-posinset")).toBe("2");
+
+      expect(press("c", "ArrowUp")).toBe(true);
+      expect(moves.at(-1)).toEqual({ id: "c", parentId: null, beforeId: "b", afterId: "a" });
+      expect(order(tree())).toEqual(["home", "a", "c", "b"]);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(dom.document.activeElement).toBe(item("c"));
+      expect(item("c").getAttribute("tabindex")).toBe("0");
+
+      // The last item has no place further down.
+      press("b", "ArrowDown");
+      expect(moves.length).toBe(1);
+      expect(press("b1", "ArrowDown")).toBe(true);
+      expect(moves.at(-1)).toEqual({ id: "b1", parentId: "b", beforeId: null, afterId: "b2" });
+
+      // A pinned item keeps its place and nothing moves past it.
+      const count = moves.length;
+      expect(press("a", "ArrowUp")).toBe(true);
+      expect(press("home", "ArrowDown")).toBe(false);
+      expect(moves.length).toBe(count);
+      // Plain arrows still move focus only.
+      press("a", "ArrowDown", {});
+      expect(moves.length).toBe(count);
+      expect(dom.document.activeElement).toBe(item("c"));
     } finally {
       dispose();
       dom.cleanup();

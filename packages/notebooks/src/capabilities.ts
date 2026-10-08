@@ -58,7 +58,7 @@ import * as commentStore from "./service/comments";
 import * as noteLinks from "./service/links";
 import type { Notebook, NotebookWithPermission } from "./service/notebooks";
 import * as notebookStore from "./service/notebooks";
-import type { Note } from "./service/notes";
+import type { Note, NotePlacement } from "./service/notes";
 import * as noteStore from "./service/notes";
 import * as noteSearch from "./service/search";
 import * as noteTags from "./service/tags";
@@ -871,6 +871,7 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
         },
         creatorId: context.user?.id ?? null,
         actor: activityActor(context),
+        locale: context.locale ?? "en",
       }),
       access.data.notebook,
       (note) =>
@@ -995,23 +996,52 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
   });
 };
 
+const resolveMoveTarget = async (input: z.infer<typeof NoteMoveInputSchema>, note: Note, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
+  let parentId: string | null | undefined = input.parentId;
+  let placement: NotePlacement | undefined = input.position === undefined ? undefined : { position: input.position };
+  let anchor: Note | undefined;
+  const anchorId = input.before ?? input.after;
+  if (anchorId) {
+    const resolved = await requireNoteByShortId(anchorId, context, "write");
+    if (!resolved.ok || resolved.data.note.notebookId !== note.notebookId) return capabilityNotFound(t.noteNotFound);
+    anchor = resolved.data.note;
+    if (anchor.id === note.id) return fail(err.badInput(t.anchorIsNote));
+    placement = input.before ? { before: anchor.id } : { after: anchor.id };
+  }
+  let parent: Note | null = null;
+  if (input.parentId) {
+    const resolved = await requireNoteByShortId(input.parentId, context, "write");
+    if (!resolved.ok || resolved.data.note.notebookId !== note.notebookId) return capabilityNotFound(t.parentNotFound);
+    parent = resolved.data.note;
+    parentId = parent.id;
+  } else {
+    const effectiveParentId = parentId === undefined ? (anchor ? anchor.parentId : note.parentId) : parentId;
+    if (effectiveParentId) parent = await noteStore.get({ id: effectiveParentId });
+  }
+  if (anchor && parentId !== undefined && anchor.parentId !== parentId) return fail(err.badInput(t.anchorOutsideLevel));
+  return ok({ parentId, placement, parentTitle: parent?.title ?? null, anchorTitle: anchor?.title });
+};
+
 const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: CapabilityExecutionContext) => {
   const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const resolved = await requireNoteByShortId(input.noteId, context, "write");
   if (!resolved.ok) return resolved;
-  let parentId: string | null = null;
-  let parentTitle: string | null = null;
-  if (input.parentId) {
-    const parent = await requireNoteByShortId(input.parentId, context, "write");
-    if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return capabilityNotFound(t.parentNotFound);
-    parentId = parent.data.note.id;
-    parentTitle = parent.data.note.title;
-  }
+  const target = await resolveMoveTarget(input, resolved.data.note, context);
+  if (!target.ok) return target;
+  const { parentId, placement, parentTitle } = target.data;
   return audited(actionAudit(context, "note.move", "note", resolved.data.note.id), async () =>
     noteMutationResult(
-      await noteStore.move({ id: resolved.data.note.id, parentId, position: input.position }),
+      await noteStore.move({ id: resolved.data.note.id, parentId, placement, locale: context.locale ?? "en" }),
       resolved.data.notebook,
-      (note) => (parentTitle ? t.movedUnder({ title: note.title, parent: parentTitle }) : t.movedRoot({ title: note.title })),
+      (note) =>
+        placement
+          ? parentTitle !== null
+            ? t.placedUnder({ title: note.title, parent: parentTitle, n: note.position })
+            : t.placedRoot({ title: note.title, n: note.position })
+          : parentTitle !== null
+            ? t.movedUnder({ title: note.title, parent: parentTitle })
+            : t.movedRoot({ title: note.title }),
       context.locale,
     ),
   );
@@ -1325,7 +1355,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.move": {
       title: "Move note",
-      description: "Move one note inside its notebook while rejecting invalid parents and cycles.",
+      description:
+        "Move a note to another parent and/or place it among its siblings; placing switches that level to a hand order that the sidebar and Book follow.",
       input: NoteMoveInputSchema,
       data: NoteSummaryDataSchema,
       destructive: false,
@@ -1336,18 +1367,26 @@ export const notebooksCapabilities = defineCapabilities({
         const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         const resolved = await requireNoteByShortId(input.noteId, context, "write");
         if (!resolved.ok) return resolved;
-        let parentTitle = t.notebookRoot;
-        if (input.parentId) {
-          const parent = await requireNoteByShortId(input.parentId, context, "write");
-          if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return capabilityNotFound(t.parentNotFound);
-          parentTitle = parent.data.note.title;
-        }
+        const target = await resolveMoveTarget(input, resolved.data.note, context);
+        if (!target.ok) return target;
+        const parentTitle = target.data.parentTitle ?? t.notebookRoot;
+        const placement = input.before
+          ? t.beforeNote({ title: target.data.anchorTitle! })
+          : input.after
+            ? t.afterNote({ title: target.data.anchorTitle! })
+            : input.position === "first"
+              ? t.firstPosition
+              : input.position === "last"
+                ? t.lastPosition
+                : input.position === undefined
+                  ? undefined
+                  : String(input.position);
         return ok({
           message: t.moveReview({ title: resolved.data.note.title, parent: parentTitle }),
           details: [
             { label: t.note, value: resolved.data.note.title },
             { label: t.newParent, value: parentTitle },
-            { label: t.newPosition, value: String(input.position) },
+            ...(placement === undefined ? [] : [{ label: t.newPosition, value: placement }]),
           ],
           links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
           approvalScope: notebookApprovalScope(resolved.data.notebook),

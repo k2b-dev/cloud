@@ -77,6 +77,21 @@ Blende die Navigation aus, um mit der ganzen Breite zu schreiben oder wenn ander
 - **Smartphones:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Die Schaltfläche erscheint auf breiteren Bildschirmen, wo die Navigation neben der Notiz steht.
 :::
 
+## Notizen anordnen {icon="arrows-sort"}
+
+Die Notizen jeder Ebene der Seitenleiste stehen nach Titel, bis jemand sie anordnet. Schreibende und Admins legen ihre eigene Reihenfolge fest, zum Beispiel die Kapitel eines Buchs; alle sehen sie sofort in der Seitenleiste und in der Buchansicht.
+
+:::reference
+- **Ziehen:** Ziehe am Computer eine Notiz zwischen ihren Nachbarn nach oben oder unten. Eine Linie zeigt, wo sie landet. Unternotizen wandern mit, und die Notiz bleibt auf ihrer Ebene; um sie unter eine andere Notiz zu legen, nutze **Verschieben** im Notizmenü.
+- **Tastatur:** Wähle eine Notiz in der Seitenleiste aus und drücke **Alt+Pfeil nach oben** oder **Alt+Pfeil nach unten**.
+- **Smartphone und Menüs:** Öffne das Notizmenü und wähle **Nach oben verschieben** oder **Nach unten verschieben**.
+- **Eine Ebene nach der anderen:** Das Anordnen legt nur die Reihenfolge der Ebene dieser Notiz fest. Andere Ebenen bleiben nach Titel sortiert. Neue Notizen auf einer angeordneten Ebene erscheinen am Ende, ebenso Notizen, die von anderswo dorthin verschoben werden.
+- **Zurück zum Titel:** Im Menü einer Notiz mit Unternotizen setzt **Unternotizen alphabetisch sortieren** diese Ebene wieder auf die Reihenfolge nach Titel. Für die oberste Ebene nutze **Oberste Ebene alphabetisch sortieren** im Menü einer ihrer Notizen.
+- **Startseite:** Die Startseite bleibt die erste ihrer Ebene; andere Notizen lassen sich nicht über sie schieben.
+- **Sortierung der Seitenleiste:** Die Reihenfolge gilt, wenn die Seitenleiste nach **Reihenfolge im Notizbuch** sortiert. **Zuletzt geändert** und **Erstellt** ändern nur deine Ansicht und bieten kein Anordnen an.
+- **Lesende** sehen die festgelegte Reihenfolge, können sie aber nicht ändern.
+:::
+
 ## Typografische Zeichen {icon="typography"}
 
 Notizbücher zeigen einige getippte Zeichenfolgen als ein Zeichen an, wenn du eine Notiz liest oder bearbeitest. Die Notiz behält die getippten Zeichen, deshalb sehen Suche, Export und Assistant sie unverändert.

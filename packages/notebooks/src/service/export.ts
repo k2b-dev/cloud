@@ -1,3 +1,4 @@
+import { compareNoteOrder } from "../lib/note-order";
 import type { AttachmentContent } from "./attachments";
 import * as attachments from "./attachments";
 import type { Notebook } from "./notebooks";
@@ -99,7 +100,7 @@ const buildTree = (flatNotes: Note[]) => {
   }
 
   const sort = (items: Node[]) => {
-    items.sort((a, b) => a.position - b.position || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+    items.sort(compareNoteOrder("en", (note) => note.shortId));
     for (const item of items) sort(item.children);
   };
   sort(roots);
@@ -171,13 +172,8 @@ export const buildNotebookExportFiles = (params: {
   exportedAt?: Date;
 }): NotebookExportFile[] => {
   const exportedAt = (params.exportedAt ?? new Date()).toISOString();
-  const sortedNotes = [...params.notes].sort(
-    (a, b) =>
-      (a.parentId ?? "").localeCompare(b.parentId ?? "") ||
-      a.position - b.position ||
-      a.title.localeCompare(b.title) ||
-      a.id.localeCompare(b.id),
-  );
+  const compare = compareNoteOrder("en", (note: Note) => note.shortId);
+  const sortedNotes = [...params.notes].sort((a, b) => (a.parentId ?? "").localeCompare(b.parentId ?? "") || compare(a, b));
   const sortedAttachments = [...params.attachments].sort((a, b) => a.shortId.localeCompare(b.shortId));
 
   const noteFileByShortId = new Map(sortedNotes.map((note) => [note.shortId, noteFileName(note)]));

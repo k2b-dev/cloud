@@ -184,6 +184,7 @@ export const notebooksService = {
     editContent: notes.editContent,
     remove: notes.remove,
     move: notes.move,
+    resetOrder: notes.resetOrder,
     save: notes.save,
     isLocked: notes.isLocked,
     lock: notes.lock,
@@ -311,6 +312,7 @@ export type { CreateNotebook, Notebook, NotebookAdminListItem, UpdateNotebook } 
 export type {
   CreateNote,
   Note,
+  NotePlacement,
   NoteTreeNode,
   NoteVersion,
   NoteWithContent,

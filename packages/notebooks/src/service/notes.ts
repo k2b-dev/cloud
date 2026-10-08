@@ -2,7 +2,7 @@ import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/clo
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
 import { RetentionGapError } from "@k2b/sync";
-import { sql } from "bun";
+import { sql, type TransactionSQL } from "bun";
 import * as Y from "yjs";
 import { mayDeleteOrLockNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";
 import {
@@ -14,6 +14,7 @@ import {
   noteContentHash,
   summarizeNoteEditBlocks,
 } from "../lib/note-edit";
+import { compareNoteOrder, isHandOrdered, sortNoteLevels } from "../lib/note-order";
 import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "../lib/note-title";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
@@ -21,7 +22,7 @@ import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./a
 import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
-import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
+import { invalidated, noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
 import {
   applyYjsTopicEvent,
   compareStreamCursor,
@@ -73,6 +74,8 @@ export type CreateNote = {
   position?: number;
   contentMd?: string;
 };
+
+export type NotePlacement = { position: number | "first" | "last" } | { before: string } | { after: string };
 
 export type UpdateNote = {
   parentId?: string | null;
@@ -296,18 +299,51 @@ const initialContentForNote = async (params: {
   return createInitialNoteMarkdown(renderNoteTitleTemplate(notebook.default_note_title_template, context), params.contentMd);
 };
 
-const compareTreeNodes = (left: NoteTreeNode, right: NoteTreeNode): number => {
-  const leftTitle = left.title.trim().toLocaleLowerCase();
-  const rightTitle = right.title.trim().toLocaleLowerCase();
-  if (leftTitle !== rightTitle) return leftTitle.localeCompare(rightTitle);
-  return left.id.localeCompare(right.id);
+const lockLevel = async (tx: TransactionSQL, notebookId: string, parentId: string | null, movedId?: string): Promise<void> => {
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(
+    'notebooks.note-order:' || ${notebookId}::text || ':' || coalesce(${parentId}::text, 'top'), 0
+  ))`;
+  // Moves share sibling rows and the target parent's foreign-key lock.
+  await tx`SELECT id FROM notebooks.notes
+    WHERE id = ${movedId ?? null}::uuid OR id = ${parentId}::uuid
+      OR (notebook_id = ${notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${parentId}::uuid)
+    ORDER BY id FOR UPDATE`;
 };
 
-const sortTreeNodes = (nodes: NoteTreeNode[]): void => {
-  nodes.sort(compareTreeNodes);
-  for (const node of nodes) {
-    if (node.children.length > 0) sortTreeNodes(node.children);
-  }
+type LevelNote = Pick<DbNote, "id" | "short_id" | "title" | "position">;
+
+const readLevel = (tx: TransactionSQL, notebookId: string, parentId: string | null): Promise<LevelNote[]> =>
+  tx<LevelNote[]>`SELECT id, short_id, title, position FROM notebooks.notes
+    WHERE notebook_id = ${notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${parentId}::uuid`;
+
+const appendPosition = (level: LevelNote[]): number =>
+  isHandOrdered(level) ? level.reduce((max, note) => Math.max(max, note.position), 0) + 1 : 0;
+
+const placeInLevel = async (
+  tx: TransactionSQL,
+  siblings: LevelNote[],
+  note: LevelNote,
+  placement: NotePlacement,
+  locale: string,
+): Promise<void> => {
+  const ordered = siblings.map((note) => ({ ...note, shortId: note.short_id })).sort(compareNoteOrder(locale, (note) => note.shortId));
+  const index =
+    "position" in placement
+      ? placement.position === "first"
+        ? 0
+        : placement.position === "last"
+          ? ordered.length
+          : Math.min(ordered.length, placement.position)
+      : "before" in placement
+        ? ordered.findIndex((sibling) => sibling.id === placement.before)
+        : ordered.findIndex((sibling) => sibling.id === placement.after) + 1;
+  ordered.splice(index, 0, { ...note, shortId: note.short_id });
+  const ids = toPgUuidArray(ordered.map((note) => note.id));
+  const positions = `{${ordered.map((_, index) => index + 1).join(",")}}`;
+  await tx`UPDATE notebooks.notes AS note SET position = ordered.position
+    FROM unnest(${ids}::uuid[], ${positions}::int[]) AS ordered(id, position)
+    WHERE note.id = ordered.id`;
+  note.position = index + 1;
 };
 
 const NOTE_TEXT_NAME = "codemirror";
@@ -544,7 +580,7 @@ export const listPaged = async (params: {
 /**
  * Build the complete note tree for a notebook.
  */
-export const getTree = async (params: { notebookId: string }): Promise<NoteTreeNode[]> => {
+export const getTree = async (params: { notebookId: string; locale?: string }): Promise<NoteTreeNode[]> => {
   const notes = await list(params);
 
   const nodeMap = new Map<string, NoteTreeNode>();
@@ -565,9 +601,10 @@ export const getTree = async (params: { notebookId: string }): Promise<NoteTreeN
     }
   }
 
-  sortTreeNodes(roots);
-
-  return roots;
+  return sortNoteLevels(
+    roots,
+    compareNoteOrder(params.locale ?? "en", (note) => note.shortId),
+  );
 };
 
 /**
@@ -790,24 +827,13 @@ export const create = async (params: {
   creatorId: string | null;
   actor?: activity.NotebookActivityIdentity;
   dateConfig?: DateContext;
+  locale?: string;
 }): Promise<MutationResult<Note>> => {
   const { data, creatorId } = params;
   let createdNoteId: string | null = null;
 
   if (data.parentId && !(await parentExistsInNotebook(data.parentId, data.notebookId))) {
     return { ok: false, error: "Parent note not found in notebook", status: 404 };
-  }
-
-  // Get next position if not provided
-  let position = data.position;
-  if (position === undefined) {
-    const [maxPos] = await sql<{ max: number | null }[]>`
-      SELECT MAX(position) as max
-      FROM notebooks.notes
-      WHERE notebook_id = ${data.notebookId}::uuid
-        AND ${data.parentId ? sql`parent_id = ${data.parentId}::uuid` : sql`parent_id IS NULL`}
-    `;
-    position = (maxPos?.max ?? -1) + 1;
   }
 
   try {
@@ -824,7 +850,11 @@ export const create = async (params: {
     const doc = createDocFromState(null, contentMd);
     const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc));
     doc.destroy();
-    const [row] = await sql<DbNote[]>`
+    const row = await sql.begin(async (tx) => {
+      await lockLevel(tx, data.notebookId, data.parentId ?? null);
+      const level = await readLevel(tx, data.notebookId, data.parentId ?? null);
+      const position = appendPosition(level);
+      const [row] = await tx<DbNote[]>`
       INSERT INTO notebooks.notes (
         short_id, notebook_id, parent_id, title, title_projection_version, position,
         yjs_snapshot, yjs_snapshot_at, content_md, data_properties, created_by
@@ -845,6 +875,12 @@ export const create = async (params: {
       RETURNING id, short_id, notebook_id, parent_id, title, position,
                 yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
     `;
+
+      if (row && data.position !== undefined) {
+        await placeInLevel(tx, level, row, { position: data.position }, params.locale ?? params.dateConfig?.locale ?? "en");
+      }
+      return row;
+    });
 
     if (!row) {
       return { ok: false, error: "Failed to create note", status: 500 };
@@ -877,65 +913,19 @@ export const create = async (params: {
 /**
  * Update a note.
  */
-export const update = async (params: { id: string; data: UpdateNote }): Promise<MutationResult<Note>> => {
-  const { id, data } = params;
-
-  const existing = await get({ id });
-  if (!existing) {
-    return { ok: false, error: "Note not found", status: 404 };
-  }
-
-  // Check if note is locked
-  if (existing.lockedAt) {
-    return { ok: false, error: "Cannot modify locked note", status: 403 };
-  }
-
-  const parentId = data.parentId === undefined ? existing.parentId : data.parentId;
-  const position = data.position ?? existing.position;
-
-  // Prevent moving note to be its own descendant
-  if (parentId !== existing.parentId && parentId !== null) {
-    if (!(await parentExistsInNotebook(parentId, existing.notebookId))) {
-      return { ok: false, error: "Parent note not found in notebook", status: 404 };
-    }
-
-    const isDescendant = await checkIsDescendant(id, parentId);
-    if (isDescendant) {
-      return {
-        ok: false,
-        error: "Cannot move note to be a child of itself",
-        status: 400,
-      };
-    }
-  }
-
-  const [row] = await sql<DbNote[]>`
-    UPDATE notebooks.notes
-    SET parent_id = ${parentId}::uuid, position = ${position}, updated_at = now()
-    WHERE id = ${id}::uuid
-      AND locked_at IS NULL
-    RETURNING id, notebook_id, parent_id, title, position,
-              yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at
-  `;
-
-  if (!row) {
-    const current = await get({ id });
-    if (!current) return { ok: false, error: "Note not found", status: 404 };
-    if (current.lockedAt) return { ok: false, error: "Cannot modify locked note", status: 403 };
-    return { ok: false, error: "Failed to update note", status: 500 };
-  }
-
-  // Get hasChildren for the updated note
-  const note = await get({ id });
-  await noteUpdated(note!);
-  return { ok: true, data: note! };
-};
+export const update = (params: { id: string; data: UpdateNote; locale?: string }): Promise<MutationResult<Note>> =>
+  move({
+    id: params.id,
+    parentId: params.data.parentId,
+    placement: params.data.position === undefined ? undefined : { position: params.data.position },
+    locale: params.locale ?? "en",
+  });
 
 /**
  * Check if a note is a descendant of another note.
  */
-const checkIsDescendant = async (ancestorId: string, descendantId: string): Promise<boolean> => {
-  const [result] = await sql<{ is_descendant: boolean }[]>`
+const checkIsDescendant = async (ancestorId: string, descendantId: string, tx: TransactionSQL): Promise<boolean> => {
+  const [result] = await tx<{ is_descendant: boolean }[]>`
     WITH RECURSIVE ancestors AS (
       SELECT id, parent_id FROM notebooks.notes WHERE id = ${descendantId}::uuid
       UNION ALL
@@ -979,11 +969,79 @@ export const remove = async (params: { id: string; permission: PermissionLevel }
 /**
  * Move a note to a new position.
  */
-export const move = async (params: { id: string; parentId: string | null; position: number }): Promise<MutationResult<Note>> => {
-  return update({
-    id: params.id,
-    data: { parentId: params.parentId, position: params.position },
+export const move = async (params: {
+  id: string;
+  parentId?: string | null;
+  placement?: NotePlacement;
+  locale: string;
+}): Promise<MutationResult<Note>> => {
+  const anchorId =
+    params.placement &&
+    ("before" in params.placement ? params.placement.before : "after" in params.placement ? params.placement.after : undefined);
+  if (anchorId === params.id) return { ok: false, error: "The anchor note cannot be the moved note", status: 400 };
+  const existing = await get({ id: params.id });
+  if (!existing) return { ok: false, error: "Note not found", status: 404 };
+  const anchor = anchorId ? await get({ id: anchorId }) : null;
+  if (anchorId && (!anchor || anchor.notebookId !== existing.notebookId)) return { ok: false, error: "Anchor note not found", status: 404 };
+  const parentId = params.parentId === undefined ? (anchor ? anchor.parentId : existing.parentId) : params.parentId;
+  let changed = false;
+  const result = await sql.begin(async (tx): Promise<MutationResult<Note>> => {
+    await lockLevel(tx, existing.notebookId, parentId, params.id);
+    const [row] = await tx<DbNote[]>`SELECT n.*,
+      EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
+      FROM notebooks.notes n WHERE n.id = ${params.id}::uuid`;
+    if (!row) return { ok: false, error: "Note not found", status: 404 };
+    const level = await readLevel(tx, existing.notebookId, parentId);
+    if (anchorId && !level.some((note) => note.id === anchorId)) {
+      const [currentAnchor] = await tx<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE id = ${anchorId}::uuid`;
+      return !currentAnchor || currentAnchor.notebook_id !== row.notebook_id
+        ? { ok: false, error: "Anchor note not found", status: 404 }
+        : { ok: false, error: "The anchor note is not in the target level", status: 400 };
+    }
+    const parentChanged = parentId !== row.parent_id;
+    // An omitted parent refers to the current level, even after a concurrent move.
+    if (params.parentId === undefined && !anchorId && parentChanged) {
+      if (!params.placement) return { ok: true, data: mapToNote(row) };
+      return { ok: false, error: "Note moved concurrently; retry from its current level", status: 409 };
+    }
+    if (parentChanged && row.locked_at) return { ok: false, error: "Cannot modify locked note", status: 403 };
+    if (parentId !== null) {
+      const [parent] = await tx`SELECT id FROM notebooks.notes WHERE id = ${parentId}::uuid AND notebook_id = ${row.notebook_id}::uuid`;
+      if (!parent) return { ok: false, error: "Parent note not found in notebook", status: 404 };
+      if (parentChanged && (await checkIsDescendant(row.id, parentId, tx)))
+        return { ok: false, error: "Cannot move note to be a child of itself", status: 400 };
+    }
+    if (!parentChanged && !params.placement) return { ok: true, data: mapToNote(row) };
+    const siblings = level.filter((note) => note.id !== row.id);
+    if (parentChanged) {
+      const [updated] = await tx<DbNote[]>`UPDATE notebooks.notes
+        SET parent_id = ${parentId}::uuid, position = ${appendPosition(siblings)}, updated_at = now()
+        WHERE id = ${row.id}::uuid RETURNING *`;
+      Object.assign(row, updated);
+    }
+    if (params.placement) await placeInLevel(tx, siblings, row, params.placement, params.locale);
+    changed = true;
+    return { ok: true, data: mapToNote(row) };
   });
+  if (result.ok && changed) await noteUpdated(result.data);
+  return result;
+};
+
+export const resetOrder = async (params: { notebookId: string; parentId: string | null }): Promise<Result<void>> => {
+  const result = await sql.begin(async (tx) => {
+    await lockLevel(tx, params.notebookId, params.parentId);
+    if (params.parentId) {
+      const [parent] =
+        await tx`SELECT id FROM notebooks.notes WHERE id = ${params.parentId}::uuid AND notebook_id = ${params.notebookId}::uuid`;
+      if (!parent) return fail(err.notFound("Parent note"));
+    }
+    const changed = await tx`UPDATE notebooks.notes SET position = 0
+      WHERE notebook_id = ${params.notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${params.parentId}::uuid AND position <> 0`;
+    return ok(changed.count > 0);
+  });
+  if (!result.ok) return result;
+  if (result.data) await invalidated({ notebookId: params.notebookId, reason: "bulk", scopes: ["tree"] });
+  return ok();
 };
 
 /**

@@ -353,7 +353,24 @@ export type AppWorkspaceNavTreeProps = {
   onSelectedIdChange?: (id: string) => void;
   onExpandedIdsChange?: (ids: readonly string[]) => void;
   indented?: boolean;
+  /**
+   * Lets people reorder `movable` items among their siblings: by dragging on
+   * fine pointers and with Alt+ArrowUp/ArrowDown on a focused item. The tree
+   * only reports the requested place; the application saves it and renders
+   * the new order, and the tree then keeps focus on the moved item.
+   */
+  onMove?: (move: AppWorkspaceNavTreeMove) => void;
   class?: string;
+};
+/** One requested place for an item among its unchanged siblings. */
+export type AppWorkspaceNavTreeMove = {
+  id: string;
+  /** The parent item, unchanged by the move; `null` on the top level. */
+  parentId: string | null;
+  /** The sibling the item now precedes; `null` when it becomes the last. */
+  beforeId: string | null;
+  /** The sibling the item now follows; `null` when it becomes the first. */
+  afterId: string | null;
 };
 export type AppWorkspaceNavTreeItemProps = {
   id: string;
@@ -379,6 +396,8 @@ export type AppWorkspaceNavTreeItemProps = {
   title?: string;
   viewTransitionName?: string;
   class?: string;
+  /** With the tree's `onMove`, the item can change its place among its siblings. Other items keep theirs, and no item moves past them. */
+  movable?: boolean;
   onDragEnter?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragOver?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragLeave?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
@@ -1049,6 +1068,31 @@ const navTreeItems = (value: unknown): NavTreeItemSlot[] => flatten(value).filte
 const AppWorkspaceNavTreeItem = (props: AppWorkspaceNavTreeItemProps): JSX.Element =>
   ({ kind: NAV_TREE_ITEM, ...props }) as unknown as JSX.Element;
 
+type NavTreeDragEvent = DragEvent & { currentTarget: HTMLDivElement; target: Element };
+const NAV_TREE_DRAG_TYPE = "application/x-k2b-nav-tree-item";
+
+const callDragHandler = (handler: JSX.EventHandlerUnion<HTMLDivElement, DragEvent> | undefined, event: NavTreeDragEvent) => {
+  if (typeof handler === "function") handler(event);
+  else handler?.[0](handler[1], event);
+};
+
+/**
+ * The move that puts the sibling at `from` into the gap before `slot`
+ * (`siblings.length` is the gap after the last one), or `null` when its place
+ * would not change or it would pass an item that is not movable.
+ */
+const navTreeMove = (
+  siblings: readonly NavTreeItemSlot[],
+  from: number,
+  slot: number,
+  parentId: string | null,
+): AppWorkspaceNavTreeMove | null => {
+  if (from < 0 || slot < 0 || slot > siblings.length || slot === from || slot === from + 1) return null;
+  const passed = slot < from ? siblings.slice(slot, from) : siblings.slice(from + 1, slot);
+  if (passed.some((sibling) => !sibling.movable)) return null;
+  return { id: siblings[from]!.id, parentId, beforeId: siblings[slot]?.id ?? null, afterId: siblings[slot - 1]?.id ?? null };
+};
+
 const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
   let root: HTMLDivElement | undefined;
   const resolved = children(() => props.children);
@@ -1099,14 +1143,42 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     element?.focus({ preventScroll: true });
   };
 
+  // Reordering: the dragged item and the gap the pointer marks. The application renders the
+  // new order, often with new rows; a row that mounts for the item moved by keyboard takes focus back.
+  const [dragged, setDragged] = createSignal<{ id: string; parentId: string | null } | null>(null);
+  const [dropTarget, setDropTarget] = createSignal<{ id: string; side: "before" | "after" } | null>(null);
+  let claimedDragOver: DragEvent | null = null;
+  let refocusId: string | null = null;
+  const endDrag = () => {
+    setDragged(null);
+    setDropTarget(null);
+  };
+  const requestMove = (move: AppWorkspaceNavTreeMove | null, keepFocus: boolean) => {
+    if (!move || !props.onMove) return;
+    refocusId = keepFocus ? move.id : null;
+    props.onMove(move);
+  };
+
   // Items arrive through an accessor so a changed nested list reconciles rows by identity instead of rebuilding the list.
-  const renderItems = (value: () => unknown, depth: number, parentId?: string): JSX.Element => (
-    <For each={navTreeItems(value())}>
-      {(item) => {
+  const renderItems = (siblings: () => NavTreeItemSlot[], depth: number, parentId?: string): JSX.Element => (
+    <For each={siblings()}>
+      {(item, place) => {
         const nested = createMemo(() => navTreeItems(item.children));
         const hasChildren = () => nested().length > 0;
         const selected = () => props.selectedId === item.id;
+        const siblingIndex = (id: string) => siblings().findIndex((sibling) => sibling.id === id);
+        const movable = () => Boolean(props.onMove && item.movable && !item.disabled);
         let treeItem: HTMLDivElement | undefined;
+        const ownRow = () => treeItem?.firstElementChild as HTMLElement | null | undefined;
+
+        onMount(() => {
+          if (refocusId !== item.id) return;
+          queueMicrotask(() => {
+            if (refocusId !== item.id || !treeItem?.isConnected) return;
+            const active = treeItem.ownerDocument.activeElement;
+            if (!active || active === treeItem.ownerDocument.body) treeItem.focus({ preventScroll: true });
+          });
+        });
 
         const activate = (event: MouseEvent) => {
           if (item.disabled) return;
@@ -1138,6 +1210,19 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
         };
         const onKeyDown = (event: KeyboardEvent) => {
           if (event.target !== event.currentTarget) return;
+          if (
+            event.altKey &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey &&
+            (event.key === "ArrowUp" || event.key === "ArrowDown")
+          ) {
+            if (!movable()) return;
+            event.preventDefault();
+            const from = siblingIndex(item.id);
+            requestMove(navTreeMove(siblings(), from, event.key === "ArrowUp" ? from - 1 : from + 2, parentId ?? null), true);
+            return;
+          }
           if (event.altKey || event.ctrlKey || event.metaKey) return;
           const items = treeItemElements();
           const index = items.indexOf(event.currentTarget as HTMLElement);
@@ -1233,24 +1318,75 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
           </AppWorkspaceSidebarRow>
         );
 
+        // A gap is offered only next to a sibling's own row, never over its sub-items.
+        const dropMove = (event: DragEvent): { side: "before" | "after"; move: AppWorkspaceNavTreeMove } | null => {
+          const drag = dragged();
+          const row = ownRow();
+          if (!drag || drag.parentId !== (parentId ?? null) || drag.id === item.id || !row?.contains(event.target as Node)) return null;
+          const rect = row.getBoundingClientRect();
+          const side = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+          const slot = siblingIndex(item.id) + (side === "after" ? 1 : 0);
+          const move = navTreeMove(siblings(), siblingIndex(drag.id), slot, parentId ?? null);
+          return move ? { side, move } : null;
+        };
+        const onDragStart = (event: DragEvent) => {
+          const row = ownRow();
+          if (!movable() || !row?.contains(event.target as Node)) return;
+          event.stopPropagation();
+          setDragged({ id: item.id, parentId: parentId ?? null });
+          if (!event.dataTransfer) return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData(NAV_TREE_DRAG_TYPE, item.id);
+          const rect = row.getBoundingClientRect();
+          event.dataTransfer.setDragImage(row, event.clientX - rect.left, event.clientY - rect.top);
+        };
+        const onDragOver = (event: NavTreeDragEvent) => {
+          callDragHandler(item.onDragOver, event);
+          const target = dropMove(event);
+          if (!target) return;
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+          claimedDragOver = event;
+          setDropTarget({ id: item.id, side: target.side });
+        };
+        const onDrop = (event: NavTreeDragEvent) => {
+          callDragHandler(item.onDrop, event);
+          const target = dropMove(event);
+          if (!target) return;
+          event.preventDefault();
+          event.stopPropagation();
+          endDrag();
+          requestMove(target.move, false);
+        };
+
         return (
           <div
             ref={treeItem}
             class="k2b-app-workspace__nav-tree-node"
             role="treeitem"
             aria-level={depth + 1}
+            aria-setsize={siblings().length}
+            aria-posinset={place() + 1}
             aria-selected={selected()}
             aria-expanded={hasChildren() ? isExpanded(item.id) : undefined}
             aria-disabled={item.disabled ? "true" : undefined}
             tabIndex={item.disabled ? -1 : tabStopId() === item.id ? 0 : -1}
+            draggable={movable() ? true : undefined}
             data-k2b-nav-tree-id={item.id}
             data-k2b-nav-tree-parent-id={parentId}
-            onFocus={() => setFocusedId(item.id)}
+            data-k2b-nav-tree-dragging={dragged()?.id === item.id ? "" : undefined}
+            data-k2b-nav-tree-drop={dropTarget()?.id === item.id ? dropTarget()!.side : undefined}
+            style={{ "--k2b-nav-tree-depth": String(props.indented === false ? 0 : depth) }}
+            onFocus={() => {
+              if (refocusId !== item.id) refocusId = null;
+              setFocusedId(item.id);
+            }}
             onKeyDown={onKeyDown}
+            onDragStart={onDragStart}
             onDragEnter={item.onDragEnter}
-            onDragOver={item.onDragOver}
+            onDragOver={onDragOver}
             onDragLeave={item.onDragLeave}
-            onDrop={item.onDrop}
+            onDrop={onDrop}
           >
             {row()}
             <Show when={hasChildren() && isExpanded(item.id)}>
@@ -1264,8 +1400,34 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     </For>
   );
 
+  const forgetRefocus = (event: Event) => {
+    if (!root?.contains(event.target as Node | null)) refocusId = null;
+  };
+  onMount(() => {
+    const doc = root?.ownerDocument;
+    doc?.addEventListener("pointerdown", forgetRefocus, true);
+    doc?.addEventListener("focusin", forgetRefocus, true);
+    onCleanup(() => {
+      doc?.removeEventListener("pointerdown", forgetRefocus, true);
+      doc?.removeEventListener("focusin", forgetRefocus, true);
+    });
+  });
+
   return (
-    <div ref={root} class={`k2b-app-workspace__nav-tree ${props.class ?? ""}`} role="tree" aria-label={props.ariaLabel}>
+    <div
+      ref={root}
+      class={`k2b-app-workspace__nav-tree ${props.class ?? ""}`}
+      role="tree"
+      aria-label={props.ariaLabel}
+      onDragOver={(event) => {
+        // Runs after the rows: a position no row claimed shows no gap.
+        if (claimedDragOver !== event) setDropTarget(null);
+      }}
+      onDragLeave={(event) => {
+        if (!root?.contains(event.relatedTarget as Node | null)) setDropTarget(null);
+      }}
+      onDragEnd={endDrag}
+    >
       {renderItems(roots, 0)}
     </div>
   );

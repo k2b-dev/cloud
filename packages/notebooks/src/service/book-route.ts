@@ -43,7 +43,7 @@ export const loadBookRoute = async (params: {
   const notebook = await notebooks.get({ id: params.notebookId });
   if (!notebook) return { kind: "not_found" as const };
   const [tree, tagList] = await Promise.all([
-    notes.getTree({ notebookId: params.notebookId }),
+    notes.getTree({ notebookId: params.notebookId, locale: params.locale }),
     tags.listForNotebook({ notebookId: params.notebookId }),
   ]);
   const common = {

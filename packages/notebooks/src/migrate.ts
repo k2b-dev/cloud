@@ -171,6 +171,18 @@ export const migrate = async (): Promise<void> => {
   }
   console.log("  ✓ notebooks.notes table");
 
+  await sql`CREATE TABLE IF NOT EXISTS notebooks.data_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.simple();
+  // Legacy positions followed creation order, while readers always saw title order.
+  // Mark and normalize atomically so restarts preserve later hand orders.
+  await sql.begin(async (tx) => {
+    const inserted = await tx`INSERT INTO notebooks.data_migrations (name)
+      VALUES ('note-order-alphabetical-default') ON CONFLICT DO NOTHING RETURNING name`;
+    if (inserted.length) await tx`UPDATE notebooks.notes SET position = 0 WHERE position <> 0`;
+  });
+
   await sql`
     CREATE TABLE IF NOT EXISTS notebooks.note_comments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -52,10 +52,10 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const snapshotNotebook = await notebooksService.notebook.get({ id: notebookId });
   if (!snapshotNotebook) return { kind: "not_found" as const };
   notebook = snapshotNotebook;
-  const internalTree = await notebooksService.note.getTree({ notebookId });
+  const locale = getLocale(c);
+  const internalTree = await notebooksService.note.getTree({ notebookId, locale });
   const tree = projectTree(internalTree, notebook.shortId);
   const publicNotebook = projectNotebook(notebook);
-  const locale = getLocale(c);
   // A lock only turns Write into Read-only, so Book is known before a note is chosen.
   const isBookMode =
     resolvePresentationMode({ permission, requestedMode: mode, defaultPresentationMode: notebook.defaultPresentationMode }) === "book" &&

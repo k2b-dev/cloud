@@ -5,10 +5,35 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Deprecations and migrations
+
+## Notebooks levels keep title order until arranged by hand
+
+Writers can now arrange the notes of a level in Notebooks; the sidebar, Book,
+export, and `cld notebooks ls` and `tree` follow that order. A level whose notes
+all have `position` 0 reads by title, and arranging one note numbers the whole
+level from 1. See [Notebooks](/en/apps/notebooks#use-notebooks).
+
+The first start of this release sets every existing `position` to 0 once and
+records that in `notebooks.data_migrations`. Earlier releases stored the
+creation order there, which only the notebook export used; exports of existing
+notebooks now list notes by title until someone arranges a level. Templates no
+longer store their note order.
+
+In the Notebooks API (`/api/notebooks/{id}/notes`, `PATCH …/notes/{noteId}`,
+`POST …/notes/{noteId}/move`) and the `note.create` and `note.move`
+capabilities, `position` is now the 0-based place among the siblings and
+renumbers that level; a value past the end appends. A move that only changes
+`parentId` no longer needs `position`: the note joins the end of an arranged
+level or the title order. `move` and `note.move` also accept `before`, `after`,
+or `position: "first" | "last"`. `POST /api/notebooks/{id}/note-order/reset`
+with `{ "parentId": … }` sets a level back to title order. `cld notebooks mv`
+no longer sends the old position with every move. While replicas of the previous release still run, notes they create
+take the old creation-order position, which arranges that level in creation
+order; sort it alphabetically from the folder menu if that happens.
 
 ## Assistant may end a reply with one offer
 

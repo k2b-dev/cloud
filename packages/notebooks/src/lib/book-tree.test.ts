@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { orderBookTree } from "./book-tree";
 
-type Source = { id: string; title: string; children: Source[] };
-const note = (id: string, title: string, children: Source[] = []): Source => ({ id, title, children });
+type Source = { id: string; title: string; position: number; children: Source[] };
+const note = (id: string, title: string, children: Source[] = [], position = 0): Source => ({ id, title, position, children });
 const order = (nodes: Source[], homeId: string | null = null, locale = "en") =>
   orderBookTree(nodes, { id: (node) => node.id, homeId, locale });
 /** Titles in reading order, sub-pages indented below their page. */
@@ -47,14 +47,31 @@ describe("Book reading order", () => {
     expect(outline(order(tree, null, "sv"))).toEqual(["apfel", "Ofen", "Zebra", "Äpfel", "Öl"]);
   });
 
-  test("pages with the same title keep their incoming order and surrounding spaces do not matter", () => {
+  test("pages with the same title follow their ID and surrounding spaces do not matter", () => {
     const tree = [note("note03", "Notes"), note("note01", " Notes "), note("note02", "Notes"), note("note04", "  Agenda")];
-    expect(order(tree).map((node) => node.id)).toEqual(["note04", "note03", "note01", "note02"]);
+    expect(order(tree).map((node) => node.id)).toEqual(["note04", "note01", "note02", "note03"]);
+  });
+
+  test("a level arranged by hand reads in that order, and the start page still comes first", () => {
+    const tree = [
+      note("note01", "Appendix", [], 3),
+      note("note02", "Welcome", [], 2),
+      note("note03", "Guides", [note("note04", "Setup", [], 1), note("note05", "Overview", [], 2)], 1),
+    ];
+    expect(outline(order(tree))).toEqual(["Guides", "  Setup", "  Overview", "Welcome", "Appendix"]);
+    expect(outline(order(tree, "note02"))).toEqual(["Welcome", "Guides", "  Setup", "  Overview", "Appendix"]);
   });
 
   test("returns only the public reading fields", () => {
     const internal = [
-      { id: "33333333-3333-4333-8333-333333333333", shortId: "note01", title: "Welcome", contentMd: "# Welcome", children: [] },
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        shortId: "note01",
+        title: "Welcome",
+        position: 0,
+        contentMd: "# Welcome",
+        children: [],
+      },
     ];
     expect(orderBookTree(internal, { id: (node) => node.shortId, homeId: null, locale: "en" })).toEqual([
       { id: "note01", title: "Welcome", children: [] },

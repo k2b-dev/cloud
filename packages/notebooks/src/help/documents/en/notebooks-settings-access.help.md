@@ -17,7 +17,7 @@ In Book, page links, tag filters, search, and pagination update the content with
 
 In the Book sidebar, select a page to open it, or use the arrow next to it to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, it keeps your choices and only unfolds the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages, keeps them when you close and reopen it, and opens pages in place.
 
-The sidebar lists the notebook's start page first, with its sub-pages below it, even when the start page lives under another page. Every other page follows by title at each level, in the order of your language; numbers count as numbers, so "Chapter 2" comes before "Chapter 10". The order follows along when a title or the start page changes. Set the start page in **Notebook — General**.
+The sidebar lists the notebook's start page first, with its sub-pages below it, even when the start page lives under another page. Every other page follows the notebook's order at each level: the order writers arranged by hand, or by title where nobody did, in the order of your language; numbers count as numbers, so "Chapter 2" comes before "Chapter 10". The order follows along when a title, the start page, or the arranged order changes. Set the start page in **Notebook — General**; see **Arrange notes** in **Write & organize** for the order.
 
 When you open the notebook itself in Book, it shows the start page, or the first page in the sidebar when there is none. If you last had a page of this notebook open in Write or Read-only, Book shows that page instead.
 

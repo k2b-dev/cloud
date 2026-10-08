@@ -77,6 +77,21 @@ Hide the navigation to write with the full width, or when others can see your sc
 - **Phones:** Small screens keep the navigation in the menu. The button appears on wider screens, where the navigation sits beside the note.
 :::
 
+## Arrange notes {icon="arrows-sort"}
+
+Notes on each level of the sidebar read by title until someone arranges them. Writers and admins choose their own order, for example the chapters of a book; everyone sees it in the sidebar and in Book right away.
+
+:::reference
+- **Drag:** On a computer, drag a note up or down among its neighbours. A line shows where it lands. Notes with sub-notes move with them, and a note stays on its level; use **Move** in the note menu to put it under another note.
+- **Keyboard:** Select a note in the sidebar and press **Alt+Arrow Up** or **Alt+Arrow Down**.
+- **Phones and menus:** Open the note menu and choose **Move up** or **Move down**.
+- **One level at a time:** Arranging a note fixes the order of its level only. Other levels keep reading by title. New notes on an arranged level appear at the end; notes moved there from elsewhere too.
+- **Back to titles:** In the menu of a note with sub-notes, **Sort subnotes alphabetically** sets that level back to title order. For the top level, use **Sort top level alphabetically** in the menu of any note on it.
+- **Homepage:** The homepage stays first on its level; other notes cannot move above it.
+- **Sorting the sidebar:** The order applies when the sidebar sorts by **Notebook order**. Sorting by **Last updated** or **Created** only changes your view and offers no arranging.
+- **Readers** see the arranged order but cannot change it.
+:::
+
 ## Typographic symbols {icon="typography"}
 
 Notebooks shows some typed sequences as one symbol when you read or edit a note. The note keeps the characters you typed, so search, export, and Assistant see them unchanged.

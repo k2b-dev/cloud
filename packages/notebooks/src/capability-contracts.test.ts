@@ -6,6 +6,7 @@ import {
   NoteChildrenInputSchema,
   NoteDetailDataSchema,
   NoteEditInputSchema,
+  NoteMoveInputSchema,
   NoteTreeInputSchema,
 } from "./capability-contracts";
 
@@ -47,4 +48,23 @@ test("compact paths keep local bounds without requiring new inputs on existing e
   expect(NoteEditInputSchema.safeParse(edit).success).toBeTrue();
   expect(NoteEditInputSchema.parse({ ...edit, blockLimit: 0 }).blockLimit).toBe(0);
   expect(NoteEditInputSchema.safeParse({ ...edit, blockLimit: 501 }).success).toBeFalse();
+});
+
+test("move supports an optional parent and mutually exclusive placements", () => {
+  for (const placement of [{}, { position: 0 }, { position: "first" }, { position: "last" }, { before: "abc123" }, { after: "abc123" }]) {
+    expect(NoteMoveInputSchema.safeParse({ noteId: "def456", ...placement }).success).toBeTrue();
+    expect(NoteMoveInputSchema.safeParse({ noteId: "def456", parentId: null, ...placement }).success).toBeTrue();
+  }
+  for (const placement of [
+    { position: -1 },
+    { position: 0.5 },
+    { position: "middle" },
+    { before: "abc123", after: "ghi789" },
+    { position: 0, before: "abc123" },
+    { position: "last", after: "abc123" },
+  ]) {
+    expect(NoteMoveInputSchema.safeParse({ noteId: "def456", ...placement }).success).toBeFalse();
+  }
+  const ambiguous = NoteMoveInputSchema.safeParse({ noteId: "def456", before: "abc123", after: "ghi789" });
+  if (!ambiguous.success) expect(ambiguous.error.issues[0]?.message).toContain("at most one placement");
 });

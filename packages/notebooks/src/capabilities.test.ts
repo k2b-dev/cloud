@@ -1103,3 +1103,71 @@ test("note search enforces the requested notebook and rejects inaccessible conte
   ).toBe(false);
   expect(search).toHaveBeenCalledTimes(1);
 });
+
+test("move capability resolves anchors and reviews placement with its effective parent", async () => {
+  const parent = { ...note, id: "66666666-6666-4666-8666-666666666666", shortId: "par123", title: "Operations" };
+  const anchor = { ...note, id: "77777777-7777-4777-8777-777777777777", shortId: "anc123", title: "Setup", parentId: parent.id };
+  trackedSpy(spyOn(noteStore, "getByShortId")).mockImplementation(async ({ shortId }) =>
+    shortId === anchor.shortId ? anchor : shortId === parent.shortId ? parent : note,
+  );
+  trackedSpy(spyOn(noteStore, "get")).mockResolvedValue(parent);
+  trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+  trackedSpy(spyOn(noteStore, "resolveIdsToShortIds")).mockResolvedValue(new Map([[parent.id, parent.shortId]]));
+  const move = trackedSpy(spyOn(noteStore, "move")).mockResolvedValue({ ok: true, data: { ...note, parentId: parent.id, position: 3 } });
+  trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+  const operation = notebooksCapabilities.actions["note.move"];
+  for (const locale of ["en", "de"]) {
+    const context = { ...userContext, locale };
+    const input = operation.input.parse({ noteId: note.shortId, after: anchor.shortId });
+    const review = await operation.review!(input, context);
+    expect(review.ok).toBe(true);
+    if (review.ok)
+      expect(review.data.details).toEqual(
+        expect.arrayContaining([
+          { label: locale === "de" ? "Neue übergeordnete Notiz" : "New parent", value: "Operations" },
+          { label: locale === "de" ? "Neue Position" : "New position", value: locale === "de" ? "Nach „Setup“" : "After “Setup”" },
+        ]),
+      );
+    const result = await operation.run(input, context);
+    expect(result.ok).toBe(true);
+    if (result.ok)
+      expect(result.data.summary).toBe(
+        locale === "de"
+          ? "„Knowledge index“ an Position 3 unter „Operations“ eingeordnet."
+          : "Placed “Knowledge index” at position 3 under “Operations”.",
+      );
+    expect(move).toHaveBeenLastCalledWith({ id: note.id, parentId: undefined, placement: { after: anchor.id }, locale });
+  }
+  const invalid = await operation.review!(
+    operation.input.parse({ noteId: note.shortId, parentId: null, before: anchor.shortId }),
+    userContext,
+  );
+  expect(invalid.ok).toBe(false);
+});
+
+test("move capability preserves parent-only messages and localizes first/last placement reviews", async () => {
+  trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+  trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+  const move = trackedSpy(spyOn(noteStore, "move")).mockResolvedValue({ ok: true, data: { ...note, position: 1 } });
+  trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+  const operation = notebooksCapabilities.actions["note.move"];
+  const onlyParent = operation.input.parse({ noteId: note.shortId, parentId: null });
+  const result = await operation.run(onlyParent, userContext);
+  expect(result.ok && result.data.summary).toBe("Moved “Knowledge index” to the notebook root.");
+  expect(move).toHaveBeenLastCalledWith({ id: note.id, parentId: null, placement: undefined, locale: "en" });
+  const parentReview = await operation.review!(onlyParent, userContext);
+  if (parentReview.ok) expect(parentReview.data.details).toHaveLength(2);
+  for (const position of ["first", "last", 0] as const) {
+    const input = operation.input.parse({ noteId: note.shortId, position });
+    const review = await operation.review!(input, { ...userContext, locale: "de" });
+    expect(review.ok).toBe(true);
+    if (review.ok)
+      expect(review.data.details?.at(-1)?.value).toBe(
+        position === "first" ? "Erste Position" : position === "last" ? "Letzte Position" : "0",
+      );
+    const result = await operation.run(input, { ...userContext, locale: "de" });
+    expect(result.ok && result.data.summary).toBe("„Knowledge index“ an Position 1 auf der obersten Ebene des Notizbuchs eingeordnet.");
+  }
+});

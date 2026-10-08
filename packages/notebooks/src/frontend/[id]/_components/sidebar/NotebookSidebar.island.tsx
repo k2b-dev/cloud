@@ -64,9 +64,11 @@ export default function NotebookSidebar(props: Props) {
   const navigatorMode = () => props.ctx.settings.sidebarMode === "navigator";
   const [treeSort, setTreeSort] = createSignal<NoteTreeSort>(props.ctx.settings.treeSort);
   // Like the start page of a Book, the homepage leads its own level whatever the sort order.
-  const sortedTree = createMemo(() => homepageFirst(sortNoteTree(noteTree(), treeSort()), notebook().homepageNoteId));
+  const sortedTree = createMemo(() => homepageFirst(sortNoteTree(noteTree(), treeSort(), locale()), notebook().homepageNoteId));
+  // Writers rearrange the notebook order only where it is the order on screen.
+  const orderable = () => canWrite && treeSort() === "title";
   const treeSortOptions = () => [
-    { value: "title" as const, label: t().nameSort },
+    { value: "title" as const, label: t().notebookOrderSort },
     { value: "updated" as const, label: t().updatedSort },
     { value: "created" as const, label: t().createdSort },
   ];
@@ -123,15 +125,23 @@ export default function NotebookSidebar(props: Props) {
       favoriteNoteIds={[...favoriteNoteIds()]}
       presentationMode={props.ctx.presentationMode}
       homepageId={notebook().homepageNoteId}
+      orderable={orderable()}
+      onOrderChanged={() => void refreshWorkspace()}
     />
   );
 
-  const actions = useNoteActions(notebook().id, noteTree);
+  const actions = useNoteActions(notebook().id, noteTree, { onOrderChanged: () => void refreshWorkspace() });
   const favorites = useFavoriteNotes({ notebookId: notebook().id, initialFavoriteNoteIds: () => [...favoriteNoteIds()] });
-  const noteActions = (node: NoteTreeNode) =>
-    noteActionItems(node, actions, t(), canDeleteOrLockNotes()).flatMap((item) => ("items" in item ? item.items : [item]));
+  const noteActions = (node: NoteTreeNode, level: NoteTreeNode[]) =>
+    noteActionItems(
+      node,
+      actions,
+      t(),
+      canDeleteOrLockNotes(),
+      orderable() ? { level, homepageId: notebook().homepageNoteId } : undefined,
+    ).flatMap((item) => ("items" in item ? item.items : [item]));
   const isHomepage = (node: NoteTreeNode) => node.id === notebook().homepageNoteId;
-  const noteEntry = (node: NoteTreeNode): NavigationItem => ({
+  const noteEntry = (node: NoteTreeNode, _index: number, level: NoteTreeNode[]): NavigationItem => ({
     id: `note:${node.id}`,
     label: node.title || t().untitled,
     icon: isHomepage(node) ? "ti ti-home" : node.lockedAt ? "ti ti-lock" : "ti ti-file-text",
@@ -149,9 +159,9 @@ export default function NotebookSidebar(props: Props) {
         icon: "ti ti-star",
       },
       ...(canWrite
-        ? noteActions(node).map((item) => ({
-            id: `note-action:${node.id}:${item.icon}`,
-            action: `note-action:${node.id}:${item.icon}`,
+        ? noteActions(node, level).map((item, index) => ({
+            id: `note-action:${node.id}:${index}`,
+            action: `note-action:${node.id}:${index}`,
             label: item.label,
             description: item.description,
             icon: item.icon,
@@ -247,8 +257,9 @@ export default function NotebookSidebar(props: Props) {
       if (action.startsWith("note-action:")) {
         const rest = action.slice(12);
         const index = rest.indexOf(":");
-        const node = findNoteByShortId(noteTree(), rest.slice(0, index));
-        const item = node && noteActions(node).find((item) => item.icon === rest.slice(index + 1));
+        const node = findNoteByShortId(sortedTree(), rest.slice(0, index));
+        const level = node && (node.parentId ? findNoteByShortId(sortedTree(), node.parentId)?.children : sortedTree());
+        const item = node && level && noteActions(node, level)[Number(rest.slice(index + 1))];
         if (item && !item.disabled) item.action?.();
       }
     },

@@ -48,6 +48,7 @@ import { loadBookRoute } from "../service/book-route";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import type { NotePathCandidate, NotePathProblem } from "../service/note-paths";
 import { renderNotePdf } from "../service/note-pdf";
+import type { NotePlacement } from "../service/notes";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
 import {
@@ -266,12 +267,13 @@ const CreateNoteSchema = z.object({
       "Parent path, relative to parentId or the notebook root. When present, a title that already exists among the target siblings is refused with 409.",
     ),
   createParents: z.boolean().optional().describe("Create missing parentPath segments as notes titled after the segment"),
-  position: z.number().int().min(0).optional(),
+  position: z.number().int().min(0).optional().describe("0-based place among siblings; placing switches this level to hand order."),
   contentMd: z.string().optional(),
 });
 
 const NoteOutlineEntrySchema = z.object({
   id: ResourceShortIdSchema,
+  position: z.number().int(),
   parentId: ResourceShortIdSchema.nullable(),
   title: z.string(),
   hasChildren: z.boolean(),
@@ -293,13 +295,22 @@ const ResolvedNoteSchema = NoteSchema.extend({
 
 const UpdateNoteSchema = z.object({
   parentId: ResourceShortIdSchema.nullable().optional(),
-  position: z.number().int().min(0).optional(),
+  position: z.number().int().min(0).optional().describe("0-based place among siblings; placing switches this level to hand order."),
 });
 
-const MoveNoteSchema = z.object({
-  parentId: ResourceShortIdSchema.nullable(),
-  position: z.number().int().min(0),
-});
+const MoveNoteSchema = z
+  .object({
+    parentId: ResourceShortIdSchema.nullable().optional(),
+    position: z.union([z.number().int().min(0), z.enum(["first", "last"])]).optional(),
+    before: ResourceShortIdSchema.optional(),
+    after: ResourceShortIdSchema.optional(),
+  })
+  .refine(
+    (data) => [data.position, data.before, data.after].filter((value) => value !== undefined).length <= 1,
+    "Specify at most one placement: position, before, or after",
+  );
+
+const ResetNoteOrderSchema = z.object({ parentId: ResourceShortIdSchema.nullable() });
 
 const CopyNoteSchema = z.object({
   targetNotebookId: ResourceShortIdSchema,
@@ -1319,7 +1330,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const tree = await notebooksService.note.getTree({ notebookId });
+      const tree = await notebooksService.note.getTree({ notebookId, locale: getLocale(c) });
       return respond(c, ok(await toPublicNoteTree(tree, notebook!.shortId)));
     },
   )
@@ -1345,7 +1356,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
 
       const [tree, favoriteRows, tags, attachmentCount] = await Promise.all([
-        notebooksService.note.getTree({ notebookId: notebook!.id }),
+        notebooksService.note.getTree({ notebookId: notebook!.id, locale: getLocale(c) }),
         notebooksService.note.favorites.listIds({ notebookId: notebook!.id, userId: userResult.data.id }),
         notebooksService.tag.listForNotebook({ notebookId: notebook!.id }),
         notebooksService.attachment.count({ notebookId: notebook!.id }),
@@ -1594,6 +1605,7 @@ const app = new Hono<AuthContext>()
             id: entry.shortId,
             parentId: entry.parentId ? (shortIds.get(entry.parentId) ?? null) : null,
             title: entry.title,
+            position: entry.position,
             hasChildren: entry.hasChildren,
             updatedAt: entry.updatedAt,
           })),
@@ -1669,6 +1681,7 @@ const app = new Hono<AuthContext>()
           parentPath: data.parentPath,
           createParents: data.createParents ?? false,
           contentMd: data.contentMd,
+          position: data.position,
           creatorId: user?.id ?? null,
           actor: getNotebookActivityActor(c),
           dateConfig: getDateConfig(c),
@@ -2115,7 +2128,43 @@ const app = new Hono<AuthContext>()
       }
       return respond(
         c,
-        toPublicNoteResult(notebooksService.note.update({ id: noteId, data: { ...data, parentId } }), notebook!.shortId, getLocale(c)),
+        toPublicNoteResult(
+          notebooksService.note.update({ id: noteId, data: { ...data, parentId }, locale: getLocale(c) }),
+          notebook!.shortId,
+          getLocale(c),
+        ),
+      );
+    },
+  )
+
+  .post(
+    "/:id/note-order/reset",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Sort notes alphabetically",
+      description: "Reset one level to alphabetical order by setting all its note positions to zero. Requires write access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(MessageResponseSchema, "Notes sorted alphabetically"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook or parent note not found"),
+      },
+    }),
+    v("json", ResetNoteOrderSchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      let { parentId } = c.req.valid("json");
+      if (parentId) {
+        const parent = await requireNoteInNotebook(notebook!.id, parentId, getLocale(c));
+        if (!parent.ok) return respond(c, parent);
+        parentId = parent.data.id;
+      }
+      return respondMessage(
+        c,
+        notebooksService.note.resetOrder({ notebookId: notebook!.id, parentId }),
+        messages(c).notesSortedAlphabetically,
       );
     },
   )
@@ -2126,11 +2175,13 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Move note",
-      description: "Move note to a new parent and/or position.",
+      description:
+        "Move a note to another parent and/or place it among siblings. Placing switches the target level to hand order and renumbers all its notes. Without a placement, a reparented note joins the end of a hand-ordered level or the title order of an alphabetical level.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Moved note"),
         400: jsonResponse(ErrorResponseSchema, "Invalid move (e.g., to own descendant)"),
+        409: jsonResponse(ErrorResponseSchema, "Note moved concurrently; retry from its current level"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Note not found"),
       },
@@ -2139,7 +2190,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       let notebookId = c.req.param("id")!;
       let noteId = c.req.param("noteId")!;
-      const { parentId, position } = c.req.valid("json");
+      const { parentId, position, before, after } = c.req.valid("json");
 
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
@@ -2147,16 +2198,23 @@ const app = new Hono<AuthContext>()
       const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
-      let resolvedParentId: string | null = null;
+      let resolvedParentId: string | null | undefined = parentId;
       if (parentId) {
         const parent = await requireNoteInNotebook(notebookId, parentId, getLocale(c));
         if (!parent.ok) return respond(c, parent);
         resolvedParentId = parent.data.id;
       }
+      const anchorId = before ?? after;
+      let placement: NotePlacement | undefined = position === undefined ? undefined : { position };
+      if (anchorId) {
+        const anchor = await requireNoteInNotebook(notebookId, anchorId, getLocale(c));
+        if (!anchor.ok) return respond(c, anchor);
+        placement = before ? { before: anchor.data.id } : { after: anchor.data.id };
+      }
       return respond(
         c,
         toPublicNoteResult(
-          notebooksService.note.move({ id: noteId, parentId: resolvedParentId, position }),
+          notebooksService.note.move({ id: noteId, parentId: resolvedParentId, placement, locale: getLocale(c) }),
           notebook!.shortId,
           getLocale(c),
         ),

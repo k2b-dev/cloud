@@ -1,21 +1,17 @@
+import { compareNoteOrder, sortNoteLevels } from "../../../../lib/note-order";
 import type { NoteTreeNode } from "./types";
 
+/** `title` is the notebook order: by hand where a level was arranged, by title elsewhere. */
 export type NoteTreeSort = "title" | "created" | "updated";
 
-const compareNotes = (mode: NoteTreeSort, left: NoteTreeNode, right: NoteTreeNode): number => {
-  if (mode !== "title") {
-    const leftDate = mode === "created" ? left.createdAt : left.updatedAt;
-    const rightDate = mode === "created" ? right.createdAt : right.updatedAt;
-    if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
-  }
-
-  return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
+const byDate = (mode: "created" | "updated") => (left: NoteTreeNode, right: NoteTreeNode) => {
+  const leftDate = mode === "created" ? left.createdAt : left.updatedAt;
+  const rightDate = mode === "created" ? right.createdAt : right.updatedAt;
+  return rightDate.localeCompare(leftDate) || left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
 };
 
-export function sortNoteTree(nodes: NoteTreeNode[], mode: NoteTreeSort): NoteTreeNode[] {
-  return [...nodes]
-    .sort((left, right) => compareNotes(mode, left, right))
-    .map((node) => ({ ...node, children: sortNoteTree(node.children, mode) }));
+export function sortNoteTree(nodes: NoteTreeNode[], mode: NoteTreeSort, locale: string): NoteTreeNode[] {
+  return sortNoteLevels(nodes, mode === "title" ? compareNoteOrder(locale, (node: NoteTreeNode) => node.id) : byDate(mode));
 }
 
 /** Moves the homepage to the front of its own level, like the start page of a Book; every other note keeps its place. */

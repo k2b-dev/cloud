@@ -51,6 +51,7 @@ const resolveContents = (locale: string) => {
     const materialized = materializeTemplate(template, now, locale);
     const notes = new Map<string, Note>();
     for (const [index, note] of materialized.notes.entries()) {
+      expect(note).not.toHaveProperty("position");
       const parent = note.parentKey ? notes.get(note.parentKey) : null;
       notes.set(note.key, fakeNote("Neue Notiz", `n${String(index).padStart(5, "0")}`, parent?.id ?? null));
     }

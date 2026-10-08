@@ -14,7 +14,7 @@ declare global {
   interface Window {
     mountNotebookSidebar: (ctx: NotebookContext, locale: string) => void;
     /** Renders the phone menu from the items the sidebar hands to Cloud's header, like the Cloud layout does. */
-    mountPhoneMenu: (locale: string) => void;
+    mountPhoneMenu: (locale: string, live?: boolean) => void;
     openedNotes: string[];
   }
 }
@@ -62,15 +62,18 @@ window.mountNotebookSidebar = (ctx, locale) => {
   );
 };
 
-window.mountPhoneMenu = (locale) => {
+/** `live` uses the sidebar's own navigation, as Cloud's header does once the island runs, so actions work. */
+window.mountPhoneMenu = (locale, live = false) => {
   const script = document.querySelector<HTMLScriptElement>("script[data-cloud-workspace-navigation]");
   const { label, items } = JSON.parse(script?.textContent ?? "{}") as { label: string; items: NavigationItem[] };
   const host = document.getElementById("phone-menu");
   if (!host) throw new Error("Missing phone menu root");
+  const navigation =
+    live && window.__cloudWorkspaceNavigation ? window.__cloudWorkspaceNavigation.navigation : createNavigation({ items: () => items });
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <Navigation navigation={createNavigation({ items: () => items })} label={label} />
+        <Navigation navigation={navigation} label={label} />
       </LocaleProvider>
     ),
     host,

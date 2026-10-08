@@ -45,7 +45,14 @@ export type Manifest = {
   notes: ManifestNote[];
 };
 
-export type OutlineEntry = { id: string; parentId: string | null; title: string; hasChildren: boolean; updatedAt: string };
+export type OutlineEntry = {
+  position: number;
+  id: string;
+  parentId: string | null;
+  title: string;
+  hasChildren: boolean;
+  updatedAt: string;
+};
 
 type AttachmentMeta = { id: string; filename: string };
 

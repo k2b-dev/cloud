@@ -1,6 +1,7 @@
 import {
   AppOverview,
   AppWorkspace,
+  type AppWorkspaceNavTreeMove,
   Avatar,
   addPanesItem,
   Button,
@@ -43,7 +44,7 @@ import {
   TextInput,
   Toolbar,
 } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
@@ -52,6 +53,19 @@ import { LiveWorkspaceDemo } from "./workspace-live";
 const WorkspaceDemo = () => {
   const [activeView, setActiveView] = createSignal("available");
   const [expandedNavigation, setExpandedNavigation] = createSignal<readonly string[]>(["items", "tags"]);
+  // Tags can be arranged by hand: drag them, or press Alt+ArrowUp/ArrowDown on a focused tag.
+  const [tags, setTags] = createSignal([
+    { id: "ready", label: "Ready", meta: 8 },
+    { id: "repair", label: "Repair", meta: 4 },
+    { id: "sold", label: "Sold", meta: 2 },
+  ]);
+  const moveTag = (move: AppWorkspaceNavTreeMove) => {
+    const moved = tags().find((tag) => tag.id === move.id);
+    const rest = tags().filter((tag) => tag.id !== move.id);
+    if (!moved) return;
+    rest.splice(move.beforeId ? rest.findIndex((tag) => tag.id === move.beforeId) : rest.length, 0, moved);
+    setTags(rest);
+  };
   const [paneOpen, setPaneOpen] = createSignal(false);
   const [detailOpen, setDetailOpen] = createSignal(true);
   const [drawerOpen, setDrawerOpen] = createSignal(true);
@@ -110,6 +124,7 @@ const WorkspaceDemo = () => {
                 expandedIds={expandedNavigation()}
                 onSelectedIdChange={setActiveView}
                 onExpandedIdsChange={setExpandedNavigation}
+                onMove={moveTag}
               >
                 <AppWorkspace.NavTree.Item id="items" label="Items" icon="ti ti-folder" expandedIcon="ti ti-folder-open" meta={12}>
                   <AppWorkspace.NavTree.Item
@@ -132,8 +147,9 @@ const WorkspaceDemo = () => {
                 </AppWorkspace.NavTree.Item>
                 <AppWorkspace.NavTree.Item id="activity" label="Activity" icon="ti ti-history" />
                 <AppWorkspace.NavTree.Item id="tags" label="Tags" icon="ti ti-tags">
-                  <AppWorkspace.NavTree.Item id="ready" label="Ready" icon="ti ti-tag" meta={8} />
-                  <AppWorkspace.NavTree.Item id="repair" label="Repair" icon="ti ti-tag" meta={4} />
+                  <For each={tags()}>
+                    {(tag) => <AppWorkspace.NavTree.Item id={tag.id} label={tag.label} icon="ti ti-tag" meta={tag.meta} movable />}
+                  </For>
                 </AppWorkspace.NavTree.Item>
               </AppWorkspace.NavTree>
             </AppWorkspace.SidebarSection>

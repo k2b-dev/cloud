@@ -32,7 +32,11 @@ note list.
 - Capture project notes, decisions, research, meeting records, recipes, or
   lightweight task lists.
 - Organize notes in a tree and connect related knowledge with note links and
-  tags.
+  tags. Each level reads by title until a writer arranges it by hand, by
+  dragging in the sidebar, with Alt+ArrowUp or Alt+ArrowDown, or with **Move
+  up** and **Move down** in the note menu; the sidebar, Book, and export follow
+  that order for everyone, and the folder menu sorts a level alphabetically
+  again.
 - Publish an internal handbook in Book view, with page navigation and tag
   filters but no editing controls or detail panel.
 - Discuss a page in a durable Markdown thread. New comments appear live for
@@ -309,6 +313,11 @@ their file names carry the note ID, as in `backup--Ab12Cd.md`; this suffix
 exists only in the mirror. Each file starts with `id`, `title`, and
 `updatedAt` front matter, and `.cld-notebook.json` records one `path`,
 `contentHash`, `fileHash`, and `updatedAt` per note.
+
+`mv` also arranges a note among its siblings with `--before <note>`,
+`--after <note>`, `--first`, or `--last`, as in
+`cld notebooks mv "Docs":guide/setup --after "Docs":guide/intro`. Placing a
+note fixes the order of its level by hand; other levels keep their title order.
 
 Changes go back through `write`, `edit`, `mv`, and `rm`, which accept mirror
 files and update the mirror immediately. Writing a mirror file, or editing

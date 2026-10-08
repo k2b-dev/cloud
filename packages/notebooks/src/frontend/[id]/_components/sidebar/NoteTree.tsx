@@ -1,8 +1,22 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
+import {
+  AppWorkspace,
+  type AppWorkspaceNavTreeMove,
+  Button,
+  Dropdown,
+  type DropdownAction,
+  type DropdownItem,
+  IconButton,
+  Placeholder,
+  prompts,
+  ScrollArea,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { isHandOrdered } from "../../../../lib/note-order";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
@@ -33,13 +47,34 @@ type Props = {
   presentationMode?: PresentationMode;
   /** The notebook's homepage, shown with a home icon instead of the note icon. */
   homepageId?: string | null;
+  /** The tree shows the notebook order, so writers may rearrange it. */
+  orderable?: boolean;
+  /** Reloads the tree after a change of order. */
+  onOrderChanged?: () => void;
 };
+
+/** A new place among the siblings, named by a neighbour as the server expects. */
+export type NotePlacement = { before: string } | { after: string };
+
+/** Where a note sits in the notebook order on screen; absent where another order is shown. */
+export type NoteOrderContext = {
+  /** The note's level as displayed, the pinned homepage first. */
+  level: NoteTreeNode[];
+  homepageId: string | null;
+};
+
+/** The place between two neighbours: before the next one, or after the last one. */
+const placementBetween = (after: NoteTreeNode | undefined, before: NoteTreeNode | undefined): NotePlacement | null =>
+  before ? { before: before.id } : after ? { after: after.id } : null;
+
+export const placementForMove = (move: AppWorkspaceNavTreeMove): NotePlacement | null =>
+  move.beforeId ? { before: move.beforeId } : move.afterId ? { after: move.afterId } : null;
 
 // =============================================================================
 // Note Actions
 // =============================================================================
 
-export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
+export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], options: { onOrderChanged?: () => void } = {}) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const createNoteMut = mutations.create<{ id: string }, { parentId?: string }>({
@@ -58,15 +93,39 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
   });
 
   const moveNoteMut = mutations.create({
-    mutation: async (data: { noteId: string; parentId: string | null; position: number }) => {
+    // Without a place the note joins the end of a level arranged by hand, or the title order.
+    mutation: async (data: { noteId: string; parentId: string | null }) => {
       const res = await apiClient[":id"].notes[":noteId"].move.$post({
         param: { id: notebookId, noteId: data.noteId },
-        json: { parentId: data.parentId, position: data.position },
+        json: { parentId: data.parentId },
       });
       if (!res.ok) throw new Error(t().failedMoveNote);
       return res.json();
     },
     onSuccess: () => refreshCurrentPath(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const placeNoteMut = mutations.create<unknown, { noteId: string; placement: NotePlacement }>({
+    mutation: async (data: { noteId: string; placement: NotePlacement }) => {
+      const res = await apiClient[":id"].notes[":noteId"].move.$post({
+        param: { id: notebookId, noteId: data.noteId },
+        json: data.placement,
+      });
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().failedMoveNote));
+      return res.json();
+    },
+    onSuccess: () => options.onOrderChanged?.(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const sortAlphabeticallyMut = mutations.create<unknown, string | null>({
+    mutation: async (parentId: string | null) => {
+      const res = await apiClient[":id"]["note-order"].reset.$post({ param: { id: notebookId }, json: { parentId } });
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().failedSortNotes));
+      return res.json();
+    },
+    onSuccess: () => options.onOrderChanged?.(),
     onError: (err) => toast.error(err.message),
   });
 
@@ -176,11 +235,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
     );
 
     if (result) {
-      moveNoteMut.mutate({
-        noteId: node.id,
-        parentId: result.parentId,
-        position: 0,
-      });
+      moveNoteMut.mutate({ noteId: node.id, parentId: result.parentId });
     }
   };
 
@@ -252,22 +307,65 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
     }
   };
 
+  const handlePlace = (noteId: string, placement: NotePlacement | null) => {
+    if (placement) void placeNoteMut.mutate({ noteId, placement });
+  };
+  const handleSortAlphabetically = (parentId: string | null) => {
+    void sortAlphabeticallyMut.mutate(parentId);
+  };
+
   return {
     handleCreateNote,
     handleMove,
+    handlePlace,
+    handleSortAlphabetically,
     handleCopy,
     handleDelete,
     handleLock,
     loading: () =>
-      createNoteMut.loading() || moveNoteMut.loading() || copyNoteMut.loading() || deleteNoteMut.loading() || lockNoteMut.loading(),
+      createNoteMut.loading() ||
+      moveNoteMut.loading() ||
+      placeNoteMut.loading() ||
+      sortAlphabeticallyMut.loading() ||
+      copyNoteMut.loading() ||
+      deleteNoteMut.loading() ||
+      lockNoteMut.loading(),
   };
 }
+
+/** Move up and down, plus the way back to the title order where a level was arranged by hand. */
+const noteOrderItems = (
+  node: NoteTreeNode,
+  actions: ReturnType<typeof useNoteActions>,
+  t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
+  order: NoteOrderContext,
+): DropdownAction[] => {
+  const { level, homepageId } = order;
+  const index = level.findIndex((sibling) => sibling.id === node.id);
+  // The homepage leads its level, so it keeps that place and nothing moves above it.
+  const up =
+    index > 0 && node.id !== homepageId && level[index - 1]!.id !== homepageId
+      ? placementBetween(level[index - 2], level[index - 1])
+      : null;
+  const down = index >= 0 && node.id !== homepageId ? placementBetween(level[index + 1], level[index + 2]) : null;
+  return [
+    { icon: "ti ti-arrow-up", label: t.moveUp, disabled: !up, action: () => actions.handlePlace(node.id, up) },
+    { icon: "ti ti-arrow-down", label: t.moveDown, disabled: !down, action: () => actions.handlePlace(node.id, down) },
+    ...(isHandOrdered(node.children)
+      ? [{ icon: "ti ti-sort-a-z", label: t.sortSubnotesAlphabetically, action: () => actions.handleSortAlphabetically(node.id) }]
+      : []),
+    ...(node.parentId === null && isHandOrdered(level)
+      ? [{ icon: "ti ti-sort-a-z", label: t.sortTopLevelAlphabetically, action: () => actions.handleSortAlphabetically(null) }]
+      : []),
+  ];
+};
 
 export const noteActionItems = (
   node: NoteTreeNode,
   actions: ReturnType<typeof useNoteActions>,
   t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
   canDeleteOrLock: boolean,
+  order?: NoteOrderContext,
 ): DropdownItem[] => [
   {
     icon: "ti ti-file-plus",
@@ -286,6 +384,7 @@ export const noteActionItems = (
               action: () => actions.handleMove(node),
             },
           ]),
+      ...(order ? noteOrderItems(node, actions, t, order) : []),
       {
         icon: "ti ti-copy",
         label: t.duplicate,
@@ -322,6 +421,7 @@ function NoteTreeItems(props: {
   homepageId: string | null;
   canWrite: boolean;
   canDeleteOrLockNotes: boolean;
+  orderable: boolean;
   actions: ReturnType<typeof useNoteActions>;
   favoriteNoteIds?: () => Set<string>;
   onToggleFavorite?: (node: NoteTreeNode, event: MouseEvent) => void;
@@ -348,6 +448,7 @@ function NoteTreeItems(props: {
             iconLabel={node.id === props.homepageId ? t().homepage : undefined}
             href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
             navigation="document"
+            movable={props.orderable && node.id !== props.homepageId}
             actions={
               props.onToggleFavorite || props.canWrite ? (
                 <>
@@ -371,7 +472,13 @@ function NoteTreeItems(props: {
                       <Dropdown.Root
                         position="bottom-right"
                         width="12rem"
-                        items={noteActionItems(node, props.actions, t(), props.canDeleteOrLockNotes)}
+                        items={noteActionItems(
+                          node,
+                          props.actions,
+                          t(),
+                          props.canDeleteOrLockNotes,
+                          props.orderable ? { level: props.nodes, homepageId: props.homepageId } : undefined,
+                        )}
                       >
                         <Dropdown.Trigger
                           iconOnly
@@ -395,6 +502,7 @@ function NoteTreeItems(props: {
               homepageId={props.homepageId}
               canWrite={props.canWrite}
               canDeleteOrLockNotes={props.canDeleteOrLockNotes}
+              orderable={props.orderable}
               actions={props.actions}
               favoriteNoteIds={props.favoriteNoteIds}
               onToggleFavorite={props.onToggleFavorite}
@@ -413,7 +521,8 @@ function NoteTreeItems(props: {
 export default function NoteTree(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const actions = useNoteActions(props.notebookId, () => props.tree);
+  const actions = useNoteActions(props.notebookId, () => props.tree, { onOrderChanged: () => props.onOrderChanged?.() });
+  const orderable = () => Boolean(props.canWrite && props.orderable);
   const showHeaderActions = () => props.showHeaderActions ?? true;
   const [selectedNoteId, setSelectedNoteId] = createSignal(props.selectedNoteId);
   const { favoriteNoteIds, toggleFavorite } = useFavoriteNotes({
@@ -470,6 +579,7 @@ export default function NoteTree(props: Props) {
             defaultExpandedIds={flattenTree(props.tree)
               .filter((node) => node.children.length > 0)
               .map((node) => node.id)}
+            onMove={orderable() ? (move) => actions.handlePlace(move.id, placementForMove(move)) : undefined}
           >
             <NoteTreeItems
               nodes={props.tree}
@@ -478,6 +588,7 @@ export default function NoteTree(props: Props) {
               homepageId={props.homepageId ?? null}
               canWrite={props.canWrite ?? false}
               canDeleteOrLockNotes={props.canDeleteOrLockNotes ?? false}
+              orderable={orderable()}
               actions={actions}
               favoriteNoteIds={favoriteNoteIds}
               onToggleFavorite={toggleFavorite}
