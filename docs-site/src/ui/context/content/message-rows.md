@@ -186,7 +186,10 @@ bubble.
 `linkPreview` and `card` are slots below the attachments: a preview of a link
 in the text, and a card for an element the message refers to, such as a task
 or a document. The application builds both, ideally with `@k2b/ui` surfaces,
-and gives them their final height when they mount. A preview that is fetched
+and gives them their final height when they mount. For `card`, use
+[`ResourceCard`](/en/ui/surfaces/cards): it has the same size while it loads,
+when it shows the element, and when the reader has no access or the element is
+gone. A preview that is fetched
 later should be passed only once its data is there, or reserve its height from
 the start.
 

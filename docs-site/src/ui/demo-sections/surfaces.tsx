@@ -18,6 +18,8 @@ import {
   ProgressBar,
   ProgressRing,
   RangePicker,
+  ResourceCard,
+  type ResourceCardState,
   SegmentedControl,
   Select,
   StatCell,
@@ -25,7 +27,7 @@ import {
   StatusBadge,
 } from "@k2b/ui";
 import baseCss from "@k2b/ui/base.css" with { type: "text" };
-import { createSignal, type JSX } from "solid-js";
+import { createSignal, For, type JSX } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -324,6 +326,43 @@ const CardsDemo = () => (
         <Avatar name="Ada Lovelace" src="/assets/logo.svg" size="lg" />
         <Avatar name="Grace Hopper" fallback="GH" size="md" />
       </div>
+    </div>
+  </DemoCard>
+);
+
+const resourceStates: ResourceCardState[] = ["ok", "loading", "no_access", "deleted", "unavailable"];
+
+const ResourceCardDemo = () => (
+  <DemoCard
+    id="resource-cards"
+    chip={{ kind: "component", name: "ResourceCard", from: "@k2b/ui" }}
+    description="ResourceCard keeps one size while it loads, shows the element, or says that the reader has no access, the element is deleted, or it is not available right now. Outside ok it shows nothing of the element."
+    code={`import { ResourceCard } from "@k2b/ui";
+
+<ResourceCard
+  state={card.state}
+  title="Onboarding checklist"
+  icon="ti ti-notebook"
+  source="Notebooks"
+  location="Team handbook"
+  preview="Laptop, accounts, and the first week"
+  href="/notebooks/onboarding"
+/>`}
+  >
+    <div class="ui-demo-form-grid">
+      <For each={resourceStates}>
+        {(state) => (
+          <ResourceCard
+            state={state}
+            title="Onboarding checklist"
+            icon="ti ti-notebook"
+            source="Notebooks"
+            location="Team handbook"
+            preview="Laptop, accounts, and the first week"
+            href="#resource-cards"
+          />
+        )}
+      </For>
     </div>
   </DemoCard>
 );
@@ -825,6 +864,7 @@ const demos: DemoSection = {
   cards: () => (
     <DemoGrid columns="one">
       <CardsDemo />
+      <ResourceCardDemo />
     </DemoGrid>
   ),
   details: () => (
