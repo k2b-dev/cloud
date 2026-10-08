@@ -1,9 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { Socket } from "node:net";
 import * as nodemailer from "nodemailer";
-import { sendEmail } from "../notifications/email";
 import * as settings from "../settings";
-import { coreSettings } from "../settings/api";
 import * as store from "./store";
 import { smtpFailureMessage } from "./test-send";
 import * as transport from "./transport";
@@ -49,42 +47,6 @@ test("SMTP failures redact plaintext and authentication encodings", () => {
   expect(message).not.toContain("password");
   expect(message).not.toContain(Buffer.from(plain).toString("base64"));
 });
-test("notification email uses the default profile sender and preserves its HTML frame and message id", async () => {
-  const resolve = spyOn(store, "resolveMailCredentials").mockResolvedValue(credentials);
-  const smtp = transport.buildMailTransport(credentials);
-  const send = spyOn(smtp, "sendMail").mockImplementation(async () => ({
-    messageId: "sent",
-    envelope: { from: "sender@example.org", to: ["recipient@example.org"] },
-    accepted: ["recipient@example.org"],
-    rejected: [],
-  }));
-  const builder = spyOn(transport, "buildMailTransport").mockReturnValue(smtp);
-  const read = spyOn(settings, "get").mockResolvedValue("Cloud");
-  const logo = spyOn(coreSettings, "get").mockResolvedValue("");
-  try {
-    await sendEmail("recipient@example.org", "Subject", { content: "Hello", messageId: "<test@example.org>" });
-    expect(resolve).toHaveBeenCalledWith();
-    expect(builder).toHaveBeenCalledWith(credentials);
-    expect(send.mock.calls[0]?.[0]).toMatchObject({
-      from: { address: "sender@example.org", name: "Cloud" },
-      to: "recipient@example.org",
-      subject: "Subject",
-      text: "Hello",
-      messageId: "<test@example.org>",
-    });
-    expect(send.mock.calls[0]?.[0]?.html).toContain("<!DOCTYPE html>");
-    resolve.mockResolvedValue({ ...credentials, fromName: "Configured sender" });
-    await sendEmail("recipient@example.org", "Subject", { content: "Hello" });
-    expect(send.mock.calls[1]?.[0]).toMatchObject({ from: { name: "Configured sender" } });
-    resolve.mockRejectedValue(new store.OutgoingMailError("profile_unknown", "Configure a default outgoing mail profile."));
-    await expect(sendEmail("recipient@example.org", "Subject", {})).rejects.toThrow("default outgoing mail profile");
-    expect(send).toHaveBeenCalledTimes(2);
-  } finally {
-    for (const mock of [resolve, send, builder, read, logo]) mock.mockRestore();
-    smtp.close();
-  }
-});
-
 test("profile test failures expose the SMTP answer and audit no credentials", async () => {
   const { outgoingMailTest } = await import("./test-send");
   const { audit } = await import("../audit");

@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser]
-updated: 2026-09-14
+updated: 2026-10-08
 ---
 
 # Notifications
@@ -151,6 +151,11 @@ When `email()` is present, it returns:
 | `subject` | Yes | Email subject |
 | `content` | No | Plain-text content |
 | `rawHtml` | No | HTML content |
+
+Cloud sanitizes the body and wraps it in the installation's HTML frame. It
+also sends a plain-text part: sanitized `content` when supplied, otherwise text
+derived from `rawHtml`. Email goes through [Outgoing mail](/en/docs/platform/outgoing-mail)
+on the default sender profile as app `core`, with a stable key for each delivery.
 
 Without `email()`, Cloud uses the neutral `title` as the subject and `body` as
 the plain-text content.
@@ -325,7 +330,19 @@ const unregisterSms = registerNotificationChannel(smsDriver);
 ```
 
 A driver resolves destinations, builds a persisted provider payload, and
-delivers that payload. Channel IDs are lowercase identifiers with at most 80
+delivers that payload. `deliver(payload, context)` receives an optional second
+argument with `deliveryId` and, during worker processing, an abort `signal`.
+For an email recovery, it also includes the persisted `outgoingMailId`.
+Existing drivers may keep returning `void` to indicate delivery. A driver that
+hands work to a durable provider may return `{ status: "pending", retryAfterMs,
+errorMessage? }` with a finite `retryAfterMs` greater than zero. Cloud clamps
+that delay to 2,000–300,000 ms, persists the pending state with no error code,
+preserves the notification attempt budget, and schedules another call. A `pending` return
+without a valid delay is treated as delivered, like `void`. An optional
+`outgoingMailId` is recorded only when it is a UUID string. A completed driver
+may return `{ status: "delivered" }`.
+
+Channel IDs are lowercase identifiers with at most 80
 characters. Register one driver per ID. Keep the returned cleanup function and
 call it when the deployment integration stops.
 
@@ -518,6 +535,28 @@ User-facing history normalizes unknown provider-specific errors to
 Cloud retries retryable provider failures with backoff for up to five delivery
 attempts. Non-retryable failures move directly to `failed`.
 
+Temporary SMTP failures keep email deliveries `pending` while outgoing mail
+retries them. Waiting for accepted mail does not use notification attempts and
+keeps the delivery error code null, so a required email reports `queued`. The
+last SMTP answer may remain in the delivery error message for operators. Other
+retryable channel failures keep their error codes, so required deliveries in
+retry continue to report `error`.
+Recommended fallback channels activate only after a terminal mail failure,
+which can take up to the 24-hour delivery deadline. They stay deferred while
+SMTP retries continue, so a recovered SMTP server does not cause delivery
+through both channels.
+The outgoing-mail record settles within its 24-hour deadline. Permanent SMTP
+failures and mail cancellation end the notification delivery; mail availability
+failures retry, while profile and input policy errors fail immediately.
+
+Delivery observability includes `outgoingMailId` and `outgoingMailStatus`, so
+operators can follow the email in the send log, including a later `bounced`
+status. The ID remains after mail record retention; its status then becomes null.
+**Observability → Notifications** (`/admin/observability/notifications`) shows
+the mail status under the email channel, and the Accounts batch detail shows it
+under each recipient's status, whenever it adds information, such as `queued`,
+`failed`, or `bounced`. The mail ID appears as the line's tooltip.
+
 The delivery runtime also recovers an attempt left in `sending` after a worker
 stops. It returns the delivery to `pending` and records `lease_recovered`.
 
@@ -530,3 +569,20 @@ for recovery after five minutes.
 Calling `notifications.send()` again with the same idempotency key is safe, but
 it does not restart provider delivery. The existing event and current delivery
 state are returned. Cloud's delivery worker owns retries and recovery.
+
+## Notification batches
+
+Notification batches enqueue chunks of up to 100 recipients into outgoing mail's
+bulk lane as app `core`. The default profile's pace and daily recipient limit for
+app `core` apply. Batches continue as the rolling 24-hour window frees capacity.
+Core's magic links, password resets, and other notification email share this
+limit: leave headroom or keep the default profile unlimited. Recipients remain
+`sending` until their mail settles; batch counters and message history then
+record `sent` (also for `bounced`) or `error` for failed or cancelled mail.
+
+Worker retries and stale claims reuse the same send generation and mail ID.
+An explicit failed-recipient retry creates a new generation. If retention
+removed a mail record before reconciliation, recovery records an error instead
+of automatically sending it again. Temporary backlog,
+quota, or availability failures leave recipients pending for another attempt;
+profile and input policy errors mark them as errors.

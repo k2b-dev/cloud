@@ -9,6 +9,8 @@ type NavigationEntry = {
   id: string;
   label: string;
   icon?: string;
+  /** Names a meaningful icon for screen readers, such as "Homepage"; without it the icon is decorative. */
+  iconLabel?: string;
   badge?: string | number;
   description?: string;
   /**

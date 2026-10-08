@@ -243,6 +243,11 @@ icon then reflects the branch state and acts as the disclosure target, so no
 second chevron is rendered. The row label keeps its normal select or navigation
 behavior, and the keyboard contract is unchanged.
 
+Icons are decorative by default. When an icon carries meaning the label does
+not, such as a home icon that marks a notebook's homepage among its notes, set
+`iconLabel`: the icon then becomes an image with that name, and screen readers
+announce it together with the label.
+
 Optional drag event handlers on `NavTree.Item` are forwarded to the tree item
 container. Applications still own drag payloads, permission checks, drop
 effects, and mutations.
@@ -381,7 +386,7 @@ type AppWorkspaceNavTreeItemProps = {
   id: string; label: JSX.Element; children?: JSX.Element; href?: string; navigation?: "enhanced" | "document";
   replace?: boolean; scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onSelect?: (event: MouseEvent) => void;
-  disabled?: boolean; icon?: string; expandedIcon?: string; meta?: JSX.Element;
+  disabled?: boolean; icon?: string; iconLabel?: string; expandedIcon?: string; meta?: JSX.Element;
   metaVisibility?: AppWorkspaceSidebarAccessoryVisibility; actions?: JSX.Element;
   tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string; class?: string;
   onDragEnter?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;

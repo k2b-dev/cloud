@@ -368,6 +368,8 @@ export type AppWorkspaceNavTreeItemProps = {
   onSelect?: (event: MouseEvent) => void;
   disabled?: boolean;
   icon?: string;
+  /** Names a meaningful icon for screen readers, such as "Homepage"; without it the icon is decorative. */
+  iconLabel?: string;
   /** Replaces `icon` while this branch is expanded and makes the icon the disclosure target. */
   expandedIcon?: string;
   meta?: JSX.Element;
@@ -391,6 +393,8 @@ const modeAttrs = (mode?: AppWorkspaceSidebarVisibility) => (mode && mode !== "a
 const modeData = (mode?: AppWorkspaceSidebarVisibility) => (mode && mode !== "always" ? { "sidebar-mode": mode } : {});
 const scrollAttrs = (key?: string | false) => (key ? { "data-scroll-preserve": key } : {});
 const iconClass = (icon: string | undefined, fallback = "ti-circle") => (icon?.startsWith("ti ") ? icon : `ti ${icon || fallback}`);
+/** A named icon is an image screen readers announce; any other icon is decoration. */
+const iconAccessibility = (label: string | undefined) => (label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true });
 
 function AppWorkspaceMainPane(props: AppWorkspaceMainPaneProps): JSX.Element {
   return {
@@ -1182,7 +1186,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
               <span
                 class="k2b-app-workspace__sidebar-item-icon"
                 data-k2b-nav-tree-toggle={usesIconDisclosure() ? "" : undefined}
-                aria-hidden="true"
+                {...iconAccessibility(item.iconLabel)}
               >
                 <i class={iconClass(rowIcon())} />
               </span>

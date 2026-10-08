@@ -8,9 +8,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "../../_inte
 import * as registry from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
 import { audit } from "../audit";
-import { sendEmail } from "../notifications/email";
 import * as settings from "../settings";
-import { coreSettings } from "../settings/api";
 import { decryptValue } from "../settings/crypto";
 import { mail } from "./index";
 import { outgoingMailStore, resolveMailCredentials } from "./store";
@@ -203,10 +201,9 @@ databaseSuite()("outgoing mail store and delivery", () => {
     await outgoingMailStore.delete(b, context);
     expect((await outgoingMailStore.apps()).items.find((app) => app.appId === "offline")?.profiles).toEqual([]);
   });
-  test("test-send and notification email reach the sink through the profile sender and explicit TLS mode", async () => {
+  test("test-send reaches the sink through the profile sender and explicit TLS mode", async () => {
     const sink = smtpSink();
     const read = spyOn(settings, "get").mockResolvedValue("Cloud");
-    const logo = spyOn(coreSettings, "get").mockResolvedValue("");
     try {
       const current = (await outgoingMailStore.put(b, config, context)).profile;
       await outgoingMailStore.put(
@@ -223,19 +220,15 @@ databaseSuite()("outgoing mail store and delivery", () => {
         context,
       );
       await outgoingMailTest.send(b, "recipient@example.org", context);
-      await sendEmail("notify@example.org", "Notification", { content: "Hello", messageId: "<test@cloud.invalid>" });
-      expect(sink.messages).toHaveLength(2);
+      expect(sink.messages).toHaveLength(1);
       expect(sink.messages[0]).toMatchObject({ from: config.fromAddress, to: ["recipient@example.org"] });
-      expect(sink.messages[1]).toMatchObject({ from: config.fromAddress, to: ["notify@example.org"] });
-      expect(sink.messages[1]!.raw).toContain("From: Sender <alerts@example.org>");
-      expect(sink.messages[1]!.raw).toContain("Message-ID: <test@cloud.invalid>");
+      expect(sink.messages[0]!.raw).toContain("From: Sender <alerts@example.org>");
       expect(
         (await sql`SELECT action FROM audit.events WHERE request_id = ${context.requestId} AND action = 'outgoing_mail.profile.test'`)
           .length,
       ).toBe(1);
     } finally {
       read.mockRestore();
-      logo.mockRestore();
       sink.stop();
     }
   });

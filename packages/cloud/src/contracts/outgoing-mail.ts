@@ -134,14 +134,15 @@ const referenceText = z
   .max(200)
   .refine((value) => !value.includes("\0"), "Reference must not contain NUL");
 const ref = z.object({ scope: referenceText, id: referenceText }).strict();
+const mailAddress = z.email({ pattern: z.regexes.html5Email }).max(320);
 export const MailMessageSchema = z
   .object({
-    to: z.array(z.email().max(320)).min(1).max(50),
+    to: z.array(mailAddress).min(1).max(50),
     subject: safeHeader.max(998),
     text: body,
     html: body.optional(),
     fromName: safeHeader.max(998).optional(),
-    replyTo: z.email().max(320).optional(),
+    replyTo: mailAddress.optional(),
     attachments: z
       .array(
         z

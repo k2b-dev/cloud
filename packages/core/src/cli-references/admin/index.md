@@ -124,6 +124,11 @@ cld admin notification-batches get <batch-id> --json
 cld admin notification-batches finalize <batch-id> --yes
 ```
 
+`cld admin notification-batches recipients <batch-id>` shows `mailId` and
+`mailStatus` alongside recipient status and attempts. JSON output includes
+`outgoingMailId` and `outgoingMailStatus`; the status becomes null after mail
+record retention. Recipients stay `sending` while outgoing mail is in flight.
+
 Use the exact command help to prepare the audience-selection JSON and to retry failed recipients. Deleting a draft cannot be undone.
 
 ## Legal documents

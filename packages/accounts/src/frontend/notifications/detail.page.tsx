@@ -101,6 +101,9 @@ export default ssr<AuthContext>(async (c) => {
       skipped: t.skipped,
       error: t.error,
     })[status];
+  // Recipients count bounced mail as sent; the mail status keeps that difference visible.
+  const mailStatusLabel = (status: NonNullable<NotificationBatchRecipient["outgoingMailStatus"]>) =>
+    ({ queued: t.queued, sending: t.sending, sent: t.sent, failed: t.failed, bounced: t.bounced, cancelled: t.cancelled })[status];
   const ruleLabels: Record<string, { label: string; icon: string }> = {
     account_manager: { label: t.accountManagers, icon: "ti ti-shield-check" },
     local: { label: t.localAccounts, icon: "ti ti-device-desktop" },
@@ -380,8 +383,22 @@ export default ssr<AuthContext>(async (c) => {
                     if (col.id === "recipient") return <span class="block truncate text-dimmed">{entry.recipient ?? "-"}</span>;
                     if (col.id === "provider") return <span class="text-dimmed">{entry.provider}</span>;
                     if (col.id === "profile") return <span class="text-dimmed">{entry.profile}</span>;
-                    if (col.id === "status")
-                      return <StatusBadge tone={statusTone(entry.status)} label={<> {statusLabel(entry.status)} </>} />;
+                    if (col.id === "status") {
+                      const mail = entry.outgoingMailStatus;
+                      return (
+                        <div class="min-w-0">
+                          <StatusBadge tone={statusTone(entry.status)} label={<> {statusLabel(entry.status)} </>} />
+                          {mail && mail !== "sent" ? (
+                            <span
+                              class={`mt-0.5 block truncate text-xs ${mail === "failed" || mail === "bounced" || mail === "cancelled" ? "text-red-500" : "text-dimmed"}`}
+                              title={entry.outgoingMailId ?? undefined}
+                            >
+                              {t.outgoingMailStatus({ status: mailStatusLabel(mail) })}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    }
                     if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(entry.attemptCount, { locale })}</span>;
                     if (col.id === "sent")
                       return <span class="text-dimmed">{entry.sentAt ? dates.formatDateTime(entry.sentAt, { locale }) : "-"}</span>;

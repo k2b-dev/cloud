@@ -12,6 +12,9 @@ export type NavigationProps = {
   beforeSelect?: () => boolean | void | Promise<boolean | void>;
 };
 
+/** A named icon is an image screen readers announce; any other icon is decoration. */
+const iconAccessibility = (label: string | undefined) => (label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true });
+
 export default function Navigation(props: NavigationProps) {
   const messages = useUiMessages();
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
@@ -35,7 +38,7 @@ export default function Navigation(props: NavigationProps) {
           const content = () => (
             <>
               <Show when={item().icon}>
-                <i class={item().icon} aria-hidden="true" />
+                <i class={item().icon} {...iconAccessibility(item().iconLabel)} />
               </Show>
               <span class="k2b-navigation__copy">
                 <span>{item().label}</span>

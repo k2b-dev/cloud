@@ -54,10 +54,10 @@ test("explicit batch retries retain a wakeup while the previous worker is comple
     mock.module(${JSON.stringify(new URL("../logging/index.ts", import.meta.url).pathname)}, () => ({ logger: () => ({}), trace: {} }));
     mock.module(${JSON.stringify(new URL("../../shared/markdown.ts", import.meta.url).pathname)}, () => ({ markdown: {} }));
     mock.module(${JSON.stringify(new URL("../postgres.ts", import.meta.url).pathname)}, () => ({
-      parsePgJsonValue: value => value, toPgTextArray: value => value, toPgUuidArray: value => value,
+      escapeLikePattern: value => value, parsePgJsonValue: value => value, toPgTextArray: value => value, toPgUuidArray: value => value,
     }));
-    mock.module(${JSON.stringify(new URL("./email.ts", import.meta.url).pathname)}, () => ({
-      sendEmail: () => { throw new Error("Provider must not be called"); },
+    mock.module(${JSON.stringify(new URL("../outgoing-mail/enqueue.ts", import.meta.url).pathname)}, () => ({
+      enqueueMail: () => { throw new Error("Provider must not be called"); },
     }));
     mock.module(${JSON.stringify(new URL("../audit/index.ts", import.meta.url).pathname)}, () => ({ audit: { record: async () => {} } }));
     const { retryFailed, retryRecipient } = await import(${JSON.stringify(new URL("./batches.ts", import.meta.url).pathname)});

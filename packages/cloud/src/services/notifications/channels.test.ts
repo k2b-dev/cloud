@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { getNotificationChannel, registerNotificationChannel } from "./channels";
 
 describe("notification channel drivers", () => {
-  test("derives a stable provider key for repeated email attempts", async () => {
+  test("creates repeated email payloads without a notification-owned Message-ID", async () => {
     const driver = getNotificationChannel("email");
     if (!driver) throw new Error("Email notification driver is not registered");
     const [destination] = await driver.resolveDestinations({ userId: null, email: "user@example.test" });
@@ -12,7 +12,8 @@ describe("notification channel drivers", () => {
     const first = driver.createPayload({ presentation: { title: "Test" }, destination, event });
     const second = driver.createPayload({ presentation: { title: "Test" }, destination, event });
 
-    expect(first).toEqual(expect.objectContaining({ messageId: `<cloud-notification-${event.id}@cloud.invalid>` }));
+    expect(first).toEqual({ to: "user@example.test", subject: "Test", content: undefined, rawHtml: undefined });
+    expect(first).not.toHaveProperty("messageId");
     expect(second).toEqual(first);
   });
 

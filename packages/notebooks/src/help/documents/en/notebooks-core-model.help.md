@@ -14,6 +14,7 @@ A notebook is a shared workspace. A note is its Markdown source document. Named 
 - **Notebook:** A workspace with notes, attachments, settings, permissions, and exports. Its immutable six-character id appears in URLs and APIs.
 - **Note:** A Markdown document with prose, tasks, links, tables, data, and attachments. Its immutable six-character id appears in URLs and note links.
 - **Note tree:** Notes can have parent notes. Navigation and queries can use that hierarchy.
+- **Homepage:** The note chosen as the notebook's homepage comes first on its level of the sidebar's note tree and shows a home icon. Set it in **Notebook — General**.
 - **Tag:** A #tag in note content groups notes for search, tag pages, and queries.
 - **Attachment:** A file uploaded to the notebook and referenced with attach://shortId.
 - **Named block:** Put @name directly above a table, list, data block, or section to give it a stable name.

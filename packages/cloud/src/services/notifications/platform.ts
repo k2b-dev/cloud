@@ -407,7 +407,7 @@ export const sendTypedNotification = async <
   if (persisted.prepared) {
     for (const deliveryId of persisted.requiredIds) {
       const result = await processNotificationDelivery(deliveryId);
-      if (result.status === "retry") await enqueueNotificationDelivery(deliveryId, result.retryAfterMs);
+      if (result.status === "retry" || result.status === "pending") await enqueueNotificationDelivery(deliveryId, result.retryAfterMs);
       if (result.activatedIds?.length) await enqueueNotificationDeliveries(result.activatedIds);
     }
     await enqueueNotificationDeliveries(persisted.pendingIds);

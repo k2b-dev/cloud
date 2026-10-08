@@ -125,3 +125,13 @@ test("custom header byte limits include names and separators", () => {
   expect(MailMessageSchema.safeParse({ ...message, subject: "x".repeat(998), headers: { "X-A": "x".repeat(8185) } }).success).toBe(true);
   expect(MailMessageSchema.safeParse({ ...message, headers: { "X-A": "x".repeat(8186) } }).success).toBe(false);
 });
+
+test("recipient and reply-to addresses use HTML email syntax", () => {
+  for (const address of ["user@example.xn--p1ai", "a&b@example.org", "admin@intranet"]) {
+    expect(MailMessageSchema.safeParse({ ...message, to: [address], replyTo: address }).success).toBe(true);
+  }
+  for (const address of ["a b@x.org", '\"q\"@x.org', "a@x.org\n", "<a@x.org>", "a,b@x.org", "user@müller.de"]) {
+    expect(MailMessageSchema.safeParse({ ...message, to: [address] }).success).toBe(false);
+    expect(MailMessageSchema.safeParse({ ...message, replyTo: address }).success).toBe(false);
+  }
+});

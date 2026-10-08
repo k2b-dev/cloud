@@ -1,7 +1,15 @@
 import { sql } from "bun";
 import type { MailMessage, MailRecord } from "../../contracts/outgoing-mail";
 import { cancelMailStreams, deleteMailObjects, uploadMailAttachments } from "./attachments";
-import { allowedMailProfile, MailQuotaError, mailQuotaUsed, messageRecord, outgoingMailMessages, recordMailSend } from "./messages";
+import {
+  allowedMailProfile,
+  type MailAcceptanceOptions,
+  MailQuotaError,
+  mailQuotaUsed,
+  messageRecord,
+  outgoingMailMessages,
+  recordMailSend,
+} from "./messages";
 import { OutgoingMailError } from "./store";
 import { mailAttachments, mailSendJob, mailSettled, submitMail } from "./sync";
 
@@ -62,7 +70,12 @@ export const waitForMail = async (appId: string, initial: MailRecord, signal?: A
     void follower;
   }
 };
-export const sendMail = async (appId: string, message: MailMessage, signal?: AbortSignal): Promise<MailRecord> => {
+export const sendMail = async (
+  appId: string,
+  message: MailMessage,
+  signal?: AbortSignal,
+  options?: MailAcceptanceOptions,
+): Promise<MailRecord> => {
   const existing = await outgoingMailMessages.known(appId, message.key);
   if (existing) {
     cancelMailStreams(message.attachments);
@@ -84,7 +97,7 @@ export const sendMail = async (appId: string, message: MailMessage, signal?: Abo
   const uploaded = await uploadMailAttachments(id, message.attachments ?? [], profile.max_attachment_bytes);
   let accepted: Awaited<ReturnType<typeof outgoingMailMessages.accept>>;
   try {
-    accepted = await outgoingMailMessages.accept(appId, id, message, uploaded);
+    accepted = await outgoingMailMessages.accept(appId, id, message, uploaded, options);
   } catch (error) {
     // If the commit reply was lost, or another call won while this transaction
     // failed, an existing record still owns the outcome and its objects.

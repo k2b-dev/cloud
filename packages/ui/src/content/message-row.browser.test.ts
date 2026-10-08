@@ -307,11 +307,16 @@ const open = async (
     await Promise.all(
       [
         "400 15px 'IBM Plex Sans'",
+        "italic 400 15px 'IBM Plex Sans'",
+        "500 15px 'IBM Plex Sans'",
         "600 15px 'IBM Plex Sans'",
         "700 15px 'IBM Plex Sans'",
         "400 13px 'IBM Plex Mono'",
         "16px tabler-icons",
       ].map((font) => document.fonts.load(font)),
+    );
+    (window as unknown as { preloaded: Set<FontFace> }).preloaded = new Set(
+      Array.from(document.fonts).filter((face) => face.status === "loaded"),
     );
   });
   await page.evaluate(
@@ -337,6 +342,15 @@ const open = async (
   );
   await page.addScriptTag({ content: script });
   await page.locator(`[data-key="${options.messages?.at(-1)?.id ?? (options.rich ? "m16" : "m10")}"] .k2b-message-row`).waitFor();
+  // Layout requests every face the rows use, so one missing from the list above shows here, not as a late shift.
+  expect(
+    await page.evaluate(() => {
+      const { preloaded } = window as unknown as { preloaded: Set<FontFace> };
+      return Array.from(document.fonts)
+        .filter((face) => face.status !== "unloaded" && !preloaded.has(face))
+        .map((face) => `${face.style} ${face.weight} ${face.family}`);
+    }),
+  ).toEqual([]);
   if (!options.touch) await page.mouse.move(width - 1, 1399);
   return Object.assign(page, { releaseMedia });
 };

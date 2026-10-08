@@ -54,6 +54,8 @@ export type NotificationBatchRecipient = {
   profile: "user" | "guest";
   status: NotificationRecipientStatus;
   notificationId: string | null;
+  outgoingMailId: string | null;
+  outgoingMailStatus: string | null;
   error: string | null;
   attemptCount: number;
   sentAt: string | null;
@@ -370,6 +372,8 @@ export const notificationCommands = [
         provider: recipient.provider,
         profile: recipient.profile,
         attempts: recipient.attemptCount,
+        mailId: recipient.outgoingMailId ?? "",
+        mailStatus: recipient.outgoingMailStatus ?? "",
         error: truncate(recipient.error, 60),
         userId: recipient.userId,
       }));
@@ -381,6 +385,8 @@ export const notificationCommands = [
         { key: "provider" },
         { key: "profile" },
         { key: "attempts" },
+        { key: "mailId" },
+        { key: "mailStatus" },
         { key: "error" },
         { key: "userId" },
       ]);
