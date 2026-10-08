@@ -226,6 +226,18 @@ describe("Cloud AI Skill seeds", () => {
     expect(seed).not.toHaveBeenCalled();
   });
 
+  test("Spaces seed upgrades instructions for incomplete assignee previews", async () => {
+    const seed = spyOn(aiSkills, "seedOnce").mockResolvedValue();
+    await seedCloudAiSkills();
+    const spaces = seed.mock.calls.map(([input]) => input).find((input) => input.key === "spaces:cloud-spaces");
+    expect(spaces?.version).toBe(2);
+    expect(spaces?.instructions).toContain("at most three assignees and tags");
+    expect(spaces?.instructions).toContain("relationsTruncated");
+    expect(spaces?.instructions).toContain("assigneeCount");
+    expect(spaces?.instructions).toContain("is larger than the number of `assignees`");
+    expect(spaces?.instructions).toContain("3 of 11");
+  });
+
   test("Grids skill uses canonical Help and names only declared capabilities", async () => {
     const grids = getBuiltinAiSkillTemplate("cloud-grids")!;
     expect(grids.version).toBe(7);

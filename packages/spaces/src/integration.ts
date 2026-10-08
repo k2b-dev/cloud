@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ResourceShortIdSchema } from "./contracts";
 import { buildSpaceItemHref } from "./routes";
 
+export const MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH = 96 * 1024;
+
 const CalendarInvitationExistingSchema = z
   .object({
     itemId: ResourceShortIdSchema,

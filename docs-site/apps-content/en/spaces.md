@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Spaces
@@ -267,6 +267,24 @@ relation snapshots with explicit truncation flags, preserving their page model.
 
 `calendar-destination.list` lists writable Mail invitation destinations in pages
 of up to 100. Follow the returned cursor to retrieve every destination.
+
+`task.list` and `event.list` return at most three assignees and tags per item.
+`assigneeCount` includes assignees omitted from the preview. When it is larger
+than the number of `assignees`, state the total (for example, “3 of 11”) or use
+`item.read` before naming everyone. The response budget may shorten previews
+further; `relationsTruncated` signals a partial relation preview. Resource
+reference previews contain at most 2,000 characters; read the resource for its
+full content.
+
+`task.blocker.add` returns the saved blocker with a `spaces.item` ref, just like
+`task.blocker.list`. For the reverse direction, `task.blocks.list` returns up to
+100 dependent tasks per page by default. Use `cursor` and `limit` and follow
+`page.nextCursor` until `page.hasMore` is false.
+
+`event.invitation.prepare` rejects a calendar that would take more than 96 KiB
+of the response, measured as JSON-encoded UTF-8, and rolls back the
+preparation. Reduce the event content or attendees and try again. A retry of a
+stored preparation that is too large needs a new idempotency key.
 
 ## Implementation tasks and agent handoffs
 

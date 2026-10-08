@@ -17,6 +17,7 @@ import {
   type CreateEventInvitationDraftInput,
   type EventInvitationContext,
   type EventInvitationDraft,
+  MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH,
 } from "../integration";
 import { withShortId } from "../lib/short-id";
 import { buildSpaceCalendarUid, buildSpaceItemHref } from "../routes";
@@ -691,6 +692,13 @@ export type PreparedEventInvitationAttachment = {
   calendar: string;
 };
 
+class PreparedEventInvitationSizeError extends Error {}
+
+// Measured as transported: JSON-encoded UTF-8 bytes are never fewer than the UTF-16 length, so this also enforces
+// the schema's character max and leaves about 160 KiB of the 256 KiB result envelope for everything else.
+export const preparedEventInvitationCalendarFits = (calendar: string): boolean =>
+  Buffer.byteLength(JSON.stringify(calendar)) <= MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH;
+
 export const prepareEventInvitationAttachment = async (params: {
   spaceId: string;
   itemId: string;
@@ -728,7 +736,7 @@ export const prepareEventInvitationAttachment = async (params: {
   if (!publicRef) return fail(err.notFound("Event"));
   const uid = buildSpaceCalendarUid(publicRef.itemId);
 
-  return sql.begin(async (tx) => {
+  const preparation = sql.begin(async (tx) => {
     await tx`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`spaces:event-invitation:${params.deliveryId}`}, 0)
@@ -761,6 +769,9 @@ export const prepareEventInvitationAttachment = async (params: {
       }
       if (!existing.calendar_payload || !existing.attachment_filename) {
         return fail(err.conflict("Invitation preparation is incomplete; use a new idempotency key"));
+      }
+      if (!preparedEventInvitationCalendarFits(existing.calendar_payload)) {
+        return fail(err.conflict("Stored invitation is too large; reduce the event content or attendees and use a new idempotency key"));
       }
       return ok({
         deliveryId: params.deliveryId,
@@ -818,6 +829,10 @@ export const prepareEventInvitationAttachment = async (params: {
       attendees,
       generatedAt: new Date().toISOString(),
     });
+    // Throw inside the transaction so source/sequence changes roll back too.
+    if (!preparedEventInvitationCalendarFits(calendar)) {
+      throw new PreparedEventInvitationSizeError("Prepared calendar invitation is too large; reduce the event content or attendees");
+    }
     await tx`
       INSERT INTO spaces.calendar_invitation_deliveries (
         idempotency_key, item_id, mailbox_id, sender_identity_id, sequence, method, state,
@@ -838,6 +853,10 @@ export const prepareEventInvitationAttachment = async (params: {
       contentType,
       calendar,
     });
+  });
+  return preparation.catch((error: unknown) => {
+    if (error instanceof PreparedEventInvitationSizeError) return fail(err.badInput(error.message));
+    throw error;
   });
 };
 
