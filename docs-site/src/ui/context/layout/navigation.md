@@ -23,10 +23,14 @@ const navigation = createNavigation({
 ```
 
 Items use stable, unique `id` values, a `label`, and either `href`, an `action`
-key, or `children`. Optional fields are `icon`, `badge` (string or number),
-`description`, `status`, `active`, `disabled`, `color`, secondary `actions`, and
-`inlineActions`. Everything in the item tree is serializable; functions remain
-in the controller.
+key, or `children`. Optional fields are `icon`, `iconLabel`, `badge` (string or
+number), `description`, `status`, `active`, `disabled`, `color`, secondary
+`actions`, and `inlineActions`. Everything in the item tree is serializable;
+functions remain in the controller.
+
+`icon` is decorative unless `iconLabel` names it. Set `iconLabel` only when the
+icon carries meaning the label does not, such as a home icon on the note that
+is a notebook's homepage; screen readers then read it with the row.
 
 `status` puts one icon at the row's end, before its buttons, in a slot of fixed
 size: `{ icon, label, tone? }`. The `label` is part of the row's accessible name

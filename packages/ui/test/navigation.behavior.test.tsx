@@ -350,3 +350,25 @@ test("sections head their rows without a disclosure, and a row's status fills it
     dom.cleanup();
   }
 });
+
+test("a row names a meaningful icon and keeps every other icon decorative", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const nav = createNavigation({
+    items: () => [
+      { id: "home", label: "Overview", href: "/notes/home", icon: "ti ti-home", iconLabel: "Homepage" },
+      { id: "rules", label: "Rules", href: "/notes/rules", icon: "ti ti-file-text" },
+    ],
+  });
+  const dispose = render(() => <Navigation navigation={nav} label="Notes" />, dom.root);
+  try {
+    const [home, rules] = Array.from(dom.root.querySelectorAll(".k2b-navigation__control > i"));
+    expect(home?.getAttribute("role")).toBe("img");
+    expect(home?.getAttribute("aria-label")).toBe("Homepage");
+    expect(home?.hasAttribute("aria-hidden")).toBe(false);
+    expect(rules?.getAttribute("aria-hidden")).toBe("true");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

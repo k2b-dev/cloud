@@ -134,4 +134,30 @@ describe("@k2b/ui AppWorkspace.NavTree behavior", () => {
     dispose();
     dom.cleanup();
   });
+
+  test("names a meaningful icon and keeps every other icon decorative", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const dispose = render(
+      () => (
+        <AppWorkspace.NavTree ariaLabel="Notes" defaultExpandedIds={["home"]}>
+          <AppWorkspace.NavTree.Item id="home" label="Overview" icon="ti ti-home" iconLabel="Homepage">
+            <AppWorkspace.NavTree.Item id="child" label="Rules" icon="ti ti-file-text" />
+          </AppWorkspace.NavTree.Item>
+        </AppWorkspace.NavTree>
+      ),
+      dom.root,
+    );
+    try {
+      const icon = (id: string) => dom.root.querySelector(`[data-k2b-nav-tree-id="${id}"] .k2b-app-workspace__sidebar-item-icon`);
+      expect(icon("home")?.getAttribute("role")).toBe("img");
+      expect(icon("home")?.getAttribute("aria-label")).toBe("Homepage");
+      expect(icon("home")?.hasAttribute("aria-hidden")).toBe(false);
+      expect(icon("child")?.getAttribute("aria-hidden")).toBe("true");
+      expect(icon("child")?.hasAttribute("role")).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 });
