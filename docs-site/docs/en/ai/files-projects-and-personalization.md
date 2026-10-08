@@ -526,7 +526,9 @@ there either. The preview in **Assistant settings > System prompt** and
 - **Suggestions** allows at most one offer, in the last sentence of the final
   message, and only when a concrete next step saves the user real work. When
   the user or the chat shows that a request recurs, the offer is to save it as
-  a Skill or scheduled task; otherwise it is the natural next step. The model
+  a Skill or scheduled task, as described in
+  [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
+  otherwise it is the natural next step. The model
   makes no offer for simple facts, while asking or waiting for approval, after
   a failure, after a reply that already ended with one, or once the user
   declined. It never searches data only to justify an offer. Organization,
