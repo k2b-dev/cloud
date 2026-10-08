@@ -359,11 +359,11 @@ sender can sustain. Batch uploads run sequentially within one shared
 Reserve JetStream storage for the Core-owned object store
 `cloud-outgoing-mail-attachments`: **2 GiB** on every node that holds one of
 its replicas, 25 MiB maximum per object, and 48-hour object expiry. Bulk mail
-keeps its attachment objects until its attempt, so large paced batches with attachments
-can fill the shared store for hours. While it is full, every application's
-sends and enqueues with attachments fail with `attachment_storage_full`.
-The store limit is fixed, so send links instead of large attachments in bulk
-mail.
+keeps its attachment objects until its attempt, so large paced batches with
+attachments can fill the shared store for hours. While it is full, every
+application's sends and enqueues with attachments fail with
+`attachment_storage_full`. The store limit is fixed, so send links instead of
+large attachments in bulk mail.
 
 The settled topic `cloud-outgoing-mail-settled` retains message-ID wakeups for
 five minutes with a 2 MiB stream limit; with its dead-letter stream it reserves
