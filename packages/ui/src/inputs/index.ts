@@ -36,6 +36,8 @@ export type {
   DurationPreset,
 } from "./DatePicker";
 export { DatePicker, DateRangePicker, DateTimePicker } from "./DatePicker";
+export type { FileDropDetails, FileDropOptions, FileDropRejection, FileDropTargetProps } from "./FileDropTarget";
+export { FileDropTarget, fileDropTarget } from "./FileDropTarget";
 export type { FileDropzoneProps, ImageCropperProps, ImageInputProps } from "./FileInputs";
 export { FileDropzone, ImageCropper, ImageInput } from "./FileInputs";
 export type { DateContext, FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";

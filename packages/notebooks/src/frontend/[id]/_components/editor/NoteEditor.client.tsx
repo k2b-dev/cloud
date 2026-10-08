@@ -5,8 +5,8 @@ import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
-import { dropzone, query } from "@k2b/stdlib/solid";
-import { NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
+import { query } from "@k2b/stdlib/solid";
+import { FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createCodeMirror } from "solid-codemirror";
 import { type Accessor, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
@@ -722,7 +722,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   // Three trigger paths converge on the same `uploadAndInsert`:
   //   1. Picker modal (slash /file, footer button) — dispatches
   //      EDITOR_INSERT_ATTACHMENT_EVENT after upload-or-pick.
-  //   2. Drag-drop on the editor wrapper.
+  //   2. Drag-drop anywhere on the note's workspace area.
   //   3. Paste of clipboard files (e.g. screenshots).
   const uploadFilesSequentially = async (fileList: File[]) => {
     const view = editorView();
@@ -766,8 +766,6 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     event.preventDefault();
     void uploadFilesSequentially(fileList);
   };
-
-  const dz = dropzone.create({ onDrop: (fileList) => void uploadFilesSequentially(fileList) });
 
   onMount(() => {
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
@@ -864,9 +862,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
       <ScrollArea
         ref={scrollPort}
         style={{ "scroll-padding-block": fadeScrollPadding }}
-        class={`relative min-h-0 flex-1 cursor-text transition-colors ${
-          !props.readOnly && dz.isDragging() ? "ring-2 ring-blue-400 dark:ring-blue-500 ring-inset" : ""
-        }`}
+        class="relative min-h-0 flex-1 cursor-text"
         onMouseDown={(event) => {
           if (props.readOnly) return;
           const target = event.target as HTMLElement | null;
@@ -892,13 +888,14 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
           }
         }}
         onPaste={props.readOnly ? undefined : onPaste}
-        {...(props.readOnly ? {} : dz.handlers)}
         role="textbox"
         tabIndex={-1}
         aria-label={props.readOnly ? t().readonlySurface : t().editorSurface}
       >
         <div ref={editorRef} />
       </ScrollArea>
+      {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
+      <FileDropTarget label={t().dropToInsert} disabled={props.readOnly} onDrop={(fileList) => void uploadFilesSequentially(fileList)} />
       <Show when={tabKeys.indents()}>
         <p id={tabKeys.hintId} class="sr-only">
           {t().tabIndentHint}

@@ -1,11 +1,12 @@
-import { dropzone } from "@k2b/stdlib/solid";
-import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { Tooltip } from "../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
+import { fileDropTarget } from "./FileDropTarget";
 import type { FieldProps, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { fileDropEngine, liveDocument } from "./file-drop";
 import {
   clampImageCropRect,
   getInitialImageCropRect,
@@ -28,6 +29,8 @@ export type FileDropzoneProps = FieldProps & {
   title?: JSX.Element;
   subtitle?: JSX.Element;
   hint?: JSX.Element;
+  /** One sentence that says what dropping does, shown while files are over the zone. Defaults to "Drop to upload". */
+  dropLabel?: string;
   onDrop: (files: File[]) => void | Promise<void>;
 };
 
@@ -37,23 +40,47 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
   const disabled = () => Boolean(props.disabled || props.busy);
   const error = () => resolveMaybeAccessor(props.error);
   let input: HTMLInputElement | undefined;
+  const [button, setButton] = createSignal<HTMLButtonElement>();
   const emit = (files: File[]) => {
     if (disabled() || files.length === 0) return;
     void props.onDrop(props.multiple === false ? files.slice(0, 1) : files);
   };
-  const zone = dropzone.create({
+  // Drops take the same path as every other file drop target: files only, the most specific target wins, and files
+  // that do not fit `accept` are left out with a message.
+  const dropLabel = () => props.dropLabel ?? messages().dropToUpload;
+  const dropRef = fileDropTarget({
+    get label() {
+      return dropLabel();
+    },
     get accept() {
       return props.accept;
     },
+    get multiple() {
+      return props.multiple;
+    },
+    get disabled() {
+      return disabled();
+    },
     onDrop: emit,
+  });
+  const [engine, setEngine] = createSignal<ReturnType<typeof fileDropEngine>>();
+  onMount(() => {
+    const element = button();
+    if (element) setEngine(fileDropEngine(liveDocument(element)));
+  });
+  const dragState = createMemo(() => {
+    const element = button();
+    const hover = engine()?.session()?.hover;
+    if (!hover || hover.element !== element) return undefined;
+    return hover.invalid ? "invalid" : "over";
   });
   const title = () =>
     props.busy
       ? messages().uploading
-      : zone.invalidDrag()
+      : dragState() === "invalid"
         ? messages().fileTypeNotAccepted
-        : zone.isDragging()
-          ? messages().dropToUpload
+        : dragState() === "over"
+          ? dropLabel()
           : (props.title ?? messages().dropFiles);
 
   return (
@@ -69,13 +96,15 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
       <button
         id={meta.controlId}
         type="button"
+        ref={(element) => {
+          setButton(element);
+          dropRef(element);
+        }}
         class="k2b-dropzone"
-        data-dragging={zone.isDragging() ? "true" : undefined}
-        data-invalid={zone.invalidDrag() || error() ? "true" : undefined}
+        data-invalid={error() ? "true" : undefined}
         disabled={disabled()}
         {...fieldControlAria(meta, props)}
         onClick={() => input?.click()}
-        {...zone.handlers}
       >
         <span class="k2b-dropzone__icon" aria-hidden="true">
           <i class={props.busy ? "ti ti-loader-2 k2b-spin" : (props.icon ?? "ti ti-cloud-upload")} />
@@ -83,7 +112,7 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
         <span class="k2b-dropzone__copy">
           <strong>{title()}</strong>
           <Show
-            when={zone.invalidDrag()}
+            when={dragState() === "invalid"}
             fallback={
               <Show when={props.subtitle}>
                 <span class="k2b-dropzone__subtitle">{props.subtitle}</span>

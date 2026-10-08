@@ -1,4 +1,4 @@
-import { Button, FileDropzone, Format, InlineGuidance, toast } from "@k2b/ui";
+import { Button, FileDropTarget, FileDropzone, Format, InlineGuidance, toast } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { PublicShare } from "../contracts";
 import { transferUpload } from "../upload-transfer";
@@ -92,8 +92,21 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
       }
     },
   });
+  const upload = (files: File[]) => {
+    if (!files.length) return;
+    // A file over the limit can never be uploaded, so it is named once instead of becoming a row to retry.
+    const tooLarge = files.filter((file) => file.size > props.share.maxFileSize);
+    if (tooLarge.length) toast.error(b().uploadTooLarge(tooLarge.map((file) => file.name)));
+    uploads.add(
+      null,
+      { key: "inbox", label: props.share.title },
+      files.filter((file) => file.size <= props.share.maxFileSize).map((file) => ({ file, path: file.name })),
+    );
+  };
   return (
     <div class="flex flex-col gap-3">
+      {/* The page exists to receive files: they can be dropped anywhere on it. */}
+      <FileDropTarget label={b().dropInto({ name: props.share.title })} onDrop={upload} />
       <InlineGuidance icon="ti ti-info-circle">
         {b().publicFileLimit}: <Format.Bytes value={props.share.maxFileSize} /> · {b().publicTotalBudget}:{" "}
         <Format.Bytes value={props.share.maxTotalSize} />
@@ -104,17 +117,9 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
       <FileDropzone
         label={b().upload}
         hint={b().publicInboxHint}
+        dropLabel={b().dropInto({ name: props.share.title })}
         multiple
-        onDrop={(files) => {
-          // A file over the limit can never be uploaded, so it is named once instead of becoming a row to retry.
-          const tooLarge = files.filter((file) => file.size > props.share.maxFileSize);
-          if (tooLarge.length) toast.error(b().uploadTooLarge(tooLarge.map((file) => file.name)));
-          uploads.add(
-            null,
-            { key: "inbox", label: props.share.title },
-            files.filter((file) => file.size <= props.share.maxFileSize).map((file) => ({ file, path: file.name })),
-          );
-        }}
+        onDrop={upload}
       />
       <UploadSurface queue={uploads} />
       <Show when={props.share.showUploadNames}>

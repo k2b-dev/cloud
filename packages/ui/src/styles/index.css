@@ -6817,14 +6817,88 @@
   font-size: 0.6875rem;
 }
 
-.k2b-ui .k2b-dropzone[data-dragging="true"] {
+.k2b-ui .k2b-dropzone[data-file-drop="over"] {
   border-color: var(--k2b-action);
   background: var(--k2b-selected);
 }
 
-.k2b-ui .k2b-dropzone[data-invalid="true"] {
+.k2b-ui .k2b-dropzone[data-invalid="true"],
+.k2b-ui .k2b-dropzone[data-file-drop="invalid"] {
   border-color: var(--k2b-danger-500);
   background: var(--k2b-danger-surface);
+}
+
+/* A specific file drop target under the pointer (`fileDropTarget`): an inset ring that moves nothing. */
+.k2b-ui [data-file-drop="over"] {
+  box-shadow: inset 0 0 0 2px var(--k2b-action);
+}
+
+.k2b-ui [data-file-drop="invalid"] {
+  box-shadow: inset 0 0 0 2px var(--k2b-danger-500);
+}
+
+/* FileDropTarget: a top-layer overlay over its area while files are dragged over the window. It never takes the
+   pointer, so the area below still reports where a drop lands. */
+.k2b-ui [popover].k2b-file-drop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-action) 4%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--k2b-action) 35%, transparent);
+  pointer-events: none;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.k2b-ui [popover].k2b-file-drop[data-state="over"] {
+  background: color-mix(in srgb, var(--k2b-action) 8%, transparent);
+  box-shadow: inset 0 0 0 2px var(--k2b-action);
+}
+
+.k2b-ui [popover].k2b-file-drop[data-state="invalid"] {
+  background: color-mix(in srgb, var(--k2b-danger-500) 6%, transparent);
+  box-shadow: inset 0 0 0 2px var(--k2b-danger-500);
+}
+
+.k2b-ui .k2b-file-drop__message {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.k2b-ui .k2b-file-drop__message > i {
+  flex: none;
+  color: var(--k2b-action);
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-file-drop[data-state="invalid"] .k2b-file-drop__message > i {
+  color: var(--k2b-danger-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui [popover].k2b-file-drop {
+    transition: none;
+  }
 }
 
 .k2b-ui .k2b-image-input {
@@ -8513,10 +8587,6 @@
   box-shadow: var(--k2b-shadow-surface);
 }
 
-.k2b-ui .k2b-chat-composer[data-drag-active="true"] {
-  border-color: var(--k2b-ai-accent);
-}
-
 .k2b-ui .k2b-chat-composer-shell { position: relative; display: grid; gap: 0.5rem; min-width: 0; }
 .k2b-ui .k2b-chat-composer-slot { position: relative; min-width: 0; }
 .k2b-ui .k2b-chat-composer-accessory { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; }
@@ -8785,20 +8855,6 @@
 .k2b-ui .k2b-chat-composer__input textarea::placeholder {
   color: var(--k2b-placeholder-color);
   opacity: 1;
-}
-
-.k2b-ui .k2b-chat-composer__drop {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  border-radius: var(--k2b-radius-control);
-  color: var(--k2b-ai-accent);
-  background: var(--k2b-ai-surface);
-  font-size: 0.75rem;
-  font-weight: 600;
-  pointer-events: none;
 }
 
 .k2b-ui .k2b-chat-composer__error {

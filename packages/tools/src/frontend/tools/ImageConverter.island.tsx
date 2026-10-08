@@ -1,11 +1,12 @@
 import { clipboard as browserClipboard, files as fileTools, type ImgData, images as imageTools } from "@k2b/stdlib/browser";
-import { dropzone, mutation } from "@k2b/stdlib/solid";
+import { mutation } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Button,
   Checkbox,
   ColorInput,
   DetailPanel,
+  FileDropTarget,
   FileDropzone,
   IconButton,
   NoticeCard,
@@ -161,8 +162,6 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
     }
     void loadMutation.mutate(files);
   };
-
-  const workspaceDropzone = dropzone.create({ accept: IMAGE_ACCEPT, onDrop: addFiles });
 
   const selectFiles = async () => {
     try {
@@ -325,11 +324,9 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
       <AppWorkspace.Main class="tools-main" scroll={false}>
         <section
           class="tools-image-converter relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--ui-surface)]"
-          data-dragging={workspaceDropzone.isDragging() ? "true" : undefined}
-          data-invalid-drag={workspaceDropzone.invalidDrag() ? "true" : undefined}
           aria-label={t().workspaceLabel}
-          {...workspaceDropzone.handlers}
         >
+          <FileDropTarget label={t().dropToAdd} accept={IMAGE_ACCEPT} onDrop={addFiles} />
           <header class="flex flex-none flex-wrap items-center justify-between gap-3 px-[var(--ui-space-shell)] py-[var(--ui-space-section)]">
             <div class="min-w-0">
               <h1 class="text-base font-semibold text-primary">{t().heading}</h1>
@@ -361,6 +358,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   subtitle={t().dropzoneSubtitle}
                   hint={t().dropzoneHint}
                   icon="ti ti-photo-plus"
+                  dropLabel={t().dropToAdd}
                   onDrop={addFiles}
                 />
               </div>
@@ -449,18 +447,6 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                 </For>
               </div>
             </ScrollArea>
-          </Show>
-
-          <Show when={workspaceDropzone.isDragging()}>
-            <div
-              class="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-[var(--ui-radius-surface)] border-2 border-dashed border-[var(--app-accent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,var(--ui-surface))]"
-              role="status"
-            >
-              <div class="flex flex-col items-center gap-2 text-center app-accent-text">
-                <i class={workspaceDropzone.invalidDrag() ? "ti ti-file-x text-3xl" : "ti ti-photo-plus text-3xl"} aria-hidden="true" />
-                <strong>{workspaceDropzone.invalidDrag() ? t().invalidDrag : t().dropToAdd}</strong>
-              </div>
-            </div>
           </Show>
         </section>
       </AppWorkspace.Main>

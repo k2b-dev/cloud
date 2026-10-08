@@ -6,6 +6,7 @@ import {
   ColorInput,
   DetailPanel,
   Dropdown,
+  FileDropTarget,
   IconButton,
   NoticeCard,
   NumberInput,
@@ -854,19 +855,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   };
 
   // ====================================
-  // Drag & Drop + Keyboard
+  // Keyboard
   // ====================================
-
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    const dropped = Array.from(e.dataTransfer?.files ?? []);
-    const files = dropped.filter((f) => f.type.startsWith("image/"));
-    if (dropped.length > 0 && files.length === 0) {
-      setError(t().dropImageFile);
-      return;
-    }
-    loadFiles(files);
-  };
 
   const isEditableTarget = (target: EventTarget | null) =>
     target instanceof HTMLElement &&
@@ -1007,13 +997,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   return (
     <>
       <AppWorkspace.Main class="tools-main" scroll={false}>
-        <div
-          class="flex min-h-0 min-w-0 flex-1 flex-col"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleDrop}
-          role="region"
-          aria-label={t().canvasLabel}
-        >
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col" role="region" aria-label={t().canvasLabel}>
+          <FileDropTarget label={t().dropToAdd} accept="image/*" onDrop={loadFiles} />
           <div
             ref={previewViewportRef}
             class="relative min-h-75 min-w-0 flex-1 overflow-auto bg-[var(--ui-surface)] p-[var(--ui-space-shell)]"

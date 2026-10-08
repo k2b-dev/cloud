@@ -78,6 +78,31 @@ A chosen file is a copy. `chooseFiles()` does not return where it came from,
 and later changes in the provider do not reach your copy. Keep one upload
 action: do not add a second "From Cloud" button next to it.
 
+### Take dropped files too
+
+Wherever your upload action lives, let people drop files from their computer
+on the same area. Render
+[`FileDropTarget`](/en/ui/input/file-drop-target) from `@k2b/ui` in the page,
+detail panel, or dialog and pass dropped files to the same upload path:
+
+```tsx
+import { FileDropTarget } from "@k2b/ui";
+
+<FileDropTarget
+  label={t().dropToAttach}
+  accept={ATTACHMENT_TYPES}
+  disabled={!canAttach()}
+  onDrop={(files) => void uploadAttachments(files)}
+/>;
+```
+
+The whole workspace main area, detail panel, or dialog around it becomes the
+target, never the sidebar, and a calm overlay says what dropping does. A more
+specific target inside, such as a folder row, wins under the pointer. While the
+chooser is open it takes dropped files itself, like files picked from this
+device, and the page behind it does not. Keep the upload button; dropping
+needs a pointer.
+
 ## Functions
 
 | Function | Kind | Input schema | Result schema | Stream | Files ID |

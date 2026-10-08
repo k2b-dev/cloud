@@ -24,6 +24,7 @@ export const documentMarkdownMessages = i18n.define({
       dropSubtitle: "PDF, Word, PowerPoint, spreadsheets, RTF, EPUB, or CSV",
       dropHint: "Maximum document size: 20 MB",
       dropAriaLabel: "Choose a document to convert to Markdown",
+      dropToConvert: "Drop to convert the document to Markdown",
       serverNotice:
         "The document is sent to this Cloud server for conversion. Neither the upload nor the Markdown result is stored by this tool.",
       convertingFile: ({ filename }: { filename: string }) => `Converting ${filename}…`,
@@ -56,6 +57,7 @@ export const documentMarkdownMessages = i18n.define({
       dropSubtitle: "PDF, Word, PowerPoint, Tabellen, RTF, EPUB oder CSV",
       dropHint: "Maximale Dokumentgröße: 20 MB",
       dropAriaLabel: "Dokument für die Konvertierung zu Markdown auswählen",
+      dropToConvert: "Ablegen, um das Dokument in Markdown umzuwandeln",
       serverNotice:
         "Das Dokument wird zur Konvertierung an diesen Cloud-Server gesendet. Das Werkzeug speichert weder den Upload noch das Markdown-Ergebnis.",
       convertingFile: ({ filename }) => `${filename} wird konvertiert…`,

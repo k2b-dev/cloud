@@ -29,6 +29,7 @@ import from another application.
 | Add resources to global search | Universal Search Query | `@k2b/cloud/contracts` | [Universal search](/en/docs/platform/search) |
 | Let a user choose a Cloud resource | `openCloudResourcePicker()` | `@k2b/cloud/browser/resource-picker` | [Universal search](/en/docs/platform/search#let-a-user-choose-a-cloud-resource) |
 | Let a user add files from the device or Cloud apps | `chooseFiles()` | `@k2b/cloud/browser/files` | [File providers](/en/docs/platform/file-providers#add-files-from-providers) |
+| Let a user drop files onto a page, panel, or dialog | `FileDropTarget` | `@k2b/ui` | [Take dropped files too](/en/docs/platform/file-providers#take-dropped-files-too) |
 | Add a dashboard summary | Widget declaration and response contract | `@k2b/cloud`, `@k2b/cloud/contracts` | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |
 | Add product guidance | Help collection | `@k2b/cloud/server` | [In-product Help](/en/docs/platform/help) |
 | Render documents | Template and PDF services | `@k2b/cloud/services` | [PDF and templates](/en/docs/platform/pdf-and-templates) |

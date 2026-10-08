@@ -348,6 +348,27 @@ function directoryEntry(name: string, children: FileSystemEntry[]): FileSystemEn
   } as FileSystemDirectoryEntry;
 }
 
+test("files dropped on a folder row upload into that folder, and dropped anywhere else into the open one", async () => {
+  const folder = { name: "Invoices", path: "Documents/Invoices", directory: true, size: 0, modified: "2026-09-18T00:00:00Z" };
+  const dom = await mountBrowser(() => ({ ...initial, items: [folder] }));
+  await flush();
+  const drop = (target: Element, name: string) => {
+    const dropped = new File(["report"], name, { type: "text/plain" });
+    const event = new dom.window.Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: { items: [], files: [dropped], types: ["Files"] } });
+    target.dispatchEvent(event);
+  };
+  const row = [...dom.root.querySelectorAll(".filesv2-list__row")].find((element) => element.textContent?.includes("Invoices"))!;
+  drop(row, "march.txt");
+  await flush();
+  drop(dom.root.querySelector(".filesv2-browser__header")!, "notes-2.txt");
+  await flush();
+  expect(calls.filter((call) => call.startsWith("open"))).toEqual([
+    "open Documents/Invoices/march.txt 6 error",
+    "open Documents/notes-2.txt 6 error",
+  ]);
+});
+
 test("a dropped folder skips Windows and macOS system entries, including everything under a system folder", async () => {
   const dom = await mountBrowser();
   const entries = [

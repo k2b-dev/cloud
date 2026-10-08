@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { FileDropTarget } from "../inputs/FileDropTarget";
 import { SelectChip } from "../inputs/SelectChip";
 import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
@@ -115,7 +116,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const messages = useUiMessages();
   const commandListId = `k2b-chat-commands-${createUniqueId().replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const [selectedCommandIndex, setSelectedCommandIndex] = createSignal(0);
-  const [dragActive, setDragActive] = createSignal(false);
   const [addingFiles, setAddingFiles] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   let composerRef: HTMLElement | undefined;
@@ -538,7 +538,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         ref={composerRef}
         class={`k2b-chat-composer ${props.class ?? ""}`}
         data-running={running() ? "true" : undefined}
-        data-drag-active={dragActive() ? "true" : undefined}
         role="group"
         aria-label={props.label ?? messages().messageComposer}
       >
@@ -614,35 +613,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           </div>
         </Show>
 
-        <div
-          class="k2b-chat-composer__input"
-          role="group"
-          aria-label={messages().messageInput}
-          onDragEnter={(event) => {
-            if (!canSelectFiles() || !event.dataTransfer?.types.includes("Files")) return;
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragOver={(event) => {
-            if (!canSelectFiles() || !event.dataTransfer?.types.includes("Files")) return;
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
-          }}
-          onDrop={(event) => {
-            if (!event.dataTransfer?.types.includes("Files")) return;
-            event.preventDefault();
-            setDragActive(false);
-            if (canSelectFiles() && event.dataTransfer.files.length) void runFiles(event.dataTransfer.files);
-          }}
-        >
-          <Show when={dragActive()}>
-            <div class="k2b-chat-composer__drop" aria-hidden="true">
-              {messages().dropFilesToAttach}
-            </div>
-          </Show>
+        <div class="k2b-chat-composer__input" role="group" aria-label={messages().messageInput}>
           <Show when={mentions().length > 0}>
             <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
               <For each={chatMentionSegments(props.value, mentions())}>
@@ -841,6 +812,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             {(content) => content()}
           </Show>
         </footer>
+        {/* Files dropped anywhere in the surrounding workspace area attach to the message. */}
+        <Show when={props.fileSelection}>
+          {(selection) => (
+            <FileDropTarget
+              label={messages().dropFilesToAttach}
+              accept={selection().accept}
+              multiple={selection().multiple}
+              disabled={!canSelectFiles()}
+              onDrop={(files) => void runFiles(files)}
+            />
+          )}
+        </Show>
       </section>
     </div>
   );

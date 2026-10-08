@@ -2,13 +2,14 @@ import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { dropzone, mutation as mutations, query, timed } from "@k2b/stdlib/solid";
+import { mutation as mutations, query, timed } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
   type Completion,
   Dropdown,
   type DropdownItem,
+  FileDropTarget,
   IconButton,
   isPanesItemVisible,
   NoticeCard,
@@ -333,12 +334,7 @@ export default function MailComposer(props: {
     const files = await chooseFiles({ multiple: true, maxBytes: MAX_DRAFT_ATTACHMENT_BYTES });
     if (files.length > 0 && editable() && !disposed) void attachments.addFiles(files);
   };
-  const attachmentDropzone = dropzone.create({
-    onDrop: (files) => {
-      if (!editable() || files.length === 0) return;
-      void attachments.addFiles(files);
-    },
-  });
+  const [surface, setSurface] = createSignal<HTMLDivElement>();
 
   const addCalendarInvitation = async () => {
     if (!editable() || !props.calendarIntegrationAvailable)
@@ -1134,18 +1130,16 @@ export default function MailComposer(props: {
   ]);
 
   return (
-    <div class="mail-composer-surface relative h-full min-w-0 overflow-hidden" {...attachmentDropzone.handlers}>
-      <Show when={editable() && attachmentDropzone.isDragging()}>
-        <div
-          class="pointer-events-none absolute inset-2 z-50 flex items-center justify-center rounded-[var(--ui-radius-surface)] border-2 border-dashed border-[var(--ui-accent)] bg-[color-mix(in_srgb,var(--ui-surface)_88%,transparent)]"
-          role="status"
-        >
-          <div class="flex items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-4 py-3 text-sm font-medium text-primary shadow-lg">
-            <i class="ti ti-paperclip text-[var(--ui-accent)]" aria-hidden="true" />
-            {t().dropFiles}
-          </div>
-        </div>
-      </Show>
+    <div ref={setSurface} class="mail-composer-surface relative h-full min-w-0 overflow-hidden">
+      {/* The composer is a page or a popout window of its own; either way, all of it takes attachments. */}
+      <FileDropTarget
+        for={surface()}
+        label={t().dropFiles}
+        disabled={!editable()}
+        onDrop={(files) => {
+          if (files.length > 0 && !disposed) void attachments.addFiles(files);
+        }}
+      />
       <Show when={!props.popout}>
         <header class="flex shrink-0 items-center gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
           <Tooltip.Anchor content={t().backToMailbox}>
