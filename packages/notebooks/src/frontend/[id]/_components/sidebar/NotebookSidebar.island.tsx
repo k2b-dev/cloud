@@ -24,7 +24,7 @@ import {
   setNavigationHidden,
 } from "./navigation-visibility";
 import TagsButton, { openTagsModal } from "./TagsButton";
-import { type NoteTreeSort, sortNoteTree } from "./tree-utils";
+import { homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NotebookContext, NoteTreeNode } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
@@ -63,7 +63,8 @@ export default function NotebookSidebar(props: Props) {
   const canDeleteOrLockNotes = () => mayDeleteOrLockNotes(props.ctx.permission, notebook().noteDeletePermission);
   const navigatorMode = () => props.ctx.settings.sidebarMode === "navigator";
   const [treeSort, setTreeSort] = createSignal<NoteTreeSort>(props.ctx.settings.treeSort);
-  const sortedTree = createMemo(() => sortNoteTree(noteTree(), treeSort()));
+  // Like the start page of a Book, the homepage leads its own level whatever the sort order.
+  const sortedTree = createMemo(() => homepageFirst(sortNoteTree(noteTree(), treeSort()), notebook().homepageNoteId));
   const treeSortOptions = () => [
     { value: "title" as const, label: t().nameSort },
     { value: "updated" as const, label: t().updatedSort },
@@ -121,6 +122,7 @@ export default function NotebookSidebar(props: Props) {
       showHeaderActions={false}
       favoriteNoteIds={[...favoriteNoteIds()]}
       presentationMode={props.ctx.presentationMode}
+      homepageId={notebook().homepageNoteId}
     />
   );
 
@@ -131,7 +133,8 @@ export default function NotebookSidebar(props: Props) {
   const noteEntry = (node: NoteTreeNode): NavigationItem => ({
     id: `note:${node.id}`,
     label: node.title || t().untitled,
-    icon: node.lockedAt ? "ti ti-lock" : "ti ti-file-text",
+    icon: node.id === notebook().homepageNoteId ? "ti ti-home" : node.lockedAt ? "ti ti-lock" : "ti ti-file-text",
+    iconLabel: node.id === notebook().homepageNoteId ? t().homepage : undefined,
     href: buildNoteUrl(notebook().id, node.id, props.ctx.presentationMode),
     active: selectedNoteId() === node.id,
     children: node.children.map(noteEntry),

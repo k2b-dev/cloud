@@ -31,6 +31,8 @@ type Props = {
   showHeaderActions?: boolean;
   favoriteNoteIds?: string[];
   presentationMode?: PresentationMode;
+  /** The notebook's homepage, shown with a home icon instead of the note icon. */
+  homepageId?: string | null;
 };
 
 // =============================================================================
@@ -317,6 +319,7 @@ function NoteTreeItems(props: {
   nodes: NoteTreeNode[];
   notebookId: string;
   presentationMode?: PresentationMode;
+  homepageId: string | null;
   canWrite: boolean;
   canDeleteOrLockNotes: boolean;
   actions: ReturnType<typeof useNoteActions>;
@@ -341,7 +344,8 @@ function NoteTreeItems(props: {
                 </Show>
               </span>
             }
-            icon="ti ti-file-text"
+            icon={node.id === props.homepageId ? "ti ti-home" : "ti ti-file-text"}
+            iconLabel={node.id === props.homepageId ? t().homepage : undefined}
             href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
             navigation="document"
             actions={
@@ -388,6 +392,7 @@ function NoteTreeItems(props: {
               nodes={node.children}
               notebookId={props.notebookId}
               presentationMode={props.presentationMode}
+              homepageId={props.homepageId}
               canWrite={props.canWrite}
               canDeleteOrLockNotes={props.canDeleteOrLockNotes}
               actions={props.actions}
@@ -470,6 +475,7 @@ export default function NoteTree(props: Props) {
               nodes={props.tree}
               notebookId={props.notebookId}
               presentationMode={props.presentationMode}
+              homepageId={props.homepageId ?? null}
               canWrite={props.canWrite ?? false}
               canDeleteOrLockNotes={props.canDeleteOrLockNotes ?? false}
               actions={actions}

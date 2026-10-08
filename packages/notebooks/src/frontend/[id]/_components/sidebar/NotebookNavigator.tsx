@@ -12,7 +12,7 @@ import SearchButton from "../search/SearchButton";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { type NotebookSettings, writeSettings } from "../settings/NotebookSettingsStore";
 import { noteActionItems, useNoteActions } from "./NoteTree";
-import { flattenTree } from "./tree-utils";
+import { flattenTree, homepageFirst } from "./tree-utils";
 import type { Notebook, NoteTreeNode, TagSummary } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
 
@@ -129,7 +129,7 @@ const expandedNavigationIds = (nodes: NoteTreeNode[]): string[] => [
     .map((note) => noteTreeId(note.id)),
 ];
 
-const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; onSelect: (id: string) => void }) => {
+const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; homepageId: string | null; onSelect: (id: string) => void }) => {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
@@ -138,10 +138,11 @@ const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; onSelect: (id: stri
         <AppWorkspace.NavTree.Item
           id={noteTreeId(note.id)}
           label={note.title || t().untitled}
-          icon="ti ti-folder"
+          icon={note.id === props.homepageId ? "ti ti-home" : "ti ti-folder"}
+          iconLabel={note.id === props.homepageId ? t().homepage : undefined}
           onSelect={() => props.onSelect(note.id)}
         >
-          <NoteNavigationItems nodes={note.children} onSelect={props.onSelect} />
+          <NoteNavigationItems nodes={note.children} homepageId={props.homepageId} onSelect={props.onSelect} />
         </AppWorkspace.NavTree.Item>
       )}
     </For>
@@ -177,14 +178,10 @@ export default function NotebookNavigator(props: Props) {
 
   const allNotes = createMemo(() => flattenTree(props.tree));
   const notesById = createMemo(() => new Map(allNotes().map((note) => [note.id, note])));
-  const branchTree = createMemo(() => branchNodes(props.tree));
+  const branchTree = createMemo(() => branchNodes(homepageFirst(props.tree, props.notebook.homepageNoteId)));
   const [expandedTreeIds, setExpandedTreeIds] = createSignal<readonly string[]>(expandedNavigationIds(branchTree()));
   const homepageNote = createMemo(() => (props.notebook.homepageNoteId ? (notesById().get(props.notebook.homepageNoteId) ?? null) : null));
   const selectedRoot = () => selection().root;
-  const selectedNoteRootId = () => {
-    const current = selection();
-    return current.root === "notes" ? current.noteId : null;
-  };
   const selectedNavigationId = () => {
     const current = selection();
     if (current.root === "notes") return current.noteId ? noteTreeId(current.noteId) : "notes";
@@ -215,9 +212,10 @@ export default function NotebookNavigator(props: Props) {
     return [...notes].sort(compareNotes(sortMode()));
   });
 
-  // Top-level notes without sub-notes have no folder, so the tree lists them after the folders; the homepage has its own entry.
+  // Top-level notes without sub-notes have no folder, so the tree lists them after the folders. The homepage leads its own level.
+  const homepageLeaf = createMemo(() => props.tree.find((note) => note.id === homepageNote()?.id && note.children.length === 0) ?? null);
   const rootLeafNotes = createMemo(() =>
-    props.tree.filter((note) => note.children.length === 0 && note.id !== homepageNote()?.id).sort(compareNotes(sortMode())),
+    props.tree.filter((note) => note.children.length === 0 && note !== homepageLeaf()).sort(compareNotes(sortMode())),
   );
 
   const pinnedNote = createMemo(() => {
@@ -330,7 +328,22 @@ export default function NotebookNavigator(props: Props) {
               icon="ti ti-folder"
               onSelect={() => select({ root: "notes", noteId: null })}
             >
-              <NoteNavigationItems nodes={branchTree()} onSelect={(noteId) => select({ root: "notes", noteId })} />
+              <Show when={homepageLeaf()}>
+                {(home) => (
+                  <AppWorkspace.NavTree.Item
+                    id={noteTreeId(home().id)}
+                    label={home().title || t().untitled}
+                    icon="ti ti-home"
+                    iconLabel={t().homepage}
+                    onSelect={() => openNote(home())}
+                  />
+                )}
+              </Show>
+              <NoteNavigationItems
+                nodes={branchTree()}
+                homepageId={homepageNote()?.id ?? null}
+                onSelect={(noteId) => select({ root: "notes", noteId })}
+              />
               <For each={rootLeafNotes()}>
                 {(note) => (
                   <AppWorkspace.NavTree.Item
@@ -407,6 +420,7 @@ export default function NotebookNavigator(props: Props) {
             <Show when={pinnedNote()}>
               {(note) => {
                 const active = () => note().id === activeNoteId();
+                const home = () => note().id === homepageNote()?.id;
                 return (
                   <div class={noteCardClass(active())} style={{ "border-color": active() ? "var(--ui-app-accent-border)" : undefined }}>
                     <a
@@ -420,9 +434,12 @@ export default function NotebookNavigator(props: Props) {
                     >
                       <div class="min-w-0">
                         <p class="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-primary">
-                          <i
-                            class={`ti ${selectedNoteRootId() ? "ti-folder" : "ti-home"} shrink-0 text-sm text-zinc-500 dark:text-zinc-400`}
-                          />
+                          <Show
+                            when={home()}
+                            fallback={<i class="ti ti-folder shrink-0 text-sm text-zinc-500 dark:text-zinc-400" aria-hidden="true" />}
+                          >
+                            <i class="ti ti-home shrink-0 text-sm text-zinc-500 dark:text-zinc-400" role="img" aria-label={t().homepage} />
+                          </Show>
                           <span class={`min-w-0 truncate ${active() ? "app-accent-text" : "text-dimmed dark:text-primary"}`}>
                             {note().title || t().untitled}
                           </span>

@@ -14,6 +14,7 @@ Ein Notizbuch ist ein gemeinsamer Arbeitsbereich. Eine Notiz ist sein Markdown-Q
 - **Notizbuch:** Ein Arbeitsbereich mit Notizen, Anhängen, Einstellungen, Berechtigungen und Exporten. Seine unveränderliche sechsstellige ID erscheint in URLs und APIs.
 - **Notiz:** Ein Markdown-Dokument mit Text, Aufgaben, Links, Tabellen, Daten und Anhängen. Seine unveränderliche sechsstellige ID erscheint in URLs und Notizlinks.
 - **Notizbaum:** Notizen können übergeordnete Notizen haben. Navigation und Abfragen können diese Hierarchie nutzen.
+- **Startseite:** Die als Startseite gewählte Notiz steht in der Seitenleiste vor den anderen Notizen ihrer Ebene und zeigt ein Haus-Symbol. Du legst sie unter **Notizbuch – Allgemein** fest.
 - **Tag:** Ein #tag im Notiztext gruppiert Notizen für Suche, Tagseiten und Abfragen.
 - **Anhang:** Eine ins Notizbuch hochgeladene Datei, die mit attach://shortId referenziert wird.
 - **Benannter Block:** Schreibe @name direkt über eine Tabelle, Liste, einen Datenblock oder Abschnitt, um ihm einen stabilen Namen zu geben.
