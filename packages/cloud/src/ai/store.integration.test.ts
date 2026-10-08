@@ -1,5 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
-import type { LoopAggregate, Message } from "@k2b/nessi";
+import { type LoopAggregate, type Message, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
 import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
@@ -56,6 +56,47 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("signed and redacted assistant messages round-trip through Postgres into the next provider request", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const message: Message = {
+      role: "assistant",
+      provider: "anthropic",
+      model: "fixture",
+      stopReason: "stop",
+      content: [
+        { type: "thinking", thinking: "Plan", signature: "signature" },
+        { type: "thinking", thinking: "", redacted: "encrypted", details: [{ type: "reasoning.encrypted", data: "opaque" }] },
+        { type: "text", text: "Answer", signature: "text-signature" },
+      ],
+    };
+    const requests: ProviderRequest[] = [];
+    const provider: Provider = {
+      name: "anthropic",
+      family: "anthropic",
+      model: "fixture",
+      capabilities: { streaming: true, tools: false, images: false, thinking: true, usage: true },
+      complete: async () => {
+        throw new Error("Unexpected completion");
+      },
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+      },
+    };
+    try {
+      const store = aiConversations.createSessionStore({ conversationId: chat.id });
+      await store.append(message);
+      expect((await store.load())[0]?.message).toEqual(message);
+      for await (const _event of nessi({ systemPrompt: "Test", store, provider, input: "Continue" })) {
+      }
+      expect(requests[0]?.messages[0]).toEqual(message);
+      expect((await store.load())[0]?.message).toEqual(message);
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
+
   test("an interactive turn defers new background results without losing or compacting them", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

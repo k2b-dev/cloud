@@ -1,5 +1,5 @@
 import { expect, setSystemTime, spyOn, test } from "bun:test";
-import type { Provider, ProviderEvent } from "@k2b/nessi";
+import { type LoopAggregate, memoryStore, nessi, type Provider, type ProviderEvent } from "@k2b/nessi";
 import {
   AiBackgroundAdmissionError,
   AiBackgroundCostError,
@@ -296,3 +296,72 @@ test("a thrown provider error keeps its message and the timing of the first visi
   await complete.wrap().complete(request);
   expect(complete.booked[0]).toMatchObject({ status: "failed", details: { error: "The provider finished with error." } });
 });
+
+test("a provider-stopped stream records a failure detail while preserving measured usage once", async () => {
+  const f = fixture([event, { ...event, finishReason: "error" }]);
+  await drain(f.wrap());
+  expect(f.booked).toHaveLength(1);
+  expect(f.booked[0]).toMatchObject({
+    usage: { input: 8, output: 2 },
+    status: "failed",
+    details: { error: "The provider finished with error." },
+  });
+});
+
+for (const ending of ["provider_stop", "provider_error", "abort"] as const)
+  test(`${ending}: a real loop accounts reported failed-turn usage exactly once`, async () => {
+    const controller = new AbortController();
+    const f = fixture([]);
+    f.provider.stream = async function* () {
+      yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
+      yield { type: "block_end", blockId: "text", index: 0, block: { type: "text", text: "Partial" } };
+      yield {
+        type: "usage",
+        usage: { input: 8, output: 2, total: 10, creditsUsed: 3 },
+        finishReason: ending === "provider_stop" ? "error" : undefined,
+      };
+      if (ending === "provider_error")
+        yield { type: "issue", issue: { kind: "provider_error", retryable: false, message: "connection lost" } };
+      if (ending === "abort") {
+        controller.abort();
+        controller.signal.throwIfAborted();
+      }
+    };
+    const deductions: number[] = [];
+    const store = memoryStore();
+    let aggregate: LoopAggregate | undefined;
+    let turnEnds = 0;
+    let reason: string | undefined;
+    for await (const event of nessi({
+      systemPrompt: "Test",
+      provider: f.wrap(),
+      store,
+      input: "Hello",
+      signal: controller.signal,
+      creditStore: {
+        remaining: async () => 100,
+        deduct: async (value) => {
+          deductions.push(value);
+        },
+      },
+    })) {
+      if (event.type === "turn_end") {
+        turnEnds++;
+        expect(event.message.stopReason).toBe(ending === "abort" ? "interrupted" : "error");
+      }
+      if (event.type === "loop_end") {
+        aggregate = event.aggregate;
+        reason = event.reason;
+      }
+    }
+    expect(turnEnds).toBe(1);
+    expect(reason).toBe(ending === "abort" ? "aborted" : "error");
+    expect(aggregate?.usage).toEqual({ input: 8, output: 2, total: 10, creditsUsed: 3 });
+    expect(aggregate?.assistantMessageCount).toBe(1);
+    expect(deductions).toEqual([3]);
+    expect(f.booked).toHaveLength(1);
+    expect(f.booked[0]).toMatchObject({ usage: { input: 8, output: 2 }, status: ending === "abort" ? "aborted" : "failed" });
+    const history = await store.load();
+    expect(history.filter((entry) => entry.message.role === "assistant")).toHaveLength(1);
+    expect(history.at(-1)?.message).toMatchObject({ stopReason: ending === "abort" ? "interrupted" : "error" });
+  });

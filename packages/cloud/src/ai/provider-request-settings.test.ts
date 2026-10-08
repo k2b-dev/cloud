@@ -35,13 +35,14 @@ const streaming = (provider: AiProviderId) => {
   return 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n';
 };
 const expectedThinking = (provider: AiProviderId, disabled = false) => {
-  if (provider === "anthropic") return disabled ? {} : { thinking: { type: "adaptive" }, output_config: { effort: "medium" } };
+  if (provider === "anthropic")
+    return disabled ? { thinking: { type: "disabled" } } : { thinking: { type: "adaptive" }, output_config: { effort: "medium" } };
   if (provider === "gemini")
     return { generationConfig: { thinkingConfig: disabled ? { thinkingBudget: 0 } : { thinkingLevel: "medium" } } };
-  if (provider === "ollama") return disabled ? {} : { think: "medium" };
-  if (provider === "mistral") return disabled ? {} : { reasoning_effort: "medium" };
-  if (provider === "openrouter" && !disabled) return { reasoning: { effort: "medium" } };
-  return { reasoning_effort: disabled ? "low" : "medium" };
+  if (provider === "ollama") return disabled ? { think: false } : { think: "medium" };
+  if (provider === "mistral") return { reasoning_effort: disabled ? "none" : "medium" };
+  if (provider === "openrouter") return { reasoning: { effort: disabled ? "none" : "medium" } };
+  return { reasoning_effort: disabled ? "none" : "medium" };
 };
 
 for (const providerId of providers)
@@ -114,15 +115,10 @@ for (const providerId of providers)
       provider: counted,
       input: "title",
       output: z.object({ answer: z.string() }),
-      disableReasoning: true,
+      reasoningEffort: "none",
     });
     expect(requests[1]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
-    expect(requests[1]!.body.reasoning).toBeUndefined();
-    if (["anthropic", "mistral", "ollama"].includes(providerId)) {
-      expect(requests[1]!.body.reasoning_effort).toBeUndefined();
-      expect(requests[1]!.body.think).toBeUndefined();
-      expect(requests[1]!.body.thinking).toBeUndefined();
-    }
+
     const compactMessages = spyOn(aiConversations, "compactMessages").mockResolvedValue(undefined);
     const recordStructuredRun = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
     const entries: StoreEntry[] = Array.from({ length: 8 }, (_, i) => ({
@@ -155,12 +151,6 @@ for (const providerId of providers)
     expect(requests[2]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
     if (providerId === "vllm" || providerId === "openai-compatible") {
       for (const request of requests) expect(request.headers.get("X-Secret")).toBe("header-secret");
-    }
-    expect(requests[2]!.body.reasoning).toBeUndefined();
-    if (["anthropic", "mistral", "ollama"].includes(providerId)) {
-      expect(requests[2]!.body.reasoning_effort).toBeUndefined();
-      expect(requests[2]!.body.think).toBeUndefined();
-      expect(requests[2]!.body.thinking).toBeUndefined();
     }
     await createAiProvider({ ...profile, reasoningEffort: undefined, extraBody: undefined }, "api-key").complete({ messages: [] });
     const defaultBody = requests[3]!.body;

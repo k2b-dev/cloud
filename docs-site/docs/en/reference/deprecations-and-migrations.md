@@ -10,6 +10,31 @@ updated: 2026-10-08
 
 # Deprecations and migrations
 
+## AI provider behavior with Nessi 0.17
+
+Review AI model output limits and budgets when upgrading:
+
+- Anthropic defaults to 8,192 output tokens, including thinking, unless the
+  profile or call sets an explicit limit. Budget reservations use that default.
+- Gemini output usage includes thinking tokens, so reported reference costs
+  and budget consumption can exceed visible-answer token counts.
+- Failed and aborted turns retain already-reported usage. Each provider request
+  is charged once, and its loop aggregate includes that usage for display.
+- Provider-stopped answers, including refusals and content filters, end as
+  failed turns. Their tool calls never run or resume. The chat asks the user to
+  adjust the request and does not offer **Continue**.
+- Structured tasks and compaction now request `reasoningEffort: "none"` for all
+  providers. The deprecated `disableReasoning` flag previously meant `low` for
+  OpenAI-compatible providers and was ignored by several other adapters.
+  Select models that support `none`; unsupported levels return provider errors.
+- An Ollama profile with `contextWindow` now sends it as `num_ctx`, so Ollama
+  allocates that window instead of its memory-dependent default. Check that the
+  server has memory for it, or clear the field.
+
+See [Models and providers](/en/docs/ai/models-and-providers#set-the-thinking-level),
+[Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns), and
+[Usage and feedback](/en/docs/ai/usage-and-feedback#read-the-report).
+
 ## Notebooks levels keep title order until arranged by hand
 
 Writers can now arrange the notes of a level in Notebooks; the sidebar, Book,

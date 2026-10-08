@@ -222,8 +222,20 @@ describe("describeResponseEnd", () => {
       "Abgeschlossen · Maximale Antwortlänge erreicht",
     );
     expect(describeResponseEnd({ loopDoneReason: null, stopReason: "stop" }, "en")).toBe("Completed");
-    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "content_filter" }, "en")).toBe("Completed · content_filter");
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "content_filter" }, "en")).toBe("Stopped by the model provider");
     expect(describeResponseEnd({ loopDoneReason: null, stopReason: "toString" }, "en")).toBe("toString");
     expect(describeResponseEnd({ loopDoneReason: null, stopReason: null }, "de")).toBe("Unbekannt");
   });
+});
+
+test("a failed or interrupted message never describes itself as Completed", () => {
+  for (const [locale, failed, interrupted, providerStopped] of [
+    ["en", "Failed", "Interrupted", "Stopped by the model provider"],
+    ["de", "Fehlgeschlagen", "Unterbrochen", "Vom KI-Anbieter gestoppt"],
+  ]) {
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "error" }, locale!)).toBe(failed!);
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "interrupted" }, locale!)).toBe(interrupted!);
+    for (const stopReason of ["content_filter", "refusal"])
+      expect(describeResponseEnd({ loopDoneReason: "error", stopReason }, locale!)).toBe(`${failed} · ${providerStopped}`);
+  }
 });

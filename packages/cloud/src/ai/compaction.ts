@@ -3,6 +3,7 @@ import { truncateMiddle } from "@k2b/nessi";
 import { aiConversations } from "./store";
 import { safelyRecordStructuredRun } from "./structured-runs";
 import { buildAiTaskPrompt } from "./task-prompt";
+import { AiTurnFailure } from "./turn-failure";
 
 /**
  * Structured handoff prompt, modeled on the compaction prompts of the big
@@ -165,7 +166,16 @@ export const createCloudCompactFn = (input: {
           tools: [],
           maxOutputTokens: input.maxOutputTokens,
           signal: input.signal,
-          disableReasoning: true,
+          reasoningEffort: "none",
+        })
+        .then((result) => {
+          if (result.finishReason === "error" || result.finishReason === "interrupted" || result.finishReason === "aborted") {
+            throw new AiTurnFailure(
+              result.finishReason === "error" ? "provider_stopped" : "interrupted",
+              `AI compaction ended with ${result.finishReason}.`,
+            );
+          }
+          return result;
         })
         .catch(async (error: unknown) => {
           await safelyRecordStructuredRun({

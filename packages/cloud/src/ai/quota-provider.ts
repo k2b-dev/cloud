@@ -170,7 +170,10 @@ export function inferenceProvider(
           )
             usage = { input: 0, output: 0 };
           if (event.type === "usage") {
-            if (event.finishReason === "aborted" || event.finishReason === "interrupted" || event.finishReason === "error") failed = true;
+            if (event.finishReason === "aborted" || event.finishReason === "interrupted" || event.finishReason === "error") {
+              failed = true;
+              error ??= `The provider finished with ${event.finishReason}.`;
+            }
             const { input, output } = event.usage;
             // Some adapters synthesize all-zero usage when the endpoint reports none.
             if (Number.isSafeInteger(input) && Number.isSafeInteger(output) && input >= 0 && output >= 0 && input + output > 0)

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
-import { hasCompleteSentence, layoutAiTurn, waitsForUser } from "./turn-layout";
+import { hasCompleteSentence, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -222,4 +222,11 @@ describe("turn layout", () => {
     const layout = layoutAiTurn([text("t1", "Reading."), tool("read", "read_file", { status: "running" })], { phase: "running" });
     expect(layout.current?.id).toBe("tool-read");
   });
+});
+
+test("partial failed and interrupted history cannot become a completed answer without a loop ending", () => {
+  expect(storedPhase([{ loopDoneReason: null, stopReason: "error" }])).toBe("failed");
+  expect(storedPhase([{ loopDoneReason: "stop", stopReason: "content_filter" }])).toBe("failed");
+  expect(storedPhase([{ loopDoneReason: null, stopReason: "interrupted" }])).toBe("stopped");
+  expect(storedPhase([{ loopDoneReason: "error", stopReason: "interrupted" }])).toBe("failed");
 });

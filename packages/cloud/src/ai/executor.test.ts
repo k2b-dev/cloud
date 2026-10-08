@@ -1,10 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import type { OutboundEvent } from "@k2b/nessi";
+import type { NessiLoop, OutboundEvent } from "@k2b/nessi";
+import type { CapabilityActionReview } from "../contracts/capabilities";
 import { aiTurnAllowsRememberedApprovals } from "./approvals";
-import { __aiExecutorTest } from "./executor";
+import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
+import { prepareAiTools } from "./tools";
 
 const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
@@ -668,3 +670,102 @@ describe("saved live state", () => {
     }
   });
 });
+
+for (const stopReason of ["error", "interrupted", "aborted"] as const)
+  test(`a ${stopReason} answer never counts as an issued or completed tool round`, () => {
+    const message = {
+      role: "assistant" as const,
+      stopReason,
+      content: [{ type: "tool_call" as const, id: "call", name: "send", args: {} }],
+    };
+    const entry = {
+      id: "m",
+      shortId: "m",
+      conversationId: "c",
+      seq: 1,
+      kind: "message" as const,
+      message,
+      loopId: "t",
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta: null,
+      createdAt: new Date(0).toISOString(),
+    };
+    expect(__aiExecutorTest.toolRoundState([entry])).toEqual({ issued: 0, completed: 0 });
+    expect(
+      __aiExecutorTest.toolRoundState([
+        entry,
+        {
+          ...entry,
+          seq: 2,
+          message: {
+            role: "tool_result",
+            callId: "call",
+            name: "send",
+            result: "interrupted",
+            isError: true,
+          },
+        },
+      ]),
+    ).toEqual({ issued: 0, completed: 0 });
+  });
+
+for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as const)
+  test(`executor handles ${stopReason} turn_end without counting unexecuted calls as completed rounds`, async () => {
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 1000, enqueueContinuation: async () => {} });
+    executor["startHeartbeat"] = () => () => {};
+    const pipeline = new __aiExecutorTest.StreamPipeline({
+      conversationId: "chat",
+      turnId: "turn",
+      attempt: 1,
+      startSeq: 0,
+      leaseOwner: "worker",
+      seedBlocks: [],
+      allowRememberedApprovals: false,
+    });
+    pipeline.apply = async () => {};
+    pipeline.flush = async () => {};
+    pipeline.timing.event = async () => {};
+    const loop: NessiLoop = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          ...turn,
+          type: "turn_end",
+          message: { role: "assistant", stopReason, content: [{ type: "tool_call", id: "call", name: "send", args: {} }] },
+        };
+      },
+      subscribe: () => () => {},
+      push: () => {},
+      steer: () => {},
+      abort: () => {},
+    };
+    let rounds = 0;
+    const input = {
+      loop,
+      pipeline,
+      conversationId: "chat",
+      turnId: "turn",
+      abortController: new AbortController(),
+      prepared: prepareAiTools({ tools: [] }),
+      allowRememberedApprovals: false,
+      rememberableCapabilityApprovals: new Map<string, string>(),
+      capabilityActionReviews: new Map<string, CapabilityActionReview>(),
+      appliedSteers: [],
+      noteToolRound: () => {
+        rounds++;
+      },
+      noteToolCall: () => {},
+      failureReason: { current: null },
+    };
+    await executor["driveChatLoop"](input);
+    expect(rounds).toBe(stopReason === "tool_use" ? 1 : 0);
+    rounds = 0;
+    input.abortController.abort();
+    await executor["driveChatLoop"](input);
+    expect(rounds).toBe(0);
+  });

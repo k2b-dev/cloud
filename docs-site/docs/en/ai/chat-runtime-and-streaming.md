@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Chat runtime and streaming
@@ -605,12 +605,28 @@ before its tools finish, without rendering a second copy of the active response.
 
 ### Failed turns
 
+Truncated streams and provider failures end with `loop_end` reason `error`.
+A provider that stops an answer itself also ends the turn as failed; its tool
+calls are never executed, including on a later resume. The chat explains this
+as `provider_stopped` in English or German and offers no **Continue** action.
+Adjust the request before trying again.
+
+Each model `turn_start` has one `turn_end`, including errors and cancellation.
+`turn_end` carries the partial assistant message with `stopReason: "error"` or
+`"interrupted"` when generation failed or was stopped. It does not mean that
+an answer succeeded or its tool calls ran. Partial content stays in history,
+except for a context-overflow attempt that compaction may retry. A failed or
+interrupted compaction response never replaces the existing context. The chat shows
+failed or interrupted content accordingly and keeps calls that never ran as
+not run. Leaving the loop iteration early aborts the loop.
+
 A failed turn records why as `meta.turnError` on the last message of its loop,
 which is the user's own message when the model never answered. The code is
 stable and never translated; clients word it in their reader's language:
 
 | `code` | Meaning | A new message can continue |
 | --- | --- | --- |
+| `provider_stopped` | The provider stopped the answer, such as a refusal or a content filter; adjust the request | no |
 | `model_unavailable` | The model service failed or timed out, also after its retries | yes |
 | `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |
 | `context_full` | The chat no longer fits the model, also after compaction | no |
@@ -634,6 +650,12 @@ goes only to the error log entry `AI turn failed` under `ai:executor`, beside
 the `code`, and a provider call's message also stays on its
 [usage record](/en/docs/ai/usage-and-feedback#read-the-report). A stop records
 no reason.
+
+Provider history preserves each complete assistant message, including its
+producing `provider` and reasoning blocks' `signature`, `redacted`, and `details`.
+Those fields remain unchanged through tool-result repair and in the recent
+context retained by compaction. Display and enrichment projections do not
+rewrite that history.
 
 The next turn of the chat sees the failed turn's finished steps in its context.
 A turn that ended while a call ran or waited for an approval leaves that call

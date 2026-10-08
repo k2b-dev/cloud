@@ -159,7 +159,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     tools,
     maxTurns: 40,
     maxOutputTokens: 12000,
-    disableReasoning: true,
+    reasoningEffort: "none",
     signal: context.signal,
     store: {
       load: async () => history,
@@ -186,7 +186,7 @@ export async function evaluateCodeMode(context: CodeToolContext, turnId: string)
     apps = await Promise.all(listed.items.filter((item) => !originalIds.has(item.id)).map((item) => artifacts.get(item.id, context)));
     await Bun.write(
       "/tmp/assistant-code-mode-eval.json",
-      JSON.stringify({ model: provider.model, disableReasoning: true, elapsedMs: Date.now() - started, history, events, apps }, null, 2),
+      JSON.stringify({ model: provider.model, reasoningEffort: "none", elapsedMs: Date.now() - started, history, events, apps }, null, 2),
     );
   }
   return { history, events, apps };

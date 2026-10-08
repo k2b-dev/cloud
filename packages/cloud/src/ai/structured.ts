@@ -131,7 +131,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           outputName: input.outputName,
           temperature: input.temperature ?? 0,
           maxOutputTokens: input.maxOutputTokens ?? resolved.profile.maxOutputTokens,
-          disableReasoning: true,
+          reasoningEffort: "none",
           signal: input.signal,
         });
         const durationMs = Date.now() - startedAt;

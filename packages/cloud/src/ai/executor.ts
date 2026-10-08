@@ -1,4 +1,4 @@
-import type { CompactEvent, LoopAggregate, NessiLoop, OutboundEvent } from "@k2b/nessi";
+import type { AssistantMessage, CompactEvent, LoopAggregate, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReview } from "../contracts/capabilities";
@@ -91,10 +91,17 @@ const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 
+// Failed generation can contain calls that nessi deliberately never executes or resumes.
+const isToolRound = (message: AssistantMessage): boolean =>
+  message.stopReason !== "error" &&
+  message.stopReason !== "interrupted" &&
+  message.stopReason !== "aborted" &&
+  message.content.some((block) => block.type === "tool_call");
+
 const toolRoundState = (messages: AiStoredMessage[]): { issued: number; completed: number } => {
   const completedCallIds = new Set(messages.flatMap(({ message }) => (message.role === "tool_result" ? [message.callId] : [])));
   const rounds = messages.flatMap(({ message }) => {
-    if (message.role !== "assistant") return [];
+    if (message.role !== "assistant" || !isToolRound(message)) return [];
     const callIds = message.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : []));
     return callIds.length > 0 ? [callIds] : [];
   });
@@ -1413,7 +1420,7 @@ export class AiTurnExecutor {
             result: event.result,
             isError: event.isError === true,
           });
-        } else if (event.type === "turn_end" && event.message.content.some((block) => block.type === "tool_call")) {
+        } else if (event.type === "turn_end" && !abortController.signal.aborted && isToolRound(event.message)) {
           noteToolRound();
         } else if (event.type === "issue") {
           lastIssueMessage = event.issue.message;

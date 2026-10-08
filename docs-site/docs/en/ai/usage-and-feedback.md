@@ -5,7 +5,7 @@ section: AI
 order: 1065
 description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Usage and feedback
@@ -41,11 +41,19 @@ supply a reliable billable duration. Audio calls remain visible as unpriced.
 
 These are **reference costs, not a provider invoice**. Coverage is limited to the
 input/output tokens the adapter reports. Cache discounts, separately billed
-cached input, hidden reasoning, and provider-specific image charges are not
-reconstructed. A direct chat with images uses its reported tokens; a separate
-image-inspection call belongs to background usage.
+cached input, and provider-specific image charges are not reconstructed.
+Gemini's reported output includes thinking tokens; reasoning costs omitted by
+other providers cannot be reconstructed. A direct chat with images uses its
+reported tokens; a separate image-inspection call belongs to background usage.
 
 ## Read the report
+
+Failed, provider-stopped, and aborted calls retain any usage already reported by
+the provider. The call ledger books each request once; the loop aggregate
+includes the same usage for display and does not book another charge. Repeated
+usage snapshots replace earlier snapshots rather than being added together.
+If an interrupted call reports no usable usage, Cloud records an explicit
+estimate under the existing accounting rules.
 
 Use period, user, model profile, actual provider model, and application filters.
 Filters, view, sorting, and pagination are stored in the URL. **Refresh** advances

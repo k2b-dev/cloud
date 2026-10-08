@@ -20,7 +20,7 @@ import { type AiChatActions, AiChatActionsProvider, createAssistantMessageAction
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
-import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, waitsForUser } from "./turn-layout";
+import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
@@ -100,13 +100,6 @@ const leadingSteerOpener = (blocks: readonly AssistantBlock[]): string | null =>
     opener = steerOpener(block.steerId);
   }
   return opener;
-};
-
-/** History phase of a finished loop, from how its loop ended. */
-const storedPhase = (entries: readonly AiStoredMessage[]): AiTurnPhase => {
-  const reason = entries.findLast((entry) => entry.loopDoneReason)?.loopDoneReason;
-  if (!reason || reason === "stop") return "completed";
-  return reason === "aborted" ? "stopped" : "failed";
 };
 
 /** Responses with a work line, rich places, or a failure notice span the message column so their right edges align. */
