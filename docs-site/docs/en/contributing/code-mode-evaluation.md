@@ -43,9 +43,10 @@ if you need to compare results. Temporary app links are not usable after cleanup
 
 The automated acceptance check requires one saved app with an `index.html`
 interface, a script run that reached `ready`, and a `code_present` card for the
-app. Apps have no rendered self-check yet, so the check does not prove analytical
-or visual correctness. Independently compare original CSV values and target
-granularity with the saved data and raw KPI values. Open the saved app on desktop
+app. A passing `code_check` shows only that the app is not broken, so the
+acceptance check does not prove analytical or visual correctness. Independently
+compare original CSV values and target granularity with the saved data and raw
+KPI values. Open the saved app on desktop
 and mobile and exercise combined filters, empty states, and reset; do not
 substitute a copied calculation for testing the actual app.
 

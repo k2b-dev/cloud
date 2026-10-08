@@ -561,7 +561,10 @@ without a passing check for the current files and table definitions, bound to
 that user and conversation. Changing `steps.json` also invalidates the check.
 One-off presentation requires exactly the checked files. Scripts have no gate.
 The human Studio publish flow is not gated: the self-test is an agent workflow
-guard, not a security mechanism, and grants no access.
+guard, not a security mechanism, and grants no access. The gate applies when the
+tool is called: a presented or opened saved app keeps loading its current source,
+so the agent checks again after every edit before asking the person to reload.
+`code_restore` is a rollback to an earlier publication and is not gated.
 
 `steps.json` is an array of at most 20 steps. Actions are `click`, `check`,
 `uncheck`, `fill`, `select`, `press`, `upload`, and `reload`. Targets use
@@ -570,7 +573,9 @@ case-insensitive, then substring; multiple matches fail and list candidates.
 Names match the accessibility tree and exclude placeholders. `press` may omit
 its target to use focus. `fill`, `select`, and `press` take a string `value`;
 fill decimal numbers with a dot. `upload.file` names a chat file/path or an
-app-relative source file. `reload` keeps the run's disposable data.
+app-relative source file. `reload` keeps the run's disposable data and the
+app's URL hash. Disabled controls cannot be clicked, filled, selected, uploaded
+to, or focused for `press`.
 
 ```json
 [
@@ -585,28 +590,41 @@ Both desktop (1280×800) and phone (390×844, touch) replay the steps, in opposi
 themes with the viewer's locale/time zone. Background checks use the task time
 zone and the default locale/light theme when no preferences are available.
 CLI checks use a light desktop theme and the service locale/time zone.
-Each run uses a separate disposable copy
+For a saved app, each run uses a separate disposable copy
 of the app database, shared KV/files and only the checking user's personal KV.
-One-off apps start empty. Reads and writes use the normal services; real app
-data stays unchanged. A database above 1000 rows or 16 MiB uses schema only and
-reports a warning. Storage copies are limited to 250 MiB.
+Reads and writes use the normal services; real app data stays unchanged. A
+database above 1000 rows or 16 MiB uses schema only and reports a warning.
+Storage copies are limited to 250 MiB. In a background turn, checking a saved
+app with a connected database requires a task grant that allows `export` for
+that app; otherwise the start is refused with `BACKGROUND_ACCESS_DENIED`.
+One-off apps have no storage or database, as in their chat card: `cloud.kv`,
+`cloud.files` and `cloud.db` reject with `unavailable`.
 
-AI runs for real. HTTP, capability effects and anything needing approval reject
-with `unavailable` (“not executed during code_check”); those exact failures warn.
-Granted read-only capabilities run, except in background turns where all
-capabilities reject. Downloads from `cloud.download` and download links become
-readable chat files alongside screenshots.
+AI runs for real. HTTP, capability actions and anything needing approval reject
+with `unavailable` (“not executed during code_check”). Uncaught errors and
+`console.error` output that contain this message warn instead of failing.
+Read-only capability queries run for one-off apps and apps the checking user
+manages. For apps the user can only use, where the normal runner would ask
+first, and in background turns, every capability rejects. Downloads from
+`cloud.download` and download links become readable chat files alongside
+screenshots.
 
 The check fails on runtime errors, `console.error`, sandbox violations, missing
 readiness after 10 seconds, an empty page, failed steps, serious/critical axe
 findings, static lint errors, phone horizontal overflow or clipped controls in
-sideways scrolling containers. Fields/buttons without main-flow steps also fail.
+sideways scrolling containers, at startup and after the steps. Findings name
+elements by tag, id and accessible name. Fields or buttons without main-flow
+steps also fail; links alone need no steps. More than 200 findings end with one
+error saying later findings were dropped.
 Other accessibility findings, password fields, several untyped form buttons,
 layout loops and fields still `:user-invalid` warn. `cloud.chart` keeps complete
 category labels and skips some at narrow widths; it does not shorten them to
 one or two characters.
 
-Checks use the existing host admission and a 45-second deadline. Output is at
+Checks use the existing host admission and a 45-second deadline. Each user can
+hold at most 16 disposable check copies at a time, two for each of the eight
+admitted code hosts; another start fails with `limit` until a check finishes or
+the sweep removes copies of crashed checks. Output is at
 most three screenshots and 64 downloads, 50 MiB per file and 250 MiB total.
 The accessibility tree is limited to 4 KiB. Cancellation closes pages and removes
 copies; crashed hosts leave a durable cleanup marker for the service sweep

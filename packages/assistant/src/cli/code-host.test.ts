@@ -25,6 +25,7 @@ test.each(["signal", "code_stop"])(
         if (path.endsWith("host.js")) return new Response(bundle);
         if (path.endsWith("/check/start"))
           return Response.json({
+            artifactId: "abc234",
             scopeId: "Scp234",
             hash: "a".repeat(64),
             steps: [],

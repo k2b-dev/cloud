@@ -141,11 +141,11 @@ test("long app element identities cannot exceed individual diagnostic field limi
   expect(shaped.issues[0]!.where!.length).toBeLessThanOrEqual(2000);
 });
 
-test("only the exact check-unavailable error is downgraded, not incidental console/error text", () => {
+test("check-unavailable diagnostics warn even with a console prefix", () => {
   expect(diagnosticSeverity(`CloudError: ${CHECK_UNAVAILABLE}\n at app.js:3`)).toBe("warning");
   expect(diagnosticSeverity(`Unhandled rejection: CloudError: ${CHECK_UNAVAILABLE}`)).toBe("warning");
-  expect(diagnosticSeverity(`Error: ${CHECK_UNAVAILABLE}`)).toBe("error");
-  expect(diagnosticSeverity(`Unexpected failure: ${CHECK_UNAVAILABLE} while saving`)).toBe("error");
-  expect(diagnosticSeverity(`CloudError: ${CHECK_UNAVAILABLE} extra`)).toBe("error");
+  expect(diagnosticSeverity(`Weather failed: CloudError: ${CHECK_UNAVAILABLE}\n at app.js:3`)).toBe("warning");
+  expect(diagnosticSeverity(`Load failed: ${CHECK_UNAVAILABLE}`)).toBe("warning");
+  expect(diagnosticSeverity("Error: unexpected failure")).toBe("error");
   expect(diagnosticSeverity("ResizeObserver loop completed with undelivered notifications.")).toBe("warning");
 });

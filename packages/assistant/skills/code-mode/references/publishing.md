@@ -32,7 +32,9 @@ the current working revision, call `code_restore` with the selected publication
 and expectedRevision. This atomically updates the working source and creates a
 new latest publication with an automatic "Restore version X" note. Do not publish
 again after restoring. Test the selected historical version before restoring;
-it never deletes history or restores user data. A concurrent write produces a
+it never deletes history or restores user data. As a rollback, `code_restore`
+needs no passing `code_check`; for an HTML app, run `code_check({id})` right
+after restoring and fix forward if it fails. A concurrent write produces a
 conflict: read the new state and reconcile instead of blindly retrying. Coordinate
 overlapping edits; do not build branching machinery for ordinary single-user apps.
 

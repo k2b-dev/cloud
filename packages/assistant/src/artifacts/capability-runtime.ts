@@ -86,12 +86,13 @@ async function operation(name: string, locale?: string | null) {
 
 export const runtimeCapabilities = {
   async check(
-    input: { name: string; input: z.infer<ReturnType<typeof z.json>>; conversationId: string },
+    input: { name: string; input: z.infer<ReturnType<typeof z.json>>; conversationId: string; artifactId?: string },
     identity: ArtifactIdentity,
     caller: CapabilityCaller,
   ) {
     const request = RuntimeCapabilityRequest.parse({ ...input, id: crypto.randomUUID() });
-    await authorize(request, identity);
+    const resource = await authorize(request, identity);
+    if (resource && resource.permission !== "admin") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
     // Discover first. Never prepare an action: even a review may have effects.
     const target = await operation(input.name, caller.locale);
     if (target.kind !== "query") throw new CloudError("unavailable", CHECK_UNAVAILABLE);

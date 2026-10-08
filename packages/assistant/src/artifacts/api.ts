@@ -215,7 +215,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     })
     .post(
       "/runtime/check/capability",
-      v("json", z.object({ name: z.string(), input: z.json(), conversationId: z.uuid() }).strict()),
+      v("json", z.object({ name: z.string(), input: z.json(), conversationId: z.uuid(), artifactId: CodeResourceId.optional() }).strict()),
       async (c) => {
         const input = c.req.valid("json");
         return respond(c, ok(await runtimeCapabilities.check(input, identity(c), caller(c))));

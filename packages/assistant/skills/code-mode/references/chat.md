@@ -30,10 +30,13 @@ check the totals, and write the result into `data.js`. Never retype truncated
 tool output into a data file; export it with `cloud.download` and `code_export`
 and read the exported file.
 
-Before saving anything, `code_present` checks the files and refuses errors such
-as CDN scripts, missing imports, inline handlers or network URLs; fix them and
-call it again. Warnings come back with the result. Presenting does not run the
-app for you, so mention what the person can do with it.
+Before showing an app, run `code_check` on exactly the files you will present,
+including `steps.json` (see [HTML apps](apps.md)). `code_present` refuses an app
+without a passing check for those files, or for a saved app's current files and
+tables. It also refuses static errors such as CDN scripts, missing imports, inline
+handlers or network URLs; warnings come back with the result. A passing check
+does not judge design or business logic, so mention what the person can do with
+the app.
 
 The card's download menu saves a static copy of the app as it is shown, as HTML
 or PDF. The copy runs no scripts. A download does not create a chat file; to

@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser } from "playwright";
 import { browserName, launchBrowser } from "../../../../ui/test/browser";
-import type { ArtifactSource } from "../contracts";
+import { type ArtifactSource, LIMITS } from "../contracts";
 import type { AppFrameAssets } from "./assets";
 import { buildBaseCss, buildCheckPrelude } from "./build-assets";
 import { runHtmlCheck } from "./check";
-import { type CheckStep, checkHash, readCheckSteps } from "./check-contracts";
+import { CHECK_LIMITS, type CheckStep, checkHash, readCheckSteps } from "./check-contracts";
 
 let browser: Browser, runtime: string, assets: AppFrameAssets;
 const scopes = new Map<string, Map<string, string>>();
@@ -26,7 +26,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
 });
-async function check(html: string, js = "", steps: CheckStep[] = [], css = "") {
+async function check(html: string, js = "", steps: CheckStep[] = [], css = "", artifactId: string | null = "App234") {
   const source: ArtifactSource = {
     entry: "index.html",
     files: [
@@ -38,11 +38,16 @@ async function check(html: string, js = "", steps: CheckStep[] = [], css = "") {
   };
   const saved = new Map<string, Uint8Array>();
   const copies: string[] = [];
+  const downloadCalls: number[] = [];
   const report = await runHtmlCheck({
     browser,
     conversationId: "00000000-0000-4000-8000-000000000001",
     signal: new AbortController().signal,
     initialize: async (page) => {
+      const view = downloadCalls.push(0) - 1;
+      await page.exposeFunction("recordCheckDownload", () => {
+        downloadCalls[view] = downloadCalls[view]! + 1;
+      });
       // WebKit routes blob module imports too; only HTTP(S) belongs to the mock server.
       await page.route(
         (url) => /^https?:$/.test(url.protocol),
@@ -68,6 +73,10 @@ async function check(html: string, js = "", steps: CheckStep[] = [], css = "") {
       );
       await page.goto("http://check.test");
       await page.addScriptTag({ content: runtime });
+      await page.addScriptTag({
+        content: `const download = window.assistantCheckDownload;
+        window.assistantCheckDownload = async (...args) => { await window.recordCheckDownload(); return download(...args); };`,
+      });
     },
     start: async () => {
       const scopeId = `Scp${String(++seq).padStart(3, "2")}`;
@@ -75,6 +84,7 @@ async function check(html: string, js = "", steps: CheckStep[] = [], css = "") {
       scopes.set(scopeId, new Map());
       return {
         scopeId,
+        artifactId: artifactId ?? undefined,
         source,
         steps: readCheckSteps(source.files),
         hash: checkHash(source, []),
@@ -97,7 +107,7 @@ async function check(html: string, js = "", steps: CheckStep[] = [], css = "") {
   expect(copies).toHaveLength(2);
   expect(copies[0]).not.toBe(copies[1]);
   expect(copies.every((id) => !scopes.has(id))).toBe(true);
-  return { report, saved };
+  return { report, saved, downloadCalls };
 }
 const todoHtml =
   "<main><h1>Tasks</h1><form><label for=title>New task</label><input id=title required><button>Add</button></form><ul id=list></ul><p role=status></p></main>";
@@ -149,7 +159,7 @@ test("phone horizontal overflow and a clipped control are errors", async () => {
     expect.objectContaining({ kind: "overflow", severity: "error", view: "mobile", message: expect.stringContaining("div#wide") }),
   );
   expect(report.issues).toContainEqual(
-    expect.objectContaining({ kind: "clipped", severity: "error", view: "mobile", message: expect.stringContaining("button#save") }),
+    expect.objectContaining({ kind: "clipped", severity: "error", view: "mobile", message: expect.stringContaining('button#save "Save"') }),
   );
 }, 60000);
 test("invalid fields warn and buttons without main-flow steps fail", async () => {
@@ -250,6 +260,7 @@ test.each(["startup", "step"])(
         signal: abort.signal,
         start: async () => ({
           scopeId: "Scp234",
+          artifactId: "App234",
           source,
           steps: at === "step" ? [{ action: "click", target: { role: "button", name: "Wait" } }] : [],
           hash: checkHash(source, []),
@@ -294,3 +305,86 @@ test.each(["startup", "step"])(
   },
   60000,
 );
+
+test("one-off apps cannot use saved-app storage", async () => {
+  const { report } = await check("<main><h1>Todos</h1></main>", "const todos = await cloud.kv.user.get('todos') ?? [];", [], "", null);
+  expect(report.passed).toBe(false);
+  expect(report.issues.some((issue) => issue.severity === "error" && /Storage requires a saved app/.test(issue.message))).toBe(true);
+}, 60000);
+
+test("uncaught error floods resolve within the diagnostic budget", async () => {
+  const { report } = await check("<main><h1>Ticks</h1></main>", "setInterval(() => { throw new Error('tick ' + Math.random()); }, 1);");
+  expect(report.passed).toBe(false);
+  expect(report.issues.length).toBeLessThanOrEqual(CHECK_LIMITS.issues);
+}, 60000);
+
+test("uncaught unavailable HTTP rejections only warn without duplicate host errors", async () => {
+  const { report } = await check(
+    "<main><h1>Load data</h1><button type=button>Load</button></main>",
+    "document.querySelector('button').addEventListener('click', () => { cloud.http.fetch('https://example.com'); });",
+    [{ action: "click", target: { role: "button", name: "Load" } }],
+  );
+  expect(report.issues.some((issue) => issue.kind === "host")).toBe(false);
+  const unavailable = report.issues.filter((issue) => issue.message.includes("not executed during code_check"));
+  expect(unavailable.length).toBeGreaterThan(0);
+  expect(unavailable.every((issue) => issue.severity === "warning")).toBe(true);
+  expect(report.passed).toBe(true);
+}, 60000);
+
+test("report links do not require main-flow steps", async () => {
+  const { report } = await check("<main><h1>Report</h1><p>Total 12</p><a href='https://example.com'>Source</a></main>");
+  expect(report.issues.some((issue) => issue.kind === "steps")).toBe(false);
+}, 60000);
+
+test("aria preserves direct list and definition text without repeating table names", async () => {
+  const { report } = await check(
+    "<main><h1>Records</h1><ul><li>Alpha record</li><li>Beta record</li></ul><dl><dt>Total</dt><dd>99 EUR</dd></dl><table><tr><th>Name</th><td>Ada</td></tr></table></main>",
+  );
+  for (const text of ["Alpha record", "Beta record", "99 EUR"]) expect(report.aria).toContain(text);
+  expect(report.aria).not.toContain('table "Name Ada"');
+  expect(report.aria).not.toContain('rowgroup "Name Ada"');
+}, 60000);
+
+test("reload preserves the current app hash", async () => {
+  const { report } = await check(
+    "<main><h1>Filters</h1><button type=button>Open</button><p role=status></p></main>",
+    "document.querySelector('button').addEventListener('click', () => { location.hash = 'open'; }); document.querySelector('[role=status]').textContent = 'filter ' + location.hash.slice(1);",
+    [{ action: "click", target: { role: "button", name: "Open" } }, { action: "reload" }],
+  );
+  expect(report.aria).toContain("filter open");
+  expect(report.passed).toBe(true);
+}, 60000);
+
+test("select steps reject disabled controls", async () => {
+  const { report } = await check(
+    "<main><h1>Disabled</h1><label>Filter<select disabled><option value=open>Open</option></select></label></main>",
+    "",
+    [{ action: "select", target: { label: "Filter" }, value: "open" }],
+  );
+  expect(report.issues).toContainEqual(expect.objectContaining({ kind: "step", message: expect.stringContaining("Target is disabled") }));
+}, 60000);
+
+test("startup mobile overflow survives steps that remove the wide element", async () => {
+  const { report } = await check(
+    "<main><h1>Layout</h1><div id=wide>Wide</div><button type=button>Hide</button></main>",
+    "document.querySelector('button').addEventListener('click', () => { document.querySelector('#wide').remove(); });",
+    [{ action: "click", target: { role: "button", name: "Hide" } }],
+    "#wide{width:700px}",
+  );
+  expect(report.issues).toContainEqual(expect.objectContaining({ kind: "overflow", severity: "error", view: "mobile" }));
+}, 60000);
+
+test("concurrent downloads are bounded before reaching the exposed save function", async () => {
+  // Stay within the bridge budget so concurrent batches reach the download budget.
+  const { report, downloadCalls } = await check(
+    "<main><h1>Downloads</h1></main>",
+    `for (let offset = 0; offset < ${CHECK_LIMITS.downloads + 5}; offset += ${LIMITS.pendingRequests}) {
+      await Promise.allSettled(Array.from({length: Math.min(${LIMITS.pendingRequests}, ${CHECK_LIMITS.downloads + 5} - offset)},
+        (_, i) => cloud.download('file' + (offset + i) + '.txt', 'tiny')));
+    }`,
+  );
+  expect(report.downloads.length).toBeLessThanOrEqual(CHECK_LIMITS.downloads);
+  expect(downloadCalls).toHaveLength(2);
+  expect(downloadCalls[0]).toBe(CHECK_LIMITS.downloads);
+  for (const count of downloadCalls) expect(count).toBeLessThanOrEqual(CHECK_LIMITS.downloads);
+}, 60000);

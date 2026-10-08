@@ -776,7 +776,8 @@ open/present/publish operations require a passing check for the current source,
 steps and table definitions in that user/conversation. Human Studio publication
 and scripts have no check gate. The self-test is not a security mechanism.
 
-Desktop and phone run on separate disposable copies of app data. AI runs for
-real; HTTP and capability effects are unavailable, and background checks reject
-all capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+Desktop and phone run a saved app on separate disposable copies of its data;
+one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
+capability effects are unavailable, and background checks reject all
+capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for step matching, copy/output budgets, cancellation and the report contract.

@@ -759,7 +759,7 @@ with site isolation and isolated sandboxed iframes so an app loop cannot freeze
 the host. Only check mounts use the bundled inspection prelude with axe-core and
 its own pinned CSP hash; normal app mounts omit inspection code. No separate
 network asset or service is needed. Existing host admission and execution budgets
-apply. Disposable scopes are removed after checks; the service sweep reclaims
+apply, and each user holds at most 16 disposable check copies at a time. Disposable scopes are removed after checks; the service sweep reclaims
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.

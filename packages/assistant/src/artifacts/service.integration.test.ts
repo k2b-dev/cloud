@@ -25,13 +25,38 @@ import { artifactCodeHandlers } from "./code-tools";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase } from "./database";
 import { studioFiles } from "./file-transfer";
-import { type CheckReport, checkHash } from "./html/check-contracts";
+import { CHECK_LIMITS, type CheckReport, checkHash } from "./html/check-contracts";
 import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { httpService } from "./http-service";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
 import { testIdentity } from "./test-identity";
+
+function checkConversation(conversationId: string, userId: string) {
+  return {
+    id: conversationId,
+    shortId: "abc234",
+    title: "Check",
+    titleSource: "user" as const,
+    description: "",
+    descriptionSource: "user" as const,
+    keywords: [],
+    pinnedAt: null,
+    done: null,
+    isDone: false,
+    lastUsedAt: new Date().toISOString(),
+    archivedAt: null,
+    runStatus: "idle" as const,
+    runError: null,
+    unreadCompletion: false,
+    projectId: null,
+    draft: { content: [], revision: 1, updatedAt: null },
+    createdByUserId: userId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   const owner = testIdentity("00000000-0000-4000-8000-000000000001");
@@ -1079,7 +1104,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
-  test("shared resources require consent for queries and ignore personal remembered actions", async () => {
+  test("shared resources require consent for queries, including checks, and ignore personal remembered actions", async () => {
     const resource = await artifacts.create({ title: "Shared data app", source }, owner);
     await artifacts.publish(resource.id, 1, owner, "Initial release");
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
@@ -1123,7 +1148,21 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { private: true } } });
     await sql`INSERT INTO ai.tool_approval_preferences(actor_user_id,tool_name,approval_scope) VALUES(${reader.user.id}::uuid,'consent.write','private')`;
     const request = (name: string) => ({ id: crypto.randomUUID(), name, input: {}, artifactId: resource.id });
+    const conversationId = crypto.randomUUID();
+    const conversation = spyOn(aiConversations, "getConversation").mockResolvedValue(checkConversation(conversationId, reader.user.id));
     try {
+      const checkInput = { name: "consent.read", input: {}, artifactId: resource.id, conversationId };
+      const before =
+        await sql`SELECT id FROM assistant.capability_calls WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`;
+      await expect(runtimeCapabilities.check(checkInput, reader, {})).rejects.toMatchObject({ code: "unavailable" });
+      expect(
+        await sql`SELECT id FROM assistant.capability_calls WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id})`,
+      ).toEqual(before);
+      expect(execute).not.toHaveBeenCalled();
+      conversation.mockResolvedValue(checkConversation(conversationId, owner.user.id));
+      expect(await runtimeCapabilities.check(checkInput, owner, {})).toEqual({ data: { private: true } });
+      execute.mockClear();
+      conversation.mockRestore();
       const read = request("consent.read");
       expect(await runtimeCapabilities.prepare(read, reader, {})).toMatchObject({
         status: "approval",
@@ -1145,6 +1184,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await runtimeCapabilities.prepare(request("consent.write"), reader, {})).toMatchObject({ status: "approval" });
       expect(await runtimeCapabilities.prepare(request("consent.read"), owner, {})).toMatchObject({ status: "completed" });
     } finally {
+      conversation.mockRestore();
       catalog.mockRestore();
       review.mockRestore();
       execute.mockRestore();
@@ -1308,6 +1348,29 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
+  test("code_check limits live scratch scopes per user and releases admission after discard", async () => {
+    const conversationId = crypto.randomUUID();
+    await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
+    const conversation = spyOn(aiConversations, "getConversation").mockResolvedValue(checkConversation(conversationId, owner.user.id));
+    const scopes: string[] = [];
+    const input = { files: [{ path: "index.html", content: "<main><h1>Check</h1></main>" }] };
+    const signal = new AbortController().signal;
+    try {
+      for (let i = 0; i < CHECK_LIMITS.scopesPerUser; i++) {
+        const started = await appChecks.start(input, conversationId, owner, signal);
+        expect(started.artifactId).toBeUndefined();
+        scopes.push(started.scopeId);
+      }
+      await expect(appChecks.start(input, conversationId, owner, signal)).rejects.toMatchObject({ code: "limit" });
+      await appChecks.discard(scopes.pop()!, owner);
+      scopes.push((await appChecks.start(input, conversationId, owner, signal)).scopeId);
+    } finally {
+      for (const scope of scopes) await appChecks.discard(scope, owner);
+      conversation.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${conversationId}::uuid`;
+    }
+  });
+
   testFor("rsql")(
     "code_check isolates real database, shared files/KV and only the viewer's personal KV, then removes the scope",
     async () => {
@@ -1362,6 +1425,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await artifactDatabase.connect(real.id, owner);
         const emptyCopy = await appChecks.start({ id: real.id }, conversationId, owner, context.signal);
         scratch = emptyCopy.scopeId;
+        expect(emptyCopy.artifactId).toBe(real.id);
         await expect(artifacts.get(crashed, owner)).rejects.toThrow("NOT_FOUND");
         crashed = undefined;
         expect(await artifactDatabase.call(scratch, { operation: "query", sql: "SELECT 42 AS answer", params: [] }, owner)).toEqual([

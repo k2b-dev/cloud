@@ -53,8 +53,18 @@ function locate(target: z.infer<typeof CheckTarget> | undefined) {
     return candidates[matchTarget(names, "text" in target ? target.text : "label" in target ? target.label : target.name)]!;
   });
 }
-const identity = (el: Element) =>
-  `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${el.getAttribute("aria-label") ? " " + el.getAttribute("aria-label") : ""}`;
+const identity = (el: Element) => {
+  const name = (accessibleName(el) || visibleText(el)).slice(0, 40);
+  return `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${name ? " " + JSON.stringify(name) : ""}`;
+};
+const directText = (node: Element) =>
+  [...node.childNodes]
+    .filter((child) => child.nodeType === Node.TEXT_NODE)
+    .map((child) => child.textContent ?? "")
+    .join(" ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 100);
 export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
   const input = Request.parse(raw);
   if (input.op === "settle") {
@@ -81,7 +91,10 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
         let line = "";
         if (role && !["generic", "presentation", "none", "paragraph"].includes(role)) {
           // Container names repeat their children's text; the children carry it.
-          const name = ["document", "main", "list", "listitem", "row"].includes(role) ? "" : accessibleName(node).slice(0, 100);
+          const name =
+            (["document", "main", "list", "listitem", "row", "table", "rowgroup"].includes(role)
+              ? ""
+              : accessibleName(node).slice(0, 100)) || directText(node);
           const states = ["pressed", "current", "expanded", "checked", "selected", "disabled"].flatMap((state) => {
             const attr = node.getAttribute(`aria-${state}`);
             const native =
@@ -100,12 +113,7 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
           if (role === "alert" || role === "status") line += " " + (node.textContent ?? "").trim().slice(0, 200);
         } else if (!(node instanceof HTMLLabelElement)) {
           // Direct text only; a label's text is already the name of its control.
-          const text = [...node.childNodes]
-            .filter((child) => child.nodeType === Node.TEXT_NODE)
-            .map((child) => child.textContent ?? "")
-            .join(" ")
-            .trim()
-            .replace(/\s+/g, " ");
+          const text = directText(node);
           if (text) line = `${"  ".repeat(depth)}${text.slice(0, 100)}`;
         }
         if (line) {
@@ -118,43 +126,46 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
       return lines.join("\n");
     });
   }
-  if (input.op === "measure") {
-    scrollTo(0, 0);
-    const all = [...document.body.querySelectorAll("*")].filter(visible);
-    for (const el of all) if (el.scrollLeft) el.scrollLeft = 0;
-    const controls = all.filter((el) => el.matches('button,a[href],input,select,textarea,[role="button"],[role="link"]'));
-    const clipped = controls
-      .filter((el) => {
-        const rect = el.getBoundingClientRect();
-        for (let p = el.parentElement; p; p = p.parentElement) {
-          if (p.scrollWidth <= p.clientWidth + 1 || !["auto", "scroll", "hidden", "clip"].includes(getComputedStyle(p).overflowX)) continue;
-          const box = p.getBoundingClientRect();
-          if (rect.left < box.left - 1 || rect.right > box.right + 1) return true;
-        }
-        return false;
-      })
-      .map(identity)
-      .slice(0, 20);
-    const scrolling = document.scrollingElement ?? document.documentElement;
-    return {
-      height: Math.ceil(document.documentElement.getBoundingClientRect().height),
-      empty: !document.body.innerText.trim() && !all.some((el) => el.matches("svg,canvas,img,input,button")),
-      overflowX: scrolling.scrollWidth > scrolling.clientWidth + 1,
-      wide: all
-        .filter((el) => el.getBoundingClientRect().right > scrolling.clientWidth + 1 || el.getBoundingClientRect().left < -1)
-        .slice(0, 10)
-        .map(identity),
-      clipped,
-      invalid: all
-        .filter((el) => el.matches(":user-invalid"))
+  if (input.op === "measure")
+    return withAxe(() => {
+      scrollTo(0, 0);
+      const all = [...document.body.querySelectorAll("*")].filter(visible);
+      for (const el of all) if (el.scrollLeft) el.scrollLeft = 0;
+      const controls = all.filter((el) => el.matches('button,a[href],input,select,textarea,[role="button"],[role="link"]'));
+      const clipped = controls
+        .filter((el) => {
+          const rect = el.getBoundingClientRect();
+          for (let p = el.parentElement; p; p = p.parentElement) {
+            if (p.scrollWidth <= p.clientWidth + 1 || !["auto", "scroll", "hidden", "clip"].includes(getComputedStyle(p).overflowX))
+              continue;
+            const box = p.getBoundingClientRect();
+            if (rect.left < box.left - 1 || rect.right > box.right + 1) return true;
+          }
+          return false;
+        })
         .map(identity)
-        .slice(0, 20),
-      interactive: controls.length > 0,
-      password: !!document.querySelector('input[type="password"]'),
-      untyped: [...document.forms].some((form) => form.querySelectorAll("button:not([type])").length > 1),
-    };
-  }
+        .slice(0, 20);
+      const scrolling = document.scrollingElement ?? document.documentElement;
+      return {
+        height: Math.ceil(document.documentElement.getBoundingClientRect().height),
+        empty: !document.body.innerText.trim() && !all.some((el) => el.matches("svg,canvas,img,input,button")),
+        overflowX: scrolling.scrollWidth > scrolling.clientWidth + 1,
+        wide: all
+          .filter((el) => el.getBoundingClientRect().right > scrolling.clientWidth + 1 || el.getBoundingClientRect().left < -1)
+          .slice(0, 10)
+          .map(identity),
+        clipped,
+        invalid: all
+          .filter((el) => el.matches(":user-invalid"))
+          .map(identity)
+          .slice(0, 20),
+        interactive: controls.some((el) => !el.matches('a[href],[role="link"]')),
+        password: !!document.querySelector('input[type="password"]'),
+        untyped: [...document.forms].some((form) => form.querySelectorAll("button:not([type])").length > 1),
+      };
+    });
   const el = locate(input.target);
+  if (el.matches(":disabled")) throw new Error("Target is disabled");
   if (input.op === "focus") {
     if (!(el instanceof HTMLElement || el instanceof SVGElement)) throw new Error("Target cannot receive focus");
     el.focus();
@@ -164,7 +175,7 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
   await new Promise((resolve) => setTimeout(resolve, 50));
   if (input.op === "locate") {
     const r = el.getBoundingClientRect();
-    if (el.matches(":disabled") || !r.width || !r.height) throw new Error("Target is disabled or has no visible area");
+    if (!r.width || !r.height) throw new Error("Target has no visible area");
     return {
       x: r.x + r.width / 2,
       y: r.y + r.height / 2,

@@ -60,7 +60,8 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
     height = 0,
     aria = "",
     outputBytes = 0,
-    downloadCount = 0;
+    downloadCount = 0,
+    issueBudgetExceeded = false;
   let theme: "light" | "dark" = "light";
   const save = async (name: string, bytes: Uint8Array, type: string) => {
     signal.throwIfAborted();
@@ -80,7 +81,16 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
     }
     const viewTheme = view === "desktop" ? theme : theme === "dark" ? "light" : "dark";
     const add = (kind: string, message: string, severity: CheckIssue["severity"] = "error", where?: string) => {
-      if (issues.length >= CHECK_LIMITS.issues) throw new Error("Check issue budget exceeded");
+      if (issueBudgetExceeded) return;
+      if (issues.length >= CHECK_LIMITS.issues) {
+        issueBudgetExceeded = true;
+        issues[issues.length - 1] = {
+          severity: "error",
+          kind: "budget",
+          message: "Diagnostic budget exceeded; later findings were dropped.",
+        };
+        return;
+      }
       issues.push({ severity, kind, message: message.slice(0, 6000), where, view });
     };
     let context: Awaited<ReturnType<CheckDriver["browser"]["newContext"]>> | undefined;
@@ -114,7 +124,6 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
       const page = await context.newPage();
       signal.throwIfAborted();
       page.setDefaultTimeout(CHECK_LIMITS.readyMs);
-      page.on("pageerror", (error) => add("host", error.message));
       await page.exposeFunction("assistantCheckDownload", async (name: string, data: string, type: string) => {
         signal.throwIfAborted();
         if (downloadCount >= CHECK_LIMITS.downloads) throw new Error("Check download budget exceeded");
@@ -136,6 +145,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
         await page.evaluate((input) => window.assistantCheckMount(input), {
           source: start.source,
           scopeId: start.scopeId,
+          artifactId: start.artifactId,
           context: start.context,
           assets: start.assets,
           conversationId: driver.conversationId,
@@ -199,7 +209,8 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
       if (ready) {
         // K1 checks startup too: steps must not hide/delete all the controls.
         const before = Measure.parse(await command({ op: "measure" }));
-        issues.push(...layoutIssues(view, { ...before, overflowX: false, clipped: [], invalid: [] }, start.steps.length));
+        for (const issue of layoutIssues(view, { ...before, invalid: [] }, start.steps.length))
+          add(issue.kind, issue.message, issue.severity, issue.where);
         if (view === "desktop") await shot("desktop-start");
         for (const [index, step] of start.steps.entries()) {
           signal.throwIfAborted();
@@ -251,7 +262,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
           height = Math.min(measure.height, 100000);
           aria = z.string().parse(await command({ op: "aria" }));
         }
-        issues.push(...layoutIssues(view, measure, start.steps.length));
+        for (const issue of layoutIssues(view, measure, start.steps.length)) add(issue.kind, issue.message, issue.severity, issue.where);
         if (measure.password) add("password", "App contains a password field; use Cloud secret input for credentials.", "warning");
         if (measure.untyped) add("buttons", "Several buttons in a form have no explicit type.", "warning");
         for (const v of Violations.parse(await command({ op: "axe" })))

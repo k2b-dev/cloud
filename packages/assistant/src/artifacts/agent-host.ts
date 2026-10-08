@@ -9,6 +9,7 @@ import {
   parseCodeToolInput,
   readAiConversationFile,
 } from "@k2b/cloud/ai";
+import { CodeCheckInput } from "@k2b/cloud/ai/browser";
 import { env } from "@k2b/cloud/config";
 import { type AuthContext, LOCALE_HEADER, TIMEZONE_COOKIE } from "@k2b/cloud/server";
 import { sql } from "bun";
@@ -21,6 +22,7 @@ import { backgroundCodeRouteAllowed, backgroundDatabaseOperation } from "./backg
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
 import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
+import { LIMITS } from "./contracts";
 import { DatabaseRequest } from "./database-contracts";
 import { FlatDatabaseRequest } from "./database-runtime";
 import { appChecks } from "./html/check-service";
@@ -56,8 +58,6 @@ type Session = {
   decisions: Map<string, (approved: boolean) => void>;
 };
 const sessions = new Map<string, Session>();
-// Matches the default Core worker concurrency; admission applies before Chromium allocation.
-const MAX_HOSTS = 8;
 const IDLE_MS = 120_000;
 const keyOf = (turnId: string, callId: string) => `${turnId}:${callId}`;
 
@@ -158,6 +158,28 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
     timeZone = context.timeZone,
     theme = context.theme ?? "light";
   if (config.background && url.pathname === "/api/assistant/artifacts/runtime/check/start") {
+    const { input } = z
+      .object({ input: CodeCheckInput, conversationId: z.uuid() })
+      .strict()
+      .parse(await new Request(url, init).json());
+    if (input.id) {
+      const [connected] = await sql`SELECT d.artifact_id FROM assistant.artifact_databases d
+        JOIN assistant.artifacts a ON a.id=d.artifact_id WHERE a.short_id=${input.id} AND d.connected`;
+      if (connected) {
+        try {
+          await aiChatTasks.authorizeRuntime({
+            mandate: config.mandate!,
+            kind: "database",
+            input: { resourceId: input.id, operation: "export" },
+          });
+        } catch (error) {
+          return Response.json(
+            { code: "BACKGROUND_ACCESS_DENIED", message: error instanceof Error ? error.message : "Database access denied" },
+            { status: 403 },
+          );
+        }
+      }
+    }
     // Resolve check preferences here; scheduled turns retain their existing
     // Core behavior and never inherit the latest interactive turn.
     const task = await aiChatTasks.get({ userId: context.actor.user.id, taskId: config.background.taskId });
@@ -283,7 +305,7 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
     existing.context = context;
     return existing;
   }
-  if (sessions.size >= MAX_HOSTS) throw new Error("Code hosts are busy. Retry after a current run finishes.");
+  if (sessions.size >= LIMITS.codeHosts) throw new Error("Code hosts are busy. Retry after a current run finishes.");
   const session: Session = {
     phase: "starting",
     id: crypto.randomUUID(),

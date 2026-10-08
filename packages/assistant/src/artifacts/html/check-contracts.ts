@@ -67,13 +67,13 @@ export const CHECK_LIMITS = {
   // Match CheckReport.issues, including layout and browser diagnostics.
   issues: LIMITS.logs,
   downloads: LIMITS.files,
+  scopesPerUser: 2 * LIMITS.codeHosts,
   outputBytes: LIMITS.inputBytes,
   fileBytes: LIMITS.inputFileBytes,
 } as const;
 export const CHECK_UNAVAILABLE = "not executed during code_check";
 export function diagnosticSeverity(text: string): CheckIssue["severity"] {
-  const heading = text.split("\n", 1)[0]?.replace(/^Unhandled rejection: /, "");
-  return heading === `CloudError: ${CHECK_UNAVAILABLE}` || text.includes("ResizeObserver loop") ? "warning" : "error";
+  return text.includes(CHECK_UNAVAILABLE) || text.includes("ResizeObserver loop") ? "warning" : "error";
 }
 
 /** Canonicalizes object keys; arrays retain meaning (column order, for example). */
@@ -212,6 +212,7 @@ export function layoutIssues(
 }
 
 export const CheckStart = z.object({
+  artifactId: z.string().optional(),
   scopeId: z.string(),
   source: ArtifactSource,
   steps: CheckSteps,

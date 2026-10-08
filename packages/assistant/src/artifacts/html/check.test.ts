@@ -120,3 +120,45 @@ test("a scope returned after cancellation is discarded without creating a contex
   await expect(runHtmlCheck(driver)).rejects.toBe(reason);
   expect(events).toEqual(["start", "discard:scope"]);
 });
+
+test("diagnostic overflow records one budget error and keeps discarding both scopes", async () => {
+  const discarded: string[] = [];
+  const report = await runHtmlCheck({
+    browser: {
+      browserType: () => ({ name: () => "chromium" }),
+      newContext: async () => {
+        throw new Error("Browser startup failed");
+      },
+    },
+    conversationId: "chat",
+    signal: new AbortController().signal,
+    start: async () => ({
+      scopeId: "scope",
+      hash: "a".repeat(64),
+      steps: [],
+      warnings: Array.from({ length: 201 }, (_, i) => `Copy warning ${i}`),
+      source: { entry: "index.html", files: [{ path: "index.html", content: "<h1>Check</h1>" }] },
+      context: { locale: "en", timeZone: "UTC", user: null },
+      theme: "light",
+      assets: { prelude: "", preludeHash: "", baseCss: "" },
+    }),
+    discard: async (id) => {
+      discarded.push(id);
+    },
+    initialize: async () => {
+      throw new Error("Unexpected initialization");
+    },
+    save: async () => {
+      throw new Error("Unexpected save");
+    },
+    upload: async () => {
+      throw new Error("Unexpected upload");
+    },
+  });
+  expect(report.passed).toBe(false);
+  expect(report.issues.length).toBeLessThanOrEqual(200);
+  expect(report.issues.filter((issue) => issue.kind === "budget")).toEqual([
+    { severity: "error", kind: "budget", message: "Diagnostic budget exceeded; later findings were dropped." },
+  ]);
+  expect(discarded).toEqual(["scope", "scope"]);
+});

@@ -43,6 +43,12 @@ export const appChecks = {
     try {
       return await sql.begin(async (db) => {
         await databaseConfigLock(db);
+        await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-check:" + user(identity).id}))`;
+        const [live] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM assistant.artifacts a
+          JOIN ai.conversations c ON c.id=a.check_conversation_id
+          WHERE a.check_scratch AND c.created_by_user_id=${user(identity).id}::uuid`;
+        if (live!.count >= CHECK_LIMITS.scopesPerUser)
+          throw new CloudError("limit", "Too many code checks are running for this user; wait for one to finish.");
         // Keep source, definitions and the exported data under the same source
         // row lock as edits. Both check runs bind what was actually copied.
         const resource = input.id ? await requireArtifact(db, input.id, identity, "read") : undefined;
@@ -79,7 +85,7 @@ export const appChecks = {
             FROM assistant.artifact_storage WHERE artifact_id=${resource.row.id}::uuid AND (user_id IS NULL OR user_id=${user(identity).id}::uuid)`;
         }
         signal.throwIfAborted();
-        return { scopeId: scratch.id, source, steps, hash, warnings };
+        return { artifactId: input.id, scopeId: scratch.id, source, steps, hash, warnings };
       });
     } catch (error) {
       if (scopeId) await appChecks.discard(scopeId, identity);
