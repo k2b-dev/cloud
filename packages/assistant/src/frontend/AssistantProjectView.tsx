@@ -1,4 +1,5 @@
 import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { coreClient } from "@k2b/cloud/clients/core";
@@ -216,7 +217,7 @@ export default function AssistantProjectView(props: Props) {
     }
   };
 
-  const chooseFiles = (imagesOnly = false) =>
+  const addFiles = (imagesOnly = false) =>
     prompts.dialog<void>(
       (close) => (
         <div class="k2b-dialog__body">
@@ -224,7 +225,8 @@ export default function AssistantProjectView(props: Props) {
             multiple
             accept={imagesOnly ? "image/*" : undefined}
             title={text(imagesOnly ? "Add Project images" : "Add Project files")}
-            subtitle={text("Drop files here or choose them from this device")}
+            subtitle={text("Drop files here or choose them")}
+            choose={() => chooseFiles({ multiple: true, accept: imagesOnly ? "image/*" : undefined })}
             onDrop={(files) => {
               close();
               void uploadFiles(files);
@@ -537,7 +539,7 @@ export default function AssistantProjectView(props: Props) {
                     title={assistantContextCountTitle(imageFiles().length, text("Image"), text("Images"))}
                     action={
                       <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add images")} onClick={() => void chooseFiles(true)}>
+                        <IconButton size="xs" label={text("Add images")} onClick={() => void addFiles(true)}>
                           <i class="ti ti-plus" aria-hidden="true" />
                         </IconButton>
                       </Show>
@@ -565,7 +567,7 @@ export default function AssistantProjectView(props: Props) {
                     title={assistantContextCountTitle(regularFiles().length, text("File"), text("Files"))}
                     action={
                       <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add files")} onClick={() => void chooseFiles()}>
+                        <IconButton size="xs" label={text("Add files")} onClick={() => void addFiles()}>
                           <i class="ti ti-plus" aria-hidden="true" />
                         </IconButton>
                       </Show>

@@ -81,7 +81,7 @@ alternative:
   `@k2b/stdlib/solid` for owner-local queries, mutations, and interaction
   primitives;
 - `@k2b/ssr` with `@k2b/cloud/ssr` for SSR, islands, and navigation;
-- `chooseFiles()` from `@k2b/cloud/browser/files` and `FileDropTarget` for uploads;
+- `chooseFiles()` from `@k2b/cloud/browser/files` (also as `choose` of `FileDropzone` and `ChatComposer`) and `FileDropTarget` for uploads;
 - `@k2b/sync` for jobs, queues, schedulers, topics, mutexes, and bounded
   distributed coordination, `@k2b/sync/retry` for local retries, and
   `@k2b/cloud/server` for rate limits;

@@ -121,6 +121,8 @@ const trees: Record<string, Record<string, FileProviderEntry[]>> = {
 };
 
 let catalogApps: unknown[] = [];
+/** A catalog status other than 200 refuses the caller, like Core does for a visitor of a public page. */
+let catalogStatus = 200;
 let catalogRequests = 0;
 let catalogGate: Promise<void> | undefined;
 let brokenAnswers = 0;
@@ -137,6 +139,7 @@ const answer = async (request: Request): Promise<Response> => {
   if (url.pathname === "/api/capabilities/v1/catalog") {
     catalogRequests++;
     await catalogGate;
+    if (catalogStatus !== 200) return json({ code: "UNAUTHORIZED", message: "Sign in" }, catalogStatus);
     return json({ protocolVersion: 2, apps: catalogApps, page: { hasMore: false } });
   }
   const [, app = "", operation] = /^\/api\/capabilities\/v1\/queries\/(\w+)\/([\w.]+)$/.exec(url.pathname) ?? [];
@@ -575,4 +578,92 @@ describe("choosing files in a browser", () => {
       await close();
     }
   }, 30_000);
+
+  test("a visitor the catalog refuses gets the device's file dialog directly, with no error", async () => {
+    catalogApps = [drive];
+    catalogStatus = 401;
+    const { page, close } = await open(desktop, "?single");
+    try {
+      const picker = page.waitForEvent("filechooser");
+      await page.locator("#attach").click();
+      const chooser = await picker;
+      expect(await page.locator("dialog[open]").count()).toBe(0);
+      await chooser.setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("local") });
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      expect(await chosen(page)).toEqual([[{ name: "local.txt", type: "text/plain", size: 5, text: "local" }]]);
+    } finally {
+      catalogStatus = 200;
+      await close();
+    }
+  }, 30_000);
+});
+
+describe("choosing through a dropzone inside a dialog, as Notebooks and Assistant Projects do", () => {
+  const dropzone = (page: Page) => page.locator("dialog[open] .k2b-dropzone");
+  const openDropzone = async (page: Page) => {
+    await page.locator("#attach").click();
+    await dropzone(page).waitFor();
+  };
+  /** The chooser is the dialog's top level; the level that asked waits underneath and returns when it closes. */
+  const chooserOpen = (page: Page) => page.locator("dialog[open] .cloud-file-chooser").isVisible();
+
+  test("the chooser opens over the dialog, hands a provider file to the dropzone, and returns to the dialog", async () => {
+    catalogApps = [drive];
+    for (const view of [desktop, phone]) {
+      const { page, close } = await open(view, "?dropzone");
+      try {
+        await openDropzone(page);
+        await dropzone(page).click();
+        await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
+        expect(await dropzone(page).isVisible()).toBe(false);
+        await row(page, "Drive").click();
+        await row(page, "Home").click();
+        await row(page, "notes.txt").click();
+        await page.getByRole("button", { name: "Add", exact: true }).click();
+        await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+        expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "text/plain", size: 13, text: "meeting notes" }]]);
+        // Only the chooser closed; the dialog that asked is back, and its dropzone has focus again.
+        await dropzone(page).waitFor();
+        expect(await chooserOpen(page)).toBe(false);
+        await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-dropzone"));
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("Escape closes only the chooser; without providers the dropzone opens the device's dialog directly", async () => {
+    catalogApps = [drive];
+    const withProviders = await open(desktop, "?dropzone");
+    try {
+      const { page } = withProviders;
+      await openDropzone(page);
+      await dropzone(page).click();
+      await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
+      await page.keyboard.press("Escape");
+      await dropzone(page).waitFor();
+      await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-dropzone"));
+      // A cancelled choice hands nothing to the dropzone.
+      expect(await chosen(page)).toEqual([]);
+    } finally {
+      await withProviders.close();
+    }
+
+    catalogApps = [notes];
+    const withoutProviders = await open(desktop, "?dropzone");
+    try {
+      const { page } = withoutProviders;
+      await openDropzone(page);
+      const picker = page.waitForEvent("filechooser");
+      await dropzone(page).click();
+      const chooser = await picker;
+      expect(await chooserOpen(page)).toBe(false);
+      await chooser.setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("local") });
+      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      expect(await chosen(page)).toEqual([[{ name: "local.txt", type: "text/plain", size: 5, text: "local" }]]);
+      expect(await dropzone(page).isVisible()).toBe(true);
+    } finally {
+      await withoutProviders.close();
+    }
+  }, 60_000);
 });

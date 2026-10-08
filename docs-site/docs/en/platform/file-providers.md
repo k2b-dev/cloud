@@ -5,7 +5,7 @@ section: Platform services
 order: 558
 description: Let people add files from any Cloud application with one chooser, and implement the file-provider contract so your application can offer its files.
 tags: [capabilities, files, contracts, streams, upload]
-updated: 2026-10-06
+updated: 2026-10-08
 ---
 
 # Offer and choose files across applications
@@ -44,12 +44,15 @@ const attach = async () => {
 
 It resolves ordinary `File` objects with name, type, size, and modification
 time, or `[]` when the person cancels. Your limits, progress display,
-permission checks, and scans keep working on them unchanged. Mail attaches
-files this way.
+permission checks, and scans keep working on them unchanged. Mail drafts,
+Spaces task media, Grids file fields, Notebooks attachments, and Assistant
+chats and Projects attach files this way.
 
 - **No providers:** it opens the device's file dialog directly, as an
   `<input type="file">` would. That dialog needs the user activation of the
-  click, so do not `await` anything before calling it.
+  click, so do not `await` anything before calling it. A visitor whom the
+  capability catalog refuses, such as someone on a public page, has no
+  providers either.
 - **With providers:** it opens one chooser. **This device** comes first, then
   every provider. Inside a provider, people browse folders page by page,
   filter by name, and choose files. See the
@@ -77,6 +80,29 @@ files this way.
 A chosen file is a copy. `chooseFiles()` does not return where it came from,
 and later changes in the provider do not reach your copy. Keep one upload
 action: do not add a second "From Cloud" button next to it.
+
+### Use it with `@k2b/ui` file controls
+
+`FileDropzone` and `ChatComposer` open the device's file dialog by default.
+Pass `chooseFiles` as their `choose` function, and their click or **Attach
+files** goes through the same chooser while drops and pasted files keep their
+path:
+
+```tsx
+import { chooseFiles } from "@k2b/cloud/browser/files";
+import { ChatComposer, FileDropzone } from "@k2b/ui";
+
+<FileDropzone choose={() => chooseFiles({ multiple: true })} onDrop={(files) => void uploadAttachments(files)} />;
+
+<ChatComposer
+  {...composerProps}
+  fileSelection={{ choose: () => chooseFiles({ multiple: true }), onSelect: addFiles }}
+/>;
+```
+
+Both call `choose` inside the click or menu activation, so the device's dialog
+still opens when there are no providers. When a dialog holds the dropzone, the
+chooser opens over it and returns to it when it closes.
 
 ### Take dropped files too
 

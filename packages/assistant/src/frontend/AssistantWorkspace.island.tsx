@@ -30,6 +30,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
@@ -1493,6 +1494,8 @@ export default function AssistantWorkspace(props: Props) {
           onPaste={(event) => pasteComposerContent(sessionKey(), event)}
           fileSelection={{
             onSelect: (files) => addComposerFiles(sessionKey(), files),
+            // From this device or from a Cloud app; either way the files take the same checks and limits.
+            choose: () => chooseFiles({ multiple: true, accept: aiComposerFileAccept }),
             accept: aiComposerFileAccept,
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,

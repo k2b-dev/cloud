@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-10-04
+updated: 2026-10-08
 ---
 
 # Grids
@@ -240,6 +240,9 @@ Text categories keep their original labels, even when they resemble dates.
 
 ### Manage files and retention
 
+- Upload or replace a record attachment from this device or, when Cloud apps
+  offer files, from one of them, such as Files, or drop files on the field.
+  Files from an app arrive as copies within the same size limit.
 - Replace or remove a record attachment without rewriting file history. Removal
   detaches it from the current record; protected revisions or artifacts can
   retain exact bytes, while unprotected files can be cleaned up.

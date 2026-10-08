@@ -108,7 +108,9 @@ comments, and details. Parts without content stay hidden unless you can edit
 them.
 
 Task attachments hold images and videos, at most 20 per task and 10 MB per
-file. **Add image or video** downscales large images before uploading them and
+file. **Add image or video** takes them from this device or, when Cloud apps
+offer files, from one of them, such as Files; you can also drop them on the
+open task. It downscales large images before uploading them and
 uploads videos (`.mp4`, `.m4v`, `.mov`, `.webm`, `.ogv`) unchanged, without
 transcoding. A video in another format, such as MKV, is not added, and Spaces
 names the formats it accepts. A video tile shows its first frame; selecting it

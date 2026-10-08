@@ -44,6 +44,13 @@ disabled and shows its loading state. `error` accepts visible JSX. `title`,
 `subtitle`, `hint`, and `icon` describe the upload task; while files are over
 the surface, its title shows `dropLabel`.
 
+`choose` replaces the device's file dialog on click, for example with a
+chooser that offers other sources too. It is called inside the click, so it
+may still open the device's dialog, and resolves the chosen files, or `[]`
+when the user cancels; they reach `onDrop` like dropped files, with
+`multiple` applied. In Cloud applications, pass `chooseFiles` from
+`@k2b/cloud/browser/files`.
+
 The component does not retain selected files. Store them or start the upload in `onDrop`.
 
 ## API reference
@@ -53,7 +60,8 @@ See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldPr
 ```ts
 type FileDropzoneProps = FieldProps & {
   accept?: string; multiple?: boolean; busy?: boolean; icon?: string; title?: JSX.Element;
-  subtitle?: JSX.Element; hint?: JSX.Element; dropLabel?: string; onDrop: (files: File[]) => void | Promise<void>;
+  subtitle?: JSX.Element; hint?: JSX.Element; dropLabel?: string; choose?: () => Promise<readonly File[]>;
+  onDrop: (files: File[]) => void | Promise<void>;
 };
 ```
 

@@ -117,6 +117,13 @@ describe("file provider discovery", () => {
     await expect(failure).rejects.toMatchObject({ code: "APP_UNAVAILABLE", status: 503 });
   });
 
+  test("a caller the catalog refuses, such as a visitor of a public page, has no providers", async () => {
+    for (const status of [401, 403]) {
+      const sources = await loadFileProviders({ locale: "en", fetch: async () => json({ code: "UNAUTHORIZED", message: "No" }, status) });
+      expect(sources).toEqual([]);
+    }
+  });
+
   test("only Tabler icon classes from other apps reach the page", () => {
     expect(providerIcon("ti ti-home", "ti ti-file")).toBe("ti ti-home");
     expect(providerIcon("fixed inset-0 z-50", "ti ti-file")).toBe("ti ti-file");

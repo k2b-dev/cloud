@@ -465,7 +465,7 @@ const germanText: Record<string, string> = {
   "Delete knowledge": "Wissen löschen",
   "Knowledge deleted": "Wissen gelöscht",
   "File could not be read.": "Die Datei konnte nicht gelesen werden.",
-  "Drop files here or choose them from this device": "Dateien hier ablegen oder auf diesem Gerät auswählen",
+  "Drop files here or choose them": "Dateien hier ablegen oder auswählen",
   "Add Project images": "Bilder zum Projekt hinzufügen",
   "Add Project files": "Dateien zum Projekt hinzufügen",
   "Delete file": "Datei löschen",

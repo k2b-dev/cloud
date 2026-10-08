@@ -31,6 +31,11 @@ export type FileDropzoneProps = FieldProps & {
   hint?: JSX.Element;
   /** One sentence that says what dropping does, shown while files are over the zone. Defaults to "Drop to upload". */
   dropLabel?: string;
+  /**
+   * Chooses files when the zone is clicked, instead of the device's file dialog, for example to offer other sources as
+   * well. Called within the click, so it may still open the device's dialog; resolve `[]` when the user cancels.
+   */
+  choose?: () => Promise<readonly File[]>;
   onDrop: (files: File[]) => void | Promise<void>;
 };
 
@@ -104,7 +109,10 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
         data-invalid={error() ? "true" : undefined}
         disabled={disabled()}
         {...fieldControlAria(meta, props)}
-        onClick={() => input?.click()}
+        onClick={() => {
+          if (props.choose) void props.choose().then((files) => emit([...files]));
+          else input?.click();
+        }}
       >
         <span class="k2b-dropzone__icon" aria-hidden="true">
           <i class={props.busy ? "ti ti-loader-2 k2b-spin" : (props.icon ?? "ti ti-cloud-upload")} />

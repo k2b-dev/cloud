@@ -52,6 +52,11 @@ export type ChatCommand = {
 
 export type ChatFileSelection = {
   onSelect: (files: readonly File[]) => void | Promise<void>;
+  /**
+   * Chooses files for "Attach files" instead of the device's file dialog, for example to offer other sources as well.
+   * Called within the menu activation, so it may still open the device's dialog; resolve `[]` when the user cancels.
+   */
+  choose?: () => Promise<readonly File[]>;
   onError?: (error: unknown) => void;
   accept?: string;
   multiple?: boolean;
@@ -271,7 +276,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         icon: addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-paperclip",
         label: props.fileSelection.label ?? messages().attachFiles,
         disabled: !canSelectFiles(),
-        action: () => fileInputRef?.click(),
+        action: () => chooseFiles(),
       });
     }
     for (const action of props.menuActions ?? []) {
@@ -351,6 +356,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <strong title={attachment.name}>{attachment.name}</strong>
     </span>
   );
+
+  const chooseFiles = () => {
+    const choose = props.fileSelection?.choose;
+    if (!choose) return fileInputRef?.click();
+    choose().then(
+      (files) => void runFiles(files),
+      (error: unknown) => (props.fileSelection?.onError ?? props.onError)?.(error),
+    );
+  };
 
   const runFiles = async (files: FileList | readonly File[]) => {
     if (!canSelectFiles()) return;
