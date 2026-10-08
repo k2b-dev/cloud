@@ -20,7 +20,7 @@ import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
 import { chatPresentations } from "./chat-presentations";
 import { clientCalls } from "./client-calls";
-import { evaluateCodeMode } from "./code-mode.eval";
+import { evaluateStudioCase, type StudioEvalResult, studioEvalSummary } from "./code-mode.eval";
 import { artifactCodeHandlers } from "./code-tools";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase } from "./database";
@@ -31,6 +31,7 @@ import { HttpPrepare } from "./http-contracts";
 import { httpService } from "./http-service";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
+import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
 import { testIdentity } from "./test-identity";
 
 function checkConversation(conversationId: string, userId: string) {
@@ -2322,75 +2323,99 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
   test.skipIf(!process.env.ASSISTANT_EVAL_URL)(
-    "real model builds and exercises the three-CSV dashboard",
+    "real model builds the Studio wow cases",
     async () => {
-      const conversationId = crypto.randomUUID(),
-        turnId = crypto.randomUUID();
-      await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
-      await sql`INSERT INTO ai.turns(id,status) VALUES(${turnId}::uuid,'running')`;
-      const conversation = spyOn(aiConversations, "getConversation").mockImplementation(async (request) =>
-        request.ownerUserId !== owner.user.id
-          ? null
-          : {
-              id: conversationId,
-              shortId: "abc234",
-              title: "Host test",
-              titleSource: "user",
-              description: "",
-              descriptionSource: "user",
-              keywords: [],
-              pinnedAt: null,
-              done: null,
-              isDone: false,
-              lastUsedAt: "2026-09-14T00:00:00.000Z",
-              archivedAt: null,
-              runStatus: "running",
-              runError: null,
-              unreadCompletion: false,
-              projectId: null,
-              draft: { content: [], revision: 1, updatedAt: null },
-              createdByUserId: owner.user.id,
+      const selected = (process.env.ASSISTANT_EVAL_CASES ?? "").split(",").filter(Boolean);
+      const cases = STUDIO_EVAL_CASES.filter((item) => !selected.length || selected.includes(item.name));
+      expect(selected.filter((name) => !cases.some((item) => item.name === name))).toEqual([]);
+      const directory = process.env.ASSISTANT_EVAL_OUT ?? "/tmp/assistant-code-mode-eval";
+      // One user, chat and turn per case: parallel cases share neither apps nor check slots.
+      const runs = cases.map((evalCase) => ({
+        evalCase,
+        identity: testIdentity(crypto.randomUUID()),
+        conversationId: crypto.randomUUID(),
+        turnId: crypto.randomUUID(),
+      }));
+      const byConversation = new Map<string, (typeof runs)[number]>(runs.map((run) => [run.conversationId, run]));
+      for (const run of runs) {
+        await sql`INSERT INTO auth.users(id,display_name) VALUES(${run.identity.user.id}::uuid,'Test User')`;
+        await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${run.conversationId}::uuid,${run.identity.user.id}::uuid)`;
+        await sql`INSERT INTO ai.turns(id,status,conversation_id) VALUES(${run.turnId}::uuid,'running',${run.conversationId}::uuid)`;
+      }
+      const turnOf = (conversationId: string) => {
+        const run = byConversation.get(conversationId);
+        return run
+          ? {
+              id: run.turnId,
+              shortId: "abc345",
+              conversationId,
+              status: "running" as const,
+              attempt: 1,
+              modelProfileId: null,
               createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-      );
-      const turn = spyOn(aiConversations, "getActiveTurn").mockResolvedValue({
-        turn: {
-          id: turnId,
-          shortId: "abc345",
-          conversationId,
-          status: "running",
-          attempt: 1,
-          modelProfileId: null,
-          createdAt: new Date().toISOString(),
-          completedAt: null,
-          error: null,
-        },
-        liveBlocks: [],
-        liveSeq: 1,
-        actionWaitMs: 0,
-        waitingSince: null,
-      });
+              completedAt: null,
+              error: null,
+            }
+          : null;
+      };
+      const mocks = [
+        spyOn(aiConversations, "getConversation").mockImplementation(async (request) => {
+          const run = byConversation.get(request.conversationId);
+          return run && request.ownerUserId === run.identity.user.id
+            ? { ...checkConversation(run.conversationId, run.identity.user.id), runStatus: "running" as const }
+            : null;
+        }),
+        spyOn(aiConversations, "getActiveTurn").mockImplementation(async (request) => {
+          const turn = turnOf(request.conversationId);
+          return turn && { turn, liveBlocks: [], liveSeq: 1, actionWaitMs: 0, waitingSince: null };
+        }),
+        spyOn(aiConversations, "getTurn").mockImplementation(async (request) => turnOf(request.conversationId)),
+        spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Eval", toolSource: { kind: "none" } }),
+        spyOn(app.settings, "get").mockImplementation(
+          async (key) =>
+            ({
+              "assistant.storage_total_mib": 250,
+              "assistant.storage_file_mib": 50,
+              "assistant.rsql_url": requireInfraUrl("rsql"),
+              "assistant.rsql_api_token": "artifact-test-only",
+            })[key],
+        ),
+      ];
+      const results: StudioEvalResult[] = [];
       try {
-        const result = await evaluateCodeMode(
-          { ...owner, conversationId, locale: "de", timeZone: "Europe/Berlin", signal: AbortSignal.timeout(1_200_000) },
-          turnId,
+        const queue = [...runs];
+        const concurrency = Number(process.env.ASSISTANT_EVAL_CONCURRENCY || 3);
+        await Promise.all(
+          Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+            for (let run = queue.shift(); run; run = queue.shift())
+              results.push(
+                await evaluateStudioCase(
+                  run.evalCase,
+                  {
+                    ...run.identity,
+                    conversationId: run.conversationId,
+                    locale: "de",
+                    timeZone: "Europe/Berlin",
+                    signal: AbortSignal.timeout(STUDIO_EVAL_CASE_MS),
+                  },
+                  run.turnId,
+                  `${directory}/${run.evalCase.name}`,
+                ),
+              );
+          }),
         );
-        expect(result.apps).toHaveLength(1);
-        const app = result.apps[0]!;
-        const runs = result.history
-          .filter((entry) => entry.message.role === "tool_result")
-          .map((entry) => (entry.message.role === "tool_result" ? entry.message.result : null));
-        expect(app.source.files.some((file) => file.path === "index.html")).toBe(true);
-        expect(runs).toContainEqual(expect.objectContaining({ status: "ready" }));
-        expect(runs).toContainEqual(expect.objectContaining({ userVisible: true, presentationId: expect.any(String) }));
       } finally {
         await agentHost.close();
-        conversation.mockRestore();
-        turn.mockRestore();
+        for (const mock of mocks) mock.mockRestore();
       }
+      results.sort((a, b) => cases.findIndex((item) => item.name === a.name) - cases.findIndex((item) => item.name === b.name));
+      const summary = studioEvalSummary(results);
+      await Bun.write(`${directory}/summary.md`, summary);
+      console.log(summary);
+      // The numbers are the result; the harness only fails when a case produced no record.
+      expect(results).toHaveLength(cases.length);
     },
-    1_230_000,
+    STUDIO_EVAL_CASE_MS * STUDIO_EVAL_CASES.length + 60_000,
   );
   test("chat presentations store one-off files or a saved app, deduplicate and enforce chat ownership", async () => {
     const conversationId = crypto.randomUUID();
