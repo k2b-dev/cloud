@@ -20,7 +20,7 @@ import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
 import { chatPresentations } from "./chat-presentations";
 import { clientCalls } from "./client-calls";
-import { evaluateStudioCase, type StudioEvalResult, studioEvalSummary } from "./code-mode.eval";
+import { evaluateStudioCase, type StudioEvalResult, studioEvalFailure, studioEvalSummary } from "./code-mode.eval";
 import { artifactCodeHandlers } from "./code-tools";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase } from "./database";
@@ -2385,6 +2385,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       try {
         const queue = [...runs];
         const concurrency = Number(process.env.ASSISTANT_EVAL_CONCURRENCY || 3);
+        // A failing case becomes its own unmeasured record, so the teardown waits for every other case.
         await Promise.all(
           Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
             for (let run = queue.shift(); run; run = queue.shift())
@@ -2400,7 +2401,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
                   },
                   run.turnId,
                   `${directory}/${run.evalCase.name}`,
-                ),
+                ).catch((caught: unknown) => studioEvalFailure(run.evalCase.name, caught)),
               );
           }),
         );

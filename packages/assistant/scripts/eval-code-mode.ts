@@ -33,6 +33,8 @@ Options:
                       ASSISTANT_EVAL_API_KEY. Without it, the configured Cloud default model is used,
                       which needs DATABASE_URL and APP_SECRET of that installation.
   --help              Show this help
+
+Needs CLOUD_TEST_VALKEY_URL and CLOUD_TEST_GOTENBERG_URL; Postgres and rsql run in disposable containers.
 `);
   process.exit(0);
 }
@@ -40,6 +42,13 @@ const unknown = (options.case ?? []).filter((name) => !STUDIO_EVAL_CASES.some((i
 if (unknown.length) throw new Error(`Unknown case: ${unknown.join(", ")}`);
 const concurrency = Number(options.concurrency);
 if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("--concurrency must be a positive integer");
+// Without them, evaluated apps fail on cache or PDF rendering and the run would count that against the model.
+const missing = ["CLOUD_TEST_VALKEY_URL", "CLOUD_TEST_GOTENBERG_URL"].filter((key) => !process.env[key]);
+if (missing.length) throw new Error(`Set ${missing.join(" and ")}: evaluated apps use Valkey and render PDFs with Gotenberg.`);
+// The numbers belong to this exact harness and skill state; "-dirty" marks uncommitted changes.
+const commit = Bun.spawnSync(["git", "describe", "--always", "--dirty", "--exclude", "*"], { cwd: import.meta.dir })
+  .stdout.toString()
+  .trim();
 
 async function model(): Promise<AiResolvedModel> {
   if (!options.profile) return resolveAiModel();
@@ -75,6 +84,7 @@ try {
       ASSISTANT_EVAL_TOKEN: token,
       ASSISTANT_EVAL_MODEL: profile.model,
       ASSISTANT_EVAL_REASONING: profile.reasoningEffort ?? "",
+      ASSISTANT_EVAL_COMMIT: commit,
       ASSISTANT_EVAL_CASES: (options.case ?? []).join(","),
       ASSISTANT_EVAL_OUT: options.out,
       ASSISTANT_EVAL_CONCURRENCY: String(concurrency),

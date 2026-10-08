@@ -50,27 +50,41 @@ the `ai.model_profiles_json` format with `--profile` and its API key in
 `ASSISTANT_EVAL_API_KEY`. Credentials stay in the parent process behind an
 authenticated loopback proxy. Postgres and rsql run in disposable containers;
 Valkey and Gotenberg come from `CLOUD_TEST_VALKEY_URL` and
-`CLOUD_TEST_GOTENBERG_URL`. The user's existing chats are untouched.
+`CLOUD_TEST_GOTENBERG_URL`, and the command stops before it starts when either
+is missing. The user's existing chats are untouched.
 
-The agent gets the Code Mode skill, the real tool descriptions and the real
-`code_check`. It shows each app with `code_present`. `view_image` is answered by
-the evaluated model itself, the way a vision-capable chat model works; it reads
-images only, so PDFs are read as text.
+The agent gets the Code Mode skill, the real tool descriptions, the chat ID and
+the real `code_check`. It shows each app with `code_present`. `view_image` is
+answered by the evaluated model itself, the way a vision-capable chat model
+works; PDF pages are rendered to images first, as in the real tool. Each case
+has a single user, so sharing between team members is not exercised: a wrong
+grant in a team app still counts as presented.
 
 Every run writes to `--out` (default `/tmp/assistant-code-mode-eval/<time>`):
 
-- `summary.md`: one row per case and the totals;
+- `summary.md`: model, reasoning effort, commit and start time, one row per
+  case and the totals;
 - `<case>/result.json`: checks with errors and warnings, tool calls and time;
 - `<case>/check-<n>-*.png` and downloads such as PDFs, per check;
 - `<case>/app/`: the final app files, and `<case>/transcript.json`.
 
-Two numbers matter. **First check passed** says only that the first version was
-not broken. **Presented without a correction round** says that the first checked
-version is the one the agent showed. Neither proves that the app looks good or
-calculates correctly: look at the first and final screenshots and open the PDFs
-before you report a result, and compare calculated values with the source data.
-Record the model, reasoning effort and date with the numbers; runs with
-different models are not a controlled comparison.
+Two numbers matter, counted over the checks of the presented app. **First check
+passed** says only that the first version was not broken. **Presented without a
+correction round** says that the first checked version is the one the agent
+showed; it differs from the first number only when the agent changes a passing
+version before showing it, for example after looking at its screenshots. A
+`code_check` call that fails as a tool call, such as a lost host, checks no
+version and is listed separately.
+
+A case that ends before the model finishes on its own, through a provider
+error, the 25-minute limit or the 60-turn limit, is marked as not measured and
+left out of the totals. Neither number proves that the app looks good or
+calculates correctly: look at the first and final screenshots, including the
+filled states the steps may have deleted again, open the PDFs before you report
+a result, and compare calculated values with the source data. Report a case you
+could not see in its main state as unverified. Runs with different models,
+reasoning efforts or commits are not a controlled comparison; a commit ending in
+`-dirty` had uncommitted changes.
 
 ## Evaluate HTML app checks
 
