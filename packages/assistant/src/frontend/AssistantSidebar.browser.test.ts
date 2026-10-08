@@ -33,7 +33,8 @@ render(
 );
 `;
 
-const now = Date.now();
+// One fixed clock for the fixtures and the page: noon in Berlin, far from the midnight that changes the sections.
+const now = Date.parse("2026-10-08T10:00:00.000Z");
 const conversation = (id: string, title: string, hoursAgo: number, overrides: Partial<AiConversation> = {}): AiConversation => ({
   id,
   shortId: id,
@@ -60,7 +61,6 @@ const conversation = (id: string, title: string, hoursAgo: number, overrides: Pa
 
 const quiet = [
   conversation("pinned", "Wochenbericht Vertrieb", 400, { pinnedAt: "2026-09-01T08:00:00.000Z" }),
-  // Minutes ago is today, three days ago is within the week, and two months ago is older, whatever the clock says.
   conversation("offer", "Angebot an Jana Berger mit einem sehr langen Titel, der nicht in die Zeile passt", 0.01),
   conversation("invoices", "Rechnungen Oktober", 0.02),
   conversation("travel", "Reise nach Lyon", 72),
@@ -133,6 +133,7 @@ const open = async (conversations: AiConversation[]): Promise<Page> => {
     `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head>` +
     `<body class="k2b-ui" style="margin:0"><div id="root" style="display:flex;height:100vh"></div>` +
     `<script>window.harness = ${JSON.stringify({ conversations })};</script></body></html>`;
+  await page.clock.setFixedTime(now);
   await page.route("http://assistant.test/", (route) => route.fulfill({ body: html, contentType: "text/html" }));
   await page.goto("http://assistant.test/");
   page.setDefaultTimeout(4000);

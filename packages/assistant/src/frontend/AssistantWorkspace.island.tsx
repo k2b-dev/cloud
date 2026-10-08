@@ -588,8 +588,11 @@ export default function AssistantWorkspace(props: Props) {
   // "New chat" on a chat that is still empty keeps it: another empty chat would only crowd the list.
   const activeChatIsBlank = () => {
     const conversationId = chat.activeConversationId();
+    // A chat that is still loading also shows no messages; only a loaded chat counts as empty.
     return Boolean(
       conversationId &&
+        chat.conversation()?.id === conversationId &&
+        !chat.loadingConversation() &&
         !activeProject() &&
         !activeConversation()?.projectId &&
         chat.messages().length === 0 &&
