@@ -64,7 +64,8 @@ const checkAppsBoundaries = (workspaceRoot: string, appNames: string[]): Finding
           continue;
         }
 
-        if (specifier.includes("../cloud/src") || specifier.includes("../../cloud/")) {
+        // Evaluation harnesses stand in for internal Cloud tools and never run in an application runtime.
+        if ((specifier.includes("../cloud/src") || specifier.includes("../../cloud/")) && !file.endsWith(".eval.ts")) {
           findings.push({ file, line, message: `Do not import cloud package via filesystem paths from apps (${specifier}).` });
           continue;
         }

@@ -274,6 +274,211 @@ Notification email also uses outgoing mail as app `core`: individual deliveries
 use the immediate lane; notification batches use the default profile's paced
 bulk lane. The notification service supplies its sanitized HTML frame.
 
+## Examples
+
+These functions run after `app.start()`. Database callbacks belong to your
+application; they commit before resolving. Use compact domain IDs so generated
+keys stay within the [idempotency key limit](#send-a-message).
+
+### Invoice with a PDF attachment
+
+Commit the issued invoice in your own database before calling this function;
+retry sending the same invoice version without issuing it again. Store the
+returned record ID with the invoice to [read delivery status](#read-application-delivery-status) later.
+[PDF rendering](/en/docs/platform/pdf-and-templates) requires configured Gotenberg.
+
+```ts
+import type { RequestActor } from "@k2b/cloud/contracts";
+import { mail, renderHtmlToPdf } from "@k2b/cloud/services";
+
+export const sendInvoiceMail = async (
+  invoice: { id: string; version: number; to: string; html: string },
+  saveMailId: (invoiceId: string, recordId: string) => Promise<void>,
+  actor?: RequestActor,
+) => {
+  const pdf = await renderHtmlToPdf({ html: invoice.html, title: `Invoice ${invoice.id}` });
+  const result = await mail.send({
+    to: [invoice.to],
+    subject: `Invoice ${invoice.id}`,
+    text: "Your issued invoice is attached.",
+    attachments: [{ filename: `invoice-${invoice.id}.pdf`, contentType: pdf.contentType, content: pdf.pdf }],
+    ref: { scope: "invoice", id: invoice.id },
+    key: `invoice-${invoice.id}-v${invoice.version}`,
+    actor,
+  });
+  if (!result.ok) {
+    switch (result.error.code) {
+      case "quota_exceeded": return { accepted: false, action: "retry_later" };
+      case "attachments_too_large": return { accepted: false, action: "reduce_attachment" };
+      case "profile_required": return { accepted: false, action: "choose_profile" };
+      default: throw new Error(`${result.error.code}: ${result.error.message}`);
+    }
+  }
+  await saveMailId(invoice.id, result.data.id);
+  const status = result.data.status;
+  const delivery = status === "queued" || status === "sending" ? "pending" : status;
+  return { accepted: true, record: result.data, delivery };
+};
+```
+
+An acceptance error needs the indicated action. Once accepted, `failed` is a
+recorded delivery failure: show `record.error` instead of treating it as an
+acceptance error. `queued` and `sending` remain pending; check the stored ID
+later. See [Handle errors](#handle-errors) for other codes and
+[Choose a sender](#choose-a-sender) when `profile_required` needs an explicit profile.
+The stable invoice/version key prevents another acceptance on a retried request;
+it does not remove [at-least-once delivery](#send-a-message). A deliberate
+resend, for example to a corrected address after `failed`, needs a new key,
+such as one with a stored resend counter (`invoice-<id>-v<version>-r<n>`). The
+old key keeps returning the earlier record, including a failed one, until
+[record retention](/en/docs/operations/outgoing-mail#set-retention) deletes it.
+
+### One-time download link
+
+Create a cryptographically random token and a separate, non-secret token ID in
+your application. Set a short expiry, for example 15 minutes. This function
+stores only the token hash and expiry in your database before using the
+immediate `send` lane. The download handler must check expiry and atomically
+mark the token as used when redeeming it. Keep the same token and ID when
+retrying this send; `storeToken` must preserve an existing token's used state.
+
+Message text and HTML stay in the send log until content retention removes
+them (default 90 days). Administrators can read that content through an audited
+operation, so these links must be single-use and short-lived. Keep the link and
+token value out of `ref`, `key`, headers, and the subject. See
+[Retention](/en/docs/operations/outgoing-mail#set-retention) and
+[Send log access](/en/docs/operations/outgoing-mail#inspect-the-send-log).
+
+```ts
+import { mail } from "@k2b/cloud/services";
+
+type DownloadToken = { id: string; value: string; expiresAt: string };
+type StoredDownloadToken = { id: string; downloadId: string; tokenHash: string; expiresAt: string };
+
+export const sendDownloadLink = async (
+  downloadId: string,
+  to: string,
+  origin: string,
+  token: DownloadToken,
+  storeToken: (token: StoredDownloadToken) => Promise<void>,
+) => {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token.value)));
+  const tokenHash = [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  await storeToken({ id: token.id, downloadId, tokenHash, expiresAt: token.expiresAt });
+  const link = new URL("/downloads/confirm", origin);
+  link.searchParams.set("token", token.value);
+  return mail.send({
+    to: [to],
+    subject: "Your download link",
+    text: `Download your file: ${link.href}`,
+    ref: { scope: "download", id: downloadId },
+    key: `download-link-${token.id}`,
+  });
+};
+```
+
+Handle this `send` result like the invoice result above. A pending send can
+outlive the token: do not extend its expiry to accommodate delivery retries.
+
+### Resumable bulk stock update
+
+Before starting, persist the run and a finite customer snapshot in your
+application. Generate the run ID with `crypto.randomUUID()`; its fixed length
+keeps every run/customer key distinct. Each customer appears once in the
+snapshot. Validate addresses while building it, using the syntax from
+[Send a message](#send-a-message): one invalid address rejects its whole chunk
+with `bad_input` on every resume. Resume from the run's stored
+`nextOffset`; commit accepted batch IDs and record IDs with the checkpoint in
+`saveBatch`. If acceptance succeeded but checkpoint storage failed, reuse the
+same run ID and customer keys: known keys return existing records.
+
+```ts
+import type { MailFilter, MailRecord } from "@k2b/cloud/contracts";
+import { mail } from "@k2b/cloud/services";
+
+export const enqueueStockRun = async (
+  runId: string,
+  customers: { id: string; email: string }[],
+  startOffset: number,
+  saveBatch: (batch: { batchId: string; ids: string[]; nextOffset: number }) => Promise<void>,
+) => {
+  let size = 1000;
+  for (let offset = startOffset; offset < customers.length; ) {
+    const messages = customers.slice(offset, offset + size).map((customer) => ({
+      to: [customer.email],
+      subject: "Stock update",
+      text: "New stock arrived. Visit our catalogue to see it.",
+      key: `stock-${runId}-${customer.id}`,
+    }));
+    const batch = await mail.enqueue(messages);
+    if (!batch.ok) {
+      const { code, limit, used } = batch.error;
+      if (code === "quota_exceeded" && limit !== undefined && used !== undefined && limit > used) {
+        // Each rejected chunk shrinks, so retries terminate.
+        size = limit - used;
+        continue;
+      }
+      if (code === "backlog_full" || code === "quota_exceeded") return { nextOffset: offset, reason: code };
+      throw new Error(`${code}: ${batch.error.message}`);
+    }
+    await saveBatch({ ...batch.data, nextOffset: offset + messages.length });
+    offset += messages.length;
+  }
+  return { nextOffset: customers.length };
+};
+
+export const readStockBatch = async (batchId: string, cursor?: string) => {
+  const filter: MailFilter = { batchId };
+  const items: MailRecord[] = [];
+  // At most 1000 messages per batch, with 100 records per page.
+  for (let page = 0; page < 10; page++) {
+    const result = await mail.list(filter, { perPage: 100, cursor });
+    if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
+    items.push(...result.data.items);
+    cursor = result.data.nextCursor;
+    if (!cursor) break;
+  }
+  return { items, nextCursor: cursor };
+};
+```
+
+When `reason` is `backlog_full`, save the rejected offset and schedule a later
+attempt after capacity has freed; do not retry in a hot loop. The function
+shrinks a chunk to the recipient quota that is still free, so `quota_exceeded`
+means none is left. Schedule a later attempt after accepted recipients age out
+of the rolling 24 hours, or ask the operator to raise the limit. A run larger
+than the daily limit therefore spans several days. See
+[Enqueue a batch](#enqueue-a-batch) for limits and acceptance rules.
+
+Call `readStockBatch` when showing progress, and use its `nextCursor` for a
+further bounded traversal if needed. A record can move from `sent` to
+`bounced` when a standard DSN collected from the profile's optional IMAP mailbox
+reports failed recipients. On a resumed run, known records retain their
+original batch membership; use the saved `ids` to read them in groups of at
+most 100, as described in [Enqueue a batch](#enqueue-a-batch).
+
+## Move from an application-owned SMTP account
+
+1. Replace the application's nodemailer transport with `mail` from
+   `@k2b/cloud/services`. Remove its SMTP settings and environment variables,
+   and declare `platformPermissions: ["mail:send"]` as shown above.
+2. Ask the operator to create and assign a sender profile. They can reuse the
+   application's former SMTP account as a dedicated profile. See the
+   [operator migration steps](/en/docs/operations/outgoing-mail#move-an-applications-smtp-account).
+3. Map message fields using [Send a message](#send-a-message): `to`, `subject`,
+   and plain `text` are required; `replyTo` is optional. The sender address
+   comes from the profile; use optional `fromName` for a display name. Optional
+   `html` is sanitized and sent without a frame. Move attachments to the
+   [attachment contract](#stream-attachments) and custom headers to the
+   [allow-list](#supply-custom-headers).
+
+There is no cc/bcc support. Cloud owns Message-ID, addressing, and MIME
+headers; do not pass them as custom headers. Delivery is at least once, and
+`sent` records SMTP acceptance rather than inbox delivery. Quota applies to
+both APIs; pacing applies to `enqueue`. Use `send` for immediate messages and
+`enqueue` for bulk runs. Give retryable calls stable keys and inspect the
+accepted record's delivery status.
+
 See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for sender
 configuration, retention, and admin log access, and
 [Notifications](/en/docs/platform/notifications) for typed notifications.

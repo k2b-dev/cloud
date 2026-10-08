@@ -34,6 +34,15 @@ full page load; `replace` and `scroll` apply only together with `onNavigate`.
 The `@k2b/ui` navigation components already pass `onNavigate` when they enhance
 navigation.
 
+## Applications send mail through outgoing mail
+
+Application authors replace app-owned SMTP settings and transports with `mail`
+from `@k2b/cloud/services` and declare `platformPermissions: ["mail:send"]`.
+Operators can reuse the application's former SMTP account as a sender profile
+and assign it to that application before removing its old deployment secret.
+Follow the [application migration guide](/en/docs/platform/outgoing-mail#move-from-an-application-owned-smtp-account)
+and [operator migration steps](/en/docs/operations/outgoing-mail#move-an-applications-smtp-account).
+
 ## Assistant keeps calculate loaded and offers after corrections
 
 `calculate` is no longer a deferred built-in: a turn that offers it can call
