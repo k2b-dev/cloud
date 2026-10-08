@@ -54,6 +54,23 @@ describe("markdown links", () => {
     }
   });
 
+  test("a raw anchor in a link label stays text, so the label stays one link", () => {
+    const html = renderMarkdownSync(
+      '[outer <a href="https://attacker.test">click</a> **<a href="https://b.test">x</a>**](https://trusted.test)',
+    );
+
+    expect(html.match(/<a\b/g)).toHaveLength(1);
+    expect(html).toContain(
+      'outer &lt;a href="https://attacker.test"&gt;click&lt;/a&gt; <strong>&lt;a href="https://b.test"&gt;x&lt;/a&gt;</strong><i ',
+    );
+  });
+
+  test("Notebooks note and attachment links render their label as text outside Notebooks", () => {
+    const html = renderHelpMarkdown("Open [the plan](note://Abc123#restore) or [Seed order.pdf](attach://pQ45Rt).");
+
+    expect(html).toBe("<p>Open the plan or Seed order.pdf.</p>\n");
+  });
+
   test("numeric character references stay text and cannot rebuild markup or URL schemes", () => {
     const html = renderMarkdownSync(
       "&#60;script&#62;alert(1)&#60;/script&#62; &#x3c;img src=x onerror=alert(1)&#x3e; <&#106;avascript:alert(1)>",

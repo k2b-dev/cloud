@@ -180,7 +180,9 @@ reader's language), Notebooks, and Markdown PDF exports. See
 By default these helpers render links like `MarkdownView`: a relative link is
 a reference pill with a type icon, and a web or mail link is quiet text with a
 thin accent underline (see
-[Markdown content](/en/ui/content/markdown#links-and-references)).
+[Markdown content](/en/ui/content/markdown#links-and-references)). A raw
+anchor inside a link's text stays text. A Notebooks `note://` or `attach://`
+link renders as its text, because only Notebooks resolves it.
 Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
 email. Each link then renders as an ordinary anchor around its text instead.
 Email drops the screen-reader styling, so an

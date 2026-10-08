@@ -109,16 +109,21 @@ Long words and URLs wrap instead of widening the page.
 Every rendered link is one of two kinds, and the link destination decides
 which:
 
-- A **reference** points to content of the host: any relative URL. `#anchor`
-  is a heading of the same document; a relative URL whose last path segment has
-  a file extension is a file; any other relative URL is a page. A reference is
+- A **reference** points to content of the host: any relative URL that stays
+  on the host. `#anchor` is a heading of the same document; a relative URL
+  whose last path segment has a file extension is a file; any other relative
+  URL is a page. A reference is
   a calm pill: a neutral fill, the text in the prose colour, and an icon whose
   colour names the type. PDFs are red, images violet, design files orange,
   notes blue-gray, headings and pages gray, and tasks green. Any other file
   shows the icon of its file family in the muted text colour.
-- A **web link** (an absolute or protocol-relative URL) is prose text with a
-  thin underline in the link accent and a small ↗. A **mail link** (`mailto:`,
+- A **web link** (an absolute URL, or a relative one that a browser resolves
+  to another host, such as `//host` or `/\host`) is prose text with a thin
+  underline in the link accent and a small ↗. A **mail link** (`mailto:`,
   `tel:`) is the same without the arrow.
+
+A link around an image is the image: a plain anchor without pill or arrow,
+named by the image's alternative text.
 
 A reference's accessible name starts with its type in the render locale, as
 in "PDF: Brand-2026.pdf" or "Überschrift: Akzentfarbe". The type names are

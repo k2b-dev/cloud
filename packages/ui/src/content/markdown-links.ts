@@ -61,14 +61,22 @@ export const markdownFileType = (fileName: string): "pdf" | "image" | "design" |
   return "file";
 };
 
+const REFERENCE_BASE = "https://reference.invalid/";
+
 /**
  * The reference a link destination names on its own: `#anchor` is a heading in the same document, and any other
  * relative URL is a page of the host, or a file when its last path segment has a file extension. Absolute URLs,
- * protocol-relative URLs and every scheme are web or mail links; the result is then `null`.
+ * every scheme, and relative URLs that a browser resolves to another host, such as `//host` or `/\host`, are web
+ * or mail links; the result is then `null`.
  */
 export const markdownLinkReference = (href: string): MarkdownReference | null => {
   const url = href.trim();
-  if (!url || url.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(url)) return null;
+  if (!url || /^[a-z][a-z\d+.-]*:/i.test(url)) return null;
+  try {
+    if (new URL(url, REFERENCE_BASE).origin !== new URL(REFERENCE_BASE).origin) return null;
+  } catch {
+    return null;
+  }
   if (url.startsWith("#")) return { kind: "heading" };
   const segment = url.split(/[?#]/, 1)[0]!.split("/").pop() ?? "";
   let fileName = segment;
@@ -113,14 +121,16 @@ const TYPE_LABELS: Record<MarkdownReferenceType, keyof UiMessages> = {
 export const markdownReferenceTypeLabel = (type: MarkdownReferenceType, locale?: string): string =>
   String(resolveUiMessages(locale)[TYPE_LABELS[type]]);
 
-/** The text of rendered inline HTML. */
-const htmlText = (html: string): string =>
-  html
-    .replace(/<[^>]*>/g, "")
-    .replace(
-      /&(amp|lt|gt|quot|#39);/g,
-      (entity) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" })[entity] ?? entity,
-    );
+/** The text of rendered inline HTML, still as HTML: tags go, character references such as `&copy;` stay. */
+const htmlText = (html: string): string => html.replace(/<[^>]*>/g, "");
+
+/** HTML text as an attribute value. Character references stay for the browser to decode; nothing can end the value. */
+const textAttribute = (text: string): string =>
+  text
+    .replace(/&(?!#\d+;|#x[\da-f]+;|[a-z][a-z\d]*;)/gi, "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 
 const isMailHref = (href: string) => /^(?:mailto|tel):/i.test(href.trim());
 
@@ -128,13 +138,15 @@ const isMailHref = (href: string) => /^(?:mailto|tel):/i.test(href.trim());
  * One link of rendered Markdown. A reference to content of the host renders as a calm pill: a neutral fill, the
  * text in the prose colour, and an icon whose colour names the type. Its accessible name starts with the type, as
  * in "PDF: Brand-2026.pdf". A heading in another document shows that document first ("Notes › Heading"). A web
- * link stays prose text with a thin underline in the link accent and a small ↗; a mail link has no arrow.
+ * link stays prose text with a thin underline in the link accent and a small ↗; a mail link has no arrow. A link
+ * around an image is the image: a plain anchor that the image's own text names.
  */
 export const renderMarkdownLink = (input: MarkdownLinkInput): string => {
   const titleAttribute = input.title ? ` title="${escapeHtml(input.title)}"` : "";
   const targetAttributes =
     input.target === "_blank" ? ' target="_blank" rel="noopener noreferrer"' : input.rel ? ` rel="${escapeHtml(input.rel)}"` : "";
   const href = escapeHtml(input.href);
+  if (/<img\b/i.test(input.html)) return `<a href="${href}"${titleAttribute}${targetAttributes}>${input.html}</a>`;
   const reference = input.reference;
   if (!reference) {
     const mail = isMailHref(input.href);
@@ -146,9 +158,12 @@ export const renderMarkdownLink = (input: MarkdownLinkInput): string => {
   const icon = markdownReferenceIcon(type, reference.fileName ?? text);
   const size = input.standalone && reference.kind === "file" && reference.size ? reference.size : "";
   const document = reference.kind === "heading" ? (reference.document?.trim() ?? "") : "";
-  const name = `${markdownReferenceTypeLabel(type, input.locale)}: ${document ? `${document} › ` : ""}${text}${size ? `, ${size}` : ""}`;
+  const name =
+    escapeHtml(`${markdownReferenceTypeLabel(type, input.locale)}: ${document ? `${document} › ` : ""}`) +
+    (input.text === undefined ? textAttribute(text) : escapeHtml(text)) +
+    (size ? escapeHtml(`, ${size}`) : "");
   return (
-    `<a href="${href}" class="k2b-reference" data-reference="${type}" aria-label="${escapeHtml(name)}"${titleAttribute}${targetAttributes}>` +
+    `<a href="${href}" class="k2b-reference" data-reference="${type}" aria-label="${name}"${titleAttribute}${targetAttributes}>` +
     `<i class="k2b-reference__icon ti ${icon}" aria-hidden="true"></i>` +
     (document ? `<span class="k2b-reference__document">${escapeHtml(document)} ›</span> ` : "") +
     input.html +

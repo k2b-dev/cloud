@@ -292,7 +292,7 @@ export default function VersionHistory(props: Props) {
   });
   const diffSummary = createMemo(() => summarizeDiff(diffRows()));
 
-  // A version reads as Book did: note, heading and attachment links are references, without query results.
+  // A version reads as Book does: note, heading and attachment links are references, and a query shows its definition.
   const selectedContentHtml = createMemo(
     () =>
       renderNotebookBook({
@@ -300,6 +300,7 @@ export default function VersionHistory(props: Props) {
         notebookId: props.notebookId,
         noteId: props.noteId,
         locale: locale(),
+        querySource: true,
       }).html,
   );
 

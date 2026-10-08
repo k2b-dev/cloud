@@ -2,7 +2,13 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { markdownFileType, markdownReferenceIcon, markdownReferenceType } from "@k2b/ui";
+import {
+  type MarkdownReference,
+  markdownLinkReference,
+  markdownReferenceIcon,
+  markdownReferenceType,
+  markdownReferenceTypeLabel,
+} from "@k2b/ui";
 import { anchorHash, parseNoteLink } from "../../../lib/heading-anchors";
 import { openAttachmentById } from "../attachment-preview";
 import { navigateToNotebookNote } from "../soft-navigation";
@@ -12,14 +18,35 @@ import { buildAttachmentContentUrl, extractAttachmentId, isSafeMarkdownUrl } fro
 type LinkData = {
   label: string;
   url: string;
-  /** Resolved final href (rewritten for attachment URLs, identity otherwise). */
+  /** Resolved final href: a note's path for `note://`, the attachment's content URL for `attach://`, otherwise the URL. */
   resolvedUrl: string;
-  isNoteLink: boolean;
-  /** The note link names a heading of the note. */
-  isHeadingLink: boolean;
+  /** What the link names inside Cloud, classified as Book does; `null` for a web or mail link. */
+  reference: MarkdownReference | null;
   /** Set if the link is an `attach://<shortId>` reference to a non-image blob. */
   attachmentId: string | null;
   notebookId: string;
+};
+
+/** The element opens its link on click and, where the editor is read-only, from the keyboard as a link. */
+const makeOpener = (el: HTMLElement, view: EditorView, open: () => void) => {
+  el.classList.add("cm-link-open");
+  el.setAttribute("role", "link");
+  if (view.state.readOnly) el.tabIndex = 0;
+  el.onmousedown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  el.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    open();
+  };
+  el.onkeydown = (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
+    open();
+  };
 };
 
 class LinkWidget extends WidgetType {
@@ -27,90 +54,73 @@ class LinkWidget extends WidgetType {
     super();
   }
 
-  override toDOM() {
-    const { attachmentId, isNoteLink, label } = this.linkData;
-    if (attachmentId || isNoteLink) {
+  override toDOM(view: EditorView) {
+    const { attachmentId, label, reference, url } = this.linkData;
+    if (reference) {
       // A reference renders as the shared calm pill of rendered Markdown: icon
-      // and text, no brackets. The whole pill acts — an attachment opens its
-      // preview (or asks to download), a note link navigates — while the editor
-      // keeps its cursor. The pill is drawn by `.k2b-reference`, so hover only
-      // darkens its fill and nothing moves.
-      const type = attachmentId
-        ? markdownFileType(label)
-        : markdownReferenceType({ kind: this.linkData.isHeadingLink ? "heading" : "note" }, label);
+      // and text, no brackets, and a name that starts with its type. The whole
+      // pill acts while the editor keeps its cursor: an attachment opens its
+      // preview (or asks to download), anything else navigates as Book does.
+      // The pill is drawn by `.k2b-reference`, so hover only darkens its fill.
+      const type = markdownReferenceType(reference, label);
       const el = document.createElement("span");
-      el.className = `k2b-reference ${attachmentId ? "cm-attachment-pill" : "cm-note-link"}`;
+      el.className = "k2b-reference";
       el.dataset.reference = type;
-      el.title = attachmentId ? label : this.linkData.url;
+      el.title = attachmentId ? label : url;
+      el.setAttribute("aria-label", `${markdownReferenceTypeLabel(type)}: ${label}`);
 
       const icon = document.createElement("i");
       icon.className = `k2b-reference__icon ti ${markdownReferenceIcon(type, label)}`;
       icon.setAttribute("aria-hidden", "true");
 
       el.append(icon, label);
-
-      el.onmousedown = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-      el.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // `note://<shortId>` is internal and not navigable; `resolvedUrl`
-        // carries the full path. The shared helper uses client-side editor
-        // navigation when mounted and falls back to SSR navigation otherwise.
+      // `note://<shortId>` is internal and not navigable; `resolvedUrl` carries
+      // the full path. The shared helper uses client-side editor navigation
+      // when mounted and falls back to document navigation otherwise.
+      makeOpener(el, view, () => {
         if (attachmentId) void openAttachmentById(this.linkData.notebookId, attachmentId, label);
         else void navigateToNotebookNote(this.linkData.resolvedUrl);
-      };
-
+      });
       return el;
     }
 
     // Web and mail links read like rendered ones: prose text with a thin
-    // accent underline. Clicking the text positions the cursor for editing;
-    // the small ↗ of a web link opens it in a new tab.
+    // accent underline. Clicking a web link's text positions the cursor for
+    // editing and its small ↗ opens it in a new tab; a mail link has no arrow,
+    // so its text opens it.
     const container = document.createElement("span");
     container.className = "cm-link-widget";
+    const open = () => window.open(url, "_blank", "noopener,noreferrer");
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "cm-link-label k2b-text-link";
     labelSpan.textContent = label;
     container.appendChild(labelSpan);
 
-    if (!/^(?:mailto|tel):/i.test(this.linkData.url)) {
-      const iconSpan = document.createElement("i");
-      iconSpan.className = "cm-link-icon k2b-text-link__external ti ti-arrow-up-right";
-      iconSpan.title = this.linkData.url;
-      iconSpan.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        window.open(this.linkData.url, "_blank", "noopener,noreferrer");
-      };
-      container.appendChild(iconSpan);
+    if (/^(?:mailto|tel):/i.test(url)) {
+      labelSpan.title = url;
+      makeOpener(labelSpan, view, open);
+      return container;
     }
+    const iconSpan = document.createElement("i");
+    iconSpan.className = "cm-link-icon k2b-text-link__external ti ti-arrow-up-right";
+    iconSpan.title = url;
+    iconSpan.setAttribute("aria-label", label);
+    makeOpener(iconSpan, view, open);
+    container.appendChild(iconSpan);
     return container;
   }
 
   override eq(other: WidgetType) {
-    return (
-      other instanceof LinkWidget &&
-      other.linkData.label === this.linkData.label &&
-      other.linkData.url === this.linkData.url &&
-      other.linkData.isNoteLink === this.linkData.isNoteLink &&
-      other.linkData.isHeadingLink === this.linkData.isHeadingLink &&
-      other.linkData.attachmentId === this.linkData.attachmentId
-    );
+    // Everything else derives from the label and the URL.
+    return other instanceof LinkWidget && other.linkData.label === this.linkData.label && other.linkData.url === this.linkData.url;
   }
 
   override ignoreEvent(event: Event) {
-    const target = event.target as HTMLElement;
-    // Note-link & attachment-pill swallow their own events — they navigate
-    // via onclick and CM should not try to position the cursor.
-    if (target.closest(".cm-note-link") !== null) return true;
-    if (target.closest(".cm-attachment-pill") !== null) return true;
-    // External link: only the icon click is "ours"; label click should pass
-    // through so CM positions the cursor for editing.
-    return target.closest(".cm-link-icon") !== null;
+    // Pills, mail labels and the ↗ act on their own and keep the editor's
+    // cursor; a web link's text passes its events to CodeMirror, which then
+    // positions the cursor for editing.
+    return (event.target as HTMLElement).closest(".cm-link-open") !== null;
   }
 }
 
@@ -131,15 +141,13 @@ const parseLinkSyntax = (text: string, notebookId: string): LinkData | null => {
     : note
       ? `/app/notebooks/${encodeURIComponent(notebookId)}/notes/${encodeURIComponent(note.noteId)}${anchorHash(note.anchor)}`
       : url;
-  return {
-    label: match[1],
-    url,
-    resolvedUrl,
-    isNoteLink: note !== null,
-    isHeadingLink: Boolean(note?.anchor),
-    attachmentId,
-    notebookId,
-  };
+  // The editor has no attachment metadata, so a file's type comes from its link text.
+  const reference: MarkdownReference | null = attachmentId
+    ? { kind: "file" }
+    : note
+      ? { kind: note.anchor ? "heading" : "note" }
+      : markdownLinkReference(url);
+  return { label: match[1], url, resolvedUrl, reference, attachmentId, notebookId };
 };
 
 const findLinks = (state: EditorState, notebookId: string): CursorZoneState => {
@@ -172,10 +180,7 @@ export const linksExtension = (notebookId: string): Extension => {
   const stateField = cursorZoneStateField((state) => findLinks(state, notebookId));
 
   const theme = EditorView.theme({
-    ".cm-link-icon": {
-      cursor: "pointer",
-    },
-    ".cm-note-link, .cm-attachment-pill": {
+    ".cm-link-open": {
       cursor: "pointer",
     },
   });
@@ -183,12 +188,9 @@ export const linksExtension = (notebookId: string): Extension => {
   const eventHandlers = EditorView.domEventHandlers({
     mousedown(event, view) {
       const target = event.target as HTMLElement;
-      // Note-link & attachment-pill clicks are handled by the widget's own
-      // onclick (note-link navigates same-window, attachment opens its
-      // preview). Bail out so CM doesn't reposition the cursor.
-      if (target.closest(".cm-note-link") || target.closest(".cm-attachment-pill")) {
-        return true;
-      }
+      // Pills, mail labels and the ↗ act through their own handlers. Bail out
+      // so CodeMirror doesn't reposition the cursor.
+      if (target.closest(".cm-link-open")) return true;
       if (target.closest(".cm-link-label")) {
         const pos = view.posAtDOM(target);
         if (pos !== null) {

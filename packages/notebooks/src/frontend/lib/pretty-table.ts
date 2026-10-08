@@ -10,7 +10,7 @@ import {
   parseProgressValue,
 } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
-import { renderMarkdownLink } from "@k2b/ui";
+import { markdownLinkReference, renderMarkdownLink } from "@k2b/ui";
 import { anchorHash, parseNoteLink } from "../../lib/heading-anchors";
 import { notebookWorkspaceMessages } from "../[id]/messages";
 import { prettyTableMessages } from "./pretty-table-messages";
@@ -26,7 +26,8 @@ export type PrettyTableData = {
 
 const TAG_RE = /(^|\s)#([a-zA-Z][\w-]*(?:\/[\w-]+)*)/g;
 const NOTE_LINK_RE = /\[([^\]]+)\]\((note:\/\/[0-9a-zA-Z]{6}(?:#[^)\s]*)?)\)/g;
-const MARKDOWN_LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+|tel:[^)\s]+)\)/g;
+// Web and mail links, and relative links to Cloud, which are references as in Book.
+const MARKDOWN_LINK_RE = /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+|tel:[^)\s]+|(?![a-zA-Z][a-zA-Z\d+.-]*:|\/\/)[^)\s]+)\)/g;
 const INLINE_CODE_RE = /`([^`\n]+)`/g;
 const ISO_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 export const escapeHtml = (s: string): string =>
@@ -78,9 +79,11 @@ const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string)
       const reference = { kind: note.anchor ? ("heading" as const) : ("note" as const) };
       return stashHtml(renderMarkdownLink({ href, html: escapeHtml(label), text: label, reference, locale }), placeholders);
     })
-    .replace(MARKDOWN_LINK_RE, (_match, label: string, href: string) =>
-      stashHtml(renderMarkdownLink({ href, html: escapeHtml(label), text: label, target: "_blank", locale }), placeholders),
-    )
+    .replace(MARKDOWN_LINK_RE, (_match, label: string, href: string) => {
+      const reference = markdownLinkReference(href);
+      const target = reference ? undefined : "_blank";
+      return stashHtml(renderMarkdownLink({ href, html: escapeHtml(label), text: label, target, reference, locale }), placeholders);
+    })
     .replace(INLINE_CODE_RE, (_match, code: string) => stashHtml(`<code>${escapeHtml(code)}</code>`, placeholders));
 
   const escaped = escapeHtml(withProtectedLinks);

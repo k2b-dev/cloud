@@ -20,7 +20,16 @@ describe("Markdown link kinds", () => {
     expect(markdownLinkReference("/files/Brand%20Guide.pdf?v=2#page=3")).toEqual({ kind: "file", fileName: "Brand Guide.pdf" });
     // A number after the last dot is no extension.
     expect(markdownLinkReference("/releases/2.0")).toEqual({ kind: "page" });
-    for (const href of ["https://example.com/a.pdf", "//example.com", "mailto:ada@example.test", "tel:+4930", "note://Abc123"]) {
+    for (const href of [
+      "https://example.com/a.pdf",
+      "//example.com",
+      "/\\example.com/a.pdf",
+      "\\\\example.com",
+      "/\t/example.com",
+      "mailto:ada@example.test",
+      "tel:+4930",
+      "note://Abc123",
+    ]) {
       expect(markdownLinkReference(href)).toBeNull();
     }
   });
@@ -125,6 +134,22 @@ describe("renderMarkdownLink", () => {
     expect(html).toContain('title="&quot;t&quot;"');
     expect(html).toContain('<span class="k2b-reference__document">&lt;b&gt;&quot;Doc&quot;&lt;/b&gt; ›</span>');
   });
+
+  test("character references in the link text reach the accessible name once", () => {
+    expect(renderMarkdownLink({ href: "/n/1", html: "&copy; 2026 &amp; &#x2192; R&D", reference: { kind: "page" } })).toContain(
+      'aria-label="Page: &copy; 2026 &amp; &#x2192; R&amp;D"',
+    );
+  });
+
+  test("a link around an image is the image: a plain anchor that the image's text names", () => {
+    const image = '<img src="logo.png" alt="Home">';
+    expect(renderMarkdownLink({ href: "/app", html: image, reference: { kind: "page" }, locale: "de" })).toBe(
+      `<a href="/app">${image}</a>`,
+    );
+    expect(renderMarkdownLink({ href: "https://example.com", html: image, target: "_blank" })).toBe(
+      `<a href="https://example.com" target="_blank" rel="noopener noreferrer">${image}</a>`,
+    );
+  });
 });
 
 describe("markStandaloneLinks", () => {
@@ -165,6 +190,11 @@ describe("renderSafeMarkdown links", () => {
     expect(html).toContain('data-reference="heading" aria-label="Überschrift: Top"');
     expect(html).toContain(`<a href="https://example.com" class="k2b-text-link" data-link="web">Site${ARROW}</a>`);
     expect(html).toContain('<a href="mailto:ada@example.test" class="k2b-text-link" data-link="mail">ada@example.test</a>');
+  });
+
+  test("an image link keeps the image's name and no pill; entities are read once", () => {
+    expect(renderSafeMarkdown("[![Home](logo.png)](/app)")).toBe('<p><a href="/app"><img src="logo.png" alt="Home"></a></p>\n');
+    expect(renderSafeMarkdown("[&copy; 2026](/app/x)")).toContain('aria-label="Page: &copy; 2026"');
   });
 
   test("unsafe and disallowed links stay text", () => {

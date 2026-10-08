@@ -47,6 +47,8 @@ export type NotebookBookInput = {
   noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
+  /** Show each query as its definition, as a version preview does: today's results would not be that version's. */
+  querySource?: boolean;
   references?: BookReferences;
 };
 
@@ -201,6 +203,7 @@ export const renderNotebookBook = (
   // Links to notes, headings and attachments are references; any other relative URL is a page or file of Cloud.
   const standaloneLinks = new WeakSet<Tokens.Link>();
   const markStandalone = (token: Parameters<typeof markStandaloneLinks>[0]) => markStandaloneLinks(token, standaloneLinks);
+  let insideHeading = false;
   const reference = (href: string, url: string): MarkdownReference | null => {
     const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(href)?.[1];
     if (attachmentId) {
@@ -213,7 +216,8 @@ export const renderNotebookBook = (
     if (!note) return markdownLinkReference(url);
     if (!note.anchor) return { kind: "note" };
     // A heading in another note names that note first; in the same note the heading alone says where it goes.
-    if (note.noteId === input.noteId) return { kind: "heading" };
+    // A heading's own text stays what its author wrote, so its ID and contents entry match in every view.
+    if (note.noteId === input.noteId || insideHeading) return { kind: "heading" };
     return { kind: "heading", document: input.references?.notes?.get(note.noteId) };
   };
   let insideLink = false;
@@ -245,7 +249,9 @@ export const renderNotebookBook = (
   };
   renderer.heading = function (token) {
     const { depth, tokens } = token;
+    insideHeading = true;
     const body = this.parser.parseInline(tokens);
+    insideHeading = false;
     const title = plainText(body);
     const id = anchorId(headingAnchor(title));
     const line = headingSource.get(token);
@@ -264,6 +270,8 @@ export const renderNotebookBook = (
     return renderMarkdownLink({
       href: url,
       html: body,
+      // Math in the label is still a placeholder here; its source names the link.
+      text: plainText(body),
       title: title ?? undefined,
       rel: /^https?:/i.test(url) ? "noopener noreferrer" : undefined,
       reference: reference(href, url),
@@ -462,6 +470,7 @@ export const renderNotebookBook = (
         if (!closed) return preview(diagnostic(start + 1) + source(lines.slice(start, index).join("\n")));
         if (kind === "query") {
           const query = queries.get(start + 1);
+          if (query && input.querySource) return preview(source(blockLines.join("\n")));
           return preview(query ? renderQuery(query) : diagnostic(start + 1) + source(body));
         }
         if (kind === "toc")

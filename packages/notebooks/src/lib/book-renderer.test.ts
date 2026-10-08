@@ -192,6 +192,15 @@ describe("Notebook Book HTML", () => {
     expect(render(":::query\nsource: secrets\n:::").html).toContain("Invalid block");
   });
 
+  test("a version preview shows each query's definition instead of results", () => {
+    const md = ":::query\nsource: notes\n:::\n\n:::query\nsource: secrets\n:::";
+    const { html } = renderNotebookBook({ markdown: md, notebookId: "ABC123", locale: "en", querySource: true });
+    expect(html).toContain("<pre><code>:::query\nsource: notes\n:::</code></pre>");
+    expect(html).not.toContain("unavailable");
+    // An invalid query still says so.
+    expect(html).toContain("Invalid block");
+  });
+
   test("separate identical query directives keep their own line-keyed results", () => {
     const md = ":::query\nsource: notes\n:::\n\n:::query\nsource: notes\n:::";
     const { html } = render(
@@ -277,10 +286,8 @@ describe("Notebook Book HTML", () => {
     );
     expect(html).toContain('<a class="notebook-book-image-link" href="/api/notebooks/ABC123/attachments/JKL012/content?v=1"><img');
     expect(html).not.toContain('notebook-book-image-link" href="https://example.test/a.png"');
-    // An image that is already a link's label keeps that link, without a second one inside it.
-    expect(html).toContain(
-      '<a class="k2b-text-link" data-link="web" rel="noopener noreferrer" href="https://example.test"><img class="notebook-book-image"',
-    );
+    // An image that is already a link's label keeps that link, a plain one without a second link inside it.
+    expect(html).toContain('<a rel="noopener noreferrer" href="https://example.test"><img class="notebook-book-image"');
     expect(html.match(/notebook-book-image-link/g)).toHaveLength(2);
   });
 
@@ -373,6 +380,40 @@ describe("Notebook Book HTML", () => {
     expect(html).toContain('data-reference="file" aria-label="Datei: unbekannt.zip"');
     expect(html).toContain('<a class="k2b-text-link" data-link="mail" href="mailto:a@b.de">a@b.de</a>');
     expect(html).toContain('data-reference="page" aria-label="Seite: Freigabe" href="/app/spaces/Space1?item=Item01"');
+  });
+
+  test("a heading keeps its author's text, ID and contents entry when it links a heading in another note", () => {
+    const markdown = ":::toc\n:::\n\n## [Restore](note://DEF456#restore)";
+    const withTitles = renderNotebookBook({
+      markdown,
+      notebookId: "ABC123",
+      noteId: "SELF01",
+      locale: "en",
+      references: { notes: new Map([["DEF456", "Runbook"]]) },
+    });
+    const withoutTitles = renderNotebookBook({ markdown, notebookId: "ABC123", noteId: "SELF01", locale: "en" });
+    expect(withTitles.headings).toEqual([{ id: "heading-restore", depth: 2, text: "Restore", line: 4 }]);
+    expect(withoutTitles.headings).toEqual(withTitles.headings);
+    expect(withTitles.html).not.toContain("Runbook");
+    expect(withTitles.html).toContain('<a class="k2b-text-link" href="#heading-restore">Restore</a>');
+    expect(withTitles.html).toContain(
+      '<h2 id="heading-restore"><a class="k2b-reference" data-reference="heading" aria-label="Heading: Restore"',
+    );
+  });
+
+  test("math in a reference's text names it by its source and stays out of the attribute", () => {
+    const { html } = render("[Energy $E=mc^2$ &copy;](note://DEF456)");
+    expect(html).toContain('aria-label="Note: Energy E=mc^2 ©"');
+    expect(html.match(/<span class="katex">/g)).toHaveLength(1);
+    expect(html).not.toMatch(/aria-label="[^"]*</);
+  });
+
+  test("a link around an image is the image, named by its text", () => {
+    const { html } = render("[![Plan](https://example.test/plan.png)](note://DEF456)", "de");
+    expect(html).toContain(
+      '<a href="/app/notebooks/ABC123/notes/DEF456?mode=book"><img class="notebook-book-image" src="https://example.test/plan.png" alt="Plan" loading="lazy" /></a>',
+    );
+    expect(html).not.toContain("k2b-reference");
   });
 
   test("inline decorations and all existing math forms render without a DOM", () => {

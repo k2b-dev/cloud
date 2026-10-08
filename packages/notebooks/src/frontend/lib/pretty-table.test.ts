@@ -65,6 +65,27 @@ describe("pretty table rendering", () => {
     expect(html).not.toContain("note://");
   });
 
+  test("web, mail and relative links render with the same kinds as in Book", () => {
+    const html = renderPrettyTableHtml(
+      {
+        headers: ["Links"],
+        rows: [["[Site](https://example.test) [Mail](mailto:a@b.test) [Guide](/files/guide.pdf) [Top](#top) [x](javascript:alert(1))"]],
+      },
+      { notebookId: "nb1234", locale: "en" },
+    );
+
+    expect(html).toContain(
+      '<a href="https://example.test" class="k2b-text-link" data-link="web" target="_blank" rel="noopener noreferrer">Site',
+    );
+    expect(html).toContain(
+      '<a href="mailto:a@b.test" class="k2b-text-link" data-link="mail" target="_blank" rel="noopener noreferrer">Mail</a>',
+    );
+    expect(html).toContain('<a href="/files/guide.pdf" class="k2b-reference" data-reference="pdf" aria-label="PDF: Guide">');
+    expect(html).toContain('<a href="#top" class="k2b-reference" data-reference="heading" aria-label="Heading: Top">');
+    expect(html).not.toContain('javascript:alert(1)"');
+    expect(html).toContain("[x](javascript:alert(1))");
+  });
+
   test("formats standalone ISO date-time strings", () => {
     const html = renderPrettyTableHtml({
       headers: ["created", "title"],
