@@ -159,6 +159,12 @@ a page. `html` crosses a trust boundary:
 the caller sanitizes it, and a sanitizer keeps the `class`, `aria-label`,
 `data-reference`, and `data-link` attributes.
 
+A renderer that builds the pill element itself, such as an editor widget,
+reuses the same parts: `markdownReferenceType(reference, text)` gives the
+type, `markdownReferenceIcon(type, fileName)` its Tabler glyph, and
+`markdownReferenceTypeLabel(type, locale)` the localized type name that
+starts the accessible name.
+
 ### Highlight known inline tokens
 
 Pass exact `inlineTokens` when an authoring preview needs to distinguish known

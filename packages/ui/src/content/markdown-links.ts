@@ -121,8 +121,21 @@ const TYPE_LABELS: Record<MarkdownReferenceType, keyof UiMessages> = {
 export const markdownReferenceTypeLabel = (type: MarkdownReferenceType, locale?: string): string =>
   String(resolveUiMessages(locale)[TYPE_LABELS[type]]);
 
-/** The text of rendered inline HTML, still as HTML: tags go, character references such as `&copy;` stay. */
-const htmlText = (html: string): string => html.replace(/<[^>]*>/g, "");
+/**
+ * The text of rendered inline HTML, still as HTML: tags go, character references such as `&copy;` stay. One pass,
+ * so a label full of `<` stays linear. The result only ever reaches `textAttribute`, which escapes what is left.
+ */
+const htmlText = (html: string): string => {
+  let text = "";
+  let index = 0;
+  for (let open = html.indexOf("<"); open !== -1; open = html.indexOf("<", index)) {
+    const close = html.indexOf(">", open + 1);
+    if (close === -1) break;
+    text += html.slice(index, open);
+    index = close + 1;
+  }
+  return text + html.slice(index);
+};
 
 /** HTML text as an attribute value. Character references stay for the browser to decode; nothing can end the value. */
 const textAttribute = (text: string): string =>

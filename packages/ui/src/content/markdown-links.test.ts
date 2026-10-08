@@ -141,6 +141,16 @@ describe("renderMarkdownLink", () => {
     );
   });
 
+  test("the accessible name drops tags, escapes an unclosed bracket, and stays linear on a label full of <", () => {
+    const name = (html: string) =>
+      renderMarkdownLink({ href: "/n/1", html, reference: { kind: "page" } }).match(/aria-label="([^"]*)"/)?.[1];
+    expect(name("<em>a</em> < b <<c> d")).toBe("Page: a  d");
+    expect(name("x <script")).toBe("Page: x &lt;script");
+    const started = performance.now();
+    expect(name("<".repeat(100_000))).toBe(`Page: ${"&lt;".repeat(100_000)}`);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   test("a link around an image is the image: a plain anchor that the image's text names", () => {
     const image = '<img src="logo.png" alt="Home">';
     expect(renderMarkdownLink({ href: "/app", html: image, reference: { kind: "page" }, locale: "de" })).toBe(

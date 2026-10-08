@@ -109,7 +109,6 @@ export {
   type MarkdownReference,
   type MarkdownReferenceKind,
   type MarkdownReferenceType,
-  markdownFileType,
   markdownLinkReference,
   markdownReferenceIcon,
   markdownReferenceType,
