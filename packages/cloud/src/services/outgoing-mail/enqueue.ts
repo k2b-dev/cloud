@@ -23,10 +23,11 @@ import { mailAttachments, mailDrainJob, mailSettled, submitMailDrain } from "./s
 
 type BatchItem = { id: string; message: MailMessage; existing?: MessageRow; uploaded: UploadedAttachments };
 type AcceptedBatch = { batchId: string; rows: MessageRow[]; created: MessageRow[] };
-const lockBatchKeys = async (db: SQL, appId: string, items: readonly BatchItem[]) => {
+const lockBatchApp = async (db: SQL, appId: string) => {
+  // One app lock serializes batches with batches and keyed sends without per-key locks.
+  // Lock order: policy -> app -> key (send only) -> quota -> backlog -> call.
   await db`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
-  for (const key of items.flatMap((item) => (item.message.key === undefined ? [] : [item.message.key])).sort())
-    await db`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([appId, key])}, 1))`;
+  await db`SELECT pg_advisory_xact_lock(hashtextextended(${appId}, 5))`;
 };
 /** Retain uploads when a lost COMMIT response cannot be resolved by a recovery read. */
 export class MailAcceptanceUnknown extends OutgoingMailError {
@@ -69,8 +70,7 @@ export const outgoingMailBatches = {
     let result: AcceptedBatch | undefined;
     try {
       return await sql.begin(async (tx) => {
-        await lockBatchKeys(tx, appId, items);
-        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${proposed}, 4))`;
+        await lockBatchApp(tx, appId);
         const known: (MessageRow | undefined)[] = [];
         for (const item of items) known.push(await outgoingMailMessages.known(appId, item.message.key, tx));
         const fresh = items.filter((_, index) => !known[index]);
@@ -80,6 +80,7 @@ export const outgoingMailBatches = {
             "An idempotent mail record expired during acceptance. Retry with fresh attachments.",
           );
         const profiles = await checkBatch(tx, appId, fresh);
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${proposed}, 4))`;
         let batchId = mailBatchId(proposed, known);
         const rows: MessageRow[] = [];
         const created: MessageRow[] = [];
@@ -137,7 +138,7 @@ export const enqueueMail = async (appId: string, messages: readonly MailMessage[
       items.push({ id: crypto.randomUUID(), message, uploaded: { metadata: [], refs: [] } });
     }
     const profiles = await sql.begin(async (tx) => {
-      await lockBatchKeys(tx, appId, items);
+      await lockBatchApp(tx, appId);
       for (const item of items) {
         item.existing = await outgoingMailMessages.known(appId, item.message.key, tx);
         if (item.existing) cancelMailStreams(item.message.attachments);

@@ -189,14 +189,22 @@ Each attempt consumes one slot at `60,000 / pacePerMinute` milliseconds;
 immediate sends use their separate lane. `backlog_full` (status 409) rejects a
 call when queued bulk messages plus its new messages would exceed
 `pacePerMinute × 1440` for any profile: 24 hours of nominal delivery capacity.
+Actual throughput can be lower because each profile's sender is sequential
+and opens a new SMTP connection per message.
 Reduce the batch, wait for capacity, or ask the operator to adjust the pace.
 
-Temporary SMTP errors, connection failures, and timeouts use the same retry
-schedule as `send`: one minute, doubling up to one hour. Every new record has a
-24-hour delivery deadline. Expired retries fail with their last answer;
-permanent SMTP failures fail immediately. Revoked access or a removed profile
-cancels delivery before the next attempt. Delivery remains at least once: a
-crash after SMTP acceptance and before the log update can repeat a message.
+Due retries and fresh mail go out in due-time order. Temporary SMTP errors,
+connection failures, and timeouts use the same retry schedule as `send`: one
+minute, doubling up to one hour. Every new record has a 24-hour delivery deadline.
+The 30-second recovery scan fails expired queued bulk mail with its last answer
+without using a pacing slot. Permanent SMTP failures fail immediately.
+Revoked access cancels delivery before the next attempt. Dropping the
+`mail:send` declaration cancels accepted mail of a registered app before its
+next attempt with `profile_not_allowed`, in both lanes. Temporary absence from
+the registry does not cancel mail. Queued mail of a deleted profile is cancelled
+with `profile_removed`: bulk rows by the next recovery scan, immediate rows
+before their next attempt. Delivery remains at least once: a crash after SMTP
+acceptance and before the log update can repeat a message.
 
 ## Read application delivery status
 

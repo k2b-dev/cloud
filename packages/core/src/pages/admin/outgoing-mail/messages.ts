@@ -160,6 +160,7 @@ export const outgoingMailMessages = i18n.define({
       cancelBatch: "Cancel batch",
       cancelBatchConfirm: "Cancel every mail of this batch that is still waiting? Cloud will not send them. Mail already sent stays sent.",
       cancelBatchDone: ({ count }: { count: number }) => (count === 1 ? "1 mail cancelled." : `${count} mails cancelled.`),
+      cancelBatchEmpty: "No mail of this batch was still waiting.",
       cancelBatchFailed: "Could not cancel the batch",
       close: "Close",
     },
@@ -221,6 +222,7 @@ export const outgoingMailMessages = i18n.define({
       cancelBatchConfirm:
         "Alle noch wartenden Mails dieses Stapels abbrechen? Cloud sendet sie dann nicht. Bereits gesendete Mails bleiben gesendet.",
       cancelBatchDone: ({ count }) => (count === 1 ? "1 Mail abgebrochen." : `${count} Mails abgebrochen.`),
+      cancelBatchEmpty: "In diesem Stapel wartete keine Mail mehr.",
       cancelBatchFailed: "Der Stapel konnte nicht abgebrochen werden",
       close: "Schließen",
       title: "Ausgehende Mail",

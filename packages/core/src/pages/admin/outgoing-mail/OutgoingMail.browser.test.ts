@@ -249,7 +249,8 @@ describe("outgoing mail page in a browser", () => {
     const entry = state.log.page.items[0]!;
     // A queued batch member carries the most footer actions.
     const queued = { ...entry, status: "queued" as const, batchId: "6f1c7a52-8f35-4d6f-9a3e-1b2c3d4e5f60" };
-    for (const record of [entry, queued])
+    const sent = { ...queued, status: "sent" as const };
+    for (const record of [entry, queued, sent])
       for (const view of [phone, desktop])
         for (const dark of [false, true]) {
           const dialog = () => createComponent(MessageDialog, { record, appName: "Invoices", close: () => {}, onChanged: () => {} });
@@ -262,6 +263,8 @@ describe("outgoing mail page in a browser", () => {
             expect({ width: view.width, dark, overflow: Math.max(0, layout.overflow) }).toEqual({ width: view.width, dark, overflow: 0 });
             expect(layout.text).toContain("Inhalt anzeigen");
             expect(layout.text).toContain("550 5.1.1 Mailbox unavailable");
+            expect(layout.text.includes("Stapel abbrechen")).toBe(!!record.batchId);
+            expect(layout.text.includes("Mail abbrechen")).toBe(record.status === "queued");
           } finally {
             await tab.close();
           }

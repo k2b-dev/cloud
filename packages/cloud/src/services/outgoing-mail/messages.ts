@@ -288,9 +288,13 @@ const accept = async (
   uploaded: UploadedAttachments,
 ): Promise<{ row: MessageRow; created: boolean }> =>
   sql.begin(async (tx) => {
-    // Profile policy writers use the exclusive form of this same transaction lock.
+    // Policy writers take this exclusively; batches take the app lock exclusively.
+    // Lock order: policy -> app -> key -> quota. Sends still serialize per key.
     await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
-    if (message.key !== undefined) await tx`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([appId, message.key])}, 1))`;
+    if (message.key !== undefined) {
+      await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended(${appId}, 5))`;
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([appId, message.key])}, 1))`;
+    }
     const existing = await known(appId, message.key, tx);
     if (existing) {
       return { row: existing, created: false };

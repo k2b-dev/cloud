@@ -33,8 +33,8 @@ export const smtpRetryable = (error: unknown): boolean => {
 };
 const rejectReason = (error: unknown, fallback: string): string =>
   error && typeof error === "object" && "response" in error && typeof error.response === "string" ? error.response : fallback;
-const cancelled = async (row: MessageRow, code: "profile_removed" | "profile_not_allowed") => {
-  await sql`UPDATE outgoing_mail.messages SET status = 'cancelled', error_code = ${code}, error_message = ${code === "profile_removed" ? "Outgoing mail profile was removed." : "Outgoing mail profile access was revoked."},
+const cancelled = async (row: MessageRow, code: "profile_removed" | "profile_not_allowed", message?: string) => {
+  await sql`UPDATE outgoing_mail.messages SET status = 'cancelled', error_code = ${code}, error_message = ${message ?? (code === "profile_removed" ? "Outgoing mail profile was removed." : "Outgoing mail profile access was revoked.")},
     next_attempt_at = NULL, updated_at = now() WHERE id = ${row.id}::uuid AND status = 'sending' AND attempt_count = ${row.attempt_count}`;
 };
 export const processOutgoingMail = async (id: string, signal?: AbortSignal): Promise<void> => {
@@ -62,6 +62,10 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
     }
     const apps = await listApps();
     const app = apps.find((app) => app.id === row.app_id);
+    if (app && !app.platformPermissions?.includes("mail:send")) {
+      await cancelled(row, "profile_not_allowed", "The application no longer declares mail:send.");
+      return;
+    }
     try {
       await sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
@@ -201,6 +205,19 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
 export const recoverOutgoingMail = async (): Promise<string[]> => {
   await sql`WITH stale AS (SELECT id FROM outgoing_mail.messages WHERE status = 'sending' AND updated_at < now() - INTERVAL '5 minutes' LIMIT 1000 FOR UPDATE SKIP LOCKED)
     UPDATE outgoing_mail.messages SET status = 'queued', next_attempt_at = now(), updated_at = now() WHERE id IN (SELECT id FROM stale)`;
+  const orphaned = await sql<{ id: string }[]>`WITH orphaned AS (
+    SELECT id FROM outgoing_mail.messages WHERE status = 'queued' AND lane = 'bulk' AND profile_id IS NULL
+    LIMIT 1000 FOR UPDATE SKIP LOCKED
+  ) UPDATE outgoing_mail.messages SET status = 'cancelled', error_code = 'profile_removed',
+    error_message = 'Outgoing mail profile was removed.', next_attempt_at = NULL, updated_at = now()
+    WHERE id IN (SELECT id FROM orphaned) RETURNING id`;
+  const expired = await sql<{ id: string }[]>`WITH expired AS (
+    SELECT id FROM outgoing_mail.messages WHERE status = 'queued' AND lane = 'bulk' AND deadline_at <= now()
+    LIMIT 1000 FOR UPDATE SKIP LOCKED
+  ) UPDATE outgoing_mail.messages SET status = 'failed', error_code = COALESCE(error_code, 'smtp_failed'),
+    error_message = COALESCE(error_message, 'Outgoing mail delivery deadline expired.'), next_attempt_at = NULL, updated_at = now()
+    WHERE id IN (SELECT id FROM expired) RETURNING id`;
+  for (const row of [...orphaned, ...expired]) await publishMailSettled(row.id).catch(() => {});
   const cleanup = await sql<
     { id: string }[]
   >`SELECT id FROM outgoing_mail.messages WHERE status NOT IN ('queued','sending') AND attachment_refs IS NOT NULL LIMIT 1000`;

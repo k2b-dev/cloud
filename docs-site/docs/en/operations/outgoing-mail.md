@@ -97,6 +97,8 @@ cld admin outgoing-mail profiles delete old-sender --yes
 
 Deleting the default returns `profile_is_default`. Choose another default
 first. Deleting another profile also removes its selected application grants.
+Queued mail of a deleted profile is cancelled with `profile_removed`: bulk
+rows by the next 30-second recovery scan, immediate rows before their next attempt.
 
 ## Control application access
 
@@ -126,9 +128,9 @@ newest first. Filter it by app, status, or recipient; the filters stay in the
 page URL. Select an entry to see its recipients, status, attempts, SMTP answer,
 rejected recipients, and attachment metadata. **Show content** loads the text
 and HTML and writes an audit entry. **Cancel mail** stops a queued entry. An
-entry sent with `mail.enqueue` also shows its batch ID; while it is queued,
-**Cancel batch** stops every queued mail of that batch. The CLI and admin API
-offer the same reads:
+entry sent with `mail.enqueue` also shows its batch ID and **Cancel batch**.
+The action stops the batch's still-queued mail whatever the state of the opened
+entry. The CLI and admin API offer the same reads:
 
 ```bash
 cld admin outgoing-mail log list --app inventory --status queued,failed --limit 20 --json
@@ -221,29 +223,47 @@ current SMTP attempt finish within its own 60-second timeout; shutdown can
 abort that attempt. Core heartbeats the Sync job after each attempt. A closed
 gate returns a continuation delayed until the next slot or due retry, capped
 at the 30-second recovery interval so fresh mail does not join a long backoff.
+Due retries and fresh mail go out in due-time order.
 Reserving an idle slot consumes that slot; the next attempt may wait one
 pacing interval.
 
 The queue limit for a profile is `pacePerMinute × 1440` queued bulk messages.
 An enqueue that would exceed it is rejected whole with `backlog_full` (409).
-This protects the 24-hour delivery deadline and 48-hour attachment expiry;
-SMTP failures and retries can still make a message miss its deadline. Batch
-uploads run sequentially within one shared 60-second upload budget.
+This is nominal admission capacity, not a delivery promise. One drainer sends
+a profile's bulk mail one message at a time and opens a new SMTP connection
+per message. Connection setup and SMTP round trips bound real throughput;
+a pace above that does not speed delivery. Mail that cannot be sent before
+its 24-hour deadline fails. Choose a pace the provider and this sequential
+sender can sustain. Batch uploads run sequentially within one shared
+60-second upload budget.
 
 Reserve JetStream capacity for the Core-owned object store
 `cloud-outgoing-mail-attachments`: **2 GiB**, plus replication overhead,
-25 MiB maximum per object, and 48-hour object expiry. The settled topic
-`cloud-outgoing-mail-settled` retains message-ID wakeups for five minutes with
-a 2 MiB stream limit (plus its dead-letter stream and replication overhead).
-The send and `cloud-outgoing-mail-drain` jobs use Sync's default bounded job retention. Losing a wakeup does
-not remove the durable mail row.
+25 MiB maximum per object, and 48-hour object expiry. Bulk mail keeps its
+attachment objects until its attempt, so large paced batches with attachments
+can fill the shared store for hours. While it is full, every application's
+sends and enqueues with attachments fail with `attachment_storage_full`.
+The store limit is fixed, so send links instead of large attachments in bulk
+mail.
+
+The settled topic `cloud-outgoing-mail-settled` retains message-ID wakeups for
+five minutes with a 2 MiB stream limit (plus its dead-letter stream and
+replication overhead). The send and `cloud-outgoing-mail-drain` jobs use Sync's
+default bounded job retention. Losing a wakeup does not remove the durable mail
+row.
 
 Every 30 seconds, Core recovers attempts stuck in `sending` for more than five
-minutes in both lanes and resubmits due immediate rows and bulk profile drains. Temporary SMTP failures retry after
-one minute, doubling to at most one hour until the 24-hour deadline. Revoked
-access cancels accepted mail before its next attempt; removed profiles cancel
-it with `profile_removed`. Terminal mail releases attachment objects. Failed
-cleanup is retried by recovery; object expiry bounds orphan lifetime.
+minutes in both lanes and resubmits due immediate rows and bulk profile drains.
+Recovery cancels queued bulk mail of removed profiles with `profile_removed`
+and fails expired queued bulk mail with its last answer, without using a pacing
+slot. Immediate mail of removed profiles is cancelled before its next attempt.
+Temporary SMTP failures retry after one minute, doubling to at most one hour
+until the 24-hour deadline. Revoked access cancels accepted mail before its
+next attempt. Dropping the `mail:send` declaration cancels accepted mail of a
+registered app before its next attempt with `profile_not_allowed`, in both lanes.
+Temporary absence from the registry does not cancel mail.
+Terminal mail releases attachment objects. Failed cleanup is retried by
+recovery; object expiry bounds orphan lifetime.
 
 Delivery is at least once. A crash between SMTP acceptance and the log update
 can produce duplicate delivery with the same Message-ID. A `sent` status
@@ -253,7 +273,9 @@ migration are separate slices.
 
 ## Upgrade and rollback
 
-This upgrade activates the bulk lane and adds an index on message `batch_id`.
+This upgrade activates the bulk lane and adds an index on message `batch_id`
+and two partial indexes for queued bulk mail: `outgoing_mail_messages_bulk_due`
+for profile due-time order and `outgoing_mail_messages_bulk_deadline` for expiry.
 Existing profile pacing settings now control `mail.enqueue` delivery. Core
 must run this version to process bulk rows. Before rolling back to a version
 without the drainer, stop accepting new bulk mail and finish or cancel its

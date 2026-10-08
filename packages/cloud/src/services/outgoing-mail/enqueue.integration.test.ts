@@ -168,12 +168,183 @@ suiteFor("database", "nats")("atomic bulk mail and paced Core delivery", () => {
     expect((await deliverOne()).status).toBe("sent");
     expect(sink.messages).toHaveLength(1);
   });
-  test("deadline overrides a future retry and retains its last SMTP answer", async () => {
+  test("expired bulk retries settle in recovery with their last answer and no pacing slot", async () => {
     const batch = await enqueue();
-    await sql`UPDATE outgoing_mail.messages SET deadline_at = now() - INTERVAL '1 second', next_attempt_at = now() + INTERVAL '1 hour', error_message = '451 last answer', error_code = 'smtp_failed' WHERE id = ${batch.ids[0]!}::uuid`;
-    expect(await dueOutgoingBulkProfiles()).toContain(profileId);
-    expect(await deliverOne()).toMatchObject({ status: "failed", error_message: "451 last answer" });
+    const id = batch.ids[0]!;
+    await sql`UPDATE outgoing_mail.messages SET deadline_at = now() - INTERVAL '1 second', next_attempt_at = now() + INTERVAL '1 hour', error_message = '451 last answer', error_code = 'smtp_failed' WHERE id = ${id}::uuid`;
+    expect(await dueOutgoingBulkProfiles()).not.toContain(profileId);
+    await openGate();
+    expect(await claimOutgoingBulkMail(profileId)).toBeUndefined();
+    await enqueue([input, input]);
+    const before = await sql`SELECT next_bulk_slot_at FROM outgoing_mail.profiles WHERE id = ${profileId}::uuid`;
+    await recoverOutgoingMail();
+    expect(await sql`SELECT next_bulk_slot_at FROM outgoing_mail.profiles WHERE id = ${profileId}::uuid`).toEqual(before);
+    expect(await outgoingMailMessages.read(id)).toMatchObject({
+      status: "failed",
+      error_code: "smtp_failed",
+      error_message: "451 last answer",
+      next_attempt_at: null,
+      attempt_count: 0,
+    });
+    expect(await sql`SELECT id FROM outgoing_mail.messages WHERE status = 'queued'`).toHaveLength(2);
     expect(sink.messages).toHaveLength(0);
+  });
+  test("only expired bulk rows need no continuation", async () => {
+    await enqueue();
+    await sql`UPDATE outgoing_mail.messages SET deadline_at = now() - INTERVAL '1 second'`;
+    expect(await nextOutgoingBulkDelay(profileId)).toBeUndefined();
+  });
+  test("a due 451 retry is claimed before fresh mail accepted later", async () => {
+    response = (command) => (command === "MESSAGE" ? "451 please retry" : undefined);
+    const batch = await enqueue();
+    expect((await deliverOne()).status).toBe("queued");
+    await sql`UPDATE outgoing_mail.messages SET next_attempt_at = now() - INTERVAL '1 second' WHERE id = ${batch.ids[0]!}::uuid`;
+    await enqueue(Array.from({ length: 5 }, () => input));
+    await openGate();
+    expect((await claimOutgoingBulkMail(profileId))?.row.id).toBe(batch.ids[0]);
+  });
+  test("profile deletion cancels queued and stale sending bulk mail and releases attachments", async () => {
+    await outgoingMailStore.put(
+      "bulk",
+      {
+        name: "Bulk",
+        fromAddress: "bulk@example.org",
+        fromName: null,
+        smtpHost: sink.host,
+        smtpPort: sink.port,
+        smtpSecure: false,
+        smtpUser: null,
+        pacePerMinute: 60,
+        dailyRecipientLimit: null,
+        maxAttachmentBytes: 25 * 1024 * 1024,
+      },
+      context,
+    );
+    await outgoingMailStore.setAppAccess("inventory", { mode: "selected", profiles: ["bulk"] }, context);
+    const message = {
+      ...input,
+      profile: "bulk",
+      attachments: [{ filename: "a", contentType: "text/plain", content: new Uint8Array([42]) }],
+    };
+    const batch = await enqueue([message, message, message]);
+    const refs = [];
+    for (const id of batch.ids) refs.push(...messageAttachmentRefs((await outgoingMailMessages.read(id))!));
+    await sql`UPDATE outgoing_mail.messages SET status = 'sending', updated_at = now() - INTERVAL '6 minutes' WHERE id = ${batch.ids[0]!}::uuid`;
+    await outgoingMailStore.delete("bulk", context);
+    await recoverOutgoingMail();
+    for (const id of batch.ids)
+      expect(await outgoingMailMessages.read(id)).toMatchObject({
+        status: "cancelled",
+        error_code: "profile_removed",
+        error_message: "Outgoing mail profile was removed.",
+        next_attempt_at: null,
+        attachment_refs: null,
+      });
+    for (const ref of refs) expect(await mailAttachments().get(ref)).toBeNull();
+    expect(sink.messages).toHaveLength(0);
+  });
+  test("a pacing slot starts after waiting for a profile share lock", async () => {
+    // A 10-second slot keeps the follow-up claim independent of runner speed.
+    await sql`UPDATE outgoing_mail.profiles SET pace_per_minute = 6 WHERE id = ${profileId}::uuid`;
+    await enqueue([input, input]);
+    await openGate();
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    // Acceptance holds this share lock while it inserts a batch.
+    const holder = sql.begin(async (tx) => {
+      await tx`SELECT id FROM outgoing_mail.profiles WHERE id = ${profileId}::uuid FOR SHARE`;
+      locked.resolve();
+      await release.promise;
+      const [held] = await tx<{ at: string }[]>`SELECT clock_timestamp()::text AS at`;
+      return held!.at;
+    });
+    await locked.promise;
+    const pending = claimOutgoingBulkMail(profileId);
+    let heldUntil: string;
+    try {
+      await Bun.sleep(1500);
+    } finally {
+      release.resolve();
+      heldUntil = await holder;
+    }
+    const claim = await pending;
+    expect(claim).toBeDefined();
+    // Transaction-start time would grant the slot before the lock was released.
+    expect(new Date(claim!.grantedAt).getTime()).toBeGreaterThanOrEqual(new Date(heldUntil).getTime());
+    expect(new Date(claim!.slotAt).getTime() - new Date(claim!.grantedAt).getTime()).toBe(10_000);
+    expect(await claimOutgoingBulkMail(profileId)).toBeUndefined();
+  });
+  test("1000 keyed messages use a constant number of advisory locks during acceptance", async () => {
+    let done = false;
+    let maximum = 0;
+    let samples = 0;
+    const poll = (async () => {
+      while (!done) {
+        // pg_locks is cluster-wide; count only this suite's fresh database.
+        const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_locks
+          WHERE locktype = 'advisory' AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`;
+        maximum = Math.max(maximum, row!.count);
+        samples++;
+        await Bun.sleep(1);
+      }
+    })();
+    try {
+      await enqueue(Array.from({ length: 1000 }, (_, index) => ({ ...input, key: `lock-${index}` })));
+    } finally {
+      done = true;
+      await poll;
+    }
+    expect(samples).toBeGreaterThan(1);
+    expect(maximum).toBeGreaterThan(0);
+    expect(maximum).toBeLessThanOrEqual(10);
+  }, 30_000);
+  test("a keyed send and enqueue share one quota recipient and record", async () => {
+    await sql`UPDATE outgoing_mail.profiles SET daily_recipient_limit = 1 WHERE id = ${profileId}::uuid`;
+    const original = mailAttachments().put.bind(mailAttachments());
+    const uploaded = Promise.withResolvers<void>();
+    let uploads = 0;
+    const put = spyOn(mailAttachments(), "put").mockImplementation(async (...args) => {
+      const result = await original(...args);
+      if (++uploads === 2) uploaded.resolve();
+      await uploaded.promise;
+      return result;
+    });
+    try {
+      const message = { ...input, key: "same", attachments: [{ filename: "a", contentType: "text/plain", content: new Uint8Array([42]) }] };
+      const [sent, batch] = await Promise.all([mail.send(message, { signal: AbortSignal.abort() }), mail.enqueue([message])]);
+      if (!sent.ok) throw new Error(sent.error.message);
+      if (!batch.ok) throw new Error(batch.error.message);
+      expect(batch.data.ids).toEqual([sent.data.id]);
+      expect(await sql`SELECT id FROM outgoing_mail.messages`).toHaveLength(1);
+    } finally {
+      put.mockRestore();
+    }
+  });
+  test("a registered app that drops mail:send is cancelled before SMTP", async () => {
+    await enqueue();
+    const apps = await registry.listApps();
+    registered.mockResolvedValue(apps.map(({ platformPermissions: _, ...app }) => app));
+    try {
+      expect(await deliverOne()).toMatchObject({
+        status: "cancelled",
+        error_code: "profile_not_allowed",
+        error_message: "The application no longer declares mail:send.",
+      });
+      expect(sink.messages).toHaveLength(0);
+    } finally {
+      registered.mockResolvedValue(apps);
+    }
+  });
+  test("a temporarily unregistered app still delivers accepted mail", async () => {
+    await enqueue();
+    const apps = await registry.listApps();
+    registered.mockResolvedValue([]);
+    try {
+      expect((await deliverOne()).status).toBe("sent");
+      expect(sink.messages).toHaveLength(1);
+    } finally {
+      registered.mockResolvedValue(apps);
+    }
   });
   test("a profile with only a 60-minute retry continues within the recovery interval", async () => {
     const batch = await enqueue();

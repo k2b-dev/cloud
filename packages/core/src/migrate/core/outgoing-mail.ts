@@ -80,5 +80,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
     await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_batch ON outgoing_mail.messages(batch_id) WHERE batch_id IS NOT NULL`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_bulk_due ON outgoing_mail.messages(profile_id, (COALESCE(next_attempt_at, created_at)), id) WHERE status = 'queued' AND lane = 'bulk'`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_bulk_deadline ON outgoing_mail.messages(deadline_at) WHERE status = 'queued' AND lane = 'bulk'`.simple();
   });
 };

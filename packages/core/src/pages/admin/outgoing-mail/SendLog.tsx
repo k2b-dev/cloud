@@ -152,6 +152,8 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
 export function MessageDialog(props: { record: AdminMailRecord; appName: string; close: () => void; onChanged: () => void }) {
   const t = messages();
   const [record, setRecord] = createSignal(props.record);
+  const [batchCancelled, setBatchCancelled] = createSignal(false);
+  const cancellableBatch = () => !batchCancelled() && record().batchId;
   const content = mutation.create({
     mutation: async (_: void, { abortSignal }): Promise<Content> => {
       const response = await api.messages[":id"].content.$get({ param: { id: record().id } }, { init: { signal: abortSignal } });
@@ -179,8 +181,9 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
       return response.json();
     },
     onSuccess: async ({ cancelled }) => {
+      setBatchCancelled(true);
       props.onChanged();
-      toast.success(t().cancelBatchDone({ count: cancelled }));
+      toast.success(cancelled === 0 ? t().cancelBatchEmpty : t().cancelBatchDone({ count: cancelled }));
       const response = await api.messages[":id"].$get({ param: { id: record().id } }).catch(() => undefined);
       if (response?.ok) setRecord(await response.json());
     },
@@ -317,12 +320,14 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Show when={record().status === "queued"}>
+        <Show when={record().status === "queued" || cancellableBatch()}>
           <div class="flex flex-wrap gap-2">
-            <Button type="button" variant="danger" size="sm" onClick={() => void confirmCancel()} disabled={busy()}>
-              {t().cancelMail}
-            </Button>
-            <Show when={record().batchId}>
+            <Show when={record().status === "queued"}>
+              <Button type="button" variant="danger" size="sm" onClick={() => void confirmCancel()} disabled={busy()}>
+                {t().cancelMail}
+              </Button>
+            </Show>
+            <Show when={cancellableBatch()}>
               {(batchId) => (
                 <Button type="button" variant="secondary" size="sm" onClick={() => void confirmCancelBatch(batchId())} disabled={busy()}>
                   {t().cancelBatch}

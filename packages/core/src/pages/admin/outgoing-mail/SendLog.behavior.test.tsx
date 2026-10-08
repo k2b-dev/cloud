@@ -110,12 +110,17 @@ else
   });
 
 if (!isServer)
-  test("a queued batch member offers batch cancellation and shows the cancelled state", async () => {
+  test.each([
+    { status: "queued" as const, cancelled: 3 },
+    { status: "queued" as const, cancelled: 0 },
+    { status: "sent" as const, cancelled: 3 },
+    { status: "sent" as const, cancelled: 0 },
+  ])("a $status batch member offers batch cancellation and hides it after cancelling $cancelled mails", async ({ status, cancelled }) => {
     const dom = createDomTestHarness();
     const { ui, MessageDialog } = modules!;
     delegateEvents(["click"]);
     const batchId = crypto.randomUUID();
-    const record: AdminMailRecord = { ...row("Stock update"), status: "queued", attempts: 0, batchId };
+    const record: AdminMailRecord = { ...row("Stock update"), status, attempts: status === "queued" ? 0 : 1, batchId };
     const requests: { method: string; url: URL }[] = [];
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -123,15 +128,16 @@ if (!isServer)
           const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
           const method = input instanceof Request ? input.method : (init?.method ?? "GET");
           requests.push({ method, url });
-          if (method === "POST" && url.pathname.endsWith(`/batches/${batchId}/cancel`)) return Response.json({ batchId, cancelled: 3 });
+          if (method === "POST" && url.pathname.endsWith(`/batches/${batchId}/cancel`)) return Response.json({ batchId, cancelled });
           if (method === "GET" && url.pathname.endsWith(`/messages/${record.id}`))
-            return Response.json({ ...record, status: "cancelled", errorCode: "cancelled_by_admin" });
+            return Response.json(status === "queued" ? { ...record, status: "cancelled", errorCode: "cancelled_by_admin" } : record);
           throw new Error(`Unexpected request: ${method} ${url}`);
         },
         { preconnect: globalThis.fetch.preconnect },
       ),
     );
     const confirm = spyOn(ui.prompts, "confirm").mockResolvedValue(true);
+    const toast = spyOn(ui.toast, "success");
     let changed = 0;
     const dispose = render(
       () =>
@@ -145,6 +151,7 @@ if (!isServer)
     );
     try {
       expect(dom.root.textContent).toContain(batchId);
+      expect([...dom.root.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Cancel mail")).toBe(status === "queued");
       const button = [...dom.root.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Cancel batch");
       if (!button) throw new Error("Expected the batch cancel action");
       button.click();
@@ -155,10 +162,12 @@ if (!isServer)
         `GET /messages/${record.id}`,
       ]);
       expect(changed).toBe(1);
+      expect(toast).toHaveBeenCalledWith(cancelled === 0 ? "No mail of this batch was still waiting." : "3 mails cancelled.");
       await flush();
       expect([...dom.root.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Cancel batch")).toBe(false);
     } finally {
       dispose();
+      toast.mockRestore();
       confirm.mockRestore();
       fetch.mockRestore();
       dom.cleanup();
