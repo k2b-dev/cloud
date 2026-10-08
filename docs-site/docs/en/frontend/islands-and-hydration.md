@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-09-22
+updated: 2026-10-08
 ---
 
 # Islands and hydration
@@ -96,3 +96,25 @@ Do not nest an island import inside another island or client component.
 
 See [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations)
 for typed calls and writes from an island.
+
+## When an island fails
+
+Each island and client component instance mounts inside its own error
+boundary. When it throws while it mounts, while its props are read, or during a
+later update, for example a list row that cannot render new query data, Cloud
+replaces only that instance with a short notice: "This section could not be
+displayed." and a **Try again** button, in the reader's language. Every other
+island on the page keeps working, including islands updated by the same signal
+write.
+
+**Try again** mounts the island again from its original props, as on page
+load. The error still appears in the browser console, reported through
+`reportError()` like any uncaught error.
+
+`defineApp` sets this for every application. Do not wrap an island's root in an
+`ErrorBoundary` for protection. Add one inside an island only when a part of it
+needs its own recovery; the nearest boundary handles the error.
+
+Errors in event handlers and async callbacks outside a Solid computation do not
+reach a boundary. Handle them where they happen, for example with a mutation's
+`error()` or a toast.
