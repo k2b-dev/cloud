@@ -154,6 +154,11 @@ export default function RecordFileField(props: {
     const raw = (props.field.config as { accept?: string[] }).accept;
     return Array.isArray(raw) ? raw.join(",") : undefined;
   };
+  /** How many more files the field takes; `undefined` without a configured limit. */
+  const remaining = () => {
+    const max = props.field.config?.maxFiles;
+    return typeof max === "number" ? Math.max(0, max - files().length) : undefined;
+  };
   const location = (): RecordFileLocation => ({
     endpoint:
       props.endpoint ??
@@ -260,7 +265,8 @@ export default function RecordFileField(props: {
           for={root()}
           label={t().dropToAttach({ field: props.field.name })}
           accept={accept()}
-          disabled={uploading()}
+          maxFiles={remaining()}
+          disabled={uploading() || remaining() === 0}
           onDrop={(dropped) => void uploadAll(dropped)}
         />
       </Show>

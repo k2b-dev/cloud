@@ -78,7 +78,7 @@ Wähle für jede Tabelle eine kurze, verständliche **Datensatzbezeichnung**. Si
 
 Das Verschieben eines Datensatzes in den Papierkorb ist umkehrbar. Beim Wiederherstellen entsteht ein neuer Verlaufseintrag; der Eintrag zur Löschung bleibt erhalten.
 
-**Datei ersetzen** tauscht einen Anhang atomar aus. **Aus Datensatz entfernen** trennt ihn und protokolliert Person, Zeitpunkt, Feld und unveränderliche Dateimetadaten. Geschützte Revisionen oder Artefakte bewahren seine Bytes; ungeschützte Dateien können bereinigt werden. Die Trennung verspricht weder physische Löschung noch dauerhafte Aufbewahrung. Der Dateiverlauf allein belegt keine rechtliche Konformität.
+Zum Anhängen nutze **Hochladen** oder ziehe Dateien von deinem Gerät auf das Feld im geöffneten Datensatz. Dateien, die nicht zu den erlaubten Typen oder der Dateianzahl des Felds passen, werden genannt und weggelassen. **Datei ersetzen** tauscht einen Anhang atomar aus. **Aus Datensatz entfernen** trennt ihn und protokolliert Person, Zeitpunkt, Feld und unveränderliche Dateimetadaten. Geschützte Revisionen oder Artefakte bewahren seine Bytes; ungeschützte Dateien können bereinigt werden. Die Trennung verspricht weder physische Löschung noch dauerhafte Aufbewahrung. Der Dateiverlauf allein belegt keine rechtliche Konformität.
 
 ### Dauerhafte Datensatz-Versionen aufbewahren
 

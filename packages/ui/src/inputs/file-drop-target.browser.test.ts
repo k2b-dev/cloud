@@ -14,7 +14,7 @@ setDefaultTimeout(30_000);
 const entry = resolve(import.meta.dir, "file-drop-target.fixture.ts");
 const fixtureSource = `
 import { createComponent, render } from "solid-js/web";
-import { FileDropTarget, FileDropzone, LocaleProvider, fileDropTarget } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { FileDropTarget, FileDropzone, LocaleProvider, dialogCore, fileDropTarget, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 window.drops = [];
 const record = (target) => (files) => window.drops.push({ target, names: files.map((file) => file.name) });
@@ -28,13 +28,30 @@ const html = (tag, attributes, ...children) => {
 const sidebar = html("nav", { id: "sidebar", style: "width:240px;flex:none" }, "Navigation");
 const row = html("div", { id: "row", style: "height:40px" }, "Rechnungen");
 const text = html("p", { id: "text", draggable: "true" }, "Ein Absatz");
+const source = html("div", { id: "source", draggable: "true", style: "height:32px" }, "Angebot.pdf");
+const card = html("div", { id: "card", draggable: "true", style: "height:32px" }, "Karte");
 const zoneHost = html("div", { id: "zone", style: "width:320px" });
 const pageHost = html("div", { id: "page-target" });
-const main = html("main", { id: "main", class: "k2b-app-workspace__main", style: "flex:1;min-width:0;padding:24px" }, row, text, zoneHost, pageHost);
+const main = html(
+  "main",
+  { id: "main", class: "k2b-app-workspace__main", style: "flex:1;min-width:0;padding:24px" },
+  row,
+  text,
+  source,
+  card,
+  zoneHost,
+  pageHost,
+);
 document.getElementById("app").append(html("div", { style: "display:flex;height:100vh" }, sidebar, main));
+// Resting on the row opens it, as a folder in Files does: a row dragged onto it leaves the page mid-drag.
+row.addEventListener("dragover", () => source.remove());
+// Pointer drag-and-drop libraries cancel the native drag of their elements; it never reports an end.
+card.addEventListener("dragstart", (event) => event.preventDefault());
+const firstHost = html("div", { id: "first-body", style: "padding:24px" }, "Erster Dialog");
 const dialogHost = html("div", { id: "dialog-body", style: "padding:24px" }, "Dateien wählen");
-const dialog = html("dialog", { id: "dialog", style: "width:400px;height:240px" }, dialogHost);
-document.body.append(dialog);
+// The first dialog comes first in the document, so opening it last puts the earlier one on top.
+for (const [id, body] of [["first", firstHost], ["dialog", dialogHost]])
+  document.body.append(html("dialog", { id, style: "width:400px;height:240px" }, body));
 
 const locale = () => "de";
 render(
@@ -54,25 +71,50 @@ render(
     }),
   pageHost,
 );
-render(
-  () =>
-    createComponent(LocaleProvider, {
-      locale: "de",
-      get children() {
-        return createComponent(FileDropTarget, { label: "Ablegen, um diese Dateien zu wählen", onDrop: record("dialog") });
-      },
-    }),
-  dialogHost,
-);
+for (const [host, label, target] of [
+  [dialogHost, "Ablegen, um diese Dateien zu wählen", "dialog"],
+  [firstHost, "Ablegen, um sie dem ersten Dialog zu geben", "first"],
+])
+  render(() => createComponent(FileDropTarget, { label, onDrop: record(target) }), host);
 
-/** Fires one drag event at the element; \`files\` are [name, type, size], \`kind\` "text" drags a selection instead. */
-window.drag = (type, selector, kind = "files", files = [["foto.png", "image/png", 10]]) => {
+/** Opens a dialog level whose own target takes files by default, and asks a question on top of it. */
+window.stackDialogs = () => {
+  void dialogCore.open(() => [
+    html("p", { id: "lower-body" }, "Upload-Dialog"),
+    createComponent(FileDropTarget, { label: "Ablegen, um sie hochzuladen", onDrop: record("lower") }),
+  ]);
+  void prompts.confirm("Wirklich löschen?");
+};
+window.closeDialogs = () => dialogCore.close();
+
+const files = (list) => {
   const transfer = new DataTransfer();
-  if (kind === "files") for (const [name, mime, size] of files) transfer.items.add(new File([new Uint8Array(size)], name, { type: mime }));
-  else transfer.setData("text/plain", "Ein Absatz");
+  for (const [name, mime, size] of list) transfer.items.add(new File([new Uint8Array(size)], name, { type: mime }));
+  return transfer;
+};
+/**
+ * Fires one drag event at the element; \`list\` holds [name, type, size], \`kind\` "text" drags a selection instead and
+ * "page" continues the drag that \`startPageDrag\` began.
+ */
+window.drag = (type, selector, kind = "files", list = [["foto.png", "image/png", 10]]) => {
+  let transfer = window.pageDrag;
+  if (kind === "files") transfer = files(list);
+  else if (kind === "text") {
+    transfer = new DataTransfer();
+    transfer.setData("text/plain", "Ein Absatz");
+  }
+  // A constructed DataTransfer ignores \`dropEffect\`; keep what the page asks for.
+  let effect = "none";
+  Object.defineProperty(transfer, "dropEffect", { configurable: true, get: () => effect, set: (value) => (effect = value) });
   const event = new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: transfer });
   document.querySelector(selector).dispatchEvent(event);
+  window.dropEffect = effect;
   return event.defaultPrevented;
+};
+/** Starts dragging the element within the page, carrying a file as a dragged image does. */
+window.startPageDrag = (selector) => {
+  window.pageDrag = files([["foto.png", "image/png", 10]]);
+  document.querySelector(selector).dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: window.pageDrag }));
 };
 window.overlays = () =>
   [...document.querySelectorAll(".k2b-file-drop")]
@@ -100,7 +142,11 @@ const script = await build.outputs[0]!.text();
 type Overlay = { state: string; text: string; box: number[] };
 type FixtureWindow = Window & {
   drops: { target: string; names: string[] }[];
-  drag: (type: string, selector: string, kind?: "files" | "text", files?: [string, string, number][]) => boolean;
+  drag: (type: string, selector: string, kind?: "files" | "text" | "page", files?: [string, string, number][]) => boolean;
+  dropEffect: string;
+  startPageDrag: (selector: string) => void;
+  stackDialogs: () => void;
+  closeDialogs: () => void;
   overlays: () => Overlay[];
   box: (selector: string) => number[];
   announced: () => string;
@@ -133,10 +179,10 @@ afterAll(async () => {
 const open = async (): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width: 1024, height: 640 } });
   await page.goto(server.url.href);
-  await page.waitForFunction(() => document.querySelectorAll(".k2b-file-drop").length === 2);
+  await page.waitForFunction(() => document.querySelectorAll(".k2b-file-drop").length === 3);
   return page;
 };
-const drag = (page: Page, type: string, selector: string, kind: "files" | "text" = "files", files?: [string, string, number][]) =>
+const drag = (page: Page, type: string, selector: string, kind: "files" | "text" | "page" = "files", files?: [string, string, number][]) =>
   page.evaluate(([type, selector, kind, files]) => (window as unknown as FixtureWindow).drag(type, selector, kind, files), [
     type,
     selector,
@@ -146,6 +192,9 @@ const drag = (page: Page, type: string, selector: string, kind: "files" | "text"
 const overlays = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).overlays());
 const drops = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).drops);
 const box = (page: Page, selector: string) => page.evaluate((selector) => (window as unknown as FixtureWindow).box(selector), selector);
+const dropEffect = (page: Page) => page.evaluate(() => (window as unknown as FixtureWindow).dropEffect);
+const startPageDrag = (page: Page, selector: string) =>
+  page.evaluate((selector) => (window as unknown as FixtureWindow).startPageDrag(selector), selector);
 
 describe(`FileDropTarget in ${browserName}`, () => {
   test("a file drag covers the workspace main area, not the sidebar, says what happens, and moves nothing", async () => {
@@ -173,12 +222,56 @@ describe(`FileDropTarget in ${browserName}`, () => {
     await drag(page, "dragover", "#text", "text");
     expect(await overlays(page)).toEqual([]);
     // An element dragged within the page may carry files (an image does), but it is not an upload.
-    await drag(page, "dragstart", "#text");
-    await drag(page, "dragenter", "#main");
+    await startPageDrag(page, "#text");
+    expect(await drag(page, "dragenter", "#main", "page")).toBe(false);
+    await drag(page, "dragover", "#row", "page");
     expect(await overlays(page)).toEqual([]);
-    await drag(page, "dragend", "#text");
+    expect(await drag(page, "drop", "#row", "page")).toBe(false);
+    expect(await drops(page)).toEqual([]);
     await drag(page, "dragenter", "#main");
     expect(await overlays(page)).toHaveLength(1);
+    await page.close();
+  });
+
+  test("a page drag that is cancelled or loses its source leaves the next file drag working", async () => {
+    const page = await open();
+    // Its start is cancelled, so it never reports an end.
+    await startPageDrag(page, "#card");
+    expect(await drag(page, "dragenter", "#main")).toBe(true);
+    expect(await overlays(page)).toHaveLength(1);
+    await drag(page, "dragleave", "#main");
+
+    // A real drag whose source leaves the page on the way reports its end only to the removed source.
+    const from = (await page.locator("#source").boundingBox())!;
+    const to = (await page.locator("#row").boundingBox())!;
+    await page.mouse.move(from.x + 20, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 30, from.y + from.height / 2 + 4);
+    await page.mouse.move(to.x + 40, to.y + to.height / 2, { steps: 8 });
+    await page.mouse.move(to.x + 60, to.y + to.height / 2, { steps: 4 });
+    await page.mouse.up();
+    expect(await page.locator("#source").count()).toBe(0);
+    expect(await overlays(page)).toEqual([]);
+    expect(await drag(page, "dragenter", "#text")).toBe(true);
+    expect((await overlays(page)).map((overlay) => overlay.text)).toEqual(["Ablegen, um an die Nachricht anzuhängen"]);
+    expect(await drag(page, "drop", "#text")).toBe(true);
+    expect(await drops(page)).toEqual([{ target: "page", names: ["foto.png"] }]);
+    await page.close();
+  });
+
+  test("an extension in accept leaves the decision to the drop, a type that cannot fit is refused while dragging", async () => {
+    const page = await open();
+    // Systems report their own type for an extension; the page target accepts ".pdf" by name.
+    await drag(page, "dragenter", "#text", "files", [["scan.pdf", "application/x-pdf", 10]]);
+    expect((await overlays(page)).map((overlay) => overlay.state)).toEqual(["over"]);
+    expect(await dropEffect(page)).toBe("copy");
+    expect(await drag(page, "drop", "#text", "files", [["scan.pdf", "application/x-pdf", 10]])).toBe(true);
+    expect(await drops(page)).toEqual([{ target: "page", names: ["scan.pdf"] }]);
+
+    await drag(page, "dragenter", "#zone button", "files", [["scan.pdf", "application/pdf", 10]]);
+    expect(await overlays(page)).toEqual([{ state: "invalid", text: "Dateityp wird nicht akzeptiert", box: await box(page, "#main") }]);
+    expect(await page.getAttribute("#zone button", "data-file-drop")).toBe("invalid");
+    expect(await dropEffect(page)).toBe("none");
     await page.close();
   });
 
@@ -196,8 +289,13 @@ describe(`FileDropTarget in ${browserName}`, () => {
     await page.keyboard.press("Escape");
     expect(await overlays(page)).toEqual([]);
 
-    await drag(page, "dragenter", "#text");
-    await page.mouse.move(10, 10);
+    // A pointer moving right after a drag event belongs to another pointer, such as a second finger.
+    await page.evaluate(() => {
+      (window as unknown as FixtureWindow).drag("dragenter", "#text");
+      window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+    });
+    expect(await overlays(page)).toHaveLength(1);
+    await page.waitForTimeout(700);
     await page.mouse.move(20, 20);
     expect(await overlays(page)).toEqual([]);
 
@@ -260,6 +358,49 @@ describe(`FileDropTarget in ${browserName}`, () => {
     await page.evaluate(() => (document.getElementById("dialog") as HTMLDialogElement).close());
     await drag(page, "dragenter", "#text");
     expect((await overlays(page)).map((overlay) => overlay.text)).toEqual(["Ablegen, um an die Nachricht anzuhängen"]);
+    await page.close();
+  });
+
+  test("the topmost modal dialog takes it, even when it comes first in the document", async () => {
+    const page = await open();
+    await page.evaluate(() => {
+      (document.getElementById("dialog") as HTMLDialogElement).showModal();
+      (document.getElementById("first") as HTMLDialogElement).showModal();
+    });
+    await drag(page, "dragenter", "#first-body");
+    expect(await overlays(page)).toEqual([
+      { state: "over", text: "Ablegen, um sie dem ersten Dialog zu geben", box: await box(page, "#first") },
+    ]);
+    await drag(page, "drop", "#first-body");
+    expect(await drops(page)).toEqual([{ target: "first", names: ["foto.png"] }]);
+    await page.close();
+  });
+
+  test("a target whose own place is hidden takes nothing: a lower dialog level or a hidden pane", async () => {
+    const page = await open();
+    await page.evaluate(() => (window as unknown as FixtureWindow).stackDialogs());
+    await page.waitForFunction(() => document.body.textContent?.includes("Wirklich löschen?"));
+    // The question on top has no target; the upload level below it is hidden, but in the same dialog element.
+    expect(await drag(page, "dragenter", ".k2b-dialog__body")).toBe(true);
+    expect(await overlays(page)).toEqual([]);
+    expect(await dropEffect(page)).toBe("none");
+    expect(await drag(page, "drop", ".k2b-dialog__body")).toBe(true);
+    expect(await drops(page)).toEqual([]);
+    await page.click('.k2b-dialog__actions [data-variant="secondary"]');
+    await drag(page, "dragenter", "#lower-body");
+    expect((await overlays(page)).map((overlay) => overlay.text)).toEqual(["Ablegen, um sie hochzuladen"]);
+    await drag(page, "drop", "#lower-body");
+    expect(await drops(page)).toEqual([{ target: "lower", names: ["foto.png"] }]);
+    await page.evaluate(() => (window as unknown as FixtureWindow).closeDialogs());
+
+    // A pane hidden on a small screen keeps its target in the document.
+    await page.evaluate(() => {
+      document.getElementById("page-target")!.style.display = "none";
+    });
+    expect(await drag(page, "dragenter", "#text")).toBe(true);
+    expect(await overlays(page)).toEqual([]);
+    expect(await drag(page, "drop", "#text")).toBe(true);
+    expect(await drops(page)).toEqual([{ target: "lower", names: ["foto.png"] }]);
     await page.close();
   });
 });

@@ -69,7 +69,13 @@ test("a file dropzone inside a page target wins and says what happens while file
     () => (
       <div class="k2b-app-workspace__main">
         <FileDropTarget label="Drop to attach to the message" onDrop={() => void drops.push("page")} />
-        <FileDropzone label="Logo" accept="image/*" multiple={false} onDrop={(files) => void drops.push(`zone:${files[0]?.name}`)} />
+        <FileDropzone
+          label="Logo"
+          accept="image/*"
+          multiple={false}
+          dropLabel="Drop to use as the logo"
+          onDrop={(files) => void drops.push(`zone:${files[0]?.name}`)}
+        />
       </div>
     ),
     dom.root,
@@ -79,7 +85,8 @@ test("a file dropzone inside a page target wins and says what happens while file
     const zone = dom.root.querySelector<HTMLButtonElement>(".k2b-dropzone")!;
     zone.dispatchEvent(dragEvent(dom, "dragenter", [{ name: "logo.png", type: "image/png" }]));
     expect(zone.dataset.fileDrop).toBe("over");
-    expect(zone.textContent).toContain("Drop to upload");
+    expect(zone.textContent).toContain("Drop to use as the logo");
+    expect(dom.document.querySelector(".k2b-file-drop")?.textContent).toContain("Drop to use as the logo");
     zone.dispatchEvent(
       dragEvent(dom, "drop", [
         { name: "logo.png", type: "image/png" },

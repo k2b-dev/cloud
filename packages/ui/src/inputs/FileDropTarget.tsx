@@ -27,7 +27,7 @@ export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
   let overlay: HTMLDivElement | undefined;
   const [rect, setRect] = createSignal<Rect>();
   const region = () => props.for ?? overlay?.parentElement?.closest(FILE_DROP_DEFAULT_REGION) ?? overlay?.ownerDocument.documentElement;
-  const entry: FileDropTargetEntry = { options: props, messages, locale, region };
+  const entry: FileDropTargetEntry = { options: props, messages, locale, region, host: () => overlay?.parentElement ?? undefined };
   const [engine, setEngine] = createSignal<ReturnType<typeof fileDropEngine>>();
 
   onMount(() => {

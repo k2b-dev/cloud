@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { resolveUiMessages } from "../intl/messages";
-import { fileDropRejectionMessage, partitionDroppedFiles } from "./file-drop";
+import { fileDropRejectionMessage, partitionDroppedFiles, refusesDraggedTypes } from "./file-drop";
 
 const file = (name: string, type: string, size = 1) => new File([new Uint8Array(size)], name, { type });
 
@@ -41,5 +41,24 @@ describe("dropped files", () => {
     expect(fileDropRejectionMessage(rejected, { maxSize: 1024 * 1024 }, resolveUiMessages("de"), "de")).toBe(
       "Nicht hinzugefügt, dieser Dateityp wird hier nicht angenommen: 1.exe, 2.exe, 3.exe und 2 weitere\nNicht hinzugefügt, größer als 1 MiB: big.mov",
     );
+  });
+});
+
+describe("a drag in progress", () => {
+  test("is refused only when no file it carries can fit a type-only accept", () => {
+    expect(refusesDraggedTypes(["application/pdf"], "image/*")).toBe(true);
+    expect(refusesDraggedTypes(["application/pdf", "image/png"], "image/*")).toBe(false);
+    // Engines that hide the types during the drag leave the decision to the drop.
+    expect(refusesDraggedTypes([""], "image/*")).toBe(false);
+    expect(refusesDraggedTypes([], "image/*")).toBe(false);
+    expect(refusesDraggedTypes(["application/pdf"], undefined)).toBe(false);
+  });
+
+  test("leaves extensions to the drop, which matches them by name", () => {
+    // Windows reports a .csv as an Excel sheet when Excel is installed, and a .ts as a video stream.
+    expect(refusesDraggedTypes(["application/vnd.ms-excel"], ".pdf,.csv")).toBe(false);
+    expect(refusesDraggedTypes(["video/vnd.dlna.mpeg-tts"], "image/*, .ts")).toBe(false);
+    const { accepted } = partitionDroppedFiles([file("report.csv", "application/vnd.ms-excel")], { accept: ".pdf,.csv" });
+    expect(accepted.map((entry) => entry.name)).toEqual(["report.csv"]);
   });
 });

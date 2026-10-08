@@ -80,7 +80,7 @@ If another user or tab changes a record before your edit is saved, Grids rejects
 
 Moving a record to trash is reversible. Restoring it creates a new history event; it does not erase the deletion event.
 
-**Replace** swaps an attachment atomically. **Remove from record** detaches it and logs the actor, time, field and immutable file metadata. Protected revisions or artifacts retain its bytes; unprotected files may be cleaned up. Detachment promises neither physical erasure nor permanent retention. File history alone does not establish legal compliance.
+To attach files, use **Upload** or drop files from your computer onto the field in the open record. Files that do not fit the field's accepted types or file count are named and left out. **Replace** swaps an attachment atomically. **Remove from record** detaches it and logs the actor, time, field and immutable file metadata. Protected revisions or artifacts retain its bytes; unprotected files may be cleaned up. Detachment promises neither physical erasure nor permanent retention. File history alone does not establish legal compliance.
 
 ### Keep durable record versions
 

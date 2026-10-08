@@ -146,6 +146,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
             title={busy() ? t().convertingDocument : t().dropTitle}
             subtitle={t().dropSubtitle}
             hint={t().dropHint}
+            dropLabel={t().dropToConvert}
             aria-label={t().dropAriaLabel}
             onDrop={convert}
           />

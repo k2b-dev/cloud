@@ -43,6 +43,8 @@ export type FileDropTargetEntry = {
   locale: () => string;
   /** Set for regions: the area the overlay covers. Specific targets are keyed by their element. */
   region?: () => Element | undefined;
+  /** Set for regions: where the target itself is rendered; a region whose host is hidden takes no drops. */
+  host?: () => Element | undefined;
 };
 
 export type FileDropHover = { entry: FileDropTargetEntry; element: Element; invalid: boolean };
@@ -67,26 +69,43 @@ export const FILE_DROP_ATTRIBUTE = "data-file-drop";
 /** Where a region without `for` looks for its area: the nearest dialog, workspace detail, or workspace main area. */
 export const FILE_DROP_DEFAULT_REGION = "dialog, .k2b-app-workspace__detail, .k2b-app-workspace__main";
 
+/**
+ * The type every drag that starts in a page carries. Such a drag holds page content, never files from outside, even
+ * an image that carries one. Marking the drag itself leaves nothing behind when it never reports its end, as when its
+ * start is cancelled or its source is removed.
+ */
+const PAGE_DRAG_TYPE = "application/x-k2b-page-drag";
+
+/** How long after the last drag event a pointer move means the drag ended; a drag over the page repeats them sooner. */
+const DRAG_SILENCE_MS = 600;
+
 const engines = new WeakMap<Document, FileDropEngine>();
 
 const isFileDrag = (event: DragEvent) => {
-  const types = event.dataTransfer?.types;
-  return !!types && Array.from(types).includes("Files");
+  const types = Array.from(event.dataTransfer?.types ?? []);
+  return types.includes("Files") && !types.includes(PAGE_DRAG_TYPE);
 };
 
 const elementOf = (target: EventTarget | null): Element | null =>
   target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
 
-const topModal = (doc: Document): Element | null => {
-  let top: Element | null = null;
-  for (const dialog of Array.from(doc.querySelectorAll("dialog[open]"))) {
-    try {
-      if (dialog.matches(":modal")) top = dialog;
-    } catch {
-      // An engine without `:modal` has no modal dialogs to defer to.
-    }
+const isModal = (dialog: Element) => {
+  try {
+    return dialog.matches(":modal");
+  } catch {
+    // An engine without `:modal` has no modal dialogs to defer to.
+    return false;
   }
-  return top;
+};
+
+/**
+ * The topmost modal dialog. Everything outside of it is inert, so a drag over the page lands inside it; only a drag
+ * over other top-layer content falls back to the last modal dialog in the document.
+ */
+const topModal = (doc: Document, target: EventTarget | null): Element | null => {
+  for (let dialog = elementOf(target)?.closest("dialog"); dialog; dialog = dialog.parentElement?.closest("dialog"))
+    if (isModal(dialog)) return dialog;
+  return Array.from(doc.querySelectorAll("dialog[open]")).filter(isModal).at(-1) ?? null;
 };
 
 /** Sorts dropped files into the ones a target takes and the ones it leaves out, in drop order. */
@@ -106,12 +125,23 @@ export const partitionDroppedFiles = (
   return { accepted, rejected };
 };
 
-/** During a drag only the types are readable, and only in some engines; a drag is invalid when none of them can fit. */
-const invalidDrag = (event: DragEvent, options: FileDropOptions) => {
-  if (!options.accept) return false;
-  const items = Array.from(event.dataTransfer?.items ?? []).filter((item) => item.kind === "file");
-  return items.length > 0 && items.every((item) => item.type !== "" && !checkMimeType(item.type, options.accept!));
+/**
+ * During a drag only the types are readable, and only in some engines. A drag is refused when none of them can fit.
+ * An extension in `accept` matches by file name, and systems report differing types for one extension (a `.csv` may be
+ * `application/vnd.ms-excel`), so with one the drop decides.
+ */
+export const refusesDraggedTypes = (types: readonly string[], accept: string | undefined): boolean => {
+  if (!accept || accept.split(",").some((entry) => entry.trim().startsWith("."))) return false;
+  return types.length > 0 && types.every((type) => type !== "" && !checkMimeType(type, accept));
 };
+
+const invalidDrag = (event: DragEvent, options: FileDropOptions) =>
+  refusesDraggedTypes(
+    Array.from(event.dataTransfer?.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.type),
+    options.accept,
+  );
 
 const MAX_NAMES = 3;
 const nameList = (files: readonly File[], messages: UiMessages) => {
@@ -150,8 +180,7 @@ const createEngine = (doc: Document): FileDropEngine => {
   const [frame, setFrame] = createSignal(0);
   /** Elements the drag has entered and not yet left; the drag is over the window while any remains. */
   const entered = new Set<EventTarget>();
-  /** A drag that started in this document carries page content, never files from outside. */
-  let internal = false;
+  let lastDragEvent = 0;
   let marked: Element | null = null;
   let frameRequest = 0;
 
@@ -168,16 +197,23 @@ const createEngine = (doc: Document): FileDropEngine => {
     return element?.isConnected ? element : undefined;
   };
 
-  /** A region takes part when it is enabled and not behind a modal dialog it is not inside of. */
+  /** Whether nothing between the target's host and its area hides it, as a dialog stack hides its lower levels. */
+  const displayed = (host: Element | undefined, area: Element) => {
+    for (let element: Element | null | undefined = host; element && element !== area; element = element.parentElement)
+      if (view?.getComputedStyle(element).display === "none") return false;
+    return true;
+  };
+
+  /** A region takes part when it is enabled, displayed, and not behind a modal dialog it is not inside of. */
   const eligible = (entry: FileDropTargetEntry, modal: Element | null) => {
     const element = regionElement(entry);
     if (!element || entry.options.disabled) return false;
-    return !modal || modal.contains(element);
+    return (!modal || modal.contains(element)) && displayed(entry.host?.(), element);
   };
   const rendered = (element: Element) => element === doc.documentElement || element.getClientRects().length > 0;
 
-  const begin = () => {
-    const modal = topModal(doc);
+  const begin = (target: EventTarget | null) => {
+    const modal = topModal(doc, target);
     const candidates = [...regions].filter((entry) => eligible(entry, modal) && rendered(regionElement(entry)!));
     // The latest region on an element replaces earlier ones; a region inside another shown one acts as a specific target.
     const byElement = new Map<Element, FileDropTargetEntry>();
@@ -197,7 +233,7 @@ const createEngine = (doc: Document): FileDropEngine => {
   };
 
   const resolve = (target: EventTarget | null): { entry: FileDropTargetEntry; element: Element } | null => {
-    const modal = topModal(doc);
+    const modal = topModal(doc, target);
     for (let element = elementOf(target); element; element = element.parentElement) {
       const specific = targets.get(element);
       if (specific && !specific.options.disabled) return { entry: specific, element };
@@ -255,27 +291,25 @@ const createEngine = (doc: Document): FileDropEngine => {
   };
 
   const listeners: Record<string, (event: Event) => void> = {
-    dragstart: () => {
-      internal = true;
-    },
-    dragend: () => {
-      internal = false;
-      end();
+    dragstart: (event) => {
+      (event as DragEvent).dataTransfer?.setData(PAGE_DRAG_TYPE, "");
     },
     dragenter: (event) => {
       const drag = event as DragEvent;
-      if (internal || !isFileDrag(drag)) return;
+      if (!isFileDrag(drag)) return;
+      lastDragEvent = event.timeStamp;
       if (event.target) entered.add(event.target);
-      if (!session()) begin();
+      if (!session()) begin(event.target);
       accept(drag, hoverFrom(drag));
     },
     dragover: (event) => {
       const drag = event as DragEvent;
-      if (internal || !isFileDrag(drag)) return;
+      if (!isFileDrag(drag)) return;
+      lastDragEvent = event.timeStamp;
       // An engine may skip the first dragenter; the drag still counts as over the window.
       if (!session()) {
         if (event.target) entered.add(event.target);
-        begin();
+        begin(event.target);
       }
       accept(drag, hoverFrom(drag));
       requestFrame();
@@ -289,7 +323,7 @@ const createEngine = (doc: Document): FileDropEngine => {
     },
     drop: (event) => {
       const drag = event as DragEvent;
-      if (internal || !isFileDrag(drag)) return;
+      if (!isFileDrag(drag)) return;
       const found = resolve(event.target);
       end();
       if (!found) {
@@ -304,9 +338,10 @@ const createEngine = (doc: Document): FileDropEngine => {
     keydown: (event) => {
       if ((event as KeyboardEvent).key === "Escape" && session()) end();
     },
-    // No pointer moves during a drag: one that arrives means the drag ended somewhere the page did not see.
-    pointermove: () => {
-      if (session()) end();
+    // Engines send no pointer moves during a drag: one long after the last drag event means the drag ended somewhere the
+    // page did not see. One right after it belongs to another pointer, such as a second finger on a touch screen.
+    pointermove: (event) => {
+      if (session() && event.timeStamp - lastDragEvent > DRAG_SILENCE_MS) end();
     },
     visibilitychange: () => {
       if (doc.visibilityState === "hidden") end();

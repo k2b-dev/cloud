@@ -10,7 +10,10 @@ Use `ImageInput` for one image with an immediate transformed preview.
 
 Use `FileDropTarget` to let a whole page area or dialog receive files. A
 `FileDropzone` inside such an area is the more specific target: it takes the
-files dropped on it, and the area's overlay shows its sentence meanwhile.
+files dropped on it, and the area's overlay shows its sentence meanwhile. That
+sentence is "Drop to upload" unless `dropLabel` says what dropping does here,
+such as "Drop to convert the document to Markdown". Pass it whenever dropping
+does something other than upload.
 
 ## Import
 
@@ -38,7 +41,8 @@ and the surface shows its drop state with `data-file-drop="over"` or
 
 The parent reports progress through `busy`. While busy, the dropzone is
 disabled and shows its loading state. `error` accepts visible JSX. `title`,
-`subtitle`, `hint`, and `icon` describe the upload task.
+`subtitle`, `hint`, and `icon` describe the upload task; while files are over
+the surface, its title shows `dropLabel`.
 
 The component does not retain selected files. Store them or start the upload in `onDrop`.
 
@@ -49,7 +53,7 @@ See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldPr
 ```ts
 type FileDropzoneProps = FieldProps & {
   accept?: string; multiple?: boolean; busy?: boolean; icon?: string; title?: JSX.Element;
-  subtitle?: JSX.Element; hint?: JSX.Element; onDrop: (files: File[]) => void | Promise<void>;
+  subtitle?: JSX.Element; hint?: JSX.Element; dropLabel?: string; onDrop: (files: File[]) => void | Promise<void>;
 };
 ```
 

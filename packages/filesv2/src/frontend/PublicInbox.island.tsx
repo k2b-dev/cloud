@@ -114,7 +114,13 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
       <Show when={!props.share.showUploadNames}>
         <InlineGuidance icon="ti ti-lock">{b().privateInboxHint}</InlineGuidance>
       </Show>
-      <FileDropzone label={b().upload} hint={b().publicInboxHint} multiple onDrop={upload} />
+      <FileDropzone
+        label={b().upload}
+        hint={b().publicInboxHint}
+        dropLabel={b().dropInto({ name: props.share.title })}
+        multiple
+        onDrop={upload}
+      />
       <UploadSurface queue={uploads} />
       <Show when={props.share.showUploadNames}>
         <section class="flex flex-col gap-2" aria-label={b().publicUploadNames}>

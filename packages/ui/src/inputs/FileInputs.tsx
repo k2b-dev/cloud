@@ -29,6 +29,8 @@ export type FileDropzoneProps = FieldProps & {
   title?: JSX.Element;
   subtitle?: JSX.Element;
   hint?: JSX.Element;
+  /** One sentence that says what dropping does, shown while files are over the zone. Defaults to "Drop to upload". */
+  dropLabel?: string;
   onDrop: (files: File[]) => void | Promise<void>;
 };
 
@@ -45,9 +47,10 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
   };
   // Drops take the same path as every other file drop target: files only, the most specific target wins, and files
   // that do not fit `accept` are left out with a message.
+  const dropLabel = () => props.dropLabel ?? messages().dropToUpload;
   const dropRef = fileDropTarget({
     get label() {
-      return messages().dropToUpload;
+      return dropLabel();
     },
     get accept() {
       return props.accept;
@@ -77,7 +80,7 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
       : dragState() === "invalid"
         ? messages().fileTypeNotAccepted
         : dragState() === "over"
-          ? messages().dropToUpload
+          ? dropLabel()
           : (props.title ?? messages().dropFiles);
 
   return (

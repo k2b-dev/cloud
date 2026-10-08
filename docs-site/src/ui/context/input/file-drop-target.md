@@ -50,13 +50,18 @@ leave the page.
 
 - Only real file drags count: the drag's types include `Files`. Text, links,
   and elements dragged within the page never show an overlay, even an image
-  that carries a file.
+  that carries a file. Every drag that starts in the page gets the extra type
+  `application/x-k2b-page-drag` when it starts, so a drag that is cancelled
+  or whose source disappears leaves nothing behind.
 - The most specific target under the pointer wins. A `fileDropTarget` element
   or a `FileDropzone` inside an area takes the drop, and the area's overlay
   shows its sentence while the pointer is over it. The element itself gets an
   inset ring through `data-file-drop="over"`.
-- An open modal dialog takes precedence. Targets inside it work; targets on the
-  page behind it are off until it closes.
+- The topmost open modal dialog takes precedence. Targets inside it work;
+  targets on the page or in dialogs behind it are off until it closes.
+- A target whose own place is hidden is off, even when its area is visible:
+  a lower level of a dialog stack, which stays in the same `<dialog>` while a
+  question is open on top, or a pane hidden on a small screen.
 - Two areas on the same element: the one rendered last wins. An area inside
   another shown area acts as a specific target.
 - `disabled` takes a target out. A disabled specific target passes the drop to
@@ -75,10 +80,12 @@ then `files` is empty.
 
 `accept` (`<input accept>` syntax), `multiple` (default `true`), `maxFiles`, and
 `maxSize` (bytes per file) filter the drop. Files that do not fit are left out,
-listed in `details.rejected`, and named in one error toast with the reason. When
-the engine exposes the types during the drag and none fits `accept`, the overlay
-says so before the drop. Validate size, content, and permissions again before
-upload.
+listed in `details.rejected`, and named in one error toast with the reason.
+When `accept` lists only types, the engine exposes the types during the drag,
+and none of them fits, the overlay says so and the drop is refused. An extension
+in `accept` matches by file name, which only the drop reveals, and systems
+report differing types for one extension, so with one the drop decides. Validate
+size, content, and permissions again before upload.
 
 ## Accessibility
 

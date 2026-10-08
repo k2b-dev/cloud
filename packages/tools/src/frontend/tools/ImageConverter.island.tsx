@@ -358,6 +358,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   subtitle={t().dropzoneSubtitle}
                   hint={t().dropzoneHint}
                   icon="ti ti-photo-plus"
+                  dropLabel={t().dropToAdd}
                   onDrop={addFiles}
                 />
               </div>
