@@ -2,6 +2,7 @@ import {
   ButtonLink,
   DetailPanel,
   dialogCore,
+  FileDropTarget,
   IconButton,
   IconButtonLink,
   Lightbox,
@@ -27,6 +28,7 @@ import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
 const MAX_IMAGE_LONGEST_SIDE = 2048;
+const MEDIA_ACCEPT = "image/*,.svg,video/*,.mov,.m4v";
 
 export default function TaskAttachmentsSection(props: {
   spaceId: string;
@@ -86,16 +88,16 @@ export default function TaskAttachmentsSection(props: {
     return type === source.type ? source : new File([source], source.name, { type });
   };
 
-  const chooseAndUploadMedia = async () => {
+  const remaining = () => MAX_TASK_ATTACHMENTS - attachments().length;
+  /** Picked or dropped files take the same path: up to the attachment limit, each prepared, then uploaded in order. */
+  const uploadMedia = async (selected: readonly File[]) => {
     setUploading(true);
     let changed = false;
     try {
-      const { files } = await import("@k2b/stdlib/browser");
-      const selected = await files.showFileDialog({ accept: "image/*,.svg,video/*,.mov,.m4v", multiple: true });
-      const remaining = MAX_TASK_ATTACHMENTS - attachments().length;
+      const room = remaining();
       const failures: { filename: string; message: string }[] = [];
 
-      for (const source of selected.slice(0, remaining)) {
+      for (const source of selected.slice(0, room)) {
         try {
           const file = await prepareUpload(source);
           const form = new FormData();
@@ -120,12 +122,19 @@ export default function TaskAttachmentsSection(props: {
       if (failures.length === 1 && firstFailure)
         toast.error(t.addMediaFileFailed({ filename: firstFailure.filename, message: firstFailure.message }));
       else if (failures.length > 1) toast.error(t.addMediaFilesFailed({ count: failures.length }));
-    } catch (error) {
-      if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) return;
-      toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
     } finally {
       if (changed) props.onChanged();
       setUploading(false);
+    }
+  };
+
+  const chooseAndUploadMedia = async () => {
+    try {
+      const { files } = await import("@k2b/stdlib/browser");
+      await uploadMedia(await files.showFileDialog({ accept: MEDIA_ACCEPT, multiple: true }));
+    } catch (error) {
+      if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) return;
+      toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
     }
   };
 
@@ -257,6 +266,16 @@ export default function TaskAttachmentsSection(props: {
                 )}
               </For>
             </div>
+          </Show>
+          <Show when={props.canWrite}>
+            {/* Images and videos dropped anywhere on the open task attach to it. */}
+            <FileDropTarget
+              label={t.dropToAttachMedia}
+              accept={MEDIA_ACCEPT}
+              maxFiles={remaining()}
+              disabled={uploading() || remaining() <= 0}
+              onDrop={(files) => void uploadMedia(files)}
+            />
           </Show>
           <Show when={props.canWrite && attachments().length < MAX_TASK_ATTACHMENTS}>
             <DetailPanel.Action

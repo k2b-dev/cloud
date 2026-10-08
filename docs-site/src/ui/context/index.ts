@@ -39,6 +39,7 @@ import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
+import inputFileDropTarget from "./input/file-drop-target.md" with { type: "text" };
 import inputFileDropzone from "./input/file-dropzone.md" with { type: "text" };
 import inputIcon from "./input/icon.md" with { type: "text" };
 import inputImage from "./input/image.md" with { type: "text" };
@@ -99,6 +100,7 @@ const catalogContextSources = {
   "input/image": { file: "input/image.md", content: inputImage },
   "input/image-cropper": { file: "input/image-cropper.md", content: inputImageCropper },
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },
+  "input/file-drop-target": { file: "input/file-drop-target.md", content: inputFileDropTarget },
   "input/icon": { file: "input/icon.md", content: inputIcon },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },

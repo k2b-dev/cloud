@@ -161,8 +161,10 @@ preserves the resource attachment while copy actions expose only the visible
 user text. Retrying a message while its turn waits for an approval or another
 user action aborts that pending turn and replaces the conversation branch.
 
-The Assistant composer accepts files and screenshots from paste through the
-same bounded attachment pipeline as selection and drag-and-drop. Short text
+Files dropped anywhere on the workspace main area around `ChatComposer`, not
+only on the composer, attach to the message; the overlay says so while files
+are dragged over the window. The composer accepts files and screenshots from
+paste through the same bounded attachment pipeline as selection and drop. Short text
 keeps native textarea paste behavior. A paste of at least 8,000 characters, or
 one that would exceed the 20,000-character message limit, becomes a normal
 `text/plain` conversation file with a unique internal `pasted-<short-id>.txt`

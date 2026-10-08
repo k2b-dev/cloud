@@ -1,4 +1,4 @@
-import { Button, CopyButton, FileDropzone, NoticeCard, useLocale } from "@k2b/ui";
+import { Button, CopyButton, FileDropTarget, FileDropzone, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type DocumentMarkdownMessages, documentMarkdownMessages } from "@/api/document-markdown-messages";
@@ -135,6 +135,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
 
   return (
     <section class="flex min-h-0 flex-1 flex-col gap-4" aria-labelledby="document-markdown-heading">
+      <FileDropTarget label={t().dropToConvert} accept={ACCEPTED_DOCUMENTS} multiple={false} disabled={busy()} onDrop={convert} />
       <div class="grid min-h-0 gap-4 lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.28fr)]">
         <div class="flex flex-col gap-3">
           <FileDropzone

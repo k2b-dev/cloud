@@ -4,6 +4,7 @@ import {
   announce,
   Button,
   createCollectionSelection,
+  FileDropTarget,
   FileGrid,
   Format,
   IconButton,
@@ -324,6 +325,16 @@ export function FileChooser(props: {
       {/* `display: contents`, so header, body, and footer stay the panel's own rows. */}
       <div ref={root} class="cloud-file-chooser">
         <PanelDialog.Header title={t().title({ multiple })} close={() => props.close([])} />
+        {/* Files dropped anywhere on the open chooser are taken like files picked from this device. */}
+        <FileDropTarget
+          label={t().dropToChoose({ multiple })}
+          accept={props.options.accept}
+          multiple={multiple}
+          disabled={downloading()}
+          onDrop={(files) => {
+            if (files.length > 0) props.close(files);
+          }}
+        />
         <div class="cloud-file-chooser__toolbar">
           <nav class="cloud-file-chooser__crumbs" aria-label={t().breadcrumbs}>
             <IconButton size="sm" variant="ghost" label={t().up} disabled={!location() || downloading()} onClick={up}>

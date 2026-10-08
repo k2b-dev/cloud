@@ -88,6 +88,12 @@ const portableSections = [
       ),
       page("qr-scanner", "QrScanner", "ti ti-qrcode", "Camera QR scanning with host validation and explicit camera errors."),
       page("file-dropzone", "FileDropzone", "ti ti-cloud-upload", "Accessible click and drag file selection with validation state."),
+      page(
+        "file-drop-target",
+        "FileDropTarget",
+        "ti ti-drag-drop",
+        "Whole-area file drops with a calm overlay, nested targets, and dialog precedence.",
+      ),
       page("markdown-editor", "MarkdownEditor", "ti ti-markdown", "Standalone controlled Markdown editing with native textarea behavior."),
       page(
         "autocomplete",

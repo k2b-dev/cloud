@@ -13,7 +13,9 @@ import {
   DateRangePicker,
   type DateRangeValue,
   DateTimePicker,
+  FileDropTarget,
   FileDropzone,
+  fileDropTarget,
   IconInput,
   ImageCropper,
   type ImageCropState,
@@ -1092,6 +1094,48 @@ const FileDemo = (props: { image?: boolean }) => {
   );
 };
 
+const FileDropTargetDemo = () => {
+  const [area, setArea] = createSignal<HTMLDivElement>();
+  const [last, setLast] = createSignal("Drag files from your computer over this window.");
+  const received = (folder: string) => (files: File[]) => {
+    setLast(`${folder}: ${files.map((file) => file.name).join(", ")}`);
+  };
+  return (
+    <DemoCard
+      id="file-drop-target"
+      chip={{ kind: "component", name: "FileDropTarget", from: "@k2b/ui" }}
+      description="While files are dragged over the window, the whole area shows where they land; the folder row is the more specific target and wins under the pointer. Uploading stays with the application."
+      code={`<FileDropTarget
+  for={area()}
+  label="Drop to upload to “Projects”"
+  onDrop={(files) => upload(files, "Projects")}
+/>
+<div ref={fileDropTarget({
+  label: "Drop to upload to “Invoices”",
+  onDrop: (files) => upload(files, "Projects/Invoices"),
+})}>Invoices</div>`}
+    >
+      <div ref={setArea} style={{ display: "grid", gap: "0.5rem", padding: "1rem", "min-height": "12rem", "align-content": "start" }}>
+        <FileDropTarget for={area()} label="Drop to upload to “Projects”" onDrop={received("Projects")} />
+        <div
+          ref={fileDropTarget({ label: "Drop to upload to “Invoices”", onDrop: received("Invoices") })}
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            "align-items": "center",
+            padding: "0.5rem 0.75rem",
+            "border-radius": "var(--k2b-radius-control)",
+          }}
+        >
+          <i class="ti ti-folder" aria-hidden="true" />
+          Invoices
+        </div>
+        <p style={{ margin: 0, color: "var(--k2b-text-muted)", "font-size": "0.875rem" }}>{last()}</p>
+      </div>
+    </DemoCard>
+  );
+};
+
 const CropDemo = () => {
   const [, setCrop] = createSignal<ImageCropState | null>(null);
   const [aspect, setAspect] = createSignal<CropAspectPreset>("square");
@@ -1240,6 +1284,11 @@ const demos: DemoSection = {
   "file-dropzone": () => (
     <DemoGrid columns="one">
       <FileDemo />
+    </DemoGrid>
+  ),
+  "file-drop-target": () => (
+    <DemoGrid columns="one">
+      <FileDropTargetDemo />
     </DemoGrid>
   ),
   icon: () => (

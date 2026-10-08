@@ -1,7 +1,7 @@
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
-import { dropzone, mutation } from "@k2b/stdlib/solid";
+import { mutation } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Button,
@@ -10,8 +10,10 @@ import {
   ContextMenu,
   createCollectionSelection,
   Dropdown,
+  FileDropTarget,
   FileGrid,
   FilterChip,
+  fileDropTarget,
   InlineGuidance,
   Placeholder,
   prompts,
@@ -483,13 +485,14 @@ export default function Browser(props: {
   // Questions still open when this view leaves are closed; files already queued keep uploading.
   const questions = new AbortController();
   onCleanup(() => questions.abort());
-  const prepareUpload = async (input: { files: readonly File[]; directories: readonly string[]; hidden: number }) => {
+  const prepareUpload = async (input: { files: readonly File[]; directories: readonly string[]; hidden: number; root: string }) => {
     // The target is where the files were dropped or picked; navigating while a question is open does not move it.
     const signal = questions.signal;
     const base = baseId();
-    const root = folder();
-    const label = root.split("/").at(-1) || baseLabel(props.directory.base, b(), locale());
-    const known = new Set(props.directory.items.filter((item) => !item.directory).map((item) => item.name));
+    const root = input.root;
+    const label = folderLabel(root);
+    // Names in a folder dropped onto from its parent are not listed here; the upload asks when one already exists.
+    const known = new Set(root === folder() ? props.directory.items.filter((item) => !item.directory).map((item) => item.name) : []);
     let { files, directories } = input;
     const system = new Set<string>();
     for (const path of [...files.map(relativeName), ...directories]) {
@@ -547,28 +550,27 @@ export default function Browser(props: {
       }),
     ),
   );
+  const folderLabel = (path: string) => path.split("/").at(-1) || baseLabel(props.directory.base, b(), locale());
   // `hidden` counts dropped dot-files the browser refused to hand over; a note names them instead of an error.
-  const startUpload = (files: readonly File[], directories: readonly string[] = [], hidden = 0) => {
+  const startUpload = (files: readonly File[], directories: readonly string[] = [], hidden = 0, root = folder()) => {
     if (!files.length && !directories.length) return;
     if (busy() || searching() || !canCreate()) {
       toast(b().uploadUnavailable);
       return;
     }
-    void prepareUpload({ files, directories, hidden });
+    void prepareUpload({ files, directories, hidden, root });
   };
   let filePicker: HTMLInputElement | undefined;
   let folderPicker: HTMLInputElement | undefined;
-  const drop = dropzone.create({});
   let dropPreparation: AbortController | undefined;
   onCleanup(() => dropPreparation?.abort());
-  const onExternalDrop: typeof drop.handlers.onDrop = (event) => {
-    drop.handlers.onDrop(event);
-    if (!event.dataTransfer || busy() || searching() || !canCreate()) return;
-    const entries = Array.from(event.dataTransfer.items ?? [])
+  /** Files dropped on the folder view or onto a folder row; folder entries are read while the drop is still running. */
+  const dropFiles = (files: readonly File[], dataTransfer: DataTransfer, root: string) => {
+    const entries = Array.from(dataTransfer.items ?? [])
       .map((item) => item.webkitGetAsEntry?.())
       .filter((entry): entry is FileSystemEntry => !!entry);
     if (!entries.some((entry) => entry.isDirectory)) {
-      startUpload(Array.from(event.dataTransfer.files));
+      startUpload(files, [], 0, root);
       return;
     }
     dropPreparation?.abort();
@@ -585,7 +587,7 @@ export default function Browser(props: {
       .then((result) => {
         if (request.signal.aborted || source !== locationKey()) return;
         if (result.errors.length) toast.error(result.errors.join("\n"));
-        startUpload(result.files, result.directories, result.hidden.length);
+        startUpload(result.files, result.directories, result.hidden.length, root);
       })
       .catch((error) => {
         if (!request.signal.aborted)
@@ -935,7 +937,15 @@ export default function Browser(props: {
   });
   const folderDrop = (row: FileEntry): RowAttributes =>
     row.directory && !searching() && !virtualOf(row)
-      ? dropProps(row.path, () => (view().view === "tree" ? expandFolder(row.path, true) : openFolder(row.path)))
+      ? {
+          ...dropProps(row.path, () => (view().view === "tree" ? expandFolder(row.path, true) : openFolder(row.path))),
+          // Files from outside dropped onto a folder row upload into that folder.
+          ref: fileDropTarget({
+            label: b().dropInto({ name: row.name }),
+            disabled: !canCreate() || row.actions?.write === false,
+            onDrop: (files, { dataTransfer }) => dropFiles(files, dataTransfer, row.path),
+          }),
+        }
       : {};
   const upDrop = (): RowAttributes => (folder() ? dropProps(parentPath(folder()), goUp) : {});
   const movePaths = (paths: readonly string[], target: string) =>
@@ -1163,17 +1173,12 @@ export default function Browser(props: {
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
-        <div
-          class="filesv2-browser__surface"
-          data-dragging={drop.isDragging() && !dragging() && !searching() ? "true" : undefined}
-          {...(dragging() ? {} : { ...drop.handlers, onDrop: onExternalDrop })}
-        >
-          <Show when={drop.isDragging() && !dragging() && !searching()}>
-            <div class="filesv2-browser__drop" aria-hidden="true">
-              <i class="ti ti-upload" />
-              {b().dropHere}
-            </div>
-          </Show>
+        <div class="filesv2-browser__surface">
+          <FileDropTarget
+            label={b().dropInto({ name: folderLabel(folder()) })}
+            disabled={searching() || !canCreate()}
+            onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, folder())}
+          />
           <header class="filesv2-browser__header">
             <div class="flex items-center gap-2">
               <input

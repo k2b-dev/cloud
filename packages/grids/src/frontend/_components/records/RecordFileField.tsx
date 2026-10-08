@@ -4,6 +4,7 @@ import {
   Button,
   canPreviewFile,
   dialogCore,
+  FileDropTarget,
   FileView,
   type FileViewContent,
   IconButton,
@@ -205,6 +206,11 @@ export default function RecordFileField(props: {
     }
   };
 
+  /** Dropped files upload one after another, each like a picked one. */
+  const uploadAll = async (dropped: readonly File[]) => {
+    for (const file of dropped) await upload(file);
+  };
+
   const chooseFile = async () => {
     if (uploading()) return;
     try {
@@ -244,8 +250,20 @@ export default function RecordFileField(props: {
     await refreshAfterCommittedChange();
   };
 
+  const [root, setRoot] = createSignal<HTMLDivElement>();
+
   return (
-    <div class="flex flex-col gap-2">
+    <div ref={setRoot} class="flex flex-col gap-2">
+      <Show when={props.canWrite}>
+        {/* While files are dragged over the window, each file field of the record shows where its files land. */}
+        <FileDropTarget
+          for={root()}
+          label={t().dropToAttach({ field: props.field.name })}
+          accept={accept()}
+          disabled={uploading()}
+          onDrop={(dropped) => void uploadAll(dropped)}
+        />
+      </Show>
       <Show when={files().length === 0}>
         <span class="text-dimmed">—</span>
       </Show>

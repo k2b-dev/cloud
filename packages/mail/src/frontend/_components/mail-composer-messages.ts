@@ -93,7 +93,7 @@ export const mailComposerMessages = i18n.define({
       changeSender: ({ label, address }: { label: string; address: string }) =>
         `Change sender identity. Current sender: ${label}${address ? `, ${address}` : ""}`,
       templatesFailed: "Compose templates could not be loaded",
-      dropFiles: "Drop files to attach",
+      dropFiles: "Drop to attach to the email",
       backToMailbox: "Back to mailbox",
       recoverChanges: "Recover changes",
       openInNewWindow: "Open in new window",
@@ -358,7 +358,7 @@ export const mailComposerMessages = i18n.define({
       from: "von",
       changeSender: ({ label, address }) => `Absenderidentität ändern. Aktueller Absender: ${label}${address ? `, ${address}` : ""}`,
       templatesFailed: "Vorlagen zum Verfassen konnten nicht geladen werden",
-      dropFiles: "Dateien hier ablegen, um sie anzuhängen",
+      dropFiles: "Ablegen, um an die E-Mail anzuhängen",
       backToMailbox: "Zurück zum Postfach",
       recoverChanges: "Änderungen wiederherstellen",
       openInNewWindow: "In neuem Fenster öffnen",
