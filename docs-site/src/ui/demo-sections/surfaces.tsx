@@ -330,7 +330,7 @@ const CardsDemo = () => (
   </DemoCard>
 );
 
-const resourceStates: ResourceCardState[] = ["ok", "loading", "no-access", "deleted", "unavailable"];
+const resourceStates: ResourceCardState[] = ["ok", "loading", "no_access", "deleted", "unavailable"];
 
 const ResourceCardDemo = () => (
   <DemoCard

@@ -18,9 +18,9 @@ import { Avatar, LinkCard, ResourceCard, type ResourceCardState } from "@k2b/ui"
 
 `ResourceCard` shows an element in one of five `state`s:
 
-- `"ok"` (the default) shows the element's `icon`, `title`, a line with its `source` and `location` joined by " · ", and one line of `preview` text. Empty lines are left out.
+- `"ok"` (the default) shows the element's `icon`, `title`, a line with its `source` and `location` joined by " · ", and one line of `preview` text. Empty lines are left out; a blank title shows "Untitled", so a card that opens always has a name.
 - `"loading"` shows a quiet placeholder while the application looks the element up.
-- `"no-access"` shows "No access", `"deleted"` shows "Item deleted", and `"unavailable"` shows "Not available right now", each with a neutral icon.
+- `"no_access"` shows "No access", `"deleted"` shows "Item deleted", and `"unavailable"` shows "Not available right now", each with a neutral icon.
 
 The card has the same width and height in every state, at most the width of its container, so a card that resolves, loses access, or is deleted moves nothing around it. Long text is cut off with an ellipsis. The labels follow the inherited `@k2b/ui` locale.
 
@@ -37,7 +37,7 @@ type LinkCardProps = {
   href: string; title: string; description: string; icon: string; color?: LinkCardColor; meta?: JSX.Element;
 };
 
-type ResourceCardState = "ok" | "loading" | "no-access" | "deleted" | "unavailable";
+type ResourceCardState = "ok" | "loading" | "no_access" | "deleted" | "unavailable";
 
 type ResourceCardProps = {
   state?: ResourceCardState; title?: string; icon?: string; source?: string; location?: string; preview?: string;
@@ -56,7 +56,7 @@ type AvatarProps = {
 
 ## Accessibility
 
-The card remains one native link with a visible focus indicator. A `ResourceCard` that opens is one native link or button, read with its title, source, location, and preview; it never moves on hover or focus. A card that cannot show its element is plain text and takes no focus. A loading card is marked busy and names "Loading" for screen readers without a live region, so a list of cards does not announce each one. Avatar supplies an image alternative or fallback `role="img"` label.
+The card remains one native link with a visible focus indicator. A `ResourceCard` that opens is one native link or button, read with its title, source, location, and preview; it never moves on hover or focus. A card that cannot show its element is plain text and takes no focus. A card that leaves `"ok"` while it has focus, for example because the element was deleted, becomes plain text, and focus returns to the page. A loading card is marked busy and names "Loading" for screen readers without a live region, so a list of cards does not announce each one. Avatar supplies an image alternative or fallback `role="img"` label.
 
 ## Runtime
 
@@ -84,7 +84,7 @@ All three components render on the server. Link navigation works without hydrati
   href="/notebooks/onboarding"
 />
 
-<ResourceCard state="no-access" />
+<ResourceCard state="no_access" />
 
 <Avatar name="Ada Lovelace" src={profileImageUrl} size="sm" />
 <Avatar name="Workflow" icon="ti ti-route" size="sm" />

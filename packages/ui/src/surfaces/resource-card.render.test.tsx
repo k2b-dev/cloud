@@ -57,7 +57,7 @@ const textOf = (html: string) => {
 
 const hidden = [element.title, element.source, element.location, element.preview, element.href, element.icon] as string[];
 const reasons = [
-  { state: "no-access", icon: "ti ti-lock", en: "No access", de: "Kein Zugriff" },
+  { state: "no_access", icon: "ti ti-lock", en: "No access", de: "Kein Zugriff" },
   { state: "deleted", icon: "ti ti-trash", en: "Item deleted", de: "Element gelöscht" },
   { state: "unavailable", icon: "ti ti-cloud-off", en: "Not available right now", de: "Gerade nicht verfügbar" },
 ] as const;
@@ -79,6 +79,24 @@ describe("ResourceCard", () => {
     expect(textOf(html)).toBe("Onboarding checklist");
     expect(html).not.toContain("k2b-resource-card__meta");
     expect(html).not.toContain("k2b-resource-card__preview");
+  });
+
+  test('names a card that opens "Untitled" in English and "Ohne Titel" in German when its title is blank', () => {
+    const bare = { title: undefined, icon: undefined, source: undefined, location: undefined, preview: undefined };
+    for (const [locale, text] of [
+      ["en", "Untitled"],
+      ["de", "Ohne Titel"],
+    ] as const) {
+      const link = card(bare, locale);
+      expect(link).toMatch(/^<a class="k2b-resource-card" data-state="ok" href="\/notebooks\/onboarding">/);
+      expect(textOf(link)).toBe(text);
+
+      const button = card({ ...bare, title: "  ", href: undefined, onOpen: () => {} }, locale);
+      expect(button).toMatch(/^<button type="button" class="k2b-resource-card" data-state="ok">/);
+      expect(textOf(button)).toBe(text);
+    }
+    // A blank title with other fields keeps them after the fallback name.
+    expect(textOf(card({ title: "" }))).toBe("Untitled Notebooks · Team handbook Laptop, accounts, and the first week");
   });
 
   test("opens in place with a button when the caller handles it, and is no control without a target", () => {
@@ -127,7 +145,7 @@ describe("ResourceCard", () => {
   });
 
   test("keeps the caller's class in every state", () => {
-    for (const state of ["ok", "loading", "no-access", "deleted", "unavailable"] as const)
+    for (const state of ["ok", "loading", "no_access", "deleted", "unavailable"] as const)
       expect(card({ state, class: "shared-card" })).toContain('class="k2b-resource-card shared-card"');
   });
 });
@@ -141,6 +159,7 @@ describe("ResourceCard styles", () => {
     "max-height",
     "padding",
     "padding-block",
+    "padding-inline",
     "border-width",
     "grid-template-columns",
     "font-size",
@@ -159,6 +178,14 @@ describe("ResourceCard styles", () => {
       .filter((rule) => sizing.some((property) => cssDeclarations(rule.body).has(property)))
       .map((rule) => rule.selector);
     expect(resizing).toEqual([]);
+  });
+
+  test("mutes the icon of every state that cannot show its element", () => {
+    const muted = rules.filter(
+      (rule) =>
+        rule.selector.endsWith(".k2b-resource-card__icon") && cssDeclarations(rule.body).get("color")?.[0] === "var(--k2b-text-muted)",
+    );
+    for (const { state } of reasons) expect(muted.some((rule) => rule.selector.includes(`[data-state="${state}"]`))).toBe(true);
   });
 
   test("paints only with theme tokens, so the dark theme needs no rules of its own", () => {

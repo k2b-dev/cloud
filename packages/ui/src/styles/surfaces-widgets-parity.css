@@ -220,7 +220,8 @@
   align-items: center;
   column-gap: 0.75rem;
   overflow: hidden;
-  padding: 0 0.875rem 0 0.625rem;
+  padding-block: 0;
+  padding-inline: 0.625rem 0.875rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text);
@@ -295,7 +296,7 @@
   line-height: 1.25rem;
 }
 
-.k2b-ui .k2b-resource-card:is([data-state="no-access"], [data-state="deleted"], [data-state="unavailable"]) .k2b-resource-card__icon {
+.k2b-ui .k2b-resource-card:is([data-state="no_access"], [data-state="deleted"], [data-state="unavailable"]) .k2b-resource-card__icon {
   color: var(--k2b-text-muted);
 }
 
@@ -317,10 +318,16 @@
 }
 
 /* Fills disappear in forced colours; an outline keeps the card's edge without
-   changing its size. */
+   changing its size, and the loading placeholder paints itself in GrayText so it
+   stays visible. */
 @media (forced-colors: active) {
   .k2b-ui .k2b-resource-card {
     outline: 1px solid CanvasText;
+  }
+
+  .k2b-ui .k2b-resource-card[data-state="loading"] :is(.k2b-resource-card__icon, .k2b-resource-card__bar) {
+    forced-color-adjust: none;
+    background: GrayText;
   }
 }
 

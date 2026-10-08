@@ -41,7 +41,7 @@ const cards: { name: string; props: Partial<Props> }[] = [
   { name: "ok-short", props: { title: "Plan", source: undefined, location: undefined, preview: undefined } },
   { name: "ok-button", props: { href: undefined, onOpen: () => {} } },
   { name: "loading", props: { state: "loading" } },
-  { name: "no-access", props: { state: "no-access" } },
+  { name: "no-access", props: { state: "no_access" } },
   { name: "deleted", props: { state: "deleted" } },
   { name: "unavailable", props: { state: "unavailable" } },
 ];
@@ -166,6 +166,52 @@ describe("ResourceCard in a real engine", () => {
       // A card that cannot show its element takes no focus and no hover fill.
       await page.locator(".card-no-access").hover();
       expect(await page.locator(".card-no-access").evaluate((element) => element.matches(":is(a, button)"))).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("keeps the inset beside the icon on the icon's side in right-to-left text", async () => {
+    const page = await open(viewports.desktop, "light", "en");
+    try {
+      const insets = () =>
+        page.evaluate(() => {
+          const card = document.querySelector<HTMLElement>(".card-ok")!.getBoundingClientRect();
+          const icon = document.querySelector<HTMLElement>(".card-ok .k2b-resource-card__icon")!.getBoundingClientRect();
+          const copy = document.querySelector<HTMLElement>(".card-ok .k2b-resource-card__copy")!.getBoundingClientRect();
+          return document.body.dir === "rtl"
+            ? { icon: card.right - icon.right, text: copy.left - card.left }
+            : { icon: icon.left - card.left, text: card.right - copy.right };
+        });
+      expect(await insets()).toEqual({ icon: 10, text: 14 });
+      await page.evaluate(() => {
+        document.body.dir = "rtl";
+      });
+      expect(await insets()).toEqual({ icon: 10, text: 14 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("in forced colours the loading placeholder stays visible in GrayText at the same size", async () => {
+    const page = await open(viewports.desktop, "light", "en");
+    try {
+      const before = await page.locator(".card-loading").evaluate((element) => element.getBoundingClientRect().height);
+      await page.emulateMedia({ forcedColors: "active" });
+      const measured = await page.evaluate(() => {
+        const probe = document.body.appendChild(document.createElement("i"));
+        probe.style.color = "GrayText";
+        const grayText = getComputedStyle(probe).color;
+        probe.remove();
+        const card = document.querySelector<HTMLElement>(".card-loading")!;
+        return {
+          height: card.getBoundingClientRect().height,
+          fills: Array.from(card.querySelectorAll<HTMLElement>(".k2b-resource-card__icon, .k2b-resource-card__bar")).map((part) =>
+            getComputedStyle(part).backgroundColor === grayText ? "GrayText" : getComputedStyle(part).backgroundColor,
+          ),
+        };
+      });
+      expect(measured).toEqual({ height: before, fills: ["GrayText", "GrayText", "GrayText"] });
     } finally {
       await page.close();
     }

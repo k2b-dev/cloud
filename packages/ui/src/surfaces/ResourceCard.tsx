@@ -5,12 +5,12 @@ import { useUiMessages } from "../intl/messages";
  * What a card can show of the element it stands for: the element itself, a placeholder while it is being looked up, or
  * why it cannot be shown.
  */
-export type ResourceCardState = "ok" | "loading" | "no-access" | "deleted" | "unavailable";
+export type ResourceCardState = "ok" | "loading" | "no_access" | "deleted" | "unavailable";
 
 export type ResourceCardProps = {
   /** Defaults to `"ok"`. Every state has the same size, so a card that changes state moves nothing around it. */
   state?: ResourceCardState;
-  /** The element's name. Shown only in state `"ok"`. */
+  /** The element's name. Shown only in state `"ok"`, as "Untitled" when blank, so a card that opens always has a name. */
   title?: string;
   /** Icon class of the element's kind, for example `ti ti-notebook`. Shown only in state `"ok"`. */
   icon?: string;
@@ -29,7 +29,7 @@ export type ResourceCardProps = {
 
 const DEFAULT_ICON = "ti ti-file";
 const LINK_PROTOCOLS = new Set(["https:", "http:"]);
-const STATE_ICONS = { "no-access": "ti ti-lock", deleted: "ti ti-trash", unavailable: "ti ti-cloud-off" } as const;
+const STATE_ICONS = { no_access: "ti ti-lock", deleted: "ti ti-trash", unavailable: "ti ti-cloud-off" } as const;
 
 /** A link the card may open: absolute with an allowed scheme, or relative to the page. */
 const linkUrl = (href: string | undefined): string | undefined => {
@@ -49,6 +49,7 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
   const messages = useUiMessages();
   const state = () => props.state ?? "ok";
   const ok = () => state() === "ok";
+  const title = () => (props.title?.trim() ? props.title : messages().resourceUntitled);
   const meta = () => [props.source, props.location].filter((part) => part?.trim()).join(" · ");
   /** Why the element cannot be shown, outside `"ok"` and `"loading"`. */
   const reason = (): Exclude<ResourceCardState, "ok" | "loading"> | undefined => {
@@ -64,7 +65,7 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
           <i class={props.icon ?? DEFAULT_ICON} />
         </span>
         <span class="k2b-resource-card__copy">
-          <span class="k2b-resource-card__title">{props.title}</span>
+          <span class="k2b-resource-card__title">{title()}</span>
           <Show when={meta()}>
             <span class="k2b-resource-card__meta">{meta()}</span>
           </Show>
@@ -89,7 +90,7 @@ export function ResourceCard(props: ResourceCardProps): JSX.Element {
             </span>
             <span class="k2b-resource-card__copy">
               <span class="k2b-resource-card__label">
-                {reason() === "no-access"
+                {reason() === "no_access"
                   ? messages().resourceNoAccess
                   : reason() === "deleted"
                     ? messages().resourceDeleted
