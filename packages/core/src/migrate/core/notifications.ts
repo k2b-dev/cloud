@@ -157,6 +157,7 @@ export const migrate = async (): Promise<void> => {
       UNIQUE (event_id, channel, destination_key)
     )
   `.simple();
+  await sql`ALTER TABLE notifications.deliveries ADD COLUMN IF NOT EXISTS outgoing_mail_id UUID`.simple();
   await sql`ALTER TABLE notifications.deliveries ALTER COLUMN payload_encrypted DROP NOT NULL`.simple();
   await sql`
     CREATE OR REPLACE FUNCTION notifications.redact_terminal_delivery_payload()
@@ -316,6 +317,7 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_notification_batch_recipients_status
     ON notifications.batch_recipients(batch_id, status)
   `.simple();
+  await sql`ALTER TABLE notifications.batch_recipients ADD COLUMN IF NOT EXISTS outgoing_mail_id UUID`.simple();
   console.log("  ✓ notifications batch tables");
   // Legacy selections are intentionally discarded before the sender starts.
   // Keep sent history, but never resume a batch whose audience is no longer valid.

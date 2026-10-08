@@ -3,12 +3,15 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { lazySync } from "../../_internal/process-sync";
+import { MailBatchSchema, type MailStatus, MailStatusSchema } from "../../contracts/outgoing-mail";
 import { markdown } from "../../shared/markdown";
 import { type AuditActor, audit } from "../audit";
 import { logger, trace } from "../logging";
+import { enqueueMail } from "../outgoing-mail/enqueue";
+import { OutgoingMailError } from "../outgoing-mail/store";
 import { parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";
-
-import { sendEmail } from "./email";
+import { prepareNotificationEmail } from "./email-frame";
+import { notificationMailError } from "./email-mail";
 
 const log = logger("notifications:batches");
 const CHUNK_SIZE = 100;
@@ -64,6 +67,8 @@ export type NotificationBatchRecipient = {
   profile: "user" | "guest";
   status: NotificationBatchRecipientStatus;
   notificationId: string | null;
+  outgoingMailId: string | null;
+  outgoingMailStatus: MailStatus | null;
   error: string | null;
   attemptCount: number;
   sentAt: string | null;
@@ -163,6 +168,8 @@ const mapRecipient = (row: BatchRow): NotificationBatchRecipient => ({
   profile: row.profile as "user" | "guest",
   status: row.status as NotificationBatchRecipientStatus,
   notificationId: row.notification_id as string | null,
+  outgoingMailId: typeof row.outgoing_mail_id === "string" ? row.outgoing_mail_id : null,
+  outgoingMailStatus: MailStatusSchema.nullable().parse(row.outgoing_mail_status ?? null),
   error: row.error as string | null,
   attemptCount: Number(row.attempt_count ?? 0),
   sentAt: row.sent_at ? (row.sent_at as Date).toISOString() : null,
@@ -208,29 +215,6 @@ const resolveCandidates = async (rawSelection: NotificationBatchSelection): Prom
     JOIN auth.users u ON u.id = c.user_id
     ORDER BY u.uid
   `;
-};
-
-const sendBatchEmail = async (params: {
-  recipient: string;
-  subject: string;
-  rawHtml: string;
-  sentBy?: string;
-}): Promise<{ id: string; status: "sent" | "error"; error?: string }> => {
-  const rows = await sql<BatchRow[]>`
-    INSERT INTO notifications.messages (type, recipient, subject, content, sent_by)
-    VALUES ('email', ${params.recipient}, ${params.subject}, ${params.rawHtml}, ${params.sentBy ?? null})
-    RETURNING id
-  `;
-  const id = rows[0]!.id as string;
-  try {
-    await sendEmail(params.recipient, params.subject, { rawHtml: params.rawHtml });
-    await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}::uuid`;
-    return { id, status: "sent" };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await sql`UPDATE notifications.messages SET error = ${message} WHERE id = ${id}::uuid`;
-    return { id, status: "error", error: message };
-  }
 };
 
 export const preview = async (selection: NotificationBatchSelection): Promise<NotificationBatchPreview> => {
@@ -286,74 +270,116 @@ const refreshBatchCounters = async (batchId: string): Promise<NotificationBatch 
 };
 
 const processBatchChunk = async (batchId: string): Promise<{ processed: number; remaining: number }> => {
-  await sql`
+  const [batchRow] = await sql<BatchRow[]>`
     UPDATE notifications.batches
     SET status = 'running', started_at = COALESCE(started_at, now())
     WHERE id = ${batchId}::uuid AND status IN ('ready', 'running')
+    RETURNING *
   `;
-
-  const recipients = await sql<BatchRow[]>`
-    UPDATE notifications.batch_recipients r
-    SET status = 'sending', attempt_count = attempt_count + 1, updated_at = now()
-    WHERE (r.batch_id, r.user_id) IN (
-      SELECT batch_id, user_id
-      FROM notifications.batch_recipients
-      WHERE batch_id = ${batchId}::uuid
-        AND recipient IS NOT NULL
-        AND (
-          status = 'pending'
-          OR (status = 'sending' AND updated_at < now() - interval '5 minutes')
-        )
-      ORDER BY updated_at ASC
-      LIMIT ${CHUNK_SIZE}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING r.*
-  `;
-
-  const [batchRow] = await sql<BatchRow[]>`SELECT * FROM notifications.batches WHERE id = ${batchId}::uuid`;
-  if (!batchRow || batchRow.status === "cancelled") return { processed: 0, remaining: 0 };
+  if (!batchRow) return { processed: 0, remaining: 0 };
   const batch = mapBatch(batchRow);
 
-  for (const recipient of recipients) {
+  // Settle a bounded page and its legacy message history in the same statement.
+  const settled = await sql<{ id: string }[]>`
+    WITH terminal AS (
+      SELECT r.user_id, r.outgoing_mail_id, m.status, m.sent_at, COALESCE(m.error_message, m.smtp_response, 'Outgoing mail ' || m.status, 'Outgoing mail record is no longer available.') AS error
+      FROM notifications.batch_recipients r
+      LEFT JOIN outgoing_mail.messages m ON m.id = r.outgoing_mail_id
+      WHERE r.batch_id = ${batchId}::uuid AND r.status = 'sending' AND r.outgoing_mail_id IS NOT NULL
+        AND (m.status IN ('sent', 'bounced', 'failed', 'cancelled') OR m.id IS NULL)
+      ORDER BY r.user_id LIMIT ${CHUNK_SIZE}
+    ), settled AS (
+      UPDATE notifications.batch_recipients r
+      SET status = CASE WHEN t.status IN ('sent', 'bounced') THEN 'sent' ELSE 'error' END,
+          sent_at = CASE WHEN t.status IN ('sent', 'bounced') THEN COALESCE(t.sent_at, now()) ELSE NULL END,
+          error = CASE WHEN t.status IN ('sent', 'bounced') THEN NULL ELSE t.error END, updated_at = now()
+      FROM terminal t
+      WHERE r.batch_id = ${batchId}::uuid AND r.user_id = t.user_id AND r.status = 'sending'
+        AND r.outgoing_mail_id = t.outgoing_mail_id
+      RETURNING r.notification_id, r.sent_at, r.error
+    )
+    UPDATE notifications.messages m SET sent_at = s.sent_at, error = s.error
+    FROM settled s WHERE m.id = s.notification_id RETURNING m.id
+  `;
+
+  type ClaimedRecipient = { user_id: string; recipient: string; notification_id: string | null };
+  // Persist a send generation before any external effect. Reclaim and worker
+  // retries reuse it; operator retries clear it and create a new generation.
+  const recipients = await sql.begin(async (tx) => {
+    const rows = await tx<ClaimedRecipient[]>`
+      UPDATE notifications.batch_recipients r
+      SET status = 'sending', attempt_count = attempt_count + 1, updated_at = now()
+      WHERE (r.batch_id, r.user_id) IN (
+        SELECT batch_id, user_id FROM notifications.batch_recipients
+        WHERE batch_id = ${batchId}::uuid AND recipient IS NOT NULL AND outgoing_mail_id IS NULL
+          AND (status = 'pending' OR (status = 'sending' AND updated_at < now() - interval '5 minutes'))
+        ORDER BY updated_at ASC LIMIT ${CHUNK_SIZE} FOR UPDATE SKIP LOCKED
+      )
+      RETURNING r.user_id, r.recipient, r.notification_id
+    `;
+    for (const row of rows) {
+      if (row.notification_id) continue;
+      const [message] = await tx<{ id: string }[]>`
+        INSERT INTO notifications.messages (type, recipient, subject, content, sent_by)
+        VALUES ('email', ${row.recipient}, ${batch.subject}, ${batch.bodyHtml}, ${batch.finalizedBy ?? batch.createdBy}::uuid)
+        RETURNING id
+      `;
+      if (!message) throw new Error("Notification batch message insert returned no row");
+      row.notification_id = message.id;
+      await tx`UPDATE notifications.batch_recipients SET notification_id = ${message.id}::uuid
+        WHERE batch_id = ${batchId}::uuid AND user_id = ${row.user_id}::uuid`;
+    }
+    return rows;
+  });
+
+  if (recipients.length) {
     try {
-      const result = await sendBatchEmail({
-        recipient: recipient.recipient as string,
-        subject: batch.subject,
-        rawHtml: batch.bodyHtml,
-        sentBy: batch.finalizedBy ?? batch.createdBy ?? undefined,
-      });
-      await sql`
-        UPDATE notifications.batch_recipients
-        SET
-          status = ${result.status === "sent" ? "sent" : "error"},
-          notification_id = ${result.id}::uuid,
-          error = NULL,
-          sent_at = ${result.status === "sent" ? sql`now()` : null},
-          updated_at = now()
-        WHERE batch_id = ${batchId}::uuid AND user_id = ${recipient.user_id}::uuid
-      `;
+      const frame = await prepareNotificationEmail({ rawHtml: batch.bodyHtml });
+      const parsed = MailBatchSchema.safeParse(
+        recipients.map((recipient) => ({
+          to: [recipient.recipient],
+          subject: batch.subject,
+          ...frame,
+          key: `notification-message:${recipient.notification_id}`,
+        })),
+      );
+      if (!parsed.success) throw new OutgoingMailError("bad_input", "Invalid notification batch email.", 400);
+      const accepted = await enqueueMail("core", parsed.data, { trustedHtml: true });
+      for (const [index, recipient] of recipients.entries()) {
+        await sql`UPDATE notifications.batch_recipients SET outgoing_mail_id = ${accepted.ids[index]}::uuid, updated_at = now()
+          WHERE batch_id = ${batchId}::uuid AND user_id = ${recipient.user_id}::uuid
+            AND notification_id = ${recipient.notification_id}::uuid AND status = 'sending'`;
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.error("Batch recipient send failed", { batchId, userId: recipient.user_id, error: message });
+      const failure = notificationMailError(error);
+      log.error("Notification batch enqueue failed", { batchId, code: failure.code, error: failure.message });
+      const generations = toPgUuidArray(recipients.flatMap((recipient) => (recipient.notification_id ? [recipient.notification_id] : [])));
       await sql`
-        UPDATE notifications.batch_recipients
-        SET status = 'error', error = ${message}, updated_at = now()
-        WHERE batch_id = ${batchId}::uuid AND user_id = ${recipient.user_id}::uuid
+        WITH changed AS (
+          UPDATE notifications.batch_recipients
+          SET status = ${failure.retryable ? "pending" : "error"}, error = ${failure.retryable ? null : failure.message}, updated_at = now()
+          WHERE batch_id = ${batchId}::uuid AND notification_id = ANY(${generations}::uuid[])
+            AND status = 'sending' AND outgoing_mail_id IS NULL
+          RETURNING notification_id, error
+        )
+        UPDATE notifications.messages m SET error = c.error FROM changed c WHERE m.id = c.notification_id
       `;
+      // Backlog/quota/storage failures are not terminal recipient failures.
+      await refreshBatchCounters(batchId);
+      return { processed: 0, remaining: await remainingBatchRecipients(batchId) };
     }
   }
-
-  const [pendingRow] = await sql<BatchRow[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notifications.batch_recipients
-    WHERE batch_id = ${batchId}::uuid
-      AND recipient IS NOT NULL
-      AND status IN ('pending', 'sending')
-  `;
-  const remaining = Number(pendingRow?.count ?? 0);
+  const remaining = await remainingBatchRecipients(batchId);
   await refreshBatchCounters(batchId);
-  return { processed: recipients.length, remaining };
+  return { processed: recipients.length + settled.length, remaining };
+};
+
+const remainingBatchRecipients = async (batchId: string): Promise<number> => {
+  const [row] = await sql<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count FROM notifications.batch_recipients
+    WHERE batch_id = ${batchId}::uuid AND recipient IS NOT NULL AND status IN ('pending', 'sending')
+  `;
+  return row?.count ?? 0;
 };
 
 const batchJob = lazySync((sync) => {
@@ -492,6 +518,8 @@ export const listRecipients = async (params: {
       r.profile,
       r.status,
       r.notification_id,
+      r.outgoing_mail_id,
+      mail.status AS outgoing_mail_status,
       COALESCE(m.error, r.error) AS error,
       r.attempt_count,
       r.sent_at,
@@ -499,6 +527,7 @@ export const listRecipients = async (params: {
       COUNT(*) OVER() AS total
     FROM notifications.batch_recipients r
     LEFT JOIN notifications.messages m ON m.id = r.notification_id
+    LEFT JOIN outgoing_mail.messages mail ON mail.id = r.outgoing_mail_id
     LEFT JOIN auth.users u ON u.id = r.user_id
     WHERE r.batch_id = ${params.batchId}::uuid
       AND (${params.status ?? null}::text IS NULL OR r.status = ${params.status ?? null})
@@ -620,7 +649,7 @@ export const retryFailed = async (params: {
   const result = await sql.begin(async (tx) => {
     const updated = await tx<BatchRow[]>`
       UPDATE notifications.batch_recipients
-      SET status = 'pending', error = NULL, notification_id = NULL, sent_at = NULL, updated_at = now()
+      SET status = 'pending', error = NULL, notification_id = NULL, outgoing_mail_id = NULL, sent_at = NULL, updated_at = now()
       WHERE batch_id = ${params.id}::uuid AND status = 'error' AND recipient IS NOT NULL
       RETURNING user_id
     `;
@@ -667,7 +696,7 @@ export const retryRecipient = async (params: {
   const result = await sql.begin(async (tx) => {
     const updated = await tx<BatchRow[]>`
       UPDATE notifications.batch_recipients
-      SET status = 'pending', error = NULL, notification_id = NULL, sent_at = NULL, updated_at = now()
+      SET status = 'pending', error = NULL, notification_id = NULL, outgoing_mail_id = NULL, sent_at = NULL, updated_at = now()
       WHERE batch_id = ${params.id}::uuid
         AND user_id = ${params.userId}::uuid
         AND status = 'error'

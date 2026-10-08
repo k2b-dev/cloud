@@ -259,6 +259,10 @@ Profile administration also uses `profile_exists`, `profile_is_default`,
 `revision_conflict`, and `invalid_profile`. Admin log reads use
 `message_unknown` and `batch_unknown`; cancelling a non-queued row returns `message_not_queued`.
 
+Notification email also uses outgoing mail as app `core`: individual deliveries
+use the immediate lane; notification batches use the default profile's paced
+bulk lane. The notification service supplies its sanitized HTML frame.
+
 See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for sender
 configuration, retention, and admin log access, and
 [Notifications](/en/docs/platform/notifications) for typed notifications.

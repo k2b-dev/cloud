@@ -1,3 +1,4 @@
+import { MailStatusSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { notificationBatches } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
@@ -80,6 +81,8 @@ const RecipientSchema = z.object({
   profile: z.enum(["user", "guest"]),
   status: RecipientStatusSchema,
   notificationId: z.string().nullable(),
+  outgoingMailId: z.string().nullable(),
+  outgoingMailStatus: MailStatusSchema.nullable(),
   error: z.string().nullable(),
   attemptCount: z.number(),
   sentAt: z.string().nullable(),

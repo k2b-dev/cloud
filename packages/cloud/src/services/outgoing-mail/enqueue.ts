@@ -12,6 +12,7 @@ import {
   type AcceptedProfile,
   allowedMailProfile,
   insertMailMessage,
+  type MailAcceptanceOptions,
   MailQuotaError,
   type MessageRow,
   mailQuotaUsed,
@@ -66,7 +67,7 @@ const checkBatch = async (db: SQL, appId: string, items: readonly BatchItem[]) =
   return profiles;
 };
 export const outgoingMailBatches = {
-  async accept(appId: string, proposed: string, items: readonly BatchItem[]): Promise<AcceptedBatch> {
+  async accept(appId: string, proposed: string, items: readonly BatchItem[], options?: MailAcceptanceOptions): Promise<AcceptedBatch> {
     let result: AcceptedBatch | undefined;
     try {
       return await sql.begin(async (tx) => {
@@ -95,6 +96,7 @@ export const outgoingMailBatches = {
               item.uploaded,
               profiles.get(item.message.profile ?? "")!,
               batchId,
+              options,
             );
             if (row) created.push(row);
             else row = await outgoingMailMessages.known(appId, item.message.key, tx);
@@ -131,7 +133,11 @@ export const outgoingMailBatches = {
     }
   },
 };
-export const enqueueMail = async (appId: string, messages: readonly MailMessage[]): Promise<{ batchId: string; ids: string[] }> => {
+export const enqueueMail = async (
+  appId: string,
+  messages: readonly MailMessage[],
+  options?: MailAcceptanceOptions,
+): Promise<{ batchId: string; ids: string[] }> => {
   const items: BatchItem[] = [];
   try {
     for (const message of messages) {
@@ -159,7 +165,7 @@ export const enqueueMail = async (appId: string, messages: readonly MailMessage[
         profiles.get(item.message.profile ?? "")!.max_attachment_bytes,
         deadline,
       );
-    const accepted = await outgoingMailBatches.accept(appId, crypto.randomUUID(), items);
+    const accepted = await outgoingMailBatches.accept(appId, crypto.randomUUID(), items, options);
     const createdIds = new Set(accepted.created.map((row) => row.id));
     for (const item of items) if (!createdIds.has(item.id)) await deleteMailObjects(item.uploaded.refs).catch(() => {});
     for (const id of new Set(accepted.created.flatMap((row) => (row.profile_id ? [row.profile_id] : []))))

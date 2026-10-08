@@ -1498,6 +1498,17 @@ See [JSON metadata upgrade](/en/docs/operations/repair-jsonb-containers) for the
 preservation rules and optional diagnosis. The NATS, identity, and OAuth release
 prerequisites still apply independently.
 
+## Notification email uses outgoing mail
+
+Notification email and batches now appear in the outgoing-mail send log as app
+`core`. Configure a default sender profile and keep Core's outgoing-mail runtime
+running. Notification batches follow that profile's pace; set it to the
+provider's limit. The old direct-SMTP notification path has been removed.
+
+The migration adds nullable outgoing-mail IDs to deliveries and batch recipients.
+Existing notification history remains intact. See
+[Outgoing mail operations](/en/docs/operations/outgoing-mail).
+
 ## Notification delivery upgrade
 
 When replacing the queue-based notification runtime, stop old application

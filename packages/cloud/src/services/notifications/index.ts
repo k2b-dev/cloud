@@ -4,7 +4,7 @@ import type { BoundNotificationDefinition, NotificationRecipientKind, Notificati
 import type { PaginationParams } from "../../contracts/shared";
 import { logger } from "../logging";
 import { escapeLikePattern } from "../postgres";
-import { sendEmail } from "./email";
+import { notificationMailOutcome, sendNotificationMail } from "./email-mail";
 import "./browser";
 import { notificationObservability } from "./observability";
 import { sendTypedNotification, type TypedNotificationSendResult } from "./platform";
@@ -131,7 +131,10 @@ const sendLegacy = async (params: SendNotificationParams): Promise<SendNotificat
   // Attempt delivery
   try {
     if (type === "email") {
-      await sendEmail(recipient, subject, { content, rawHtml });
+      const outcome = await notificationMailOutcome(
+        await sendNotificationMail(recipient, subject, { content, rawHtml }, `notification-message:${id}`),
+      );
+      if (outcome.status === "pending") return { id, status: "pending" };
     }
     await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}`;
     return { id, status: "sent" };
@@ -489,15 +492,19 @@ export const resend = async (id: string): Promise<{ ok: true } | { ok: false; co
 
   try {
     if (notification.type === "email") {
-      await sendEmail(notification.recipient, notification.subject, {
-        rawHtml: notification.content,
-      });
+      const outcome = await notificationMailOutcome(
+        await sendNotificationMail(notification.recipient, notification.subject, { rawHtml: notification.content }),
+      );
+      if (outcome.status === "pending") {
+        await sql`UPDATE notifications.messages SET sent_at = NULL, error = NULL WHERE id = ${id}`;
+        return { ok: true };
+      }
     }
     await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}`;
     return { ok: true };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
-    await sql`UPDATE notifications.messages SET error = ${error} WHERE id = ${id}`;
+    await sql`UPDATE notifications.messages SET sent_at = NULL, error = ${error} WHERE id = ${id}`;
     return { ok: false, code: "delivery_failed", error };
   }
 };
@@ -583,7 +590,10 @@ export const sendAllPendingSystem = async (): Promise<{
 
     try {
       if (type === "email") {
-        await sendEmail(recipient, subject, { rawHtml: content });
+        const outcome = await notificationMailOutcome(
+          await sendNotificationMail(recipient, subject, { rawHtml: content }, `notification-message:${id}`),
+        );
+        if (outcome.status === "pending") continue;
       }
       await sql`UPDATE notifications.messages SET sent_at = now(), error = NULL WHERE id = ${id}`;
       sent++;

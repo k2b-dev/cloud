@@ -1,4 +1,5 @@
 import { type SQL, sql } from "bun";
+import type { MailStatus } from "../../contracts/outgoing-mail";
 import type { NotificationDeliveryStatus } from "../../contracts/user-notifications";
 import { escapeLikePattern, toPgTextArray } from "../postgres";
 
@@ -20,6 +21,8 @@ export type NotificationDeliveryObservabilityItem = {
   required: boolean;
   routePriority: number | null;
   status: NotificationDeliveryStatus;
+  outgoingMailId: string | null;
+  outgoingMailStatus: MailStatus | null;
   attemptCount: number;
   errorCode: string | null;
   errorMessage: string | null;
@@ -79,6 +82,8 @@ type DeliveryRow = {
   required: boolean;
   route_priority: number | null;
   status: NotificationDeliveryStatus;
+  outgoing_mail_id: string | null;
+  outgoing_mail_status: MailStatus | null;
   attempt_count: number;
   error_code: string | null;
   error_message: string | null;
@@ -168,11 +173,12 @@ const listDeliveries = async (input: {
         COALESCE(NULLIF(u.display_name, ''), NULLIF(u.uid, ''), e.recipient_email, e.recipient_key) AS recipient_label,
         COALESCE(NULLIF(u.mail, ''), NULLIF(u.uid, ''), e.recipient_email, e.recipient_key) AS recipient_reference,
         d.channel, d.destination_label, d.required, d.route_priority, d.status,
-        d.attempt_count, d.error_code, d.error_message, d.created_at, d.updated_at, d.delivered_at
+        d.outgoing_mail_id, mail.status AS outgoing_mail_status, d.attempt_count, d.error_code, d.error_message, d.created_at, d.updated_at, d.delivered_at
       FROM notifications.deliveries d
       JOIN notifications.events e ON e.id = d.event_id
       JOIN notifications.definitions n ON n.id = e.definition_id
       LEFT JOIN auth.users u ON u.id = e.recipient_user_id
+      LEFT JOIN outgoing_mail.messages mail ON mail.id = d.outgoing_mail_id
       WHERE ${where}
       ORDER BY d.created_at DESC, d.id DESC
       LIMIT ${perPage} OFFSET ${offset}
@@ -196,6 +202,8 @@ const listDeliveries = async (input: {
       required: row.required,
       routePriority: row.route_priority,
       status: row.status,
+      outgoingMailId: row.outgoing_mail_id,
+      outgoingMailStatus: row.outgoing_mail_status,
       attemptCount: row.attempt_count,
       errorCode: row.error_code,
       errorMessage: row.error_message,

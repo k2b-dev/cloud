@@ -14,10 +14,12 @@ type DeliveryRow = {
   required: boolean;
   route_priority: number | null;
   attempt_count: number;
+  outgoing_mail_id: string | null;
 };
 
 export type DeliveryAttemptResult =
   | { status: "skipped" | "delivered" | "failed" }
+  | { status: "pending"; retryAfterMs: number }
   | { status: "retry"; retryAfterMs: number; error: string };
 
 const retryDelay = (attempt: number): number => Math.min(BASE_RETRY_MS * 2 ** Math.max(0, attempt - 1), MAX_RETRY_MS);
@@ -65,7 +67,10 @@ const activateNextFallback = async (eventId: string): Promise<string[]> => {
   return rows.map((row) => row.id);
 };
 
-export const processNotificationDelivery = async (deliveryId: string): Promise<DeliveryAttemptResult & { activatedIds?: string[] }> => {
+export const processNotificationDelivery = async (
+  deliveryId: string,
+  signal?: AbortSignal,
+): Promise<DeliveryAttemptResult & { activatedIds?: string[] }> => {
   const rows = await sql<DeliveryRow[]>`
     UPDATE notifications.deliveries
     SET status = 'sending', attempt_count = attempt_count + 1,
@@ -73,7 +78,7 @@ export const processNotificationDelivery = async (deliveryId: string): Promise<D
     WHERE id = ${deliveryId}::uuid
       AND status = 'pending'
       AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-    RETURNING id, event_id, channel, payload_encrypted, required, route_priority, attempt_count
+    RETURNING id, event_id, channel, payload_encrypted, required, route_priority, attempt_count, outgoing_mail_id
   `;
   const delivery = rows[0];
   if (!delivery) return { status: "skipped" };
@@ -86,10 +91,26 @@ export const processNotificationDelivery = async (deliveryId: string): Promise<D
       throw Object.assign(new Error("Notification delivery payload is unavailable"), { code: "payload_missing", retryable: false });
     }
     const payload = await decryptSecret(delivery.payload_encrypted);
-    await driver.deliver(payload);
+    const outcome = await driver.deliver(payload, {
+      deliveryId: delivery.id,
+      ...(signal ? { signal } : {}),
+      ...(delivery.outgoing_mail_id ? { outgoingMailId: delivery.outgoing_mail_id } : {}),
+    });
+    if (outcome?.status === "pending") {
+      await sql`
+        UPDATE notifications.deliveries
+        SET status = 'pending', attempt_count = attempt_count - 1,
+            next_attempt_at = now() + (${outcome.retryAfterMs}::int * INTERVAL '1 millisecond'),
+            outgoing_mail_id = COALESCE(${outcome.outgoingMailId ?? null}::uuid, outgoing_mail_id),
+            error_code = NULL, error_message = ${outcome.errorMessage ?? null}, updated_at = now()
+        WHERE id = ${delivery.id}::uuid
+      `;
+      return { status: "pending", retryAfterMs: outcome.retryAfterMs };
+    }
     await sql`
       UPDATE notifications.deliveries
-      SET status = 'delivered', delivered_at = now(), next_attempt_at = NULL,
+      SET outgoing_mail_id = COALESCE(${outcome?.outgoingMailId ?? null}::uuid, outgoing_mail_id),
+          status = 'delivered', delivered_at = now(), next_attempt_at = NULL,
           error_code = NULL, error_message = NULL, payload_encrypted = NULL, updated_at = now()
       WHERE id = ${delivery.id}::uuid
     `;
@@ -98,6 +119,10 @@ export const processNotificationDelivery = async (deliveryId: string): Promise<D
   } catch (error) {
     const message = error instanceof Error ? error.message : "Notification delivery failed";
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "provider_error";
+    const outgoingMailId =
+      error && typeof error === "object" && "outgoingMailId" in error && typeof error.outgoingMailId === "string"
+        ? error.outgoingMailId
+        : null;
     const retryable = !(error && typeof error === "object" && "retryable" in error && error.retryable === false);
     if (retryable && delivery.attempt_count < MAX_DELIVERY_ATTEMPTS) {
       const retryAfterMs = retryDelay(delivery.attempt_count);
@@ -112,7 +137,8 @@ export const processNotificationDelivery = async (deliveryId: string): Promise<D
 
     await sql`
       UPDATE notifications.deliveries
-      SET status = 'failed', next_attempt_at = NULL, error_code = ${code},
+      SET outgoing_mail_id = COALESCE(${outgoingMailId}::uuid, outgoing_mail_id),
+          status = 'failed', next_attempt_at = NULL, error_code = ${code},
           error_message = ${message}, payload_encrypted = NULL, updated_at = now()
       WHERE id = ${delivery.id}::uuid
     `;

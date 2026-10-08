@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import * as bulk from "../outgoing-mail/enqueue";
 import { toPgTextArray, toPgUuidArray } from "../postgres";
 import { __notificationBatchTest } from "./batches";
 
@@ -9,16 +10,20 @@ const suite = databaseSuite();
 /**
  * Recipients are claimed with `FOR UPDATE SKIP LOCKED`, so two workers that
  * process the same batch at once must partition the recipients instead of
- * sending to anyone twice. Email transport is not configured in the test
- * database, so every claimed recipient ends in `error` — the claim, not the
- * send, is under test.
+ * accepting anyone twice. Bulk acceptance is stubbed: the database claim,
+ * not SMTP or Sync, is under test. Accepted recipients remain `sending`.
  */
 suite("notification batch recipient claims", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   let batchId = "";
+  let enqueue: ReturnType<typeof spyOn<typeof bulk, "enqueueMail">>;
 
   beforeAll(async () => {
+    enqueue = spyOn(bulk, "enqueueMail").mockImplementation(async (_app, messages) => ({
+      batchId: crypto.randomUUID(),
+      ids: messages.map(() => crypto.randomUUID()),
+    }));
     const uids = Array.from({ length: 150 }, (_, index) => `batch-claim-${suffix}-${index}`);
     const mails = uids.map((uid) => `${uid}@example.test`);
     const users = await sql<{ id: string }[]>`
@@ -42,6 +47,7 @@ suite("notification batch recipient claims", () => {
     `;
   }, 30_000);
   afterAll(async () => {
+    enqueue?.mockRestore();
     if (batchId) await sql`DELETE FROM notifications.batches WHERE id = ${batchId}::uuid`;
     await sql`DELETE FROM auth.users WHERE uid LIKE ${`batch-claim-${suffix}-%`}`;
   });
@@ -55,7 +61,7 @@ suite("notification batch recipient claims", () => {
     `;
     expect(recipients).toHaveLength(userIds.length);
     expect(recipients.every((recipient) => recipient.attempt_count === 1)).toBe(true);
-    expect(recipients.every((recipient) => recipient.status !== "pending")).toBe(true);
+    expect(recipients.every((recipient) => recipient.status === "sending")).toBe(true);
     expect(new Set(recipients.map((recipient) => recipient.user_id)).size).toBe(userIds.length);
   }, 60_000);
 });

@@ -54,6 +54,34 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  test("notification batch recipients expose outgoing mail identity and settlement status", async () => {
+    const fixture = createContext(["notification-batches", "recipients", "batch"], {}, [
+      jsonResponse({
+        recipients: [
+          {
+            batchId: "batch",
+            userId: "user",
+            recipient: "reader@example.org",
+            uid: "reader",
+            displayName: "Reader",
+            provider: "local",
+            profile: "user",
+            status: "sending",
+            notificationId: "notification",
+            outgoingMailId: "mail",
+            outgoingMailStatus: "queued",
+            attemptCount: 1,
+            error: null,
+          },
+        ],
+        pagination: { page: 1, perPage: 100, total: 1, totalPages: 1 },
+      }),
+    ]);
+    await adminCli.run(fixture.ctx);
+    expect(fixture.tables[0]?.[0]).toMatchObject({ status: "sending", mailId: "mail", mailStatus: "queued" });
+    expect(fixture.tableColumns[0]?.map((column) => column.key)).toEqual(expect.arrayContaining(["mailId", "mailStatus"]));
+  });
+
   test("Postgres output exposes scan counters and transaction ages without treating unavailable data as zero", async () => {
     const diagnostics = {
       available: true,

@@ -64,11 +64,14 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     await handler(context);
     assert.deepEqual(batches.at(-1)[0].input, { deliveryId: "fallback" });
     assert.equal(continuations.length, 1);
+    result = { status: "pending", retryAfterMs: 2000 };
+    await handler(context);
+    assert.deepEqual(continuations, [{ delayMs: 1234 }, { delayMs: 2000 }]);
     failure = new Error("database unavailable");
     await assert.rejects(handler(context), /database unavailable/);
     assert.deepEqual(processOptions.onError({ context, error: failure }), { action: "retry" });
     assert.deepEqual(declaration.delivery, { ackWaitMs: 60000, maxAttempts: 3, backoffMs: [5000, 30000] });
-    assert.deepEqual(processed, ["delivery", "delivery", "delivery"]);
+    assert.deepEqual(processed, ["delivery", "delivery", "delivery", "delivery"]);
     await Promise.all([stopNotificationRuntime(), stopNotificationRuntime()]);
     assert.equal(stops, 1);
     assert.equal(drains, 1);

@@ -256,6 +256,9 @@ export const mailQuotaUsed = async (db: SQL, appId: string, profileId: string): 
     WHERE app_id = ${appId} AND profile_id = ${profileId}::uuid AND status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
   return usage?.used ?? 0;
 };
+/** Internal acceptance metadata; never accepted by the public mail schemas. */
+export type MailAcceptanceOptions = { trustedHtml?: boolean };
+
 export const insertMailMessage = async (
   db: SQL,
   appId: string,
@@ -264,6 +267,7 @@ export const insertMailMessage = async (
   uploaded: UploadedAttachments,
   profile: AcceptedProfile,
   batchId?: string,
+  options?: MailAcceptanceOptions,
 ): Promise<MessageRow | undefined> => {
   const actor = mailActorSnapshot(message.actor);
   const created = new Date();
@@ -273,7 +277,7 @@ export const insertMailMessage = async (
       deadline_at, actor_type, actor_id, actor_name, created_at
     ) VALUES (${id}::uuid, ${appId}, ${profile.id}::uuid, ${profile.key}, ${batchId ? "bulk" : "immediate"}, ${batchId ?? null}::uuid, ${message.key ?? null},
       ${message.ref?.scope ?? null}, ${message.ref?.id ?? null}, ${toPgTextArray(message.to)}::text[], ${message.to.length},
-      ${message.subject}, ${message.text}, ${message.html === undefined ? null : sanitizeEmailHtml(message.html)},
+      ${message.subject}, ${message.text}, ${message.html === undefined ? null : options?.trustedHtml ? message.html : sanitizeEmailHtml(message.html)},
       ${message.headers ? JSON.stringify(message.headers) : null}::text::jsonb, ${message.fromName ?? null}, ${message.replyTo ?? null},
       ${mailMessageId(id, profile.from_address)}, ${JSON.stringify(uploaded.metadata)}::text::jsonb, ${JSON.stringify(uploaded.refs)}::text::jsonb, 'queued',
       ${new Date(created.getTime() + 24 * 60 * 60_000)}, ${actor?.type ?? null}, ${actor?.id ?? null}, ${actor?.name ?? null}, ${created})
@@ -286,6 +290,7 @@ const accept = async (
   id: string,
   message: MailMessage,
   uploaded: UploadedAttachments,
+  options?: MailAcceptanceOptions,
 ): Promise<{ row: MessageRow; created: boolean }> =>
   sql.begin(async (tx) => {
     // Policy writers take this exclusively; batches take the app lock exclusively.
@@ -306,7 +311,7 @@ const accept = async (
     const used = await mailQuotaUsed(tx, appId, profile.id);
     if (profile.daily_recipient_limit !== null && used + message.to.length > profile.daily_recipient_limit)
       throw new MailQuotaError(profile.daily_recipient_limit, used, message.to.length);
-    const row = await insertMailMessage(tx, appId, id, message, uploaded, profile);
+    const row = await insertMailMessage(tx, appId, id, message, uploaded, profile, undefined, options);
     if (row) await recordMailSend(appId, message, row, tx);
     const winner = row ?? (await known(appId, message.key, tx));
     if (!winner) throw new Error("Outgoing mail insert returned no row");
