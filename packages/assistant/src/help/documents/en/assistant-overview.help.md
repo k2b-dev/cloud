@@ -36,6 +36,8 @@ Assistant is the standard workspace for your personal Cloud agent. The same agen
 - **Keep the useful thread:** Rename the chat or add a description when the conversation should be easy to find later.
 - **Search inside a chat:** Use `/search` to find visible messages or inspect the structured Cloud resources used in this chat or across your active chats.
 - **Schedule future work:** Ask Assistant to continue a chat once at a specific local date and time or on a recurring schedule. Assistant shows an Action review before creating or changing the task.
+- **Next steps:** When a concrete follow-up would save you work, Assistant may end its answer with one offer, such as drafting the reply. Answer yes to accept it. If you do not want such offers, tell Assistant.
+- **Working files:** Assistant keeps intermediate files in the chat folder `temp/` and saves results outside it, together with the Markdown or HTML source a PDF was made from.
 :::
 
 ## Scheduled chat tasks {icon="clock"}

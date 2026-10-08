@@ -60,6 +60,15 @@ language; a new delivery of the same file replaces it, also with none.
 Assistant shows results first and working files one level deeper, grouped by
 folder.
 
+The platform prompt asks the agent for this split: intermediate and scratch
+files go below `/temp/`, in one folder named after the result they serve, such
+as `/temp/sales-report/` for `/sales-report.pdf`, and deliverables go outside
+`/temp/`. `markdown_to_pdf` and `html_to_pdf` write the PDF beside its source,
+so the `.md` or `.html` source of a delivered PDF stays outside `/temp/` too,
+such as `/sales-report.md`. The folder has no special storage rules: its files
+count toward the chat's limit and are forked and deleted with the chat like any
+other file.
+
 Cloud indexes every successful delivery as a conversation source of kind
 `result` with the turn and call that made it; `code_open` is indexed when the
 turn continues with the browser's report, and a report with an `error` delivers
@@ -483,7 +492,8 @@ Cloud composes the system prompt in this order:
 
 1. Platform identity, trusted runtime values including the current chat ID and
    request locale, and global rules. Assistant follows the language of the
-   current user message when it is clear and otherwise uses that locale;
+   current user message when it is clear and otherwise uses that locale.
+   Turns a person follows also get the visibility and suggestion rules below;
 2. Organization instructions;
 3. Optional turn-specific instructions such as retry style;
 4. The bounded readable Skill catalog;
@@ -496,6 +506,37 @@ Cloud composes the system prompt in this order:
 See [AI resources and access](/en/docs/ai/resources-and-access) for authorized
 domain context and [Tools and approvals](/en/docs/ai/tools-and-approvals) for
 tool execution boundaries.
+
+### What the model knows about the chat
+
+Every turn except a scheduled task run (`background` in the turn's run
+configuration) renders two extra platform sections, controlled by the Liquid
+flag `interactive`. `cld assistant` turns count as followed turns; the CLI
+names each delivered file on standard error, such as
+`present: completed /sales-report.pdf`, so the final message need not list it
+there either. The preview in **Assistant settings > System prompt** and
+`cld assistant prefs system-prompt` shows both sections.
+
+- **What the user sees** matches the
+  [four places per turn](/en/docs/ai/chat-interface#four-places-per-turn): text
+  between tool calls is a live status that folds away, so the model finishes
+  every tool call before its final message, keeps results, warnings, and
+  questions out of status text, and does not list delivered files or visuals
+  again.
+- **Suggestions** allows at most one offer, in the last sentence of the final
+  message, and only when a concrete next step saves the user real work. When
+  the user or the chat shows that a request recurs, the offer is to save it as
+  a Skill or scheduled task, as described in
+  [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
+  otherwise it is the natural next step. The model
+  makes no offer for simple facts, while asking or waiting for approval, after
+  a failure, after a reply that already ended with one, or once the user
+  declined. It never searches data only to justify an offer. Organization,
+  Project, and user instructions about suggestions take precedence.
+
+Scheduled task runs keep the global rules and give their result without these
+sections. If the platform template fails to render, the minimal fallback prompt
+still states that only the final message and delivered files stay visible.
 
 ## Audio attachments
 
