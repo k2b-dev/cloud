@@ -4,7 +4,6 @@ import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
-import "../../../../scripts/fixtures/authorization-preload";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import recordsApi from "../api/records";
@@ -72,8 +71,8 @@ describe("durable file asset lifecycle Postgres integration", () => {
       const input = withCameraMetadata(jpeg, 1);
       const added = await upload({
         ...fixture,
-        filename: "photo.jpg",
-        mimeType: "image/jpeg",
+        filename: "IMG_0001.jpg",
+        mimeType: "application/octet-stream",
         bytes: input,
         userId: null,
         origin: "direct",
@@ -83,7 +82,7 @@ describe("durable file asset lifecycle Postgres integration", () => {
         ...fixture,
         fileId: added.data.id,
         filename: "replacement.jpg",
-        mimeType: "image/png",
+        mimeType: "application/octet-stream",
         bytes: input,
         userId: null,
         origin: "direct",
@@ -112,12 +111,12 @@ describe("durable file asset lifecycle Postgres integration", () => {
         WHERE r.id=${fixture.recordId}::uuid AND f.id=${fixture.fieldId}::uuid
       `;
       const path = `/${ids!.table_id}/${ids!.record_id}/files/${ids!.field_id}`;
-      const post = (bytes: Uint8Array, fileId?: string) => {
+      const post = (bytes: Uint8Array, fileId?: string, locale = "en") => {
         const form = new FormData();
-        form.set("file", new File([new Uint8Array(bytes)], "photo.jpg", { type: "image/jpeg" }));
+        form.set("file", new File([new Uint8Array(bytes)], "IMG_0001.jpg", { type: "application/octet-stream" }));
         return recordsApi.request(fileId ? `${path}/${fileId}` : path, {
           method: fileId ? "PUT" : "POST",
-          headers: { authorization: `Bearer ${token.data.token}` },
+          headers: { authorization: `Bearer ${token.data.token}`, "accept-language": locale },
           body: form,
         });
       };
@@ -130,8 +129,25 @@ describe("durable file asset lifecycle Postgres integration", () => {
       });
       expect(downloaded.status).toBe(200);
       expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(jpeg);
-      expect((await post(input.subarray(0, 30))).status).toBe(422);
-      expect((await post(input.subarray(0, 30), file.id)).status).toBe(422);
+      for (const fileId of [undefined, file.id]) {
+        const malformed = await post(input.subarray(0, 30), fileId, "de");
+        expect(malformed.status).toBe(422);
+        expect(await malformed.json()).toMatchObject({
+          code: "MALFORMED_IMAGE",
+          message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+        });
+      }
+      const binary = await upload({
+        ...fixture,
+        filename: "scan.bin",
+        mimeType: "application/octet-stream",
+        bytes: input,
+        userId: null,
+        origin: "direct",
+      });
+      if (!binary.ok) throw binary.error;
+      const [original] = await sql<{ bytes: Uint8Array }[]>`SELECT bytes FROM grids.files WHERE id=${binary.data.id}::uuid`;
+      expect(original?.bytes).toEqual(input);
       const titleImage = `data:image/jpeg;base64,${Buffer.from(input).toString("base64")}`;
       const form = await forms.create({ tableId: fixture.tableId, name: "Photo form", config: { fields: [], titleImage } }, null);
       if (!form.ok) throw form.error;

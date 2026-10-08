@@ -25,6 +25,7 @@ import {
   respond,
 } from "@k2b/cloud/server";
 import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
   GotenbergRenderError,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
@@ -2952,14 +2953,20 @@ const appWithAttachments = app
       }
 
       const content = new Uint8Array(await file.arrayBuffer());
-      const attachment = await notebooksService.attachment.upload({
-        notebookId,
-        filename: file.name || "untitled",
-        mimeType: file.type || "application/octet-stream",
-        content,
-        userId: user?.id ?? null,
-      });
-      return respond(c, ok(toPublicAttachment(attachment, notebook!.shortId)));
+      try {
+        const attachment = await notebooksService.attachment.upload({
+          notebookId,
+          filename: file.name || "untitled",
+          mimeType: file.type || "application/octet-stream",
+          content,
+          userId: user?.id ?? null,
+        });
+        return respond(c, ok(toPublicAttachment(attachment, notebook!.shortId)));
+      } catch (error) {
+        if (error instanceof ImageMetadataError)
+          return respond(c, { ok: false, error: messages(c).malformedImage, status: 422, code: error.code });
+        throw error;
+      }
     },
   )
 

@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { env } from "@k2b/cloud/config";
 import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@k2b/cloud/server";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
@@ -1274,18 +1275,23 @@ export const createCustomAppsApi = (
       if (!(file instanceof File)) return c.json({ message: apiMessages(c).missingFileField }, 400);
       const maxBytes = await getMaxFileSizeBytes();
       if (file.size > maxBytes) return c.json({ message: apiMessages(c).fileTooLarge({ max: Math.round(maxBytes / 1024 / 1024) }) }, 413);
-      const result = await gridsService.file.upload({
-        tableId: resolved.tableId,
-        recordId: resolved.record.id,
-        fieldId: resolved.fieldId,
-        filename: file.name || "untitled",
-        mimeType: file.type || "application/octet-stream",
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        userId: currentActorUserId(c),
-        origin: "direct",
-      });
-      if (!result.ok) return respond(c, () => Promise.resolve(result));
-      return c.json(await projectGridFile(result.data));
+      try {
+        const result = await gridsService.file.upload({
+          tableId: resolved.tableId,
+          recordId: resolved.record.id,
+          fieldId: resolved.fieldId,
+          filename: file.name || "untitled",
+          mimeType: file.type || "application/octet-stream",
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          userId: currentActorUserId(c),
+          origin: "direct",
+        });
+        if (!result.ok) return respond(c, () => Promise.resolve(result));
+        return c.json(await projectGridFile(result.data));
+      } catch (error) {
+        if (error instanceof ImageMetadataError) return c.json({ code: error.code, message: apiMessages(c).malformedImage }, 422);
+        throw error;
+      }
     })
     .put(
       "/runtime/:shortId/:pageId/:blockId/record/files/:fieldId/:fileId",
@@ -1299,19 +1305,24 @@ export const createCustomAppsApi = (
         if (!(file instanceof File)) return c.json({ message: apiMessages(c).missingFileField }, 400);
         const maxBytes = await getMaxFileSizeBytes();
         if (file.size > maxBytes) return c.json({ message: apiMessages(c).fileTooLarge({ max: Math.round(maxBytes / 1024 / 1024) }) }, 413);
-        const result = await gridsService.file.replace({
-          tableId: resolved.tableId,
-          recordId: resolved.record.id,
-          fieldId: resolved.fieldId,
-          fileId: internalIdParam(c, "fileId")!,
-          filename: file.name || "untitled",
-          mimeType: file.type || "application/octet-stream",
-          bytes: new Uint8Array(await file.arrayBuffer()),
-          userId: currentActorUserId(c),
-          origin: "direct",
-        });
-        if (!result.ok) return respond(c, () => Promise.resolve(result));
-        return c.json(await projectGridFile(result.data));
+        try {
+          const result = await gridsService.file.replace({
+            tableId: resolved.tableId,
+            recordId: resolved.record.id,
+            fieldId: resolved.fieldId,
+            fileId: internalIdParam(c, "fileId")!,
+            filename: file.name || "untitled",
+            mimeType: file.type || "application/octet-stream",
+            bytes: new Uint8Array(await file.arrayBuffer()),
+            userId: currentActorUserId(c),
+            origin: "direct",
+          });
+          if (!result.ok) return respond(c, () => Promise.resolve(result));
+          return c.json(await projectGridFile(result.data));
+        } catch (error) {
+          if (error instanceof ImageMetadataError) return c.json({ code: error.code, message: apiMessages(c).malformedImage }, 422);
+          throw error;
+        }
       },
     )
     .get(

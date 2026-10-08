@@ -13,6 +13,7 @@ import {
 import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
+import { isAiImage } from "./file-media-type";
 import { mountAiProjectFilePath } from "./file-mount";
 import { pickStoredAiFilePath } from "./files-store";
 import { withAiShortIdForDb } from "./short-id";
@@ -821,7 +822,7 @@ export const aiProjects = {
     if (input.bytes.byteLength > AI_PROJECT_FILE_MAX_BYTES)
       throw new AiFileWriteError("STORAGE_FULL", "Project file exceeds the size limit; nothing was written.");
     const mimeType = input.mediaType.trim() || "application/octet-stream";
-    const bytes = mimeType.startsWith("image/") ? stripImageMetadata(input.bytes) : input.bytes;
+    const bytes = isAiImage(input.path, mimeType) ? stripImageMetadata(input.bytes) : input.bytes;
     const path = normalizeProjectPath(input.path);
     return sql.begin(async (tx) => {
       const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;

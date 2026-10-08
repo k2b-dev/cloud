@@ -32,12 +32,25 @@ suite("aiFileStore integration", () => {
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     try {
       const jpeg = await tinyJpeg();
-      const input = { conversationId: conversation.id, path: "/photo.jpg", bytes: withCameraMetadata(jpeg, 1), mediaType: "image/png" };
+      const input = {
+        conversationId: conversation.id,
+        path: "/photo.jpg",
+        bytes: withCameraMetadata(jpeg, 1),
+        mediaType: "application/octet-stream",
+      };
       const uploaded = await aiFileStore.createUserUpload(input);
       expect(uploaded.size).toBe(jpeg.length);
       expect((await aiFileStore.read(input))?.bytes).toEqual(jpeg);
       await aiFileStore.write({ ...input, origin: "user", allowUserOverwrite: true });
       expect((await aiFileStore.read(input))?.bytes).toEqual(jpeg);
+      const artifactInput = { ...input, path: "/tool.jpg", producerCallKey: "photo:call" };
+      const artifact = await aiFileStore.createToolArtifact(artifactInput);
+      expect(artifact).toMatchObject({ size: jpeg.length, mediaType: "application/octet-stream" });
+      expect((await aiFileStore.read(artifactInput))?.bytes).toEqual(jpeg);
+      expect(await aiFileStore.createToolArtifact(artifactInput)).toEqual(artifact);
+      const binaryInput = { ...input, path: "/scan.bin" };
+      await aiFileStore.createUserUpload(binaryInput);
+      expect((await aiFileStore.read(binaryInput))?.bytes).toEqual(input.bytes);
       await expect(aiFileStore.createUserUpload({ ...input, bytes: input.bytes.subarray(0, 30) })).rejects.toMatchObject({ status: 422 });
       await expect(aiFileStore.write({ ...input, bytes: input.bytes.subarray(0, 30) })).rejects.toMatchObject({ status: 422 });
     } finally {

@@ -153,7 +153,7 @@ const normalizeProfile = (raw: z.infer<typeof ModelProfileSchema>): AiModelProfi
   };
 };
 
-/** Sanitize newly submitted model logos without changing already stored profiles. */
+/** Sanitize every submitted model logo, including unchanged images from stored profiles. */
 export const prepareAiModelProfileImages = (rawJson: string): string => {
   const raw: unknown = JSON.parse(rawJson);
   if (!Array.isArray(raw)) return rawJson;

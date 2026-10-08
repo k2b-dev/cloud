@@ -6,6 +6,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
+import { stripImageMetadata } from "../services/image-metadata";
 import { aiProjects } from "./projects";
 import { __buildAiProjectsRoutesForTest } from "./projects-routes";
 
@@ -169,5 +170,41 @@ describe("AI Project reference routes", () => {
     expect(await response.json()).toMatchObject({
       reference: { id: "rEf234", projectId: projectShortId, ref: { type: "contacts.contact", id: "contact-1" }, label: "Ada" },
     });
+  });
+});
+
+test("Project uploads preserve the typed malformed-image 422", async () => {
+  spyOn(aiProjects, "getByShortId").mockResolvedValue({
+    id: projectId,
+    shortId: projectShortId,
+    name: "Photo",
+    description: "",
+    icon: "",
+    instructions: "",
+    defaultModelProfileId: null,
+    permission: "admin",
+    revision: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  });
+  spyOn(aiProjects, "writeFile").mockImplementation(async (_id, _subject, input) => {
+    stripImageMetadata(input.bytes);
+    return null;
+  });
+  const routes = __buildAiProjectsRoutesForTest({ limit: pass, authenticate });
+  const response = await routes.request(`/${projectShortId}/files`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "accept-language": "de" },
+    body: JSON.stringify({
+      path: "photo.jpg",
+      mediaType: "image/jpeg",
+      content: Buffer.from([255, 216, 255, 219, 0]).toString("base64"),
+      encoding: "base64",
+    }),
+  });
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({
+    code: "MALFORMED_IMAGE",
+    message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
   });
 });

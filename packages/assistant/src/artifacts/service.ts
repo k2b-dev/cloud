@@ -1,4 +1,11 @@
-import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT, aiConversations, aiProjects, CodeResourceId, withAiShortIdForDb } from "@k2b/cloud/ai";
+import {
+  AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,
+  aiConversations,
+  aiProjects,
+  CodeResourceId,
+  isAiImage,
+  withAiShortIdForDb,
+} from "@k2b/cloud/ai";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
@@ -603,8 +610,8 @@ export const artifacts = {
         }
         bytes = new TextEncoder().encode(request.content).byteLength;
       } else {
-        if (!fileData || fileData.byteLength > STORAGE_FILE_MAX_BYTES) throw new ArtifactError("INVALID_INPUT");
-        if (request.mediaType.startsWith("image/")) fileData = stripImageMetadata(fileData);
+        if (!fileData || !request.key || fileData.byteLength > STORAGE_FILE_MAX_BYTES) throw new ArtifactError("INVALID_INPUT");
+        if (isAiImage(request.key, request.mediaType)) fileData = stripImageMetadata(fileData);
         bytes = fileData.byteLength;
       }
     }

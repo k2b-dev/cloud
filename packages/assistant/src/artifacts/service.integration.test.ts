@@ -126,18 +126,27 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     try {
       const jpeg = await tinyJpeg();
       const input = withCameraMetadata(jpeg, 1);
-      const request = { area: "files", operation: "write", key: "photo.jpg", mediaType: "image/jpeg" };
+      const request = { area: "files", operation: "write", key: "photo.jpg", mediaType: "application/octet-stream" };
       await artifacts.storage(resource.id, request, owner, false, input);
       const stored = await artifacts.storage(resource.id, { area: "files", operation: "read", key: "photo.jpg" }, owner);
       expect("item" in stored && stored.item?.data).toEqual(jpeg);
       const path = `/${resource.id}/storage/file?key=api-photo.jpg`;
-      const response = await api.request(path, { method: "PUT", headers: { "content-type": "image/jpeg" }, body: new Uint8Array(input) });
+      const response = await api.request(path, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream" },
+        body: new Uint8Array(input),
+      });
       expect(response.status).toBe(200);
       const content = await api.request(path);
       expect(new Uint8Array(await content.arrayBuffer())).toEqual(jpeg);
       expect(
-        (await api.request(path, { method: "PUT", headers: { "content-type": "image/jpeg" }, body: new Uint8Array(input.subarray(0, 30)) }))
-          .status,
+        (
+          await api.request(path, {
+            method: "PUT",
+            headers: { "content-type": "application/octet-stream" },
+            body: new Uint8Array(input.subarray(0, 30)),
+          })
+        ).status,
       ).toBe(422);
     } finally {
       await artifacts.remove(resource.id, owner);

@@ -1031,7 +1031,10 @@ AI reference documents options, limits and examples.
 New JPEG, PNG, and WebP image uploads remove location and device metadata
 without changing image quality. JPEG orientation, colour profiles,
 transparency, and supported animation data remain. Malformed containers are
-rejected with HTTP 422. This applies to conversation uploads, Project files, and shared App files.
+rejected with HTTP 422. This applies to conversation uploads, Project files,
+and shared App files, including images the assistant writes there, such as
+fetched web images. A file counts as an image by its media type or its path
+extension.
 
 Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images

@@ -38,7 +38,7 @@ databaseSuite()("aiProjects (integration)", () => {
     const project = await aiProjects.create({ subject, name: "Photo privacy" });
     try {
       const jpeg = await tinyJpeg();
-      const input = { path: "photo.jpg", bytes: withCameraMetadata(jpeg, 1), mediaType: "image/jpeg" };
+      const input = { path: "photo.jpg", bytes: withCameraMetadata(jpeg, 1), mediaType: "application/octet-stream" };
       const stored = await aiProjects.writeFile(project.id, subject, input);
       expect(stored?.size).toBe(jpeg.length);
       const content = await aiProjects.readFileByPath(project.id, input.path, subject);

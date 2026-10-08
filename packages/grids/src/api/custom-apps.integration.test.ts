@@ -1151,7 +1151,16 @@ describe("Grids App Form runtime", () => {
           form.set("file", new File([new Uint8Array(bytes)], "photo.jpg", { type: "image/jpeg" }));
           return form;
         };
-        expect((await api.request(filesUrl, { method: "POST", body: imageForm(photo.subarray(0, 30)) })).status).toBe(422);
+        const malformedUpload = await api.request(filesUrl, {
+          method: "POST",
+          headers: { "accept-language": "de" },
+          body: imageForm(photo.subarray(0, 30)),
+        });
+        expect(malformedUpload.status).toBe(422);
+        expect(await malformedUpload.json()).toMatchObject({
+          code: "MALFORMED_IMAGE",
+          message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+        });
         const imageUpload = await api.request(filesUrl, { method: "POST", body: imageForm(photo) });
         expect(imageUpload.status).toBe(200);
         const imageFile = z.object({ id: z.string(), sizeBytes: z.number() }).parse(await imageUpload.json());
@@ -1159,7 +1168,16 @@ describe("Grids App Form runtime", () => {
         const imageUrl = `${filesUrl.slice(0, filesUrl.indexOf("?"))}/${imageFile.id}?request_id=${body.recordId}`;
         const imageContentUrl = `${filesUrl.slice(0, filesUrl.indexOf("?"))}/${imageFile.id}/content?request_id=${body.recordId}`;
         expect(new Uint8Array(await (await api.request(imageContentUrl)).arrayBuffer())).toEqual(jpeg);
-        expect((await api.request(imageUrl, { method: "PUT", body: imageForm(photo.subarray(0, 30)) })).status).toBe(422);
+        const malformedReplacement = await api.request(imageUrl, {
+          method: "PUT",
+          headers: { "accept-language": "de" },
+          body: imageForm(photo.subarray(0, 30)),
+        });
+        expect(malformedReplacement.status).toBe(422);
+        expect(await malformedReplacement.json()).toMatchObject({
+          code: "MALFORMED_IMAGE",
+          message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+        });
         const imageReplacement = await api.request(imageUrl, { method: "PUT", body: imageForm(photo) });
         expect(imageReplacement.status).toBe(200);
         const nextImage = z.object({ id: z.string() }).parse(await imageReplacement.json());

@@ -64,7 +64,6 @@ and durable data.
   `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in
   the bundled image. Import Bun built-ins statically; the minified server
   bundle breaks `await import("bun")`.
-- Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; preserve Files originals and document formats that retain metadata.
 - Store durable state explicitly, never in process memory or container files.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable
@@ -73,7 +72,7 @@ and durable data.
 ## Reuse public building blocks
 
 Choose documented Cloud entry points and services before creating a parallel
-mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP.
+mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals.
 
 Prefer the documented K2B foundations before building an application-local
 alternative:
@@ -175,5 +174,6 @@ speculative paths, one-off abstractions, and unrelated cleanup. Start with the
 fastest relevant check, then verify each affected permission, data,
 registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
 variables and never touch a database whose name does not end in `_test`. Before
-release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish
+release, test against the target Cloud version with the production package
+version. Update the application's docs when observable behavior changes; finish
 when code, focused tests, and documentation describe one contract.

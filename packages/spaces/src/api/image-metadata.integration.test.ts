@@ -41,10 +41,10 @@ databaseSuite()("spaces image upload privacy", () => {
       const base = `/${resource!.short_id}/items/${item!.short_id}/attachments`;
       const jpeg = await tinyJpeg();
       const input = withCameraMetadata(jpeg, 1);
-      const upload = (bytes: Uint8Array) => {
+      const upload = (bytes: Uint8Array, locale = "en") => {
         const form = new FormData();
         form.set("file", new File([new Uint8Array(bytes)], "photo.jpg", { type: "image/png" }));
-        return api.request(base, { method: "POST", headers, body: form });
+        return api.request(base, { method: "POST", headers: { ...headers, "accept-language": locale }, body: form });
       };
       const response = await upload(input);
       expect(response.status).toBe(200);
@@ -70,7 +70,12 @@ databaseSuite()("spaces image upload privacy", () => {
         expect(row.content).toEqual(jpeg);
         expect(Number(row.size_bytes)).toBe(jpeg.length);
       }
-      expect((await upload(input.subarray(0, 30))).status).toBe(422);
+      const malformed = await upload(input.subarray(0, 30), "de");
+      expect(malformed.status).toBe(422);
+      expect(await malformed.json()).toMatchObject({
+        code: "MALFORMED_IMAGE",
+        message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+      });
       const listed = await api.request(base, { headers });
       expect(z.array(z.unknown()).parse(await listed.json())).toHaveLength(2);
     } finally {

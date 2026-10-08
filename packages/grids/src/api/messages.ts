@@ -5,6 +5,7 @@ export const gridsApiMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      malformedImage: "This image could not be read. Export it again or choose another file.",
       recordEventFailureNotFound: "Record event failure not found",
       recordEventReplayUnavailable: "Record event is not available for replay",
       accessEntryNotFound: "Access entry not found",
@@ -121,6 +122,7 @@ export const gridsApiMessages = i18n.define({
       resourceNotFound: ({ resource }: { resource: string }) => `${resource} not found`,
     },
     de: {
+      malformedImage: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
       recordEventFailureNotFound: "Fehlgeschlagenes Datensatzereignis nicht gefunden",
       recordEventReplayUnavailable: "Das Datensatzereignis kann nicht wiederholt werden",
       accessEntryNotFound: "Zugriffseintrag nicht gefunden",

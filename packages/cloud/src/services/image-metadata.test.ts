@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ImageMetadataError, stripImageMetadata } from "@k2b/cloud/services/image-metadata";
+import { ImageMetadataError, stripImageDataUrlMetadata, stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import {
   cameraExif,
   imageBytes,
@@ -102,7 +102,7 @@ describe("lossless image metadata privacy", () => {
     expect(await new Bun.Image(out).metadata()).toMatchObject({ width: 3, height: 2 });
   });
 
-  test("malformed TIFF headers, offsets, IFDs, orientation types and ranges fail with a typed 422", async () => {
+  test("malformed TIFF headers, IFD0 tables and orientation types fail with a typed 422", async () => {
     const jpeg = await tinyJpeg();
     const corruptions = [
       (exif: Uint8Array) => {
@@ -120,22 +120,19 @@ describe("lossless image metadata privacy", () => {
       (exif: Uint8Array) => {
         exif[19] = 4;
       },
-      (exif: Uint8Array) => {
-        exif[25] = 9;
-      },
-      (exif: Uint8Array) => {
-        exif[36] = 255;
-      },
     ];
     for (const corrupt of corruptions) {
       const exif = cameraExif();
       corrupt(exif);
       rejects(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, exif), jpeg.subarray(2)));
     }
-    for (const length of [4, 13, 16, 53]) {
+    for (const length of [13, 16, 49]) {
       rejects(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif().subarray(0, length)), jpeg.subarray(2)));
     }
-    rejects(withCameraMetadata(jpeg, 0));
+    const duplicate = cameraExif();
+    duplicate.set(duplicate.subarray(16, 28), 28);
+    rejects(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, duplicate), jpeg.subarray(2)));
+    rejects(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, cameraExif(6)), jpegSegment(0xe1, cameraExif(3)), jpeg.subarray(2)));
   });
 
   test("every truncated JPEG fails without leaking a RangeError", async () => {
@@ -246,4 +243,103 @@ describe("lossless image metadata privacy", () => {
       expect(stripImageMetadata(bytes)).toBe(bytes);
     }
   });
+});
+
+test("data URL parameters, case, percent encoding and forgiving base64 cannot bypass stripping", async () => {
+  const jpeg = await tinyJpeg();
+  const camera = withCameraMetadata(jpeg, 1);
+  const base64 = Buffer.from(camera).toString("base64");
+  const expected = `data:image/jpeg;base64,${Buffer.from(jpeg).toString("base64")}`;
+  expect(base64).toMatch(/=$/);
+  const bodies = [base64, base64.replace(/=+$/, ""), base64.replace(/.{1,60}/g, "$&\r\n ")];
+  for (const prefix of [
+    "data:image/jpeg;name=photo.jpg;base64,",
+    "data:image/jpeg;charset=utf-8;base64,",
+    "DATA:image/jpeg;base64,",
+    "data:IMAGE/JPEG;base64,",
+    "data:image/jpeg; BASE64 \t,",
+    "data:image/jpeg;base64,",
+  ])
+    for (const body of bodies) expect(stripImageDataUrlMetadata(prefix + body)).toBe(expected);
+  // Browsers ignore surrounding spaces, embedded tabs or newlines, and the fragment of an image source.
+  for (const value of [` data:image/jpeg;base64,${base64}`, `da\nta:image/jpeg;base64,${base64}`, `data:image/jpeg;base64,${base64}#gps`])
+    expect(stripImageDataUrlMetadata(value)).toBe(expected);
+  const percentBody = Array.from(camera, (byte) => `%${byte.toString(16).padStart(2, "0")}`).join("");
+  expect(stripImageDataUrlMetadata(`data:image/jpeg,${percentBody}`)).toBe(expected);
+  // Magic bytes own classification even when the declared MIME is unrelated.
+  expect(stripImageDataUrlMetadata(`data:APPLICATION/OCTET-STREAM;base64,${base64}`)).toBe(
+    expected.replace("image/jpeg", "application/octet-stream"),
+  );
+  for (const value of [
+    "https://example.test/photo.jpg",
+    "data:image/jpeg;base64",
+    "data:image/svg+xml,%ZZ<svg/>",
+    `data:image/svg+xml;base64, ${Buffer.from("<svg />").toString("base64").replace(/=+$/, "")}\n`,
+  ])
+    expect(stripImageDataUrlMetadata(value)).toBe(value);
+  for (const body of ["%%%", "A", "AAAA=", "AA===", "AA-_", "AA\vAA"])
+    expect(() => stripImageDataUrlMetadata(`data:image/jpeg;base64,${body}`)).toThrow(ImageMetadataError);
+});
+
+test("discarded EXIF tags and pointers do not reject renderable JPEGs", async () => {
+  const jpeg = await tinyJpeg();
+  for (const orientation of [0, 9, 65535]) expect(stripImageMetadata(withCameraMetadata(jpeg, orientation))).toEqual(jpeg);
+  for (const mutate of [
+    (view: DataView) => view.setUint16(30, 13), // Unrelated Make type.
+    (view: DataView) => view.setUint32(36, 0xffffffff), // Unrelated Make value offset.
+    (view: DataView) => view.setUint32(52, 0xffffffff), // Next IFD pointer.
+  ]) {
+    const exif = cameraExif();
+    mutate(new DataView(exif.buffer));
+    expect(orientationOf(stripImageMetadata(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, exif), jpeg.subarray(2))))).toBe(6);
+  }
+  expect(stripImageMetadata(imageBytes(jpeg.subarray(0, 2), new Uint8Array([0, 0]), jpeg.subarray(2)))).toEqual(jpeg);
+  expect(stripImageMetadata(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe1, imageText("Exif\0X")), jpeg.subarray(2)))).toEqual(jpeg);
+});
+
+test("JFIF ignores trailing padding and writes only the thumbnail-free header", async () => {
+  const jpeg = await tinyJpeg();
+  const header = imageBytes(imageText("JFIF\0"), new Uint8Array([1, 1, 0, 0, 1, 0, 1, 0, 0]));
+  const out = stripImageMetadata(
+    imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe0, imageBytes(header, new Uint8Array([13, 14]))), jpeg.subarray(2)),
+  );
+  expect(out).toEqual(imageBytes(jpeg.subarray(0, 2), jpegSegment(0xe0, header), jpeg.subarray(2)));
+  expect(new DataView(out.buffer, out.byteOffset).getUint16(4)).toBe(16);
+});
+
+const repeat = (part: Uint8Array, count: number): Uint8Array => {
+  const out = new Uint8Array(part.length * count);
+  for (let offset = 0; offset < out.length; offset += part.length) out.set(part, offset);
+  return out;
+};
+
+test("100k JPEG segments retain codec segments in order and drop interleaved comments", async () => {
+  const jpeg = await tinyJpeg();
+  const kept = new Uint8Array([255, 196, 0, 2]);
+  const input = imageBytes(jpeg.subarray(0, 2), repeat(imageBytes(kept, jpegSegment(0xfe, imageText("GPS"))), 100_000), jpeg.subarray(2));
+  const out = stripImageMetadata(input);
+  expect(out).toEqual(imageBytes(jpeg.subarray(0, 2), repeat(kept, 100_000), jpeg.subarray(2)));
+  expect(out.length).toBeLessThanOrEqual(input.length + 36);
+});
+
+test("100k PNG chunks retain transparency chunks in order and drop interleaved text", () => {
+  const png = tinyPng();
+  const kept = pngChunk("tRNS", new Uint8Array());
+  const input = imageBytes(png.subarray(0, 33), repeat(imageBytes(kept, pngChunk("tEXt", imageText("GPS"))), 100_000), png.subarray(33));
+  const out = stripImageMetadata(input);
+  expect(out).toEqual(imageBytes(png.subarray(0, 33), repeat(kept, 100_000), png.subarray(33)));
+  expect(out.length).toBeLessThanOrEqual(input.length);
+});
+
+test("100k WebP ICC chunks retain their order with canonical RIFF length and VP8X flags", () => {
+  const flags = new Uint8Array([0x2c, 0, 0, 0, 2, 0, 0, 1, 0, 0]);
+  const kept = repeat(riffChunk("ICCP", new Uint8Array([1])), 100_000);
+  const codec = riffChunk("VP8L", new Uint8Array([47, 0, 0, 0, 0]));
+  const input = webpRiff(riffChunk("VP8X", flags), kept, codec, riffChunk("XMP ", imageText("GPS")));
+  flags[0] = 0x20;
+  const out = stripImageMetadata(input);
+  expect(out).toEqual(webpRiff(riffChunk("VP8X", flags), kept, codec));
+  expect(out[20]).toBe(0x20);
+  expect(new DataView(out.buffer, out.byteOffset).getUint32(4, true)).toBe(out.length - 8);
+  expect(out.length).toBeLessThanOrEqual(input.length);
 });

@@ -171,6 +171,16 @@ Opening-hour exceptions stay separate: they change only the hours and never
 create a shift. A one-off shift counts toward the staffed opening logic like a
 weekly shift on that date.
 
+## Image privacy
+
+Venue logos, banners, and menu item images are inline image data. When an
+admin saves them through the workspace, the API, or `cld venue`, JPEG, PNG,
+and WebP images lose location and device metadata before storage, without
+changing image quality. Saving Venue settings or a section processes every
+image it contains, also unchanged ones. A malformed JPEG, PNG, or WebP answers
+HTTP 422 with code `MALFORMED_IMAGE`. Other formats stay unchanged. See
+[Image upload privacy](/en/docs/platform/image-upload-privacy).
+
 ## How Venues fits Cloud
 
 Venues owns schedules, assignments, opening status, public content, feedback,

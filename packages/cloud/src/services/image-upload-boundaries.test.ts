@@ -2,8 +2,11 @@ import { expect, test } from "bun:test";
 import { stripImageDataUrlMetadata, stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { Hono } from "hono";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
+import { isAiImage } from "../ai/file-media-type";
 import { prepareAiModelProfileImages } from "../ai/settings";
+import { respond } from "../server/api/respond";
 import { setAvatar } from "./accounts/avatar";
+import { settingsService } from "./settings/app";
 import { registerSettings } from "./settings/defaults";
 import { writeKey } from "./settings/store";
 
@@ -33,6 +36,11 @@ test("avatar and image setting writes reject malformed containers before any sto
   const key = `test.image_privacy_${crypto.randomUUID()}`;
   registerSettings([{ key, kind: "image", default: "", label: "Image", description: "Unit test only", group: "test" }]);
   await expect(writeKey(key, dataUrl(malformed))).rejects.toMatchObject({ status: 422 });
+  // App settings routes (Grids admin settings, gateway-ops) pass the result to respond().
+  const app = new Hono().put("/", async (c) => respond(c, await settingsService.entry.update({ key, value: dataUrl(malformed) })));
+  const response = await app.request("/", { method: "PUT" });
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({ message: "Malformed JPEG image.", code: "MALFORMED_IMAGE" });
 });
 
 test("new model profile logos are sanitized without rewriting other profile fields", async () => {
@@ -40,4 +48,10 @@ test("new model profile logos are sanitized without rewriting other profile fiel
   const profile = { id: "example", image: dataUrl(withCameraMetadata(jpeg, 1)), model: "example-model", provider: "openai" };
   expect(prepareAiModelProfileImages(JSON.stringify([profile]))).toBe(JSON.stringify([{ ...profile, image: dataUrl(jpeg) }]));
   expect(() => prepareAiModelProfileImages(JSON.stringify([{ ...profile, image: dataUrl(malformed) }]))).toThrow();
+});
+
+test("AI image classification accepts the declared media type or the path extension", () => {
+  expect(isAiImage("/IMG_0001.JPG", "application/octet-stream")).toBe(true);
+  expect(isAiImage("/scan.bin", "image/jpeg")).toBe(true);
+  expect(isAiImage("/scan.bin", "application/octet-stream")).toBe(false);
 });

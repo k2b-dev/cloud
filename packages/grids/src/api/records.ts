@@ -1,5 +1,6 @@
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -630,17 +631,22 @@ export const recordsRoutes = new Hono<AuthContext>()
         return c.json({ message: apiMessages(c).fileTooLarge({ max: Math.round(maxBytes / 1024 / 1024) }) }, 413);
       }
 
-      const result = await gridsService.file.upload({
-        tableId,
-        recordId,
-        fieldId,
-        filename: file.name || "untitled",
-        mimeType: file.type || "application/octet-stream",
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        userId: currentActorUserId(c),
-        origin: "direct",
-      });
-      return result.ok ? c.json(await toPublicFile(result.data)) : respond(c, () => Promise.resolve(result));
+      try {
+        const result = await gridsService.file.upload({
+          tableId,
+          recordId,
+          fieldId,
+          filename: file.name || "untitled",
+          mimeType: file.type || "application/octet-stream",
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          userId: currentActorUserId(c),
+          origin: "direct",
+        });
+        return result.ok ? c.json(await toPublicFile(result.data)) : respond(c, () => Promise.resolve(result));
+      } catch (error) {
+        if (error instanceof ImageMetadataError) return c.json({ code: error.code, message: apiMessages(c).malformedImage }, 422);
+        throw error;
+      }
     },
   )
 
@@ -685,18 +691,23 @@ export const recordsRoutes = new Hono<AuthContext>()
         return c.json({ message: apiMessages(c).fileTooLarge({ max: Math.round(maxBytes / 1024 / 1024) }) }, 413);
       }
 
-      const result = await gridsService.file.replace({
-        tableId,
-        recordId,
-        fieldId,
-        fileId,
-        filename: file.name || "untitled",
-        mimeType: file.type || "application/octet-stream",
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        userId: currentActorUserId(c),
-        origin: "direct",
-      });
-      return result.ok ? c.json(await toPublicFile(result.data)) : respond(c, () => Promise.resolve(result));
+      try {
+        const result = await gridsService.file.replace({
+          tableId,
+          recordId,
+          fieldId,
+          fileId,
+          filename: file.name || "untitled",
+          mimeType: file.type || "application/octet-stream",
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          userId: currentActorUserId(c),
+          origin: "direct",
+        });
+        return result.ok ? c.json(await toPublicFile(result.data)) : respond(c, () => Promise.resolve(result));
+      } catch (error) {
+        if (error instanceof ImageMetadataError) return c.json({ code: error.code, message: apiMessages(c).malformedImage }, 422);
+        throw error;
+      }
     },
   )
 

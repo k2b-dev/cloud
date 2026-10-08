@@ -1,6 +1,7 @@
 import { type SQL, sql } from "bun";
 import { stripImageMetadata } from "../services/image-metadata";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
+import { isAiImage } from "./file-media-type";
 
 export { guessAiMediaType } from "./file-media-type";
 
@@ -80,7 +81,7 @@ export const createUniqueAiFileInTransaction = async (
     throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
   }
 
-  const bytes = (input.mediaType ?? "application/octet-stream").startsWith("image/") ? stripImageMetadata(input.bytes) : input.bytes;
+  const bytes = isAiImage(input.path, input.mediaType ?? "application/octet-stream") ? stripImageMetadata(input.bytes) : input.bytes;
 
   await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
   const total = await aiConversationStoredBytes(tx, input.conversationId);
@@ -194,7 +195,8 @@ export const aiFileStore = {
     producerCallKey: string;
     mediaType: string;
   }): Promise<AiFileStat> {
-    if (input.bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT)
+    const bytes = isAiImage(input.path, input.mediaType) ? stripImageMetadata(input.bytes) : input.bytes;
+    if (bytes.byteLength > AI_FILES_MAX_FILE_BYTES_DEFAULT)
       throw new AiFileWriteError("STORAGE_FULL", "File exceeds the destination file limit; nothing was written.");
     if (!normalizeAiFilePath(input.path)) {
       throw new Error("Invalid tool artifact path or file size.");
@@ -213,18 +215,18 @@ export const aiFileStore = {
           Number(row.version) === 1 &&
           row.producer_call_key === input.producerCallKey &&
           row.media_type === input.mediaType &&
-          Buffer.from(row.bytes).equals(Buffer.from(input.bytes))
+          Buffer.from(row.bytes).equals(Buffer.from(bytes))
         )
           return toStat(row);
         throw new AiFileWriteError("CONFLICT", "Destination file already exists. Choose another path; nothing was written.");
       }
       const total = await aiConversationStoredBytes(tx, input.conversationId);
-      if (total + input.bytes.byteLength > AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT) {
+      if (total + bytes.byteLength > AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT) {
         throw new AiFileWriteError("STORAGE_FULL", "Conversation storage limit exceeded.");
       }
       const rows = await tx<FileRow[]>`
         INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, producer_call_key)
-        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType}, ${input.bytes.byteLength}, 'assistant', ${input.producerCallKey})
+        VALUES (${input.conversationId}, ${path}, ${bytes}, ${input.mediaType}, ${bytes.byteLength}, 'assistant', ${input.producerCallKey})
         RETURNING path, size, media_type, origin, dictation_recorded_at, updated_at, version
       `;
       return toStat(rows[0]!);
@@ -367,7 +369,7 @@ export const aiFileStore = {
       throw new AiFileWriteError("STORAGE_FULL", `File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
     }
 
-    const bytes = (input.mediaType ?? "application/octet-stream").startsWith("image/") ? stripImageMetadata(input.bytes) : input.bytes;
+    const bytes = isAiImage(input.path, input.mediaType ?? "application/octet-stream") ? stripImageMetadata(input.bytes) : input.bytes;
 
     return sql.begin(async (tx) => {
       const [conversation] = await tx<
