@@ -193,7 +193,6 @@ export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
   "markdown_to_pdf",
   "html_to_pdf",
   "present",
-  "calculate",
   "read_cloud_resource",
 ]);
 
