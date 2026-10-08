@@ -1,9 +1,24 @@
-import type { Provider } from "@k2b/nessi/ai";
+import type { Provider, ReasoningEffort } from "@k2b/nessi/ai";
 import { anthropic, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
 import type { AiModelProfile } from "./types";
 
 /** Bound provider stalls while allowing long-context requests up to 60s to begin streaming. */
 const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
+
+/**
+ * Reasoning for structured tasks and compaction: the requests every provider accepted before Nessi 0.17. A global
+ * "none" breaks models that cannot turn reasoning off, so Anthropic, Mistral and Ollama keep their model defaults.
+ */
+export const taskReasoningEffort = (provider: Pick<Provider, "family">): ReasoningEffort | undefined => {
+  switch (provider.family) {
+    case "openai-compatible":
+      return "low";
+    case "gemini":
+      return "none";
+    default:
+      return undefined;
+  }
+};
 
 const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
   apiKey,

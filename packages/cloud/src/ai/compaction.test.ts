@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { CompactContext, Provider, StoreEntry, Usage } from "@k2b/nessi";
+import type { CompactContext, Message, Provider, ProviderRequest, StoreEntry, Usage } from "@k2b/nessi";
 import { defineTool, nessi } from "@k2b/nessi";
 import { z } from "zod";
 import { createCloudCompactFn } from "./compaction";
@@ -55,6 +55,55 @@ const setup = (force = false) => {
 afterEach(() => mock.restore());
 
 describe("compaction inference accounting", () => {
+  for (const force of [false, true]) {
+    test(`${force ? "manual" : "automatic"} compaction retains provider and reasoning metadata in the next model request`, async () => {
+      const fixture = setup(force);
+      const assistant: Message = {
+        role: "assistant",
+        provider: "anthropic",
+        model: "fixture",
+        stopReason: "stop",
+        content: [
+          { type: "thinking", thinking: "Recent plan", signature: "signed-reasoning" },
+          { type: "thinking", thinking: "", redacted: "encrypted", details: [{ type: "reasoning.encrypted", data: "opaque", index: 0 }] },
+          { type: "text", text: "Recent answer", signature: "signed-text" },
+        ],
+      };
+      const original: StoreEntry[] = [...entries.slice(0, -1), { seq: 8, kind: "message", message: structuredClone(assistant) }];
+      const snapshot = structuredClone(original);
+      let history = original;
+      fixture.compactMessages.mockImplementation(async ({ checkpointSeq, summary }) => {
+        history = [{ seq: checkpointSeq, kind: "summary", message: summary }, ...history.filter((entry) => entry.seq > checkpointSeq)];
+      });
+      const store = {
+        load: async () => history,
+        append: async (message: Message) => {
+          history.push({ seq: history.at(-1)!.seq + 1, kind: "message", message });
+        },
+      };
+      await fixture.compact({ ...fixture.context, entries: original, store });
+      expect(fixture.compactMessages).toHaveBeenCalledTimes(1);
+      expect(fixture.compactMessages.mock.calls[0]?.[0].checkpointSeq).toBe(force ? 6 : 4);
+      expect(history.slice(1)).toEqual(snapshot.slice(force ? 6 : 4));
+      expect(JSON.stringify(fixture.complete.mock.calls[0]?.[0].messages)).not.toContain("Recent plan");
+      const requests: ProviderRequest[] = [];
+      const provider: Provider = {
+        ...fixture.context.provider,
+        capabilities: { ...fixture.context.provider.capabilities, streaming: true, thinking: true },
+        async *stream(request) {
+          requests.push(request);
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        },
+      };
+      for await (const _event of nessi({ systemPrompt: "Test", store, provider, input: "Continue" })) {
+      }
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.messages.slice(1, -1)).toEqual(snapshot.slice(force ? 6 : 4).map((entry) => entry.message));
+      expect(requests[0]?.messages.at(-2)).toEqual(assistant);
+      expect(original).toEqual(snapshot);
+    });
+  }
+
   test("Nessi compacts an oversized first tool result before requesting its second model turn", async () => {
     const fixture = setup();
     let history: StoreEntry[] = [];
@@ -233,4 +282,52 @@ describe("compaction inference accounting", () => {
     });
     expect(compactMessages).not.toHaveBeenCalled();
   });
+});
+
+for (const finishReason of ["error", "interrupted", "aborted"] as const)
+  test(`a ${finishReason} compaction response never replaces provider history`, async () => {
+    const fixture = setup(true);
+    fixture.complete.mockResolvedValue({
+      message: { role: "assistant", content: [{ type: "text", text: "Incomplete summary" }], stopReason: finishReason },
+      finishReason,
+      usage,
+    });
+    await expect(fixture.compact(fixture.context)).rejects.toThrow();
+    expect(fixture.compactMessages).not.toHaveBeenCalled();
+    expect(fixture.record).toHaveBeenCalledTimes(1);
+    expect(fixture.record).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", usage }));
+  });
+
+test("compaction persists only summary text without reasoning", async () => {
+  const fixture = setup(true);
+  fixture.complete.mockResolvedValue({
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "secret plan", signature: "s" },
+        { type: "text", text: "Real summary" },
+      ],
+    },
+    finishReason: "stop",
+    usage,
+  });
+  await fixture.compact(fixture.context);
+  expect(fixture.compactMessages).toHaveBeenCalledTimes(1);
+  expect(fixture.compactMessages.mock.calls[0]?.[0].summary).toMatchObject({
+    role: "assistant",
+    content: [{ type: "text", text: "Conversation summary:\nReal summary" }],
+  });
+});
+
+test("thinking-only compaction leaves provider history unchanged", async () => {
+  const fixture = setup(true);
+  fixture.complete.mockResolvedValue({
+    message: { role: "assistant", content: [{ type: "thinking", thinking: "secret plan", signature: "s" }] },
+    finishReason: "stop",
+    usage,
+  });
+  await fixture.compact(fixture.context);
+  expect(fixture.compactMessages).not.toHaveBeenCalled();
+  expect(fixture.record).toHaveBeenCalledTimes(1);
+  expect(fixture.record).toHaveBeenCalledWith(expect.objectContaining({ status: "ok", usage }));
 });

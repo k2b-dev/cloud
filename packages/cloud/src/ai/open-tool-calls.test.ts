@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { type Message, memoryStore, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
+import { defineTool, type Message, memoryStore, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
+import { z } from "zod";
 import { AI_OPEN_TOOL_CALL_RESULT, answerOpenToolCalls } from "./open-tool-calls";
 
 /** Records each streamed request. */
@@ -93,3 +94,24 @@ test("a history without open calls reaches the provider unchanged", async () => 
   const messages = [user("Send"), calls("done"), result("done"), user("Thanks")];
   expect(await send(messages)).toBe(messages);
 });
+
+for (const stopReason of ["error", "interrupted", "aborted"] as const)
+  test(`resuming a ${stopReason} answer repairs calls without executing them`, async () => {
+    let executions = 0;
+    const store = memoryStore();
+    const message = calls("ollama-random-id-0");
+    if (message.role !== "assistant") throw new Error("Expected assistant fixture");
+    await store.append({ ...message, stopReason });
+    const requests: ProviderRequest[] = [];
+    const tool = defineTool({ name: "send_mail", description: "Send", inputSchema: z.object({ to: z.string() }) }).server(async () => {
+      executions++;
+      return "sent";
+    });
+    for await (const _event of nessi({ systemPrompt: "Test", provider: answerOpenToolCalls(recording(requests)), store, tools: [tool] })) {
+    }
+    expect(executions).toBe(0);
+    expect(requests[0]?.messages).toEqual([
+      { ...message, stopReason },
+      { role: "tool_result", callId: "ollama-random-id-0", name: "send_mail", result: AI_OPEN_TOOL_CALL_RESULT, isError: true },
+    ]);
+  });

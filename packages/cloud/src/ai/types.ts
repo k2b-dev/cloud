@@ -329,6 +329,7 @@ export type AiConversationTimelineEntry = {
  */
 export type AiTurnErrorCode =
   | "model_unavailable"
+  | "provider_stopped"
   | "quota_exhausted"
   | "context_full"
   | "time_limit"

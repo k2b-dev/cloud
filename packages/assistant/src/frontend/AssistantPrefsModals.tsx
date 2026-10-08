@@ -359,7 +359,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           <Switch
             label={text("Learn personalization from private chats")}
             description={text(
-              "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats; review or delete them under Saved personalization.",
+              "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.",
             )}
             value={learningEnabled}
             onValueChange={setLearningEnabled}

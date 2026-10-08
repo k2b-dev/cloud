@@ -9,6 +9,7 @@ import {
 } from "./memory-workflow-evidence";
 import { migrateCloudAi } from "./migrate";
 import { createAiShortId } from "./short-id";
+import { aiConversations } from "./store";
 
 const insertUser = async (suffix: string): Promise<string> => {
   const [row] = await sql<{ id: string }[]>`
@@ -82,6 +83,62 @@ databaseSuite()("AI workflow evidence (integration)", () => {
       expect((await listAiPendingWorkflowPatterns(10)).some((item) => item.userId === firstUser)).toBe(false);
     } finally {
       await sql`DELETE FROM auth.users WHERE id IN (${firstUser}::uuid, ${secondUser}::uuid)`;
+    }
+  });
+
+  test("archived receipts do not count or become examples, even when still unreviewed", async () => {
+    const userId = await insertUser(crypto.randomUUID());
+    try {
+      const turns = [];
+      for (let index = 0; index < 4; index += 1) {
+        const turn = await insertCompletedTurn(userId);
+        turns.push(turn);
+        await recordAiMemoryWorkflowEvidence({
+          userId,
+          ...turn,
+          capabilityId: "mail.conversation.search",
+          resources: [{ ref: { type: "mail.mailbox", id: "BoxArchived" }, title: "Accounting" }],
+        });
+      }
+      const archived = turns[3]!;
+      // Simulate old pending evidence left behind by archive before this fix.
+      await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${archived.conversationId}::uuid`;
+      await sql`UPDATE ai.memory_workflow_evidence SET observed_at = now() + interval '1 second' WHERE turn_id = ${archived.turnId}::uuid`;
+      expect(await listAiTurnWorkflowEvidence(userId, archived.turnId)).toEqual([]);
+      const pattern = (await listAiPendingWorkflowPatterns(20)).find((item) => item.userId === userId);
+      expect(pattern?.observationCount).toBe(3);
+      expect(pattern?.turnIds).toHaveLength(3);
+      expect(pattern?.turnIds).not.toContain(archived.turnId);
+      await sql`DELETE FROM ai.conversations WHERE id = ${turns[0]!.conversationId}::uuid`;
+      expect(await listAiTurnWorkflowEvidence(userId, turns[0]!.turnId)).toEqual([]);
+      expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(false);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("does not record late workflow receipts from archived or deleted chats", async () => {
+    const userId = await insertUser(crypto.randomUUID());
+    try {
+      const turn = await insertCompletedTurn(userId);
+      expect(await aiConversations.archiveConversation({ conversationId: turn.conversationId, ownerUserId: userId })).toBe(true);
+      const receipt = {
+        userId,
+        ...turn,
+        capabilityId: "mail.conversation.search",
+        resources: [{ ref: { type: "mail.mailbox", id: "BoxLate" } }],
+      };
+      await recordAiMemoryWorkflowEvidence(receipt);
+      const [count] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM ai.memory_workflow_evidence WHERE user_id = ${userId}::uuid
+      `;
+      expect(count?.count).toBe(0);
+      await sql`DELETE FROM ai.conversations WHERE id = ${turn.conversationId}::uuid`;
+      await expect(recordAiMemoryWorkflowEvidence(receipt)).resolves.toBeUndefined();
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 });

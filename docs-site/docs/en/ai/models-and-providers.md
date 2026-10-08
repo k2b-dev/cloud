@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Models and providers
@@ -83,7 +83,7 @@ A locked policy needs `modelId`. A selectable policy may set
 | `capabilities` | `streaming`, `tools`, `vision`, or an exclusive `transcription` profile |
 | `dataBoundary` | `hosted` or `private` |
 | `baseURL` | Optional provider endpoint |
-| `contextWindow` | Optional context limit |
+| `contextWindow` | Optional context limit; Ollama also receives it as `num_ctx` |
 | `temperature` | Optional profile default |
 | `maxOutputTokens` | Optional output limit |
 | `reasoningEffort` | Optional thinking level passed unchanged to chat and tool loops; empty means the model default |
@@ -165,10 +165,15 @@ Omitting it or clearing it preserves the model's default behavior.
 
 The profile level applies to chat and tool loops, including background agents,
 scheduled chat tasks and workflow chat actions. Structured calls, including
-titles, summaries and workflow calculations, and context compaction retain their
-existing low or disabled reasoning request: `low` for OpenAI-compatible adapters
-and zero thinking budget for Gemini. The legacy disable flag remains a no-op for
-Anthropic, Mistral and Ollama; those models keep their own defaults.
+titles, summaries and workflow calculations, and context compaction keep their
+previous reasoning requests: `low` for OpenAI, OpenRouter, vLLM and
+OpenAI-compatible profiles, a zero thinking budget for Gemini, and no thinking
+field for Anthropic, Mistral and Ollama, which keep their model defaults. The
+profile thinking level does not apply to these tasks.
+
+Without an explicit output limit, Anthropic uses 8,192 output tokens, including
+thinking tokens. Cloud uses that same default for budget reservations. Set
+`maxOutputTokens` when a different limit is needed.
 
 ## Add provider parameters
 

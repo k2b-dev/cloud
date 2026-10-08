@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-08-23
+updated: 2026-10-08
 ---
 
 # Structured and background AI
@@ -62,6 +62,13 @@ redacted model input.
 
 The returned value includes the parsed output, model profile ID, usage, and
 structured-output metadata.
+
+Structured tasks and context compaction keep their previous reasoning requests:
+`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, a zero thinking
+budget for Gemini, and no thinking field for Anthropic, Mistral and Ollama, which
+keep their model defaults. The profile thinking level does not apply. Profile
+`extraBody` still applies and can override nested provider parameters; see
+[Thinking level](/en/docs/ai/models-and-providers#set-the-thinking-level).
 
 ## Set the task fields
 

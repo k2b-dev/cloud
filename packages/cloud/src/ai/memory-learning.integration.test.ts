@@ -1,5 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import type { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { aiMemories } from "./memories";
 import { learnAiMemoriesFromPrivateChats, listAiMemoryLearningCandidates } from "./memory-learning";
@@ -9,7 +10,96 @@ import { migrateCloudAi } from "./migrate";
 import { aiUserPrefs } from "./prefs";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
+import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
 import type { AiResolvedModel } from "./types";
+
+const learningTestModel: AiResolvedModel = {
+  profile: { id: "test-model", label: "Test", provider: "openai", model: "test", enabled: true, capabilities: [], dataBoundary: "private" },
+  provider: {
+    name: "test",
+    family: "openai-compatible",
+    model: "test",
+    capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: false },
+    async complete() {
+      throw new Error("Must use the structured fixture");
+    },
+    async *stream() {
+      throw new Error("Must use the structured fixture");
+    },
+  },
+};
+
+const insertLearningUser = async (): Promise<string> => {
+  const suffix = crypto.randomUUID();
+  const [user] = await sql<{ id: string }[]>`
+    INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+    VALUES (${`ai-archive-${suffix}`}, 'local', 'user', 'Archive Learning', ${`ai-archive-${suffix}@example.test`}, 'Archive', 'Learning')
+    RETURNING id
+  `;
+  return user!.id;
+};
+
+const insertLearningTurn = async (userId: string, existingConversationId?: string) => {
+  let conversationId = existingConversationId;
+  if (!conversationId) {
+    const [conversation] = await sql<{ id: string }[]>`
+      INSERT INTO ai.conversations (short_id, created_by_user_id, title)
+      VALUES (${createAiShortId()}, ${userId}::uuid, 'Archive learning test') RETURNING id
+    `;
+    conversationId = conversation!.id;
+  }
+  const [turn] = await sql<{ id: string }[]>`
+    INSERT INTO ai.turns (short_id, conversation_id, status, run_config)
+    VALUES (${createAiShortId()}, ${conversationId}::uuid, 'running', ${JSON.stringify({ kind: "chat", input: [] })}::jsonb)
+    RETURNING id
+  `;
+  const [seq] = await sql<{ next: number }[]>`
+    SELECT COALESCE(max(seq), 0)::int + 1 AS next FROM ai.messages WHERE conversation_id = ${conversationId}::uuid
+  `;
+  await sql`
+    INSERT INTO ai.messages (short_id, conversation_id, seq, role, message, loop_id)
+    VALUES (${createAiShortId()}, ${conversationId}::uuid, ${seq!.next}, 'user',
+      ${JSON.stringify({ role: "user", content: [{ type: "text", text: "Always use Accounting for invoice mail." }] })}::jsonb, ${turn!.id}::uuid)
+  `;
+  await recordAiMemoryWorkflowEvidence({
+    userId,
+    conversationId,
+    turnId: turn!.id,
+    capabilityId: "mail.conversation.search",
+    resources: [{ ref: { type: "mail.mailbox", id: "BoxArchive" }, title: "Accounting" }],
+  });
+  expect(await aiConversations.completeTurn({ conversationId, turnId: turn!.id, status: "completed" })).toBe("completed");
+  const [completed] = await sql<{ completed_as_of: string }[]>`
+    SELECT completed_at::text AS completed_as_of FROM ai.turns WHERE id = ${turn!.id}::uuid
+  `;
+  return { userId, conversationId, turnId: turn!.id, completedAsOf: completed!.completed_as_of, failCount: 0, locale: "en" };
+};
+
+const proposeLearning =
+  (duringModel: () => Promise<void> = async () => {}) =>
+  async <TOutput extends z.ZodType>(request: RunAiStructuredInput<TOutput>): Promise<RunAiStructuredResult<TOutput>> => {
+    await duringModel();
+    return {
+      output: request.output.parse(
+        request.task === "memory-learn-workflow"
+          ? { workflow: { content: "Use Accounting for invoice mail.", memoryIds: [] } }
+          : { changes: [{ action: "add", kind: "preference", content: "Prefers concise answers.", memoryIds: [], resourceRef: null }] },
+      ),
+      modelProfileId: "test-model",
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+    };
+  };
+
+const learningDeps = () => ({
+  resolveModel: async () => learningTestModel,
+  listCandidates: async () => [],
+  listWorkflowPatterns: async () => [],
+  monthlyTokenBudget: 1_000_000,
+  readMonthlyAccountedTokens: async () => 0,
+  readAdditionalInstructions: async () => "",
+  readDefaultLocale: async () => "en",
+  structured: proposeLearning(),
+});
 
 databaseSuite()("AI memory learning (integration)", () => {
   beforeAll(async () => {
@@ -221,7 +311,7 @@ databaseSuite()("AI memory learning (integration)", () => {
         learned: 0,
         updated: 0,
         retired: 0,
-        skipped: 0,
+        skipped: 1,
         failed: 0,
       });
       expect(modelCalls).toBe(1);
@@ -421,4 +511,216 @@ databaseSuite()("AI memory learning (integration)", () => {
       await sql`DELETE FROM auth.users WHERE id IN (${byDefault.userId}::uuid, ${off.userId}::uuid)`;
     }
   });
+
+  test("archive retires pending turns and receipts; restore learns only newly completed turns", async () => {
+    const userId = await insertLearningUser();
+    try {
+      const old = await insertLearningTurn(userId);
+      await sql`UPDATE ai.turns SET memory_learn_failed_at = now(), memory_learn_fail_count = 2 WHERE id = ${old.turnId}::uuid`;
+      expect(await aiConversations.archiveConversation({ conversationId: old.conversationId, ownerUserId: userId })).toBe(true);
+      const [turn] = await sql<{ learned: boolean; fail_count: number; failed_at: string | null }[]>`
+        SELECT memory_learned_at = completed_at AS learned, memory_learn_fail_count AS fail_count, memory_learn_failed_at AS failed_at
+        FROM ai.turns WHERE id = ${old.turnId}::uuid
+      `;
+      expect(turn).toMatchObject({ learned: true, fail_count: 0, failed_at: null });
+      const [receipt] = await sql<{ reviewed: boolean }[]>`
+        SELECT reviewed_at IS NOT NULL AS reviewed FROM ai.memory_workflow_evidence WHERE turn_id = ${old.turnId}::uuid
+      `;
+      expect(receipt?.reviewed).toBe(true);
+      let calls = 0;
+      const deps = {
+        ...learningDeps(),
+        listCandidates: async (limit: number, budget: number) =>
+          (await listAiMemoryLearningCandidates(limit, budget)).filter((item) => item.userId === userId),
+        structured: proposeLearning(async () => {
+          calls += 1;
+        }),
+      };
+      expect((await learnAiMemoriesFromPrivateChats({ deps })).learned).toBe(0);
+      expect(calls).toBe(0);
+      expect(await aiMemories.list({ userId })).toEqual([]);
+      expect(await aiConversations.restoreConversation({ conversationId: old.conversationId, ownerUserId: userId })).not.toBeNull();
+      expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === old.turnId)).toBe(false);
+      expect((await learnAiMemoriesFromPrivateChats({ deps: { ...deps, listCandidates: async () => [old] } })).skipped).toBe(1);
+      expect(calls).toBe(0);
+      const fresh = await insertLearningTurn(userId, old.conversationId);
+      expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === fresh.turnId)).toBe(true);
+      expect((await learnAiMemoriesFromPrivateChats({ deps: { ...deps, listCandidates: async () => [fresh] } })).learned).toBe(1);
+      expect(calls).toBe(1);
+      expect(await aiMemories.list({ userId })).toHaveLength(1);
+      expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(false);
+    } finally {
+      await sql`DELETE FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("restore never backfills turns or receipts left pending by an earlier archive", async () => {
+    const userId = await insertLearningUser();
+    try {
+      const first = await insertLearningTurn(userId);
+      await insertLearningTurn(userId, first.conversationId);
+      await insertLearningTurn(userId, first.conversationId);
+      expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(true);
+
+      await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${first.conversationId}::uuid`;
+      expect(await aiConversations.restoreConversation({ conversationId: first.conversationId, ownerUserId: userId })).not.toBeNull();
+
+      expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.userId === userId)).toBe(false);
+      expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(false);
+      const turns = await sql<{ learned: boolean }[]>`
+        SELECT memory_learned_at = completed_at AS learned FROM ai.turns WHERE conversation_id = ${first.conversationId}::uuid
+      `;
+      expect(turns).toEqual([{ learned: true }, { learned: true }, { learned: true }]);
+      const receipts = await sql<{ reviewed: boolean }[]>`
+        SELECT reviewed_at IS NOT NULL AS reviewed FROM ai.memory_workflow_evidence WHERE user_id = ${userId}::uuid
+      `;
+      expect(receipts).toEqual([{ reviewed: true }, { reviewed: true }, { reviewed: true }]);
+    } finally {
+      await sql`DELETE FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  for (const timing of [
+    "after-list",
+    "before-model",
+    "during-model",
+    "restored-during-model",
+    "deleted-after-list",
+    "deleted-during-model",
+  ]) {
+    test(`skips turn learning when chat becomes ineligible ${timing}`, async () => {
+      const userId = await insertLearningUser();
+      try {
+        const candidate = await insertLearningTurn(userId);
+        const invalidate = async () => {
+          if (timing.startsWith("deleted")) {
+            await sql`DELETE FROM ai.conversations WHERE id = ${candidate.conversationId}::uuid`;
+          } else {
+            expect(await aiConversations.archiveConversation({ conversationId: candidate.conversationId, ownerUserId: userId })).toBe(true);
+            if (timing === "restored-during-model") {
+              expect(
+                await aiConversations.restoreConversation({ conversationId: candidate.conversationId, ownerUserId: userId }),
+              ).not.toBeNull();
+            }
+          }
+        };
+        let calls = 0;
+        const summary = await learnAiMemoriesFromPrivateChats({
+          deps: {
+            ...learningDeps(),
+            listCandidates: async () => {
+              expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === candidate.turnId)).toBe(true);
+              if (timing.endsWith("after-list")) await invalidate();
+              return [candidate];
+            },
+            readMonthlyAccountedTokens: async () => {
+              if (timing === "before-model") await invalidate();
+              return 0;
+            },
+            structured: proposeLearning(async () => {
+              calls += 1;
+              if (timing.endsWith("during-model")) await invalidate();
+            }),
+          },
+        });
+        expect(summary).toMatchObject({ scanned: 1, learned: 0, skipped: 1, failed: 0 });
+        if (timing === "before-model") {
+          const runs = await sql<{ status: string; accounted_tokens: number }[]>`
+            SELECT status, accounted_tokens FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid
+          `;
+          expect(runs).toEqual([{ status: "skipped", accounted_tokens: 0 }]);
+        }
+        expect(calls).toBe(timing.endsWith("during-model") ? 1 : 0);
+        expect(await aiMemories.list({ userId })).toEqual([]);
+        const rows = await sql<
+          { learned: boolean }[]
+        >`SELECT memory_learned_at IS NOT NULL AS learned FROM ai.turns WHERE id = ${candidate.turnId}::uuid`;
+        if (timing.startsWith("deleted")) {
+          expect(rows).toEqual([]);
+          expect(await listAiTurnWorkflowEvidence(userId, candidate.turnId)).toEqual([]);
+        } else {
+          expect(rows[0]?.learned).toBe(true);
+        }
+        expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === candidate.turnId)).toBe(false);
+      } finally {
+        await sql`DELETE FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid`;
+        await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    });
+  }
+
+  for (const timing of [
+    "after-list",
+    "before-model",
+    "during-model",
+    "restored-during-model",
+    "deleted-after-list",
+    "deleted-during-model",
+  ]) {
+    test(`skips workflow learning when any example becomes ineligible ${timing}`, async () => {
+      const userId = await insertLearningUser();
+      try {
+        const turns = [];
+        for (let index = 0; index < 3; index += 1) turns.push(await insertLearningTurn(userId));
+        const pattern = (await listAiPendingWorkflowPatterns(20)).find((item) => item.userId === userId);
+        expect(pattern).toBeDefined();
+        // Invalidate a different example than the source (the newest turn).
+        const removed = turns[0]!;
+        const invalidate = async () => {
+          if (timing.startsWith("deleted")) {
+            await sql`DELETE FROM ai.conversations WHERE id = ${removed.conversationId}::uuid`;
+          } else {
+            expect(await aiConversations.archiveConversation({ conversationId: removed.conversationId, ownerUserId: userId })).toBe(true);
+            if (timing === "restored-during-model") {
+              expect(
+                await aiConversations.restoreConversation({ conversationId: removed.conversationId, ownerUserId: userId }),
+              ).not.toBeNull();
+            }
+          }
+        };
+        let calls = 0;
+        const summary = await learnAiMemoriesFromPrivateChats({
+          deps: {
+            ...learningDeps(),
+            listWorkflowPatterns: async () => {
+              if (timing.endsWith("after-list")) await invalidate();
+              return [pattern!];
+            },
+            readMonthlyAccountedTokens: async () => {
+              if (timing === "before-model") await invalidate();
+              return 0;
+            },
+            structured: proposeLearning(async () => {
+              calls += 1;
+              if (timing.endsWith("during-model")) await invalidate();
+            }),
+          },
+        });
+        expect(summary).toMatchObject({ learned: 0, skipped: 1, failed: 0 });
+        if (timing === "before-model") {
+          const runs = await sql<{ status: string; accounted_tokens: number }[]>`
+            SELECT status, accounted_tokens FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid
+          `;
+          expect(runs).toEqual([{ status: "skipped", accounted_tokens: 0 }]);
+        }
+        expect(calls).toBe(timing.endsWith("during-model") ? 1 : 0);
+        expect(await aiMemories.list({ userId })).toEqual([]);
+        expect((await listAiPendingWorkflowPatterns(20)).some((item) => item.userId === userId)).toBe(false);
+        // The two remaining chats can contribute to a future three-turn pattern.
+        const [pending] = await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM ai.memory_workflow_evidence WHERE user_id = ${userId}::uuid AND reviewed_at IS NULL
+        `;
+        expect(pending?.count).toBe(2);
+      } finally {
+        await sql`DELETE FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid`;
+        await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    });
+  }
 });

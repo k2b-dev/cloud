@@ -25,8 +25,8 @@ export type AiMemoryWorkflowPattern = {
 
 /**
  * Persist only successful, schema-valid capability/resource receipts, and only
- * while learning is on for the user: receipts from a time it was off never
- * count toward a workflow pattern.
+ * while learning is on for the user and the chat is active: receipts from a
+ * time it was off or the chat was archived never count toward a pattern.
  */
 export const recordAiMemoryWorkflowEvidence = async (input: {
   userId: string;
@@ -70,6 +70,7 @@ export const recordAiMemoryWorkflowEvidence = async (input: {
         WHERE turn.id = ${input.turnId}::uuid
           AND conversation.id = ${input.conversationId}::uuid
           AND conversation.created_by_user_id = ${input.userId}::uuid
+          AND conversation.archived_at IS NULL
           AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
         ON CONFLICT (turn_id, capability_id, resource_type, resource_id)
         DO UPDATE SET resource_title = COALESCE(EXCLUDED.resource_title, ai.memory_workflow_evidence.resource_title)
@@ -96,6 +97,7 @@ export const listAiTurnWorkflowEvidence = async (userId: string, turnId: string)
     WHERE evidence.user_id = ${userId}::uuid
       AND evidence.turn_id = ${turnId}::uuid
       AND conversation.created_by_user_id = evidence.user_id
+      AND conversation.archived_at IS NULL
     ORDER BY evidence.capability_id, evidence.resource_type, evidence.resource_id
   `;
   return rows.map((row) => ({
@@ -127,6 +129,7 @@ export const listAiPendingWorkflowPatterns = async (limit = 5): Promise<AiMemory
     JOIN ai.conversations conversation
       ON conversation.id = evidence.conversation_id AND conversation.created_by_user_id = evidence.user_id
     WHERE evidence.reviewed_at IS NULL
+      AND conversation.archived_at IS NULL
       AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
     GROUP BY evidence.user_id, evidence.capability_id, evidence.resource_type, evidence.resource_id
     HAVING count(*) >= 3
@@ -136,14 +139,17 @@ export const listAiPendingWorkflowPatterns = async (limit = 5): Promise<AiMemory
   return Promise.all(
     groups.map(async (group) => {
       const turns = await sql<{ turn_id: string }[]>`
-        SELECT turn_id
-        FROM ai.memory_workflow_evidence
-        WHERE user_id = ${group.user_id}::uuid
-          AND capability_id = ${group.capability_id}
-          AND resource_type = ${group.resource_type}
-          AND resource_id = ${group.resource_id}
-          AND reviewed_at IS NULL
-        ORDER BY observed_at DESC, turn_id DESC
+        SELECT evidence.turn_id
+        FROM ai.memory_workflow_evidence evidence
+        JOIN ai.conversations conversation
+          ON conversation.id = evidence.conversation_id AND conversation.created_by_user_id = evidence.user_id
+        WHERE evidence.user_id = ${group.user_id}::uuid
+          AND evidence.capability_id = ${group.capability_id}
+          AND evidence.resource_type = ${group.resource_type}
+          AND evidence.resource_id = ${group.resource_id}
+          AND evidence.reviewed_at IS NULL
+          AND conversation.archived_at IS NULL
+        ORDER BY evidence.observed_at DESC, evidence.turn_id DESC
         LIMIT 3
       `;
       return {
@@ -156,6 +162,25 @@ export const listAiPendingWorkflowPatterns = async (limit = 5): Promise<AiMemory
       };
     }),
   );
+};
+
+/** Every example used by the model must still belong to pending, active evidence. */
+export const isAiWorkflowPatternEligible = async (pattern: AiMemoryWorkflowPattern): Promise<boolean> => {
+  if (pattern.turnIds.length < 3) return false;
+  const [row] = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count
+    FROM ai.memory_workflow_evidence evidence
+    JOIN ai.conversations conversation
+      ON conversation.id = evidence.conversation_id AND conversation.created_by_user_id = evidence.user_id
+    WHERE evidence.user_id = ${pattern.userId}::uuid
+      AND evidence.capability_id = ${pattern.capabilityId}
+      AND evidence.resource_type = ${pattern.resourceRef.type}
+      AND evidence.resource_id = ${pattern.resourceRef.id}
+      AND evidence.turn_id IN ${sql(pattern.turnIds)}
+      AND evidence.reviewed_at IS NULL
+      AND conversation.archived_at IS NULL
+  `;
+  return row?.count === pattern.turnIds.length;
 };
 
 export const markAiWorkflowPatternReviewed = async (pattern: AiMemoryWorkflowPattern): Promise<void> => {
