@@ -108,10 +108,11 @@ test("move up and down name the new neighbour and stop at the ends and below the
   item("Charl1", "Move up")?.action?.();
   item("Alpha1", "Move down")?.action?.();
   item("Bravo1", "Move down")?.action?.();
+  // Each names the level on screen, so a neighbour that has left it is refused instead of followed.
   expect(placed).toEqual([
-    ["Charl1", { before: "Bravo1" }],
-    ["Alpha1", { before: "Charl1" }],
-    ["Bravo1", { after: "Charl1" }],
+    ["Charl1", { parentId: null, before: "Bravo1" }],
+    ["Alpha1", { parentId: null, before: "Charl1" }],
+    ["Bravo1", { parentId: null, after: "Charl1" }],
   ]);
   expect(menu(level[1]!, true, "de", order).map((entry) => entry.label)).toContain("Nach oben verschieben");
   // Without the notebook order on screen, nothing offers to change it.
@@ -137,4 +138,15 @@ test("a level arranged by hand offers the way back to the title order", () => {
     .filter((entry) => entry.label.startsWith("Sort"))
     .forEach((entry) => entry.action?.());
   expect(sorted).toEqual(["Folder", null]);
+});
+
+test("every action in a note's menu has its own label, which keys the action in the phone menu", () => {
+  const children = [{ ...sibling("Child1", 1), parentId: "Folder" }];
+  const folder = sibling("Folder", 1, children);
+  const level = [folder, sibling("Other1", 2)];
+  for (const locale of ["en", "de"]) {
+    const labels = menu(folder, true, locale, { level, homepageId: null }).map((entry) => entry.label);
+    expect(labels).toContain(locale === "en" ? "Sort top level alphabetically" : "Oberste Ebene alphabetisch sortieren");
+    expect(new Set(labels).size).toBe(labels.length);
+  }
 });

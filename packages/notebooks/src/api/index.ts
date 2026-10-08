@@ -2176,7 +2176,7 @@ const app = new Hono<AuthContext>()
       tags: ["Notebooks"],
       summary: "Move note",
       description:
-        "Move a note to another parent and/or place it among siblings. Placing switches the target level to hand order and renumbers all its notes. Without a placement, a reparented note joins the end of a hand-ordered level or the title order of an alphabetical level.",
+        "Move a note to another parent and/or place it among siblings. Placing switches the target level to hand order and renumbers all its notes. Without a placement, a reparented note joins the end of a hand-ordered level or the title order of an alphabetical level. `before` or `after` without `parentId` places the note in that neighbour's level; with `parentId`, a neighbour outside that level is refused with 400, so a client can reorder only the level it shows.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Moved note"),

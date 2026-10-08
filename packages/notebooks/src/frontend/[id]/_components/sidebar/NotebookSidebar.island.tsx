@@ -158,10 +158,11 @@ export default function NotebookSidebar(props: Props) {
         label: favorites.favoriteNoteIds().has(node.id) ? t().removeFavorite : t().addFavorite,
         icon: "ti ti-star",
       },
+      // Labels are unique in a note's menu and fixed for the page, so a tap runs the action it showed even if the menu changed since.
       ...(canWrite
-        ? noteActions(node, level).map((item, index) => ({
-            id: `note-action:${node.id}:${index}`,
-            action: `note-action:${node.id}:${index}`,
+        ? noteActions(node, level).map((item) => ({
+            id: `note-action:${node.id}:${item.label}`,
+            action: `note-action:${node.id}:${item.label}`,
             label: item.label,
             description: item.description,
             icon: item.icon,
@@ -259,7 +260,7 @@ export default function NotebookSidebar(props: Props) {
         const index = rest.indexOf(":");
         const node = findNoteByShortId(sortedTree(), rest.slice(0, index));
         const level = node && (node.parentId ? findNoteByShortId(sortedTree(), node.parentId)?.children : sortedTree());
-        const item = node && level && noteActions(node, level)[Number(rest.slice(index + 1))];
+        const item = node && level && noteActions(node, level).find((item) => item.label === rest.slice(index + 1));
         if (item && !item.disabled) item.action?.();
       }
     },

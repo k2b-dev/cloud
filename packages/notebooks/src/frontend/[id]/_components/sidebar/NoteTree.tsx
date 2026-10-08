@@ -53,8 +53,11 @@ type Props = {
   onOrderChanged?: () => void;
 };
 
-/** A new place among the siblings, named by a neighbour as the server expects. */
-export type NotePlacement = { before: string } | { after: string };
+/**
+ * A new place among the siblings on screen: the level the person saw and a neighbour in it. Naming the
+ * level makes the server refuse a neighbour that has left it instead of moving the note after it.
+ */
+export type NotePlacement = { parentId: string | null } & ({ before: string } | { after: string });
 
 /** Where a note sits in the notebook order on screen; absent where another order is shown. */
 export type NoteOrderContext = {
@@ -64,11 +67,18 @@ export type NoteOrderContext = {
 };
 
 /** The place between two neighbours: before the next one, or after the last one. */
-const placementBetween = (after: NoteTreeNode | undefined, before: NoteTreeNode | undefined): NotePlacement | null =>
-  before ? { before: before.id } : after ? { after: after.id } : null;
+const placementBetween = (
+  parentId: string | null,
+  after: NoteTreeNode | undefined,
+  before: NoteTreeNode | undefined,
+): NotePlacement | null => (before ? { parentId, before: before.id } : after ? { parentId, after: after.id } : null);
 
 export const placementForMove = (move: AppWorkspaceNavTreeMove): NotePlacement | null =>
-  move.beforeId ? { before: move.beforeId } : move.afterId ? { after: move.afterId } : null;
+  move.beforeId
+    ? { parentId: move.parentId, before: move.beforeId }
+    : move.afterId
+      ? { parentId: move.parentId, after: move.afterId }
+      : null;
 
 // =============================================================================
 // Note Actions
@@ -112,11 +122,17 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[], o
         param: { id: notebookId, noteId: data.noteId },
         json: data.placement,
       });
+      // The note or its neighbour left the level on screen; nothing moved.
+      if (res.status === 400 || res.status === 404 || res.status === 409) throw new Error(t().noteOrderChanged);
       if (!res.ok) throw new Error(await readErrorMessage(res, t().failedMoveNote));
       return res.json();
     },
     onSuccess: () => options.onOrderChanged?.(),
-    onError: (err) => toast.error(err.message),
+    // Either way the tree shows the current order again.
+    onError: (err) => {
+      toast.error(err.message);
+      options.onOrderChanged?.();
+    },
   });
 
   const sortAlphabeticallyMut = mutations.create<unknown, string | null>({
@@ -345,9 +361,9 @@ const noteOrderItems = (
   // The homepage leads its level, so it keeps that place and nothing moves above it.
   const up =
     index > 0 && node.id !== homepageId && level[index - 1]!.id !== homepageId
-      ? placementBetween(level[index - 2], level[index - 1])
+      ? placementBetween(node.parentId, level[index - 2], level[index - 1])
       : null;
-  const down = index >= 0 && node.id !== homepageId ? placementBetween(level[index + 1], level[index + 2]) : null;
+  const down = index >= 0 && node.id !== homepageId ? placementBetween(node.parentId, level[index + 1], level[index + 2]) : null;
   return [
     { icon: "ti ti-arrow-up", label: t.moveUp, disabled: !up, action: () => actions.handlePlace(node.id, up) },
     { icon: "ti ti-arrow-down", label: t.moveDown, disabled: !down, action: () => actions.handlePlace(node.id, down) },

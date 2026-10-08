@@ -99,8 +99,9 @@ const ctx = (sidebarMode: "simple" | "navigator", homepageNoteId: string | null 
 });
 
 /**
- * The notebook API the sidebar talks to, with the server's order rules: placing a note renumbers its level 1..n
- * in the order on screen, sorting alphabetically sets the level back to 0, and the workspace state returns the result.
+ * The notebook API the sidebar talks to, with the server's order rules: placing a note renumbers the named level
+ * 1..n, a neighbour outside that level is refused, sorting alphabetically sets the level back to 0, and the
+ * workspace state returns the result.
  */
 const api = {
   notebook: ctx("simple").notebook,
@@ -133,12 +134,15 @@ const handleApi = async (request: Request, path: string): Promise<Response> => {
   const body = (await request.json()) as { before?: string; after?: string; parentId?: string | null };
   api.requests.push({ path, body });
   const moved = /^notes\/(\w+)\/move$/u.exec(path)?.[1];
-  const level = moved ? levelOf(api.tree, parentOf(api.tree, moved)) : levelOf(api.tree, body.parentId ?? null);
+  const anchor = body.before ?? body.after;
+  const level = levelOf(api.tree, moved && !("parentId" in body) ? parentOf(api.tree, anchor!) : (body.parentId ?? null));
   if (!level) return new Response("Not found", { status: 404 });
+  if (moved && !level.some((node) => node.id === anchor))
+    return Response.json({ message: "The anchor note is not in the target level" }, { status: 400 });
   if (moved) {
     const order = level.filter((node) => node.id !== moved).sort(compareNoteOrder("en", (node: NoteTreeNode) => node.id));
-    const anchor = order.findIndex((node) => node.id === (body.before ?? body.after));
-    order.splice(body.before ? anchor : anchor + 1, 0, level.find((node) => node.id === moved)!);
+    const index = order.findIndex((node) => node.id === anchor);
+    order.splice(body.before ? index : index + 1, 0, level.find((node) => node.id === moved)!);
     order.forEach((node, index) => {
       node.position = index + 1;
     });
@@ -364,7 +368,7 @@ describe("Notebook sidebar order by hand", () => {
       await page.waitForFunction(
         () => document.querySelector('[role="tree"] > [role="treeitem"]:nth-child(2)')?.getAttribute("data-k2b-nav-tree-id") === "Reels1",
       );
-      expect(api.requests).toEqual([{ path: "notes/Reels1/move", body: { before: "Rules1" } }]);
+      expect(api.requests).toEqual([{ path: "notes/Reels1/move", body: { parentId: null, before: "Rules1" } }]);
       expect(await order(page)).toEqual(["Home01", "Reels1", "Rules1", "Exam01"]);
       await expect(page.locator("[data-k2b-nav-tree-drop]").count()).resolves.toBe(0);
     } finally {
@@ -400,7 +404,7 @@ describe("Notebook sidebar order by hand", () => {
       await page.waitForFunction(
         () => document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"]')?.getAttribute("data-k2b-nav-tree-id") === "Tone01",
       );
-      expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { before: "Lang01" } }]);
+      expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
       expect(await order(page, "Rules1")).toEqual(["Tone01", "Lang01"]);
       await expect(page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).resolves.toBe("Tone01");
       await expect(page.locator('[data-k2b-nav-tree-id="Tone01"]').getAttribute("aria-posinset")).resolves.toBe("1");
@@ -410,6 +414,27 @@ describe("Notebook sidebar order by hand", () => {
       await page.keyboard.press("ArrowDown");
       expect(api.requests.length).toBe(1);
       await expect(page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.k2bNavTreeId)).resolves.toBe("Lang01");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a neighbour that left the level on screen moves nothing; the tree reloads and says why", async () => {
+    const page = await open(desktop, writable(startTree()), "de");
+    try {
+      // Someone else moved Language to the top level; this sidebar still shows it under Content rules.
+      const rules = api.tree.find((node) => node.id === "Rules1")!;
+      api.tree.push({ ...rules.children.shift()!, parentId: null });
+      await page.locator('[data-k2b-nav-tree-id="Tone01"]').focus();
+      await page.keyboard.press("Alt+ArrowUp");
+      await expect(
+        page.getByText("Diese Ebene wurde inzwischen geändert. Sie zeigt jetzt die aktuelle Reihenfolge.").waitFor(),
+      ).resolves.toBeUndefined();
+      await page.waitForFunction(() => !document.querySelector('[data-k2b-nav-tree-parent-id="Rules1"][data-k2b-nav-tree-id="Lang01"]'));
+      expect(api.requests).toEqual([{ path: "notes/Tone01/move", body: { parentId: "Rules1", before: "Lang01" } }]);
+      expect(await order(page, "Rules1")).toEqual(["Tone01"]);
+      expect(await order(page)).toContain("Lang01");
+      expect(api.tree.find((node) => node.id === "Rules1")!.children.map((node) => node.position)).toEqual([0]);
     } finally {
       await page.context().close();
     }
@@ -459,7 +484,7 @@ describe("Notebook sidebar order by hand", () => {
       await page.waitForFunction(
         () => document.querySelector('[role="tree"] > [role="treeitem"]:nth-child(2)')?.getAttribute("data-k2b-nav-tree-id") === "Exam01",
       );
-      expect(api.requests).toEqual([{ path: "notes/Exam01/move", body: { before: "Rules1" } }]);
+      expect(api.requests).toEqual([{ path: "notes/Exam01/move", body: { parentId: null, before: "Rules1" } }]);
     } finally {
       await page.context().close();
     }
