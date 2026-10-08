@@ -1,6 +1,6 @@
 import { defineApp } from "@k2b/cloud";
-import type { MailMessage, MailPage, MailProfile, MailRecord, PlatformPermission } from "@k2b/cloud/contracts";
-import { mail } from "@k2b/cloud/services";
+import type { MailFilter, MailMessage, MailPage, MailProfile, MailRecord, PlatformPermission, RequestActor } from "@k2b/cloud/contracts";
+import { mail, renderHtmlToPdf } from "@k2b/cloud/services";
 
 const permissions: readonly PlatformPermission[] = ["mail:send"];
 export const outgoingMailApp = defineApp({
@@ -49,4 +49,100 @@ export const enqueueStockMail = async (): Promise<MailPage> => {
   const status = await mail.list({ batchId: batch.data.batchId }, { perPage: 100 });
   if (!status.ok) throw new Error(status.error.message);
   return status.data;
+};
+
+export const sendInvoiceMail = async (
+  invoice: { id: string; version: number; to: string; html: string },
+  saveMailId: (invoiceId: string, recordId: string) => Promise<void>,
+  actor?: RequestActor,
+) => {
+  const pdf = await renderHtmlToPdf({ html: invoice.html, title: `Invoice ${invoice.id}` });
+  const result = await mail.send({
+    to: [invoice.to],
+    subject: `Invoice ${invoice.id}`,
+    text: "Your issued invoice is attached.",
+    attachments: [{ filename: `invoice-${invoice.id}.pdf`, contentType: pdf.contentType, content: pdf.pdf }],
+    ref: { scope: "invoice", id: invoice.id },
+    key: `invoice-${invoice.id}-v${invoice.version}`,
+    actor,
+  });
+  if (!result.ok) {
+    switch (result.error.code) {
+      case "quota_exceeded":
+        return { accepted: false, action: "retry_later" };
+      case "attachments_too_large":
+        return { accepted: false, action: "reduce_attachment" };
+      case "profile_required":
+        return { accepted: false, action: "choose_profile" };
+      default:
+        throw new Error(`${result.error.code}: ${result.error.message}`);
+    }
+  }
+  await saveMailId(invoice.id, result.data.id);
+  const status = result.data.status;
+  const delivery = status === "queued" || status === "sending" ? "pending" : status;
+  return { accepted: true, record: result.data, delivery };
+};
+
+type DownloadToken = { id: string; value: string; expiresAt: string };
+type StoredDownloadToken = { id: string; downloadId: string; tokenHash: string; expiresAt: string };
+
+export const sendDownloadLink = async (
+  downloadId: string,
+  to: string,
+  origin: string,
+  token: DownloadToken,
+  storeToken: (token: StoredDownloadToken) => Promise<void>,
+) => {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token.value)));
+  const tokenHash = [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  await storeToken({ id: token.id, downloadId, tokenHash, expiresAt: token.expiresAt });
+  const link = new URL("/downloads/confirm", origin);
+  link.searchParams.set("token", token.value);
+  return mail.send({
+    to: [to],
+    subject: "Your download link",
+    text: `Download your file: ${link.href}`,
+    ref: { scope: "download", id: downloadId },
+    key: `download-link-${token.id}`,
+  });
+};
+
+export const enqueueStockRun = async (
+  runId: string,
+  customers: { id: string; email: string }[],
+  startOffset: number,
+  saveBatch: (batch: { batchId: string; ids: string[]; nextOffset: number }) => Promise<void>,
+) => {
+  for (let offset = startOffset; offset < customers.length; offset += 1000) {
+    const messages = customers.slice(offset, offset + 1000).map((customer) => ({
+      to: [customer.email],
+      subject: "Stock update",
+      text: "New stock arrived. Visit our catalogue to see it.",
+      key: `stock-${runId}-${customer.id}`,
+    }));
+    const batch = await mail.enqueue(messages);
+    if (!batch.ok) {
+      if (batch.error.code === "backlog_full" || batch.error.code === "quota_exceeded") {
+        return { nextOffset: offset, reason: batch.error.code };
+      }
+      throw new Error(`${batch.error.code}: ${batch.error.message}`);
+    }
+    await saveBatch({ ...batch.data, nextOffset: offset + messages.length });
+  }
+  return { nextOffset: customers.length };
+};
+
+export const readStockBatch = async (batchId: string, cursor?: string) => {
+  const filter: MailFilter = { batchId };
+  const items: MailRecord[] = [];
+  // At most 1000 messages per batch, with 100 records per page.
+  for (let page = 0; page < 10; page++) {
+    const result = await mail.list(filter, { perPage: 100, cursor });
+    if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
+    items.push(...result.data.items);
+    cursor = result.data.nextCursor;
+    if (!cursor) break;
+  }
+  return { items, nextCursor: cursor };
 };

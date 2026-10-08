@@ -10,6 +10,15 @@ updated: 2026-10-08
 
 # Deprecations and migrations
 
+## Applications send mail through outgoing mail
+
+Application authors replace app-owned SMTP settings and transports with `mail`
+from `@k2b/cloud/services` and declare `platformPermissions: ["mail:send"]`.
+Operators can reuse the application's former SMTP account as a sender profile
+and assign it to that application before removing its old deployment secret.
+Follow the [application migration guide](/en/docs/platform/outgoing-mail#move-from-an-application-owned-smtp-account)
+and [operator migration steps](/en/docs/operations/outgoing-mail#move-an-applications-smtp-account).
+
 ## Notebooks levels keep title order until arranged by hand
 
 Writers can now arrange the notes of a level in Notebooks; the sidebar, Book,
