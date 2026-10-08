@@ -159,8 +159,10 @@ The default tool source keeps discovery, Help, `fetch_file`, `read_file`,
 `web_extract` are also always available together. `fetch_file` imports one
 exact public HTTPS source into the conversation; it does not browse
 repositories, authenticate to a website, or reach private network targets.
-`calculate` stays loaded because the system prompt requires it for every
-amount, sum, or other derived number the answer states. Cards, surveys, the
+`calculate` stays loaded because, whenever a turn offers it, the system
+prompt requires it for every amount, sum, or other number the model derives
+itself. A conversation with a fixed tool scope that excludes it, or a model
+without tool support, gets neither the tool nor that rule. Cards, surveys, the
 long-form text editor, file writes and presentation, and Markdown-to-PDF load
 on demand. Built-in usage hints remain in the system prompt even while their
 schemas are deferred. These built-ins provide no arbitrary code execution,

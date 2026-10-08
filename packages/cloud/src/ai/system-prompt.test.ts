@@ -129,7 +129,7 @@ describe("renderAiPlatformPrompt", () => {
   it("answers what it can do from the user's own work instead of a generic app list", () => {
     const prompt = renderAiPlatformPrompt({ user });
     expect(prompt).toContain(
-      "When the user asks what you can do, first take one quick look at what they already work with, such as their Spaces, recent chats, or files, and lead with that.",
+      "When the user asks what you can do, first take one quick look, where your tools allow it, at what they already work with, such as their Spaces, recent chats, or files, and lead with that.",
     );
     expect(prompt).toContain("leave out apps where they have no data, such as mail without a mailbox");
     expect(prompt).toContain("three to five concrete examples");
@@ -138,20 +138,22 @@ describe("renderAiPlatformPrompt", () => {
   it("shows times in the runtime time zone and computes numbers with calculate when it is available", () => {
     const withoutCalculate = renderAiPlatformPrompt({ user, interactive: false });
     expect(withoutCalculate).toContain(
-      "7. Show dates and times in the runtime time zone, also in drafts and Skills you write. Convert timestamps from tools; mention UTC only when the user asks for it.",
+      "7. Show dates and times in the runtime time zone, also in drafts and Skills you write, unless the user asks for another zone such as UTC. Convert timestamps from tools.",
     );
     expect(withoutCalculate).not.toContain("with calculate");
 
     const prompt = renderAiPlatformPrompt({ user, interactive: false, tools: [{ name: "calculate", hint: "calculate arithmetic." }] });
     expect(prompt).toContain(
-      "8. Compute every amount, sum, difference, tax, percentage, or other derived number you state with calculate, even simple ones. Never state a computed number you did not calculate.",
+      "8. Work out every amount, sum, difference, tax, percentage, or other number you derive yourself with calculate, even simple ones, and never state such a number without it.",
     );
-    expect(prompt.indexOf("8. Compute")).toBeLessThan(prompt.indexOf("# Workflow"));
+    // A Grids total or an exact money result from code must not be recomputed with floating-point calculate.
+    expect(prompt).toContain("Numbers that a tool, file, or code result returns need no recalculation; state them as returned.");
+    expect(prompt.indexOf("8. Work out")).toBeLessThan(prompt.indexOf("# Workflow"));
   });
 
   it("routes references to earlier work to chat search when app tools are available", () => {
     const rule =
-      'When the user refers to earlier work, such as "like last time", "as last week", or "the report you made me", search earlier chats with core.ai.chats.search first, then read the best match with core.ai.chat.read.';
+      'When the user refers to earlier work that is not in this chat, such as "like last time", "as last week", or "the report you made me", search earlier chats with core.ai.chats.search first when it is available, then read the best match with core.ai.chat.read.';
     expect(renderAiPlatformPrompt({ user, appToolsEnabled: true })).toContain(rule);
     expect(renderAiPlatformPrompt({ user })).not.toContain("core.ai.chats.search");
   });
@@ -234,12 +236,18 @@ describe("composeAiSystemPrompt", () => {
 
     expect(suggestions).toContain("Use the first case that applies:");
     expect(suggestions).toContain(
-      "The user corrected the format, tone, or steps of a result for the second time in this chat and you delivered the corrected result: offer to save the approach as a personal Skill unless a listed Skill already covers it.",
+      "The user corrected the format or steps of a result for the second time in this chat and you delivered the corrected result: offer to save the approach as a personal Skill.",
+    );
+    // Every new-Skill offer, including one for recurring work, first checks the catalog so a used Skill is not offered again.
+    expect(suggestions).toContain(
+      "Offer a new Skill only when no listed Skill already covers the approach; a single preference belongs in memory, not a Skill.",
+    );
+    expect(suggestions.indexOf("offer to save it as a Skill or scheduled task.")).toBeLessThan(
+      suggestions.indexOf("Offer a new Skill only when no listed Skill"),
     );
     expect(suggestions).toContain("The user corrected a result that their own Skill shaped: offer to add the correction to that Skill.");
     expect(suggestions).toContain("offer to save it as a Skill or scheduled task.");
     expect(suggestions).toContain("do not claim how often something happened unless the user said it or this chat shows it");
-    expect(suggestions).toContain("A single preference belongs in memory, not a Skill.");
     expect(suggestions).toContain("Built-in and shared Skills change for everyone, so change one only when the user asks for that.");
     expect(suggestions).toContain("load skill-creator and draft from this conversation; its create or update review is the confirmation");
     // Without the memory tool there is nowhere to keep a preference, so no such offer.
@@ -265,13 +273,15 @@ describe("composeAiSystemPrompt", () => {
       omittedSkillCount: 4,
       skillCreatorAvailable: true,
     });
-    expect(prompt).toContain("offer to save the approach as a personal Skill unless a listed Skill or search_skills already covers it.");
+    expect(prompt).toContain("Offer a new Skill only when no listed Skill or search_skills result already covers the approach;");
   });
 
-  test("offers to remember a correction of a built-in Skill's result in the user's own words, only with the memory tool", () => {
+  test("offers to remember a tone correction of a built-in Skill's result in the user's own words, only with the memory tool", () => {
     const base = { globalInstructions: "", user, memoryEnabled: true, memoryToolEnabled: true };
+    // Only tone: a first format correction must not use up the one offer the second correction needs.
+    // The memory tool rejects text the user did not write this turn, so a plain yes cannot complete this offer.
     const preference =
-      'The user corrected a result that a built-in or shared Skill shaped, such as the tone of a mail: offer to remember it as their preference. Memory keeps only the user\'s own words, so suggest a one-line rule they can send back, such as "Always write mails casually and briefly".';
+      'The user corrected the tone of a result that a built-in or shared Skill shaped, such as a mail that is too formal: offer to remember it as their preference. Memory keeps only the user\'s own words, so a plain yes cannot be saved: suggest a one-line rule they can send back, such as "Always write mails casually and briefly".';
     expect(composeAiSystemPrompt(base)).toContain(preference);
     expect(composeAiSystemPrompt({ ...base, memoryToolEnabled: false })).not.toContain(preference);
     expect(composeAiSystemPrompt({ ...base, interactive: false })).not.toContain(preference);

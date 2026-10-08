@@ -41,7 +41,7 @@ Du kannst den Assistenten auch bitten, einen Skill zu erstellen oder zu verbesse
 
 Sieht eine Anfrage nach wiederkehrender Arbeit aus, etwa weil du „wieder“ schreibst oder das Format eines Ergebnisses zum zweiten Mal korrigierst, kann der Assistent einmal anbieten, das Vorgehen als Skill zu speichern. Stimmst du zu, entwirft er den Skill aus dem Chat: die Schritte, deine Korrekturen und das Ausgabeformat, ohne Namen, Beträge oder Inhalte aus deinen Anhängen. Die übliche Prüfung zeigt den Skill, bevor er gespeichert wird. Lehnst du ab, fragt er in diesem Chat nicht noch einmal. Das Angebot braucht Skill Creator; hast du ihn deaktiviert, bietet der Assistent es nicht an.
 
-Korrigierst du das Ergebnis eines eingebauten oder geteilten Skills, ändert der Assistent diesen Skill nicht für alle, außer du bittest darum. Ist **Personalisierung in Assistenten-Chats verwenden** eingeschaltet, bietet er stattdessen an, sich die Korrektur zu merken, und schlägt eine kurze Regel vor, etwa „Mails immer förmlich schreiben“. Schick ihm die Regel in eigenen Worten zurück, dann merkt er sie sich für dich.
+Korrigierst du das Ergebnis eines eingebauten oder geteilten Skills, ändert der Assistent diesen Skill nicht für alle, außer du bittest darum. Korrigierst du den Ton und ist **Personalisierung in Assistenten-Chats verwenden** eingeschaltet, bietet er stattdessen an, sich die Korrektur zu merken, und schlägt eine kurze Regel vor, etwa „Mails immer förmlich schreiben“. Ein einfaches Ja reicht dafür nicht: Schick ihm die Regel in eigenen Worten zurück, dann merkt er sie sich für dich.
 
 Skills und Projekte erfordern eine Anmeldung. Teile sie mit Nutzern, Gruppen, Dienstkonten oder allen angemeldeten Identitäten; öffentlicher Zugriff ist nicht möglich.
 

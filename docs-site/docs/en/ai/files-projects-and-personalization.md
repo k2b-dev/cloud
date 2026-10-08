@@ -291,28 +291,30 @@ The [Suggestions](#what-the-model-knows-about-the-chat) section of a followed
 turn lists the offer cases as if-then rules, and the model takes the first
 that applies:
 
-1. The user corrected the format, tone, or steps of a result for the second
-   time in the chat, and the model delivered the corrected result: it offers
-   to save the approach as a personal Skill, unless a listed Skill already
-   covers it. When Skills are omitted from the bounded catalog, it also checks
-   `search_skills`.
+1. The user corrected the format or steps of a result for the second time in
+   the chat, and the model delivered the corrected result: it offers to save
+   the approach as a personal Skill.
 2. The user corrected a result that their own Skill shaped: it offers to add
    the correction to that Skill.
-3. The user corrected a result that a built-in or shared Skill shaped: it
-   offers to remember the correction as a preference and suggests a one-line
-   rule the user can send back, because memory saves only text the user wrote
-   in that turn. Built-in and shared Skills change for everyone, so they
-   change only when the user asks for that.
+3. The user corrected the tone of a result that a built-in or shared Skill
+   shaped: it offers to remember the correction as a preference. Because
+   memory saves only text the user wrote in that turn, a plain yes cannot be
+   saved, so the model suggests a one-line rule the user can send back.
+   Built-in and shared Skills change for everyone, so they change only when
+   the user asks for that.
 4. The user says the request recurs ("again", "every week", "like last
    time", "always"), pastes a long reusable instruction, or a personalization
    workflow default covers it: it offers a Skill or a scheduled task.
 
-Cases 1 and 2 and the Skill part of case 4 need `skill-creator`; if the user
-disabled it or it was deleted, they are left out, even when other Skills
-remain loadable. Case 3 needs the memory tool. A single preference belongs in
-memory, not in a Skill. The model claims how often something happened only
-when the user said it or the chat shows it, and never searches chats only to
-justify an offer.
+A new Skill is offered only when no listed Skill already covers the approach.
+When Skills are omitted from the bounded catalog, the model also checks
+`search_skills`. A request that a Skill already handles can still lead to a
+scheduled task offer. Cases 1 and 2 and the Skill part of case 4 need
+`skill-creator`; if the user disabled it or it was deleted, they are left out,
+even when other Skills remain loadable. Case 3 needs the memory tool. A single
+preference such as tone belongs in memory, not in a Skill. The model claims
+how often something happened only when the user said it or the chat shows it,
+and never searches chats only to justify an offer.
 
 The general suggestion limits apply: at most one offer, in the last sentence
 of the final message, and none after a failure, while asking a clarifying
@@ -501,10 +503,12 @@ Cloud composes the system prompt in this order:
    request locale, and global rules. Assistant follows the language of the
    current user message when it is clear and otherwise uses that locale. It
    shows dates and times in the runtime time zone, also in drafts and Skills
-   it writes, and mentions UTC only on request. When `calculate` is available,
-   every amount, sum, or other derived number in an answer must come from it.
-   With app tools, a reference to earlier work such as "like last time" goes
-   to `core.ai.chats.search` first. Turns a person follows also get the
+   it writes, unless the user asks for another zone such as UTC. When the turn
+   offers `calculate`, every amount, sum, or other number the model derives
+   itself must come from it; numbers that a tool, file, or code result returns
+   are stated as returned. With app tools, a reference to earlier work outside
+   the current chat, such as "like last time", goes to `core.ai.chats.search`
+   first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
 2. Organization instructions;
 3. Optional turn-specific instructions such as retry style;
@@ -546,9 +550,9 @@ there either. The preview in **Assistant settings > System prompt** and
   answer. A request to shorten a draft does not count as that. It never
   searches data only to justify an offer. Organization, Project, and user
   instructions about suggestions take precedence. Asked what it can do, the
-  model first looks at what the user already works with, such as Spaces,
-  recent chats, or files, leads with that, and leaves out apps without data
-  for them.
+  model first looks, where its tools allow it, at what the user already works
+  with, such as Spaces, recent chats, or files, leads with that, and leaves out
+  apps without data for them.
 
 Scheduled task runs keep the global rules and give their result without these
 sections. If the platform template fails to render, the minimal fallback prompt

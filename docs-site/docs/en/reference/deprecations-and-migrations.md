@@ -12,16 +12,25 @@ updated: 2026-10-08
 
 ## Assistant keeps calculate loaded and offers after corrections
 
-`calculate` is no longer a deferred built-in: every turn with the default tool
-source can call it without `load_tools`, and the platform prompt requires it
-for every amount, sum, or other derived number an answer states. The prompt
-also shows dates and times in the runtime time zone, sends references to
-earlier work to `core.ai.chats.search`, and lists the Skill and preference
-offer cases under Suggestions instead of the Skill catalog. The built-in
-`cloud-assistant` Skill template moves to version 3 with a description that
-names such references. An unmodified installation updates at the next start; a
-customized copy shows **Update available** under **Admin > AI > Skills**. No
-setting changes. See
+`calculate` is no longer a deferred built-in: a turn that offers it can call
+it without `load_tools`, and only then does the platform prompt add a rule that
+requires it for every amount, sum, or other number the model derives itself.
+Numbers that a tool, file, or code result returns are stated as returned. A
+fixed conversation tool scope that excludes `calculate`, or a model without
+tool support, gets neither. The prompt also shows dates and times in the
+runtime time zone, sends references to earlier work outside the current chat
+to `core.ai.chats.search`, and lists the Skill and preference offer cases
+under Suggestions instead of the Skill catalog.
+
+The built-in `cloud-assistant` Skill template moves to version 3 with a
+description that names such references, and `assistant-code-mode` moves to
+version 62 with a description that points plain arithmetic to `calculate`. An
+unmodified copy that is already linked to its template updates at the next
+start; a customized one shows **Update available** under **Admin > AI >
+Skills**. An older copy without a template link stays unchanged until an
+administrator selects **Link to template**, as described in
+[Update an installed built-in Skill](/en/docs/ai/files-projects-and-personalization#update-an-installed-built-in-skill).
+No setting changes. See
 [Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
 
 ## Notebooks levels keep title order until arranged by hand
