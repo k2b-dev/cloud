@@ -19,7 +19,7 @@ is independent of the Mail application and its `cld mail` commands.
 A profile has an immutable lowercase key, a display name, a sender address,
 and SMTP connection settings. Keys may contain lowercase letters, digits,
 and hyphens; they begin with a letter or digit and contain at most 63 characters.
-A null sender name uses the registered application name for `mail.send`;
+A null sender name uses the registered application name for `mail.send` and `mail.enqueue`;
 existing system notifications and test sends use the installation's `app.name`.
 Profile and sender names are limited to 120 characters, sender addresses and
 SMTP usernames to 320, SMTP hosts to 253, and SMTP passwords to 16384.
@@ -81,7 +81,7 @@ inferred from the port for profiles you create. Authentication is omitted when
 
 Pacing must be 1–6000 per minute. The rolling daily recipient limit
 must be at least 1 or null for unlimited. Attachment limits must be 1–26214400
-bytes; the default is 15728640 bytes (15 MiB). `mail.send` enforces recipient quota and the total attachment byte limit.
+bytes; the default is 15728640 bytes (15 MiB). Both mail APIs enforce recipient quota and the total attachment byte limit.
 Immediate sending does not use the bulk pacing setting.
 
 ## Choose the default profile
@@ -125,8 +125,10 @@ The **Send log** section in **Administration → Outgoing mail** lists app mail
 newest first. Filter it by app, status, or recipient; the filters stay in the
 page URL. Select an entry to see its recipients, status, attempts, SMTP answer,
 rejected recipients, and attachment metadata. **Show content** loads the text
-and HTML and writes an audit entry. **Cancel mail** stops a queued entry. The
-CLI and admin API offer the same reads:
+and HTML and writes an audit entry. **Cancel mail** stops a queued entry. An
+entry sent with `mail.enqueue` also shows its batch ID; while it is queued,
+**Cancel batch** stops every queued mail of that batch. The CLI and admin API
+offer the same reads:
 
 ```bash
 cld admin outgoing-mail log list --app inventory --status queued,failed --limit 20 --json
@@ -134,6 +136,7 @@ cld admin outgoing-mail log list --profile alerts --since 2026-10-01T00:00:00Z -
 cld admin outgoing-mail log show <id> --json
 cld admin outgoing-mail log show <id> --content --json
 cld admin outgoing-mail log cancel <id> --yes
+cld admin outgoing-mail log cancel --batch <batchId> --yes
 ```
 
 `list` accepts `--app`, `--profile`, comma-separated `--status`, ISO `--since`,
@@ -150,6 +153,13 @@ headers, or a marker that content was purged. Every such read writes
 `outgoing_mail.message.cancel`. Other states return HTTP 409,
 `message_not_queued`; unknown IDs return `message_unknown` (404).
 
+`log cancel` takes exactly one message ID or `--batch <batchId>`, with `--yes`. A batch cancellation changes all
+still-queued members to `cancelled`, deletes their stored attachments, publishes
+their settled status, and writes one `outgoing_mail.batch.cancel` audit entry
+with application IDs and the cancelled count. Sent rows stay sent; rows already
+`sending` finish normally. The response is `{ batchId, cancelled }`, including
+zero when no queued rows remain. Unknown batches return `batch_unknown` (404).
+
 The administrator-only routes use `Cache-Control: no-store`:
 
 | Route under `/api/admin/core/outgoing-mail` | Result |
@@ -158,6 +168,7 @@ The administrator-only routes use `Cache-Control: no-store`:
 | `GET /messages/:id` | One metadata record |
 | `GET /messages/:id/content` | Audited content read or purge marker |
 | `POST /messages/:id/cancel` | Cancel queued mail and audit the cancellation |
+| `POST /batches/:batchId/cancel` | Cancel queued batch members and audit once |
 
 ## Set retention
 
@@ -196,19 +207,39 @@ is deleted at record age, including any content that has not yet been purged.
 
 Application mail is committed to Postgres before a Sync job wakes Core. Core
 runs up to eight immediate SMTP attempts concurrently per worker. SMTP egress
-for `mail.send` comes from Core only; existing system notification delivery is
+for both mail APIs comes from Core only; existing system notification delivery is
 unchanged in this slice.
+
+`mail.enqueue` uses the bulk lane. `pacePerMinute` (`pace_per_minute` in
+Postgres) spaces bulk attempts for one profile across all applications and Core
+replicas. The atomic profile slot gate prevents two drainers from reserving the
+same slot; message claims also lock and skip rows already claimed elsewhere.
+Core runs four profile drainers per worker. Sync coalesces queued or running
+jobs by `profile:<id>`; PostgreSQL still protects slots and rows if a stale run
+is redelivered. A run stops claiming new rows after 60 seconds and lets its
+current SMTP attempt finish within its own 60-second timeout; shutdown can
+abort that attempt. Core heartbeats the Sync job after each attempt. A closed
+gate returns a continuation delayed until the next slot or due retry, capped
+at the 30-second recovery interval so fresh mail does not join a long backoff.
+Reserving an idle slot consumes that slot; the next attempt may wait one
+pacing interval.
+
+The queue limit for a profile is `pacePerMinute × 1440` queued bulk messages.
+An enqueue that would exceed it is rejected whole with `backlog_full` (409).
+This protects the 24-hour delivery deadline and 48-hour attachment expiry;
+SMTP failures and retries can still make a message miss its deadline. Batch
+uploads run sequentially within one shared 60-second upload budget.
 
 Reserve JetStream capacity for the Core-owned object store
 `cloud-outgoing-mail-attachments`: **2 GiB**, plus replication overhead,
 25 MiB maximum per object, and 48-hour object expiry. The settled topic
 `cloud-outgoing-mail-settled` retains message-ID wakeups for five minutes with
 a 2 MiB stream limit (plus its dead-letter stream and replication overhead).
-The send job uses Sync's default bounded job retention. Losing a wakeup does
+The send and `cloud-outgoing-mail-drain` jobs use Sync's default bounded job retention. Losing a wakeup does
 not remove the durable mail row.
 
 Every 30 seconds, Core recovers attempts stuck in `sending` for more than five
-minutes and resubmits due immediate rows. Temporary SMTP failures retry after
+minutes in both lanes and resubmits due immediate rows and bulk profile drains. Temporary SMTP failures retry after
 one minute, doubling to at most one hour until the 24-hour deadline. Revoked
 access cancels accepted mail before its next attempt; removed profiles cancel
 it with `profile_removed`. Terminal mail releases attachment objects. Failed
@@ -217,10 +248,17 @@ cleanup is retried by recovery; object expiry bounds orphan lifetime.
 Delivery is at least once. A crash between SMTP acceptance and the log update
 can produce duplicate delivery with the same Message-ID. A `sent` status
 records SMTP acceptance, including individual recipient rejections in
-`failures`; it does not prove inbox delivery. Bounce collection, bulk enqueue,
-pacing, and notification migration are separate slices.
+`failures`; it does not prove inbox delivery. Bounce collection and notification
+migration are separate slices.
 
 ## Upgrade and rollback
+
+This upgrade activates the bulk lane and adds an index on message `batch_id`.
+Existing profile pacing settings now control `mail.enqueue` delivery. Core
+must run this version to process bulk rows. Before rolling back to a version
+without the drainer, stop accepting new bulk mail and finish or cancel its
+queued batches; older Core workers cannot deliver that lane. No new
+configuration variables are required.
 
 On upgrade, Core imports the stored `mail.noreply.*` settings when there are
 no profiles and the prior SMTP host is non-empty. The imported profile is
@@ -249,7 +287,10 @@ mutations commit together with their audit entries. Each application send
 call also writes `outgoing_mail.send` with application, actor, profile,
 recipient count, and record ID; it omits subject, body, addresses, and
 attachment content. The entry for an accepted message commits together with
-the message.
+the message. Each enqueue call writes one `outgoing_mail.send` entry for the
+batch with profiles, actors, message count and IDs; acceptance and its audit
+commit together. Denied calls also audit once without content. Batch
+cancellations use `outgoing_mail.batch.cancel`.
 
 Passwords are encrypted at rest using `APP_SECRET`, never returned by the API,
 CLI, or `mail.profiles()`, and decrypted only on the platform email send path.

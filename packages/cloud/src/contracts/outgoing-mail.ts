@@ -55,12 +55,14 @@ export const MailErrorCodeSchema = z.enum([
   "profile_not_allowed",
   "profile_required",
   "quota_exceeded",
+  "backlog_full",
   "attachments_too_large",
   "attachment_storage_full",
   "profile_removed",
   "attachment_lost",
   "cancelled_by_admin",
   "message_unknown",
+  "batch_unknown",
   "message_not_queued",
   "mail_unavailable",
   "mail_not_declared",
@@ -175,6 +177,14 @@ export const MailMessageSchema = z
   })
   .strict();
 export type MailMessage = z.infer<typeof MailMessageSchema>;
+export const MailBatchSchema = z
+  .array(MailMessageSchema)
+  .min(1)
+  .max(1000)
+  .refine((messages) => {
+    const keys = messages.flatMap((message) => (message.key === undefined ? [] : [message.key]));
+    return new Set(keys).size === keys.length;
+  }, "Duplicate outgoing mail keys in a batch");
 export const MailFilterSchema = z
   .object({
     ref: ref.partial({ id: true }).optional(),
@@ -222,4 +232,8 @@ export const AdminMailFilterSchema = MailFilterSchema.extend({
   recipient: z.string().max(320).optional(),
 });
 export type AdminMailFilter = z.infer<typeof AdminMailFilterSchema>;
-export type MailServiceError = ServiceError<MailErrorCode> & { limit?: number; used?: number; requested?: number };
+export type MailServiceError = ServiceError<MailErrorCode> & {
+  limit?: number;
+  used?: number;
+  requested?: number;
+};

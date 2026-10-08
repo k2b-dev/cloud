@@ -37,12 +37,20 @@ export const uploadMailAttachments = async (
   id: string,
   attachments: readonly MailAttachment[],
   limit: number,
+  uploadDeadline?: number,
 ): Promise<UploadedAttachments> => {
   const result: UploadedAttachments = { metadata: [], refs: [] };
   let total = 0;
   const controller = new AbortController();
   // The caller's signal cancels the wait only. All attachments share one bounded upload.
-  const timer = setTimeout(() => controller.abort(new Error("Attachment upload timed out")), MAIL_ATTACHMENT_UPLOAD_MS);
+  if (uploadDeadline !== undefined && uploadDeadline <= Date.now() && attachments.length) {
+    cancelMailStreams(attachments);
+    throw new OutgoingMailError("mail_unavailable", "Attachment upload timed out.");
+  }
+  const timer = setTimeout(
+    () => controller.abort(new Error("Attachment upload timed out")),
+    uploadDeadline === undefined ? MAIL_ATTACHMENT_UPLOAD_MS : Math.max(0, uploadDeadline - Date.now()),
+  );
   try {
     for (const [index, attachment] of attachments.entries()) {
       const hash = createHash("sha256");

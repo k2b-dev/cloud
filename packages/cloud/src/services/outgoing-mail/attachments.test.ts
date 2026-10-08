@@ -84,6 +84,35 @@ test("aggregate attachment overflow cleans prior uploads and cancels remaining s
     factory.mockRestore();
   }
 });
+test("a batch's expired upload budget cancels the next message without storing it", async () => {
+  const { store } = fakeStore();
+  const factory = spyOn(sync, "mailAttachments").mockReturnValue(store);
+  const put = spyOn(store, "put");
+  let cancelled = false,
+    pulls = 0;
+  const source = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        pulls++;
+      },
+      cancel() {
+        cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  try {
+    await expect(uploadMailAttachments("later-message", [attachment(source)], 5, Date.now() - 1)).rejects.toMatchObject({
+      code: "mail_unavailable",
+    });
+    expect(cancelled).toBe(true);
+    expect(pulls).toBe(0);
+    expect(put).not.toHaveBeenCalled();
+  } finally {
+    put.mockRestore();
+    factory.mockRestore();
+  }
+});
 test("duplicate stream cancellation never reads source attachments", async () => {
   let reads = 0;
   let cancelled = false;

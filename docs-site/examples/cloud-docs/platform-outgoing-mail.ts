@@ -40,3 +40,13 @@ export const orderMailLog = async (cursor?: string): Promise<MailPage> => {
   if (!result.ok) throw new Error(result.error.message);
   return result.data;
 };
+export const enqueueStockMail = async (): Promise<MailPage> => {
+  const batch = await mail.enqueue([
+    { to: ["first@example.org"], subject: "Stock update", text: "New stock arrived.", key: "stock-42-first" },
+    { to: ["second@example.org"], subject: "Stock update", text: "New stock arrived.", key: "stock-42-second" },
+  ]);
+  if (!batch.ok) throw new Error(`${batch.error.code}: ${batch.error.message}`);
+  const status = await mail.list({ batchId: batch.data.batchId }, { perPage: 100 });
+  if (!status.ok) throw new Error(status.error.message);
+  return status.data;
+};

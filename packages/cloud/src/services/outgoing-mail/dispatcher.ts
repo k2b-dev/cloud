@@ -44,6 +44,12 @@ export const processOutgoingMail = async (id: string, signal?: AbortSignal): Pro
     WHERE id = ${id}::uuid AND status = 'queued' AND lane = 'immediate' AND (next_attempt_at IS NULL OR next_attempt_at <= now() OR deadline_at <= now())
     RETURNING *, created_at::text AS cursor_created_at`;
   if (!row) return;
+  await attemptOutgoingMail(row, signal);
+};
+
+/** Both lanes share policy, attachments, SMTP outcomes and retry handling. */
+export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal): Promise<void> => {
+  const id = row.id;
   let credentials: Awaited<ReturnType<typeof resolveMailCredentials>> | undefined;
   try {
     if (new Date(row.deadline_at).getTime() <= Date.now()) {
@@ -193,7 +199,7 @@ export const processOutgoingMail = async (id: string, signal?: AbortSignal): Pro
   }
 };
 export const recoverOutgoingMail = async (): Promise<string[]> => {
-  await sql`WITH stale AS (SELECT id FROM outgoing_mail.messages WHERE lane = 'immediate' AND status = 'sending' AND updated_at < now() - INTERVAL '5 minutes' LIMIT 1000 FOR UPDATE SKIP LOCKED)
+  await sql`WITH stale AS (SELECT id FROM outgoing_mail.messages WHERE status = 'sending' AND updated_at < now() - INTERVAL '5 minutes' LIMIT 1000 FOR UPDATE SKIP LOCKED)
     UPDATE outgoing_mail.messages SET status = 'queued', next_attempt_at = now(), updated_at = now() WHERE id IN (SELECT id FROM stale)`;
   const cleanup = await sql<
     { id: string }[]

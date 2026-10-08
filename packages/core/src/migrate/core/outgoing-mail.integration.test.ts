@@ -64,6 +64,8 @@ databaseSuite()("outgoing mail migration", () => {
     await migrate(db);
     await db`DROP TABLE IF EXISTS outgoing_mail.messages`.simple();
     await Promise.all([migrate(db), migrate(db)]);
+    const [index] = await db<{ name: string | null }[]>`SELECT to_regclass('outgoing_mail.outgoing_mail_messages_batch')::text AS name`;
+    expect(index?.name).toBe("outgoing_mail.outgoing_mail_messages_batch");
     const [table] = await db<{ name: string | null }[]>`SELECT to_regclass('outgoing_mail.messages')::text AS name`;
     expect(table?.name).toBe("outgoing_mail.messages");
     const [profile] = await db<{ id: string }[]>`SELECT id FROM outgoing_mail.profiles`;

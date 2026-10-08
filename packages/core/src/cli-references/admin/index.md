@@ -559,6 +559,7 @@ cld admin outgoing-mail log list --app inventory --status queued,failed --limit 
 cld admin outgoing-mail log show <id> --json
 cld admin outgoing-mail log show <id> --content --json
 cld admin outgoing-mail log cancel <id> --yes
+cld admin outgoing-mail log cancel --batch <batchId> --yes
 cld admin outgoing-mail retention show --json
 cld admin outgoing-mail retention set --content-days 90 --record-days 365 --yes
 ```
@@ -576,8 +577,11 @@ Outgoing mail log reads require an administrator. `log list` supports `--app`,
 `--recipient` (substring), `--cursor`, and `--limit` (1–100). Use `nextCursor`
 to continue. List and show return metadata only. `show --content` reads bodies
 and headers through an audited endpoint, or reports purged content. Cancel
-needs `--yes` and accepts only queued records; other states return 409,
-`message_not_queued`. Record retention deletes idempotency keys with their rows.
+needs `--yes` and exactly one message ID or `--batch <batchId>`. A message ID
+accepts only queued records; other states return 409, `message_not_queued`.
+A batch cancels all queued members and returns `{ batchId, cancelled }`, leaving
+sent and sending members alone. Unknown batches return `batch_unknown` (404).
+Record retention deletes idempotency keys with their rows.
 
 `retention show` returns the effective `{ contentDays, recordDays }` settings.
 `retention set` requires both day flags and `--yes`. Values must be whole days

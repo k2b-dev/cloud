@@ -76,4 +76,9 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`INSERT INTO outgoing_mail.profiles(id, key, name, from_address, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password_encrypted, is_default)
       VALUES (${crypto.randomUUID()}::uuid, 'noreply', 'No-reply', ${typeof from === "string" ? from : ""}, ${host}, ${port}, ${port === 465}, ${typeof user === "string" && user ? user : null}, ${password}, true)`;
   });
+  // Additive, repeatable step: also runs when the original profile import returns early.
+  await db.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
+    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_batch ON outgoing_mail.messages(batch_id) WHERE batch_id IS NOT NULL`.simple();
+  });
 };

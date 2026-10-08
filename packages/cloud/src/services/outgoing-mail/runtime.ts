@@ -2,9 +2,11 @@ import type { Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { logger } from "../logging";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, stopRuntimeJobs } from "../runtime-lifecycle";
+import { MAIL_RECOVERY_MS } from "./bulk";
 import { processOutgoingMail, recoverOutgoingMail } from "./dispatcher";
+import { drainOutgoingMail, dueOutgoingBulkProfiles } from "./drain";
 import { retainOutgoingMail } from "./retention";
-import { mailAttachments, mailSendJob, mailSettled, submitMail } from "./sync";
+import { mailAttachments, mailDrainJob, mailSendJob, mailSettled, submitMail, submitMailDrain } from "./sync";
 
 const log = logger("outgoing-mail");
 const scheduler = lazySync((sync) =>
@@ -12,6 +14,7 @@ const scheduler = lazySync((sync) =>
 );
 const tasks = createRuntimeTaskTracker();
 let worker: Worker | undefined;
+let drainWorker: Worker | undefined;
 let retentionWorker: Worker | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
 let recovering: Promise<void> | undefined;
@@ -20,6 +23,7 @@ const recover = (): Promise<void> => {
     tasks.run(async () => {
       try {
         for (const id of await recoverOutgoingMail()) await submitMail(id);
+        for (const id of await dueOutgoingBulkProfiles()) await submitMailDrain(id);
       } catch {
         log.error("Outgoing mail recovery failed; the next scan will retry.");
       }
@@ -34,6 +38,12 @@ const lifecycle = createRuntimeLifecycle({
     tasks.open();
     await Promise.all([mailAttachments().ready(), mailSettled().ready()]);
     worker = await mailSendJob().process({ concurrency: 8 }, ({ input, signal }) => processOutgoingMail(input.id, signal));
+    // Heartbeats cover the last attempt beyond the 60-second claim window. Sync owns the per-key claim;
+    // PostgreSQL also gates slots and claims rows if a stale run is redelivered.
+    drainWorker = await mailDrainJob().process({ concurrency: 4 }, async ({ input, signal, heartbeat, resubmit }) => {
+      const delayMs = await drainOutgoingMail(input.profileId, signal, heartbeat);
+      if (delayMs !== undefined) resubmit({ delayMs });
+    });
     await scheduler().create({
       id: "daily",
       cron: "0 0 * * *",
@@ -43,7 +53,7 @@ const lifecycle = createRuntimeLifecycle({
     });
     retentionWorker = await scheduler().process({ concurrency: 1 });
     await recover();
-    timer = setInterval(() => void recover(), 30_000);
+    timer = setInterval(() => void recover(), MAIL_RECOVERY_MS);
     timer.unref();
   },
   stop: async () => {
@@ -51,9 +61,10 @@ const lifecycle = createRuntimeLifecycle({
     timer = undefined;
     await stopRuntimeJobs(
       tasks,
-      [worker, retentionWorker].filter((item): item is Worker => item !== undefined),
+      [worker, drainWorker, retentionWorker].filter((item): item is Worker => item !== undefined),
     );
     worker = undefined;
+    drainWorker = undefined;
     retentionWorker = undefined;
   },
 });

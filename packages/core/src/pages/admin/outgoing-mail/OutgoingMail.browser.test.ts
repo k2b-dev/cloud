@@ -247,21 +247,24 @@ describe("outgoing mail page in a browser", () => {
 
   test("a send log entry fits a phone and a desktop without horizontal overflow", async () => {
     const entry = state.log.page.items[0]!;
-    const dialog = () => createComponent(MessageDialog, { record: entry, appName: "Invoices", close: () => {}, onChanged: () => {} });
-    for (const view of [phone, desktop])
-      for (const dark of [false, true]) {
-        const tab = await open(view, dark, "de", dialog, "width: min(calc(100vw - 2rem), 40rem)");
-        try {
-          const layout = await tab.evaluate(() => ({
-            overflow: document.documentElement.scrollWidth - window.innerWidth,
-            text: document.body.textContent ?? "",
-          }));
-          expect({ width: view.width, dark, overflow: Math.max(0, layout.overflow) }).toEqual({ width: view.width, dark, overflow: 0 });
-          expect(layout.text).toContain("Inhalt anzeigen");
-          expect(layout.text).toContain("550 5.1.1 Mailbox unavailable");
-        } finally {
-          await tab.close();
+    // A queued batch member carries the most footer actions.
+    const queued = { ...entry, status: "queued" as const, batchId: "6f1c7a52-8f35-4d6f-9a3e-1b2c3d4e5f60" };
+    for (const record of [entry, queued])
+      for (const view of [phone, desktop])
+        for (const dark of [false, true]) {
+          const dialog = () => createComponent(MessageDialog, { record, appName: "Invoices", close: () => {}, onChanged: () => {} });
+          const tab = await open(view, dark, "de", dialog, "width: min(calc(100vw - 2rem), 40rem)");
+          try {
+            const layout = await tab.evaluate(() => ({
+              overflow: document.documentElement.scrollWidth - window.innerWidth,
+              text: document.body.textContent ?? "",
+            }));
+            expect({ width: view.width, dark, overflow: Math.max(0, layout.overflow) }).toEqual({ width: view.width, dark, overflow: 0 });
+            expect(layout.text).toContain("Inhalt anzeigen");
+            expect(layout.text).toContain("550 5.1.1 Mailbox unavailable");
+          } finally {
+            await tab.close();
+          }
         }
-      }
   }, 60_000);
 });

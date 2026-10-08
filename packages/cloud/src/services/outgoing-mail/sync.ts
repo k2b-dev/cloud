@@ -24,6 +24,16 @@ export const mailSettled = lazySync((sync) =>
     retention: { maxAgeMs: 5 * 60_000, maxBytes: 8 * 256 * 1024 },
   }),
 );
+export const mailDrainJob = lazySync((sync) =>
+  sync.job<{ profileId: string }>({
+    id: "cloud-outgoing-mail-drain",
+    owner: "core",
+    delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [5000, 30000] },
+  }),
+);
+export const submitMailDrain = async (profileId: string): Promise<void> => {
+  await mailDrainJob().submit({ key: `profile:${profileId}`, input: { profileId }, coalesce: true });
+};
 export const submitMail = async (id: string): Promise<void> => {
   await mailSendJob().submit({ key: id, input: { id }, coalesce: true });
 };

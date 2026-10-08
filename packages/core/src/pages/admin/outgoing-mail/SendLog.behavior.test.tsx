@@ -7,7 +7,8 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return { ui: await import("@k2b/ui"), SendLog: (await import("./SendLog")).SendLog };
+    const sendLog = await import("./SendLog");
+    return { ui: await import("@k2b/ui"), SendLog: sendLog.SendLog, MessageDialog: sendLog.MessageDialog };
   } finally {
     dom.cleanup();
   }
@@ -103,6 +104,62 @@ else
     } finally {
       dispose();
       timer.mockRestore();
+      fetch.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("a queued batch member offers batch cancellation and shows the cancelled state", async () => {
+    const dom = createDomTestHarness();
+    const { ui, MessageDialog } = modules!;
+    delegateEvents(["click"]);
+    const batchId = crypto.randomUUID();
+    const record: AdminMailRecord = { ...row("Stock update"), status: "queued", attempts: 0, batchId };
+    const requests: { method: string; url: URL }[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+          const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+          requests.push({ method, url });
+          if (method === "POST" && url.pathname.endsWith(`/batches/${batchId}/cancel`)) return Response.json({ batchId, cancelled: 3 });
+          if (method === "GET" && url.pathname.endsWith(`/messages/${record.id}`))
+            return Response.json({ ...record, status: "cancelled", errorCode: "cancelled_by_admin" });
+          throw new Error(`Unexpected request: ${method} ${url}`);
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const confirm = spyOn(ui.prompts, "confirm").mockResolvedValue(true);
+    let changed = 0;
+    const dispose = render(
+      () =>
+        createComponent(ui.LocaleProvider, {
+          locale: "en",
+          get children() {
+            return createComponent(MessageDialog, { record, appName: "Inventory", close: () => {}, onChanged: () => changed++ });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.textContent).toContain(batchId);
+      const button = [...dom.root.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Cancel batch");
+      if (!button) throw new Error("Expected the batch cancel action");
+      button.click();
+      await flush();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(requests.map((request) => `${request.method} ${request.url.pathname.split("/outgoing-mail")[1]}`)).toEqual([
+        `POST /batches/${batchId}/cancel`,
+        `GET /messages/${record.id}`,
+      ]);
+      expect(changed).toBe(1);
+      await flush();
+      expect([...dom.root.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Cancel batch")).toBe(false);
+    } finally {
+      dispose();
+      confirm.mockRestore();
       fetch.mockRestore();
       dom.cleanup();
     }

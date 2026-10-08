@@ -81,11 +81,16 @@ export const outgoingMailCommands = [
   }),
   command("outgoing-mail log cancel", {
     summary: "Cancel queued outgoing mail",
-    args: { id: arg.required({ valueLabel: "id" }) },
-    flags: { yes: confirmFlag("Confirm cancelling queued outgoing mail") },
+    args: { id: arg.optional({ valueLabel: "id" }) },
+    flags: {
+      batch: flag.string({ description: "Cancel queued messages in this batch instead of one ID" }),
+      yes: confirmFlag("Confirm cancelling queued outgoing mail"),
+    },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Cancelling outgoing mail requires --yes.");
-      print(ctx, await apiJson(ctx, "POST", `${root}/messages/${encodeURIComponent(args.id)}/cancel`));
+      if ((args.id !== undefined) === (flags.batch !== undefined)) throw new Error("Choose exactly one message ID or --batch <batchId>.");
+      const path = flags.batch !== undefined ? `batches/${encodeURIComponent(flags.batch)}` : `messages/${encodeURIComponent(args.id!)}`;
+      print(ctx, await apiJson(ctx, "POST", `${root}/${path}/cancel`));
     },
   }),
   command("outgoing-mail profiles list", {
