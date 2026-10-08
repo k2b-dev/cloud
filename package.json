@@ -12,6 +12,7 @@
       "packages/api-docs",
       "packages/assistant",
       "packages/capabilities",
+      "packages/chat",
       "packages/cloud",
       "packages/contacts",
       "packages/core",

@@ -35,8 +35,8 @@ describe("production Compose release set", () => {
     expect(images.every((line) => line.endsWith(":${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}"))).toBeTrue();
     expect(images.some((line) => /:(?:latest|main)$/.test(line))).toBeFalse();
   });
-  test("starts the unreleased mobile app only with its profile", () => {
-    const service = /^  app-pwa:\n((?: {4}.*\n)*)/m.exec(compose)?.[1];
+  test.each(["app-pwa", "app-chat"])("starts the unreleased %s only with its profile", (name) => {
+    const service = new RegExp(`^  ${name}:\\n((?: {4}.*\\n)*)`, "m").exec(compose)?.[1];
     expect(service).toContain('    profiles: ["unreleased"]\n');
   });
 });

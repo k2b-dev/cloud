@@ -135,6 +135,24 @@
         "typescript": "catalog:",
       },
     },
+    "packages/chat": {
+      "name": "@k2b/cloud-app-chat",
+      "version": "0.0.0",
+      "dependencies": {
+        "@k2b/cloud": "workspace:*",
+        "@k2b/ssr": "catalog:",
+        "@k2b/stdlib": "catalog:",
+        "@k2b/ui": "workspace:*",
+        "hono": "catalog:",
+        "hono-openapi": "catalog:",
+        "solid-js": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/cloud": {
       "name": "@k2b/cloud",
       "version": "0.28.0",
@@ -961,6 +979,8 @@
     "@k2b/cloud-app-assistant": ["@k2b/cloud-app-assistant@workspace:packages/assistant"],
 
     "@k2b/cloud-app-capabilities": ["@k2b/cloud-app-capabilities@workspace:packages/capabilities"],
+
+    "@k2b/cloud-app-chat": ["@k2b/cloud-app-chat@workspace:packages/chat"],
 
     "@k2b/cloud-app-contacts": ["@k2b/cloud-app-contacts@workspace:packages/contacts"],
 

@@ -113,6 +113,13 @@ services:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-capabilities:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
+  # Chat is unreleased: its image is built and published, but it starts only
+  # with `--profile unreleased`, which is for test installations. Do not start it.
+  app-chat:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-chat:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    profiles: ["unreleased"]
+
   app-contacts:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-contacts:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}

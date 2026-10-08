@@ -1,0 +1,43 @@
+import { i18n } from "@k2b/stdlib";
+
+export const chatMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      appName: "Chat",
+      start: "Start",
+      chats: "Chats",
+      noneYet: "None yet",
+      noChatsTitle: "No chats yet",
+      noChatsDescription: "Chats you belong to appear here.",
+      operations: "Operations",
+      state: "State",
+      healthy: "Healthy",
+      unavailable: "Unavailable",
+      database: "Database",
+      databaseReady: "Ready",
+      databaseUnavailable: "Not reachable or not set up",
+      latency: ({ value }: { value: number }) => `${value} ms round trip`,
+      observed: ({ time }: { time: string }) => `Checked at ${time}`,
+      logs: "Logs",
+    },
+    de: {
+      appName: "Chat",
+      start: "Start",
+      chats: "Chats",
+      noneYet: "Noch keine",
+      noChatsTitle: "Noch keine Chats",
+      noChatsDescription: "Chats, in denen du Mitglied bist, erscheinen hier.",
+      operations: "Betrieb",
+      state: "Zustand",
+      healthy: "Bereit",
+      unavailable: "Nicht verfügbar",
+      database: "Datenbank",
+      databaseReady: "Bereit",
+      databaseUnavailable: "Nicht erreichbar oder nicht eingerichtet",
+      latency: ({ value }: { value: number }) => `${value} ms Antwortzeit`,
+      observed: ({ time }: { time: string }) => `Geprüft um ${time}`,
+      logs: "Logs",
+    },
+  },
+});
