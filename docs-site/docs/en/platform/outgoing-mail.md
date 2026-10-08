@@ -212,8 +212,18 @@ acceptance and before the log update can repeat a message.
 `mail.list(filter?, page?)` returns only the calling application's records.
 Filters are `ref: { scope, id? }`, `ids` (at most 100 UUIDs), `batchId`,
 `status` (an array), and `since` (an ISO timestamp). Status values are `queued`,
-`sending`, `sent`, `failed`, `bounced`, and `cancelled`; bounce ingestion is not
-part of this API slice.
+`sending`, `sent`, `failed`, `bounced`, and `cancelled`.
+
+`bounced` means a standard delivery status notification (RFC 3464) reported
+failed recipients after SMTP acceptance (`sent`). Core collects these reports
+asynchronously from the sender profile's optional IMAP mailbox and adds
+`{ recipient, reason, at }` entries to `failures`. Reports must match the stored
+Message-ID and a message recipient (Final-Recipient or Original-Recipient,
+case-insensitive); failures retain the stored recipient spelling. Later
+sender-domain changes do not affect matching. Delayed reports and
+non-standard bounces are ignored. The absence of a bounce does not prove inbox
+delivery. Administrators configure collection in
+[Outgoing mail operations](/en/docs/operations/outgoing-mail).
 
 ```ts
 const first = await mail.list({ ref: { scope: "order", id: "42" } }, { perPage: 20 });

@@ -38,7 +38,9 @@ const invoke = async (
       return init?.method === "DELETE" ? new Response(null, { status: 204 }) : Response.json(result);
     },
     readJson: async (response) => response.json(),
-    print: () => {},
+    print: (value) => {
+      output.push(value);
+    },
     write: async () => {},
     error: () => {},
     json: (value) => {
@@ -47,7 +49,9 @@ const invoke = async (
     jsonLine: (value) => {
       output.push(value);
     },
-    table: () => {},
+    table: (rows) => {
+      output.push(rows);
+    },
   };
   await module.run(ctx);
   return { requests, output };
@@ -249,4 +253,43 @@ test("log show content uses the audited endpoint and cancel needs --yes", async 
     method: "POST",
     body: null,
   });
+});
+
+test("IMAP config is accepted but nested passwords require file or stdin", async () => {
+  const imap = { host: "imap.example.org", port: 993, secure: true, user: "sender", folder: "INBOX" };
+  const config = { ...input, imap };
+  expect((await invoke(["profiles", "put", "alerts"], { config: JSON.stringify(config) })).requests[0]?.body).toEqual(config);
+  for (const password of ["imap-secret", null]) {
+    await expect(
+      invoke(["profiles", "put", "alerts"], { config: JSON.stringify({ ...config, imap: { ...imap, password } }) }),
+    ).rejects.toThrow("--config-file");
+  }
+  const { spyOn } = await import("bun:test");
+  const secretConfig = { ...config, imap: { ...imap, password: "imap-secret" } };
+  const stdin = spyOn(Bun.stdin, "text").mockResolvedValue(JSON.stringify(secretConfig));
+  try {
+    expect((await invoke(["profiles", "put", "alerts"], { stdin: true })).requests[0]?.body).toEqual(secretConfig);
+  } finally {
+    stdin.mockRestore();
+  }
+});
+
+test("profile text output shows IMAP host/folder and bounce check, error or off", async () => {
+  const imap = { host: "imap.example.org", folder: "INBOX" };
+  const checkedAt = "2026-10-08T00:00:00.000Z";
+  const items = [
+    { key: "checked", imap, bounces: { checkedAt, error: null } },
+    { key: "error", imap, bounces: { checkedAt, error: "open_failed" } },
+    { key: "off", imap: null, bounces: null },
+  ];
+  const result = await invoke(["profiles", "list"], {}, { items }, [], "text");
+  expect(result.output[0]).toMatchObject([
+    { key: "checked", imap: "imap.example.org/INBOX", bounces: checkedAt },
+    { key: "error", imap: "imap.example.org/INBOX", bounces: "open_failed" },
+    { key: "off", imap: "off", bounces: "off" },
+  ]);
+  for (const item of items) {
+    const read = await invoke(["profiles", "get", item.key], {}, item, [], "text");
+    expect(read.output[1]).toBe(`Bounces: ${item.bounces?.error ?? item.bounces?.checkedAt ?? "off"}`);
+  }
 });

@@ -3,8 +3,10 @@ import { listApps } from "../../_internal/registry";
 import {
   type AdminMailApp,
   type AdminMailProfile,
+  AdminMailProfileSchema,
   type MailAppAccess,
   MailAppAccessSchema,
+  type MailBounceErrorCode,
   type MailErrorCode,
   type MailProfile,
   type MailProfileInput,
@@ -37,6 +39,14 @@ type ProfileRow = {
   smtp_secure: boolean;
   smtp_user: string | null;
   has_password: boolean;
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_secure: boolean | null;
+  imap_user: string | null;
+  imap_folder: string | null;
+  imap_has_password: boolean;
+  imap_checked_at: Date | string | null;
+  imap_error: MailBounceErrorCode | null;
   pace_per_minute: number;
   daily_recipient_limit: number | null;
   max_attachment_bytes: number;
@@ -48,6 +58,8 @@ type ProfileRow = {
 };
 const columns = (db: SQL) => db`id, key, name, from_address, from_name, smtp_host, smtp_port, smtp_secure, smtp_user,
   (smtp_password_encrypted IS NOT NULL) AS has_password, pace_per_minute, daily_recipient_limit, max_attachment_bytes,
+  imap_host, imap_port, imap_secure, imap_user, imap_folder,
+  (imap_password_encrypted IS NOT NULL) AS imap_has_password, imap_checked_at, imap_error,
   is_default, revision, created_at, updated_at, updated_by`;
 const timestamp = (value: Date | string) => new Date(value).toISOString();
 const keyValue = (key: string) => {
@@ -90,6 +102,24 @@ const mapProfile = (row: ProfileRow, appCount: number): AdminMailProfile => ({
   smtpSecure: row.smtp_secure,
   smtpUser: row.smtp_user,
   hasPassword: row.has_password,
+  imap:
+    row.imap_host === null
+      ? null
+      : AdminMailProfileSchema.shape.imap.parse({
+          host: row.imap_host,
+          port: row.imap_port,
+          secure: row.imap_secure,
+          user: row.imap_user,
+          folder: row.imap_folder,
+          hasPassword: row.imap_has_password,
+        }),
+  bounces:
+    row.imap_host === null
+      ? null
+      : {
+          checkedAt: row.imap_checked_at === null ? null : timestamp(row.imap_checked_at),
+          error: row.imap_error,
+        },
   pacePerMinute: row.pace_per_minute,
   dailyRecipientLimit: row.daily_recipient_limit,
   maxAttachmentBytes: row.max_attachment_bytes,
@@ -136,6 +166,23 @@ const put = async (
       before.smtp_host.trim().toLowerCase() !== input.smtpHost.trim().toLowerCase()
     )
       throw new OutgoingMailError("invalid_profile", "Enter the SMTP password again, or remove it, when you change the SMTP host.");
+    const imap = input.imap ?? null;
+    if (
+      before?.imap_has_password &&
+      imap &&
+      imap.password === undefined &&
+      before.imap_host?.trim().toLowerCase() !== imap.host.trim().toLowerCase()
+    )
+      throw new OutgoingMailError("invalid_profile", "Enter the IMAP password again, or remove it, when you change the IMAP host.");
+    const imapPassword =
+      !imap || imap.password === null ? null : imap.password === undefined ? undefined : await encryptValue(imap.password);
+    const resetImap =
+      !imap ||
+      !before ||
+      before.imap_host?.toLowerCase() !== imap.host.toLowerCase() ||
+      before.imap_port !== imap.port ||
+      before.imap_user !== imap.user ||
+      before.imap_folder !== imap.folder;
     const password =
       input.smtpPassword === undefined ? undefined : input.smtpPassword === null ? null : await encryptValue(input.smtpPassword);
     if (before) {
@@ -151,6 +198,15 @@ const put = async (
           ${input.smtpSecure}, ${input.smtpUser}, ${password ?? null}, ${input.pacePerMinute}, ${input.dailyRecipientLimit}, ${input.maxAttachmentBytes},
           NOT EXISTS(SELECT 1 FROM outgoing_mail.profiles), ${context.actor.userId ?? null})`;
     }
+    await tx`UPDATE outgoing_mail.profiles SET
+      imap_host = ${imap?.host ?? null}, imap_port = ${imap?.port ?? null}, imap_secure = ${imap?.secure ?? null},
+      imap_user = ${imap?.user ?? null}, imap_folder = ${imap?.folder ?? null},
+      imap_password_encrypted = CASE WHEN ${imapPassword !== undefined} THEN ${imapPassword ?? null} ELSE imap_password_encrypted END,
+      imap_uid_validity = CASE WHEN ${resetImap} THEN NULL ELSE imap_uid_validity END,
+      imap_last_uid = CASE WHEN ${resetImap} THEN NULL ELSE imap_last_uid END,
+      imap_error = CASE WHEN ${resetImap} THEN NULL ELSE imap_error END,
+      imap_checked_at = CASE WHEN ${resetImap} THEN NULL ELSE imap_checked_at END
+      WHERE key = ${key}`;
     await record(tx, context, before ? "profile.update" : "profile.create", key);
     return { profile: (await list(tx, apps)).find((p) => p.key === key)!, created: !before };
   });
@@ -288,4 +344,54 @@ export const resolveMailCredentials = async (key?: string | { id: string }) => {
     smtpUser: row.smtp_user,
     smtpPassword: password,
   };
+};
+
+export type ImapMailProfile = {
+  id: string;
+  key: string;
+  revision: number;
+  fromAddress: string;
+  imap: NonNullable<AdminMailProfile["imap"]>;
+  uidValidity: string | null;
+  lastUid: number | null;
+};
+/** Core's bounce poller only; listing profiles does not decrypt credentials. */
+export const listImapMailProfiles = async (): Promise<ImapMailProfile[]> => {
+  const rows = await sql<(ProfileRow & { uid_validity: string | null; last_uid: string | null })[]>`
+    SELECT ${columns(sql)}, imap_uid_validity::text AS uid_validity, imap_last_uid::text AS last_uid
+    FROM outgoing_mail.profiles WHERE imap_host IS NOT NULL ORDER BY imap_checked_at NULLS FIRST, key`;
+  return rows.map((row) => {
+    const imap = mapProfile(row, 0).imap;
+    if (!imap) throw new Error("Outgoing mail IMAP configuration is invalid.");
+    return {
+      id: row.id,
+      key: row.key,
+      revision: row.revision,
+      fromAddress: row.from_address,
+      imap,
+      uidValidity: row.uid_validity,
+      lastUid: row.last_uid === null ? null : Number(row.last_uid),
+    };
+  });
+};
+export const resolveImapMailCredentials = async (profile: ImapMailProfile) => {
+  const [row] = await sql<{ imap_password_encrypted: string | null }[]>`
+    SELECT imap_password_encrypted FROM outgoing_mail.profiles
+    WHERE id = ${profile.id}::uuid AND revision = ${profile.revision} AND imap_host IS NOT NULL`;
+  if (!row) throw new Error("Outgoing mail IMAP profile changed.");
+  const password = row.imap_password_encrypted === null ? null : await decryptValue(row.imap_password_encrypted);
+  if (password !== null && typeof password !== "string") throw new Error("Outgoing mail IMAP password is invalid.");
+  return password;
+};
+export const saveImapMailCheck = async (
+  profile: ImapMailProfile,
+  result: { uidValidity: string; lastUid: number | null; error?: MailBounceErrorCode } | { error: MailBounceErrorCode },
+) => {
+  await sql`UPDATE outgoing_mail.profiles SET imap_checked_at = now(),
+    imap_error = ${result.error ?? null},
+    imap_uid_validity = ${"uidValidity" in result ? result.uidValidity : profile.uidValidity}::bigint,
+    imap_last_uid = ${"lastUid" in result ? result.lastUid : profile.lastUid}::bigint
+    WHERE id = ${profile.id}::uuid AND revision = ${profile.revision} AND imap_host IS NOT NULL
+      AND imap_uid_validity IS NOT DISTINCT FROM ${profile.uidValidity}::bigint
+      AND imap_last_uid IS NOT DISTINCT FROM ${profile.lastUid}::bigint`;
 };

@@ -25,6 +25,8 @@ const profile = (overrides: Partial<AdminMailProfile>): AdminMailProfile => ({
   smtpSecure: false,
   smtpUser: "smtp-user",
   hasPassword: true,
+  imap: null,
+  bounces: null,
   pacePerMinute: 60,
   dailyRecipientLimit: null,
   maxAttachmentBytes: 15 * 1024 * 1024,
@@ -150,4 +152,43 @@ test("an empty send log explains when mail appears", () => {
   const html = render("en", { ...state, log: emptyLog });
   expect(html).toContain("No mail sent yet");
   expect(html).toContain("Mail appears here as soon as an app sends it.");
+});
+
+test("each profile shows whether Cloud checks its mailbox for bounces, with a visible reason in English and German", () => {
+  const imap = { host: "imap.example.org", port: 993, secure: true, user: "noreply@example.org", folder: "INBOX", hasPassword: true };
+  const profiles = [
+    profile({}),
+    profile({ key: "pending", name: "Pending", isDefault: false, imap, bounces: { checkedAt: null, error: null } }),
+    profile({ key: "checked", name: "Checked", isDefault: false, imap, bounces: { checkedAt: "2026-10-08T10:00:00.000Z", error: null } }),
+    profile({
+      key: "broken",
+      name: "Broken",
+      isDefault: false,
+      imap,
+      bounces: { checkedAt: "2026-10-08T10:00:00.000Z", error: "open_failed" },
+    }),
+    profile({
+      key: "slow",
+      name: "Slow",
+      isDefault: false,
+      imap,
+      bounces: { checkedAt: "2026-10-08T10:00:00.000Z", error: "interrupted" },
+    }),
+  ];
+  const en = render("en", { ...state, profiles });
+  for (const label of ["No bounce check", "Bounce check pending", "Bounces checked"]) expect(en).toContain(label);
+  expect(en).toContain("Bounce check failed: Cloud could not open the mailbox. Check the server, sign-in, TLS, and folder.");
+  expect(en).toContain("Bounce check failed: The check ran out of time and continues with the next one.");
+  // Stable codes are a transport contract, never the text an administrator reads.
+  expect(en).not.toContain("open_failed");
+  // Phones and tablets get the same line in the profile column; the server column only appears from lg.
+  expect(en.match(/Bounce check failed: Cloud could not open the mailbox/g)).toHaveLength(2);
+  const de = render("de", { ...state, profiles });
+  for (const label of [
+    "Keine Prüfung auf unzustellbare Mails",
+    "Prüfung auf unzustellbare Mails ausstehend",
+    "Unzustellbare Mails geprüft",
+    "Prüfung auf unzustellbare Mails fehlgeschlagen: Cloud konnte das Postfach nicht öffnen. Prüfe Server, Anmeldung, TLS und Ordner.",
+  ])
+    expect(de).toContain(label);
 });

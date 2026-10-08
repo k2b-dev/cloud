@@ -10,6 +10,7 @@ import {
   type DataTableColumn,
   Dropdown,
   dialogCore,
+  Format,
   NoticeCard,
   NumberInput,
   PanelDialog,
@@ -81,7 +82,50 @@ const accessLabel = (app: AdminMailApp, profiles: readonly AdminMailProfile[], t
   return app.profiles.map((key) => profiles.find((profile) => profile.key === key)?.name ?? key).join(", ");
 };
 
-function ProfileDialog(props: {
+type BounceError = NonNullable<NonNullable<AdminMailProfile["bounces"]>["error"]>;
+const bounceReason = (error: BounceError, t: Messages): string =>
+  ({
+    open_failed: t.bounceOpenFailed,
+    search_failed: t.bounceSearchFailed,
+    apply_failed: t.bounceApplyFailed,
+    save_failed: t.bounceSaveFailed,
+    interrupted: t.bounceInterrupted,
+  })[error];
+
+/**
+ * Whether Core reads this profile's mailbox for bounces, and how the latest check went. The reason
+ * stays visible text, because touch screens cannot reveal a tooltip, and wraps inside table cells,
+ * which truncate by default.
+ */
+function BounceStatus(props: { profile: AdminMailProfile; t: Messages; class?: string }) {
+  return (
+    <p
+      class={`mt-0.5 whitespace-normal break-words text-xs ${props.profile.bounces?.error ? "text-red-600 dark:text-red-400" : "text-dimmed"} ${props.class ?? ""}`}
+    >
+      <Show when={props.profile.bounces} fallback={props.t.bouncesOff}>
+        {(bounces) => (
+          <Show
+            when={bounces().error}
+            fallback={
+              <Show when={bounces().checkedAt} fallback={props.t.bouncesPending}>
+                {(checkedAt) => (
+                  <>
+                    {props.t.bouncesChecked} <Format.DateTime value={checkedAt()} />
+                  </>
+                )}
+              </Show>
+            }
+          >
+            {(error) => `${props.t.bouncesFailed}: ${bounceReason(error(), props.t)}`}
+          </Show>
+        )}
+      </Show>
+    </p>
+  );
+}
+
+/** Exported for the behavior test: saving replaces the whole profile, including its IMAP mailbox. */
+export function ProfileDialog(props: {
   profile?: AdminMailProfile;
   close: () => void;
   onSaved: () => void;
@@ -102,11 +146,23 @@ function ProfileDialog(props: {
   const [pace, setPace] = createSignal<number | null>(initial?.pacePerMinute ?? 60);
   const [dailyLimit, setDailyLimit] = createSignal<number | null>(initial?.dailyRecipientLimit ?? null);
   const [attachmentMb, setAttachmentMb] = createSignal<number | null>(initial ? initial.maxAttachmentBytes / MB : 15);
+  const imap = initial?.imap ?? null;
+  const [imapHost, setImapHost] = createSignal(imap?.host ?? "");
+  const [imapPort, setImapPort] = createSignal<number | null>(imap?.port ?? 993);
+  const [imapSecure, setImapSecure] = createSignal(imap?.secure ?? true);
+  const [imapUser, setImapUser] = createSignal(imap?.user ?? "");
+  const [imapFolder, setImapFolder] = createSignal(imap?.folder ?? "INBOX");
+  const [imapPassword, setImapPassword] = createSignal("");
+  const [clearImapPassword, setClearImapPassword] = createSignal(false);
+  // An empty IMAP host turns the bounce check off; the other IMAP fields then wait disabled.
+  const imapOn = () => !!imapHost().trim();
 
   const keyValid = () => /^[a-z0-9][a-z0-9-]{0,62}$/.test(key());
   // A saved password never follows the profile to another server: a new host needs it again or without it.
   const passwordNeeded = () =>
     !!initial?.hasPassword && smtpHost().trim().toLowerCase() !== initial.smtpHost.toLowerCase() && !password() && !clearPassword();
+  const imapPasswordNeeded = () =>
+    !!imap?.hasPassword && imapHost().trim().toLowerCase() !== imap.host.toLowerCase() && !imapPassword() && !clearImapPassword();
   const complete = () =>
     keyValid() &&
     !!name().trim() &&
@@ -115,7 +171,8 @@ function ProfileDialog(props: {
     !!smtpPort() &&
     !!pace() &&
     !!attachmentMb() &&
-    !passwordNeeded();
+    !passwordNeeded() &&
+    (!imapOn() || (!!imapPort() && !!imapUser().trim() && !!imapFolder().trim() && !imapPasswordNeeded()));
   const dirty = createMemo(() => {
     const before = {
       key: initial?.key ?? "",
@@ -129,6 +186,11 @@ function ProfileDialog(props: {
       pace: initial?.pacePerMinute ?? 60,
       dailyLimit: initial?.dailyRecipientLimit ?? null,
       attachmentMb: initial ? initial.maxAttachmentBytes / MB : 15,
+      imapHost: imap?.host ?? "",
+      imapPort: imap?.port ?? 993,
+      imapSecure: imap?.secure ?? true,
+      imapUser: imap?.user ?? "",
+      imapFolder: imap?.folder ?? "INBOX",
     };
     return (
       before.key !== key() ||
@@ -142,8 +204,15 @@ function ProfileDialog(props: {
       before.pace !== pace() ||
       before.dailyLimit !== dailyLimit() ||
       before.attachmentMb !== attachmentMb() ||
+      before.imapHost !== imapHost() ||
+      before.imapPort !== imapPort() ||
+      before.imapSecure !== imapSecure() ||
+      before.imapUser !== imapUser() ||
+      before.imapFolder !== imapFolder() ||
       !!password() ||
-      clearPassword()
+      clearPassword() ||
+      !!imapPassword() ||
+      clearImapPassword()
     );
   });
 
@@ -162,6 +231,17 @@ function ProfileDialog(props: {
         pacePerMinute: pace() ?? 60,
         dailyRecipientLimit: dailyLimit(),
         maxAttachmentBytes: Math.round((attachmentMb() ?? 15) * MB),
+        // The profile is replaced as a whole: leaving IMAP out would turn the bounce check off.
+        imap: imapOn()
+          ? {
+              host: imapHost().trim(),
+              port: imapPort() ?? 993,
+              secure: imapSecure(),
+              user: imapUser().trim(),
+              folder: imapFolder().trim(),
+              ...(imapPassword() ? { password: imapPassword() } : clearImapPassword() ? { password: null } : {}),
+            }
+          : null,
         ...(initial ? { revision: initial.revision } : {}),
       };
       const response = await api.profiles[":key"].$put({ param: { key: key() }, json }, { init: { signal: abortSignal } });
@@ -299,6 +379,85 @@ function ProfileDialog(props: {
                 disabled={save.loading()}
               />
             </Show>
+          </PanelDialog.Section>
+          <PanelDialog.Section title={t().bounceSection} subtitle={t().bounceSectionDescription}>
+            <div class="grid gap-3 sm:grid-cols-[1fr_8rem]">
+              <TextInput
+                label={t().host}
+                description={t().imapHostHint}
+                value={imapHost()}
+                onValueChange={setImapHost}
+                disabled={save.loading()}
+                maxLength={253}
+                placeholder="imap.example.org"
+                autocomplete="off"
+              />
+              <NumberInput
+                label={t().port}
+                value={imapPort()}
+                onValueChange={(value) => {
+                  setImapPort(value);
+                  if (!imap && (value === 993 || value === 143)) setImapSecure(value === 993);
+                }}
+                min={1}
+                max={65535}
+                showSteppers={false}
+                disabled={save.loading() || !imapOn()}
+                required={imapOn()}
+              />
+            </div>
+            <Switch
+              label={t().secure}
+              description={t().imapSecureHint}
+              value={imapSecure()}
+              onValueChange={setImapSecure}
+              disabled={save.loading() || !imapOn()}
+            />
+            <TextInput
+              label={t().user}
+              description={t().imapUserHint}
+              value={imapUser()}
+              onValueChange={setImapUser}
+              disabled={save.loading() || !imapOn()}
+              required={imapOn()}
+              maxLength={320}
+              autocomplete="off"
+            />
+            <TextInput
+              label={t().password}
+              description={imap?.hasPassword ? t().passwordHostHint : undefined}
+              password
+              value={imapPassword()}
+              onValueChange={(value) => {
+                setImapPassword(value);
+                if (value) setClearImapPassword(false);
+              }}
+              placeholder={imapPasswordNeeded() ? t().passwordReenter : imap?.hasPassword ? t().passwordKeep : t().passwordNone}
+              disabled={save.loading() || !imapOn() || clearImapPassword()}
+              maxLength={16384}
+              autocomplete="new-password"
+            />
+            <Show when={imap?.hasPassword}>
+              <Checkbox
+                label={t().clearPassword}
+                value={clearImapPassword()}
+                onValueChange={(value) => {
+                  setClearImapPassword(value);
+                  if (value) setImapPassword("");
+                }}
+                disabled={save.loading() || !imapOn()}
+              />
+            </Show>
+            <TextInput
+              label={t().folder}
+              description={t().folderHint}
+              value={imapFolder()}
+              onValueChange={setImapFolder}
+              disabled={save.loading() || !imapOn()}
+              required={imapOn()}
+              maxLength={200}
+              autocomplete="off"
+            />
           </PanelDialog.Section>
           <PanelDialog.Section title={t().limitsSection} subtitle={t().limitsSectionDescription}>
             <NumberInput
@@ -616,6 +775,8 @@ export default function OutgoingMail(props: Props) {
                     </div>
                     <p class="mt-0.5 font-mono text-xs text-dimmed">{row.key}</p>
                     <p class="mt-0.5 truncate text-xs text-dimmed md:hidden">{row.fromAddress}</p>
+                    {/* Below lg the server column is hidden, so the bounce check moves here. */}
+                    <BounceStatus profile={row} t={t()} class="lg:hidden" />
                   </div>
                 );
               if (col.id === "sender")
@@ -635,6 +796,7 @@ export default function OutgoingMail(props: Props) {
                       {row.smtpSecure ? t().encrypted : t().startTls}
                       {row.smtpUser ? ` · ${row.smtpUser}` : ""}
                     </p>
+                    <BounceStatus profile={row} t={t()} />
                   </div>
                 );
               if (col.id === "limits")

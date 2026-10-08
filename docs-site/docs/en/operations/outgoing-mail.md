@@ -45,7 +45,7 @@ Save a configuration file such as `sender.json`:
 
 Protect files containing credentials and keep them out of Git. Submit them
 through `--config-file` or `--stdin`. Inline `--config` rejects any
-`smtpPassword` property, including `null`, to keep secrets out of command
+`smtpPassword` or `imap.password` property, including `null`, to keep secrets out of command
 arguments and shell history.
 
 ```bash
@@ -84,6 +84,93 @@ Pacing must be 1–6000 per minute. The rolling daily recipient limit
 must be at least 1 or null for unlimited. Attachment limits must be 1–26214400
 bytes; the default is 15728640 bytes (15 MiB). Both mail APIs enforce recipient quota and the total attachment byte limit.
 Immediate sending does not use the bulk pacing setting.
+
+## Collect delivery reports
+
+In **Administration → Outgoing mail**, edit a profile and fill in the
+**Bounces** section with the IMAP mailbox that receives its delivery reports.
+Leave the host empty to turn collection off. With **Implicit TLS** off, Cloud
+requires STARTTLS. The profile list shows when the mailbox was last checked or
+why the latest check failed, on phones as well as on wide screens.
+
+From the CLI, add an optional `imap` object to the profile configuration
+through `profiles put`. For example, include this block in `sender.json`:
+
+```json
+{
+  "imap": {
+    "host": "imap.example.org",
+    "port": 993,
+    "secure": true,
+    "user": "noreply@example.org",
+    "password": "replace-with-your-password",
+    "folder": "INBOX"
+  }
+}
+```
+
+Supply every connection field, including `folder`; use `"INBOX"` for the inbox.
+Hosts follow the SMTP hostname constraints, ports must be 1–65535, usernames
+1–320 characters, and folders 1–200 characters without control characters.
+User and folder values are trimmed; whitespace-only values are rejected.
+`secure: true` uses implicit TLS; `false` requires STARTTLS before authentication.
+Hosts may be DNS names or IP addresses; the server certificate must cover the
+configured host.
+The IMAP password follows the SMTP rules: omission keeps it, `null` clears it,
+and changing the host requires entering it again or clearing it. Submit
+passwords only through `--config-file` or `--stdin`. Responses expose
+`imap.hasPassword`, never the password.
+
+Prefer a dedicated bounce mailbox. SMTP uses the profile's `fromAddress` as
+the envelope sender, so delivery reports return to that address; route them
+into the configured folder. Core needs outbound access to this IMAP server;
+other applications need no IMAP egress for platform bounce collection.
+
+Core polls enabled profiles every five minutes, one after another, within a
+four-minute processing budget, with at most another 30 seconds to record an
+interrupted check. Profiles left over wait for the next tick. Each profile
+processes at most 200 messages, oldest UID first. The first run and a change of
+mailbox UIDVALIDITY restart from the last seven days; subsequent runs read UIDs
+strictly above the stored cursor. Changing the IMAP host, port, user, or folder
+resets that cursor and the check status. Servers without ESEARCH are searched
+in bounded UID windows; empty windows advance the cursor so later polls continue.
+An interrupted or failed run keeps progress through the last fully processed UID.
+Setting `imap` to `null` or omitting it on replacement turns collection off and clears its cursor and check status.
+
+Polling opens the folder read-only and fetches parts without marking mail as
+read. It never moves, deletes, or expunges messages. Only standard RFC 3464
+`multipart/report; report-type=delivery-status` messages with the
+stored Cloud Message-ID are processed. Matching is case-insensitive and uses
+the Message-ID fixed at acceptance, so later sender-domain changes do not matter.
+Core fetches only the delivery status and original headers, each limited to 64 KiB; oversized parts
+are skipped, and returned original bodies and attachments are never downloaded.
+`Action: failed` adds recipients and reasons to the send log and changes `sent`
+to `bounced` only when Final-Recipient, or otherwise Original-Recipient, matches
+one of the message's recipients case-insensitively. Failures keep the stored
+recipient spelling; unrelated recipients are ignored. Repeated reports do not
+duplicate the same recipient and reason; a record holds at most 100 failures. Delayed and non-standard bounces are
+ignored. No bounce does not prove delivery.
+
+If reading a message fails, Core retries it once on a new connection. A second
+read failure skips that UID, logs a warning with the profile key and UID, and
+continues on another connection. Reconnection failures or a changed UIDVALIDITY
+stop the check; database failures are never skipped.
+
+`profiles list` and `profiles get` show the IMAP host and folder plus the latest
+check time, error, or `off`. JSON exposes `imap` and `bounces: { checkedAt,
+error }`; both are null when disabled. A new mailbox is `pending` until its
+first check. Errors are stable codes, cleared by a successful check:
+
+| Code | What to check |
+| --- | --- |
+| `open_failed` | Credentials, folder, TLS certificate, required STARTTLS, Core's IMAP egress, or a UIDVALIDITY change during reconnection |
+| `search_failed` | IMAP server availability and UID search support |
+| `apply_failed` | Database availability while recording a report |
+| `save_failed` | Database availability while saving progress and check status |
+| `interrupted` | Core shutdown or the four-minute budget; collection resumes from saved progress on the next tick |
+
+After resolving an error, wait for the next poll. If the database cannot save
+check status, inspect Core's logs; the displayed status may still be older.
 
 ## Choose the default profile
 
@@ -278,9 +365,16 @@ recovery; object expiry bounds orphan lifetime.
 Delivery is at least once. A crash between SMTP acceptance and the log update
 can produce duplicate delivery with the same Message-ID. A `sent` status
 records SMTP acceptance, including individual recipient rejections in
-`failures`; it does not prove inbox delivery. Bounce collection is a separate slice.
+`failures`; it does not prove inbox delivery. Optional IMAP collection can later
+mark the record `bounced` when a standard delivery report identifies failed
+recipients.
 
 ## Upgrade and rollback
+
+Core adds nullable IMAP configuration and cursor columns automatically during
+setup. Existing profiles keep bounce collection off. Enable it explicitly with
+`profiles put` and allow IMAP egress from Core only when needed. Rolling back
+stops collection; keep the additive columns and previously collected records.
 
 This upgrade activates the bulk lane and adds an index on message `batch_id`
 and two partial indexes for queued bulk mail: `outgoing_mail_messages_bulk_due`
@@ -324,7 +418,8 @@ commit together. Denied calls also audit once without content. Batch
 cancellations use `outgoing_mail.batch.cancel`.
 
 Passwords are encrypted at rest using `APP_SECRET`, never returned by the API,
-CLI, or `mail.profiles()`, and decrypted only on the platform email send path.
+CLI, or `mail.profiles()`. SMTP credentials are decrypted only on the platform
+email send path; IMAP credentials only in Core's bounce poller.
 Keep the same `APP_SECRET` across applications and upgrades.
 Application grants are platform policy, not isolation: applications share the
 database and `APP_SECRET`, so only install application code you trust.

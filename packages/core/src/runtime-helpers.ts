@@ -36,6 +36,7 @@ import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
+import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
 
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopHelpMaintenance: (() => Promise<void>) | undefined;
@@ -99,6 +100,7 @@ export const startCoreServices = async (
     await aiChatTaskRuntime.start();
     await deliverPendingAiMessages();
     await startOutgoingMailRuntime();
+    await outgoingMailBounceRuntime.start();
     await startNotificationRuntime();
     await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
@@ -121,6 +123,7 @@ export const startCoreServices = async (
       appApprovalRuntime.stop(),
       stopNotificationRuntime(),
       stopOutgoingMailRuntime(),
+      outgoingMailBounceRuntime.stop(),
     ]);
     browserNotifications.stop();
     throw error;
@@ -143,7 +146,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await Promise.all([lifecycleJobs.stop(), appApprovalRuntime.stop()]);
   } finally {
     try {
-      await Promise.all([stopNotificationRuntime(), stopOutgoingMailRuntime()]);
+      await Promise.all([stopNotificationRuntime(), stopOutgoingMailRuntime(), outgoingMailBounceRuntime.stop()]);
     } finally {
       try {
         stopCloudAiRuntime?.();

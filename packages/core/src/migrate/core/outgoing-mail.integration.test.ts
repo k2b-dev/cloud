@@ -139,6 +139,53 @@ databaseSuite()("outgoing mail migration", () => {
       attempt_count: 0,
     });
   });
+
+  test("adds nullable IMAP columns repeatedly to populated profiles and validates ports", async () => {
+    await seed("smtp_host", "smtp.example.org");
+    await seed("from", "noreply@example.org");
+    await migrate(db);
+    for (const column of [
+      "imap_host",
+      "imap_port",
+      "imap_secure",
+      "imap_user",
+      "imap_password_encrypted",
+      "imap_folder",
+      "imap_uid_validity",
+      "imap_last_uid",
+      "imap_checked_at",
+      "imap_error",
+    ])
+      await db.unsafe(`ALTER TABLE outgoing_mail.profiles DROP COLUMN ${column}`);
+    await Promise.all([migrate(db), migrate(db)]);
+    expect(
+      await db<Record<string, unknown>[]>`SELECT imap_host, imap_port, imap_secure, imap_user, imap_password_encrypted, imap_folder,
+      imap_uid_validity, imap_last_uid, imap_checked_at, imap_error FROM outgoing_mail.profiles`,
+    ).toEqual([
+      {
+        imap_host: null,
+        imap_port: null,
+        imap_secure: null,
+        imap_user: null,
+        imap_password_encrypted: null,
+        imap_folder: null,
+        imap_uid_validity: null,
+        imap_last_uid: null,
+        imap_checked_at: null,
+        imap_error: null,
+      },
+    ]);
+    // A Bun SQL query runs once awaited; `expect().rejects` alone would never start it.
+    for (const port of [0, 65536])
+      await expect((async () => await db`UPDATE outgoing_mail.profiles SET imap_port = ${port}`)()).rejects.toThrow();
+    await db`UPDATE outgoing_mail.profiles SET imap_port = 993, imap_uid_validity = 4294967295, imap_last_uid = 4294967295`;
+    await migrate(db);
+    expect(
+      await db<
+        Record<string, unknown>[]
+      >`SELECT imap_port, imap_uid_validity::text AS validity, imap_last_uid::text AS uid FROM outgoing_mail.profiles`,
+    ).toEqual([{ imap_port: 993, validity: "4294967295", uid: "4294967295" }]);
+  });
   test("uses port 587 when it was not stored", async () => {
     await seed("smtp_host", "smtp.example.org");
     await seed("from", "noreply@example.org");

@@ -100,8 +100,16 @@ export const outgoingMailCommands = [
       printJsonOrTable(
         ctx,
         result,
-        result.items.map((p) => ({ key: p.key, name: p.name, from: p.fromAddress, default: p.isDefault, revision: p.revision })),
-        [{ key: "key" }, { key: "name" }, { key: "from" }, { key: "default" }, { key: "revision" }],
+        result.items.map((p) => ({
+          key: p.key,
+          name: p.name,
+          from: p.fromAddress,
+          default: p.isDefault,
+          revision: p.revision,
+          imap: p.imap ? `${p.imap.host}/${p.imap.folder}` : "off",
+          bounces: p.bounces ? (p.bounces.error ?? p.bounces.checkedAt ?? "pending") : "off",
+        })),
+        [{ key: "key" }, { key: "name" }, { key: "from" }, { key: "default" }, { key: "revision" }, { key: "imap" }, { key: "bounces" }],
       );
     },
   }),
@@ -109,13 +117,18 @@ export const outgoingMailCommands = [
     summary: "Read one outgoing mail sender profile",
     args: keyArgs,
     async run({ ctx, args }) {
-      print(ctx, await apiGet(ctx, profilePath(args.key)));
+      const profile = await apiGet<AdminMailProfile>(ctx, profilePath(args.key));
+      print(ctx, profile);
+      if (ctx.options.output === "text")
+        ctx.print(`Bounces: ${profile.bounces ? (profile.bounces.error ?? profile.bounces.checkedAt ?? "pending") : "off"}`);
     },
   }),
   command("outgoing-mail profiles put", {
     summary: "Create or replace a sender profile with its current revision",
     args: keyArgs,
-    flags: { config: flag.input({ required: true, description: "Profile JSON; SMTP passwords only via --config-file or --stdin" }) },
+    flags: {
+      config: flag.input({ required: true, description: "Profile JSON; SMTP and IMAP passwords only via --config-file or --stdin" }),
+    },
     async run({ ctx, args, flags }) {
       const input = await readCliInput(flags.config, { label: "outgoing mail profile", required: true });
       let raw: unknown;
@@ -126,7 +139,11 @@ export const outgoingMailCommands = [
       }
       if (flags.config.source === "value" && raw && typeof raw === "object" && "smtpPassword" in raw)
         throw new Error("Pass smtpPassword only through --config-file or --stdin.");
-      print(ctx, await apiJson(ctx, "PUT", profilePath(args.key), MailProfileInputSchema.parse(raw)));
+      const parsed = MailProfileInputSchema.safeParse(raw);
+      if (!parsed.success) throw new Error("Invalid outgoing mail profile configuration.");
+      if (flags.config.source === "value" && parsed.data.imap && "password" in parsed.data.imap)
+        throw new Error("Pass imap.password only through --config-file or --stdin.");
+      print(ctx, await apiJson(ctx, "PUT", profilePath(args.key), parsed.data));
     },
   }),
   command("outgoing-mail profiles set-default", {

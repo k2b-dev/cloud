@@ -26,6 +26,8 @@ const profile: AdminMailProfile = {
   ...input,
   key: "alerts",
   hasPassword: true,
+  imap: null,
+  bounces: null,
   isDefault: true,
   revision: 1,
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -410,5 +412,41 @@ test("send-log routes validate filters, return metadata and forward audited cont
     expect(list).toHaveBeenCalledTimes(1);
   } finally {
     for (const mock of [list, get, content, cancel]) mock.mockRestore();
+  }
+});
+
+test("IMAP profile API validates config, returns status and never returns passwords", async () => {
+  const imap = { host: "imap.example.org", port: 993, secure: true, user: "sender", folder: "INBOX" };
+  const value = { ...profile, imap: { ...imap, hasPassword: true }, bounces: { checkedAt: "2026-10-08T00:00:00.000Z", error: null } };
+  const put = spyOn(outgoingMailStore, "put").mockResolvedValue({ profile: value, created: true });
+  const get = spyOn(outgoingMailStore, "get").mockResolvedValue(value);
+  const list = spyOn(outgoingMailStore, "list").mockResolvedValue([value]);
+  try {
+    const config = { ...input, imap: { ...imap, user: " sender ", folder: " INBOX ", password: "imap-fixture-secret" } };
+    const response = await request(authorized(), "/profiles/alerts", "PUT", config);
+    expect(response.status).toBe(201);
+    expect(put.mock.calls[0]?.[1]).toEqual({ ...config, imap: { ...config.imap, user: "sender", folder: "INBOX" } });
+    const result = await response.json();
+    expect(result).toEqual(value);
+    expect(JSON.stringify(result)).not.toContain("imap-fixture-secret");
+    expect(await (await authorized().request("/profiles/alerts")).json()).toEqual(value);
+    expect(await (await authorized().request("/profiles")).json()).toEqual({ items: [value] });
+    for (const change of [
+      { host: "user@host" },
+      { port: 0 },
+      { port: 65536 },
+      { folder: "" },
+      { folder: "   " },
+      { user: "   " },
+      { folder: "x\r\ny" },
+      { folder: "x".repeat(201) },
+    ])
+      expect((await request(authorized(), "/profiles/alerts", "PUT", { ...input, imap: { ...imap, ...change } })).status).toBe(400);
+    expect(put).toHaveBeenCalledTimes(1);
+    for (const imap of [undefined, null]) expect(MailProfileInputSchema.safeParse({ ...input, imap }).success).toBe(true);
+  } finally {
+    put.mockRestore();
+    get.mockRestore();
+    list.mockRestore();
   }
 });
