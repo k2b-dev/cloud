@@ -2,6 +2,7 @@ import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ss
 import {
   children,
   createContext,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -1143,8 +1144,8 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     element?.focus({ preventScroll: true });
   };
 
-  // Reordering: the dragged item and the gap the pointer marks. The application renders the
-  // new order, often with new rows; a row that mounts for the item moved by keyboard takes focus back.
+  // Reordering: the dragged item and the gap the pointer marks. The application renders the new
+  // order; the item moved by keyboard takes focus back when its row mounts or changes place.
   const [dragged, setDragged] = createSignal<{ id: string; parentId: string | null } | null>(null);
   const [dropTarget, setDropTarget] = createSignal<{ id: string; side: "before" | "after" } | null>(null);
   let claimedDragOver: DragEvent | null = null;
@@ -1171,7 +1172,9 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
         let treeItem: HTMLDivElement | undefined;
         const ownRow = () => treeItem?.firstElementChild as HTMLElement | null | undefined;
 
-        onMount(() => {
+        // A new row for the moved item, or the same row at its new place: moving a focused row drops its focus.
+        createEffect(() => {
+          place();
           if (refocusId !== item.id) return;
           queueMicrotask(() => {
             if (refocusId !== item.id || !treeItem?.isConnected) return;

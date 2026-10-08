@@ -249,6 +249,51 @@ describe("@k2b/ui AppWorkspace.NavTree behavior", () => {
       dom.cleanup();
     }
   });
+  test("keeps focus on the moved item when the application reorders the same item objects", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    delegateEvents(["keydown"], dom.document);
+    // Solid moves the existing rows instead of mounting new ones, which drops the focus of a moved row.
+    const [a, b, c] = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const [rows, setRows] = createSignal([a, b, c]);
+    const dispose = render(
+      () => (
+        <AppWorkspace.NavTree
+          ariaLabel="Notes"
+          onMove={(move) => {
+            const rest = rows().filter((row) => row.id !== move.id);
+            const at = move.beforeId ? rest.findIndex((row) => row.id === move.beforeId) : rest.length;
+            rest.splice(at, 0, rows().find((row) => row.id === move.id)!);
+            setRows(rest);
+          }}
+        >
+          <For each={rows()}>{(row) => <AppWorkspace.NavTree.Item id={row.id} label={row.id} movable />}</For>
+        </AppWorkspace.NavTree>
+      ),
+      dom.root,
+    );
+    try {
+      const item = (id: string) => dom.root.querySelector<HTMLElement>(`[data-k2b-nav-tree-id="${id}"]`)!;
+      const press = async (id: string, key: string) => {
+        dom.document.activeElement?.dispatchEvent(
+          new dom.window.KeyboardEvent("keydown", { key, altKey: true, bubbles: true, cancelable: true }) as unknown as Event,
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(dom.document.activeElement).toBe(item(id));
+      };
+      item("a").focus();
+      await press("a", "ArrowDown");
+      await press("a", "ArrowDown");
+      expect(rows()).toEqual([b, c, a]);
+      await press("a", "ArrowUp");
+      await press("a", "ArrowUp");
+      expect(rows()).toEqual([a, b, c]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
   test("the moved item does not take back focus the person moved elsewhere while the move was saving", async () => {
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
