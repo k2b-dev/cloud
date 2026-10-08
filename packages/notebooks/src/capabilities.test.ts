@@ -33,6 +33,7 @@ import {
   TagNotesDataSchema,
   TagNotesInputSchema,
 } from "./capability-contracts";
+import { notebookCapabilityMessages } from "./capability-messages";
 import { noteContentHash } from "./lib/note-edit";
 import * as bookStore from "./service/book";
 import * as commentStore from "./service/comments";
@@ -1134,11 +1135,16 @@ test("move capability resolves anchors and reviews placement with its effective 
     if (result.ok)
       expect(result.data.summary).toBe(
         locale === "de"
-          ? "„Knowledge index“ an Position 3 unter „Operations“ eingeordnet."
-          : "Placed “Knowledge index” at position 3 under “Operations”.",
+          ? "„Knowledge index“ als 3. Notiz unter „Operations“ eingeordnet."
+          : "Placed “Knowledge index” as the 3rd note under “Operations”.",
       );
     expect(move).toHaveBeenLastCalledWith({ id: note.id, parentId: undefined, placement: { after: anchor.id }, locale });
   }
+  // The stored position counts from 1, so it reads as an ordinal, never as the 0-based input `position`.
+  const { t } = notebookCapabilityMessages.resolve(["en"]);
+  expect([1, 2, 11, 22, 103].map((n) => t.placedRoot({ title: "A", n }))).toEqual(
+    ["1st", "2nd", "11th", "22nd", "103rd"].map((place) => `Placed “A” as the ${place} note in the notebook root.`),
+  );
   const invalid = await operation.review!(
     operation.input.parse({ noteId: note.shortId, parentId: null, before: anchor.shortId }),
     userContext,
@@ -1168,6 +1174,6 @@ test("move capability preserves parent-only messages and localizes first/last pl
         position === "first" ? "Erste Position" : position === "last" ? "Letzte Position" : "0",
       );
     const result = await operation.run(input, { ...userContext, locale: "de" });
-    expect(result.ok && result.data.summary).toBe("„Knowledge index“ an Position 1 auf der obersten Ebene des Notizbuchs eingeordnet.");
+    expect(result.ok && result.data.summary).toBe("„Knowledge index“ als 1. Notiz auf der obersten Ebene des Notizbuchs eingeordnet.");
   }
 });

@@ -70,6 +70,10 @@ const publicNotebook = (notebook: Notebook) => ({
   updatedAt: notebook.updatedAt,
 });
 
+// Exports, scheduled backups among them, have no reader; one fixed collation for title-ordered
+// levels keeps every export of a notebook the same. Hand-ordered levels need no collation.
+const EXPORT_LOCALE = "en";
+
 const buildTree = (flatNotes: Note[]) => {
   type Node = Pick<Note, "id" | "shortId" | "parentId" | "title" | "position" | "createdAt" | "updatedAt"> & {
     children: Node[];
@@ -100,7 +104,7 @@ const buildTree = (flatNotes: Note[]) => {
   }
 
   const sort = (items: Node[]) => {
-    items.sort(compareNoteOrder("en", (note) => note.shortId));
+    items.sort(compareNoteOrder(EXPORT_LOCALE, (note) => note.shortId));
     for (const item of items) sort(item.children);
   };
   sort(roots);
@@ -172,7 +176,7 @@ export const buildNotebookExportFiles = (params: {
   exportedAt?: Date;
 }): NotebookExportFile[] => {
   const exportedAt = (params.exportedAt ?? new Date()).toISOString();
-  const compare = compareNoteOrder("en", (note: Note) => note.shortId);
+  const compare = compareNoteOrder(EXPORT_LOCALE, (note: Note) => note.shortId);
   const sortedNotes = [...params.notes].sort((a, b) => (a.parentId ?? "").localeCompare(b.parentId ?? "") || compare(a, b));
   const sortedAttachments = [...params.attachments].sort((a, b) => a.shortId.localeCompare(b.shortId));
 

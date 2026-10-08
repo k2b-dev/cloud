@@ -1,5 +1,9 @@
 import { i18n } from "@k2b/stdlib";
 
+const englishOrdinalSuffix: Record<string, string> = { one: "st", two: "nd", few: "rd" };
+/** "3rd": a place that cannot be mistaken for the 0-based `position` of the input. */
+const englishOrdinal = (n: number) => `${n}${englishOrdinalSuffix[new Intl.PluralRules("en", { type: "ordinal" }).select(n)] ?? "th"}`;
+
 export const notebookCapabilityMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -27,8 +31,9 @@ export const notebookCapabilityMessages = i18n.define({
       createdUntitled: ({ notebook }: { notebook: string }) => `Created a new note in ${notebook}.`,
       created: ({ title, notebook }: { title: string; notebook: string }) => `Created “${title}” in ${notebook}.`,
       placedUnder: ({ title, parent, n }: { title: string; parent: string; n: number }) =>
-        `Placed “${title}” at position ${n} under “${parent}”.`,
-      placedRoot: ({ title, n }: { title: string; n: number }) => `Placed “${title}” at position ${n} in the notebook root.`,
+        `Placed “${title}” as the ${englishOrdinal(n)} note under “${parent}”.`,
+      placedRoot: ({ title, n }: { title: string; n: number }) =>
+        `Placed “${title}” as the ${englishOrdinal(n)} note in the notebook root.`,
       beforeNote: ({ title }: { title: string }) => `Before “${title}”`,
       afterNote: ({ title }: { title: string }) => `After “${title}”`,
       firstPosition: "First",
@@ -109,8 +114,8 @@ export const notebookCapabilityMessages = i18n.define({
       commentChangeFailed: "Der Kommentar konnte nicht geändert werden",
       createdUntitled: ({ notebook }) => `Neue Notiz in ${notebook} erstellt.`,
       created: ({ title, notebook }) => `„${title}“ in ${notebook} erstellt.`,
-      placedUnder: ({ title, parent, n }) => `„${title}“ an Position ${n} unter „${parent}“ eingeordnet.`,
-      placedRoot: ({ title, n }) => `„${title}“ an Position ${n} auf der obersten Ebene des Notizbuchs eingeordnet.`,
+      placedUnder: ({ title, parent, n }) => `„${title}“ als ${n}. Notiz unter „${parent}“ eingeordnet.`,
+      placedRoot: ({ title, n }) => `„${title}“ als ${n}. Notiz auf der obersten Ebene des Notizbuchs eingeordnet.`,
       beforeNote: ({ title }) => `Vor „${title}“`,
       afterNote: ({ title }) => `Nach „${title}“`,
       firstPosition: "Erste Position",
