@@ -216,6 +216,40 @@ databaseSuite()("aiMemories (integration)", () => {
     }
   });
 
+  test("background proposals do not write from an archived source chat", async () => {
+    const userId = await insertUser();
+    try {
+      const conversationId = await insertConversation(userId, "Archived source");
+      const memory = await aiMemories.create({
+        userId,
+        kind: "preference",
+        content: "Prefers short answers.",
+        source: "background",
+        sourceConversationId: conversationId,
+      });
+      await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${conversationId}::uuid`;
+
+      expect(
+        await aiMemories.applyBackgroundProposal({
+          userId,
+          sourceConversationId: conversationId,
+          proposal: { action: "add", kind: "preference", content: "Prefers German answers.", memoryIds: [], resourceRef: null },
+        }),
+      ).toEqual([]);
+      expect(
+        await aiMemories.applyBackgroundProposal({
+          userId,
+          sourceConversationId: conversationId,
+          proposal: { action: "retire", kind: "preference", content: "", memoryIds: [memory.shortId], resourceRef: null },
+        }),
+      ).toEqual([]);
+      expect((await aiMemories.list({ userId })).map((item) => item.id)).toEqual([memory.id]);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("only known BM25 capability failures may downgrade search", () => {
     expect(isAiMemoryBm25CapabilityError({ code: "42883" })).toBe(true);
     expect(isAiMemoryBm25CapabilityError({ code: "57014" })).toBe(false);

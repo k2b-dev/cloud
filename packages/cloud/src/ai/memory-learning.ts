@@ -12,6 +12,7 @@ import { type AiMemoryLearningChange, aiMemoryLearningRuns } from "./memory-lear
 import {
   type AiMemoryWorkflowEvidence,
   type AiMemoryWorkflowPattern,
+  isAiWorkflowPatternEligible,
   listAiPendingWorkflowPatterns,
   listAiTurnWorkflowEvidence,
   markAiWorkflowPatternReviewed,
@@ -199,6 +200,21 @@ const markFailed = async (candidate: Candidate): Promise<void> => {
 
 const learningEnabled = async (userId: string): Promise<boolean> => (await aiUserPrefs.get(userId)).memoryLearningEnabled;
 
+const turnEligible = async (candidate: Candidate): Promise<boolean> => {
+  const [row] = await sql<{ id: string }[]>`
+    SELECT turn.id
+    FROM ai.turns turn
+    JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
+    WHERE turn.id = ${candidate.turnId}::uuid
+      AND conversation.id = ${candidate.conversationId}::uuid
+      AND conversation.created_by_user_id = ${candidate.userId}::uuid
+      AND conversation.archived_at IS NULL
+      AND turn.status = 'completed'
+      AND turn.memory_learned_at IS NULL
+  `;
+  return Boolean(row);
+};
+
 const monthlyAccountedTokens = async (userId: string): Promise<number> => {
   const [row] = await sql<{ tokens: number }[]>`
     SELECT COALESCE(sum(accounted_tokens), 0)::int AS tokens
@@ -342,6 +358,7 @@ const applyChanges = async (
 const workflowPatternInput = async (
   pattern: AiMemoryWorkflowPattern,
 ): Promise<{ input: string; source: TurnEvidence | null; mutableMemoryIds: Set<string> }> => {
+  if (!(await isAiWorkflowPatternEligible(pattern))) return { input: "", source: null, mutableMemoryIds: new Set() };
   const sources = await Promise.all(
     pattern.turnIds.map(async (turnId) => {
       const [row] = await sql<{ conversation_id: string; completed_as_of: string; fail_count: number }[]>`
@@ -349,6 +366,7 @@ const workflowPatternInput = async (
         FROM ai.turns turn
         JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
         WHERE turn.id = ${turnId}::uuid AND conversation.created_by_user_id = ${pattern.userId}::uuid
+          AND conversation.archived_at IS NULL
       `;
       if (!row) return null;
       return loadTurnEvidence({
@@ -361,6 +379,7 @@ const workflowPatternInput = async (
     }),
   );
   const evidence = sources.filter((source): source is TurnEvidence => Boolean(source));
+  if (evidence.length !== pattern.turnIds.length) return { input: "", source: null, mutableMemoryIds: new Set() };
   const query = evidence.map((source) => source.userText).join(" ");
   const selected = await aiMemories.selectHot(pattern.userId, query);
   const examples = evidence
@@ -441,6 +460,12 @@ export const learnAiMemoriesFromPrivateChats = async (
     let runId: string | null = null;
     let changes: AiMemoryLearningChange[] = [];
     try {
+      if (!(await turnEligible(candidate))) {
+        await markLearned(candidate);
+        summary.skipped += 1;
+        processedCandidates += 1;
+        continue;
+      }
       const evidence = await loadTurnEvidence(candidate);
       if (!evidence.userText) {
         await markLearned(candidate);
@@ -458,7 +483,6 @@ export const learnAiMemoriesFromPrivateChats = async (
       });
       const reservedTokens = estimatedTokens(systemPrompt, taskInput);
       if ((await readMonthlyUsage(candidate.userId)) + reservedTokens > monthlyTokenBudget) continue;
-      // Read the choice again right before the turn can reach the model.
       if (!(await learningEnabled(candidate.userId))) continue;
       runId = await aiMemoryLearningRuns.start({
         userId: candidate.userId,
@@ -468,6 +492,22 @@ export const learnAiMemoriesFromPrivateChats = async (
         modelProfileId: resolved.profile.id,
         accountedTokens: reservedTokens,
       });
+      // Claiming the run also awaits the database: recheck immediately before inference.
+      // runAiStructured may still wait for background admission; checks after the call discard results for chats that became ineligible.
+      if (!(await turnEligible(candidate))) {
+        await markLearned(candidate);
+        if (runId)
+          await aiMemoryLearningRuns.finish({
+            runId,
+            status: "skipped",
+            durationMs: Date.now() - startedAt,
+            changes: [],
+            accountedTokens: 0,
+          });
+        summary.skipped += 1;
+        processedCandidates += 1;
+        continue;
+      }
       if (!runId) continue;
       const result = await structured({
         task: "memory-learn-turn",
@@ -481,7 +521,7 @@ export const learnAiMemoriesFromPrivateChats = async (
         signal: input.signal,
         resolveModel: async () => resolved,
       });
-      if (!(await learningEnabled(candidate.userId))) {
+      if (!(await learningEnabled(candidate.userId)) || !(await turnEligible(candidate))) {
         await markLearned(candidate);
       } else {
         changes = await applyChanges(
@@ -547,7 +587,8 @@ export const learnAiMemoriesFromPrivateChats = async (
     try {
       const context = await workflowPatternInput(pattern);
       if (!context.source) {
-        await markAiWorkflowPatternReviewed(pattern);
+        // Archive retires its own receipts; preserve other chats' evidence for a later pattern.
+        summary.skipped += 1;
         continue;
       }
       const locale = await resolveLearningLocale(context.source.candidate.locale);
@@ -568,6 +609,18 @@ export const learnAiMemoriesFromPrivateChats = async (
         modelProfileId: resolved.profile.id,
         accountedTokens: reservedTokens,
       });
+      if (!(await isAiWorkflowPatternEligible(pattern))) {
+        if (runId)
+          await aiMemoryLearningRuns.finish({
+            runId,
+            status: "skipped",
+            durationMs: Date.now() - startedAt,
+            changes: [],
+            accountedTokens: 0,
+          });
+        summary.skipped += 1;
+        continue;
+      }
       if (!runId) continue;
       const result = await structured({
         task: "memory-learn-workflow",
@@ -586,7 +639,8 @@ export const learnAiMemoriesFromPrivateChats = async (
         resolveModel: async () => resolved,
       });
       let changes: AiMemoryLearningChange[] = [];
-      if (result.output.workflow && (await learningEnabled(pattern.userId))) {
+      // The write locks only the source chat; check the other examples right before it.
+      if (result.output.workflow && (await learningEnabled(pattern.userId)) && (await isAiWorkflowPatternEligible(pattern))) {
         const memoryIds = result.output.workflow.memoryIds;
         const action = memoryIds.length > 1 ? "merge" : memoryIds.length === 1 ? "replace" : "add";
         changes = await applyChanges(
@@ -603,7 +657,7 @@ export const learnAiMemoriesFromPrivateChats = async (
           context.mutableMemoryIds,
         );
       }
-      await markAiWorkflowPatternReviewed(pattern);
+      if (await isAiWorkflowPatternEligible(pattern)) await markAiWorkflowPatternReviewed(pattern);
       await aiMemoryLearningRuns.finish({
         runId,
         status: changes.length > 0 ? "ok" : "skipped",

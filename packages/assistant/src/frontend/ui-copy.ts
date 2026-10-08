@@ -325,8 +325,8 @@ const germanText: Record<string, string> = {
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",
-  "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats; review or delete them under Saved personalization.":
-    "Solange dies eingeschaltet ist, kann der Assistent aus deinen privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
+  "While this is on, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults from your private chats that are not archived; review or delete them under Saved personalization.":
+    "Solange dies eingeschaltet ist, kann der Assistent aus deinen nicht archivierten privaten Chats dauerhafte Tatsachen, Präferenzen und wiederkehrende Cloud-Abläufe speichern; du kannst sie unter „Gespeicherte Personalisierung“ prüfen oder löschen.",
   Type: "Typ",
   "You can view and export it, but you cannot change it.": "Du kannst ihn ansehen und exportieren, aber nicht ändern.",
   failed: "fehlgeschlagen",

@@ -412,6 +412,7 @@ export const aiMemories = {
    * Apply one model proposal as an ownership-checked transaction. Background
    * learning may only mutate normal background memories; user, agent, and
    * pinned entries remain authoritative.
+   * The source chat must still be active; the row lock makes this atomic with archiving.
    */
   async applyBackgroundProposal(input: {
     userId: string;
@@ -437,6 +438,7 @@ export const aiMemories = {
         FROM ai.conversations c
         WHERE c.id = ${input.sourceConversationId}::uuid
           AND c.created_by_user_id = ${input.userId}::uuid
+          AND c.archived_at IS NULL
           AND (${input.sourceMessageId ?? null}::uuid IS NULL OR EXISTS (
             SELECT 1 FROM ai.messages m
             WHERE m.id = ${input.sourceMessageId ?? null}::uuid AND m.conversation_id = c.id
