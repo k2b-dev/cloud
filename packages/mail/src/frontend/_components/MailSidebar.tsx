@@ -4,6 +4,7 @@ import { documentNavigate, type LinkNavigateEvent, navigateTo, refreshCurrentPat
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
+  Button,
   ButtonLink,
   createNavigation,
   Dropdown,
@@ -509,25 +510,26 @@ export default function MailSidebar(props: {
       : common;
   };
   // Used as a row and as an inline action, so its type stays inferred and fits both.
-  const details = () => ({
+  const details = (label: string) => ({
     id: "details",
-    label: messages().mailboxDetails,
+    label,
     icon: "ti ti-info-circle",
     action: "details",
     disabled: props.detailsOpening,
   });
   const navigation = createNavigation({
     items: () => [
-      // Like the desktop sidebar, the details sit beside Compose; readers, who cannot compose, get them as their own row.
+      // Like the desktop sidebar, the details sit beside Compose; readers, who cannot compose, get them as their own row,
+      // named like the button that takes Compose's place on desktop.
       props.canWrite
         ? {
             id: "compose",
             label: messages().compose,
             icon: "ti ti-pencil",
             href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
-            inlineActions: [details()],
+            inlineActions: [details(messages().mailboxDetails)],
           }
-        : details(),
+        : details(messages().aboutMailbox),
       { id: "mailboxes", label: messages().allMailboxes, icon: "ti ti-switch-horizontal", href: "/app/mail" },
       { id: "follow-up", label: messages().followUp, children: views(followUpViewItems()) },
       { id: "assignment", label: messages().assignment, children: views(assignmentViewItems()) },
@@ -630,34 +632,52 @@ export default function MailSidebar(props: {
     },
   });
 
+  const detailsIcon = () => (props.detailsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-info-circle");
+
   return (
     <>
       <WorkspaceNavigationProvider navigation={navigation} label={props.mailboxName} />
       <AppWorkspace.Sidebar class="mail-workspace-navigation">
         <AppWorkspace.SidebarDesktop>
           <div class="mail-sidebar-actions mx-2 mt-2 flex items-center gap-2">
-            {props.canWrite && (
-              <ButtonLink
+            {/* SSR knows the permission, so this slot never changes shape after hydration. While the details load, only
+                the icon changes: the button keeps its size and focus. */}
+            {props.canWrite ? (
+              <>
+                <ButtonLink
+                  size="sm"
+                  href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`}
+                  class="mail-compose-action min-w-0 flex-1"
+                >
+                  <i class="ti ti-pencil" aria-hidden="true" />
+                  <span>{messages().compose}</span>
+                </ButtonLink>
+                <IconButton
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  class="mail-details-action shrink-0"
+                  label={messages().mailboxDetails}
+                  aria-busy={props.detailsOpening ? "true" : undefined}
+                  onClick={() => props.onOpenDetails()}
+                >
+                  <i class={detailsIcon()} aria-hidden="true" />
+                </IconButton>
+              </>
+            ) : (
+              // Readers cannot compose: the details take Compose's place at its full width, so no row stands half empty.
+              <Button
+                type="button"
                 size="sm"
-                href={`/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`}
-                class="mail-compose-action min-w-0 flex-1"
+                variant="secondary"
+                class="mail-details-action min-w-0 flex-1"
+                aria-busy={props.detailsOpening ? "true" : undefined}
+                onClick={() => props.onOpenDetails()}
               >
-                <i class="ti ti-pencil" aria-hidden="true" />
-                <span>{messages().compose}</span>
-              </ButtonLink>
+                <i class={detailsIcon()} aria-hidden="true" />
+                <span>{messages().aboutMailbox}</span>
+              </Button>
             )}
-            {/* Square beside Compose. While the details load, only its icon changes: it keeps its size and focus. */}
-            <IconButton
-              type="button"
-              size="sm"
-              variant="secondary"
-              class="mail-details-action ms-auto shrink-0"
-              label={messages().mailboxDetails}
-              aria-busy={props.detailsOpening ? "true" : undefined}
-              onClick={() => props.onOpenDetails()}
-            >
-              <i class={props.detailsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-info-circle"} aria-hidden="true" />
-            </IconButton>
           </div>
           <AppWorkspace.SidebarBody scrollPreserveKey={`mail-sidebar-${props.mailboxId}`}>
             <AppWorkspace.SidebarSection title={messages().followUp}>

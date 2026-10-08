@@ -12,51 +12,50 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: MailSidebar } = await import("./MailSidebar.tsx");
+const [{ default: MailSidebar }, { LocaleProvider }] = await Promise.all([import("./MailSidebar.tsx"), import("@k2b/ui")]);
 
-const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
-  renderToString(() =>
-    createComponent(MailSidebar, {
-      mailboxId: "Box001",
-      mailboxName: "Support",
-      syncEnabled: true,
-      needsConnection: false,
-      folders: [],
-      localTags: [],
-      savedViews: [],
-      scheduledMode: false,
-      scheduledCount: 0,
-      activeFolderId: null,
-      activeView: null,
-      activeSavedViewId: null,
-      activeTagId: null,
-      searchActive: false,
-      viewCounts: {
-        needs_action: 2,
-        mine: 1,
-        unassigned: 1,
-        waiting: 3,
-        done: 4,
-        snoozed: 0,
-        send_problems: 0,
-        recently_active: 5,
-      },
-      canWrite: true,
-      canAdmin: true,
-      managementOpening: null,
-      settingsOpening: false,
-      detailsOpening: false,
-      onOpenDetails: () => {},
-      onOpenHealth: () => {},
-      onOpenSharedLinks: () => {},
-      onOpenRemoteContent: () => {},
-      onOpenSubscriptions: () => {},
-      onOpenSettings: () => {},
-      onMoveConversation: () => {},
-      onNavigate: () => {},
-      ...overrides,
-    }),
-  );
+const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
+  createComponent(MailSidebar, {
+    mailboxId: "Box001",
+    mailboxName: "Support",
+    syncEnabled: true,
+    needsConnection: false,
+    folders: [],
+    localTags: [],
+    savedViews: [],
+    scheduledMode: false,
+    scheduledCount: 0,
+    activeFolderId: null,
+    activeView: null,
+    activeSavedViewId: null,
+    activeTagId: null,
+    searchActive: false,
+    viewCounts: {
+      needs_action: 2,
+      mine: 1,
+      unassigned: 1,
+      waiting: 3,
+      done: 4,
+      snoozed: 0,
+      send_problems: 0,
+      recently_active: 5,
+    },
+    canWrite: true,
+    canAdmin: true,
+    managementOpening: null,
+    settingsOpening: false,
+    detailsOpening: false,
+    onOpenDetails: () => {},
+    onOpenHealth: () => {},
+    onOpenSharedLinks: () => {},
+    onOpenRemoteContent: () => {},
+    onOpenSubscriptions: () => {},
+    onOpenSettings: () => {},
+    onMoveConversation: () => {},
+    onNavigate: () => {},
+    ...overrides,
+  });
+const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) => renderToString(() => sidebar(overrides));
 
 describe("Mail sidebar", () => {
   test("separates follow-up and assignment and links stable tag IDs", () => {
@@ -200,7 +199,7 @@ describe("Mail sidebar", () => {
     });
   });
 
-  test("puts the mailbox details beside Compose, and gives readers them too", () => {
+  test("puts the mailbox details beside Compose, and gives readers them in Compose's place", () => {
     type Entry = { id: string; label: string; action?: string; inlineActions?: Entry[] };
     const phoneItems = (html: string) =>
       (JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1] ?? "{}") as { items: Entry[] }).items;
@@ -224,8 +223,26 @@ describe("Mail sidebar", () => {
     const reader = renderSidebar({ canWrite: false, canAdmin: false });
     const readerRow = actionsRow(reader);
     expect(readerRow).not.toContain("mail-compose-action");
-    expect(readerRow).toContain('aria-label="Mailbox details"');
+    // A labelled, full-width button in Compose's slot, not the square icon button.
+    expect(readerRow).toMatch(
+      /<button[^>]*class="k2b-button mail-details-action min-w-0 flex-1[^"]*"[^>]*data-size="sm"[^>]*data-variant="secondary"/,
+    );
+    expect(readerRow).not.toContain("aria-label=");
+    expect(readerRow).toContain("About this mailbox");
+    expect(readerRow).toContain("ti ti-info-circle");
     const [details] = phoneItems(reader);
-    expect([details?.id, details?.action]).toEqual(["details", "details"]);
+    expect([details?.id, details?.label, details?.action]).toEqual(["details", "About this mailbox", "details"]);
+
+    const germanReader = actionsRow(
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return sidebar({ canWrite: false, canAdmin: false });
+          },
+        }),
+      ),
+    );
+    expect(germanReader).toContain("Über dieses Postfach");
   });
 });

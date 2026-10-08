@@ -52,7 +52,7 @@ Nach der Einrichtung erkennt Mail die Ordner des Anbieters und beginnt mit der S
 
 Die linke Navigation enthält:
 
-- **Verfassen** ganz oben, wenn du senden darfst, und daneben die Schaltfläche **Postfachdetails** (i). Auf dem Smartphone stehen beide in der ersten Zeile des App-Menüs; wer nur lesen darf und nicht verfassen kann, findet die Postfachdetails dort als eigene Zeile.
+- **Verfassen** ganz oben, wenn du senden darfst, und daneben die Schaltfläche **Postfachdetails** (i). Wenn du das Postfach nur lesen darfst, steht dort **Über dieses Postfach** und öffnet dieselben Details. Auf dem Smartphone stehen sie in der ersten Zeile des App-Menüs.
 - **Nachverfolgung** mit Handlungsbedarf, Wartet auf Antwort, Später und Erledigt.
 - **Zuordnung** mit Mir zugewiesen und Nicht zugewiesen.
 - **Mail** mit Posteingang, Entwürfe, Geplant, Gesendet und einer ausklappbaren Mehr-Gruppe.

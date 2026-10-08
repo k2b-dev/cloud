@@ -52,7 +52,7 @@ Open **Settings > Accounts & identities > Sending identities**. An identity grou
 
 The left navigation contains:
 
-- **Compose** at the top when you may send, with the **Mailbox details** button (i) beside it. On a phone, both are in the first row of the app menu; readers, who cannot compose, find Mailbox details there on its own.
+- **Compose** at the top when you may send, with the **Mailbox details** button (i) beside it. If you may only read the mailbox, **About this mailbox** takes that place and opens the same details. On a phone, these are in the first row of the app menu.
 - **Follow-up** for Needs action, Waiting for reply, Later, and Done.
 - **Assignment** for Assigned to me and Unassigned.
 - **Mail** for Inbox, Drafts, Scheduled, Sent, and an expandable More group.
