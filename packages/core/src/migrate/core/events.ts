@@ -8,13 +8,14 @@
  * is no dead state, so `events.enqueue` turns anything that would fail forever
  * into something that cannot: an oversized live payload becomes a resync hint.
  */
+import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { type SQL, sql } from "bun";
 
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
     // Core replicas may start together during a rollout.
     await tx`SELECT pg_advisory_xact_lock(hashtext('cloud.events.migrate'))`;
-    await tx`CREATE SCHEMA IF NOT EXISTS events`.simple();
+    await ensureSchema(tx, "events");
     await tx`
       CREATE TABLE IF NOT EXISTS events.outbox (
         seq             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

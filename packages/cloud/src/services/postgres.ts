@@ -1,3 +1,18 @@
+import type { TransactionSQL } from "bun";
+
+/**
+ * Call inside the migration transaction directly after its advisory lock, as
+ * its first statement reading pg_namespace (including through views like pg_tables).
+ * The fresh relation lock applies catalog invalidations the advisory lock does not,
+ * so this check and all later DDL see schemas other migrators committed while it waited.
+ * The schema name must be a code constant and a plain lowercase Postgres identifier.
+ */
+export const ensureSchema = async (db: TransactionSQL, name: string): Promise<void> => {
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(name)) throw new Error("Schema name must be a plain lowercase Postgres identifier");
+  const [schema] = await db<{ exists: boolean }[]>`SELECT EXISTS(SELECT FROM pg_namespace WHERE nspname = ${name}) AS exists`;
+  if (!schema?.exists) await db.unsafe(`CREATE SCHEMA ${name}`).simple();
+};
+
 /** Convert a JS string array to a Postgres TEXT[] literal (Bun sql can't serialize empty arrays). */
 export const toPgTextArray = (values: string[] | null | undefined): string => {
   if (!Array.isArray(values) || values.length === 0) return "{}";
