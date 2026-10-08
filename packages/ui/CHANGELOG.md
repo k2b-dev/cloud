@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.18.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.17.0...npm-ui-v0.18.0) (2026-10-08)
+
+
+### Features
+
+* **ai:** calm, clear Assistant surfaces ([#719](https://github.com/k2b-dev/cloud/issues/719)) ([400da10](https://github.com/k2b-dev/cloud/commit/400da1004a259e12135050f249f565d45fe4de9b))
+* **ai:** keep failed turns visible with a clear next step ([#712](https://github.com/k2b-dev/cloud/issues/712)) ([2edd0da](https://github.com/k2b-dev/cloud/commit/2edd0da4d48a98ade02a23a4604f4c81a1abdce6))
+* **filesv2:** play videos in Files and attach them in Spaces ([#714](https://github.com/k2b-dev/cloud/issues/714)) ([6cd619d](https://github.com/k2b-dev/cloud/commit/6cd619dd4fa1a17a1b3d6e8ad7d12024f38cb610))
+* **notebooks:** let writers order notes by hand ([#731](https://github.com/k2b-dev/cloud/issues/731)) ([0835dee](https://github.com/k2b-dev/cloud/commit/0835dee1ebedd72323089d1156abf62b98245f5e))
+* **notebooks:** list the homepage note in the tree with a home icon ([#726](https://github.com/k2b-dev/cloud/issues/726)) ([304d103](https://github.com/k2b-dev/cloud/commit/304d1031d681735c88286bc8e95f0623397ec86a))
+* **ui:** calm reference pills and quiet links in every Markdown view ([#733](https://github.com/k2b-dev/cloud/issues/733)) ([4b00e92](https://github.com/k2b-dev/cloud/commit/4b00e92e52a9a54e28b4020732e96fe830d46be9))
+* **ui:** drop files anywhere on the page, not into a thin strip ([#718](https://github.com/k2b-dev/cloud/issues/718)) ([732e64a](https://github.com/k2b-dev/cloud/commit/732e64a49cacf2fcd2608200a18da6815cba2a75))
+
+
+### Bug Fixes
+
+* **ui:** give table lines and hover highlights one consistent width ([#722](https://github.com/k2b-dev/cloud/issues/722)) ([e9bd63e](https://github.com/k2b-dev/cloud/commit/e9bd63e84a6208cdca8e2f0b947a720823da142e))
+* **ui:** make the VideoPlayer playback tests reach the end reliably in WebKit ([#724](https://github.com/k2b-dev/cloud/issues/724)) ([be41bb8](https://github.com/k2b-dev/cloud/commit/be41bb81d87af0e29e9199cbd0f942897ee35021))
+
 ## [0.17.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.16.0...npm-ui-v0.17.0) (2026-10-07)
 
 
