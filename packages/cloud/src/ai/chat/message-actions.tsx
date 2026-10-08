@@ -13,7 +13,14 @@ import {
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
-import { type AiForkMessageInput, type AiRetryMessageInput, aiToolIcon, displayToolName, formatWorkedDuration } from "./message-utils";
+import {
+  type AiForkMessageInput,
+  type AiRetryMessageInput,
+  aiToolIcon,
+  describeResponseEnd,
+  displayToolName,
+  formatWorkedDuration,
+} from "./message-utils";
 import { aiChatMessages } from "./messages";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
@@ -90,7 +97,7 @@ const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
     { label: t.infoProviderModel, value: entry.providerModel ?? t.infoUnknown },
     { label: t.infoModelProfile, value: entry.modelProfileId ?? t.infoUnknown },
     { label: t.infoLoopId, value: entry.loopId ?? t.infoLegacy },
-    { label: t.infoFinished, value: `${entry.loopDoneReason ?? t.infoUnknown} · ${entry.stopReason ?? t.infoUnknown}` },
+    { label: t.infoFinished, value: describeResponseEnd(entry, locale) },
     { label: t.infoCreated, value: formatDateTime(entry.createdAt, locale) },
   ];
 

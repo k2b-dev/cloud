@@ -228,7 +228,7 @@ export function CloudSurveyBlock(props: {
           </Show>
         </div>
       </div>
-      <footer class="flex min-h-12 items-center gap-3 border-t border-[var(--k2b-border)] bg-[var(--k2b-surface-subtle)] px-4 py-2.5">
+      <footer class="flex min-h-12 items-center gap-3 px-4 pb-3">
         <Show when={submitted()}>
           <span class="inline-flex items-center gap-1.5 text-xs font-medium text-secondary">
             <i class="ti ti-check text-[var(--k2b-ai-accent)]" aria-hidden="true" />

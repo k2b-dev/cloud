@@ -1,4 +1,4 @@
-import type { Message, Usage } from "@k2b/nessi";
+import type { DoneReason, Message, Usage } from "@k2b/nessi";
 import { fileIcons } from "@k2b/stdlib";
 import { formatBytes as sharedFormatBytes } from "../../shared/format";
 import { type AiAttachmentRef, parseAiAttachmentMarkers } from "../attachments";
@@ -122,6 +122,35 @@ export const FILE_INPUT_ACCEPT = [
 ].join(",");
 
 /** Seconds-granular work duration ("8s", "2m 14s") — stdlib's dates.formatDuration is deliberately minute-granular. */
+/**
+ * How a response ended, in words: the run's end, plus the last message's own stop when it adds something, such as a
+ * cut-off answer. A stop code the list does not know stays as the provider sent it.
+ */
+export const describeResponseEnd = (entry: Pick<AiStoredMessage, "loopDoneReason" | "stopReason">, locale: string): string => {
+  const t = aiChatMessages(locale);
+  const run: Record<DoneReason, string> = {
+    stop: t.infoEndCompleted,
+    aborted: t.infoEndStopped,
+    error: t.infoEndFailed,
+    max_turns: t.infoEndStepLimit,
+    no_credits: t.infoEndUsageLimit,
+    context_overflow: t.infoEndContextFull,
+  };
+  const message: Record<string, string | null> = {
+    stop: entry.loopDoneReason ? null : t.infoEndCompleted,
+    tool_use: null,
+    max_tokens: t.infoEndLengthLimit,
+    aborted: t.infoEndStopped,
+    interrupted: t.infoEndInterrupted,
+    error: t.infoEndFailed,
+  };
+  const parts = [
+    entry.loopDoneReason ? run[entry.loopDoneReason] : null,
+    entry.stopReason ? (Object.hasOwn(message, entry.stopReason) ? message[entry.stopReason] : entry.stopReason) : null,
+  ].filter((part): part is string => Boolean(part));
+  return [...new Set(parts)].join(" · ") || t.infoUnknown;
+};
+
 export const formatWorkedDuration = (ms: number): string => {
   const totalSeconds = Math.max(1, Math.round(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
