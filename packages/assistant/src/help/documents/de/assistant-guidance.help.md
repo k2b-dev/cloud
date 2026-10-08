@@ -74,7 +74,7 @@ Behandle erzeugte Tatsachen, Berechnungen, externe Aktionen und Änderungen an w
 
 ## Studio-App öffnen oder teilen {icon="share"}
 
-App-Nutzer öffnen die eigenständige Ansicht ohne Assistant-Sidebar. App-Verwalter
+App-Nutzer öffnen die eigenständige Ansicht ohne Assistent-Seitenleiste. App-Verwalter
 wählen oben **Vollbild öffnen** oder im Aktionsmenü **App-Link kopieren**. Der Link startet
 immer die zuletzt veröffentlichte Version. Private Apps benötigen weiterhin eine
 Anmeldung und eine App-Berechtigung.

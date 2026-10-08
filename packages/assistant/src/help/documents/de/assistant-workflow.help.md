@@ -115,7 +115,7 @@ vorher abgeschlossen sein.
 ## Chats durchsuchen {icon="search"}
 
 **Alle Chats durchsuchen** öffnet die globale Suche für Titel und Nachrichteninhalte
-deiner Assistant-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
+deiner Assistent-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
 geöffneten Chat. Der entfernbare Filter zeigt den Suchbereich. Eine Suchaktion
 in der Palette setzt ihn direkt im offenen Fenster. Entfernst du den Filter,
 suchst du wieder in allen Cloud-Apps.
