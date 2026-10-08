@@ -24,10 +24,11 @@ export const MailImapInputSchema = z
       .refine((value) => !/[\s/@\0]/.test(value), "Use an IMAP hostname"),
     port: z.int().min(1).max(65535),
     secure: z.boolean(),
-    user: z.string().min(1).max(320),
+    user: z.string().trim().min(1).max(320),
     password: z.string().max(16384).nullable().optional(),
     folder: z
       .string()
+      .trim()
       .min(1)
       .max(200)
       .refine((value) => !/[\x00-\x1f\x7f]/.test(value), "Folder must not contain control characters"),
@@ -94,11 +95,13 @@ export const MailErrorCodeSchema = z.enum([
   "smtp_failed",
 ]);
 export type MailErrorCode = z.infer<typeof MailErrorCodeSchema>;
+export const MailBounceErrorCodeSchema = z.enum(["open_failed", "search_failed", "apply_failed", "save_failed", "interrupted"]);
+export type MailBounceErrorCode = z.infer<typeof MailBounceErrorCodeSchema>;
 export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword: true, revision: true, imap: true }).extend({
   key: MailProfileKeySchema,
   hasPassword: z.boolean(),
   imap: MailImapInputSchema.omit({ password: true }).extend({ hasPassword: z.boolean() }).nullable(),
-  bounces: z.object({ checkedAt: z.string().nullable(), error: z.string().nullable() }).nullable(),
+  bounces: z.object({ checkedAt: z.string().nullable(), error: MailBounceErrorCodeSchema.nullable() }).nullable(),
   isDefault: z.boolean(),
   revision: z.int(),
   createdAt: z.string(),

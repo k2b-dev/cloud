@@ -217,7 +217,10 @@ Filters are `ref: { scope, id? }`, `ids` (at most 100 UUIDs), `batchId`,
 `bounced` means a standard delivery status notification (RFC 3464) reported
 failed recipients after SMTP acceptance (`sent`). Core collects these reports
 asynchronously from the sender profile's optional IMAP mailbox and adds
-`{ recipient, reason, at }` entries to `failures`. Delayed reports and
+`{ recipient, reason, at }` entries to `failures`. Reports must match the stored
+Message-ID and a message recipient (Final-Recipient or Original-Recipient,
+case-insensitive); failures retain the stored recipient spelling. Later
+sender-domain changes do not affect matching. Delayed reports and
 non-standard bounces are ignored. The absence of a bounce does not prove inbox
 delivery. Administrators configure collection in
 [Outgoing mail operations](/en/docs/operations/outgoing-mail).

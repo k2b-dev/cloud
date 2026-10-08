@@ -89,8 +89,9 @@ Immediate sending does not use the bulk pacing setting.
 
 In **Administration → Outgoing mail**, edit a profile and fill in the
 **Bounces** section with the IMAP mailbox that receives its delivery reports.
-Leave the host empty to turn collection off. The **Server** column of the
-profile list shows the latest check or a failed check.
+Leave the host empty to turn collection off. With **Implicit TLS** off, Cloud
+requires STARTTLS. The profile list shows when the mailbox was last checked or
+why the latest check failed, on phones as well as on wide screens.
 
 From the CLI, add an optional `imap` object to the profile configuration
 through `profiles put`. For example, include this block in `sender.json`:
@@ -111,7 +112,10 @@ through `profiles put`. For example, include this block in `sender.json`:
 Supply every connection field, including `folder`; use `"INBOX"` for the inbox.
 Hosts follow the SMTP hostname constraints, ports must be 1–65535, usernames
 1–320 characters, and folders 1–200 characters without control characters.
-`secure: true` uses implicit TLS; `false` uses STARTTLS when offered.
+User and folder values are trimmed; whitespace-only values are rejected.
+`secure: true` uses implicit TLS; `false` requires STARTTLS before authentication.
+Hosts may be DNS names or IP addresses; the server certificate must cover the
+configured host.
 The IMAP password follows the SMTP rules: omission keeps it, `null` clears it,
 and changing the host requires entering it again or clearing it. Submit
 passwords only through `--config-file` or `--stdin`. Responses expose
@@ -128,25 +132,45 @@ interrupted check. Profiles left over wait for the next tick. Each profile
 processes at most 200 messages, oldest UID first. The first run and a change of
 mailbox UIDVALIDITY restart from the last seven days; subsequent runs read UIDs
 strictly above the stored cursor. Changing the IMAP host, port, user, or folder
-resets that cursor and the check status. Setting `imap` to `null` or omitting it on replacement turns
-collection off and clears its cursor and check status.
+resets that cursor and the check status. Servers without ESEARCH are searched
+in bounded UID windows; empty windows advance the cursor so later polls continue.
+An interrupted or failed run keeps progress through the last fully processed UID.
+Setting `imap` to `null` or omitting it on replacement turns collection off and clears its cursor and check status.
 
 Polling opens the folder read-only and fetches parts without marking mail as
 read. It never moves, deletes, or expunges messages. Only standard RFC 3464
-`multipart/report; report-type=delivery-status` messages with the original
-Cloud Message-ID and sender domain are processed. Core fetches only the
-delivery status and original headers, each limited to 64 KiB; oversized parts
+`multipart/report; report-type=delivery-status` messages with the
+stored Cloud Message-ID are processed. Matching is case-insensitive and uses
+the Message-ID fixed at acceptance, so later sender-domain changes do not matter.
+Core fetches only the delivery status and original headers, each limited to 64 KiB; oversized parts
 are skipped, and returned original bodies and attachments are never downloaded.
 `Action: failed` adds recipients and reasons to the send log and changes `sent`
-to `bounced`. Repeated reports do not duplicate the same recipient and reason;
-a record holds at most 100 failures. Delayed and non-standard bounces are
+to `bounced` only when Final-Recipient, or otherwise Original-Recipient, matches
+one of the message's recipients case-insensitively. Failures keep the stored
+recipient spelling; unrelated recipients are ignored. Repeated reports do not
+duplicate the same recipient and reason; a record holds at most 100 failures. Delayed and non-standard bounces are
 ignored. No bounce does not prove delivery.
+
+If reading a message fails, Core retries it once on a new connection. A second
+read failure skips that UID, logs a warning with the profile key and UID, and
+continues on another connection. Reconnection failures or a changed UIDVALIDITY
+stop the check; database failures are never skipped.
 
 `profiles list` and `profiles get` show the IMAP host and folder plus the latest
 check time, error, or `off`. JSON exposes `imap` and `bounces: { checkedAt,
 error }`; both are null when disabled. A new mailbox is `pending` until its
-first check. Connection failures retain the cursor and show a short error;
-check credentials, folder, TLS, and Core's egress, then wait for the next poll.
+first check. Errors are stable codes, cleared by a successful check:
+
+| Code | What to check |
+| --- | --- |
+| `open_failed` | Credentials, folder, TLS certificate, required STARTTLS, Core's IMAP egress, or a UIDVALIDITY change during reconnection |
+| `search_failed` | IMAP server availability and UID search support |
+| `apply_failed` | Database availability while recording a report |
+| `save_failed` | Database availability while saving progress and check status |
+| `interrupted` | Core shutdown or the four-minute budget; collection resumes from saved progress on the next tick |
+
+After resolving an error, wait for the next poll. If the database cannot save
+check status, inspect Core's logs; the displayed status may still be older.
 
 ## Choose the default profile
 

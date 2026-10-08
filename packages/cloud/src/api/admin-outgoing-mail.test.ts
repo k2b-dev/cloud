@@ -422,10 +422,10 @@ test("IMAP profile API validates config, returns status and never returns passwo
   const get = spyOn(outgoingMailStore, "get").mockResolvedValue(value);
   const list = spyOn(outgoingMailStore, "list").mockResolvedValue([value]);
   try {
-    const config = { ...input, imap: { ...imap, password: "imap-fixture-secret" } };
+    const config = { ...input, imap: { ...imap, user: " sender ", folder: " INBOX ", password: "imap-fixture-secret" } };
     const response = await request(authorized(), "/profiles/alerts", "PUT", config);
     expect(response.status).toBe(201);
-    expect(put.mock.calls[0]?.[1]).toEqual(config);
+    expect(put.mock.calls[0]?.[1]).toEqual({ ...config, imap: { ...config.imap, user: "sender", folder: "INBOX" } });
     const result = await response.json();
     expect(result).toEqual(value);
     expect(JSON.stringify(result)).not.toContain("imap-fixture-secret");
@@ -436,6 +436,8 @@ test("IMAP profile API validates config, returns status and never returns passwo
       { port: 0 },
       { port: 65536 },
       { folder: "" },
+      { folder: "   " },
+      { user: "   " },
       { folder: "x\r\ny" },
       { folder: "x".repeat(201) },
     ])

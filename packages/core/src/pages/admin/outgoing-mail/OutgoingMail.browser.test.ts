@@ -60,6 +60,8 @@ const state: OutgoingMailState = {
       smtpSecure: true,
       isDefault: false,
       dailyRecipientLimit: 500,
+      imap: { host: "imap.provider.example", port: 993, secure: true, user: "billing@example.org", folder: "INBOX", hasPassword: true },
+      bounces: { checkedAt: "2026-10-07T10:00:00.000Z", error: "open_failed" },
     }),
   ],
   apps: {
@@ -173,11 +175,25 @@ describe("outgoing mail page in a browser", () => {
         for (const locale of ["en", "de"]) {
           const tab = await open(view, dark, locale);
           try {
-            const layout = await tab.evaluate(() => ({
-              overflow: document.documentElement.scrollWidth - window.innerWidth,
-              tables: document.querySelectorAll("table").length,
-              headings: Array.from(document.querySelectorAll("h1, h2")).map((heading) => heading.textContent),
-            }));
+            const failed = locale === "de" ? "Prüfung auf unzustellbare Mails fehlgeschlagen:" : "Bounce check failed:";
+            const layout = await tab.evaluate(
+              (failed) => ({
+                overflow: document.documentElement.scrollWidth - window.innerWidth,
+                tables: document.querySelectorAll("table").length,
+                headings: Array.from(document.querySelectorAll("h1, h2")).map((heading) => heading.textContent),
+                // A failed bounce check and its reason stay readable at every width: visible, wrapped
+                // inside its cell instead of cut off, and without a tooltip.
+                bounceFailures: Array.from(document.querySelectorAll("p"))
+                  .filter((line) => line.textContent?.startsWith(failed) && line.getClientRects().length > 0)
+                  .map((line) => {
+                    const cell = line.closest("td")!.getBoundingClientRect();
+                    const box = line.getBoundingClientRect();
+                    return line.scrollWidth <= line.clientWidth + 1 && box.left >= cell.left - 1 && box.right <= cell.right + 1;
+                  }),
+              }),
+              failed,
+            );
+            expect(layout.bounceFailures).toEqual([true]);
             expect({ width: view.width, dark, locale, overflow: Math.max(0, layout.overflow), tables: layout.tables }).toEqual({
               width: view.width,
               dark,

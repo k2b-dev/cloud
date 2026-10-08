@@ -593,16 +593,35 @@ passed to `profiles put`:
 }
 ```
 
-Supply `folder` explicitly; use `"INBOX"` for the inbox. IMAP password omission
-keeps it, `null` clears it, and a host change requires re-entry or clearing.
+Supply `folder` explicitly; use `"INBOX"` for the inbox. User and folder are
+trimmed; whitespace-only values are rejected. `secure: true` uses implicit TLS;
+`false` requires STARTTLS before authentication. DNS names and IP hosts are
+supported; the server certificate must cover the configured host.
+IMAP password omission keeps it, `null` clears it, and a host change requires re-entry or clearing.
 Inline `--config` rejects `imap.password`, including `null`. Setting `imap` to
 `null` or omitting it on replacement disables collection and clears its cursor.
 `profiles list` and `profiles get` show the host/folder and bounce status: the
 last check time, last error, `pending`, or `off`. JSON returns
 `imap.hasPassword` and `bounces: { checkedAt, error }`, never credentials.
-Core polls read-only every five minutes; only standard delivery reports mark
-sent mail `bounced`. See [Outgoing mail operations](/en/docs/operations/outgoing-mail)
-for collection limits and network requirements.
+Core polls read-only every five minutes. A read failure is retried once on a
+new connection, then that UID is skipped and logged with the profile key and
+UID. Interrupted or failed checks retain completed progress. Servers without
+ESEARCH use bounded UID windows and checkpoint empty ranges. Database failures
+stop the check.
+
+Only standard delivery reports matching the stored Message-ID mark sent mail
+`bounced`; later sender-domain changes do not affect matching. Final-Recipient,
+or otherwise Original-Recipient, must match a message recipient
+case-insensitively; stored failures retain the message's recipient spelling.
+
+`bounces.error` is a code or null. For `open_failed`, check credentials, folder,
+TLS, required STARTTLS, egress, and mailbox UIDVALIDITY. For `search_failed`,
+check IMAP availability and UID search support. For `apply_failed` or
+`save_failed`, check database availability. `interrupted` means shutdown or the
+processing budget expired; the next tick resumes from saved progress. A
+successful check clears the error. See
+[Outgoing mail operations](/en/docs/operations/outgoing-mail) for collection
+limits and network requirements.
 
 Outgoing mail log reads require an administrator. `log list` supports `--app`,
 `--profile`, `--status` (comma-separated), `--since` (ISO), `--ref scope[:id]`,

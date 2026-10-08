@@ -124,8 +124,17 @@ databaseSuite()("outgoing mail store and delivery", () => {
 
   test("IMAP passwords are encrypted, host changes require replacement, and disabling clears all IMAP state", async () => {
     const imap = { host: "imap.example.org", port: 993, secure: true, user: "sender", folder: "INBOX" };
-    let current = (await outgoingMailStore.put(a, { ...config, imap: { ...imap, password: "imap-secret" } }, context)).profile;
+    let current = (
+      await outgoingMailStore.put(
+        a,
+        { ...config, imap: { ...imap, user: " sender ", folder: " INBOX ", password: "imap-secret" } },
+        context,
+      )
+    ).profile;
     expect(current.imap).toEqual({ ...imap, hasPassword: true });
+    expect(await sql<Record<string, unknown>[]>`SELECT imap_user, imap_folder FROM outgoing_mail.profiles WHERE key = ${a}`).toEqual([
+      { imap_user: "sender", imap_folder: "INBOX" },
+    ]);
     expect(current.bounces).toEqual({ checkedAt: null, error: null });
     expect(JSON.stringify(current)).not.toContain("imap-secret");
     const [polling] = await listImapMailProfiles();
@@ -179,7 +188,7 @@ databaseSuite()("outgoing mail store and delivery", () => {
   test.each(["port", "user", "folder"])("changing IMAP %s resets its cursor and check status", async (field) => {
     const imap = { host: "imap.example.org", port: 993, secure: true, user: "sender", folder: "INBOX" };
     const current = (await outgoingMailStore.put(a, { ...config, imap }, context)).profile;
-    await sql`UPDATE outgoing_mail.profiles SET imap_uid_validity = 42, imap_last_uid = 200, imap_error = 'old failure', imap_checked_at = now() WHERE key = ${a}`;
+    await sql`UPDATE outgoing_mail.profiles SET imap_uid_validity = 42, imap_last_uid = 200, imap_error = 'open_failed', imap_checked_at = now() WHERE key = ${a}`;
     const changed = { ...imap, ...(field === "port" ? { port: 143 } : field === "user" ? { user: "other" } : { folder: "Reports" }) };
     await outgoingMailStore.put(a, { ...config, imap: changed, revision: current.revision }, context);
     expect(
@@ -194,15 +203,18 @@ databaseSuite()("outgoing mail store and delivery", () => {
     const [polling] = await listImapMailProfiles();
     await saveImapMailCheck(polling!, { uidValidity: "42", lastUid: 20 });
     await saveImapMailCheck(polling!, { uidValidity: "42", lastUid: 10 });
-    await saveImapMailCheck(polling!, { error: "stale failure" });
+    await saveImapMailCheck(polling!, { error: "interrupted" });
     expect(
       await sql<
         Record<string, unknown>[]
       >`SELECT imap_uid_validity::text AS validity, imap_last_uid::int AS uid, imap_error FROM outgoing_mail.profiles WHERE key = ${a}`,
     ).toEqual([{ validity: "42", uid: 20, imap_error: null }]);
     const [newer] = await listImapMailProfiles();
-    await saveImapMailCheck(newer!, { error: "connection failed" });
-    expect((await outgoingMailStore.get(a)).bounces?.error).toBe("connection failed");
+    await saveImapMailCheck(newer!, { uidValidity: "42", lastUid: 25, error: "interrupted" });
+    expect((await outgoingMailStore.get(a)).bounces?.error).toBe("interrupted");
+    expect(await sql<Record<string, unknown>[]>`SELECT imap_last_uid::int AS uid FROM outgoing_mail.profiles WHERE key = ${a}`).toEqual([
+      { uid: 25 },
+    ]);
     await outgoingMailStore.put(a, { ...config, imap: { ...imap, folder: "Other" }, revision: current.revision }, context);
     await saveImapMailCheck(newer!, { uidValidity: "42", lastUid: 30 });
     expect(await sql<Record<string, unknown>[]>`SELECT imap_last_uid FROM outgoing_mail.profiles WHERE key = ${a}`).toEqual([

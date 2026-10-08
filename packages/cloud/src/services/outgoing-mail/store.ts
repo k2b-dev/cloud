@@ -6,6 +6,7 @@ import {
   AdminMailProfileSchema,
   type MailAppAccess,
   MailAppAccessSchema,
+  type MailBounceErrorCode,
   type MailErrorCode,
   type MailProfile,
   type MailProfileInput,
@@ -45,7 +46,7 @@ type ProfileRow = {
   imap_folder: string | null;
   imap_has_password: boolean;
   imap_checked_at: Date | string | null;
-  imap_error: string | null;
+  imap_error: MailBounceErrorCode | null;
   pace_per_minute: number;
   daily_recipient_limit: number | null;
   max_attachment_bytes: number;
@@ -384,12 +385,12 @@ export const resolveImapMailCredentials = async (profile: ImapMailProfile) => {
 };
 export const saveImapMailCheck = async (
   profile: ImapMailProfile,
-  result: { uidValidity: string; lastUid: number | null } | { error: string },
+  result: { uidValidity: string; lastUid: number | null; error?: MailBounceErrorCode } | { error: MailBounceErrorCode },
 ) => {
   await sql`UPDATE outgoing_mail.profiles SET imap_checked_at = now(),
-    imap_error = ${"error" in result ? result.error : null},
-    imap_uid_validity = ${"error" in result ? profile.uidValidity : result.uidValidity}::bigint,
-    imap_last_uid = ${"error" in result ? profile.lastUid : result.lastUid}::bigint
+    imap_error = ${result.error ?? null},
+    imap_uid_validity = ${"uidValidity" in result ? result.uidValidity : profile.uidValidity}::bigint,
+    imap_last_uid = ${"lastUid" in result ? result.lastUid : profile.lastUid}::bigint
     WHERE id = ${profile.id}::uuid AND revision = ${profile.revision} AND imap_host IS NOT NULL
       AND imap_uid_validity IS NOT DISTINCT FROM ${profile.uidValidity}::bigint
       AND imap_last_uid IS NOT DISTINCT FROM ${profile.lastUid}::bigint`;

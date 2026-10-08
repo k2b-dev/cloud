@@ -8,7 +8,11 @@ export type BounceStructure = {
   parameters?: Record<string, string>;
   childNodes?: BounceStructure[];
 };
-export type DeliveryReport = { messageId: string; failures: { recipient: string; reason: string }[] };
+export type DeliveryReport = {
+  id: string;
+  messageId: string;
+  failures: { recipient: string; originalRecipient?: string; reason: string }[];
+};
 
 /** Select only the report and original headers, never the returned message body. */
 export const dsnParts = (structure: BounceStructure) => {
@@ -33,25 +37,33 @@ const fields = (block: string) => {
   }
   return result;
 };
-export const parseDsn = (status: string, headers: string, fromAddress: string): DeliveryReport | null => {
+const recipientAddress = (value: string | undefined) => {
+  const address = value
+    ?.match(/^rfc822\s*;\s*(.+)$/i)?.[1]
+    ?.trim()
+    .replace(/^<(.*)>$/, "$1")
+    .trim();
+  return address && address.length <= 320 ? address : undefined;
+};
+export const parseDsn = (status: string, headers: string): DeliveryReport | null => {
   if (Buffer.byteLength(status) > DSN_PART_BYTES || Buffer.byteLength(headers) > DSN_PART_BYTES) return null;
   const messageId = fields(headers.split(/\r?\n\r?\n/, 1)[0] ?? "").get("message-id");
   const match = messageId?.match(/^<([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@([^<>\s@]+)>$/i);
-  const domain = fromAddress.slice(fromAddress.lastIndexOf("@") + 1);
-  if (!match || !z.uuid().safeParse(match[1]).success || match[2]?.toLowerCase() !== domain.toLowerCase()) return null;
+  const id = match?.[1]?.toLowerCase();
+  if (!messageId || !id || !z.uuid().safeParse(id).success) return null;
   const failures: DeliveryReport["failures"] = [];
   // RFC 3464 begins with one per-message block followed by per-recipient blocks.
   for (const block of status.split(/\r?\n[\t ]*\r?\n/).slice(1)) {
     const entry = fields(block);
     if (entry.get("action")?.toLowerCase() !== "failed") continue;
-    const final = entry.get("final-recipient")?.match(/^rfc822\s*;\s*(.+)$/i);
-    const recipient = final?.[1]?.trim();
+    const originalRecipient = recipientAddress(entry.get("original-recipient"));
+    const recipient = recipientAddress(entry.get("final-recipient")) ?? originalRecipient;
     const code = entry.get("status");
-    if (!recipient || !z.email().max(320).safeParse(recipient).success || !code || !/^[245]\.\d{1,3}\.\d{1,3}$/.test(code)) continue;
+    if (!recipient || !code || !/^[245]\.\d{1,3}\.\d{1,3}$/.test(code)) continue;
     const reason = `${code} ${entry.get("diagnostic-code") ?? ""}`.trim().slice(0, 1000);
-    if (!failures.some((item) => item.recipient === recipient && item.reason === reason)) failures.push({ recipient, reason });
+    if (!failures.some((item) => item.recipient === recipient && item.originalRecipient === originalRecipient && item.reason === reason))
+      failures.push({ recipient, ...(originalRecipient ? { originalRecipient } : {}), reason });
     if (failures.length === BOUNCE_FAILURE_LIMIT) break;
   }
-  // Generated outgoing-mail IDs use lowercase UUIDs and the profile's sender domain.
-  return failures.length ? { messageId: `<${match[1]?.toLowerCase()}@${domain}>`, failures } : null;
+  return failures.length ? { id, messageId, failures } : null;
 };

@@ -397,19 +397,29 @@ export const outgoingMailMessages = { read, metadata, known, accept, list, conte
 /** Serialize updates to preserve failures from overlapping reports and replicas. */
 export const applyOutgoingMailBounce = async (
   profileId: string,
+  id: string,
   messageId: string,
-  failures: readonly { recipient: string; reason: string }[],
+  failures: readonly { recipient: string; originalRecipient?: string; reason: string }[],
   db: SQL = sql,
 ): Promise<void> => {
   if (!failures.length) return;
   await db.begin(async (tx) => {
-    const [row] = await tx<{ id: string; failures: unknown }[]>`SELECT id, failures FROM outgoing_mail.messages
-      WHERE profile_id = ${profileId}::uuid AND message_id_header = ${messageId}
+    const [row] = await tx<
+      { id: string; to_addresses: string[]; failures: unknown }[]
+    >`SELECT id, to_addresses, failures FROM outgoing_mail.messages
+      WHERE id = ${id}::uuid AND profile_id = ${profileId}::uuid AND lower(message_id_header) = lower(${messageId})
         AND status IN ('sent', 'bounced') FOR UPDATE`;
     if (!row) return;
+    const matched = failures.flatMap((failure) => {
+      const recipient =
+        row.to_addresses.find((address) => address.toLowerCase() === failure.recipient.toLowerCase()) ??
+        row.to_addresses.find((address) => address.toLowerCase() === failure.originalRecipient?.toLowerCase());
+      return recipient ? [{ recipient, reason: failure.reason }] : [];
+    });
+    if (!matched.length) return;
     const stored = MailRecordSchema.shape.failures.parse(parsePgJsonValue(row.failures));
     const at = new Date().toISOString();
-    for (const failure of failures) {
+    for (const failure of matched) {
       if (stored.length >= 100) break;
       const reason = failure.reason.slice(0, 1000);
       if (!stored.some((item) => item.recipient === failure.recipient && item.reason === reason))

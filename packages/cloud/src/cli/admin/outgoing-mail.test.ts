@@ -279,13 +279,13 @@ test("profile text output shows IMAP host/folder and bounce check, error or off"
   const checkedAt = "2026-10-08T00:00:00.000Z";
   const items = [
     { key: "checked", imap, bounces: { checkedAt, error: null } },
-    { key: "error", imap, bounces: { checkedAt, error: "Connection failed" } },
+    { key: "error", imap, bounces: { checkedAt, error: "open_failed" } },
     { key: "off", imap: null, bounces: null },
   ];
   const result = await invoke(["profiles", "list"], {}, { items }, [], "text");
   expect(result.output[0]).toMatchObject([
     { key: "checked", imap: "imap.example.org/INBOX", bounces: checkedAt },
-    { key: "error", imap: "imap.example.org/INBOX", bounces: "Connection failed" },
+    { key: "error", imap: "imap.example.org/INBOX", bounces: "open_failed" },
     { key: "off", imap: "off", bounces: "off" },
   ]);
   for (const item of items) {

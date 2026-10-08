@@ -30,9 +30,17 @@ export const status = [
   "",
 ].join("\r\n");
 export const report = {
+  id: "01234567-89ab-4def-8012-3456789abcde",
   messageId: "<01234567-89ab-4def-8012-3456789abcde@example.org>",
   failures: [
     { recipient: "first@example.org", reason: "5.1.1 smtp; 550 Unknown recipient" },
     { recipient: "second@example.org", reason: "5.2.2 smtp; 552 Mailbox full" },
   ],
 };
+
+/** Raw RFC 3501 BODYSTRUCTURE for the same report, including returned message metadata. */
+export const wireStructure = `(("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 10 1)
+("MESSAGE" "DELIVERY-STATUS" NIL NIL NIL "7BIT" ${Buffer.byteLength(status)})
+("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 26214400 (NIL NIL NIL NIL NIL NIL NIL NIL NIL NIL)
+("TEXT" "PLAIN" NIL NIL NIL "7BIT" 25000000 1) 1)
+"REPORT" ("REPORT-TYPE" "delivery-status") NIL NIL NIL)`.replaceAll("\n", " ");

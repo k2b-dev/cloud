@@ -82,10 +82,26 @@ const accessLabel = (app: AdminMailApp, profiles: readonly AdminMailProfile[], t
   return app.profiles.map((key) => profiles.find((profile) => profile.key === key)?.name ?? key).join(", ");
 };
 
-/** One line under the SMTP server: whether Core reads this profile's mailbox for bounces, and how that went. */
-function BounceStatus(props: { profile: AdminMailProfile; t: Messages }) {
+type BounceError = NonNullable<NonNullable<AdminMailProfile["bounces"]>["error"]>;
+const bounceReason = (error: BounceError, t: Messages): string =>
+  ({
+    open_failed: t.bounceOpenFailed,
+    search_failed: t.bounceSearchFailed,
+    apply_failed: t.bounceApplyFailed,
+    save_failed: t.bounceSaveFailed,
+    interrupted: t.bounceInterrupted,
+  })[error];
+
+/**
+ * Whether Core reads this profile's mailbox for bounces, and how the latest check went. The reason
+ * stays visible text, because touch screens cannot reveal a tooltip, and wraps inside table cells,
+ * which truncate by default.
+ */
+function BounceStatus(props: { profile: AdminMailProfile; t: Messages; class?: string }) {
   return (
-    <p class="mt-0.5 text-xs" classList={{ "text-danger": !!props.profile.bounces?.error, "text-dimmed": !props.profile.bounces?.error }}>
+    <p
+      class={`mt-0.5 whitespace-normal break-words text-xs ${props.profile.bounces?.error ? "text-red-600 dark:text-red-400" : "text-dimmed"} ${props.class ?? ""}`}
+    >
       <Show when={props.profile.bounces} fallback={props.t.bouncesOff}>
         {(bounces) => (
           <Show
@@ -100,7 +116,7 @@ function BounceStatus(props: { profile: AdminMailProfile; t: Messages }) {
               </Show>
             }
           >
-            {(error) => <span title={error()}>{props.t.bouncesFailed}</span>}
+            {(error) => `${props.t.bouncesFailed}: ${bounceReason(error(), props.t)}`}
           </Show>
         )}
       </Show>
@@ -390,7 +406,13 @@ export function ProfileDialog(props: {
                 required={imapOn()}
               />
             </div>
-            <Switch label={t().secure} value={imapSecure()} onValueChange={setImapSecure} disabled={save.loading() || !imapOn()} />
+            <Switch
+              label={t().secure}
+              description={t().imapSecureHint}
+              value={imapSecure()}
+              onValueChange={setImapSecure}
+              disabled={save.loading() || !imapOn()}
+            />
             <TextInput
               label={t().user}
               description={t().imapUserHint}
@@ -753,6 +775,8 @@ export default function OutgoingMail(props: Props) {
                     </div>
                     <p class="mt-0.5 font-mono text-xs text-dimmed">{row.key}</p>
                     <p class="mt-0.5 truncate text-xs text-dimmed md:hidden">{row.fromAddress}</p>
+                    {/* Below lg the server column is hidden, so the bounce check moves here. */}
+                    <BounceStatus profile={row} t={t()} class="lg:hidden" />
                   </div>
                 );
               if (col.id === "sender")

@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import * as store from "@k2b/cloud/services/outgoing-mail/store";
 import * as imap from "./imap";
 import * as poller from "./poller";
-import { pollOutgoingMailBounces } from "./runtime";
+import { BOUNCE_ACK_WAIT_MS, BOUNCE_RUN_BUDGET_MS, pollOutgoingMailBounces } from "./runtime";
 
 const profile: store.ImapMailProfile = {
   id: crypto.randomUUID(),
@@ -40,12 +40,13 @@ test("enabled profiles run sequentially within four minutes; leftovers wait when
   let active = false;
   const connect = spyOn(imap, "createImapBounceMailbox").mockReturnValue({
     open: async () => ({ uidValidity: "42" }),
-    listUids: async () => [],
+    listUids: async () => ({ uids: [], through: 0 }),
     bodyStructure: async () => null,
     fetchPart: async () => null,
     close: () => {},
   });
-  const poll = spyOn(poller, "pollProfileBounces").mockImplementation(async (item, _mailbox, signal) => {
+  const poll = spyOn(poller, "pollProfileBounces").mockImplementation(async (item, mailbox, signal) => {
+    mailbox();
     expect(active).toBe(false);
     active = true;
     await Promise.resolve();
@@ -85,4 +86,9 @@ test("the processing budget also interrupts profile loading", async () => {
     list.mockRestore();
     connect.mockRestore();
   }
+});
+
+test("scheduler lease exceeds the bounded run plus error write", () => {
+  expect(BOUNCE_ACK_WAIT_MS).toBeGreaterThan(BOUNCE_RUN_BUDGET_MS + poller.BOUNCE_ERROR_WRITE_BUDGET_MS);
+  expect(BOUNCE_ACK_WAIT_MS).toBe(300_000);
 });
