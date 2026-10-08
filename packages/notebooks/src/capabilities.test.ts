@@ -1152,7 +1152,7 @@ test("move capability resolves anchors and reviews placement with its effective 
   expect(invalid.ok).toBe(false);
 });
 
-test("move capability preserves parent-only messages and localizes first/last placement reviews", async () => {
+test("move capability preserves parent-only messages and localizes placement reviews and results", async () => {
   trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
   trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
   trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
@@ -1165,14 +1165,11 @@ test("move capability preserves parent-only messages and localizes first/last pl
   expect(move).toHaveBeenLastCalledWith({ id: note.id, parentId: null, placement: undefined, locale: "en" });
   const parentReview = await operation.review!(onlyParent, userContext);
   if (parentReview.ok) expect(parentReview.data.details).toHaveLength(2);
-  for (const position of ["first", "last", 0] as const) {
+  for (const position of [0, 99]) {
     const input = operation.input.parse({ noteId: note.shortId, position });
     const review = await operation.review!(input, { ...userContext, locale: "de" });
     expect(review.ok).toBe(true);
-    if (review.ok)
-      expect(review.data.details?.at(-1)?.value).toBe(
-        position === "first" ? "Erste Position" : position === "last" ? "Letzte Position" : "0",
-      );
+    if (review.ok) expect(review.data.details?.at(-1)?.value).toBe(String(position));
     const result = await operation.run(input, { ...userContext, locale: "de" });
     expect(result.ok && result.data.summary).toBe("„Knowledge index“ als 1. Notiz auf der obersten Ebene des Notizbuchs eingeordnet.");
   }

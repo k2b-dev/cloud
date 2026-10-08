@@ -1374,13 +1374,9 @@ export const notebooksCapabilities = defineCapabilities({
           ? t.beforeNote({ title: target.data.anchorTitle! })
           : input.after
             ? t.afterNote({ title: target.data.anchorTitle! })
-            : input.position === "first"
-              ? t.firstPosition
-              : input.position === "last"
-                ? t.lastPosition
-                : input.position === undefined
-                  ? undefined
-                  : String(input.position);
+            : input.position === undefined
+              ? undefined
+              : String(input.position);
         return ok({
           message: t.moveReview({ title: resolved.data.note.title, parent: parentTitle }),
           details: [

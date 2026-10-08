@@ -391,10 +391,12 @@ export const NoteMoveInputSchema = z
         "New parent note ID in the same notebook, or null for the top level. Omit to keep the parent, or use the anchor's parent when before/after is given.",
       ),
     position: z
-      .union([z.number().int().nonnegative(), z.enum(["first", "last"])])
+      .number()
+      .int()
+      .nonnegative()
       .optional()
       .describe(
-        "0-based place among siblings, or first/last. Placing renumbers the whole level into hand order followed by the sidebar and Book. Without placement, keep the level's order mode.",
+        "0-based place among siblings: 0 is first, and a value at or past the number of siblings is last. Placing renumbers the whole level into hand order followed by the sidebar and Book. Without placement, keep the level's order mode.",
       ),
     before: ResourceShortIdSchema.optional().describe(
       "Place immediately before this note in the same notebook. If parentId is supplied, the anchor must be its child. Placing renumbers that level into hand order followed by the sidebar and Book.",

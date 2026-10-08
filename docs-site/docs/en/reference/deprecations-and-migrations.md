@@ -30,8 +30,9 @@ In the Notebooks API (`/api/notebooks/{id}/notes`, `PATCH …/notes/{noteId}`,
 capabilities, `position` is now the 0-based place among the siblings and
 renumbers that level; a value past the end appends. A move that only changes
 `parentId` no longer needs `position`: the note joins the end of an arranged
-level or the title order. `move` and `note.move` also accept `before`, `after`,
-or `position: "first" | "last"`. `POST /api/notebooks/{id}/note-order/reset`
+level or the title order. `move` and `note.move` also accept `before` or
+`after`, and `move` accepts `position: "first" | "last"`; `note.move` keeps its
+integer `position`. `POST /api/notebooks/{id}/note-order/reset`
 with `{ "parentId": … }` sets a level back to title order. `cld notebooks mv`
 no longer sends the old position with every move.
 

@@ -244,7 +244,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
             parentId:
               "Optionale ID der neuen übergeordneten Notiz im selben Notizbuch oder null für die oberste Ebene. Ohne Angabe bleibt die übergeordnete Notiz erhalten; bei before/after gilt die Ebene der Ankernotiz.",
             position:
-              "Optionale 0-basierte Position oder first/last. Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge, der Seitenleiste und Buch folgen. Ohne Platzierung bleibt der Ordnungsmodus erhalten.",
+              "Optionale 0-basierte Position: 0 ist die erste, ein Wert ab der Anzahl der Geschwister die letzte. Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge, der Seitenleiste und Buch folgen. Ohne Platzierung bleibt der Ordnungsmodus erhalten.",
             before:
               "Direkt vor dieser Notiz im selben Notizbuch einordnen. Bei parentId muss die Ankernotiz zu dieser Ebene gehören. Stellt die Ebene auf manuelle Reihenfolge um.",
             after:

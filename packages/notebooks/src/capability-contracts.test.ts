@@ -51,17 +51,18 @@ test("compact paths keep local bounds without requiring new inputs on existing e
 });
 
 test("move supports an optional parent and mutually exclusive placements", () => {
-  for (const placement of [{}, { position: 0 }, { position: "first" }, { position: "last" }, { before: "abc123" }, { after: "abc123" }]) {
+  for (const placement of [{}, { position: 0 }, { position: 99 }, { before: "abc123" }, { after: "abc123" }]) {
     expect(NoteMoveInputSchema.safeParse({ noteId: "def456", ...placement }).success).toBeTrue();
     expect(NoteMoveInputSchema.safeParse({ noteId: "def456", parentId: null, ...placement }).success).toBeTrue();
   }
   for (const placement of [
     { position: -1 },
     { position: 0.5 },
-    { position: "middle" },
+    { position: "first" },
+    { position: "last" },
     { before: "abc123", after: "ghi789" },
     { position: 0, before: "abc123" },
-    { position: "last", after: "abc123" },
+    { position: 99, after: "abc123" },
   ]) {
     expect(NoteMoveInputSchema.safeParse({ noteId: "def456", ...placement }).success).toBeFalse();
   }
