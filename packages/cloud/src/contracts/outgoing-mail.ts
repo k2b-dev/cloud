@@ -14,6 +14,25 @@ const headerText = z
   .min(1)
   .max(120)
   .refine((value) => !/[\r\n\0]/.test(value), "Header must not contain control characters");
+export const MailImapInputSchema = z
+  .object({
+    host: z
+      .string()
+      .trim()
+      .min(1)
+      .max(253)
+      .refine((value) => !/[\s/@\0]/.test(value), "Use an IMAP hostname"),
+    port: z.int().min(1).max(65535),
+    secure: z.boolean(),
+    user: z.string().min(1).max(320),
+    password: z.string().max(16384).nullable().optional(),
+    folder: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((value) => !/[\x00-\x1f\x7f]/.test(value), "Folder must not contain control characters"),
+  })
+  .strict();
 export const MailProfileInputSchema = z
   .object({
     name: headerText,
@@ -29,6 +48,7 @@ export const MailProfileInputSchema = z
     smtpSecure: z.boolean(),
     smtpUser: z.string().max(320).nullable(),
     smtpPassword: z.string().max(16384).nullable().optional(),
+    imap: MailImapInputSchema.nullable().optional(),
     pacePerMinute: z.int().min(1).max(6000),
     dailyRecipientLimit: z.int().min(1).max(2147483647).nullable(),
     maxAttachmentBytes: z.int().min(1).max(26214400),
@@ -74,9 +94,11 @@ export const MailErrorCodeSchema = z.enum([
   "smtp_failed",
 ]);
 export type MailErrorCode = z.infer<typeof MailErrorCodeSchema>;
-export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword: true, revision: true }).extend({
+export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword: true, revision: true, imap: true }).extend({
   key: MailProfileKeySchema,
   hasPassword: z.boolean(),
+  imap: MailImapInputSchema.omit({ password: true }).extend({ hasPassword: z.boolean() }).nullable(),
+  bounces: z.object({ checkedAt: z.string().nullable(), error: z.string().nullable() }).nullable(),
   isDefault: z.boolean(),
   revision: z.int(),
   createdAt: z.string(),

@@ -25,6 +25,8 @@ const profile = (overrides: Partial<AdminMailProfile>): AdminMailProfile => ({
   smtpSecure: false,
   smtpUser: "smtp-user",
   hasPassword: true,
+  imap: null,
+  bounces: null,
   pacePerMinute: 60,
   dailyRecipientLimit: null,
   maxAttachmentBytes: 15 * 1024 * 1024,
@@ -150,4 +152,24 @@ test("an empty send log explains when mail appears", () => {
   const html = render("en", { ...state, log: emptyLog });
   expect(html).toContain("No mail sent yet");
   expect(html).toContain("Mail appears here as soon as an app sends it.");
+});
+
+test("each profile shows whether Cloud checks its mailbox for bounces in English and German", () => {
+  const imap = { host: "imap.example.org", port: 993, secure: true, user: "noreply@example.org", folder: "INBOX", hasPassword: true };
+  const profiles = [
+    profile({}),
+    profile({ key: "pending", name: "Pending", isDefault: false, imap, bounces: { checkedAt: null, error: null } }),
+    profile({ key: "checked", name: "Checked", isDefault: false, imap, bounces: { checkedAt: "2026-10-08T10:00:00.000Z", error: null } }),
+    profile({ key: "broken", name: "Broken", isDefault: false, imap, bounces: { checkedAt: null, error: "Could not open mailbox." } }),
+  ];
+  const en = render("en", { ...state, profiles });
+  for (const label of ["No bounce check", "Bounce check pending", "Bounces checked", "Bounce check failed"]) expect(en).toContain(label);
+  expect(en).toContain('title="Could not open mailbox."');
+  const de = render("de", { ...state, profiles });
+  for (const label of [
+    "Keine Prüfung auf unzustellbare Mails",
+    "Unzustellbare Mails geprüft",
+    "Prüfung auf unzustellbare Mails fehlgeschlagen",
+  ])
+    expect(de).toContain(label);
 });

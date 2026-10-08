@@ -34,6 +34,8 @@ const profile = (overrides: Partial<AdminMailProfile>): AdminMailProfile => ({
   smtpSecure: false,
   smtpUser: "noreply@example.org",
   hasPassword: true,
+  imap: null,
+  bounces: null,
   pacePerMinute: 60,
   dailyRecipientLimit: null,
   maxAttachmentBytes: 15 * 1024 * 1024,

@@ -84,4 +84,18 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_bulk_due ON outgoing_mail.messages(profile_id, (COALESCE(next_attempt_at, created_at)), id) WHERE status = 'queued' AND lane = 'bulk'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_bulk_deadline ON outgoing_mail.messages(deadline_at) WHERE status = 'queued' AND lane = 'bulk'`.simple();
   });
+  await db.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
+    await tx`ALTER TABLE outgoing_mail.profiles
+      ADD COLUMN IF NOT EXISTS imap_host TEXT,
+      ADD COLUMN IF NOT EXISTS imap_port INTEGER CHECK(imap_port BETWEEN 1 AND 65535),
+      ADD COLUMN IF NOT EXISTS imap_secure BOOLEAN,
+      ADD COLUMN IF NOT EXISTS imap_user TEXT,
+      ADD COLUMN IF NOT EXISTS imap_password_encrypted TEXT,
+      ADD COLUMN IF NOT EXISTS imap_folder TEXT,
+      ADD COLUMN IF NOT EXISTS imap_uid_validity BIGINT,
+      ADD COLUMN IF NOT EXISTS imap_last_uid BIGINT,
+      ADD COLUMN IF NOT EXISTS imap_checked_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS imap_error TEXT`.simple();
+  });
 };
