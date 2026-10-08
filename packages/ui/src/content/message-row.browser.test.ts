@@ -591,6 +591,37 @@ describe(`MessageRow in ${browserName}`, () => {
     }
   }, 30_000);
 
+  test("a collapsed message keeps a Markdown table's reach past the text, and opening it moves nothing", async () => {
+    const table = "| Name | Count |\n| --- | --: |\n| Apples | 3 |\n| Pears | 5 |";
+    const lines = Array.from({ length: 16 }, (_, index) => `Line ${index + 1} of the checklist`).join("\n");
+    const page = await open({ messages: [{ id: "t1", author: "nora", text: `Before the table\n\n${table}\n\n${lines}`, minute: 1 }] });
+    try {
+      const row = rowOf(page, "t1");
+      const measure = () =>
+        row.evaluate((row) => {
+          const text = row.querySelector<HTMLElement>(".k2b-message-row__text")!;
+          const wrap = text.querySelector(".k2b-content-markdown__table")!.getBoundingClientRect();
+          const first = text.querySelector("p")!.getBoundingClientRect();
+          const left = text.getBoundingClientRect().left + text.clientLeft;
+          return {
+            collapsed: text.hasAttribute("data-collapsed"),
+            // The clamp clips: the table's lines reach past the text inside it.
+            inside: wrap.left >= left - 0.5 && wrap.right <= left + text.clientWidth + 0.5,
+            boxes: [first, wrap].map((box) => [box.left, box.top, box.width].map((value) => value.toFixed(2))),
+          };
+        });
+      const collapsed = await measure();
+      expect({ collapsed: collapsed.collapsed, inside: collapsed.inside }).toEqual({ collapsed: true, inside: true });
+      await row.getByRole("button", { name: "Show more" }).click();
+      const opened = await measure();
+      expect(opened.collapsed).toBe(false);
+      // The text and the table keep their place and width.
+      expect(opened.boxes).toEqual(collapsed.boxes);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("raw HTML and javascript: links stay text, and links open apart from the page", async () => {
     const page = await open();
     try {

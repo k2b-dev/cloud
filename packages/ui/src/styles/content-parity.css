@@ -2249,6 +2249,12 @@
   max-height: 10rem;
   overflow: hidden;
 }
+/* Inside a document, which leaves room around its text, the excerpt clips a
+   Markdown table's 0.5rem past the text no sooner than the full preview does. */
+.k2b-ui .k2b-content-file-view__document > .k2b-content-file-view__excerpt {
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
+}
 .k2b-ui .k2b-content-file-view[data-excerpt="true"] td {
   white-space: nowrap;
   max-width: 20rem;
@@ -2274,6 +2280,14 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+/* A Markdown table reaches 0.5rem past the text. The preview scrolls flush with
+   its host, so around a document it reaches that far into the host and pads
+   the document back into place: the text stays put, and the table neither
+   scrolls the preview sideways nor loses its line ends. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__preview:has(> .k2b-content-file-view__document) {
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
 }
 /* The expander lines up with the content instead of the old frame's inset. */
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__truncated {

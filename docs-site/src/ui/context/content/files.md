@@ -362,7 +362,10 @@ natural height, so the host is the one element that scrolls; a host that used
 to rely on a plain preview scrolling inside a bounded box now scrolls it
 itself. Wide content, such as a CSV table, scrolls sideways in place. Markdown
 keeps a reading measure of 72 characters in wider hosts; its tables and code
-blocks scroll within that column. Text and source files show their line numbers
+blocks scroll within that column. Around a document, the preview reaches 0.5rem
+into its host on both sides and pads the text back into place, so a Markdown
+table's lines can run past the text. A host that clips leaves that much room
+around the preview. Text and source files show their line numbers
 and soft-wrapped lines directly on the host surface, without a code box or its
 copy header, so the host offers copying where it needs it. JSON shows its keys
 and values on the host surface without their own card. An excerpt's "more

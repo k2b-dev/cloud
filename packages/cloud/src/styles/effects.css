@@ -702,7 +702,8 @@
   background: transparent;
   box-shadow: none;
   overflow-wrap: break-word;
-  padding: 0.65rem var(--md-table-bleed);
+  /* The row fill and column band reach as far past the text on every side. */
+  padding: var(--md-table-bleed);
   font-size: 0.78rem;
   line-height: 1.45;
   word-break: normal;

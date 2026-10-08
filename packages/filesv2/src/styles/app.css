@@ -623,9 +623,13 @@
   min-height: 0;
   padding: 0.25rem 0.75rem 0.75rem;
 }
+/* The viewport clips; it reaches into the section's inset by a Markdown table's 0.5rem past the text, so the table
+   keeps its line ends while the text stays in place. */
 .filesv2-folder-readme__content {
   height: 20vh;
   overflow: hidden;
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
 }
 .k2b-ui .filesv2-folder-readme .k2b-content-markdown[data-heading-scale] > :first-child {
   margin-block-start: 0;

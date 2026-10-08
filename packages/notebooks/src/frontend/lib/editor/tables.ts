@@ -516,8 +516,8 @@ export const tablesExtension = (notebookId: string): Extension => {
       // `getBoundingClientRect().height` includes it, and CM's
       // measurement matches the visual layout. Above the table, the
       // header cell's top padding keeps the header text where it was.
-      // The wrap keeps its shared inline bleed, which reaches into the
-      // editor content's inline padding (`theme.ts`).
+      // The wrap keeps its shared inline bleed, which reaches past the
+      // content into the scroller's inline padding (`theme.ts`).
       padding: "0 0 0.5rem",
       margin: "0 !important",
     },

@@ -167,15 +167,14 @@ test("Markdown table lines, row hover and column bands share one width", async (
         }, host);
       await page.mouse.move(0, 0);
       const idle = await measure();
-      const reach = host === "#help" ? 10.4 : 8;
       expect({ host, ...idle, layout: undefined, next: undefined }).toEqual({
         host,
         rows: idle.rows.map(() => [0, 0]),
         lines: ["1px", "1px"],
         bands: idle.bands.map(() => [8, 8, "0px", "0px"]),
-        // Help keeps its taller rows; elsewhere the band reaches as far above and below as to the sides.
-        above: reach,
-        below: reach,
+        // The band reaches as far above the header and below the last row as to the sides.
+        above: 8,
+        below: 8,
         bleed: [8, 8],
         flush: [0, 0],
         layout: undefined,

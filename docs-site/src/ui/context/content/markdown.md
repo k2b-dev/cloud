@@ -178,8 +178,13 @@ a row's fill and a column's band are exactly as wide as the lines and reach
 keyboard-focusable container, including that extra 0.5rem. Its focus ring sits
 inside its edge, in the space beside the text.
 
+A table at the start of the content keeps the 0.5rem above its header, so its
+header text starts that much lower than a paragraph would.
+
 A host that scrolls or clips its content needs at least 0.5rem of inline
 padding around a Markdown table. Without it, a scrolling host scrolls sideways
 by that amount, and a clipping host cuts the line ends. If the host is flush
 with its surroundings, pair the padding with an equal negative margin, so the
-text stays in place.
+text stays in place. The bodies of `prompts` dialogs, `FileView` previews and
+excerpts of a document, and the clamp of a collapsed `MessageRow` already do
+this.

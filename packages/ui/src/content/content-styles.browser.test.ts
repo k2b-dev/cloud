@@ -104,6 +104,27 @@ render(
     }),
   wideTable,
 );
+// A Markdown table in plain and excerpted FileView previews, on a phone and in a wide host.
+const tableReadme = "Vorher.\\n\\n| Name | Anzahl |\\n| --- | --: |\\n| Äpfel | 3 |\\n| Birnen | 5 |\\n\\nNachher.";
+for (const [id, width, props] of [
+  ["table-plain-phone", 340, { variant: "plain" }],
+  ["table-plain-wide", 800, { variant: "plain" }],
+  ["table-plain-excerpt", 340, { variant: "plain", previewLines: 30 }],
+  ["table-excerpt", 340, { previewLines: 30 }],
+]) {
+  const box = app.appendChild(document.createElement("section"));
+  box.id = id;
+  box.style.width = width + "px";
+  render(
+    () =>
+      createComponent(FileView, {
+        file: { path: "README.md", size: tableReadme.length },
+        load: async () => ({ encoding: "utf8", content: tableReadme, mediaType: "text/markdown" }),
+        ...props,
+      }),
+    box,
+  );
+}
 // A plain excerpt with its expander, plain JSON, and a plain table in a host that bounds and stretches it.
 const plainExcerpt = app.appendChild(document.createElement("section"));
 plainExcerpt.id = "plain-excerpt";
@@ -360,6 +381,39 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect({ ...scroll, end: Math.abs(scroll.end) }).toEqual({ scrolls: true, bleed: [8, 8], end: 0, pad: "8px" });
     // A scrolling host with at least the bleed as inline padding does not scroll sideways.
     expect(await page.locator("#inset").evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  });
+
+  test("a Markdown table in a plain or excerpted FileView keeps its reach past the text, and nothing scrolls sideways", async () => {
+    const hosts = { "table-plain-phone": 0, "table-plain-wide": 0, "table-plain-excerpt": 0, "table-excerpt": 17 };
+    for (const id of Object.keys(hosts)) await page.locator(`#${id} .k2b-content-markdown__table`).waitFor();
+    const result = await page.evaluate(
+      (ids) =>
+        Object.fromEntries(
+          ids.map((id) => {
+            const host = document.getElementById(id)!;
+            const table = host.querySelector(".k2b-content-markdown__table")!;
+            const wrap = table.getBoundingClientRect();
+            // Every box between the table and the host that clips or scrolls.
+            const boxes = [];
+            for (let element = table.parentElement; element && element !== host; element = element.parentElement) {
+              if (getComputedStyle(element).overflowX === "visible") continue;
+              const left = element.getBoundingClientRect().left + element.clientLeft;
+              boxes.push({
+                sideways: element.scrollWidth - element.clientWidth,
+                inside: wrap.left >= left - 0.5 && wrap.right <= left + element.clientWidth + 0.5,
+              });
+            }
+            const text = host.querySelector(".k2b-content-markdown > p")!.getBoundingClientRect().left - host.getBoundingClientRect().left;
+            return [id, { boxes, text: Math.round(text) }];
+          }),
+        ),
+      Object.keys(hosts),
+    );
+    for (const [id, text] of Object.entries(hosts)) {
+      expect(result[id]!.boxes.length, id).toBeGreaterThan(0);
+      // A plain preview keeps its text flush with the host; a framed one inside its border and padding.
+      expect(result[id], id).toEqual({ boxes: result[id]!.boxes.map(() => ({ sideways: 0, inside: true })), text });
+    }
   });
 
   test("MarkdownView quotes sit on the prose edge and wrap long tokens", async () => {

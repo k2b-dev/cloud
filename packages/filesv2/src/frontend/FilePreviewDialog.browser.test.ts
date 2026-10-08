@@ -270,6 +270,46 @@ describe("file preview dialog in a browser", () => {
     }
   });
 
+  // A Markdown table's lines reach 0.5rem past the text; the boxes that clip or scroll around a README leave that room.
+  for (const [label, options] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`a README's table keeps its line ends in the dialog and in the folder, and nothing scrolls sideways (${label})`, async () => {
+      const tab = await open(options);
+      try {
+        const fit = (selector: string) =>
+          tab.$eval(selector, (root) => {
+            const table = root.querySelector(".k2b-content-markdown__table")!;
+            const wrap = table.getBoundingClientRect();
+            const boxes = [];
+            for (let element = table.parentElement; element && element !== root.parentElement; element = element.parentElement) {
+              if (getComputedStyle(element).overflowX === "visible") continue;
+              const left = element.getBoundingClientRect().left + element.clientLeft;
+              boxes.push({
+                sideways: element.scrollWidth - element.clientWidth,
+                inside: wrap.left >= left - 0.5 && wrap.right <= left + element.clientWidth + 0.5,
+              });
+            }
+            return boxes;
+          });
+        await show(tab, "README.md");
+        await tab.waitForSelector(".filesv2-preview-dialog .k2b-content-markdown__table");
+        const dialog = await fit(".filesv2-preview-dialog");
+        expect(dialog.length).toBeGreaterThan(0);
+        expect(dialog).toEqual(dialog.map(() => ({ sideways: 0, inside: true })));
+        await tab.keyboard.press("Escape");
+        await tab.evaluate((size) => window.preview.readme("README.md", size), Buffer.byteLength(files["README.md"]![1]));
+        await tab.waitForSelector(".filesv2-folder-readme .k2b-content-markdown__table");
+        const folder = await fit(".filesv2-folder-readme");
+        expect(folder.length).toBeGreaterThan(0);
+        expect(folder).toEqual(folder.map(() => ({ sideways: 0, inside: true })));
+      } finally {
+        await tab.context().close();
+      }
+    });
+  }
+
   test("Markdown without a heading and read-only Markdown keep the file name as the title", async () => {
     const tab = await open(desktop);
     try {
