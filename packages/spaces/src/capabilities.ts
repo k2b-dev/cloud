@@ -1081,7 +1081,7 @@ const runItemReferenceList = async (input: z.infer<typeof ItemResourceReferenceL
     refs: [
       itemRef(resolved.data.item, isEvent(resolved.data.item) ? "event" : "task"),
       ...data.map((reference) => ({ ...reference.ref, title: reference.label })),
-    ],
+    ].slice(0, 100),
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
   });
 };

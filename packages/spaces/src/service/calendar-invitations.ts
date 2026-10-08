@@ -694,11 +694,10 @@ export type PreparedEventInvitationAttachment = {
 
 class PreparedEventInvitationSizeError extends Error {}
 
-export const assertPreparedEventInvitationCalendar = (calendar: string): void => {
-  if (calendar.length > MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH) {
-    throw new PreparedEventInvitationSizeError("Prepared calendar invitation is too large; reduce the event content or attendees");
-  }
-};
+// Measured as transported: JSON-encoded UTF-8 bytes are never fewer than the UTF-16 length, so this also enforces
+// the schema's character max and leaves about 160 KiB of the 256 KiB result envelope for everything else.
+export const preparedEventInvitationCalendarFits = (calendar: string): boolean =>
+  Buffer.byteLength(JSON.stringify(calendar)) <= MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH;
 
 export const prepareEventInvitationAttachment = async (params: {
   spaceId: string;
@@ -771,7 +770,9 @@ export const prepareEventInvitationAttachment = async (params: {
       if (!existing.calendar_payload || !existing.attachment_filename) {
         return fail(err.conflict("Invitation preparation is incomplete; use a new idempotency key"));
       }
-      assertPreparedEventInvitationCalendar(existing.calendar_payload);
+      if (!preparedEventInvitationCalendarFits(existing.calendar_payload)) {
+        return fail(err.conflict("Stored invitation is too large; reduce the event content or attendees and use a new idempotency key"));
+      }
       return ok({
         deliveryId: params.deliveryId,
         itemId: params.itemId,
@@ -829,7 +830,9 @@ export const prepareEventInvitationAttachment = async (params: {
       generatedAt: new Date().toISOString(),
     });
     // Throw inside the transaction so source/sequence changes roll back too.
-    assertPreparedEventInvitationCalendar(calendar);
+    if (!preparedEventInvitationCalendarFits(calendar)) {
+      throw new PreparedEventInvitationSizeError("Prepared calendar invitation is too large; reduce the event content or attendees");
+    }
     await tx`
       INSERT INTO spaces.calendar_invitation_deliveries (
         idempotency_key, item_id, mailbox_id, sender_identity_id, sequence, method, state,

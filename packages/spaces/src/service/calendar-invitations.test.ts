@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { EventInvitationPrepareDataSchema } from "../capability-contracts";
 import {
-  assertPreparedEventInvitationCalendar,
   buildCalendarResponse,
   decideCalendarImport,
   parseCalendarInvitation,
+  preparedEventInvitationCalendarFits,
 } from "./calendar-invitations";
 
 const request = `BEGIN:VCALENDAR\r
@@ -30,12 +30,26 @@ describe("calendar invitation protocol", () => {
     const calendar = EventInvitationPrepareDataSchema.shape.calendar;
     const limit = calendar.maxLength;
     if (limit === null) throw new Error("Expected a bounded prepared invitation");
-    const atLimit = "c".repeat(limit);
-    expect(() => assertPreparedEventInvitationCalendar(atLimit)).not.toThrow();
+    const atLimit = "c".repeat(limit - 2);
+    expect(Buffer.byteLength(JSON.stringify(atLimit))).toBe(limit);
+    expect(preparedEventInvitationCalendarFits(atLimit)).toBeTrue();
     expect(calendar.safeParse(atLimit).success).toBeTrue();
     const oversized = `${atLimit}c`;
-    expect(calendar.safeParse(oversized).success).toBeFalse();
-    expect(() => assertPreparedEventInvitationCalendar(oversized)).toThrow("Prepared calendar invitation is too large");
+    expect(Buffer.byteLength(JSON.stringify(oversized))).toBe(limit + 1);
+    expect(calendar.safeParse(oversized).success).toBeTrue();
+    expect(preparedEventInvitationCalendarFits(oversized)).toBeFalse();
+
+    const multibyte = "€".repeat(40_000);
+    expect(calendar.safeParse(multibyte).success).toBeTrue();
+    expect(preparedEventInvitationCalendarFits(multibyte)).toBeFalse();
+
+    const escapedAtLimit = `${"\r\n".repeat((limit - 4) / 4)}cc`;
+    expect(Buffer.byteLength(JSON.stringify(escapedAtLimit))).toBe(limit);
+    expect(preparedEventInvitationCalendarFits(escapedAtLimit)).toBeTrue();
+    const escapedOversized = `${escapedAtLimit}\r\n`;
+    expect(calendar.safeParse(escapedOversized).success).toBeTrue();
+    expect(Buffer.byteLength(JSON.stringify(escapedOversized))).toBe(limit + 4);
+    expect(preparedEventInvitationCalendarFits(escapedOversized)).toBeFalse();
   });
   test("parses a bounded REQUEST with timezone, organizer, attendees, and recurrence", () => {
     const result = parseCalendarInvitation(request);

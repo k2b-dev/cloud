@@ -194,24 +194,6 @@ calendar integration, and troubleshooting. Developers can read
 [App capabilities](/en/docs/platform/capabilities) for the shared contracts
 Spaces adopts.
 
-The `spaces.task.list` and `spaces.event.list` capabilities return at most
-three assignees and tags per item. `assigneeCount` is the total number of
-assignees, including those omitted from the preview. The response budget may
-shorten these lists further; `relationsTruncated` marks partial relations.
-Report assignments as, for example, “3 of 11”, or use `spaces.item.read` for
-more detail before naming everyone. Resource reference previews contain at
-most 2,000 characters; read the resource for its full content.
-
-`spaces.task.blocker.add` returns the saved blocker with a `spaces.item` ref,
-just like `spaces.task.blocker.list`. For the reverse direction,
-`spaces.task.blocks.list` returns up to 100 dependent tasks per page by default;
-use its `cursor` and `limit` inputs and follow `page.nextCursor` until
-`page.hasMore` is false.
-
-Invitation preparation rejects generated calendar payloads longer than 98,304
-characters and rolls back the preparation. Reduce the event content or
-attendee list before trying again.
-
 ## Automate Spaces from the terminal
 
 `cld spaces` lists and changes work from a terminal. An item is addressed by
@@ -285,6 +267,24 @@ relation snapshots with explicit truncation flags, preserving their page model.
 
 `calendar-destination.list` lists writable Mail invitation destinations in pages
 of up to 100. Follow the returned cursor to retrieve every destination.
+
+`task.list` and `event.list` return at most three assignees and tags per item.
+`assigneeCount` includes assignees omitted from the preview. When it is larger
+than the number of `assignees`, state the total (for example, “3 of 11”) or use
+`item.read` before naming everyone. The response budget may shorten previews
+further; `relationsTruncated` signals a partial relation preview. Resource
+reference previews contain at most 2,000 characters; read the resource for its
+full content.
+
+`task.blocker.add` returns the saved blocker with a `spaces.item` ref, just like
+`task.blocker.list`. For the reverse direction, `task.blocks.list` returns up to
+100 dependent tasks per page by default. Use `cursor` and `limit` and follow
+`page.nextCursor` until `page.hasMore` is false.
+
+`event.invitation.prepare` rejects a calendar that would take more than 96 KiB
+of the response, measured as JSON-encoded UTF-8, and rolls back the
+preparation. Reduce the event content or attendees and try again. A retry of a
+stored preparation that is too large needs a new idempotency key.
 
 ## Implementation tasks and agent handoffs
 

@@ -433,6 +433,27 @@ test.each([
   expect(result.data.data.description).toHaveLength(5000);
 });
 
+test("item reference listing keeps all links within the result reference limit", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  const references = Array.from({ length: 100 }, (_, index) => ({
+    ref: { type: "mail.conversation", id: `Conv${index.toString().padStart(2, "0")}` },
+    label: `Conversation ${index}`,
+    createdAt,
+  }));
+  spyOn(spacesService.item.references, "list").mockResolvedValue(references);
+
+  const query = spacesCapabilities.queries["item.reference.list"];
+  const result = await query.run(query.input.parse({ itemId }), userContext);
+  if (!result.ok) throw new Error("Expected item references");
+  expect(capabilityResultSchema(query.data).safeParse(result.data).success).toBeTrue();
+  expect(result.data.data).toHaveLength(100);
+  expect(result.data.data).toEqual(references);
+  expect(result.data.refs).toHaveLength(100);
+  expect(result.data.refs?.[0]).toMatchObject({ type: "spaces.item", id: itemId, title: task.title });
+});
+
 test("tasks blocked by one task paginate within the declared result schema", async () => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");

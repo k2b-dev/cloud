@@ -234,6 +234,7 @@ describe("Cloud AI Skill seeds", () => {
     expect(spaces?.instructions).toContain("at most three assignees and tags");
     expect(spaces?.instructions).toContain("relationsTruncated");
     expect(spaces?.instructions).toContain("assigneeCount");
+    expect(spaces?.instructions).toContain("is larger than the number of `assignees`");
     expect(spaces?.instructions).toContain("3 of 11");
   });
 
