@@ -37,8 +37,9 @@ for (const [name, entry] of Object.entries({
 await Bun.write(resolve(output, "assistant-artifact-chunks.json"), JSON.stringify(chunks));
 
 // HTML app frames: the hash-pinned prelude and the base stylesheet with fonts (also used by cloud.pdf.render).
-const { buildBaseCss, buildPrelude } = await import("../src/artifacts/html/build-assets");
+const { buildBaseCss, buildPrelude, buildCheckPrelude } = await import("../src/artifacts/html/build-assets");
 await Bun.write(resolve(output, "assistant-app-prelude.js"), await buildPrelude());
+await Bun.write(resolve(output, "assistant-check-prelude.js"), await buildCheckPrelude());
 await Bun.write(resolve(output, "assistant-app-base.css"), await buildBaseCss());
 
 const host = await Bun.build({

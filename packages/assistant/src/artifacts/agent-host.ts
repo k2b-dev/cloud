@@ -23,13 +23,14 @@ import { codeApprovalMessage } from "./code-approval-message";
 import type { CodeToolContext } from "./code-tools";
 import { DatabaseRequest } from "./database-contracts";
 import { FlatDatabaseRequest } from "./database-runtime";
+import { appChecks } from "./html/check-service";
 import { httpService } from "./http-service";
 
 export const AgentHostRequest = z
   .object({
     turnId: z.uuid(),
     callId: z.string().min(1).max(180),
-    name: z.enum(["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present"]),
+    name: z.enum(["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present", "code_check"]),
     args: z.unknown(),
     decision: z.object({ id: z.uuid(), approved: z.boolean() }).optional(),
   })
@@ -47,6 +48,8 @@ type Session = {
   host: Promise<Host>;
   lastUsed: number;
   busy: Set<string>;
+  checks: Map<string, { controller: AbortController; operation: Promise<void> }>;
+  checkScopes: Set<string>;
   lastCall?: { turnId: string; callId: string };
   capabilityTransport: ReturnType<typeof createCodeCapabilityTransport>;
   capabilityContext?: { conversationId: string; turnId: string; token: string };
@@ -62,10 +65,14 @@ async function closeSession(session: Session) {
   if (sessions.get(session.key) === session) sessions.delete(session.key);
   for (const resolve of session.decisions.values()) resolve(false);
   session.decisions.clear();
+  for (const check of session.checks.values()) check.controller.abort();
   await session.host.then(
     (host) => host.close(),
     () => {},
   );
+  // Also recover a start response lost when its caller disconnected.
+  for (const id of session.checkScopes) await appChecks.discard(id, session.context);
+  session.checkScopes.clear();
   await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now()
     WHERE host_id=${session.id}::uuid AND status='running'`;
 }
@@ -76,10 +83,23 @@ async function authorize(context: CodeToolContext, turnId: string) {
   return { user: context.actor.user, key: config.background ? turnId : context.conversationId };
 }
 
-async function hostFetch(context: CodeToolContext, session: Session, path: string, init?: RequestInit): Promise<Response> {
+export async function hostFetch(context: CodeToolContext, session: Session, path: string, init?: RequestInit): Promise<Response> {
   if (context.actor.kind !== "user" || !context.conversationId) throw new Error("User required");
-  const { config } = await authorizeCodeExecution(context.conversationId, session.turnId, context.actor.user.id);
   const url = new URL(path, "http://localhost");
+  if (url.pathname === "/api/assistant/artifacts/runtime/check/discard" && init?.method === "POST") {
+    const { id } = z
+      .object({ id: z.string() })
+      .strict()
+      .parse(await new Request(url, init).json());
+    if (session.checkScopes.has(id)) {
+      // Cancellation revokes execution authority, not cleanup of this host's
+      // own disposable copies. The service still checks scratch/admin access.
+      await appChecks.discard(id, context);
+      session.checkScopes.delete(id);
+      return Response.json({ discarded: true });
+    }
+  }
+  const { config } = await authorizeCodeExecution(context.conversationId, session.turnId, context.actor.user.id);
   const prefix = `/api/ai/conversations/${context.conversationId}/files`;
   if (url.pathname === prefix && (init?.method ?? "GET") === "GET")
     return Response.json({ files: await listAiConversationFiles(context.conversationId) });
@@ -125,12 +145,32 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
       },
       { status: 403 },
     );
+  if (config.background && url.pathname === "/api/assistant/artifacts/runtime/check/capability")
+    return Response.json({ ok: false, code: "unavailable", message: "not executed during code_check" }, { status: 403 });
+  // Only this host's own check scopes bypass the task's real-data write grants.
+  const scratchId = /^\/api\/assistant\/artifacts\/([^/]+)\/(?:database|storage)/.exec(url.pathname)?.[1];
+  const [scratch] = scratchId
+    ? await sql`SELECT check_scratch FROM assistant.artifacts
+    WHERE short_id=${scratchId} AND check_conversation_id=${context.conversationId}::uuid AND check_scratch`
+    : [];
   const headers = new Headers(init?.headers);
-  headers.set(LOCALE_HEADER, context.locale);
-  headers.set("cookie", `${TIMEZONE_COOKIE}=${encodeURIComponent(context.timeZone)}`);
+  let locale = context.locale,
+    timeZone = context.timeZone,
+    theme = context.theme ?? "light";
+  if (config.background && url.pathname === "/api/assistant/artifacts/runtime/check/start") {
+    // Resolve check preferences here; scheduled turns retain their existing
+    // Core behavior and never inherit the latest interactive turn.
+    const task = await aiChatTasks.get({ userId: context.actor.user.id, taskId: config.background.taskId });
+    if (!task) throw new Error("Scheduled check task is unavailable");
+    locale = config.locale ?? context.locale;
+    timeZone = config.timeZone ?? task.timezone;
+    theme = config.theme ?? "light";
+  }
+  headers.set(LOCALE_HEADER, locale);
+  headers.set("cookie", `${TIMEZONE_COOKIE}=${encodeURIComponent(timeZone)}; theme=${theme}`);
   const request = new Request(url, { ...init, headers });
   const database = /^\/api\/assistant\/artifacts\/([^/]+)\/database(?:\/maintenance)?(\/connect)?$/.exec(url.pathname);
-  if (config.background && config.mandate && database && request.method === "POST") {
+  if (config.background && config.mandate && database && !scratch && request.method === "POST") {
     const input = database[2]
       ? { operation: "connect" }
       : (url.pathname.includes("/maintenance") ? DatabaseRequest : FlatDatabaseRequest).parse(await request.clone().json());
@@ -220,7 +260,16 @@ async function hostFetch(context: CodeToolContext, session: Session, path: strin
         signal: init?.signal ?? undefined,
       })),
     );
-  return router.fetch(request);
+  const checking = session.lastCall ? session.checks.get(keyOf(session.lastCall.turnId, session.lastCall.callId))?.controller : undefined;
+  const response = await router.fetch(request);
+  if (url.pathname === "/api/assistant/artifacts/runtime/check/start" && response.ok) {
+    const { scopeId } = z.object({ scopeId: z.string() }).parse(await response.clone().json());
+    // A cancelled caller may never receive this scope ID. Do not retain it
+    // until host shutdown when creation completed after cancellation.
+    if (checking?.signal.aborted || init?.signal?.aborted) await appChecks.discard(scopeId, context);
+    else session.checkScopes.add(scopeId);
+  }
+  return response;
 }
 
 async function createSession(context: CodeToolContext, turnId: string): Promise<Session> {
@@ -245,6 +294,8 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
     context,
     lastUsed: Date.now(),
     busy: new Set(),
+    checks: new Map(),
+    checkScopes: new Set(),
     decisions: new Map(),
     capabilityTransport: createCodeCapabilityTransport(() => {
       if (!session.capabilityContext) throw new Error("Code capability authority expired");
@@ -252,7 +303,7 @@ async function createSession(context: CodeToolContext, turnId: string): Promise<
     }),
     host: Promise.resolve().then(() =>
       createCliCodeHost(
-        { fetch: (path, init) => hostFetch(context, session, String(path), init) },
+        { fetch: (path, init) => hostFetch(session.context, session, String(path), init) },
         async (approval) => {
           const { config } = await authorizeCodeExecution(
             context.conversationId!,
@@ -323,6 +374,14 @@ export const agentHost = {
       session = await createSession(context, call.turnId);
       if (context.capabilityToken)
         session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
+      if (input.operation === "stop") {
+        const check = session.checks.get(keyOf(call.turnId, input.runId));
+        if (check) {
+          check.controller.abort();
+          await check.operation;
+          return { status: "done", result: { stopped: true }, approvals: [] };
+        }
+      }
       if (session.busy.size) return { status: "busy", phase: "busy", approvals: [] };
       session.busy.add(key);
       session.lastCall = { turnId: call.turnId, callId: call.callId };
@@ -337,15 +396,19 @@ export const agentHost = {
       }
       if (inserted.length) {
         const owned = session;
-        void owned.host
+        const controller = call.name === "code_check" ? new AbortController() : undefined;
+        const operation = owned.host
           .then((host) =>
-            host.execute({
-              name: call.name,
-              args: call.args,
-              callId: call.callId,
-              turnId: call.turnId,
-              conversationId: context.conversationId!,
-            }),
+            host.execute(
+              {
+                name: call.name,
+                args: call.args,
+                callId: call.callId,
+                turnId: call.turnId,
+                conversationId: context.conversationId!,
+              },
+              controller ? AbortSignal.any([context.signal, controller.signal]) : undefined,
+            ),
           )
           .then(async (result) => {
             await sql`UPDATE assistant.artifact_agent_calls SET status='done',result=(${JSON.stringify(result)}::text)::jsonb,updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND host_id=${owned.id}::uuid AND status='running'`;
@@ -358,10 +421,34 @@ export const agentHost = {
               () => {},
             );
           })
-          .finally(() => {
-            owned.busy.delete(key);
-            owned.lastUsed = Date.now();
+          .finally(async () => {
+            try {
+              if (controller) {
+                // Discard IDs the child could not receive, and retry teardown
+                // whose transport was interrupted by turn cancellation.
+                for (const id of owned.checkScopes) {
+                  await appChecks.discard(id, context);
+                  owned.checkScopes.delete(id);
+                }
+              }
+            } finally {
+              owned.busy.delete(key);
+              owned.checks.delete(key);
+              owned.lastUsed = Date.now();
+            }
           });
+        if (controller) {
+          owned.checks.set(key, { controller, operation });
+          // Keep the originating HTTP request open: its signal must still
+          // observe a cancelled tool or detached caller between polls.
+          await operation;
+          context.signal.throwIfAborted();
+          const [completed] = await sql<{ status: string; result: unknown }[]>`SELECT status,result FROM assistant.artifact_agent_calls
+            WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND host_id=${owned.id}::uuid`;
+          if (!completed) throw new Error("Code call disappeared; no replay performed");
+          return { ...completed, approvals: [] };
+        }
+        void operation.catch(() => {});
       } else session.busy.delete(key);
       return { status: "running", phase: session.phase, approvals: [] };
     }

@@ -4,6 +4,11 @@ import { backgroundCodeRouteAllowed, backgroundDatabaseOperation } from "./backg
 test("background code admits computation and artifacts but no route around task grants", () => {
   for (const path of [
     "/runtime/compile",
+    "/runtime/check/start",
+    "/runtime/check/discard",
+    "/runtime/check/record",
+    "/runtime/check/gate",
+    "/runtime/check/capability",
     "/runtime/action",
     "/runtime/capabilities",
     "/runtime/ai",

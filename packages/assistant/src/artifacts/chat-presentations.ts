@@ -3,7 +3,9 @@ import { sql } from "bun";
 import { z } from "zod";
 import { ChatPresentation, ChatPresentationInput } from "./chat-presentation-contracts";
 import { LIMITS } from "./contracts";
-import { ArtifactError, type ArtifactIdentity, artifacts } from "./service";
+import { databaseConfigLock } from "./database-lock";
+import { appChecks } from "./html/check-service";
+import { ArtifactError, type ArtifactIdentity, readArtifactRevision, requireArtifact } from "./service";
 
 async function conversation(id: string, identity: ArtifactIdentity) {
   if (identity.actor.kind !== "user") throw new ArtifactError("ACCESS_DENIED");
@@ -21,8 +23,18 @@ export const chatPresentations = {
     const input = ChatPresentationInput.parse(raw);
     const chat = await conversation(input.conversationId, identity);
     // A saved app is only referenced; the card loads it with the viewer's access every time it starts.
-    if (input.artifactId) await artifacts.get(input.artifactId, identity);
     return sql.begin(async (db) => {
+      await databaseConfigLock(db);
+      const resource = input.artifactId ? await requireArtifact(db, input.artifactId, identity, "read") : undefined;
+      const bundle = resource
+        ? await readArtifactRevision(
+            db,
+            resource.row,
+            resource.permission,
+            resource.permission === "admin" ? resource.row.revision : resource.row.published_revision!,
+          )
+        : undefined;
+      await appChecks.assert(bundle?.source ?? { entry: "index.html", files: input.files! }, input.artifactId, identity, chat.id, db);
       // Serialize the per-chat budget and duplicate delivery checks.
       await db`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
       const [existing] =

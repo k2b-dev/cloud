@@ -1,9 +1,11 @@
 import { AiFileWriteError, AiQuotaError, AiTaskRequestSchema, CODE_SOURCE_TOOLS, isAiSettingsError } from "@k2b/cloud/ai";
-import { CodeActionInput, CodeResourceId } from "@k2b/cloud/ai/browser";
+import { CodeActionInput, CodeCheckInput, CodeResourceId } from "@k2b/cloud/ai/browser";
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, auth, getLocale, respond, v } from "@k2b/cloud/server";
 import { GotenbergRenderError } from "@k2b/cloud/services";
+import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ok } from "@k2b/stdlib";
+import { sql } from "bun";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { etag } from "hono/etag";
@@ -18,9 +20,12 @@ import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
 import { ArtifactCreate, ArtifactFile, ArtifactMetadata, ArtifactSource, ArtifactUpdate, LIMITS, PublicationNote } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
+import { databaseConfigLock } from "./database-lock";
 import { FlatDatabaseRequest } from "./database-runtime";
 import { studioFiles } from "./file-transfer";
-import { appFrameAssets } from "./html/assets";
+import { appFrameAssets, checkFrameAssets } from "./html/assets";
+import { CheckReport } from "./html/check-contracts";
+import { appChecks } from "./html/check-service";
 import { HttpPrepare, HttpScope, SecretSave } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
 import { artifactMessages } from "./messages";
@@ -32,7 +37,7 @@ import { cliHostBundle } from "./runtime/cli-bundle";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
 import { viewerContext } from "./runtime/context";
 import { CloudError } from "./runtime/errors";
-import { ArtifactError, artifacts } from "./service";
+import { ArtifactError, artifacts, readArtifactRevision, requireArtifact } from "./service";
 import { STORAGE_TRANSPORT_BYTES, StorageFileQuery, StorageJsonRequest } from "./storage-contracts";
 import { StorageSettings, storageSettings } from "./storage-settings";
 
@@ -171,6 +176,51 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       if (code === "REQUEST_FAILED") console.error("Assistant artifact request failed", error);
       return respond(c, { ok: false, code, status, error: artifactMessages.resolve([getLocale(c)]).t[code] });
     })
+    .post("/runtime/check/start", v("json", z.object({ input: CodeCheckInput, conversationId: z.uuid() }).strict()), async (c) => {
+      const input = c.req.valid("json");
+      const assets = await checkFrameAssets();
+      return respond(
+        c,
+        ok({
+          ...(await appChecks.start(input.input, input.conversationId, identity(c), c.req.raw.signal)),
+          context: viewerContext(c),
+          theme: readThemeFromCookieHeader(c.req.header("cookie")),
+          assets,
+        }),
+      );
+    })
+    .post("/runtime/check/discard", v("json", z.object({ id: CodeResourceId }).strict()), async (c) => {
+      await appChecks.discard(c.req.valid("json").id, identity(c));
+      return respond(c, ok({ discarded: true }));
+    })
+    .post(
+      "/runtime/check/record",
+      v("json", z.object({ input: CodeCheckInput, conversationId: z.uuid(), report: CheckReport }).strict()),
+      async (c) => {
+        const input = c.req.valid("json");
+        await appChecks.record(input.report, input.input, input.conversationId, identity(c));
+        return respond(c, ok({ recorded: true }));
+      },
+    )
+    .post("/runtime/check/gate", v("json", z.object({ id: CodeResourceId, conversationId: z.uuid() }).strict()), async (c) => {
+      const input = c.req.valid("json");
+      const opened = await sql.begin(async (db) => {
+        await databaseConfigLock(db);
+        const { row, permission } = await requireArtifact(db, input.id, identity(c), "read");
+        const app = await readArtifactRevision(db, row, permission, permission === "admin" ? row.revision : row.published_revision!);
+        await appChecks.assert(app.source, app.id, identity(c), input.conversationId, db);
+        return { id: app.id, title: app.title };
+      });
+      return respond(c, ok(opened));
+    })
+    .post(
+      "/runtime/check/capability",
+      v("json", z.object({ name: z.string(), input: z.json(), conversationId: z.uuid() }).strict()),
+      async (c) => {
+        const input = c.req.valid("json");
+        return respond(c, ok(await runtimeCapabilities.check(input, identity(c), caller(c))));
+      },
+    )
     .post("/presentations", v("json", ChatPresentationInput), async (c) =>
       c.json(await chatPresentations.save(c.req.valid("json"), identity(c))),
     )

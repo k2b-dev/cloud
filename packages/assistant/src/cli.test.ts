@@ -1,8 +1,14 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { CODE_RUNTIME_TOOL_NAMES } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { z } from "zod";
+import { CheckReport } from "./artifacts/html/check-contracts";
 import assistantCli from "./cli";
 import { printCapabilityTable } from "./cli/capability-table";
+import * as codeHost from "./cli/code-host";
 import { collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";
 
@@ -1402,4 +1408,93 @@ test("Studio storage clear defaults to shared and forwards personal scope", asyn
     ctx.flags = { area: "kv", yes: true, ...(scope ? { scope } : {}) };
     await assistantCli.run(ctx);
   }
+});
+
+test.each(["explicit", "temporary"])("code check saves every chat output locally with %s --out", async (directory) => {
+  const files = ["desktop-start-light.png", "desktop-light.png", "mobile-dark.png", "mobile-1-export.csv"];
+  const report = CheckReport.parse({
+    passed: true,
+    hash: "a".repeat(64),
+    height: 800,
+    issues: [],
+    calls: [],
+    aria: "",
+    screenshots: [
+      { view: "desktop-start", theme: "light", path: `/files/hash/${files[0]}` },
+      { view: "desktop", theme: "light", path: `/files/hash/${files[1]}` },
+      { view: "mobile", theme: "dark", path: `/files/hash/${files[2]}` },
+    ],
+    downloads: [{ name: "../export.csv", type: "text/csv", size: 3, path: `/files/hash/${files[3]}` }],
+  });
+  const requests: string[] = [];
+  const { ctx, stdout } = createContext(
+    ["code", "check", "abc234"],
+    async (path) => {
+      const url = new URL(String(path), "https://cloud.example");
+      if (url.pathname.endsWith("/files/content")) {
+        const file = url.searchParams.get("path")!;
+        requests.push(file);
+        return new Response(new Uint8Array([0, 128, 255]));
+      }
+      return json({}, 404);
+    },
+    directory === "explicit" ? "json" : "text",
+  );
+  ctx.flags.chat = "chat-1";
+  const chosen = directory === "explicit" ? await mkdtemp(join(tmpdir(), "check-cli-test-")) : undefined;
+  if (chosen) ctx.flags.out = chosen;
+  let input: unknown,
+    closed = false;
+  const host = spyOn(codeHost, "createCliCodeHost").mockResolvedValue({
+    health: async () => {},
+    execute: async (call) => {
+      input = call.args;
+      return report;
+    },
+    call: async () => report,
+    close: async () => {
+      closed = true;
+    },
+  });
+  let out: string | undefined = chosen;
+  try {
+    await assistantCli.run(ctx);
+    const output = stdout.join("");
+    if (directory === "explicit") {
+      const saved = z.object({ out: z.string(), screenshots: z.array(z.object({ localPath: z.string() })) }).parse(JSON.parse(output));
+      out = saved.out;
+      expect(saved.screenshots).toHaveLength(3);
+    } else {
+      out = /^Output directory: (.+)$/m.exec(output)?.[1];
+      expect(out).toStartWith(join(tmpdir(), "cloud-code-check-"));
+    }
+    expect(out).toBeDefined();
+    expect(input).toEqual({ id: "abc234" });
+    expect(requests).toEqual(files.map((file) => `/files/hash/${file}`));
+    for (const file of files) {
+      const localPath = join(out!, basename(file));
+      expect([...new Uint8Array(await Bun.file(localPath).arrayBuffer())]).toEqual([0, 128, 255]);
+      expect(output).toContain(localPath);
+      expect(output).toContain(`/files/hash/${file}`);
+    }
+    expect(closed).toBe(true);
+  } finally {
+    host.mockRestore();
+    if (out) await rm(out, { recursive: true, force: true });
+  }
+});
+
+test("code check rejects an empty --out and documents the temporary directory default", async () => {
+  const { ctx } = createContext(["code", "check", "abc234"], async () => {
+    throw new Error("Unexpected request");
+  });
+  ctx.flags.chat = "chat-1";
+  ctx.flags.out = "";
+  await expect(assistantCli.run(ctx)).rejects.toThrow("non-empty directory for --out");
+  const help = createContext(["code", "check", "help"], async () => {
+    throw new Error("Unexpected request");
+  });
+  await assistantCli.run(help.ctx);
+  expect(help.stdout.join("")).toContain("--out");
+  expect(help.stdout.join("")).toContain("new printed temp directory");
 });

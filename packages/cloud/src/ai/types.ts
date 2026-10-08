@@ -463,6 +463,7 @@ export type AiClientToolId =
   | "code_stop"
   | "code_open"
   | "code_present"
+  | "code_check"
   | "code_export"
   | "code_secret";
 
@@ -608,6 +609,9 @@ export type AiChatTurnRunConfig = {
   /** Stable public ID exposed as runtime context, not instructions. */
   chatId?: string;
   actor?: RequestActor;
+  /** Browser preferences retained for managed HTML self-tests. */
+  theme?: "light" | "dark";
+  timeZone?: string;
   /** Request locale persisted with the turn so async execution keeps the caller preference. */
   locale?: string;
   modelPolicy?: AiModelPolicy;

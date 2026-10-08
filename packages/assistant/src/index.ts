@@ -6,6 +6,7 @@ import adminPages from "./artifacts/admin-page";
 import { agentHost } from "./artifacts/agent-host";
 import { codeToolRoutes } from "./artifacts/code-tool-routes";
 import { artifactDatabase } from "./artifacts/database";
+import { appChecks } from "./artifacts/html/check-service";
 import { httpService } from "./artifacts/http-service";
 import { migrateArtifacts } from "./artifacts/migrate";
 import { runnerApi } from "./artifacts/runner-api";
@@ -19,7 +20,7 @@ let hostSweep: Promise<unknown> | undefined;
 let databaseTimer: ReturnType<typeof setInterval> | undefined;
 let databaseCleanup: Promise<unknown> | undefined;
 const sweep = () =>
-  (databaseCleanup ??= Promise.all([artifactDatabase.cleanup(), httpService.cleanup()])
+  (databaseCleanup ??= Promise.all([artifactDatabase.cleanup(), httpService.cleanup(), appChecks.cleanup()])
     .catch(() => console.warn("Assistant storage cleanup deferred"))
     .finally(() => {
       databaseCleanup = undefined;

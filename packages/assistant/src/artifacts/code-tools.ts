@@ -2,22 +2,26 @@ import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOO
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
 import { fail, ok, text } from "@k2b/stdlib";
+import { sql } from "bun";
 import { z } from "zod";
 import { ArtifactCompileError, sourceActions } from "./actions";
 import { readBinaryResponse } from "./binary";
-import { LIMITS, PUBLIC_APP_SHARING } from "./contracts";
+import { hasInterface, LIMITS, PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase, DatabaseError } from "./database";
+import { databaseConfigLock } from "./database-lock";
 import { studioFiles } from "./file-transfer";
+import { appChecks } from "./html/check-service";
 import { artifactMessages } from "./messages";
 import { reviewMessages } from "./review-messages";
 import { CloudError } from "./runtime/errors";
 import type { ArtifactIdentity } from "./service";
-import { ArtifactError, artifacts, user } from "./service";
+import { ArtifactError, artifacts, readArtifactRevision, requireArtifact, user } from "./service";
 import { sourceDiagnostics, sourceManifest } from "./source";
 
 export type CodeToolContext = ArtifactIdentity & {
   locale: string;
   timeZone: string;
+  theme?: "light" | "dark";
   signal: AbortSignal;
   review?: boolean;
   capabilityToken?: string;
@@ -393,7 +397,20 @@ export const artifactCodeHandlers = {
       return { data: sourceManifest(copy), ...links(copy.id) };
     }),
   code_publish: ({ id, expectedRevision, note }, context) =>
-    result(context, async () => ({ data: await artifacts.publish(id, expectedRevision, context, note), ...links(id) })),
+    result(context, async () => {
+      return sql.begin(async (db) => {
+        // Source and table mutations take this artifact row too. Keep the gate
+        // and normal publication in one transaction, without changing access.
+        await databaseConfigLock(db);
+        const { row } = await requireArtifact(db, id, context, "admin");
+        const draft = await readArtifactRevision(db, row, "admin");
+        if (hasInterface(draft.source)) {
+          if (!context.conversationId) throw new ArtifactError("INVALID_INPUT");
+          await appChecks.assert(draft.source, id, context, context.conversationId, db);
+        }
+        return { data: await artifacts.publish(id, expectedRevision, context, note, db), ...links(id) };
+      });
+    }),
   code_restore: ({ id, version, expectedRevision }, context) =>
     result(context, async () => ({ data: sourceManifest(await artifacts.restore(id, version, expectedRevision, context)), ...links(id) })),
   code_update: ({ id, ...patch }, context) =>

@@ -10,6 +10,7 @@ import {
   err,
   fail,
   getLocale,
+  getTimeZone,
   ok,
   type RequestActor,
   rateLimit,
@@ -19,6 +20,7 @@ import {
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
+import { readThemeFromCookieHeader } from "../shared/theme";
 import type { AiToolApprovalContext } from "./approvals";
 import { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
@@ -884,6 +886,8 @@ export const aiRoutes = (() => {
             userMessage: message,
             actor: ctx.actor,
             locale: getLocale(c),
+            theme: readThemeFromCookieHeader(c.req.header("cookie")),
+            timeZone: getTimeZone(c),
             requestedModelId: body.modelProfileId ?? project?.defaultModelProfileId ?? undefined,
             modelPolicy: ctx.modelPolicy,
             project: project ?? undefined,
@@ -991,6 +995,8 @@ export const aiRoutes = (() => {
             userMessage: message,
             actor: ctx.actor,
             locale: getLocale(c),
+            theme: readThemeFromCookieHeader(c.req.header("cookie")),
+            timeZone: getTimeZone(c),
             requestedModelId,
             modelPolicy: ctx.modelPolicy,
             systemPrompt,

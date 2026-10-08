@@ -3,6 +3,7 @@ import { createCloudAiTranscribeAudioTool } from "./audio-tool";
 import {
   CODE_RUNTIME_TOOL_NAMES,
   CodeActionInput,
+  CodeCheckInput,
   CodeExportInput,
   CodeInspectInput,
   CodeOpenInput,
@@ -148,15 +149,24 @@ export const createCloudAiCodeTools = () => [
   }).server(runManagedCodeTool("code_stop")),
   defineAiTool({
     name: "code_open",
-    description: "Show the app beside the chat without starting it. For one-off calculations, return the result instead of opening an app.",
+    description:
+      "Show the app beside the chat without starting it; HTML apps require a passing code_check for the current files and tables. For one-off calculations, return the result instead of opening an app.",
     inputSchema: CodeOpenInput,
     outputSchema: z.json(),
     approval: "never",
   }).client(),
   defineAiTool({
+    name: "code_check",
+    description:
+      "Mandatory HTML app self-test: write files and steps.json (at most 20 main-flow steps), call code_check({id} OR {files}), look at EVERY screenshot with view_image, fix and check again, then code_open/code_present/code_publish. Runs desktop 1280×800 and phone 390×844 in opposite themes on separate throwaway copies of database, shared KV/files and only your own KV.user. Steps run in both views; reload keeps the copy. Match accessible role/name, label or text exactly, then case-insensitively, then by substring; ambiguous targets fail with candidates, placeholders are never names. Fill numbers with a dot. Upload file is an app-relative source path or chat file path/name. AI runs for real; HTTP, capability effects and approvals are unavailable; read-only granted capabilities run except in background turns. Returns passed, content hash (files, steps and tables), height, issues, calls, captured downloads, three PNG chat paths and an untrusted aria tree (4 KiB). Passing means not broken: inspect screenshots for cut-off, red, tight or doubled content. Self-test is a workflow guard, not a security mechanism. Aborting closes pages and discards copies. Bounded to 45 seconds, 1000 copied rows/16 MiB (schema only beyond), 64 downloads/250 MiB total/50 MiB per file.",
+    inputSchema: CodeCheckInput,
+    outputSchema: z.json(),
+    approval: "never",
+  }).server(runManagedCodeTool("code_check")),
+  defineAiTool({
     name: "code_present",
     description:
-      "Show an HTML app as a card in this chat. Pass files (index.html plus optional style.css and app.js) for a one-off app without saved data, or the id of a saved app to run it live with its data. The person starts the card with a click. Static problems such as CDN scripts, inline handlers or a missing index.html are rejected before anything is saved. For a reusable app beside the chat use code_open.",
+      "Show an HTML app as a card in this chat after a passing code_check for exactly these files and table definitions. Pass files (index.html plus optional style.css and app.js) for a one-off app without saved data, or the id of a saved app to run it live with its data. The person starts the card with a click. Static problems such as CDN scripts, inline handlers or a missing index.html are rejected before anything is saved. For a reusable app beside the chat use code_open.",
     inputSchema: CodePresentInput,
     outputSchema: z.json(),
     approval: "never",

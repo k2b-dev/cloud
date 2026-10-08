@@ -18,6 +18,7 @@ import {
   typedRow,
 } from "./database-runtime";
 import { safeQuery } from "./database-sql";
+import { CHECK_LIMITS } from "./html/check-contracts";
 import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
@@ -96,7 +97,135 @@ const mutationIntents = new SQL({ max: 1, connectionTimeout: 15 });
 async function markDataMutation(id: string) {
   await mutationIntents`UPDATE assistant.artifact_databases SET data_revision=gen_random_uuid() WHERE artifact_id=${id}::uuid`;
 }
+const CheckColumn = z.object({
+  name: z.string(),
+  type: z.string(),
+  not_null: z.boolean().optional(),
+  unique: z.boolean().optional(),
+  default: z.unknown().optional(),
+  index: z.boolean().optional(),
+  pattern: z.string().optional(),
+  max_length: z.number().optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  auto: z.boolean().optional(),
+  options: z.array(z.string()).optional(),
+  formula: z.string().optional(),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((value) => value ?? undefined),
+  primary_key: z.boolean().optional(),
+  read_only: z.boolean().optional(),
+});
+const CheckTable = z.object({
+  name: z.string(),
+  type: z.enum(["table", "view"]).default("table"),
+  columns: z.array(CheckColumn).optional(),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((value) => value ?? undefined),
+  sql: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined),
+});
+type CheckTable = z.infer<typeof CheckTable>;
 export const artifactDatabase = {
+  /** Stable source definitions, never row counts or namespace identity. */
+  async checkDefinitions(id: string, identity: ArtifactIdentity, signal?: AbortSignal, transaction?: SQL): Promise<CheckTable[]> {
+    const read = async (db: SQL) => {
+      const { row } = await requireArtifact(db, id, identity, "read");
+      const [mapping] = await db<
+        { namespace: string; connected: boolean }[]
+      >`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${row.id}::uuid`;
+      if (!mapping?.connected) return [];
+      const client = connection(await config(), signal).ns(mapping.namespace);
+      const names = z
+        .array(z.object({ name: z.string() }))
+        .max(LIMITS.nodes)
+        .parse(result(await client.tables.list()))
+        .map((table) => table.name)
+        .sort();
+      const tables: CheckTable[] = [];
+      for (const name of names) {
+        const schema = CheckTable.parse({ ...result(await client.tables.get(name)), name });
+        tables.push(schema);
+        if (new TextEncoder().encode(JSON.stringify(tables)).byteLength > CHECK_LIMITS.copyBytes) throw new DatabaseError("DB_LIMIT");
+      }
+      return tables;
+    };
+    return transaction ? read(transaction) : sql.begin(read);
+  },
+  async copyForCheck(from: string, to: string, identity: ArtifactIdentity, signal: AbortSignal, transaction: SQL): Promise<string[]> {
+    const tables = await this.checkDefinitions(from, identity, signal, transaction);
+    const [original] = await transaction<
+      { namespace: string; connected: boolean }[]
+    >`SELECT d.namespace,d.connected FROM assistant.artifacts a
+      JOIN assistant.artifact_databases d ON d.artifact_id=a.id WHERE a.short_id=${from}`;
+    if (!original?.connected) return [];
+    // A connected database with no tables still supports SQL expressions.
+    await this.connect(to, identity, signal);
+    const [target] = await sql<{ namespace: string }[]>`SELECT d.namespace FROM assistant.artifacts a
+      JOIN assistant.artifact_databases d ON d.artifact_id=a.id WHERE a.short_id=${to}`;
+    if (!target) throw new DatabaseError("DB_NOT_CONNECTED");
+    const upstream = connection(await config(), signal, true);
+    // Stream a consistent SQLite snapshot with an actual byte bound, rather than
+    // trusting a prior size estimate while other users may still write.
+    const response = result(await upstream.namespaces.exportDb(original.namespace));
+    const reader = response.body!.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0,
+      schemaOnly = false;
+    try {
+      while (true) {
+        signal.throwIfAborted();
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > CHECK_LIMITS.copyBytes) {
+          schemaOnly = true;
+          await reader.cancel();
+          break;
+        }
+        chunks.push(chunk.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const client = upstream.ns(target.namespace);
+    if (!schemaOnly) {
+      result(
+        await upstream.namespaces.importDb(target.namespace, {
+          filename: "check.sqlite",
+          content: new Blob(chunks.map((chunk) => new Uint8Array(chunk))),
+        }),
+      );
+      let count = 0;
+      for (const table of tables.filter((table) => table.type === "table")) {
+        const quoted = '"' + table.name.replaceAll('"', '""') + '"';
+        const page = z
+          .object({ data: z.array(z.object({ count: z.coerce.number() })).nullable() })
+          .parse(result(await client.query.run({ sql: `SELECT count(*) AS count FROM ${quoted}`, params: [] })));
+        count += page.data?.[0]?.count ?? 0;
+      }
+      schemaOnly = count > CHECK_LIMITS.rows;
+      if (schemaOnly)
+        for (const table of tables.filter((table) => table.type === "table")) result(await client.table(table.name).rows.bulkDelete({}));
+    } else {
+      // rsql supplies its managed id/timestamp columns itself.
+      for (const table of [...tables].sort((a, b) => Number(a.type === "view") - Number(b.type === "view"))) {
+        result(
+          await client.tables.create({
+            ...table,
+            columns: table.columns?.filter((column) => !["id", "created_at", "updated_at"].includes(column.name)),
+          }),
+        );
+      }
+    }
+    return schemaOnly ? [`Database copied as schema only: more than ${CHECK_LIMITS.rows} rows or ${CHECK_LIMITS.copyBytes} bytes.`] : [];
+  },
   async status(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
@@ -454,6 +583,16 @@ export const artifactDatabase = {
       }
       if (new TextEncoder().encode(JSON.stringify(output ?? null)).length > LIMITS.rpcBytes) throw new DatabaseError("DB_LIMIT");
       return output ?? null;
+    });
+  },
+  async deleteQueuedNamespace(namespace: string) {
+    return sql.begin(async (db) => {
+      await databaseConfigLock(db);
+      const [item] = await db`SELECT namespace FROM assistant.database_cleanup WHERE namespace=${namespace} FOR UPDATE`;
+      if (!item) return;
+      const removed = await connection(await config()).namespaces.delete(namespace);
+      if (!removed.ok && removed.status !== 404) result(removed);
+      await db`DELETE FROM assistant.database_cleanup WHERE namespace=${namespace}`;
     });
   },
   async cleanup() {

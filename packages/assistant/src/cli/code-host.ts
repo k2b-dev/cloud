@@ -71,7 +71,6 @@ export async function createCliCodeHost(
   let closing: Promise<void> | undefined;
   const close = () =>
     (closing ??= (async () => {
-      http.close();
       const force = setTimeout(() => child.kill(), 5000);
       try {
         if (child.exitCode === null) await ipc.request({ operation: "close" }).catch(() => {});
@@ -79,6 +78,7 @@ export async function createCliCodeHost(
         child.disconnect();
         await child.exited;
       } finally {
+        http.close();
         clearTimeout(force);
       }
     })());
@@ -104,8 +104,8 @@ export async function createCliCodeHost(
           clearTimeout(deadline);
         }
       },
-      execute: (call: Call) => ipc.request({ operation: "execute", call }),
-      call: (call: Call) => ipc.request({ operation: "call", call }),
+      execute: (call: Call, signal?: AbortSignal) => ipc.request({ operation: "execute", call }, signal),
+      call: (call: Call, signal?: AbortSignal) => ipc.request({ operation: "call", call }, signal),
       close,
     };
   } catch (error) {

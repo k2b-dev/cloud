@@ -94,6 +94,8 @@ export type SubmitAiChatTurnInput = {
   userMessage: Message;
   actor?: RequestActor;
   locale?: string;
+  theme?: "light" | "dark";
+  timeZone?: string;
   modelPolicy?: AiModelPolicy;
   requestedModelId?: string;
   /** Optional instructions that apply only to this turn. */
@@ -155,6 +157,8 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     chatId: input.chatId,
     actor: input.actor,
     ...(input.locale ? { locale: input.locale } : {}),
+    ...(input.theme ? { theme: input.theme } : {}),
+    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
     modelPolicy: input.modelPolicy,
     requestedModelId,
     systemPrompt: input.systemPrompt,
@@ -190,6 +194,8 @@ export const deliverAiInterChatMessage = async (input: {
   chatId?: string;
   actor: RequestActor;
   locale?: string;
+  theme?: "light" | "dark";
+  timeZone?: string;
   modelPolicy?: AiModelPolicy;
   systemPrompt?: string;
   project?: AiChatTurnRunConfig["project"];
@@ -209,6 +215,8 @@ export const deliverAiInterChatMessage = async (input: {
     chatId: input.chatId,
     actor: input.actor,
     ...(input.locale ? { locale: input.locale } : {}),
+    ...(input.theme ? { theme: input.theme } : {}),
+    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
     modelPolicy: input.modelPolicy,
     systemPrompt: input.systemPrompt,
     project: input.project,

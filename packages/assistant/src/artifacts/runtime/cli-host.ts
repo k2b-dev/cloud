@@ -1,4 +1,5 @@
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
+import "../html/check-host";
 import { createRoot } from "solid-js";
 import { createArtifactAgentRuntime } from "../agent-runtime";
 import type { CapabilityDecision, CodeApproval } from "./capabilities";

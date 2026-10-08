@@ -26,9 +26,11 @@ export type FrameToHost =
   | { type: "ready"; height: number }
   | { type: "hash"; value: string }
   | { type: "open"; url: string }
-  | { type: "snapshot"; id: number; html: string };
+  | { type: "snapshot"; id: number; html: string }
+  | { type: "check-result"; id: number; value?: unknown; error?: string };
 
 export type HostToFrame =
+  | { type: "check"; id: number; input: unknown }
   | { type: "result"; id: number; value?: unknown; error?: string; code?: string }
   | { type: "theme"; value: "light" | "dark" }
   | { type: "hash"; value: string }

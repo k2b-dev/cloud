@@ -25,6 +25,8 @@ import { artifactCodeHandlers } from "./code-tools";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { artifactDatabase } from "./database";
 import { studioFiles } from "./file-transfer";
+import { type CheckReport, checkHash } from "./html/check-contracts";
+import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { httpService } from "./http-service";
 import { migrateArtifacts } from "./migrate";
@@ -1306,6 +1308,182 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
 
+  testFor("rsql")(
+    "code_check isolates real database, shared files/KV and only the viewer's personal KV, then removes the scope",
+    async () => {
+      const conversationId = crypto.randomUUID();
+      await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
+      const conversation = spyOn(aiConversations, "getConversation").mockResolvedValue({
+        id: conversationId,
+        shortId: "abc234",
+        title: "Check",
+        titleSource: "user",
+        description: "",
+        descriptionSource: "user",
+        keywords: [],
+        pinnedAt: null,
+        done: null,
+        isDone: false,
+        lastUsedAt: new Date().toISOString(),
+        archivedAt: null,
+        runStatus: "idle",
+        runError: null,
+        unreadCompletion: false,
+        projectId: null,
+        draft: { content: [], revision: 1, updatedAt: null },
+        createdByUserId: owner.user.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      const settings = spyOn(app.settings, "get").mockImplementation(
+        async (key) =>
+          ({
+            "assistant.storage_total_mib": 250,
+            "assistant.storage_file_mib": 50,
+            "assistant.rsql_url": requireInfraUrl("rsql"),
+            "assistant.rsql_api_token": "artifact-test-only",
+          })[key],
+      );
+      const real = await artifacts.create(
+        {
+          kind: "app",
+          title: "Check isolation",
+          source: { entry: "index.html", files: [{ path: "index.html", content: "<main><h1>Data</h1></main>" }] },
+        },
+        owner,
+      );
+      const context = { ...owner, conversationId, locale: "en", timeZone: "UTC", signal: new AbortController().signal };
+      let scratch: string | undefined;
+      let crashed: string | undefined;
+      try {
+        const abandoned = await artifacts.create({ kind: "app", title: "Crashed check", source: real.source }, owner, true);
+        crashed = abandoned.id;
+        await sql`UPDATE assistant.artifacts SET updated_at=now()-interval '3 minutes' WHERE short_id=${crashed}`;
+        await artifactDatabase.connect(real.id, owner);
+        const emptyCopy = await appChecks.start({ id: real.id }, conversationId, owner, context.signal);
+        scratch = emptyCopy.scopeId;
+        await expect(artifacts.get(crashed, owner)).rejects.toThrow("NOT_FOUND");
+        crashed = undefined;
+        expect(await artifactDatabase.call(scratch, { operation: "query", sql: "SELECT 42 AS answer", params: [] }, owner)).toEqual([
+          { answer: 42 },
+        ]);
+        await appChecks.discard(scratch, owner);
+        scratch = undefined;
+
+        await artifactDatabase.call(
+          real.id,
+          { operation: "tables.create", name: "items", columns: [{ name: "title", type: "text" }], write: "everyone" },
+          owner,
+          undefined,
+          "maintenance",
+        );
+        await artifactDatabase.call(real.id, { operation: "insert", table: "items", rows: { title: "Original" } }, owner);
+        await artifacts.storage(real.id, { area: "kv", operation: "write", key: "shared", content: '"original"' }, owner);
+        await artifacts.storage(real.id, { area: "kv", scope: "user", operation: "write", key: "mine", content: '"private"' }, owner);
+        await artifacts.storage(
+          real.id,
+          { area: "files", operation: "write", key: "data.csv", mediaType: "text/csv" },
+          owner,
+          false,
+          new TextEncoder().encode("original"),
+        );
+        await artifacts.grant(real.id, { type: "user", userId: stranger.user.id }, "admin", owner);
+        await artifacts.storage(
+          real.id,
+          { area: "kv", scope: "user", operation: "write", key: "theirs", content: '"secret to another user"' },
+          stranger,
+        );
+        const started = await appChecks.start({ id: real.id }, conversationId, owner, context.signal);
+        scratch = started.scopeId;
+        expect((await artifacts.list(owner, 1, "Code check")).items).toEqual([]);
+        expect(await artifactDatabase.call(scratch, { operation: "list", table: "items" }, owner)).toMatchObject([{ title: "Original" }]);
+        expect((await artifacts.storage(scratch, { area: "kv", operation: "read", key: "shared" }, owner)).item?.content).toBe(
+          '"original"',
+        );
+        expect((await artifacts.storage(scratch, { area: "kv", scope: "user", operation: "read", key: "mine" }, owner)).item?.content).toBe(
+          '"private"',
+        );
+        const [other] =
+          await sql`SELECT count(*)::int AS count FROM assistant.artifact_storage WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${scratch}) AND user_id=${stranger.user.id}::uuid`;
+        expect(other!.count).toBe(0);
+        await artifactDatabase.call(scratch, { operation: "insert", table: "items", rows: { title: "Check only" } }, owner);
+        await artifacts.storage(scratch, { area: "kv", operation: "write", key: "shared", content: '"changed"' }, owner);
+        await artifacts.storage(
+          scratch,
+          { area: "files", operation: "write", key: "data.csv", mediaType: "text/csv" },
+          owner,
+          false,
+          new TextEncoder().encode("changed"),
+        );
+        expect(await artifactDatabase.call(real.id, { operation: "list", table: "items" }, owner)).toMatchObject([{ title: "Original" }]);
+        expect((await artifacts.storage(real.id, { area: "kv", operation: "read", key: "shared" }, owner)).item?.content).toBe(
+          '"original"',
+        );
+        expect(
+          new TextDecoder().decode(
+            (await artifacts.storage(real.id, { area: "files", operation: "read", key: "data.csv" }, owner)).item?.data ?? undefined,
+          ),
+        ).toBe("original");
+        const [namespace] =
+          await sql`SELECT namespace FROM assistant.artifact_databases WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${scratch})`;
+        await appChecks.discard(scratch, owner);
+        await expect(artifacts.get(scratch, owner)).rejects.toThrow("NOT_FOUND");
+        const { createRsqlClient } = await import("@k2b/rsql");
+        expect(
+          (
+            await createRsqlClient({ url: requireInfraUrl("rsql"), token: "artifact-test-only" }).namespaces.get(
+              String(namespace!.namespace),
+            )
+          ).ok,
+        ).toBe(false);
+        scratch = undefined;
+        expect(await artifactCodeHandlers.code_publish({ id: real.id, expectedRevision: 1, note: "Check gate" }, context)).toMatchObject({
+          ok: false,
+          error: { message: expect.stringContaining("no check") },
+        });
+        const report: CheckReport = {
+          passed: true,
+          hash: started.hash,
+          height: 800,
+          issues: [],
+          calls: [],
+          downloads: [],
+          aria: "",
+          screenshots: [
+            { view: "desktop-start", theme: "light", path: "/files/start.png" },
+            { view: "desktop", theme: "light", path: "/files/desktop.png" },
+            { view: "mobile", theme: "dark", path: "/files/mobile.png" },
+          ],
+        };
+        await appChecks.record(report, { id: real.id }, conversationId, owner);
+        expect(await artifactCodeHandlers.code_publish({ id: real.id, expectedRevision: 1, note: "Checked" }, context)).toMatchObject({
+          ok: true,
+        });
+        await artifactDatabase.call(
+          real.id,
+          { operation: "tables.update", table: "items", changes: { add_columns: [{ name: "note", type: "text" }] } },
+          owner,
+          undefined,
+          "maintenance",
+        );
+        expect(await artifactCodeHandlers.code_publish({ id: real.id, expectedRevision: 1, note: "Stale" }, context)).toMatchObject({
+          ok: false,
+          error: { message: expect.stringContaining("changed since") },
+        });
+        // Human publication remains outside the agent workflow gate.
+        expect(await artifacts.publish(real.id, 1, owner, "Human publication")).toMatchObject({ publishedRevision: 1 });
+      } finally {
+        if (scratch) await appChecks.discard(scratch, owner);
+        if (crashed) await artifacts.remove(crashed, owner);
+        await artifacts.remove(real.id, owner);
+        await artifactDatabase.cleanup();
+        await sql`DELETE FROM ai.conversations WHERE id=${conversationId}::uuid`;
+        settings.mockRestore();
+        conversation.mockRestore();
+      }
+    },
+    60000,
+  );
   testFor("rsql")("flat db returns typed rows, manages audit fields, bounds lists and enforces every write rule", async () => {
     const resource = await artifacts.create({ title: "Flat db", kind: "app", source }, owner);
     await artifacts.publish(resource.id, 1, owner, "Initial release");
@@ -2185,6 +2363,27 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         { path: "app.js", content: "document.querySelector('h1').textContent = cloud.locale;" },
       ];
       const input = { conversationId, callId: "present-once", title: "Report", files };
+      await expect(chatPresentations.save(input, owner)).rejects.toThrow("no check");
+      const checked: CheckReport = {
+        passed: false,
+        hash: checkHash({ files }, []),
+        height: 800,
+        issues: [],
+        calls: [],
+        downloads: [],
+        screenshots: [
+          { view: "desktop-start", theme: "light", path: "/files/start.png" },
+          { view: "desktop", theme: "light", path: "/files/desktop.png" },
+          { view: "mobile", theme: "dark", path: "/files/mobile.png" },
+        ],
+        aria: "",
+      };
+      await appChecks.record(checked, { files }, conversationId, owner);
+      await expect(chatPresentations.save(input, owner)).rejects.toThrow("failed check");
+      await appChecks.record({ ...checked, passed: true }, { files }, conversationId, owner);
+      await expect(
+        chatPresentations.save({ ...input, callId: "changed", files: [{ ...files[0]!, content: "<h1>Changed</h1>" }] }, owner),
+      ).rejects.toThrow("changed since");
       const [first, duplicate] = await Promise.all([chatPresentations.save(input, owner), chatPresentations.save(input, owner)]);
       expect(first).toEqual(duplicate);
       expect(await chatPresentations.read(first.presentationId, conversationId, owner)).toMatchObject({
@@ -2300,6 +2499,13 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         callId: "visual-present",
         args: { title: "Interactive result", files: [{ path: "index.html", content: "<main><p>Total <strong>20</strong></p></main>" }] },
       };
+      const checked = await wait({
+        ...presentCall,
+        name: "code_check" as const,
+        callId: "visual-check",
+        args: { files: presentCall.args.files },
+      });
+      expect(checked).toMatchObject({ status: "done", result: { passed: true } });
       const shown = await wait(presentCall);
       expect(shown).toMatchObject({ status: "done", result: { title: "Interactive result", userVisible: true } });
       expect(await wait(presentCall)).toEqual(shown);
@@ -2310,7 +2516,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const [count] = await sql<
         { count: number }[]
       >`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid`;
-      expect(count!.count).toBe(2);
+      expect(count!.count).toBe(3);
       const syntax = await wait({ ...call, callId: "syntax-error", args: { code: "export default () => { const broken = ; }" } });
       expect(syntax).toMatchObject({ status: "done", result: { failed: true, error: expect.stringContaining("Unexpected") } });
       expect(JSON.stringify(syntax)).not.toContain("artifact request failed");
@@ -2383,11 +2589,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
                 status: "done",
                 result: { output: '{"linked":true,"unchanged":true}' },
               });
-            // The dashboard's interface passes the static checks and appears in the chat.
+            // Static checks alone no longer authorize an agent presentation.
             if (folder === "dashboard")
               expect(
                 await wait({ ...call, name: "code_present" as const, callId: "dashboard-view", args: { id: example.id } }),
-              ).toMatchObject({ status: "done", result: { userVisible: true, title: "dashboard" } });
+              ).toMatchObject({ status: "done", result: { failed: true, error: expect.stringContaining("code_check") } });
           } finally {
             await artifacts.remove(example.id, owner);
           }

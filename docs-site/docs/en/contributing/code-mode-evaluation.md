@@ -51,3 +51,15 @@ substitute a copied calculation for testing the actual app.
 
 Record repair attempts and model configuration alongside duration. Different
 models or reasoning settings do not constitute a controlled speed comparison.
+
+## Evaluate HTML app checks
+
+For an HTML interface, write its main flow into `steps.json` and run
+`code_check` before presenting or publishing. The gate binds files, steps and
+table definitions to the checking user/conversation. Inspect all three returned
+screenshots with `view_image`; a passing report does not establish visual quality.
+
+The [HTML app check contract](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+describes desktop/phone runs, disposable data, schema-only copies above the
+budget, restricted effects and cancellation. Browser regressions use the
+repository launcher and support Chromium or `TEST_BROWSER=webkit`.
