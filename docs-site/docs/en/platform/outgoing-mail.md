@@ -327,7 +327,11 @@ acceptance error. `queued` and `sending` remain pending; check the stored ID
 later. See [Handle errors](#handle-errors) for other codes and
 [Choose a sender](#choose-a-sender) when `profile_required` needs an explicit profile.
 The stable invoice/version key prevents another acceptance on a retried request;
-it does not remove [at-least-once delivery](#send-a-message).
+it does not remove [at-least-once delivery](#send-a-message). A deliberate
+resend, for example to a corrected address after `failed`, needs a new key,
+such as one with a stored resend counter (`invoice-<id>-v<version>-r<n>`). The
+old key keeps returning the earlier record, including a failed one, until
+[record retention](/en/docs/operations/outgoing-mail#set-retention) deletes it.
 
 ### One-time download link
 
@@ -378,8 +382,12 @@ outlive the token: do not extend its expiry to accommodate delivery retries.
 
 ### Resumable bulk stock update
 
-Persist a run ID and a finite customer snapshot in your application before
-starting. Each customer appears once in that snapshot. Resume from its stored
+Before starting, persist the run and a finite customer snapshot in your
+application. Generate the run ID with `crypto.randomUUID()`; its fixed length
+keeps every run/customer key distinct. Each customer appears once in the
+snapshot. Validate addresses while building it, using the syntax from
+[Send a message](#send-a-message): one invalid address rejects its whole chunk
+with `bad_input` on every resume. Resume from the run's stored
 `nextOffset`; commit accepted batch IDs and record IDs with the checkpoint in
 `saveBatch`. If acceptance succeeded but checkpoint storage failed, reuse the
 same run ID and customer keys: known keys return existing records.
@@ -394,8 +402,9 @@ export const enqueueStockRun = async (
   startOffset: number,
   saveBatch: (batch: { batchId: string; ids: string[]; nextOffset: number }) => Promise<void>,
 ) => {
-  for (let offset = startOffset; offset < customers.length; offset += 1000) {
-    const messages = customers.slice(offset, offset + 1000).map((customer) => ({
+  let size = 1000;
+  for (let offset = startOffset; offset < customers.length; ) {
+    const messages = customers.slice(offset, offset + size).map((customer) => ({
       to: [customer.email],
       subject: "Stock update",
       text: "New stock arrived. Visit our catalogue to see it.",
@@ -403,12 +412,17 @@ export const enqueueStockRun = async (
     }));
     const batch = await mail.enqueue(messages);
     if (!batch.ok) {
-      if (batch.error.code === "backlog_full" || batch.error.code === "quota_exceeded") {
-        return { nextOffset: offset, reason: batch.error.code };
+      const { code, limit, used } = batch.error;
+      if (code === "quota_exceeded" && limit !== undefined && used !== undefined && limit > used) {
+        // Each rejected chunk shrinks, so retries terminate.
+        size = limit - used;
+        continue;
       }
-      throw new Error(`${batch.error.code}: ${batch.error.message}`);
+      if (code === "backlog_full" || code === "quota_exceeded") return { nextOffset: offset, reason: code };
+      throw new Error(`${code}: ${batch.error.message}`);
     }
     await saveBatch({ ...batch.data, nextOffset: offset + messages.length });
+    offset += messages.length;
   }
   return { nextOffset: customers.length };
 };
@@ -429,9 +443,12 @@ export const readStockBatch = async (batchId: string, cursor?: string) => {
 ```
 
 When `reason` is `backlog_full`, save the rejected offset and schedule a later
-attempt after capacity has freed; do not retry in a hot loop. For
-`quota_exceeded`, wait for the rolling quota to free capacity or ask the operator
-to adjust it. See [Enqueue a batch](#enqueue-a-batch) for limits and acceptance rules.
+attempt after capacity has freed; do not retry in a hot loop. The function
+shrinks a chunk to the recipient quota that is still free, so `quota_exceeded`
+means none is left. Schedule a later attempt after accepted recipients age out
+of the rolling 24 hours, or ask the operator to raise the limit. A run larger
+than the daily limit therefore spans several days. See
+[Enqueue a batch](#enqueue-a-batch) for limits and acceptance rules.
 
 Call `readStockBatch` when showing progress, and use its `nextCursor` for a
 further bounded traversal if needed. A record can move from `sent` to

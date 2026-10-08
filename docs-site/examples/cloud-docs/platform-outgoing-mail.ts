@@ -114,8 +114,9 @@ export const enqueueStockRun = async (
   startOffset: number,
   saveBatch: (batch: { batchId: string; ids: string[]; nextOffset: number }) => Promise<void>,
 ) => {
-  for (let offset = startOffset; offset < customers.length; offset += 1000) {
-    const messages = customers.slice(offset, offset + 1000).map((customer) => ({
+  let size = 1000;
+  for (let offset = startOffset; offset < customers.length; ) {
+    const messages = customers.slice(offset, offset + size).map((customer) => ({
       to: [customer.email],
       subject: "Stock update",
       text: "New stock arrived. Visit our catalogue to see it.",
@@ -123,12 +124,17 @@ export const enqueueStockRun = async (
     }));
     const batch = await mail.enqueue(messages);
     if (!batch.ok) {
-      if (batch.error.code === "backlog_full" || batch.error.code === "quota_exceeded") {
-        return { nextOffset: offset, reason: batch.error.code };
+      const { code, limit, used } = batch.error;
+      if (code === "quota_exceeded" && limit !== undefined && used !== undefined && limit > used) {
+        // Each rejected chunk shrinks, so retries terminate.
+        size = limit - used;
+        continue;
       }
-      throw new Error(`${batch.error.code}: ${batch.error.message}`);
+      if (code === "backlog_full" || code === "quota_exceeded") return { nextOffset: offset, reason: code };
+      throw new Error(`${code}: ${batch.error.message}`);
     }
     await saveBatch({ ...batch.data, nextOffset: offset + messages.length });
+    offset += messages.length;
   }
   return { nextOffset: customers.length };
 };
