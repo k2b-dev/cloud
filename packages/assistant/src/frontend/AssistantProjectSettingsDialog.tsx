@@ -3,7 +3,17 @@ import type { AiProject, AiProjectAccess } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import { query } from "@k2b/stdlib/solid";
-import { Button, confirmDiscardIfDirty, Placeholder, prompts, SettingsGroup, SettingsModal, TextInput, toast } from "@k2b/ui";
+import {
+  Button,
+  confirmDiscardIfDirty,
+  Placeholder,
+  prompts,
+  SettingsGroup,
+  SettingsModal,
+  SettingsPanelFooter,
+  TextInput,
+  toast,
+} from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import {
   type AssistantLiveHub,
@@ -48,6 +58,12 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
   });
   onCleanup(unregister);
 
+  const discard = () => {
+    setName(props.project.name);
+    setDescription(props.project.description);
+    setInstructions(props.project.instructions);
+    setSaveError(null);
+  };
   const requestClose = async () => {
     if (!saving() && (await confirmDiscardIfDirty(() => changeCount() > 0))) props.close();
   };
@@ -119,19 +135,13 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
               </Show>
             </SettingsGroup>
             <SettingsModal.Footer>
-              <div class="flex w-full items-center justify-between gap-3">
-                <span class="text-xs text-dimmed">
-                  {changeCount()} unsaved {changeCount() === 1 ? "change" : "changes"}
-                </span>
-                <div class="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => void requestClose()} disabled={saving()}>
-                    {text("Cancel")}
-                  </Button>
-                  <Button size="sm" onClick={() => void save()} loading={saving()} disabled={!name().trim() || changeCount() === 0}>
-                    {text("Save changes")}
-                  </Button>
-                </div>
-              </div>
+              <SettingsPanelFooter
+                changeCount={changeCount}
+                loading={saving}
+                saveDisabled={() => !name().trim()}
+                onDiscard={discard}
+                onSave={() => void save()}
+              />
             </SettingsModal.Footer>
           </SettingsModal.Tab>
         </SettingsModal.Group>

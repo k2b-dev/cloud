@@ -105,6 +105,7 @@ export {
   type NavigationController,
   type NavigationItem,
   type NavigationOptions,
+  type NavigationStatus,
 } from "./navigation-model";
 export type {
   PanelDialogBodyProps,

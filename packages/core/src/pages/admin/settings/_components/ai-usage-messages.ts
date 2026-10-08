@@ -144,7 +144,7 @@ export const aiUsageMessages = i18n.define({
       other: "Other",
     },
     de: {
-      allowances: "Assistant-Kontingente ansehen",
+      allowances: "Assistenten-Kontingente ansehen",
       moreFilters: "Weitere Filter",
       dataNotes: "Hinweise zu den Daten",
       additionalStatistics: "Anwendungen & Werkzeuge",
@@ -269,7 +269,7 @@ export const aiUsageMessages = i18n.define({
       noBackground: "Keine KI-Hintergrundläufe in diesem Zeitraum.",
       unresolved: "nicht aufgelöst",
       launchedByApps: "Von Apps gestartet",
-      launchedDescription: ({ count }) => `${count} Chats wurden ausdrücklich außerhalb des Assistant gestartet.`,
+      launchedDescription: ({ count }) => `${count} Chats wurden ausdrücklich außerhalb des Assistenten gestartet.`,
       application: "App",
       chats: "Chats",
       noLaunches: "Keine von Apps gestarteten Chats in diesem Zeitraum.",

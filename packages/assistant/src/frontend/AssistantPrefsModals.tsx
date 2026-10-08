@@ -219,6 +219,18 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
     if (!q.trim()) setHasSavedPersonalization(items.length > 0);
     return items;
   });
+  const loadError = () => (
+    <Placeholder
+      state="error"
+      title={text("Could not load personalization")}
+      description={memories.error?.message}
+      action={
+        <Button size="xs" variant="secondary" loading={memories.loading} onClick={() => void refetch()}>
+          {text("Retry")}
+        </Button>
+      }
+    />
+  );
   const [memoryEnabled, setMemoryEnabled] = createSignal(props.prefs.memoryEnabled);
   const [learningEnabled, setLearningEnabled] = createSignal(props.prefs.memoryLearningEnabled);
   const [savedPreferences, setSavedPreferences] = createSignal({
@@ -370,22 +382,14 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
           title={text("Saved personalization")}
           description={text("Facts, preferences, and workflow defaults Assistant may carry into future conversations.")}
         >
-          <Show when={memories.loading}>
-            <Placeholder state="loading" title={text("Loading personalization")} />
+          {/* Loading shows only before the first list: a search keeps its field, focus and previous results while the next
+              results load. */}
+          <Show when={hasSavedPersonalization() === undefined}>
+            <Show when={memories.error} fallback={<Placeholder state="loading" title={text("Loading personalization")} />}>
+              {loadError()}
+            </Show>
           </Show>
-          <Show when={memories.error}>
-            <Placeholder
-              state="error"
-              title={text("Could not load personalization")}
-              description={memories.error.message}
-              action={
-                <Button size="xs" variant="secondary" onClick={() => void refetch()}>
-                  {text("Retry")}
-                </Button>
-              }
-            />
-          </Show>
-          <Show when={!memories.loading && !memories.error}>
+          <Show when={hasSavedPersonalization() !== undefined}>
             <Show
               when={hasSavedPersonalization()}
               fallback={
@@ -426,69 +430,71 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                   </IconButton>
                 </div>
 
-                <SettingsCollection
-                  title={<span class="sr-only">{text("Personalization entries")}</span>}
-                  class="[&>.k2b-settings-collection__header]:sr-only"
-                  empty={text("No matching personalization. Try a different search.")}
-                >
-                  <For each={memories()}>
-                    {(memory) => (
-                      <SettingsCollection.Item
-                        title={memory.content}
-                        description={
-                          <>
-                            {text(memoryKindLabel(memory.kind))}
-                            <Show when={memory.priority === "pinned"}>
-                              {" · "}
-                              <span class="font-medium text-blue-600 dark:text-blue-400">{text("Pinned")}</span>
-                            </Show>
-                            {` · ${text("Updated")} ${new Date(memory.updatedAt).toLocaleDateString(locale())}`}
-                          </>
-                        }
-                        icon={<i class={memoryKindIcon(memory.kind)} aria-hidden="true" />}
-                      >
-                        <Show when={memory.sourceConversationId}>
-                          {(conversationId) => (
-                            <SettingsCollection.Item.Status>
-                              <a
-                                class="inline-flex rounded-full focus-ui"
-                                href={assistantConversationHref(globalThis.location?.href ?? "/app/assistant", conversationId())}
-                              >
-                                <StatusBadge tone="neutral" icon="ti ti-arrow-up-right" label={text("Go to source")} />
-                              </a>
-                            </SettingsCollection.Item.Status>
-                          )}
-                        </Show>
-                        <SettingsCollection.Item.Actions>
-                          <Dropdown.Root
-                            position="bottom-left"
-                            width="10rem"
-                            label={text("Personalization actions")}
-                            disabled={Boolean(busyId())}
-                            items={[
-                              { label: text("Edit"), icon: "ti ti-pencil", action: () => void editMemory(memory) },
-                              {
-                                label: text(memory.priority === "pinned" ? "Unpin" : "Pin"),
-                                icon: memory.priority === "pinned" ? "ti ti-xbox-x" : "ti ti-pin",
-                                action: () => void togglePinned(memory),
-                              },
-                              { label: text("Delete"), icon: "ti ti-trash", variant: "danger", action: () => void removeMemory(memory) },
-                            ]}
-                          >
-                            <Dropdown.Trigger
-                              appearance="plain"
-                              iconOnly
+                <Show when={!memories.error} fallback={loadError()}>
+                  <SettingsCollection
+                    title={<span class="sr-only">{text("Personalization entries")}</span>}
+                    class="[&>.k2b-settings-collection__header]:sr-only"
+                    empty={text("No matching personalization. Try a different search.")}
+                  >
+                    <For each={memories.latest}>
+                      {(memory) => (
+                        <SettingsCollection.Item
+                          title={memory.content}
+                          description={
+                            <>
+                              {text(memoryKindLabel(memory.kind))}
+                              <Show when={memory.priority === "pinned"}>
+                                {" · "}
+                                <span class="font-medium text-blue-600 dark:text-blue-400">{text("Pinned")}</span>
+                              </Show>
+                              {` · ${text("Updated")} ${new Date(memory.updatedAt).toLocaleDateString(locale())}`}
+                            </>
+                          }
+                          icon={<i class={memoryKindIcon(memory.kind)} aria-hidden="true" />}
+                        >
+                          <Show when={memory.sourceConversationId}>
+                            {(conversationId) => (
+                              <SettingsCollection.Item.Status>
+                                <a
+                                  class="inline-flex rounded-full focus-ui"
+                                  href={assistantConversationHref(globalThis.location?.href ?? "/app/assistant", conversationId())}
+                                >
+                                  <StatusBadge tone="neutral" icon="ti ti-arrow-up-right" label={text("Go to source")} />
+                                </a>
+                              </SettingsCollection.Item.Status>
+                            )}
+                          </Show>
+                          <SettingsCollection.Item.Actions>
+                            <Dropdown.Root
+                              position="bottom-left"
+                              width="10rem"
                               label={text("Personalization actions")}
-                              title={text("Personalization actions")}
+                              disabled={Boolean(busyId())}
+                              items={[
+                                { label: text("Edit"), icon: "ti ti-pencil", action: () => void editMemory(memory) },
+                                {
+                                  label: text(memory.priority === "pinned" ? "Unpin" : "Pin"),
+                                  icon: memory.priority === "pinned" ? "ti ti-xbox-x" : "ti ti-pin",
+                                  action: () => void togglePinned(memory),
+                                },
+                                { label: text("Delete"), icon: "ti ti-trash", variant: "danger", action: () => void removeMemory(memory) },
+                              ]}
                             >
-                              <i class="ti ti-dots" aria-hidden="true" />
-                            </Dropdown.Trigger>
-                          </Dropdown.Root>
-                        </SettingsCollection.Item.Actions>
-                      </SettingsCollection.Item>
-                    )}
-                  </For>
-                </SettingsCollection>
+                              <Dropdown.Trigger
+                                appearance="plain"
+                                iconOnly
+                                label={text("Personalization actions")}
+                                title={text("Personalization actions")}
+                              >
+                                <i class="ti ti-dots" aria-hidden="true" />
+                              </Dropdown.Trigger>
+                            </Dropdown.Root>
+                          </SettingsCollection.Item.Actions>
+                        </SettingsCollection.Item>
+                      )}
+                    </For>
+                  </SettingsCollection>
+                </Show>
               </div>
             </Show>
           </Show>

@@ -2,22 +2,23 @@
 id: assistant-workflow
 title: Chats & Actions
 icon: ti ti-messages
-description: Find chats, manage metadata, retry, fork, compact, stop, and handle actions.
+description: Find chats, manage metadata, retry, continue in a new chat, compact, stop, and handle actions.
 order: 110
 ---
 
-Assistant separates Project chats from general chats in the sidebar. Create a Project from the plus action beside the Projects heading. Projects start expanded with their ten most recently active chats, or select the Project itself to start a chat and search its complete chat history.
+The sidebar lists your active chats as plain rows: pinned chats first, then by the day you last used them (**Today**, **Yesterday**, **Previous 7 days**, **Previous 30 days**, **Older**). Open **Projects** in the sidebar footer to choose, search, or create a Project, and select a Project to start a chat in it or search its complete chat history.
 
 ## Chat navigation {icon="layout-list"}
 
 :::reference
-- **Projects:** The Projects section remains visible even when it is empty. Use its plus action to create a Project with a name and optional instructions.
+- **Chat rows:** Each row shows the chat's title. One icon at the row's end marks a chat that is running, waiting for you, failed, has a new response, or has an active schedule; its tooltip names the state.
+- **Projects:** Use the plus action in the Projects popup to create a Project with a name and optional instructions.
+- **New chat:** Opens an empty chat. When the open chat is still empty, Assistant keeps it instead of creating another one, unless it belongs to a Project, was opened by another app, has a name or description you gave it, or is pinned, done, or archived.
 - **Empty chat:** Choose an optional Project below the centered composer before sending the first message. Starter cards fill an editable request; they never send it automatically.
 - **Project page:** Enter the first message in the standard composer, including files when needed. Assistant creates a private Project chat, sends the message, and then opens the normal chat. Search and scroll through existing Project chats below the composer.
 - **Project context:** The Project page shows Project instructions, knowledge, images, files, and references. People with write access can add or edit this shared context from that page.
-- **General chats:** Up to 15 chats without a Project appear in one **Chats** section below Projects. Use **See all** for the complete history.
 - **Search all chats:** Use the sidebar search button to search all saved chats.
-- **All Chats:** Project badges identify Project chats in the paginated history. All Chats also provides server-side search and edit actions.
+- **All Chats:** Project badges identify Project chats in the paginated history. Search titles and messages, and filter with one menu: all chats, new responses, running, waiting for you, failed, done, or archived.
 - **In this chat:** The sidebar at the right of a chat shows what the chat holds. On large screens it is open; close it with the button in its header and it stays closed until you open it again with the button at the upper right of the chat. On narrower windows that button opens it over the edge of the chat, and on a phone as a sheet that Back closes.
 - **Results first:** Files, Studio apps, and visualizations the assistant created for you are listed first, the newest with the sentence the assistant gave them. Open or download them directly, or select a title to jump to the place in the chat where it was delivered. Older results are grouped by day and, after a week, by month.
 - **Nothing moves while you read:** While the pointer or focus is in the sidebar, new results only raise **New · N** in the heading, and other changes show **Update**. They appear when you leave the sidebar or select the control. On a touch screen, the sidebar holds still until you touch outside it.
@@ -28,7 +29,7 @@ Assistant separates Project chats from general chats in the sidebar. Create a Pr
 - **Search:** Use the search button in the sidebar's header to find results, files, and sources in this chat. Escape closes the search.
 - **Delete chat files:** Point at an upload, voice recording, or working file, or reach it with Tab, then select the trash icon at the right; for a result, use its menu. The icon is always visible on touch devices. After you confirm, Assistant removes the file from this chat and closes its open tab. Earlier messages keep their text, but their links to the file no longer open it. Project files are managed on the Project page.
 - **Cloud resources:** Use the composer plus menu to attach a supported Cloud resource without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
-Chats automatically move to **Done** after seven days without use. Opening or reading a chat counts as use; background metadata changes do not. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. All active chats appear in the sidebar, followed by **Done** and its **All chats** entry.
+Chats automatically move to **Done** after seven days without use. Sending a message, a run, or reopening a chat counts as use; opening or reading a chat only marks it as read, and background metadata changes do not count either. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. All active chats appear in the sidebar, followed by **Done** and its **All chats** entry.
 
 - **Finish or continue:** Mark a chat done to move it into **Done**. Stop a running response first. Reopen it or send a new message to continue; files, apps, and pinning remain available.
 - **Edit or archive:** Open the chat preview and choose **Chat settings** to change its name, description, pinning, or archive it. Hover over the row, use the information button on touch devices, or reach the preview with Tab.
@@ -39,7 +40,8 @@ Chats automatically move to **Done** after seven days without use. Opening or re
 :::reference
 - **Stop:** Stop aborts the running assistant turn for the open chat.
 - **Retry:** Retry reruns a user message and replaces later messages in that chat branch.
-- **Fork:** Fork creates a new chat copied through the selected message.
+- **Continue in a new chat:** Creates a new chat copied through the selected answer.
+- **Response details:** Shows the model, time, and token usage of one answer.
 - **Compact:** Open the context indicator beside the message input and choose **Compact context** to summarize the current chat context. You can also use `/compact`. Hover previews the details; clicking keeps them open. Press Escape or click outside to close.
 - **Projects:** Project settings expose shared instructions and context according to your read, write, or admin permission. Project chats remain private.
 :::

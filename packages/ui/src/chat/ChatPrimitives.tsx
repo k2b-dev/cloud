@@ -2,6 +2,7 @@ import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
 import { ChatContextPanel, ChatContextPopup } from "./ChatContextPopup";
@@ -54,7 +55,7 @@ export type ChatActivityProps = {
 export type ChatContextUsageProps = ChatContextUsageData & {
   action?: ChatAction;
   onActionError?: (error: unknown) => void;
-  /** Host-owned number formatting. The default is locale-independent and SSR-stable. */
+  /** Host-owned number formatting. The default groups whole numbers in the inherited render locale. */
   formatNumber?: (value: number) => string;
   class?: string;
 };
@@ -103,10 +104,9 @@ const normalizedUsage = (usage: ChatContextUsageData["usage"]) => {
   return { input, output, total, reported: total !== null };
 };
 
-const formatStableInteger = (value: number): string => {
-  const digits = String(Math.round(finiteNonNegative(value)));
-  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-};
+/** Whole numbers in the render locale, so a German page reads 128.000 and an English one 128,000. */
+const formatLocaleInteger = (value: number, locale: string): string =>
+  new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.round(finiteNonNegative(value)));
 
 export const formatChatTokens = (tokens: number): string => {
   const value = finiteNonNegative(tokens);
@@ -383,7 +383,8 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
     }
   };
   const messages = useUiMessages();
-  const formatNumber = (value: number) => (props.formatNumber ?? formatStableInteger)(value);
+  const locale = useLocale();
+  const formatNumber = (value: number) => (props.formatNumber ? props.formatNumber(value) : formatLocaleInteger(value, locale()));
   const formattedUsageValue = (value: number | null): string => (value === null ? messages().unknown : formatNumber(value));
   const usage = () => normalizedUsage(props.usage);
   const loopUsage = () => normalizedUsage(props.loopUsage);
@@ -439,7 +440,7 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
               </div>
             </Show>
             <div>
-              <dt>{messages().window}</dt>
+              <dt>{messages().contextWindow}</dt>
               <dd>{windowSize() > 0 ? formatNumber(windowSize()) : messages().notConfigured}</dd>
             </div>
             <Show when={remaining() !== null}>

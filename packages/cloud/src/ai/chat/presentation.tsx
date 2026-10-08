@@ -18,6 +18,7 @@ import { type AiAssistantTimelineItem, buildAiMessageTimeline } from "../timelin
 import type { AiConversationTimelineEntry, AiStoredMessage, AiTurnError } from "../types";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
+import { aiChatMessages } from "./messages";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -254,7 +255,7 @@ const storedItems = (
         createdAt: item.entry.createdAt,
         content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
-        actions: createAiUserMessageActions(item.entry, actions),
+        actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "menu",
         anchorId: item.entry.seq,
       };
@@ -267,16 +268,14 @@ const storedItems = (
       return {
         kind: "activity",
         id: item.id,
-        label: "Context compacted",
-        description: count ? `${count} message${count === 1 ? "" : "s"} summarized · ${date}` : date,
+        label: aiChatMessages(locale).compacted,
+        description: count ? aiChatMessages(locale).compactedCount({ count, date }) : date,
         icon: "ti ti-brain",
         tone: "ai",
         content: (
           <div>
-            <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-dimmed">
-              The model now sees this summary instead of the messages above
-            </p>
-            <p class="whitespace-pre-wrap">{textFromMessage(item.entry.message) || "No visible content"}</p>
+            <p class="mb-1 text-dimmed">{aiChatMessages(locale).compactedHint}</p>
+            <p class="whitespace-pre-wrap">{textFromMessage(item.entry.message) || aiChatMessages(locale).compactedEmpty}</p>
           </div>
         ),
       };
@@ -345,6 +344,7 @@ const activeItems = (
   views: TurnViews,
   duration: Accessor<AiTurnDuration | null>,
   reconnecting: boolean,
+  locale: string,
 ): ChatTimelineItem[] => {
   if (!turn) return [];
   const segments = splitActiveTurnBlocks(turn.blocks).flatMap((segment): (AiActiveTurnSegment | SurveySegment)[] =>
@@ -385,7 +385,7 @@ const activeItems = (
         role: "user",
         status: block.status === "pending" ? "pending" : block.status === "failed" ? "error" : "complete",
         content: <p class="whitespace-pre-wrap">{aiSteerMessageText(block)}</p>,
-        actions: createAiSteerMessageActions(block, actions),
+        actions: createAiSteerMessageActions(block, actions, locale),
         actionDisplay: "menu",
         anchorId: turn.seq,
       };
@@ -496,7 +496,7 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   const clock = createActiveTurnClock(source, reconnecting);
   const idle = createMemo(() => source.activeTurn() === null);
   const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), idle()));
-  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting()));
+  const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting(), locale()));
   return createMemo(() => {
     const items = [...stored(), ...active()];
     views.retain(new Set(items.map((item) => item.id)));

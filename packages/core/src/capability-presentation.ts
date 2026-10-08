@@ -11,7 +11,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "ai.skill": {
           title: "Skill",
-          description: "Ein wiederverwendbarer Ablauf für den Assistant mit eigenen Zugriffsrechten.",
+          description: "Ein wiederverwendbarer Ablauf für den Assistenten mit eigenen Zugriffsrechten.",
         },
         "ai.task": {
           title: "Geplante KI-Aufgabe",
@@ -175,7 +175,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Erstellen Sie einen überprüften wiederverwendbaren Skill, der dem aktuellen Akteur gehört.",
           input: {
             name: "Kleingeschriebener Skill-Name mit Wörtern, die durch einzelne Bindestriche getrennt sind.",
-            description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistant ihn laden soll.",
+            description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistent ihn laden soll.",
             instructions: "Vollständige Markdown-Anweisungen für den Skill.",
           },
         },
@@ -236,7 +236,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             skillId: "Lesbare sechs Zeichen Skill ID.",
             expectedRevision: "Genaue Revision, die von Read Skill zurückgegeben wurde.",
             name: "Kleingeschriebener Skill-Name mit Wörtern, die durch einzelne Bindestriche getrennt sind.",
-            description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistant ihn laden soll.",
+            description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistent ihn laden soll.",
             instructions: "Vollständige Markdown-Anweisungen für den Skill.",
           },
         },

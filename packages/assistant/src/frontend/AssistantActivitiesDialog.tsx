@@ -195,7 +195,16 @@ export function AssistantActivitiesView() {
         >
           {(page) => (
             <>
-              <Show when={page().items.length} fallback={<Placeholder title={text("No background activity yet")} />}>
+              <Show
+                when={page().items.length}
+                fallback={
+                  <Placeholder
+                    icon="ti ti-calendar-time"
+                    title={text("No background activity yet")}
+                    description={text("Ask in the chat for a reminder or a recurring task.")}
+                  />
+                }
+              >
                 <For each={page().items}>
                   {(item) => (
                     <Button

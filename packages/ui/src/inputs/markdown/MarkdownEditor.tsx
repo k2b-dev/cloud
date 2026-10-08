@@ -2,6 +2,7 @@ import { highlight } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Tooltip } from "../../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../../internal/field";
+import { useLocale } from "../../intl/locale";
 import { useUiMessages } from "../../intl/messages";
 import {
   abbreviations as abbreviationsCompletion,
@@ -55,6 +56,8 @@ type CompletionState = {
 
 export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   const messages = useUiMessages();
+  const locale = useLocale();
+  const formatCount = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
@@ -589,15 +592,9 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         </div>
         <Show when={(props.showStats ?? true) && !props.disabled}>
           <div class="k2b-markdown-editor__stats" aria-hidden="true" data-empty={stats().chars === 0 ? "true" : undefined}>
-            <span>
-              {stats().lines} {stats().lines === 1 ? "line" : "lines"}
-            </span>
-            <span>
-              {stats().words} {stats().words === 1 ? "word" : "words"}
-            </span>
-            <span>
-              {stats().chars} {stats().chars === 1 ? "char" : "chars"}
-            </span>
+            <span>{messages().editorLines({ count: stats().lines, value: formatCount(stats().lines) })}</span>
+            <span>{messages().editorWords({ count: stats().words, value: formatCount(stats().words) })}</span>
+            <span>{messages().editorCharacters({ count: stats().chars, value: formatCount(stats().chars) })}</span>
           </div>
         </Show>
         <Show when={state() || loading() || completionError()}>

@@ -12,7 +12,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const publicUi = await import("../index");
-const { Chat, formatChatTokens } = publicUi;
+const { Chat, formatChatTokens, LocaleProvider } = publicUi;
 
 describe("@k2b/ui portable chat family", () => {
   test("keeps application submit controls beside either Send or Stop", () => {
@@ -472,7 +472,19 @@ describe("@k2b/ui portable chat family", () => {
     expect(invalid).not.toMatch(/NaN|Infinity|-1/);
   });
 
-  test("lets the host localize usage without making the default locale-dependent", () => {
+  test("groups numbers in the render locale and lets the host override them", () => {
+    const german = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(Chat.ContextUsage, { usage: { input: 1_200, output: 60 }, contextWindow: 128_000 });
+        },
+      }),
+    );
+    expect(german).toContain("1.260 Token verwendet, 1% des Kontextfensters");
+    expect(german).toContain("128.000");
+    expect(german).not.toContain("128,000");
+
     const localized = renderToString(() =>
       createComponent(Chat.ContextUsage, {
         usage: { total: 1_250 },

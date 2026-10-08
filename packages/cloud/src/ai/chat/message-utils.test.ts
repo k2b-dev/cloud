@@ -4,6 +4,7 @@ import type { AiStoredMessage } from "../types";
 import {
   aiToolIcon,
   capabilityErrorDescription,
+  describeResponseEnd,
   displayToolName,
   fetchFileErrorPresentation,
   latestLoopUsage,
@@ -205,5 +206,24 @@ describe("memory tool presentation", () => {
       description: "Memory is full.",
       failed: true,
     });
+  });
+});
+
+describe("describeResponseEnd", () => {
+  test("names how a response ended in the reader's language instead of raw codes", () => {
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "stop" }, "de")).toBe("Abgeschlossen");
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "stop" }, "en")).toBe("Completed");
+    expect(describeResponseEnd({ loopDoneReason: "aborted", stopReason: "aborted" }, "de")).toBe("Gestoppt");
+    expect(describeResponseEnd({ loopDoneReason: "max_turns", stopReason: "tool_use" }, "en")).toBe("Step limit reached");
+  });
+
+  test("adds the last message's stop only when it says more, and keeps unknown provider codes", () => {
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "max_tokens" }, "de")).toBe(
+      "Abgeschlossen · Maximale Antwortlänge erreicht",
+    );
+    expect(describeResponseEnd({ loopDoneReason: null, stopReason: "stop" }, "en")).toBe("Completed");
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "content_filter" }, "en")).toBe("Completed · content_filter");
+    expect(describeResponseEnd({ loopDoneReason: null, stopReason: "toString" }, "en")).toBe("toString");
+    expect(describeResponseEnd({ loopDoneReason: null, stopReason: null }, "de")).toBe("Unbekannt");
   });
 });

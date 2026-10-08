@@ -10193,6 +10193,15 @@
 .k2b-ui .k2b-navigation__color { flex: 0 0 .5rem; height: .5rem; border-radius: 50%; }
 .k2b-ui .k2b-navigation__disclosure { flex: 0 0 44px; height: 44px; border: 0; background: transparent; color: var(--k2b-text-muted); }
 .k2b-ui .k2b-navigation__inline-action { flex: 0 0 44px; width: 44px; height: 44px; }
+/* A fixed slot: an icon that comes and goes never changes the label's width. */
+.k2b-ui .k2b-navigation__status { display: inline-flex; flex: 0 0 1.25rem; align-items: center; justify-content: center; color: var(--k2b-text-muted); }
+.k2b-ui .k2b-navigation__status[data-tone="info"] { color: var(--k2b-info-text); }
+.k2b-ui .k2b-navigation__status[data-tone="success"] { color: var(--k2b-success-text); }
+.k2b-ui .k2b-navigation__status[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-navigation__status[data-tone="danger"] { color: var(--k2b-danger-text); }
+/* A section is a quiet heading over its rows: no disclosure and no indent. */
+.k2b-ui .k2b-navigation__heading { padding: .75rem .75rem .25rem; color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 500; line-height: 1.25rem; }
+.k2b-ui .k2b-navigation__section > .k2b-navigation__list { padding-inline-start: 0; }
 
 @media (max-width: 1023px) {
   .k2b-ui .k2b-app-workspace[data-mobile-surface="flush"] {

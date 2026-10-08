@@ -15,6 +15,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { AutocompleteEditor } = await import("../AutocompleteEditor");
 const { MarkdownEditor } = await import("./MarkdownEditor");
 const { TextInput } = await import("../TextInput");
+const { LocaleProvider } = await import("../../intl/locale");
 
 describe("source-faithful editor SSR contracts", () => {
   test("renders autocomplete ARIA and a visible overlay placeholder shim", () => {
@@ -55,6 +56,19 @@ describe("source-faithful editor SSR contracts", () => {
     expect(html).toContain("<span>1 line</span>");
     expect(html).toContain("<span>2 words</span>");
     expect(html).toContain("ti ti-device-floppy");
+  });
+
+  test("counts lines, words and characters in the inherited locale", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(MarkdownEditor, { label: "Notizen", value: `# Hallo\n${"Wort ".repeat(240)}` });
+        },
+      }),
+    );
+    const stats = html.slice(html.indexOf("k2b-markdown-editor__stats"));
+    expect(stats).toContain("<span>2 Zeilen</span><span>242 Wörter</span><span>1.208 Zeichen</span>");
   });
 
   test("delegates markdown TextInput field chrome to MarkdownEditor", () => {

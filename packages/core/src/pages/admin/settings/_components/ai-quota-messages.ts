@@ -154,9 +154,9 @@ export const quotaMessages = i18n.define({
       limitedScopes: "Modelllimits",
       blockedScopes: "ausgeschöpft",
 
-      title: "Assistant-Limits",
+      title: "Assistenten-Limits",
       description: "Kostenbudgets für direkte Chats. Bild-, Audio-, Workflow- und Hintergrundaufrufe sind ausgenommen.",
-      enabled: "Assistant-Limits durchsetzen",
+      enabled: "Assistenten-Limits durchsetzen",
       disabledHint: "Standardmäßig aus. Nutzung wird gemessen; Chats sind nicht begrenzt.",
       rules: "Regeln",
       users: "Nutzer",

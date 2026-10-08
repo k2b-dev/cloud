@@ -2,13 +2,13 @@ import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge 
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { coreClient } from "@k2b/cloud/clients/core";
-import { formatDateTime } from "@k2b/cloud/shared";
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { query as solidQuery } from "@k2b/stdlib/solid";
 import {
   Button,
   type DropdownItem,
   FileDropzone,
+  Format,
   IconButton,
   InlineGuidance,
   Lightbox,
@@ -417,7 +417,7 @@ export default function AssistantProjectView(props: Props) {
                         >
                           <i class="ti ti-message-circle shrink-0 text-dimmed" aria-hidden="true" />
                           <span class="min-w-0 flex-1 truncate text-sm text-primary">{chat.title}</span>
-                          <time class="shrink-0 text-xs text-dimmed">{formatDateTime(chat.updatedAt)}</time>
+                          <Format.RelativeTime class="shrink-0 text-xs text-dimmed" value={chat.updatedAt} />
                         </Link>
                         <IconButton
                           class="mr-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"

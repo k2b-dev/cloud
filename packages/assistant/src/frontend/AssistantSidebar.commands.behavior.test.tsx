@@ -28,6 +28,8 @@ if (!isServer) {
     const dispose = render(
       () => (
         <AssistantSidebar
+          timeZone="UTC"
+          renderedAt="2026-10-08T10:00:00.000Z"
           conversations={() => []}
           activeConversationId={chat}
           activeProjectId={project()}

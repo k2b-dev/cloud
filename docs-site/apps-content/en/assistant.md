@@ -224,7 +224,16 @@ proposed actions before relying on them.
 
 Chats automatically move to **Done** after seven days without use. Sending a message, starting a run, or explicitly reopening a chat counts as use. Opening or reading a chat only marks it as read; it does not reset the activity timestamp. Background metadata changes do not count as use. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again.
 
-The sidebar shows one chat list with pinned chats first, marked by a colored pin instead of the chat or Project icon. **Done** remains a separate collapsible section.
+The sidebar shows one chat list of plain rows: pinned chats first under
+**Pinned**, then the other active chats under **Today**, **Yesterday**,
+**Previous 7 days**, **Previous 30 days**, and **Older**, by when you last used
+them in your own time zone. Each row shows only the chat's title. One quiet
+icon at the row's end marks a chat that is running, waiting for you, failed,
+has a new response, or has an active schedule; its tooltip names the state.
+**Done** remains a separate collapsible section. The phone menu lists the same
+sections. There the icon keeps a fixed place at the row's end even while a chat
+is quiet, so a long title wraps the same way and a status change never moves
+the rows below.
 
 **Projects**, between Studio and Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
 
@@ -233,7 +242,7 @@ a context chip. Results are limited to your chats in that Project.
 
 The main sidebar search button has a different purpose: while a Project is open, it searches your own chats within that Project using a removable Project context.
 
-On mobile, expand **Projects** to reach the same destinations and actions. Project chats remain in the main chat list with the Project name on each card. **Done** includes the **All chats** entry.
+On mobile, expand **Projects** to reach the same destinations and actions. Project chats remain in the main chat list; the chat preview names the Project. **Done** includes the **All chats** entry.
 
 Choose **Mark chat done** on a sidebar row when its work is finished. Stop a
 running response first. Done chats move into the collapsed **Done** section;
@@ -244,7 +253,10 @@ does not automatically mark the whole chat done.
 Hover over a chat for its description, Project, last model, apps, files and
 **Chat settings**. Touch devices provide an information button; keyboard users
 can reach the same preview with Tab. Resource details load when the preview
-opens. **All chats** inside **Done** includes a searchable, paginated **Done** filter.
+opens. **All chats** inside **Done** searches your chats and filters them with
+one menu: all chats, new responses, running, waiting for you, failed, done, or
+archived. Each row shows the time its list is ordered by: when the chat last
+changed, or, under **Done**, when you last used it.
 
 The CLI supports `cld assistant chats done CHAT`, `chats reopen CHAT`, and
 `chats list --lifecycle active|done|all`. Archiving remains a separate action.
@@ -253,7 +265,13 @@ Pinned chats always remain active, overriding explicit or automatic completion. 
 
 Chat selection responds immediately while details load. Previously opened chats reuse their cached content while refreshing; switching does not wait behind a page transition.
 
-Active chats use context cards with an ellipsized title. Completed chats remain simple rows. New responses and requests for input use accent colors.
+Titles that do not fit end with an ellipsis. **New chat** keeps you in the
+current chat when it is still empty, so unused chats do not pile up. It creates
+a new chat instead when the open one belongs to a Project, was opened by another
+app with `launchAssistant`, carries a name or description you gave it, or is
+pinned, done, archived, or no longer available. The sidebar button, the command
+palette, `/new`, and the keyboard shortcut behave the same. A new chat is named
+"New chat" in your language until its first message names it.
 
 ## Understand the Assistant model
 
@@ -288,8 +306,10 @@ between turns; the change applies to future turns.
 A model profile selects the provider model and available capabilities for a
 turn. Assistant lists streaming, tool-capable models so stored chat and Project
 images can be inspected again through `view_image`. Retry reruns a message in
-the current branch. Fork copies the conversation through a selected message
-into a new chat.
+the current branch. **Continue in a new chat** on an answer copies the
+conversation through that answer into a new chat, so another direction does not
+replace the existing one. **Response details** lists the model, time, and token
+usage of one answer.
 
 ## Follow ongoing work
 

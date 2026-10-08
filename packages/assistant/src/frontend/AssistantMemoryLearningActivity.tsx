@@ -15,7 +15,7 @@ import {
 import { createMemo, createResource, createSignal, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";
-import { useAssistantText } from "./ui-copy";
+import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 const PAGE_SIZE = 20;
 
@@ -135,6 +135,7 @@ const openRunDetails = (run: AiMemoryLearningRun): Promise<void | undefined> =>
 
 function MemoryLearningActivity(props: { close: () => void }) {
   const text = useAssistantText();
+  const copy = useAssistantCopy();
   const locale = useLocale();
   const [page, setPage] = createSignal(1);
   const [activity, { refetch }] = createResource(page, (currentPage) =>
@@ -226,7 +227,7 @@ function MemoryLearningActivity(props: { close: () => void }) {
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span class="mr-auto text-xs text-dimmed">
-          {activity()?.total ?? 0} runs · Page {page()} of {totalPages()}
+          {copy().learningRunsPage({ count: activity()?.total ?? 0, page: page(), pages: totalPages() })}
         </span>
         <Button variant="secondary" size="sm" disabled={page() <= 1 || activity.loading} onClick={() => setPage((value) => value - 1)}>
           <i class="ti ti-chevron-left" aria-hidden="true" /> {text("Previous")}

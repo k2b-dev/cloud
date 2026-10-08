@@ -111,7 +111,7 @@ const germanText: Record<string, string> = {
   "Voice inputs": "Spracheingaben",
   "Scheduled AI task": "Geplante KI-Aufgabe",
   "AI conversation": "KI-Chat",
-  "Assistant app": "Assistant-App",
+  "Assistant app": "Assistenten-App",
   "A reference with this name already exists.": "Eine Referenz mit diesem Namen ist bereits vorhanden.",
   "Add a durable fact about you or a preference for future answers. New entries start pinned.":
     "Füge eine dauerhafte Tatsache über dich oder eine Präferenz für künftige Antworten hinzu. Neue Einträge sind zunächst angeheftet.",
@@ -133,7 +133,7 @@ const germanText: Record<string, string> = {
   Approvals: "Freigaben",
   "Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it.":
     "Der Assistent sieht Name und Beschreibung, bevor er einen Skill lädt. Beschreibe die Aufgabe und wann der Skill verwendet werden soll.",
-  "Assistant settings": "Assistent-Einstellungen",
+  "Assistant settings": "Assistenten-Einstellungen",
   "Available skills": "Verfügbare Skills",
   Changes: "Änderungen",
   "Chat context": "Chatkontext",
@@ -142,7 +142,7 @@ const germanText: Record<string, string> = {
   "Choose how Assistant uses and learns durable context about you.":
     "Lege fest, wie der Assistent dauerhafte Informationen über dich verwendet und lernt.",
   Close: "Schließen",
-  "Close Assistant settings": "Assistent-Einstellungen schließen",
+  "Close Assistant settings": "Assistenten-Einstellungen schließen",
   "Close Project settings": "Projekt-Einstellungen schließen",
   "Close learning run details": "Details des Lernlaufs schließen",
   "Close personalization learning activity": "Lernaktivität der Personalisierung schließen",
@@ -321,7 +321,7 @@ const germanText: Record<string, string> = {
     "Verwende einen kurzen, handlungsorientierten Namen aus Kleinbuchstaben, Zahlen und Bindestrichen.",
   "Use a short, recognizable name such as product-rules.": "Verwende einen kurzen, eindeutigen Namen wie product-rules.",
   "Use personalization": "Personalisierung verwenden",
-  "Use personalization in Assistant chats": "Personalisierung in Assistent-Chats verwenden",
+  "Use personalization in Assistant chats": "Personalisierung in Assistenten-Chats verwenden",
   "View activity": "Aktivität anzeigen",
   "View details for": "Details anzeigen für",
   "View learning run details": "Details des Lernlaufs anzeigen",
@@ -512,6 +512,27 @@ const germanText: Record<string, string> = {
   Memory: "Personalisierung",
   "Previous value": "Vorheriger Wert",
   tokens: "Tokens",
+  Unpin: "Lösen",
+  Pin: "Anheften",
+  Pending: "Geplant",
+  "Could not load access": "Zugriff konnte nicht geladen werden",
+  "Loading access": "Zugriff wird geladen",
+  "Skill enabled for you": "Skill für dich aktiviert",
+  "Skill disabled for you": "Skill für dich deaktiviert",
+  "No matching skills. Try a different search.": "Keine passenden Skills. Versuch es mit einem anderen Suchbegriff.",
+  "No skills yet. Create or import one to get started.": "Noch keine Skills. Erstelle oder importiere einen, um loszulegen.",
+  Disable: "Deaktivieren",
+  Enable: "Aktivieren",
+  "Create reference": "Referenz erstellen",
+  "View supporting context for this Skill.": "Zusatzinformationen zu diesem Skill ansehen.",
+  "Add supporting context Assistant can read when needed.": "Zusatzinformationen hinzufügen, die der Assistent bei Bedarf liest.",
+  "Skill saved": "Skill gespeichert",
+  "Skill created": "Skill erstellt",
+  "You can view and export this shared Skill.": "Du kannst diesen geteilten Skill ansehen und exportieren.",
+  "Define reusable instructions and optional supporting references.":
+    "Lege fest, wie der Assistent eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
+  "Save skill": "Skill speichern",
+  "For example, IT support": "Zum Beispiel IT-Support",
 };
 
 export const missingAssistantGermanText = (values: Iterable<string>): string[] =>
@@ -544,8 +565,9 @@ const copy = i18n.define({
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
       restoreNamed: ({ name }: { name: string }) => `Restore ${name}`,
       restoringNamed: ({ name }: { name: string }) => `Restoring ${name}`,
-      updatedAt: ({ value }: { value: string }) => `Updated ${value}`,
       searchChatsIn: ({ project }: { project: string }) => `Search chats in ${project}`,
+      learningRunsPage: ({ count, page, pages }: { count: number; page: number; pages: number }) =>
+        `${count === 1 ? "1 run" : `${count} runs`} · page ${page} of ${pages}`,
     },
     de: {
       text: ({ value }: { value: string }) => germanText[value] ?? value,
@@ -572,8 +594,9 @@ const copy = i18n.define({
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,
       restoreNamed: ({ name }: { name: string }) => `${name} wiederherstellen`,
       restoringNamed: ({ name }: { name: string }) => `${name} wird wiederhergestellt`,
-      updatedAt: ({ value }: { value: string }) => `Aktualisiert ${value}`,
       searchChatsIn: ({ project }: { project: string }) => `Chats in ${project} durchsuchen`,
+      learningRunsPage: ({ count, page, pages }: { count: number; page: number; pages: number }) =>
+        `${count === 1 ? "1 Lauf" : `${count} Läufe`} · Seite ${page} von ${pages}`,
     },
   },
 });

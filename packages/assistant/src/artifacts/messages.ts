@@ -216,7 +216,7 @@ export const artifactMessages = i18n.define({
         "Personen ohne Konto können diese App vorerst nicht öffnen. Behalte den öffentlichen Eintrag, damit der Link wieder funktioniert, sobald öffentliche Freigaben zurückkommen, oder entferne ihn.",
       studioApp: "Studio-App",
       noInterface: "Diese App hat keine Oberfläche",
-      noInterfaceHelp: "Sie bietet Aktionen, die Assistant und andere Apps aufrufen können.",
+      noInterfaceHelp: "Sie bietet Aktionen, die der Assistent und andere Apps aufrufen können.",
       safeModeHelp: "Die App hat beim letzten Start nicht reagiert und wurde deshalb nicht erneut gestartet.",
       appNotice: ({ code }: { code: CloudErrorCode }) => {
         const reasons: Partial<Record<CloudErrorCode, string>> = {
@@ -345,13 +345,13 @@ export const artifactMessages = i18n.define({
       draft: "Entwurf",
       launch: "Starten",
       forkConfirm:
-        "Du erhältst den veröffentlichten App-Code als eigenen Entwurf – ohne Daten, Secrets oder Freigaben. Danach kannst du ihn in einem neuen Assistant-Chat anpassen.",
+        "Du erhältst den veröffentlichten App-Code als eigenen Entwurf – ohne Daten, Secrets oder Freigaben. Danach kannst du ihn in einem neuen Assistenten-Chat anpassen.",
       customizePrompt: "Hilf mir dabei, diese App anzupassen.",
       fork: "Eigene Kopie erstellen",
       share: "Zugriff verwalten",
       unpublish: "Veröffentlichung zurückziehen",
       actions: "Aktionen",
-      noAccessibleApps: "Noch keine Apps. Erstelle eine mit Assistant oder lass eine App mit dir teilen.",
+      noAccessibleApps: "Noch keine Apps. Erstelle eine mit dem Assistenten oder lass eine App mit dir teilen.",
       unpublished: "Noch nicht veröffentlicht",
       unpublishedDescription: "Bearbeite und teste diese App in einem Chat. Veröffentliche sie anschließend für ihre Nutzer.",
       loadFailed: "Inhalt konnte nicht geladen werden",
@@ -378,7 +378,7 @@ export const artifactMessages = i18n.define({
       noLogs: "Meldungen der App erscheinen hier.",
       started: "Gestartet",
       loading: "Wird geladen…",
-      emptyApps: "Noch keine Apps. Bitte Assistant, eine zu erstellen.",
+      emptyApps: "Noch keine Apps. Bitte den Assistenten, eine zu erstellen.",
       save: "Speichern",
       refresh: "Aktualisieren",
       next: "Weiter",

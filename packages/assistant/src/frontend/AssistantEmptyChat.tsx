@@ -47,30 +47,26 @@ export default function AssistantEmptyChat(props: {
         </h1>
 
         {props.notices ? <div class="mb-2">{props.notices}</div> : null}
-        <div class="relative">
-          <div class="relative z-10">{props.composer}</div>
-          <div class="mx-4 -mt-1 rounded-b-xl border border-t-0 border-[var(--k2b-border)] bg-[var(--k2b-surface)] px-1.5 pb-1 pt-2">
-            <Button
-              size="xs"
-              variant="ghost"
-              class="assistant-empty-project-trigger w-full"
-              style={{ width: "100%" }}
-              aria-label={t().chooseProject}
-              disabled={props.choosingProject}
-              onClick={props.onChooseProject}
-            >
-              <span class="flex min-w-0 items-center justify-between gap-2" style={{ width: "100%" }}>
-                <span class="flex min-w-0 items-center gap-1.5">
-                  <i
-                    class={`${props.choosingProject ? "ti ti-loader-2 k2b-spin" : selectedProject() ? "ti ti-folder-open" : "ti ti-folder"}`}
-                    aria-hidden="true"
-                  />
-                  <span class="truncate">{selectedProject()?.name ?? t().noProject}</span>
-                </span>
-                <i class="ti ti-chevron-down shrink-0" aria-hidden="true" />
-              </span>
-            </Button>
-          </div>
+        {props.composer}
+        {/* A quiet control under the composer, aligned with its text: no tab or frame of its own. */}
+        <div class="assistant-empty-project">
+          <Button
+            size="xs"
+            variant="ghost"
+            class="assistant-empty-project-trigger"
+            // The visible choice names the button, so screen readers and voice control hear what is selected; the
+            // purpose follows as its description.
+            title={t().chooseProject}
+            disabled={props.choosingProject}
+            onClick={props.onChooseProject}
+          >
+            <i
+              class={`${props.choosingProject ? "ti ti-loader-2 k2b-spin" : selectedProject() ? "ti ti-folder-open" : "ti ti-folder"}`}
+              aria-hidden="true"
+            />
+            <span class="truncate">{selectedProject()?.name ?? t().noProject}</span>
+            <i class="ti ti-chevron-down" aria-hidden="true" />
+          </Button>
         </div>
 
         <div class="assistant-starters" role="group" aria-label={t().starters}>

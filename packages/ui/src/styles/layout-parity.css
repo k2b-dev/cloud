@@ -53,8 +53,11 @@
   gap: 0.5rem;
 }
 
+/* Actions keep their width beside the title, but never grow past the header:
+   on a phone they wrap onto further rows instead of running out of the panel. */
 .k2b-ui .k2b-panel-header__actions {
   display: flex;
+  max-width: 100%;
   flex-shrink: 0;
   align-items: center;
   flex-wrap: wrap;
@@ -1108,6 +1111,25 @@
   .k2b-ui .k2b-settings-collection__item-actions {
     grid-column: 2;
     justify-content: flex-start;
+  }
+
+  /* Icon-only actions such as a row menu fit beside the title, so they keep the
+     row's end instead of taking a line of their own. Text buttons still wrap
+     below the copy. Selectors avoid nesting :has(), which engines reject. */
+  .k2b-ui .k2b-settings-collection__item:has(> .k2b-settings-collection__item-icon + .k2b-settings-collection__item-copy ~ .k2b-settings-collection__item-actions) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .k2b-ui .k2b-settings-collection__item-icon ~ .k2b-settings-collection__item-actions {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .k2b-ui .k2b-settings-collection__item-icon ~ .k2b-settings-collection__item-status,
+  .k2b-ui .k2b-settings-collection__item-icon ~ .k2b-settings-collection__item-actions:has(.k2b-button:not(.k2b-icon-button)) {
+    grid-column: 2 / -1;
+    grid-row: auto;
   }
 
   .k2b-ui .k2b-settings__footer {

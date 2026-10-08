@@ -125,9 +125,9 @@ SolidJS library remains independent of Cloud and application domains.
   internal upstream, not the browser's.
 - Resolve the request locale once. Use `getLocale(c)` on the server and the
   inherited `@k2b/ui` locale in Solid; never keep a process-global locale or
-  thread it through ordinary component props. Applications own localized
-  human messages, while stable codes remain locale-independent. Transport
-  final display strings across capabilities and widgets, not message keys.
+  thread it through ordinary component props. Format dates and numbers with `Format.*`; a formatter
+  without a locale renders English. Applications own localized human messages, while stable codes remain
+  locale-independent. Transport final display strings across capabilities and widgets, not message keys.
   Setting presentation inherits the application's base locale; notification
   senders pass locale metadata so `render` and `email` produce final text from
   the same canonical locale without adding locale to the domain payload.

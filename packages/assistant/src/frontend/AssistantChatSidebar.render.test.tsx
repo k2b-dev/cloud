@@ -70,7 +70,7 @@ describe("Assistant chat sidebar, server render", () => {
   test("keeps the results heading and explains the empty state in a chat without results", () => {
     const html = renderSidebar(emptySidebarSnapshot());
     expect(html).toContain("Ergebnisse");
-    expect(html).toContain("Dateien, Apps und Visualisierungen, die der Assistant für dich erstellt, erscheinen hier.");
+    expect(html).toContain("Dateien, Apps und Visualisierungen, die der Assistent für dich erstellt, erscheinen hier.");
     expect(html).not.toContain("Deine Dateien");
     expect(html).not.toContain("Quellen");
     expect(html).toContain("Kontext");

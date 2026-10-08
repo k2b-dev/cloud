@@ -1,6 +1,6 @@
 import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@k2b/cloud/ai";
 import { query as solidQuery } from "@k2b/stdlib/solid";
-import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions, SegmentedControl, TextInput } from "@k2b/ui";
+import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions, Select, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAllChatsList from "./AssistantAllChatsList";
@@ -12,6 +12,7 @@ import {
   useAssistantLive,
 } from "./assistant-live";
 import type { ConversationOpenResult } from "./assistant-navigation";
+import { assistantMessages } from "./messages";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type ChatView = "done" | "all" | "running" | "needs_attention" | "failed" | "unread" | "archived";
@@ -37,13 +38,16 @@ function AssistantAllChatsDialog(props: {
 }) {
   const text = useAssistantText();
   const copy = useAssistantCopy();
-  const chatViews: ReadonlyArray<{ value: ChatView; label: string }> = [
-    { value: "done", label: text("Done") },
-    { value: "all", label: text("All") },
-    { value: "running", label: text("Running") },
-    { value: "needs_attention", label: text("Needs attention") },
-    { value: "failed", label: text("Failed") },
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
+  // One quiet filter beside the search instead of seven segments that wrap on narrow screens.
+  const chatViews = (): { value: ChatView; label: string }[] => [
+    { value: "all", label: text("All chats") },
     { value: "unread", label: text("New responses") },
+    { value: "running", label: t().running },
+    { value: "needs_attention", label: t().needsAttention },
+    { value: "failed", label: t().failed },
+    { value: "done", label: text("Done") },
     { value: "archived", label: text("Archived") },
   ];
   const [query, setQuery] = createSignal("");
@@ -114,7 +118,7 @@ function AssistantAllChatsDialog(props: {
         close={props.close}
       />
       <PanelDialog.Body scrollPreserveKey="assistant-all-chats-dialog">
-        <div class="flex flex-col gap-3">
+        <div class="assistant-all-chats-filters">
           <TextInput
             type="search"
             icon="ti ti-search"
@@ -132,13 +136,11 @@ function AssistantAllChatsDialog(props: {
               setQuery("");
             }}
           />
-          <SegmentedControl
-            options={chatViews}
+          <Select
+            aria-label={text("Chat filters")}
             value={view}
-            onValueChange={selectView}
-            ariaLabel={text("Chat filters")}
-            size="sm"
-            class="max-w-full overflow-x-auto"
+            onValueChange={(value) => selectView((value ?? "all") as ChatView)}
+            options={chatViews()}
           />
         </div>
 
@@ -177,6 +179,7 @@ function AssistantAllChatsDialog(props: {
             <AssistantAllChatsList
               conversations={result.data()!.items}
               archived={view() === "archived"}
+              orderedByUse={view() === "done"}
               projects={props.projects()}
               onChanged={() => void result.refresh()}
               onOpenConversation={openConversation}

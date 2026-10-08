@@ -283,7 +283,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
             <div class="mt-4 flex flex-col gap-4 text-xs leading-5 text-secondary">
               <p class="whitespace-pre-wrap">{description()}</p>
               <Show when={inlineReviewDetails().length > 0}>
-                <dl class="grid gap-x-5 gap-y-1.5 border-t border-[var(--k2b-border)] pt-3 sm:grid-cols-[max-content_minmax(0,1fr)]">
+                <dl class="grid gap-x-5 gap-y-1.5 sm:grid-cols-[max-content_minmax(0,1fr)]">
                   <For each={inlineReviewDetails()}>
                     {(detail) => (
                       <>
@@ -323,10 +323,12 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
             </div>
           </Show>
         </div>
-        <footer
-          class="flex min-h-12 flex-wrap items-center gap-2 border-t border-[var(--k2b-border)] bg-[var(--k2b-surface-subtle)] px-4 py-2.5"
-          data-ai-approval-footer
-        >
+        {/* The decision continues the card below its content: spacing, not a line or a band, sets it apart. */}
+        <footer class="flex min-h-12 flex-wrap items-center gap-2 px-4 pb-3" data-ai-approval-footer>
+          {/* Present from the start, so screen readers announce progress after the decision buttons leave. */}
+          <span class="k2b-sr-only" role="status" aria-live="polite">
+            {approval.loading() ? t().submitting : submitted() ? t().submitted : ""}
+          </span>
           <Show when={reviewLinks().length > 0}>
             <nav class="flex flex-wrap gap-1" aria-label={t().linksFor({ title: title() })}>
               <For each={reviewLinks()}>
@@ -339,7 +341,9 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
             </nav>
           </Show>
           <Show when={approval.error()}>
-            <p class="text-xs text-red-700 dark:text-red-300">{t().approvalFailed}</p>
+            <p class="text-xs text-red-700 dark:text-red-300" role="alert">
+              {t().approvalFailed}
+            </p>
           </Show>
           <div class="ml-auto shrink-0">
             <Show

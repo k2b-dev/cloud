@@ -13,11 +13,14 @@ import {
   userVisibleTextFromMessage,
   vfsAttachmentsFromMessage,
 } from "./message-utils";
+import { aiChatMessages } from "./messages";
 
 const openModifyRetryDialog = (
   entry: AiStoredMessage,
   onRetryMessage: (entry: AiStoredMessage, input?: AiRetryMessageInput) => void | Promise<void>,
+  locale: string,
 ) => {
+  const t = aiChatMessages(locale);
   void dialogCore.open<void>((close) => {
     const [draft, setDraft] = createSignal(userVisibleTextFromMessage(entry.message));
     const content = () => userContentWithEditedVisibleText(entry.message, draft());
@@ -34,11 +37,11 @@ const openModifyRetryDialog = (
 
     return (
       <PanelDialog>
-        <PanelDialog.Header title="Edit and try again" icon="ti ti-pencil" close={close} />
+        <PanelDialog.Header title={t.retryTitle} icon="ti ti-pencil" close={close} />
         <PanelDialog.Body>
           <TextInput
-            label="Prompt"
-            description="Attachments from the original message stay attached."
+            label={t.retryPrompt}
+            description={t.retryPromptHint}
             multiline
             lines={8}
             value={draft}
@@ -47,18 +50,18 @@ const openModifyRetryDialog = (
           />
           <Show when={retryMutation.error()}>
             <p class="text-xs text-red-600 dark:text-red-400" role="alert">
-              Could not retry this message. Your changes are still here.
+              {t.retryFailed}
             </p>
           </Show>
         </PanelDialog.Body>
         <PanelDialog.Footer>
           <div class="ml-auto flex items-center gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => close()}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="button" variant="ai" size="sm" disabled={!canRetry()} onClick={retry}>
               <i class={`ti ${retryMutation.loading() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} aria-hidden="true" />
-              {retryMutation.loading() ? "Trying again" : "Try again"}
+              {retryMutation.loading() ? t.retrying : t.actionTryAgain}
             </Button>
           </div>
         </PanelDialog.Footer>
@@ -93,38 +96,39 @@ export const aiUserMessageAttachments = (entry: AiStoredMessage, actions: AiChat
   })),
 ];
 
-export const createAiUserMessageActions = (entry: AiStoredMessage, actions: AiChatActions): ChatAction[] => {
+export const createAiUserMessageActions = (entry: AiStoredMessage, actions: AiChatActions, locale: string): ChatAction[] => {
+  const t = aiChatMessages(locale);
   const result: ChatAction[] = [];
   const copyText = copyTextFromMessage(entry.message);
 
   if (copyText) {
-    result.push({ id: "copy", label: "Copy", icon: "ti ti-copy", copyText });
+    result.push({ id: "copy", label: t.actionCopy, icon: "ti ti-copy", copyText });
   }
   if (!entry.compactedAt && actions.onRetryMessage) {
     result.push(
       {
         id: "retry",
-        label: "Try again",
+        label: t.actionTryAgain,
         icon: "ti ti-refresh",
         onSelect: () => actions.onRetryMessage?.(entry, { mode: "retry" }),
       },
       {
         id: "details",
-        label: "More detailed",
+        label: t.actionMoreDetailed,
         icon: "ti ti-list-details",
         onSelect: () => actions.onRetryMessage?.(entry, { mode: "details" }),
       },
       {
         id: "concise",
-        label: "More concise",
+        label: t.actionMoreConcise,
         icon: "ti ti-align-left",
         onSelect: () => actions.onRetryMessage?.(entry, { mode: "concise" }),
       },
       {
         id: "edit",
-        label: "Edit prompt",
+        label: t.actionEditPrompt,
         icon: "ti ti-pencil",
-        onSelect: () => openModifyRetryDialog(entry, actions.onRetryMessage!),
+        onSelect: () => openModifyRetryDialog(entry, actions.onRetryMessage!, locale),
       },
     );
   }
@@ -136,12 +140,13 @@ export const aiSteerMessageText = (block: Extract<AiTurnBlock, { kind: "steer_me
 export const createAiSteerMessageActions = (
   block: Extract<AiTurnBlock, { kind: "steer_message" }>,
   actions: AiChatActions,
+  locale: string,
 ): ChatAction[] => {
   if (block.status !== "failed" || !actions.onRetrySteer) return [];
   return [
     {
       id: "retry-steer",
-      label: "Retry guidance",
+      label: aiChatMessages(locale).actionRetryGuidance,
       icon: "ti ti-refresh",
       onSelect: () => actions.onRetrySteer?.(block),
     },

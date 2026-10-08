@@ -825,8 +825,9 @@ describe("capability tool presentation", () => {
     expect(customHtml).toContain("The draft includes an external recipient.");
     expect(customHtml.indexOf("The draft includes an external recipient.")).toBeLessThan(customHtml.indexOf("data-ai-approval-footer"));
     expect(customHtml).toContain('<dt class="font-semibold text-primary">Subject</dt>');
-    expect(customHtml).toContain("border-t border-[var(--k2b-border)] pt-3");
-    expect(customHtml).not.toContain("border-y border-[var(--k2b-border)]");
+    // Review details and the decision are grouped by spacing: no divider lines and no footer band.
+    expect(customHtml).not.toMatch(/border-[ty]\b/);
+    expect(customHtml).not.toContain("--k2b-surface-subtle");
     expect(customHtml).toContain('<dd class="min-w-0 whitespace-pre-wrap break-words">Release follow-up</dd>');
     expect(customHtml).toContain('<dt class="font-semibold text-primary">Recipients</dt>');
     expect(customHtml).toContain('<time datetime="2026-08-20">');
@@ -1061,7 +1062,7 @@ describe("survey presentation", () => {
     expect(html).toContain("var(--k2b-surface-muted)");
     expect(html).toContain("Tomorrow morning");
     expect(html).toContain("Friday afternoon");
-    expect(html).toContain("border-t border-[var(--k2b-border)]");
+    expect(html).not.toMatch(/border-t\b/);
     expect(html).toContain("k2b-button ml-auto");
     expect(html).toContain("Submit");
   });

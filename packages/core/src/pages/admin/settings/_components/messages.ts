@@ -270,7 +270,7 @@ export const settingsMessages = i18n.define({
       skillTemplateFailed: "Die Skill-Vorlage konnte nicht aktualisiert werden.",
       skillTemplateSaved: "Skill-Vorlage aktualisiert.",
       resetSkillTemplateHelp:
-        "Zurücksetzen ersetzt alle Skill-Inhalte einschließlich Referenzen. Exportiere den Skill vorher in den Assistant-Einstellungen, wenn du eine Kopie behalten möchtest. Zugriff und persönliche Aktivierung bleiben erhalten.",
+        "Zurücksetzen ersetzt alle Skill-Inhalte einschließlich Referenzen. Exportiere den Skill vorher in den Assistenten-Einstellungen, wenn du eine Kopie behalten möchtest. Zugriff und persönliche Aktivierung bleiben erhalten.",
       associateSkillTemplateHelp:
         "Wähle die Vorlage, mit der du diesen Skill verknüpfen möchtest. Der Inhalt bleibt erhalten. Automatische Updates erfolgen nur, solange der Skill unverändert der verknüpften Vorlage entspricht.",
       resetSkillTemplateConfirm: ({ name, template, version }: { name: string; template: string; version: number }) =>
@@ -278,7 +278,7 @@ export const settingsMessages = i18n.define({
       associateSkillTemplateConfirm: ({ name, template }: { name: string; template: string }) =>
         `„${name}“ mit der Vorlage ${template} verknüpfen? Der Inhalt bleibt erhalten. Automatische Updates erfolgen nur, solange der Skill unverändert der verknüpften Vorlage entspricht.`,
       aiSkills: "KI-Skills",
-      aiSkillsDescription: "Zugriff auf gemeinsam verwendete Assistant Skills wiederherstellen und verwalten.",
+      aiSkillsDescription: "Zugriff auf gemeinsam verwendete Assistenten-Skills wiederherstellen und verwalten.",
       sharedSkills: "gemeinsame Skills",
       acrossAllSkills: "in allen Skills",
       searchSkills: "Skills nach Name oder ID suchen…",

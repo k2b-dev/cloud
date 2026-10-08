@@ -310,11 +310,11 @@ export const aiSettingsMessages = i18n.define({
       applyProfileDraft: "In Entwurf übernehmen",
       profileDraftHint: "Anschließend die Einstellungen speichern, um Änderungen anzuwenden.",
 
-      restrictAssistantAccess: "Verwendung in Assistant beschränken",
+      restrictAssistantAccess: "Verwendung im Assistenten beschränken",
       restrictAssistantAccessDescription:
-        "Lege fest, wer dieses Modell in Assistant-Chats verwenden darf. Hintergrundjobs und Workflows bleiben unverändert.",
+        "Lege fest, wer dieses Modell in Assistenten-Chats verwenden darf. Hintergrundjobs und Workflows bleiben unverändert.",
       useModel: "Verwenden",
-      assistantAccessEmpty: "Ohne Freigabe kann niemand dieses Modell in Assistant verwenden.",
+      assistantAccessEmpty: "Ohne Freigabe kann niemand dieses Modell im Assistenten verwenden.",
       dirtyChats: "Geänderte Chats",
       oldest: ({ date }) => `Ältester: ${date}`,
       failedChats: "Fehlgeschlagene Chats",
@@ -372,7 +372,7 @@ export const aiSettingsMessages = i18n.define({
       filterVisionModels: "Bildmodelle filtern",
       turnTimeout: "Laufzeitlimit (Minuten)",
       turnTimeoutDescription:
-        "Standard: 30 Minuten. Im letzten Zehntel nutzt der Assistant keine Werkzeuge mehr und antwortet. Null oder leer bedeutet unbegrenzt. Gilt für neue Läufe; einzelne Request- und Tool-Timeouts bleiben bestehen.",
+        "Standard: 30 Minuten. Im letzten Zehntel nutzt der Assistent keine Werkzeuge mehr und antwortet. Null oder leer bedeutet unbegrenzt. Gilt für neue Läufe; einzelne Request- und Tool-Timeouts bleiben bestehen.",
       toolResultCeiling: "Obergrenze für Werkzeugergebnisse",
       toolResultCeilingDescription:
         "Maximale Zeichenzahl eines Werkzeugergebnisses. Bei kleineren Kontextfenstern verwendet die Laufzeit automatisch weniger.",

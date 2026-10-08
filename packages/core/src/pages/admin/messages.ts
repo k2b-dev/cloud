@@ -245,7 +245,7 @@ export const adminMessages = i18n.define({
       aiBackgroundJobs: "KI-Hintergrundaufgaben",
       aiBackgroundJobsDescription: "Modell und Zeitplan für KI-Hintergrundarbeit wie die Chat-Anreicherung.",
       aiSkills: "KI-Skills",
-      aiSkillsDescription: "Zugriff auf gemeinsam verwendete Assistant Skills wiederherstellen und verwalten.",
+      aiSkillsDescription: "Zugriff auf gemeinsam verwendete Assistenten-Skills wiederherstellen und verwalten.",
       aiProjects: "KI-Projekte",
       aiProjectsDescription: "Zugriff auf gemeinsam verwendete KI-Projekte wiederherstellen und verwalten.",
       pdfRenderingSettings: "Einstellungen der PDF-Erstellung",
