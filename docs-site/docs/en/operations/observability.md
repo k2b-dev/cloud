@@ -150,6 +150,13 @@ metrics separate from gateway duration and development-server timings.
 Route telemetry uses the route template, not the concrete URL. This keeps one
 series for `/api/inventory/items/:id`.
 
+Gateway fallback templates and request logs collapse everything below
+`/share/<app>/` into one `:token` segment, regardless of the token's length
+or alphabet. The same rule covers `/api/mail/public-attachments/` and
+`/app/mail/a/`. Queries are omitted. Upstream connection failure logs
+include a safe path and the error type; transport error messages may contain
+credentials, so they are omitted.
+
 Sort by error rate to find unhealthy routes. Sort by requests to find the
 highest traffic.
 

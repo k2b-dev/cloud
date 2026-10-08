@@ -13,6 +13,7 @@ export { authFlows } from "./auth-flows";
 export { toPgIntArray, toPgTextArray, toPgUuidArray, escapeLikePattern, isUniqueViolation } from "./postgres";
 
 export { logger, logging, TRACE_STUCK_AFTER_MS, trace } from "./logging";
+export { redactSensitivePath } from "./logging/redaction";
 export {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,

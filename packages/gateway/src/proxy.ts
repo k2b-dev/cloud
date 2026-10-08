@@ -72,23 +72,8 @@ const shouldLogError = (appId: string): boolean => {
   return true;
 };
 
-const REDACTED_PATH_SEGMENT = "[REDACTED]";
-
-/** Prevent bearer-style public link tokens from entering gateway logs. */
-export const redactSensitivePath = (pathname: string): string =>
-  pathname
-    .replace(/(\/share\/mail\/attachments\/)[^/]+/g, `$1${REDACTED_PATH_SEGMENT}`)
-    .replace(/(\/api\/mail\/public-attachments\/)[^/]+/g, `$1${REDACTED_PATH_SEGMENT}`)
-    .replace(/(\/app\/mail\/a\/)[^/]+/g, `$1${REDACTED_PATH_SEGMENT}`);
-
-/**
- * Route template for a request the app never answered — unmatched routes
- * and upstream failures. Collapse ids first so opaque values are gone
- * regardless of path shape, then run the denylist as a backstop for the
- * few known-sensitive segments short enough to survive collapsing.
- */
-const fallbackPathTemplate = (appId: string, pathname: string): string =>
-  boundTemplateCardinality(appId, redactSensitivePath(derivePathTemplate(pathname)));
+/** Bound the shared, redacted fallback template for requests without an app template. */
+const fallbackPathTemplate = (appId: string, pathname: string): string => boundTemplateCardinality(appId, derivePathTemplate(pathname));
 
 // ─── Request proxying ────────────────────────────────────────────────────────
 
@@ -212,11 +197,12 @@ export const proxyRequest = async (
     appStats.totalMs += ms;
     appStats.errors++;
     trackRoute(stats, match.matchedPrefix, true);
+    const pathTemplate = fallbackPathTemplate(match.appId, url.pathname);
     publishRequestTelemetry({
       appId: match.appId,
       routePrefix: match.matchedPrefix,
       // No response to read a template off — the request died in flight.
-      pathTemplate: fallbackPathTemplate(match.appId, url.pathname),
+      pathTemplate,
       method: req.method,
       status: 502,
       durationMs: ms,
@@ -227,8 +213,9 @@ export const proxyRequest = async (
     if (shouldLogError(match.appId)) {
       log("Upstream unavailable", {
         appId: match.appId,
-        path: redactSensitivePath(url.pathname),
-        error: err instanceof Error ? err.message : String(err),
+        path: pathTemplate,
+        // Transport error messages can include the full upstream URL and query.
+        error: err instanceof Error ? err.name : "UnknownError",
       });
     }
 

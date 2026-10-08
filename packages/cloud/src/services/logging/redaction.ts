@@ -18,3 +18,25 @@ export const redactMetadata = (input: unknown): unknown => {
   }
   return out;
 };
+
+/**
+ * Safe pathname for request logs and fallback route templates. Share URLs
+ * carry bearer credentials, so collapse their entire suffix into one marker.
+ * Match raw, case-sensitive segments and ignore empty segments, like the
+ * gateway trie; percent-encoded token segments need no decoding.
+ */
+export const redactSensitivePath = (pathname: string): string => {
+  const path = pathname.split(/[?#]/, 1)[0] ?? "";
+  const segments = path.split("/").filter(Boolean);
+  if (segments[0] === "share" && segments.length > 2) {
+    return `/${segments.slice(0, 2).join("/")}/:token`;
+  }
+  if (
+    segments.length > 3 &&
+    segments[1] === "mail" &&
+    ((segments[0] === "api" && segments[2] === "public-attachments") || (segments[0] === "app" && segments[2] === "a"))
+  ) {
+    return `/${segments.slice(0, 3).join("/")}/:token`;
+  }
+  return path;
+};

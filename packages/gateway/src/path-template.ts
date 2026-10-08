@@ -1,3 +1,5 @@
+import { redactSensitivePath } from "@k2b/cloud/services";
+
 /**
  * Fallback route templating for requests the app never answered.
  *
@@ -55,7 +57,10 @@ const placeholderFor = (segment: string): string => {
  * reach telemetry.
  */
 export const derivePathTemplate = (pathname: string): string => {
-  const segments = pathname.split("/").filter(Boolean);
+  const redacted = redactSensitivePath(pathname);
+  // The shared rule already produced a bounded template; keep its app prefix.
+  if (redacted.endsWith("/:token")) return redacted;
+  const segments = redacted.split("/").filter(Boolean);
   if (segments.length === 0) return "/";
 
   const kept = segments.slice(0, MAX_SEGMENTS).map((segment) => (isOpaqueSegment(segment) ? placeholderFor(segment) : segment));

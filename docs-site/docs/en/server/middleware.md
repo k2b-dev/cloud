@@ -140,6 +140,9 @@ access outside a request.
 | Other statuses | Not stored by this middleware |
 
 It includes method, path, status, duration, and the user ID when available.
+Paths below `/share/<app>/`, `/api/mail/public-attachments/`, and `/app/mail/a/`
+replace the entire suffix with `:token` in both messages and metadata.
+Query strings are omitted.
 
 Static assets, SSR chunks, favicons, and branding paths are skipped.
 

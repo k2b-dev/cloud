@@ -81,6 +81,30 @@ afterEach(() => {
 });
 
 describe("gateway WebSocket proxy", () => {
+  test("does not log the upstream URL from a WebSocket constructor failure", () => {
+    const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
+    Reflect.set(
+      globalThis,
+      "WebSocket",
+      class {
+        constructor(url: string) {
+          throw new Error(`Cannot connect to ${url}`);
+        }
+      },
+    );
+    const entries: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
+    const response = tryUpgradeWebSocket(
+      new Request(`http://cloud.test/share/demo/${token}?secret=query-secret`),
+      { upgrade: () => true },
+      buildRouteTable([{ prefix: "/share/demo", appId: "demo", baseUrl: "http://upstream" }]),
+      (message, metadata) => entries.push({ message, metadata }),
+    );
+    expect(response?.status).toBe(502);
+    expect(entries).toHaveLength(1);
+    expect(JSON.stringify(entries)).not.toContain(token);
+    expect(JSON.stringify(entries)).not.toContain("query-secret");
+  });
+
   test("forwards the resolved client address instead of the client's own headers", () => {
     FakeUpstream.instances = [];
     (globalThis as { WebSocket: unknown }).WebSocket = FakeUpstream;

@@ -10,8 +10,18 @@ describe("derivePathTemplate", () => {
     expect(derivePathTemplate("/api/notifications/4711")).toBe("/api/notifications/:n");
   });
 
-  test("collapses long opaque tokens", () => {
-    expect(derivePathTemplate("/share/mail/attachments/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/share/mail/attachments/:token");
+  test("collapses all share descendants before opaque-token heuristics", () => {
+    expect(derivePathTemplate("/share/mail/attachments/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/share/mail/:token");
+  });
+
+  test("redacts digit-free tokens, short tokens and encoded tokens", () => {
+    for (const path of ["/share/demo/abcdefghijklmnopqrstuvwxyzABCDEF", "//share/demo/short/", "/share/demo/forms/%61%62%63"]) {
+      expect(derivePathTemplate(path)).toBe("/share/demo/:token");
+    }
+    expect(derivePathTemplate("/api/mail/public-attachments/short/download")).toBe("/api/mail/public-attachments/:token");
+    expect(derivePathTemplate("/app/mail/a/short")).toBe("/app/mail/a/:token");
+    expect(derivePathTemplate("/share/application123456789/short")).toBe("/share/application123456789/:token");
+    expect(derivePathTemplate("/api/demo/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/api/demo/:token");
   });
 
   test("keeps human-readable route params", () => {
