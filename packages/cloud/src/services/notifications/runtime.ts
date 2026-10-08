@@ -3,7 +3,7 @@ import { lazySync } from "../../_internal/process-sync";
 import { logger, trace } from "../logging";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, stopRuntimeJobs } from "../runtime-lifecycle";
 
-import { processNotificationDelivery, recoverNotificationDeliveries } from "./dispatcher";
+import { processNotificationDelivery, reconcileNotificationMessages, recoverNotificationDeliveries } from "./dispatcher";
 
 type DeliveryMessage = { deliveryId: string };
 
@@ -58,10 +58,10 @@ const handleDelivery = async (context: JobContext<DeliveryMessage>): Promise<voi
       spanKey: trace.syncSpanKey("job", "cloud-notification-deliveries", context.jobId),
       attributes: { "cloud.notification.delivery_id": context.input.deliveryId },
     },
-    () => processNotificationDelivery(context.input.deliveryId),
+    () => processNotificationDelivery(context.input.deliveryId, context.signal),
   );
   if (result.activatedIds?.length) await enqueueNotificationDeliveries(result.activatedIds);
-  if (result.status === "retry") context.resubmit({ delayMs: result.retryAfterMs });
+  if (result.status === "retry" || result.status === "pending") context.resubmit({ delayMs: result.retryAfterMs });
 };
 
 type RuntimeOptions = { concurrency?: number; recoveryIntervalMs?: number };
@@ -78,6 +78,12 @@ const recover = (): Promise<void> => {
         await enqueueNotificationDeliveries(await recoverNotificationDeliveries());
       } catch (error) {
         log.error("Delivery recovery failed", { error: error instanceof Error ? error.message : String(error) });
+      }
+      // Message history must never hold back delivery recovery.
+      try {
+        await reconcileNotificationMessages();
+      } catch (error) {
+        log.error("Notification message reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
       }
     }) ?? Promise.resolve()
   ).finally(() => {

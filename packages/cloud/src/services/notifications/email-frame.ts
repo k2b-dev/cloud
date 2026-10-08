@@ -1,47 +1,24 @@
 import sanitizeHtml from "sanitize-html";
-import { sanitizeEmailHtml } from "../../shared";
-import { resolveMailCredentials } from "../outgoing-mail/store";
-import { buildMailTransport } from "../outgoing-mail/transport";
+import { sanitizeEmailHtml } from "../../shared/email-html";
 import * as settings from "../settings";
 import { coreSettings } from "../settings/api";
 
-/** Sanitize plain text content (no HTML allowed). */
 const sanitizeContent = (content: string): string => sanitizeHtml(content, { allowedTags: [], allowedAttributes: {} });
 
-/** Send an email with the standard HTML template. */
-export const sendEmail = async (
-  to: string,
-  subject: string,
-  opts: { content?: string; rawHtml?: string; messageId?: string },
-): Promise<void> => {
+// sanitize-html decodes entities before escaping &, < and > again. Decode only
+// those escapes once, so literal entity text is not recursively interpreted.
+const htmlText = (html: string): string =>
+  sanitizeContent(html.replace(/<br\b[^>]*>|<\/(?:p|div|h[1-6]|li|tr|td|th|ul|ol|table)>/gi, " "))
+    .replace(/&(amp|lt|gt);/g, (entity) => (entity === "&amp;" ? "&" : entity === "&lt;" ? "<" : ">"))
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const prepareNotificationEmail = async (opts: { content?: string; rawHtml?: string }): Promise<{ html: string; text: string }> => {
   const rawAppUrl = await settings.get<string>("app.url");
   const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
   const appName = await settings.get<string>("app.name");
-  const profile = await resolveMailCredentials();
-
-  let body = "";
-  if (opts.rawHtml) {
-    body = sanitizeEmailHtml(opts.rawHtml);
-  } else if (opts.content) {
-    body = `<p>${sanitizeContent(opts.content)}</p>`;
-  }
-  const text = opts.content ? sanitizeContent(opts.content) : undefined;
-
-  const html = await buildHtml(appUrl, appName, body);
-  const transporter = buildMailTransport(profile);
-
-  try {
-    await transporter.sendMail({
-      from: { address: profile.fromAddress, name: profile.fromName ?? appName },
-      to,
-      subject,
-      ...(opts.messageId ? { messageId: opts.messageId } : {}),
-      html,
-      ...(text ? { text } : {}),
-    });
-  } finally {
-    transporter.close();
-  }
+  const body = opts.rawHtml ? sanitizeEmailHtml(opts.rawHtml) : opts.content ? `<p>${sanitizeContent(opts.content)}</p>` : "";
+  return { html: await buildHtml(appUrl, appName, body), text: opts.content ? sanitizeContent(opts.content) : htmlText(body) };
 };
 
 /**
