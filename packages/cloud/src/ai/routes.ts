@@ -420,7 +420,7 @@ export const aiRoutes = (() => {
         const skillCatalog = selectAiSkillCatalog(availableSkills, previewProfile?.contextWindow ?? 0, "");
         const tools = toolsSupported
           ? [
-              ...(await createConfiguredDefaultCloudAiTools()),
+              ...(await createConfiguredDefaultCloudAiTools({ allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries })),
               ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
               ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"))] : []),
               ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"))] : []),
@@ -526,7 +526,11 @@ export const aiRoutes = (() => {
             return respond(c, fail(err.internal("The live capability catalog is unavailable.")));
           }
         }
-        const builtInNames = new Set((await createConfiguredDefaultCloudAiTools()).map((tool) => tool.def.name));
+        const builtInNames = new Set(
+          (await createConfiguredDefaultCloudAiTools({ allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries })).map(
+            (tool) => tool.def.name,
+          ),
+        );
         const preloadTools = (body.preloadTools ?? []).map((requested) => {
           if ("name" in requested) return builtInNames.has(requested.name) ? requested.name : null;
           return (

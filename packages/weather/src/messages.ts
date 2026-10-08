@@ -149,8 +149,12 @@ export const weatherMessages = i18n.define({
       invalidSearchQuery: "Enter a valid search query",
       onlyGermanCitySearch: "Only German city searches are supported.",
       locationSearchUnavailable: "Location search is unavailable",
+      citySearchNotConfigured: "City search is not set up. An administrator can set the Geo API URL in the Weather settings.",
       capabilityWeatherUnavailable: "Weather data is unavailable",
-      capabilityCitySearchUnavailable: "Weather city search is unavailable",
+      capabilityCitySearchNotConfigured:
+        'City search is not set up: no Geo API URL is configured. An administrator can set the Geo API URL in the Weather settings. Forecasts still work with explicit coordinates: use weather.forecast.current or weather.forecast.get with source.kind = "coordinates".',
+      capabilityCitySearchUnavailable:
+        'City search failed because the Geo service is unavailable. Forecasts still work with explicit coordinates: use weather.forecast.current or weather.forecast.get with source.kind = "coordinates".',
       capabilityNeedsUser: "Weather capabilities require a user-backed actor",
       capabilityInvalidCursor: "Invalid cursor",
       capabilityPaginationExceeded: "Saved location pagination exceeds the supported window",
@@ -314,8 +318,13 @@ export const weatherMessages = i18n.define({
       invalidSearchQuery: "Gib einen gültigen Suchbegriff ein",
       onlyGermanCitySearch: "Die Städtesuche unterstützt nur Orte in Deutschland.",
       locationSearchUnavailable: "Die Ortssuche ist nicht verfügbar",
+      citySearchNotConfigured:
+        "Die Städtesuche ist nicht eingerichtet. Ein Administrator kann die URL der Geo-API in den Wetter-Einstellungen festlegen.",
       capabilityWeatherUnavailable: "Wetterdaten sind nicht verfügbar",
-      capabilityCitySearchUnavailable: "Die Städtesuche ist nicht verfügbar",
+      capabilityCitySearchNotConfigured:
+        'Die Städtesuche ist nicht eingerichtet: Die URL der Geo-API fehlt. Ein Administrator kann die URL der Geo-API in den Wetter-Einstellungen festlegen. Vorhersagen funktionieren weiterhin mit expliziten Koordinaten: Verwende weather.forecast.current oder weather.forecast.get mit source.kind = "coordinates".',
+      capabilityCitySearchUnavailable:
+        'Die Städtesuche ist fehlgeschlagen, weil der Geo-Dienst nicht verfügbar ist. Vorhersagen funktionieren weiterhin mit expliziten Koordinaten: Verwende weather.forecast.current oder weather.forecast.get mit source.kind = "coordinates".',
       capabilityNeedsUser: "Für gespeicherte Wetterorte ist ein Benutzerkonto erforderlich",
       capabilityInvalidCursor: "Ungültiger Cursor",
       capabilityPaginationExceeded: "Die Seitennavigation der gespeicherten Orte überschreitet den unterstützten Bereich",

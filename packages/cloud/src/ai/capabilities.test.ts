@@ -487,7 +487,7 @@ describe("AI capability catalog", () => {
   });
 
   test("keeps only the eager baseline loaded and discovers deferred built-ins", async () => {
-    const allBuiltIns = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "" });
+    const allBuiltIns = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", audioModelConfigured: true });
     let loaded: string[] = [];
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",
@@ -542,7 +542,7 @@ describe("AI capability catalog", () => {
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",
       actor,
-      staticTools: await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "test-key" }),
+      staticTools: await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "test-key", audioModelConfigured: true }),
       store: {
         getLoadedTools: async () => [],
         loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
@@ -1291,4 +1291,42 @@ describe("AI capability catalog", () => {
     expect(JSON.stringify(requests[0]?.tools)).not.toContain("Optional title text.");
     expect(executed).toBe("contacts.list");
   });
+});
+
+test("unconfigured audio cannot be discovered or loaded, including previously loaded names", async () => {
+  const loaded: string[] = ["transcribe_audio"];
+  const resolver = createAiToolResolver({
+    conversationId: "conversation-1",
+    actor,
+    staticTools: await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", audioModelConfigured: false }),
+    store: {
+      getLoadedTools: async () => loaded,
+      loadTools: async ({ names }) => {
+        loaded.push(...names);
+        return { loaded: names, alreadyLoaded: [], evicted: [] };
+      },
+    },
+    help: fixtureHelpReader(async () => []),
+  });
+  const tools = await resolver();
+  expect(tools.some((tool) => tool.def.name === "transcribe_audio")).toBe(false);
+  const search = tools.find((tool) => tool.def.name === "search_tools");
+  const load = tools.find((tool) => tool.def.name === "load_tools");
+  if (!search || search.kind !== "server" || !load || load.kind !== "server") throw new Error("Discovery tools missing");
+  const context = {
+    signal: AbortSignal.timeout(1_000),
+    requestApproval: async () => true,
+    requestClientTool: async <T>(): Promise<T> => {
+      throw new Error("Unexpected client tool");
+    },
+  };
+  const found = z
+    .object({ tools: z.array(z.object({ name: z.string() }).passthrough()) })
+    .parse(await search.execute({ query: "transcribe audio" }, context));
+  expect(found.tools.some((tool) => tool.name === "transcribe_audio")).toBe(false);
+  expect(await load.execute({ names: ["transcribe_audio"] }, context)).toMatchObject({
+    loaded: [],
+    unavailable: [{ name: "transcribe_audio" }],
+  });
+  expect(loaded).toEqual(["transcribe_audio"]);
 });

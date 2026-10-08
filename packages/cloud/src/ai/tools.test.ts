@@ -224,8 +224,8 @@ describe("AI tools", () => {
   });
 
   test("adds Firecrawl web tools only when configured", async () => {
-    const withoutWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "" });
-    const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret" });
+    const withoutWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", audioModelConfigured: true });
+    const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret", audioModelConfigured: true });
 
     expect(withoutWeb.some((tool) => tool.def.name.startsWith("web_"))).toBe(false);
     expect(withWeb.filter((tool) => tool.def.name.startsWith("web_")).map((tool) => tool.def.name)).toEqual(["web_search", "web_extract"]);

@@ -571,6 +571,10 @@ Audio uses the normal conversation file picker and file lifecycle. Uploading a
 memo does not transcribe it or create a request. The user supplies the task.
 The shared file preview plays audio when the browser supports its codec.
 
+Cloud offers `transcribe_audio` and its prompt hint only when an enabled audio
+transcription model resolves with the required credentials and permitted data
+boundary. An administrator configures the audio model in AI settings.
+
 `transcribe_audio` reads a conversation file or an authorized `/project` file
 and uses the configured audio profile. Attached conversation audio comes from
 the exact turn snapshot; a missing required snapshot fails the call. The

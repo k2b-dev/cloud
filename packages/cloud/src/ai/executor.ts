@@ -564,7 +564,7 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
     tools:
       source.kind === "default"
         ? [
-            ...(await createConfiguredDefaultCloudAiTools()),
+            ...(await createConfiguredDefaultCloudAiTools({ allowedDataBoundaries: config.modelPolicy?.allowedDataBoundaries })),
             // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
             ...[createCloudAiLocalBashTool(), ...createCloudAiCodeTools()].filter(
               (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),

@@ -38,6 +38,7 @@ import { createCloudAiHtmlToPdfTool } from "./html-pdf-tool";
 import { createCloudAiMarkdownToPdfTool } from "./markdown-pdf-tool";
 import { createAiTodoTool } from "./todo-tool";
 import { defineAiTool } from "./tools";
+import { resolveAiAudioModel } from "./transcription";
 import type { AiDataBoundary, AiRuntimeTool } from "./types";
 import { createCloudAiViewImageTool } from "./vision-tool";
 
@@ -198,6 +199,7 @@ export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
 
 export const createConfiguredDefaultCloudAiTools = async (config?: {
   firecrawlApiKey?: string | null;
+  audioModelConfigured?: boolean;
   fetch?: typeof fetch;
   allowedDataBoundaries?: AiDataBoundary[];
 }) => {
@@ -213,8 +215,14 @@ export const createConfiguredDefaultCloudAiTools = async (config?: {
     createCloudAiPresentTool(),
     createCloudAiCalculateTool(),
     createCloudAiViewImageTool(),
-    createCloudAiTranscribeAudioTool(),
   ];
+  const audioModelConfigured =
+    config?.audioModelConfigured ??
+    (await resolveAiAudioModel({ allowedDataBoundaries: config?.allowedDataBoundaries }).then(
+      () => true,
+      () => false,
+    ));
+  if (audioModelConfigured) tools.push(createCloudAiTranscribeAudioTool());
   const firecrawlConfigured =
     config && "firecrawlApiKey" in config ? Boolean(config.firecrawlApiKey?.trim()) : await isCloudAiFirecrawlConfigured();
   if (firecrawlConfigured) {
