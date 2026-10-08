@@ -39,8 +39,13 @@ describe("markdown tables", () => {
   test("keeps help table emphasis and paint on structural rows", () => {
     const styles = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
 
-    expect(styles).toContain(`.help-document .md-table-wrap {
-  overflow: hidden;`);
+    const helpWrap = styles.slice(
+      styles.indexOf(".help-document .md-table-wrap {"),
+      styles.indexOf(".help-document .md-table-wrap > .md-table"),
+    );
+    // The shared `overflow: clip` applies: a scroll box would let scrolling a cell into view shift the table.
+    expect(helpWrap).toContain("margin-block");
+    expect(helpWrap).not.toContain("overflow");
     expect(styles).toContain(".help-document .md-table-wrap > .md-table");
     expect(styles).toContain("border-collapse: separate");
     expect(styles).toContain("border-spacing: 0");

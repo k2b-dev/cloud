@@ -12,7 +12,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "dialog-scroll.fixture.ts");
 const fixture = `
 import { createComponent } from "solid-js/web";
-import { BottomSheet, bottomSheetOptions, dialogCore, PanelDialog, panelDialogFixedOptions, panelDialogOptions, panelDialogWideOptions, panelDialogWorkspaceOptions, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { BottomSheet, bottomSheetOptions, dialogCore, MarkdownView, PanelDialog, panelDialogFixedOptions, panelDialogOptions, panelDialogWideOptions, panelDialogWorkspaceOptions, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 /** Content several viewports tall that ends in a marker the test scrolls to. */
 const long = () => {
@@ -81,11 +81,23 @@ const buttons = (close) => {
   return row;
 };
 
+/** A notice whose Markdown holds a table, as an application's action notice can. */
+const tableNotice = () => {
+  const content = document.createElement("div");
+  content.append(createComponent(MarkdownView, { markdown: "Before you continue:\\n\\n| Name | Count |\\n| --- | --: |\\n| Apples | 3 |" }));
+  const end = document.createElement("p");
+  end.dataset.end = "";
+  end.textContent = "End of content";
+  content.append(end);
+  return content;
+};
+
 const fields = Object.fromEntries(Array.from({ length: 30 }, (_, index) => ["field" + index, { type: "text", label: "Field " + (index + 1) }]));
 fields.end = { type: "info", content: () => long().lastElementChild };
 
 window.openVariant = {
   alert: () => void prompts.alert(long(), { title: "Release notes" }),
+  "table alert": () => void prompts.alert(tableNotice(), { title: "Action notice" }),
   confirm: () => void prompts.confirm(long(), { title: "Apply changes" }),
   "typed confirm": () => void prompts.confirm(long(), { title: "Delete project", confirmationPhrase: "Atlas", variant: "danger" }),
   error: () => void prompts.error(long(), { title: "Import failed" }),
@@ -277,6 +289,30 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
         });
         expect(content).toEqual({ regionScrolls: false, listScrolled: true });
         expect(await layout(page, "[data-row]")).toEqual({ frameScrolled: 0, header: true, footer: true, end: true });
+      } finally {
+        await page.close();
+      }
+    });
+
+    // A Markdown table reaches 0.5rem past the text; the body leaves it that
+    // room, so it neither scrolls sideways nor cuts the table's line ends.
+    test(`a Markdown table in an alert fits the body without moving the text at ${options.viewport.width} px`, async () => {
+      const page = await open(options, "table alert");
+      try {
+        const fit = await page.evaluate(() => {
+          const body = document.querySelector<HTMLElement>("dialog[open] .k2b-dialog__body")!;
+          const panel = document.querySelector<HTMLElement>("dialog[open] .k2b-dialog__panel")!;
+          const wrap = body.querySelector(".k2b-content-markdown__table")!.getBoundingClientRect();
+          const left = body.getBoundingClientRect().left + body.clientLeft;
+          const edge = panel.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(panel).paddingLeft);
+          return {
+            sideways: body.scrollWidth - body.clientWidth,
+            inside: wrap.left >= left - 0.5 && wrap.right <= left + body.clientWidth + 0.5,
+            // The text stays on the panel's content edge, under the title.
+            text: Math.round(body.querySelector("p")!.getBoundingClientRect().left - edge),
+          };
+        });
+        expect(fit).toEqual({ sideways: 0, inside: true, text: 0 });
       } finally {
         await page.close();
       }

@@ -164,9 +164,27 @@ const [source, setSource] = createSignal("# Release notes");
 Markdown tables omit the header row when all header cells are blank. Partially
 filled headers stay visible. Tables are hairlines on the reading surface: no
 frame or fill, a stronger line under the header, and a fine line between rows,
-so a cell that wraps still belongs to one row. The first and last columns line
-up with the surrounding prose. Header cells align with their column: at the
-start by default, or with the column's GFM alignment (`:-:`, `--:`).
-Body cells use tabular figures, so numbers line up. Inline formatting is
-preserved. Wide tables scroll within a keyboard-focusable container. Its focus
-ring sits just outside its edge, so it never covers the flush columns.
+so a cell that wraps still belongs to one row. The text of the first and last
+columns lines up with the surrounding prose. Header cells align with their
+column: at the start by default, or with the column's GFM alignment (`:-:`,
+`--:`). Body cells use tabular figures, so numbers line up. Inline formatting
+is preserved.
+
+The table reaches 0.5rem past the prose on both sides, and every cell pads its
+text by 0.5rem, so columns sit 1rem apart. The lines therefore run 0.5rem past
+the outer text. Cloud's Markdown tables use the same geometry for their hover:
+a row's fill and a column's band are exactly as wide as the lines and reach
+0.5rem past the text on every side. Wide tables scroll within a
+keyboard-focusable container, including that extra 0.5rem. Its focus ring sits
+inside its edge, in the space beside the text.
+
+A table at the start of the content keeps the 0.5rem above its header, so its
+header text starts that much lower than a paragraph would.
+
+A host that scrolls or clips its content needs at least 0.5rem of inline
+padding around a Markdown table. Without it, a scrolling host scrolls sideways
+by that amount, and a clipping host cuts the line ends. If the host is flush
+with its surroundings, pair the padding with an equal negative margin, so the
+text stays in place. The bodies of `prompts` dialogs, `FileView` previews and
+excerpts of a document, and the clamp of a collapsed `MessageRow` already do
+this.

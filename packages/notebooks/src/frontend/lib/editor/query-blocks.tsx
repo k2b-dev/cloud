@@ -258,7 +258,6 @@ export function createQueryBlockPreviews(options: {
           border: "1px solid var(--ui-border)",
           borderRadius: "var(--radius-md)",
         },
-        ".cm-query-block-preview": { overflowX: "auto" },
       }),
     ],
     listener: EditorView.updateListener.of((event) => {

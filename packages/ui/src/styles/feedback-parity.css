@@ -300,11 +300,15 @@
   }
 }
 
-/* Header and actions stay in the frame; only the body scrolls. */
+/* Header and actions stay in the frame; only the body scrolls. Like the
+ * custom content region above, it reaches 0.625rem into the panel's padding
+ * at its sides and pads its content back into place, so a Markdown table's
+ * 0.5rem past the text neither scrolls the body sideways nor gets cut off. */
 .k2b-ui .k2b-dialog__body {
   min-height: 0;
   overflow-y: auto;
-  padding: 1rem 0;
+  margin-inline: -0.625rem;
+  padding: 1rem 0.625rem;
   font-size: 0.875rem;
   white-space: pre-wrap;
 }

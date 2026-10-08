@@ -299,20 +299,20 @@ class TableWidget extends WidgetType {
 
   override get estimatedHeight() {
     // Per-cell rendered metrics (from `utilities-markdown-table.css`):
-    //   - padding: 0.5rem 0.75rem (16px vertical)
+    //   - padding: 0.5rem on every side (16px vertical)
     //   - font-size: 12px, line-height: 16px
     //   → 32px per single-line row plus its hairline divider.
-    // Plus 16px outer padding on `.cm-table-widget` (0.5rem top +
-    //   0.5rem bottom — see the theme rule for why this is padding
-    //   not margin: margin would collapse and confuse CM's height
-    //   measurement, padding stays inside the border-box).
+    // Plus 8px outer padding below `.cm-table-widget` (see the theme
+    //   rule for why this is padding not margin: margin would collapse
+    //   and confuse CM's height measurement, padding stays inside the
+    //   border-box).
     //
-    // Formula: (N+1) rows × 33px + 16px container + 2px frame
-    //        ≈ (N+1) × 33 + 18
+    // Formula: (N+1) rows × 33px + 8px container + 2px frame
+    //        ≈ (N+1) × 33 + 10
     //
     // ACCURATE estimate matters MORE than buffer — see history at
     // file top for the click-drift bug this matches.
-    return (this.data.rows.length + 1) * 33 + 18;
+    return (this.data.rows.length + 1) * 33 + 10;
   }
 }
 
@@ -499,23 +499,26 @@ export const tablesExtension = (notebookId: string): Extension => {
     ".cm-table-widget": {
       display: "block",
       // PAD instead of margin. The shared CSS (`utilities-markdown-table.css`)
-      // sets `.md-table-wrap { margin-top: 0.5rem; margin-bottom: 0.5rem; }`
-      // for breathing room in the read-mode rendering, but inside a CM
+      // sets `.md-table-wrap { margin-bottom: 0.5rem; }` for breathing room
+      // in the read-mode rendering, but inside a CM
       // block-widget that pattern produces a measurement-vs-visual
       // mismatch: the inner wrap's vertical margins COLLAPSE through
       // the cm-table-widget container (which has no border/padding to
       // contain them), so `getBoundingClientRect().height` on the
       // container returns the table height EXCLUDING those 16px. CM's
       // height-map records the smaller number; click resolution Y-coords
-      // then drift DOWN by 16px per table. Cumulative drift after 3
-      // tables = ~48px = ~3 lines, which matches the observed bug.
+      // then drift DOWN per table. Cumulative drift after 3 tables
+      // was ~48px = ~3 lines, which matches the observed bug.
       //
       // Fix: override the inner wrap to ZERO margin (already done below
       // via the descendant selector) and add equivalent PADDING on the
       // outer widget. Padding stays inside the border box, so
       // `getBoundingClientRect().height` includes it, and CM's
-      // measurement matches the visual layout.
-      padding: "0.5rem 0",
+      // measurement matches the visual layout. Above the table, the
+      // header cell's top padding keeps the header text where it was.
+      // The wrap keeps its shared inline bleed, which reaches past the
+      // content into the scroller's inline padding (`theme.ts`).
+      padding: "0 0 0.5rem",
       margin: "0 !important",
     },
     // Neutralise the shared read-mode wrap margins inside the CM

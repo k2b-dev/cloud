@@ -1,8 +1,13 @@
 /* Markdown tables use the same hairline language as @k2b/ui MarkdownView:
    no frame or header fill, a stronger line under the header, hairline row
-   separators, and the outer columns flush with the prose. Used by both the
+   separators, and the outer text flush with the prose. Used by both the
    server-side `marked` renderer and the CodeMirror table widget so read-mode
    and edit-mode look identical.
+
+   The table bleeds `--md-table-bleed` past the prose on both sides, and every
+   cell pads its text by the same amount. So the outer text stays flush, the
+   columns sit twice the bleed apart, and the header line, row lines, row hover
+   and column band all share one width: text plus the bleed on every side.
 
    Three-layer markup:
      <div class="md-table-wrap">      ← horizontal scroll owner
@@ -11,16 +16,17 @@
            <span class="md-table-cell">  ← content + alignment owner */
 
 .md-table-wrap {
+  --md-table-bleed: 0.5rem;
   overflow: clip;
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  /* The header cell's top padding takes the place of a top margin. */
+  margin: 0 calc(-1 * var(--md-table-bleed)) 0.5rem;
 }
 
 /* Inside MarkdownView a table takes the same block spacing as its own
    tables, so two tables in a row do not read as one. Hosts such as Help keep
    their own spacing. */
 :where(.k2b-ui .k2b-content-markdown) .md-table-wrap {
-  margin-block: 1em;
+  margin-block: calc(1em - var(--md-table-bleed)) 1em;
 }
 
 .md-table {
@@ -70,7 +76,7 @@
   gap: 0.35rem;
   box-sizing: border-box;
   min-height: 2rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem var(--md-table-bleed, 0.5rem);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -88,19 +94,8 @@
 }
 
 .md-table thead .md-table-cell {
-  padding-top: 0;
   background: transparent;
   font-weight: 600;
-}
-
-.md-table th:first-child > .md-table-cell,
-.md-table td:first-child > .md-table-cell {
-  padding-left: 0;
-}
-
-.md-table th:last-child > .md-table-cell,
-.md-table td:last-child > .md-table-cell {
-  padding-right: 0;
 }
 
 /* Inside MarkdownView the span stays the only padding owner. */
@@ -147,7 +142,9 @@
   }
 
   /* A cell-sized pseudo-element can span the table vertically without
-     changing its layout. The scroll wrapper clips it to the table frame. */
+     changing its layout. The scroll wrapper clips it to the table frame, so
+     the band, like the row, reaches the bleed above the header text and
+     below the last row. */
   .md-table :is(th, td)::after {
     content: "";
     position: absolute;

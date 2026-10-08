@@ -1915,19 +1915,24 @@
 }
 
 /* Tables are hairlines on the reading surface: no frame or fill, a stronger
-   line under the header, and the outer columns flush with the prose. Wide
-   tables scroll inside the focusable wrapper. Its text touches its edge, so
-   its own ring sits just outside, where it never covers text; rings of links
-   inside the table stay inside (see the clipping containers below). */
+   line under the header, and the outer text flush with the prose. The table
+   bleeds `--k2b-markdown-table-bleed` past the prose on both sides and every
+   cell pads its text by the same amount, so the lines reach that far beyond
+   the outer text. Wide tables scroll inside the focusable wrapper, bleed
+   included. Its ring sits inside, in the bleed, like the rings of links inside
+   the table (see the clipping containers below). The header cell's top
+   padding takes the place of the bleed in the top margin. */
 .k2b-ui .k2b-content-markdown__table {
-  max-width: 100%;
+  --k2b-markdown-table-bleed: 0.5rem;
+  max-width: calc(100% + 2 * var(--k2b-markdown-table-bleed));
   overflow-x: auto;
-  margin-block: 1em;
+  margin-block: calc(1em - var(--k2b-markdown-table-bleed)) 1em;
+  margin-inline: calc(-1 * var(--k2b-markdown-table-bleed));
 }
 
 .k2b-ui .k2b-content-markdown__table:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-width);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
 .k2b-ui .k2b-content-markdown table {
@@ -1943,18 +1948,13 @@
    outrank the header rules below. */
 .k2b-ui .k2b-content-markdown th,
 .k2b-ui .k2b-content-markdown td {
-  padding: 0.625rem 0.75rem;
+  padding: 0.625rem var(--k2b-markdown-table-bleed, 0.5rem);
   border: 0;
   vertical-align: top;
 }
 
-.k2b-ui .k2b-content-markdown th:first-child,
-.k2b-ui .k2b-content-markdown td:first-child { padding-inline-start: 0; }
-.k2b-ui .k2b-content-markdown th:last-child,
-.k2b-ui .k2b-content-markdown td:last-child { padding-inline-end: 0; }
-
 .k2b-ui .k2b-content-markdown th {
-  padding-block: 0 0.5rem;
+  padding-block: 0.5rem;
   border-bottom: 1px solid var(--k2b-border-strong);
   color: var(--k2b-text-secondary);
   font-size: 0.9285714em;
@@ -2249,6 +2249,12 @@
   max-height: 10rem;
   overflow: hidden;
 }
+/* Inside a document, which leaves room around its text, the excerpt clips a
+   Markdown table's 0.5rem past the text no sooner than the full preview does. */
+.k2b-ui .k2b-content-file-view__document > .k2b-content-file-view__excerpt {
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
+}
 .k2b-ui .k2b-content-file-view[data-excerpt="true"] td {
   white-space: nowrap;
   max-width: 20rem;
@@ -2274,6 +2280,14 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+/* A Markdown table reaches 0.5rem past the text. The preview scrolls flush with
+   its host, so around a document it reaches that far into the host and pads
+   the document back into place: the text stays put, and the table neither
+   scrolls the preview sideways nor loses its line ends. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__preview:has(> .k2b-content-file-view__document) {
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
 }
 /* The expander lines up with the content instead of the old frame's inset. */
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__truncated {

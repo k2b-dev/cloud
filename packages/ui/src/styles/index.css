@@ -7413,6 +7413,14 @@
   mask-image: linear-gradient(to bottom, #000 calc(8 * var(--k2b-message-line)), transparent calc(10 * var(--k2b-message-line)));
 }
 
+/* A Markdown table reaches 0.5rem past the text. The clamp reaches as far and pads the text back into place, so a
+   collapsed table keeps the line ends and focus ring it shows once the message opens. */
+.k2b-ui .k2b-content-markdown.k2b-message-row__text[data-collapsed] {
+  max-width: calc(100% + 1rem);
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
+}
+
 .k2b-ui .k2b-button.k2b-message-row__more,
 .k2b-ui .k2b-message-row__line .k2b-button {
   min-height: 0;

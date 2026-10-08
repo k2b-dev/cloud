@@ -22,14 +22,18 @@ const baseEditorCSS = EditorView.theme({
     padding: "0",
   },
   "&.cm-editor.cm-focused": { outline: "none" },
+  // The scroller, not the content, clips sideways: a Markdown table widget
+  // reaches past the text into the scroller's inline padding, so its lines and
+  // hover extend past the text as in the Book. The content keeps the text's
+  // edges, which CodeMirror draws selections from.
   ".cm-scroller": {
     overflow: "auto",
+    overflowX: "hidden",
     maxWidth: "100%",
     margin: "0 auto",
   },
   ".cm-content": {
     maxWidth: "100%",
-    overflowX: "hidden",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",

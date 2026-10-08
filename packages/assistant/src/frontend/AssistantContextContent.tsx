@@ -145,10 +145,12 @@ export const assistantMarkdownBody = (title: string, markdown: string): string =
     .replace(/^(?:\s*\n)+/u, "");
 };
 
+// The scroll area reaches into the dialog's inset by a table's bleed, so a
+// Markdown table neither scrolls sideways nor loses its outer line ends.
 export const openAssistantMarkdown = (title: string, markdown: string, icon = "ti ti-file-description") =>
   prompts.dialog<void>(
     () => (
-      <ScrollArea class="max-h-[70vh]">
+      <ScrollArea class="-mx-2 max-h-[70vh] px-2">
         <MarkdownView markdown={assistantMarkdownBody(title, markdown)} headingScale="compact" />
       </ScrollArea>
     ),

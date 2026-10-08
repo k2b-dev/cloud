@@ -563,7 +563,9 @@
 .assistant-task-detail__actions { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: .5rem; padding: .75rem .5rem .25rem; background: var(--k2b-surface); }
 
 .assistant-activity-dialog { height: min(640px, 70dvh); min-height: 0; display: flex; flex-direction: column; }
-.assistant-activity-dialog__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1rem; }
+/* The body scrolls flush with the dialog's content region; it reaches into that region's inset by a Markdown table's
+   0.5rem past the text and pads its content back, so a result table neither scrolls sideways nor loses its line ends. */
+.assistant-activity-dialog__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1rem; margin-inline: -.5rem; padding-inline: .5rem; }
 .assistant-activity-dialog__actions { flex: none; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-start; padding-top: 1rem; }
 .assistant-activity-result { flex: 1; }
 .assistant-activity-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .75rem; color: var(--k2b-text-muted); padding-bottom: .25rem; }
