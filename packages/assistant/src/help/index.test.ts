@@ -37,7 +37,9 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-overview", "de")).toContain(
       "Der Assistent ist der zentrale Arbeitsbereich für deinen persönlichen Cloud-Agenten",
     );
-    expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain("Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen");
+    expect(assistantHelp.getMarkdown("assistant-workflow", "de")).toContain(
+      "Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen",
+    );
     expect(assistantHelp.getMarkdown("assistant-guidance", "de")).toContain("Eine hilfreiche Anfrage formulieren");
   });
 
