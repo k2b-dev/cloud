@@ -110,7 +110,7 @@ describe("Assistant sidebar", () => {
     }
   });
 
-  test("lists open chats as flat rows under day headings, pinned chats first", () => {
+  test("lists open chats as flat rows under day headings, pinned chats first", async () => {
     const today = renderedAt;
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },
@@ -123,16 +123,21 @@ describe("Assistant sidebar", () => {
     const rendered = renderToString(() =>
       createComponent(AssistantSidebar, { timeZone: "UTC", renderedAt, conversations, projects: [project], live }),
     );
-    // The desktop list, without hydration markers, after the mobile navigation snapshot that lists the same chats.
-    const html = rendered.slice(rendered.indexOf("<aside")).replaceAll(/<!--[^>]*-->/g, "");
+    // The desktop list, after the mobile navigation snapshot that lists the same chats.
+    const html = rendered.slice(rendered.indexOf("<aside"));
+    // Headings by their text and chat rows by their id, in document order.
+    const rowPrefix = "/app/assistant?conversation=";
+    const order = (await selectHtml(html, `h2, a[href^="${rowPrefix}"]`)).map(({ attributes, text }) =>
+      attributes.href ? attributes.href.slice(rowPrefix.length) : text,
+    );
+    const at = (key: string) => order.indexOf(key);
 
-    expect(html.indexOf("<h2>Pinned</h2>")).toBeGreaterThan(-1);
-    const row = (id: string) => html.indexOf(`href="/app/assistant?conversation=${id}"`);
-    expect(html.indexOf("<h2>Pinned</h2>")).toBeLessThan(row("chatpinned"));
-    expect(row("chatpinned")).toBeLessThan(html.indexOf("<h2>Today</h2>"));
-    expect(html.indexOf("<h2>Today</h2>")).toBeLessThan(row("chatproject"));
-    expect(row("chatproject")).toBeLessThan(html.indexOf("<h2>Older</h2>"));
-    expect(html.indexOf("<h2>Older</h2>")).toBeLessThan(row("chat1"));
+    expect(at("Pinned")).toBeGreaterThan(-1);
+    expect(at("Pinned")).toBeLessThan(at("chatpinned"));
+    expect(at("chatpinned")).toBeLessThan(at("Today"));
+    expect(at("Today")).toBeLessThan(at("chatproject"));
+    expect(at("chatproject")).toBeLessThan(at("Older"));
+    expect(at("Older")).toBeLessThan(at("chat1"));
     expect(html).toContain("General chat 17");
     expect(html).toContain("Chat settings");
     expect(html).toContain("Mark chat done");
@@ -166,7 +171,7 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("overflow-y-auto");
   });
 
-  test("pinned chats sit under their heading without a Done action or Ready filler", () => {
+  test("pinned chats sit under their heading without a Done action or Ready filler", async () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
         timeZone: "UTC",
@@ -175,7 +180,7 @@ describe("Assistant sidebar", () => {
         live,
       }),
     );
-    expect(html.replaceAll(/<!--[^>]*-->/g, "")).toContain("<h2>Pinned</h2>");
+    expect((await selectHtml(html, "h2")).map(({ text }) => text)).toContain("Pinned");
     expect(html).not.toContain("Mark chat done");
     expect(html).not.toContain(">Ready<");
     expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
