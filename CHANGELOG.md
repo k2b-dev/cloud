@@ -3,6 +3,39 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.34.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.33.0...cloud-v0.34.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **assistant:** Studio apps are plain HTML ([#716](https://github.com/k2b-dev/cloud/issues/716))
+
+### Features
+
+* **ai:** calm, clear Assistant surfaces ([#719](https://github.com/k2b-dev/cloud/issues/719)) ([400da10](https://github.com/k2b-dev/cloud/commit/400da1004a259e12135050f249f565d45fe4de9b))
+* **ai:** keep failed turns visible with a clear next step ([#712](https://github.com/k2b-dev/cloud/issues/712)) ([2edd0da](https://github.com/k2b-dev/cloud/commit/2edd0da4d48a98ade02a23a4604f4c81a1abdce6))
+* **ai:** tell the Assistant what users see and suggest next steps ([#720](https://github.com/k2b-dev/cloud/issues/720)) ([37b8839](https://github.com/k2b-dev/cloud/commit/37b883986d85916c809a9a95d88220ff29e15f8b))
+* **assistant:** check every Studio app before it is shown ([#723](https://github.com/k2b-dev/cloud/issues/723)) ([e5ec357](https://github.com/k2b-dev/cloud/commit/e5ec357b61f127b802d167be5d6df7e1024d79fb))
+* **assistant:** Studio apps are plain HTML ([#716](https://github.com/k2b-dev/cloud/issues/716)) ([6863ebc](https://github.com/k2b-dev/cloud/commit/6863ebc843a82d0ac4d05fda5614adeacf842439))
+* **cloud:** let apps send mail and read their send log ([#717](https://github.com/k2b-dev/cloud/issues/717)) ([3a9da9a](https://github.com/k2b-dev/cloud/commit/3a9da9af2fd242b81000f14c7734aa27b5ec9da4))
+* **cloud:** mark bounced mail from delivery reports ([#734](https://github.com/k2b-dev/cloud/issues/734)) ([97fd6a7](https://github.com/k2b-dev/cloud/commit/97fd6a79f02cfeaef807f8a4e92b59f400989746))
+* **cloud:** send mail in the background with pacing and retries ([#721](https://github.com/k2b-dev/cloud/issues/721)) ([05dc7d1](https://github.com/k2b-dev/cloud/commit/05dc7d117e6f5431754b1c7ce64989b4898872f6))
+* **filesv2:** play videos in Files and attach them in Spaces ([#714](https://github.com/k2b-dev/cloud/issues/714)) ([6cd619d](https://github.com/k2b-dev/cloud/commit/6cd619dd4fa1a17a1b3d6e8ad7d12024f38cb610))
+* **notebooks:** let writers order notes by hand ([#731](https://github.com/k2b-dev/cloud/issues/731)) ([0835dee](https://github.com/k2b-dev/cloud/commit/0835dee1ebedd72323089d1156abf62b98245f5e))
+* **notebooks:** list the homepage note in the tree with a home icon ([#726](https://github.com/k2b-dev/cloud/issues/726)) ([304d103](https://github.com/k2b-dev/cloud/commit/304d1031d681735c88286bc8e95f0623397ec86a))
+* **notifications:** deliver email through the default sender profile ([#725](https://github.com/k2b-dev/cloud/issues/725)) ([ab9f999](https://github.com/k2b-dev/cloud/commit/ab9f999aad1437b42ce685fe41a37bcde54ccf04))
+* **ui:** calm reference pills and quiet links in every Markdown view ([#733](https://github.com/k2b-dev/cloud/issues/733)) ([4b00e92](https://github.com/k2b-dev/cloud/commit/4b00e92e52a9a54e28b4020732e96fe830d46be9))
+* **ui:** drop files anywhere on the page, not into a thin strip ([#718](https://github.com/k2b-dev/cloud/issues/718)) ([732e64a](https://github.com/k2b-dev/cloud/commit/732e64a49cacf2fcd2608200a18da6815cba2a75))
+
+
+### Bug Fixes
+
+* **core:** keep Core boot migrations from failing when replicas race on a new schema ([#732](https://github.com/k2b-dev/cloud/issues/732)) ([6c07b51](https://github.com/k2b-dev/cloud/commit/6c07b516fbdb9008f63baed4588c7831943e568b))
+* **mail:** give read-only users the mailbox details in the compose slot ([#728](https://github.com/k2b-dev/cloud/issues/728)) ([652c90f](https://github.com/k2b-dev/cloud/commit/652c90ff84fdd686b37064f5932d9c6218cdc408))
+* **spaces:** confirm saved blockers and say how many people a task really has ([#736](https://github.com/k2b-dev/cloud/issues/736)) ([c481d05](https://github.com/k2b-dev/cloud/commit/c481d05e2143629b0e46c3693c1358a57b4a564f))
+* **ui:** give table lines and hover highlights one consistent width ([#722](https://github.com/k2b-dev/cloud/issues/722)) ([e9bd63e](https://github.com/k2b-dev/cloud/commit/e9bd63e84a6208cdca8e2f0b947a720823da142e))
+* **ui:** make the VideoPlayer playback tests reach the end reliably in WebKit ([#724](https://github.com/k2b-dev/cloud/issues/724)) ([be41bb8](https://github.com/k2b-dev/cloud/commit/be41bb81d87af0e29e9199cbd0f942897ee35021))
+
 ## [0.33.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.32.0...cloud-v0.33.0) (2026-10-07)
 
 
