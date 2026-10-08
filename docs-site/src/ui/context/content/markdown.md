@@ -152,7 +152,10 @@ for a heading in another document that document's title, shown first as
 its line, as in a list of files; `markStandaloneLinks(token, set)` marks those
 links from `walkTokens` of a renderer with GFM line breaks. Without a
 `reference`, the helper renders a web or mail link. `markdownLinkReference(href)`
-is the classification `MarkdownView` uses. `html` crosses a trust boundary:
+is the classification `MarkdownView` uses. URL classification never yields a
+task: the `task` kind exists for renderers that know a link points to a task,
+and no built-in renderer produces it yet, so a link to a Spaces item renders as
+a page. `html` crosses a trust boundary:
 the caller sanitizes it, and a sanitizer keeps the `class`, `aria-label`,
 `data-reference`, and `data-link` attributes.
 
