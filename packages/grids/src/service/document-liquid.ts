@@ -1,4 +1,9 @@
-import { type LiquidTemplateFilter, renderLiquidTemplate, validateLiquidTemplate as validateSharedLiquidTemplate } from "@k2b/cloud/shared";
+import {
+  LiquidTemplateError,
+  type LiquidTemplateFilter,
+  renderLiquidTemplate,
+  validateLiquidTemplate as validateSharedLiquidTemplate,
+} from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
 import type { DocumentTemplate } from "../contracts";
@@ -183,6 +188,7 @@ const barcodeDataUrlFilter: LiquidTemplateFilter = (value, bcid = "code128", sho
 
 const localizedLiquidError = (error: unknown, locale?: string): string => {
   const t = documentServiceText(locale);
+  if (error instanceof LiquidTemplateError && error.reason === "render_too_large") return t.renderedTemplateTooLarge;
   if (!isGermanDocumentLocale(locale)) return error instanceof Error ? error.message : t.templateRenderFailed;
   return t.templateRenderFailed;
 };
@@ -219,8 +225,11 @@ const renderLiquid = async (
   const valid = validateLiquidTemplate(template, options.locale);
   if (!valid.ok) return valid;
   try {
-    const rendered = renderLiquidTemplate(template, data, { filters: documentLiquidFilters, escapeOutput: options.escapeOutput });
-    if (utf8ByteLength(rendered) > (options.maxBytes ?? TEMPLATE_MAX_BYTES)) return fail(err.badInput(t.renderedTemplateTooLarge));
+    const rendered = renderLiquidTemplate(template, data, {
+      filters: documentLiquidFilters,
+      escapeOutput: options.escapeOutput,
+      renderMaxBytes: options.maxBytes ?? TEMPLATE_MAX_BYTES,
+    });
     return ok(rendered);
   } catch (error) {
     return fail(err.badInput(localizedLiquidError(error, options.locale)));

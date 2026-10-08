@@ -135,6 +135,29 @@ bounded caller-owned API response. Gotenberg failures continue to use
 
 ## Render a Liquid template
 
+Use `renderLiquidTemplate()` from `@k2b/cloud/shared` to render text or HTML
+in the server or browser. Its `LiquidTemplateOptions` separate time and size
+budgets:
+
+| Option | Default | Budget |
+| --- | --- | --- |
+| `renderTimeoutMs` | `1_000` | Milliseconds per render |
+| `renderMaxBytes` | `300_000` | UTF-8 bytes per output buffer, including captures |
+| `memoryLimit` | `2_000_000` | LiquidJS allocation units for ranges and filters |
+| `templateMaxBytes` | `200_000` | UTF-8 bytes of template source |
+
+Time and output limits are enforced during rendering; output exactly at the
+byte limit is allowed. Rendering is synchronous and blocks the application's
+event loop. Time checks run on each template and loop iteration, including
+empty bodies. Custom filters must finish promptly: a synchronous filter
+cannot be interrupted, and its elapsed time is checked when it returns.
+
+`LiquidTemplateError.reason` identifies budget failures as `render_timeout`,
+`render_too_large`, or `render_memory_limit`. Other syntax, variable, and
+filter errors remain ordinary rendering errors. Applications may pass their
+existing output budgets through `renderMaxBytes` without changing the time
+budget.
+
 Use `renderTemplatePdfPreview()` when an operator edits a Liquid template and
 needs one structured result for both template and PDF errors:
 

@@ -2,6 +2,26 @@ import { describe, expect, test } from "bun:test";
 import { renderEmailTemplate, validateEmailTemplateWrite } from "./email-templates";
 
 describe("email templates", () => {
+  test("stops rendering a subject at its existing 1,000-byte cap", async () => {
+    let reads = 0;
+    const result = await renderEmailTemplate(
+      {
+        subject: "{% for i in (1..1000) %}{{ data.chunk }}{% endfor %}",
+        html: "<p>Body</p>",
+      },
+      {
+        data: {
+          get chunk() {
+            reads++;
+            return "x".repeat(500);
+          },
+        },
+      },
+    );
+    expect(result).toMatchObject({ ok: false, error: { message: "The rendered template is too large." } });
+    expect(reads).toBe(3);
+  });
+
   test("renders allowed Liquid roots", async () => {
     const result = await renderEmailTemplate(
       {

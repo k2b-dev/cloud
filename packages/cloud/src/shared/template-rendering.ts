@@ -1,10 +1,13 @@
-import { Liquid } from "liquidjs";
+import { AssertionError, Context, type Emitter, Liquid, LiquidError, toValue, toValueSync } from "liquidjs";
 
 const TEMPLATE_MAX_BYTES = 200_000;
 const RENDER_MAX_BYTES = 300_000;
+// Synchronous rendering blocks every request in the app process. Legitimate templates
+// take milliseconds; keep this well below normal request latency budgets.
+const RENDER_TIMEOUT_MS = 1_000;
 
 type LiquidEngine = Liquid;
-export type LiquidTemplateErrorReason = "render_too_large";
+export type LiquidTemplateErrorReason = "render_too_large" | "render_timeout" | "render_memory_limit";
 
 export class LiquidTemplateError extends Error {
   constructor(
@@ -22,6 +25,7 @@ export type LiquidTemplateOptions = {
   escapeOutput?: boolean | ((value: unknown) => string);
   templateMaxBytes?: number;
   renderMaxBytes?: number;
+  renderTimeoutMs?: number;
   memoryLimit?: number;
 };
 
@@ -51,6 +55,33 @@ const ALLOWED_TAGS = new Set([
 const TEMPLATE_TAG_RE = /{%-?\s*([A-Za-z_][A-Za-z0-9_]*)\b/g;
 
 const byteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
+
+class BoundedEmitter implements Emitter {
+  buffer = "";
+  private bytes = 0;
+
+  constructor(private readonly maxBytes: number) {}
+
+  write(input: unknown): void {
+    const value: unknown = toValue(input);
+    // Match LiquidJS's emitter: nil is empty, arrays concatenate their elements.
+    if (value === null || value === undefined) return;
+    if (Array.isArray(value)) {
+      for (const item of value) this.write(item);
+      return;
+    }
+    const chunk = String(value);
+    if (!chunk) return;
+    const last = this.buffer.charCodeAt(this.buffer.length - 1);
+    const first = chunk.charCodeAt(0);
+    // A surrogate pair split across writes encodes as four bytes, rather than six.
+    const paired = last >= 0xd800 && last <= 0xdbff && first >= 0xdc00 && first <= 0xdfff;
+    const bytes = this.bytes + byteLength(chunk) - (paired ? 2 : 0);
+    if (bytes > this.maxBytes) throw new LiquidTemplateError("render_too_large", "Rendered template is too large");
+    this.bytes = bytes;
+    this.buffer += chunk;
+  }
+}
 
 export const escapeTemplateOutput = (value: unknown): string =>
   String(value).replace(/[&<>"'`=/]/g, (char) => {
@@ -85,7 +116,7 @@ const createEngine = (options: LiquidTemplateOptions = {}) => {
     ownPropertyOnly: true,
     ...(outputEscape ? { outputEscape } : {}),
     parseLimit: options.templateMaxBytes ?? TEMPLATE_MAX_BYTES,
-    renderLimit: options.renderMaxBytes ?? RENDER_MAX_BYTES,
+    renderLimit: options.renderTimeoutMs ?? RENDER_TIMEOUT_MS,
     memoryLimit: options.memoryLimit ?? 2_000_000,
     cache: false,
     dynamicPartials: false,
@@ -93,6 +124,16 @@ const createEngine = (options: LiquidTemplateOptions = {}) => {
     layouts: [],
     partials: [],
   });
+
+  const renderTemplates = engine.renderer.renderTemplates.bind(engine.renderer);
+  engine.renderer.renderTemplates = function* (templates, context, emitter) {
+    // Capture renders without an emitter; bound its intermediate buffer as well.
+    const result = yield* renderTemplates(templates, context, emitter ?? new BoundedEmitter(options.renderMaxBytes ?? RENDER_MAX_BYTES));
+    // LiquidJS checks before templates and every loop body (even an empty one).
+    // Check after them too, so a slow final filter cannot return over budget.
+    context.renderLimit.check(performance.now());
+    return result;
+  };
 
   for (const [name, filter] of Object.entries(options.filters ?? {})) engine.registerFilter(name, filter);
   return engine;
@@ -126,11 +167,27 @@ export const validateLiquidTemplate = (
 export const renderLiquidTemplate = (template: string, data: Record<string, unknown>, options: LiquidTemplateOptions = {}): string => {
   const valid = validateLiquidTemplate(template, options);
   if (!valid.ok) throw new Error(valid.error);
-  const rendered = engineFor(options).parseAndRenderSync(template, data);
-  if (byteLength(rendered) > (options.renderMaxBytes ?? RENDER_MAX_BYTES)) {
-    throw new LiquidTemplateError("render_too_large", "Rendered template is too large");
+  const engine = engineFor(options);
+  const context = new Context(data, engine.options, { sync: true }, { liquid: engine });
+  const emitter = new BoundedEmitter(options.renderMaxBytes ?? RENDER_MAX_BYTES);
+  try {
+    toValueSync(engine.renderer.renderTemplates(engine.parse(template), context, emitter));
+    return emitter.buffer;
+  } catch (error) {
+    // LiquidJS wraps emitter and limiter failures in RenderError.originalError.
+    let original = error;
+    while (original instanceof LiquidError && original.originalError) original = original.originalError;
+    if (original instanceof LiquidTemplateError) throw original;
+    if (original instanceof AssertionError) {
+      if (original.message === "template render limit exceeded") {
+        throw new LiquidTemplateError("render_timeout", "Template rendering exceeded its time budget");
+      }
+      if (original.message === "memory alloc limit exceeded") {
+        throw new LiquidTemplateError("render_memory_limit", "Template rendering exceeded its memory limit");
+      }
+    }
+    throw error;
   }
-  return rendered;
 };
 
 export const liquidTemplateVariables = (template: string, options: LiquidTemplateOptions = {}): string[] => {

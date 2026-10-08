@@ -203,6 +203,14 @@ administration settings only. Mailbox credentials belong
 to user-created IMAP/SMTP connections, not global provider settings. Grids query
 limits are configured in Grids administration and require restarting every Grids replica.
 
+Liquid templates now stop during rendering when they exceed their time or
+output budget. The shared defaults are 1,000 ms and 300,000 UTF-8 bytes;
+application-specific output caps still apply. A template preview or send can
+fail with `render_timeout`, `render_too_large`, or `render_memory_limit`.
+Simplify an affected template or reduce its data. These budgets are application
+API options, not deployment settings; see
+[PDF and templates](/en/docs/platform/pdf-and-templates#render-a-liquid-template).
+
 ## Control CLI plugin access
 
 Applications serve their `cld` command modules as plugins. Every plugin
