@@ -144,7 +144,7 @@ export const aiUsageMessages = i18n.define({
       other: "Other",
     },
     de: {
-      allowances: "Assistent-Kontingente ansehen",
+      allowances: "Assistenten-Kontingente ansehen",
       moreFilters: "Weitere Filter",
       dataNotes: "Hinweise zu den Daten",
       additionalStatistics: "Anwendungen & Werkzeuge",

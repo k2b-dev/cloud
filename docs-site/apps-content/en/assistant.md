@@ -230,7 +230,10 @@ The sidebar shows one chat list of plain rows: pinned chats first under
 them in your own time zone. Each row shows only the chat's title. One quiet
 icon at the row's end marks a chat that is running, waiting for you, failed,
 has a new response, or has an active schedule; its tooltip names the state.
-**Done** remains a separate collapsible section.
+**Done** remains a separate collapsible section. The phone menu lists the same
+sections. There the icon keeps a fixed place at the row's end even while a chat
+is quiet, so a long title wraps the same way and a status change never moves
+the rows below.
 
 **Projects**, between Studio and Personalize in the footer, opens the same preview popup as chat rows: hover or click it to choose a Project, create one with **+**, or open global search with the **Search Projects** button. The search shows one **Projects** context chip and matches accessible Project names and descriptions. Removing that chip returns to global search.
 
@@ -252,7 +255,8 @@ Hover over a chat for its description, Project, last model, apps, files and
 can reach the same preview with Tab. Resource details load when the preview
 opens. **All chats** inside **Done** searches your chats and filters them with
 one menu: all chats, new responses, running, waiting for you, failed, done, or
-archived.
+archived. Each row shows the time its list is ordered by: when the chat last
+changed, or, under **Done**, when you last used it.
 
 The CLI supports `cld assistant chats done CHAT`, `chats reopen CHAT`, and
 `chats list --lifecycle active|done|all`. Archiving remains a separate action.
@@ -262,8 +266,12 @@ Pinned chats always remain active, overriding explicit or automatic completion. 
 Chat selection responds immediately while details load. Previously opened chats reuse their cached content while refreshing; switching does not wait behind a page transition.
 
 Titles that do not fit end with an ellipsis. **New chat** keeps you in the
-current chat when it is still empty, so unused chats do not pile up; a new chat
-is named "New chat" in your language until its first message names it.
+current chat when it is still empty, so unused chats do not pile up. It creates
+a new chat instead when the open one belongs to a Project, was opened by another
+app with `launchAssistant`, carries a name or description you gave it, or is
+pinned, done, archived, or no longer available. The sidebar button, the command
+palette, `/new`, and the keyboard shortcut behave the same. A new chat is named
+"New chat" in your language until its first message names it.
 
 ## Understand the Assistant model
 

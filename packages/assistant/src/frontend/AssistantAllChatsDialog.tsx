@@ -179,6 +179,7 @@ function AssistantAllChatsDialog(props: {
             <AssistantAllChatsList
               conversations={result.data()!.items}
               archived={view() === "archived"}
+              orderedByUse={view() === "done"}
               projects={props.projects()}
               onChanged={() => void result.refresh()}
               onOpenConversation={openConversation}

@@ -24,6 +24,21 @@ export const conversationStatusPresentation = (
   return null;
 };
 
+/**
+ * Whether "New chat" may hand this chat back while it is still empty: a plain Assistant chat that is open and nobody
+ * shaped yet. A Project, an app launch with its tool ceiling, a chosen title or description, a pin, and a done or
+ * archived chat all make the next chat a different one, so New chat creates it.
+ */
+export const isPlainChat = (conversation: AiConversation): boolean =>
+  !conversation.projectId &&
+  !conversation.launchedByAppId &&
+  !conversation.allowedTools &&
+  conversation.titleSource !== "user" &&
+  conversation.descriptionSource !== "user" &&
+  !conversation.pinnedAt &&
+  !conversation.isDone &&
+  !conversation.archivedAt;
+
 export type ConversationAgeGroup = "pinned" | "today" | "yesterday" | "week" | "month" | "older";
 
 /**

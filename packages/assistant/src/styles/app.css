@@ -576,5 +576,8 @@
 .assistant-activity-row__meta { font-size: .75rem; color: var(--k2b-text-muted); }
 .assistant-activity-unread { width: .375rem; height: .375rem; flex: none; border-radius: 50%; background: var(--k2b-action); }
 
-/* All chats: search and one filter share a row; the filter keeps a readable width on phones. */
-.assistant-all-chats-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(9rem, 13rem); gap: .5rem; align-items: start; }
+/* All chats: search and one filter share a row where both fit; on phones each takes a full row, so the search is
+   never squeezed beside the filter. */
+.assistant-all-chats-filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: start; }
+.assistant-all-chats-filters > :first-child { flex: 999 1 16rem; min-width: 0; }
+.assistant-all-chats-filters > :last-child { flex: 1 1 13rem; min-width: 0; }

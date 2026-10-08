@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { createConfig } from "@k2b/ssr";
+import type { NavigationItem } from "@k2b/ui";
 import { createComponent, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../tests/fixtures/select-html";
@@ -23,6 +24,8 @@ const { default: AssistantSidebar } = await import("./AssistantSidebar");
 const { default: AssistantAllChatsList } = await import("./AssistantAllChatsList");
 const { createAssistantLiveHub } = await import("./assistant-live");
 const live = createAssistantLiveHub();
+// One fixed server render time, so the day sections do not depend on when the test runs.
+const renderedAt = "2026-10-08T10:00:00.000Z";
 
 const project = {
   id: "project123",
@@ -66,6 +69,7 @@ describe("Assistant sidebar", () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
         timeZone: "UTC",
+        renderedAt,
         conversations: () => [
           {
             ...conversation("working", "Import", null),
@@ -89,6 +93,7 @@ describe("Assistant sidebar", () => {
       const html = renderToString(() =>
         createComponent(AssistantSidebar, {
           timeZone: "UTC",
+          renderedAt,
           conversations: () => [conversation("retained", "Retained chat", null)],
           projects: [project],
           activeConversationId: () => "retained",
@@ -106,16 +111,18 @@ describe("Assistant sidebar", () => {
   });
 
   test("lists open chats as flat rows under day headings, pinned chats first", () => {
-    const today = new Date().toISOString();
+    const today = renderedAt;
     const [conversations] = createSignal([
       { ...conversation("chatpinned", "Pinned chat", null), pinnedAt: "2026-08-12T10:00:00.000Z" },
       { ...conversation("chatproject", "Project chat", project.id), lastUsedAt: today },
       ...Array.from({ length: 17 }, (_, index) => ({
         ...conversation(`chat${index + 1}`, `General chat ${index + 1}`, null),
-        lastUsedAt: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+        lastUsedAt: new Date(Date.parse(renderedAt) - 90 * 86_400_000).toISOString(),
       })),
     ]);
-    const rendered = renderToString(() => createComponent(AssistantSidebar, { timeZone: "UTC", conversations, projects: [project], live }));
+    const rendered = renderToString(() =>
+      createComponent(AssistantSidebar, { timeZone: "UTC", renderedAt, conversations, projects: [project], live }),
+    );
     // The desktop list, without hydration markers, after the mobile navigation snapshot that lists the same chats.
     const html = rendered.slice(rendered.indexOf("<aside")).replaceAll(/<!--[^>]*-->/g, "");
 
@@ -141,6 +148,7 @@ describe("Assistant sidebar", () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
         timeZone: "UTC",
+        renderedAt,
         conversations: () => [done, { ...conversation("running", "Active work", null), runStatus: "running" }],
         projects: [project],
         doneCount: 21,
@@ -162,6 +170,7 @@ describe("Assistant sidebar", () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, {
         timeZone: "UTC",
+        renderedAt,
         conversations: () => [{ ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" }],
         live,
       }),
@@ -173,7 +182,9 @@ describe("Assistant sidebar", () => {
   });
 
   test("shows empty chat, Done, Studio, and Project lists as inline lines where their first rows would be", async () => {
-    const html = renderToString(() => createComponent(AssistantSidebar, { timeZone: "UTC", conversations: () => [], projects: [], live }));
+    const html = renderToString(() =>
+      createComponent(AssistantSidebar, { timeZone: "UTC", renderedAt, conversations: () => [], projects: [], live }),
+    );
     const inline = await selectHtml(html, '.k2b-placeholder[data-variant="inline"][data-align="left"]');
     const icons = await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i');
 
@@ -194,9 +205,18 @@ describe("Assistant sidebar", () => {
 
   test("keeps New Chat text and icon stable while creation is pending", () => {
     const [conversations] = createSignal<AiConversation[]>([]);
-    const idle = renderToString(() => createComponent(AssistantSidebar, { timeZone: "UTC", conversations, projects: [project], live }));
+    const idle = renderToString(() =>
+      createComponent(AssistantSidebar, { timeZone: "UTC", renderedAt, conversations, projects: [project], live }),
+    );
     const pending = renderToString(() =>
-      createComponent(AssistantSidebar, { timeZone: "UTC", conversations, projects: [project], creatingConversation: () => true, live }),
+      createComponent(AssistantSidebar, {
+        timeZone: "UTC",
+        renderedAt,
+        conversations,
+        projects: [project],
+        creatingConversation: () => true,
+        live,
+      }),
     );
 
     expect(idle.match(/New Chat|New chat/g)?.length).toBe(pending.match(/New Chat|New chat/g)?.length);
@@ -207,6 +227,36 @@ describe("Assistant sidebar", () => {
     expect(pending).not.toContain("Creating Chat");
     expect(pending).not.toContain("Creating chat");
     expect(idle).not.toContain(">Pinned</");
+  });
+});
+
+describe("Assistant phone menu", () => {
+  test("lists the same day sections as the desktop list, with each status in a kept slot instead of a second line", () => {
+    const html = renderToString(() =>
+      createComponent(AssistantSidebar, {
+        timeZone: "UTC",
+        renderedAt,
+        conversations: () => [
+          { ...conversation("pinned", "Pinned work", null), pinnedAt: "2026-09-14T11:00:00.000Z" },
+          { ...conversation("working", "Import", null), lastUsedAt: renderedAt, runStatus: "running" },
+          { ...conversation("quiet", "Notes", null), lastUsedAt: "2026-10-07T09:00:00.000Z" },
+          { ...conversation("planned", "Weekly report", null), lastUsedAt: "2026-06-01T09:00:00.000Z", hasActiveSchedule: true },
+        ],
+        live,
+      }),
+    );
+    const snapshot = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1];
+    const items = (JSON.parse(snapshot!) as { items: NavigationItem[] }).items;
+    const sections = items.filter((item) => item.section);
+    expect(sections.map((section) => [section.label, section.children?.map((chat) => [chat.label, chat.status])])).toEqual([
+      ["Pinned", [["Pinned work", null]]],
+      ["Today", [["Import", { icon: "ti ti-loader-2 animate-spin motion-reduce:animate-none", label: "Running", tone: "neutral" }]]],
+      ["Yesterday", [["Notes", null]]],
+      ["Older", [["Weekly report", { icon: "ti ti-clock", label: "Active schedule", tone: "neutral" }]]],
+    ]);
+    // Rows are plain titles like the desktop list: no per-chat icon, and no description line that comes and goes.
+    const chats = sections.flatMap((section) => section.children ?? []);
+    expect(chats.every((chat) => chat.icon === undefined && chat.description === undefined)).toBe(true);
   });
 });
 
@@ -223,5 +273,19 @@ describe("All chats list", () => {
     expect(html).toMatch(/Project chat.*Support/);
     expect(html).toContain("k2b-status-badge");
     expect(html).toContain('data-tone="neutral"');
+  });
+
+  test("shows the time each page is ordered by: last update, or last use for Done", () => {
+    const chat = {
+      ...conversation("renamed", "Renamed chat", null),
+      lastUsedAt: "2026-09-14T00:00:00.000Z",
+      updatedAt: "2026-10-08T09:00:00.000Z",
+    };
+    const render = (orderedByUse: boolean) =>
+      renderToString(() =>
+        createComponent(AssistantAllChatsList, { conversations: [chat], orderedByUse, onOpenConversation: async () => "opened" }),
+      );
+    expect(render(false)).toContain('datetime="2026-10-08T09:00:00.000Z"');
+    expect(render(true)).toContain('datetime="2026-09-14T00:00:00.000Z"');
   });
 });

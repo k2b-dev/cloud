@@ -98,7 +98,7 @@ export const platformMessages = i18n.define({
       skills: "Skills",
       projects: "Projekte",
       aiUsage: "Nutzung",
-      aiQuotas: "Assistent-Limits",
+      aiQuotas: "Assistenten-Limits",
       backgroundJobs: "Hintergrundaufgaben",
       apps: "Apps",
       appMenu: "Menü",

@@ -64,6 +64,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     () => (
       <AssistantSidebar
         timeZone="UTC"
+        renderedAt="2026-10-08T10:00:00.000Z"
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
         activeConversationId={selected}
         activeProjectId={project()}
@@ -143,6 +144,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
     () => (
       <AssistantSidebar
         timeZone="UTC"
+        renderedAt="2026-10-08T10:00:00.000Z"
         projects={[project]}
         live={live}
         onCreateProject={() => {
@@ -195,7 +197,17 @@ test("footer project popup and mobile group share search and creation; pinned ch
     expect(closes).toBe(2);
     const mobile = readWorkspaceNavigation()!.navigation;
     const ids = mobile.items().map((item) => item.id);
-    expect(ids.slice(2, 4)).toEqual(["chat:pinned", "chat:normal"]);
+    // The phone menu has the desktop list's sections: pinned first, then by last use.
+    expect(ids.slice(2, 4)).toEqual(["section:pinned", "section:month"]);
+    expect(
+      mobile
+        .items()
+        .slice(2, 4)
+        .map((section) => [section.label, section.children?.map((chat) => chat.id)]),
+    ).toEqual([
+      ["Pinned", ["chat:pinned"]],
+      ["Previous 30 days", ["chat:normal"]],
+    ]);
     expect(ids.slice(-4)).toEqual(["apps", "projects", "activities", "preferences"]);
     expect(ids).not.toContain("pinned");
     expect(ids).not.toContain("chats");
@@ -229,7 +241,15 @@ test("Done keeps its row through live updates, confirms success, then fades with
       }),
   );
   const dispose = render(
-    () => <AssistantSidebar timeZone="UTC" conversations={items} live={live} onConversationUpdated={(item) => setItems([item])} />,
+    () => (
+      <AssistantSidebar
+        timeZone="UTC"
+        renderedAt="2026-10-08T10:00:00.000Z"
+        conversations={items}
+        live={live}
+        onConversationUpdated={(item) => setItems([item])}
+      />
+    ),
     dom.root,
   );
   delegateEvents(["click"]);
@@ -268,7 +288,14 @@ test("failed Done request leaves the chat available and clears its pending feedb
   const live = createAssistantLiveHub();
   const save = spyOn(assistantApi, "setConversationDone").mockRejectedValue(new Error("Offline"));
   const dispose = render(
-    () => <AssistantSidebar timeZone="UTC" conversations={() => [conversation("fail", "Keep this", null)]} live={live} />,
+    () => (
+      <AssistantSidebar
+        timeZone="UTC"
+        renderedAt="2026-10-08T10:00:00.000Z"
+        conversations={() => [conversation("fail", "Keep this", null)]}
+        live={live}
+      />
+    ),
     dom.root,
   );
   delegateEvents(["click"]);

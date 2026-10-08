@@ -312,7 +312,7 @@ export const aiSettingsMessages = i18n.define({
 
       restrictAssistantAccess: "Verwendung im Assistenten beschränken",
       restrictAssistantAccessDescription:
-        "Lege fest, wer dieses Modell in Assistent-Chats verwenden darf. Hintergrundjobs und Workflows bleiben unverändert.",
+        "Lege fest, wer dieses Modell in Assistenten-Chats verwenden darf. Hintergrundjobs und Workflows bleiben unverändert.",
       useModel: "Verwenden",
       assistantAccessEmpty: "Ohne Freigabe kann niemand dieses Modell im Assistenten verwenden.",
       dirtyChats: "Geänderte Chats",

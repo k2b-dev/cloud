@@ -417,7 +417,7 @@ export default function AssistantProjectView(props: Props) {
                         >
                           <i class="ti ti-message-circle shrink-0 text-dimmed" aria-hidden="true" />
                           <span class="min-w-0 flex-1 truncate text-sm text-primary">{chat.title}</span>
-                          <Format.RelativeTime class="shrink-0 text-xs text-dimmed" value={chat.lastUsedAt} />
+                          <Format.RelativeTime class="shrink-0 text-xs text-dimmed" value={chat.updatedAt} />
                         </Link>
                         <IconButton
                           class="mr-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"

@@ -19,6 +19,7 @@ render(
     <Apps
       userId="test"
       timeZone="UTC"
+      renderedAt="2026-10-08T10:00:00.000Z"
       conversations={[]}
       doneCount={0}
       projects={[]}

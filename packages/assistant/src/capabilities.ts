@@ -78,9 +78,9 @@ export const assistantCapabilities = defineCapabilities({
       de: {
         types: {
           app: { title: "Studio-App", description: "Eine zugängliche, wiederverwendbare Studio-App." },
-          project: { title: "Projekt", description: "Ein zugängliches Assistant-Projekt mit gemeinsamem Kontext und Chats." },
+          project: { title: "Projekt", description: "Ein zugängliches Assistenten-Projekt mit gemeinsamem Kontext und Chats." },
           chat: { title: "Chat", description: "Eine Unterhaltung mit dem Assistenten, die dir gehört." },
-          message: { title: "Chat-Nachricht", description: "Eine Nachricht in einem zugänglichen Assistant-Chat." },
+          message: { title: "Chat-Nachricht", description: "Eine Nachricht in einem zugänglichen Assistenten-Chat." },
         },
         queries: {
           "app.search": {
@@ -90,14 +90,14 @@ export const assistantCapabilities = defineCapabilities({
           },
           "project.search": {
             title: "Projekte durchsuchen",
-            description: "Zugängliche Assistant-Projekte nach Name oder Beschreibung finden. Liefert Projekte, nicht deren Chats.",
-            searchTags: { "assistant-project": { title: "Assistant-Projekte", description: "Zugängliche Assistant-Projekte finden." } },
+            description: "Zugängliche Assistenten-Projekte nach Name oder Beschreibung finden. Liefert Projekte, nicht deren Chats.",
+            searchTags: { "assistant-project": { title: "Assistenten-Projekte", description: "Zugängliche Assistenten-Projekte finden." } },
           },
           "chat.search": {
             title: "Chats durchsuchen",
             description:
-              "Eigene Assistant-Chats anhand von Titel und Nachrichteninhalt finden. Im Chat-Kontext werden dessen Nachrichten durchsucht.",
-            searchTags: { chat: { title: "Chats", description: "Titel und Nachrichten in Assistant-Chats durchsuchen." } },
+              "Eigene Assistenten-Chats anhand von Titel und Nachrichteninhalt finden. Im Chat-Kontext werden dessen Nachrichten durchsucht.",
+            searchTags: { chat: { title: "Chats", description: "Titel und Nachrichten in Assistenten-Chats durchsuchen." } },
           },
         },
         commands: { "chat.compose": { title: "Neuer Chat", description: "Eine Unterhaltung mit dem Assistenten beginnen." } },

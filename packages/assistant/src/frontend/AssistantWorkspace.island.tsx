@@ -112,6 +112,7 @@ import {
   observeComposerRevision,
   sendBesideComposer,
 } from "./composer-session";
+import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { useAssistantText } from "./ui-copy";
@@ -144,6 +145,8 @@ type Props = {
   lastModelId: string;
   /** The viewer's time zone from the request; the chat list's day sections use it on the server and in the browser. */
   timeZone: string;
+  /** The server's render time, so hydration builds the same day sections as the server. */
+  renderedAt: string;
   initialLiveCursor: string;
   initialConversations: AiConversation[];
   initialDoneCount: number;
@@ -585,16 +588,21 @@ export default function AssistantWorkspace(props: Props) {
     }, 2_000);
     onCleanup(() => window.clearTimeout(timer));
   });
-  // "New chat" on a chat that is still empty keeps it: another empty chat would only crowd the list.
+  // "New chat" on a plain chat that is still empty keeps it: another empty chat would only crowd the list.
   const activeChatIsBlank = () => {
     const conversationId = chat.activeConversationId();
-    // A chat that is still loading also shows no messages; only a loaded chat counts as empty.
+    const loaded = chat.conversation();
+    const listed = activeConversation();
+    // A chat that is still loading also shows no messages, and one that failed to load or is gone cannot take a
+    // message; only a loaded, available chat counts as empty.
     return Boolean(
       conversationId &&
-        chat.conversation()?.id === conversationId &&
+        loaded?.id === conversationId &&
         !chat.loadingConversation() &&
+        !chat.error() &&
         !activeProject() &&
-        !activeConversation()?.projectId &&
+        isPlainChat(loaded) &&
+        (!listed || isPlainChat(listed)) &&
         chat.messages().length === 0 &&
         !chat.hasMoreHistory() &&
         !chat.activeTurn() &&
@@ -613,7 +621,7 @@ export default function AssistantWorkspace(props: Props) {
       registerCommandHandler("assistant.chat.compose", ChatComposeInputSchema, async (input) => {
         if (input.projectId && !projects().some((project) => project.id === input.projectId))
           throw new Error(assistantCommandMessages.resolve([locale()]).t.unavailable);
-        const result = await createConversation(true, input.projectId);
+        const result = input.projectId ? await createConversation(true, input.projectId) : await createAndFocusConversation();
         if (!result) throw new Error(assistantCommandMessages.resolve([locale()]).t.failed);
       }),
     );
@@ -1753,6 +1761,7 @@ export default function AssistantWorkspace(props: Props) {
         <AssistantSidebar
           conversations={conversations}
           timeZone={props.timeZone}
+          renderedAt={props.renderedAt}
           doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
           activeConversationId={chat.activeConversationId}
           activeView="chat"

@@ -13,7 +13,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 :::reference
 - **Chatzeilen:** Jede Zeile zeigt den Titel des Chats. Ein Symbol am Zeilenende zeigt, dass ein Chat läuft, auf dich wartet, fehlgeschlagen ist, eine neue Antwort hat oder einen aktiven Zeitplan; der Tooltip nennt den Zustand.
 - **Projekte:** Erstelle über die Plus-Schaltfläche im Fenster **Projekte** ein Projekt mit einem Namen und optionalen Anweisungen.
-- **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt der Assistent in diesem Chat, statt einen weiteren anzulegen.
+- **Neuer Chat:** Öffnet einen leeren Chat. Ist der geöffnete Chat noch leer, bleibt der Assistent in diesem Chat, statt einen weiteren anzulegen. Das gilt nicht, wenn er zu einem Projekt gehört, von einer anderen App geöffnet wurde, einen von dir vergebenen Namen oder eine Beschreibung hat oder angeheftet, fertig oder archiviert ist.
 - **Leerer Chat:** Wähle unter dem mittig angeordneten Eingabefeld optional ein Projekt aus, bevor du die erste Nachricht sendest. Vorschlagskarten füllen eine bearbeitbare Anfrage aus, senden sie aber nicht automatisch.
 - **Projektseite:** Gib die erste Nachricht in das normale Eingabefeld ein und füge bei Bedarf Dateien hinzu. Der Assistent erstellt einen privaten Projekt-Chat, sendet die Nachricht und öffnet anschließend die normale Chatansicht. Unter dem Eingabefeld kannst du vorhandene Projekt-Chats durchsuchen und durchblättern.
 - **Projektkontext:** Die Projektseite zeigt Anweisungen, Wissen, Bilder, Dateien und Referenzen des Projekts. Personen mit Schreibzugriff können diesen gemeinsamen Kontext dort ergänzen oder bearbeiten.
@@ -29,7 +29,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 - **Suchen:** Über die Suchschaltfläche im Kopf der Seitenleiste findest du Ergebnisse, Dateien und Quellen dieses Chats. Escape schließt die Suche.
 - **Chatdateien löschen:** Zeige auf einen Upload, eine Sprachaufnahme oder eine Arbeitsdatei oder erreiche sie mit der Tab-Taste und wähle rechts das Papierkorbsymbol; bei einem Ergebnis nutzt du sein Menü. Auf Touch-Geräten ist das Symbol immer sichtbar. Nach deiner Bestätigung entfernt der Assistent die Datei aus diesem Chat und schließt ihren geöffneten Tab. Frühere Nachrichten bleiben erhalten, ihre Verweise öffnen die Datei aber nicht mehr. Projektdateien verwaltest du auf der Projektseite.
 - **Cloud-Ressourcen:** Hänge über das Plus-Menü eine unterstützte Cloud-Ressource an, ohne ihren Inhalt in den Chat zu kopieren. Ein Chat, der aus Mail oder einer anderen Anwendung geöffnet wurde, kann bereits eine oder mehrere Ressourcen enthalten. Ressourcenlinks öffnen die zuständige Anwendung in einem neuen Tab. Jeder Lesezugriff und jede Aktion prüft weiterhin deine aktuelle Berechtigung in dieser Anwendung.
-Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Öffnen und Lesen zählen als Nutzung; automatische Metadatenänderungen nicht. Laufende Chats und Chats, die auf eine Bestätigung warten, bleiben aktiv. **Chat wieder öffnen** hält einen Chat aktiv, bis du ihn erneut als fertig markierst. Die Sidebar zeigt alle aktiven Chats und direkt darunter **Fertig** mit dem Zugang zu **Alle Chats**.
+Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Als Nutzung zählen eine gesendete Nachricht, ein Lauf und das Wiederöffnen; Öffnen und Lesen markieren einen Chat nur als gelesen, und automatische Metadatenänderungen zählen ebenfalls nicht. Laufende Chats und Chats, die auf eine Bestätigung warten, bleiben aktiv. **Chat wieder öffnen** hält einen Chat aktiv, bis du ihn erneut als fertig markierst. Die Sidebar zeigt alle aktiven Chats und direkt darunter **Fertig** mit dem Zugang zu **Alle Chats**.
 
 - **Abschließen oder fortsetzen:** Markiere einen Chat als fertig, um ihn unter **Fertig** abzulegen. Stoppe vorher eine laufende Antwort. Öffne ihn wieder oder sende eine neue Nachricht; Dateien, Apps und Anheftung bleiben erhalten.
 - **Bearbeiten oder archivieren:** Öffne die Chatvorschau und wähle **Chat-Einstellungen**, um Namen, Beschreibung, Anheftung oder Archivstatus zu ändern. Die Vorschau öffnet sich beim Darüberfahren, über das Info-Symbol auf Touch-Geräten oder per Tab-Taste.
@@ -115,7 +115,7 @@ vorher abgeschlossen sein.
 ## Chats durchsuchen {icon="search"}
 
 **Alle Chats durchsuchen** öffnet die globale Suche für Titel und Nachrichteninhalte
-deiner Assistent-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
+deiner Assistenten-Chats. **Diesen Chat durchsuchen** begrenzt sie auf Nachrichten im
 geöffneten Chat. Der entfernbare Filter zeigt den Suchbereich. Eine Suchaktion
 in der Palette setzt ihn direkt im offenen Fenster. Entfernst du den Filter,
 suchst du wieder in allen Cloud-Apps.
@@ -125,4 +125,4 @@ Nachrichtentreffer springen zur passenden Stelle im Chat. Mit Cmd/Strg+Enter
 
 **Cmd/Strg+Shift+K** durchsucht den geöffneten Chat, sonst alle Chats.
 **Cmd/Strg+Alt+N** erstellt einen Chat im aktuellen Projekt, falls eines geöffnet ist.
-Außerhalb von Eingabefeldern markiert **D** den inaktiven Chat als erledigt oder öffnet ihn wieder.
+Außerhalb von Eingabefeldern markiert **D** den inaktiven Chat als fertig oder öffnet ihn wieder.

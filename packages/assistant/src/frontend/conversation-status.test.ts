@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiConversation } from "@k2b/cloud/ai";
-import { conversationStatusPresentation, groupConversationsByAge } from "./conversation-view";
+import { conversationStatusPresentation, groupConversationsByAge, isPlainChat } from "./conversation-view";
 
 const conversation = (overrides: Partial<AiConversation> = {}): AiConversation => ({
   id: "chat-1",
@@ -74,5 +74,28 @@ describe("Assistant chat list sections", () => {
     ]);
     // 23:30 UTC on the 7th is already the 8th in Berlin, but still yesterday in UTC.
     expect(sections("UTC")[1]).toEqual(["yesterday", ["late", "yesterday"]]);
+  });
+});
+
+describe("Assistant New chat reuse", () => {
+  test("keeps only a plain chat that nobody shaped yet", () => {
+    expect(isPlainChat(conversation())).toBe(true);
+    // An automatic title is still a plain chat; the next message renames it anyway.
+    expect(isPlainChat(conversation({ titleSource: "auto" }))).toBe(true);
+    expect(isPlainChat(conversation({ allowedTools: null, launchedByAppId: null }))).toBe(true);
+  });
+
+  test.each<[string, Partial<AiConversation>]>([
+    ["a Project chat", { projectId: "project-1" }],
+    ["a chat an app launched", { launchedByAppId: "contacts" }],
+    ["a chat with no tools", { allowedTools: [] }],
+    ["a chat with a narrow tool ceiling", { allowedTools: ["contacts.search"] }],
+    ["a renamed chat", { titleSource: "user" }],
+    ["a chat with a written description", { descriptionSource: "user" }],
+    ["a pinned chat", { pinnedAt: "2026-10-01T00:00:00.000Z" }],
+    ["a done chat", { done: true, isDone: true }],
+    ["an archived chat", { archivedAt: "2026-10-01T00:00:00.000Z" }],
+  ])("creates a new chat instead of reusing %s", (_case, overrides) => {
+    expect(isPlainChat(conversation(overrides))).toBe(false);
   });
 });

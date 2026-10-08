@@ -54,7 +54,9 @@ export default function AssistantEmptyChat(props: {
             size="xs"
             variant="ghost"
             class="assistant-empty-project-trigger"
-            aria-label={t().chooseProject}
+            // The visible choice names the button, so screen readers and voice control hear what is selected; the
+            // purpose follows as its description.
+            title={t().chooseProject}
             disabled={props.choosingProject}
             onClick={props.onChooseProject}
           >

@@ -49,7 +49,10 @@ describe("Assistant empty chat", () => {
     expect(html).toContain("What should we work on?");
     expect(html).toContain("Shared composer");
     expect(html).toContain("Support");
-    expect(html).toContain('aria-label="Choose a Project for this chat"');
+    // The visible choice is the button's name (label in name); the purpose is its description.
+    const trigger = /<button[^>]*assistant-empty-project-trigger[^>]*>/.exec(html)?.[0] ?? "";
+    expect(trigger).toContain('title="Choose a Project for this chat"');
+    expect(trigger).not.toContain("aria-label");
     for (const starter of assistantStarterActions) {
       expect(html).toContain(starter.label);
       expect(starter.prompt.length).toBeGreaterThan(0);

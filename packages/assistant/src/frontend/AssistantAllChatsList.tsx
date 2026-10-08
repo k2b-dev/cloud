@@ -13,6 +13,8 @@ type Props = {
   conversations: AiConversation[];
   projects?: readonly AiProject[];
   archived?: boolean;
+  /** The page is ordered by last use, as Done is; other pages are ordered by their last update. Rows show that time. */
+  orderedByUse?: boolean;
   onOpenConversation: (conversation: AiConversation) => Promise<ConversationOpenResult>;
   onChanged?: () => void;
 };
@@ -106,7 +108,10 @@ export default function AssistantAllChatsList(props: Props) {
               </Link>
             </Show>
             <ConversationStatusMeta conversation={conversation} labels />
-            <Format.RelativeTime class="hidden shrink-0 text-xs text-dimmed sm:block" value={conversation.lastUsedAt} />
+            <Format.RelativeTime
+              class="hidden shrink-0 text-xs text-dimmed sm:block"
+              value={props.orderedByUse ? conversation.lastUsedAt : conversation.updatedAt}
+            />
             <Tooltip.Anchor content={text(props.archived ? "Restore chat" : "Edit chat")}>
               <IconButton
                 size="sm"

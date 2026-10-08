@@ -18,6 +18,8 @@ import type { ArtifactBundle } from "./service";
 type Props = {
   userId: string;
   timeZone: string;
+  /** The server's render time, so hydration builds the same day sections as the server. */
+  renderedAt: string;
   doneCount: number;
   conversations: AiConversation[];
   projects: AiProject[];
@@ -50,6 +52,7 @@ export default function Apps(props: Props) {
         <AssistantSidebar
           conversations={() => sidebar().conversations}
           timeZone={props.timeZone}
+          renderedAt={props.renderedAt}
           doneCount={sidebar().doneCount}
           projects={sidebar().projects}
           onConversationUpdated={() => void reloadSidebar()}

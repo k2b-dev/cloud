@@ -103,6 +103,7 @@ export default ssr<AuthContext>(async (c) => {
         models={models}
         lastModelId={prefs.lastModelId}
         timeZone={getTimeZone(c)}
+        renderedAt={new Date().toISOString()}
         initialLiveCursor={initialLiveCursor}
         initialConversations={initialConversations}
         initialDoneCount={sidebar.doneCount}

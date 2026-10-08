@@ -9,6 +9,7 @@ import {
   Dropdown,
   dialogCore,
   IconButton,
+  type IntentTone,
   type NavigationItem,
   PanelDialog,
   Placeholder,
@@ -29,14 +30,30 @@ import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
-import { type ConversationAgeGroup, conversationStatusPresentation, groupConversationsByAge } from "./conversation-view";
+import {
+  type ConversationAgeGroup,
+  type ConversationStatusTone,
+  conversationStatusPresentation,
+  groupConversationsByAge,
+} from "./conversation-view";
 import { assistantMessages } from "./messages";
 import { useAssistantText } from "./ui-copy";
+
+/** List status tones in the shared navigation's intent vocabulary. */
+const navigationTone = {
+  progress: "neutral",
+  attention: "warning",
+  danger: "danger",
+  accent: "info",
+  muted: "neutral",
+} as const satisfies Record<ConversationStatusTone, IntentTone>;
 
 type AssistantSidebarProps = {
   conversations: Accessor<AiConversation[]>;
   /** The viewer's time zone from the request, so the server and the browser put chats in the same day sections. */
   timeZone: string;
+  /** The server's render time: hydration starts from the same clock and so builds the same day sections. */
+  renderedAt: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
   activeView?: "chat" | "all" | "apps";
@@ -277,9 +294,11 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       .toSorted((left, right) => Date.parse(right.pinnedAt!) - Date.parse(left.pinnedAt!));
   const unpinnedConversations = () => activeConversations().filter((conversation) => !conversation.pinnedAt);
   const chatConversations = () => [...pinnedConversations(), ...unpinnedConversations()];
-  // Day sections follow the clock: a minute tick moves chats into "Yesterday" after midnight.
-  const [now, setNow] = createSignal(new Date().toISOString());
+  // Day sections follow the clock: hydration starts at the server's render time, then the browser's clock takes over
+  // and a minute tick moves chats into "Yesterday" after midnight.
+  const [now, setNow] = createSignal(props.renderedAt);
   onMount(() => {
+    setNow(new Date().toISOString());
     const timer = window.setInterval(() => setNow(new Date().toISOString()), 60_000);
     onCleanup(() => window.clearInterval(timer));
   });
@@ -448,14 +467,18 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   };
   const chatItem = (conversation: AiConversation): NavigationItem => {
     const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
+    const active = activeConversationId() === conversation.id;
+    // The same one marker as the desktop row, in a slot that stays reserved, so a status change keeps the row's size.
+    const marker =
+      conversationStatusPresentation(conversation, locale(), active) ??
+      (conversation.hasActiveSchedule ? { label: text("Active schedule"), icon: "ti ti-clock", tone: "muted" as const } : null);
     return {
       id: `chat:${conversation.id}`,
       label: conversation.title,
-      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : conversation.hasActiveSchedule ? "ti ti-clock" : "ti ti-message",
       href: assistantConversationHref("/app/assistant", conversation.id),
       action: `chat:${conversation.id}`,
-      active: activeConversationId() === conversation.id,
-      description: conversationStatusPresentation(conversation, locale(), activeConversationId() === conversation.id)?.label,
+      active,
+      status: marker ? { icon: marker.icon, label: marker.label, tone: navigationTone[marker.tone] } : null,
       actions: [
         { id: `details:${conversation.id}`, action: `details:${conversation.id}`, label: text("Chat details"), icon: "ti ti-info-circle" },
         ...(!conversation.pinnedAt
@@ -499,7 +522,14 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     items: () => [
       { id: "new", action: "new", label: t().newChat, icon: "ti ti-plus", disabled: creatingConversation() },
       { id: "search", action: "search", label: t().searchChats, icon: "ti ti-search" },
-      ...chatConversations().map(chatItem),
+      ...chatGroups().map(
+        (entry): NavigationItem => ({
+          id: `section:${entry.group}`,
+          label: groupLabel(entry.group),
+          section: true,
+          children: entry.conversations.map(chatItem),
+        }),
+      ),
       {
         id: "done-chats",
         label: text("Done"),

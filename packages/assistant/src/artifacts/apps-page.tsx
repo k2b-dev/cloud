@@ -29,6 +29,7 @@ export default ssr<AuthContext>(async (c) => {
         <Apps
           userId={user.id}
           timeZone={getTimeZone(c)}
+          renderedAt={new Date().toISOString()}
           conversations={sidebar.conversations}
           doneCount={sidebar.doneCount}
           projects={sidebar.projects}
