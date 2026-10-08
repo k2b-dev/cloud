@@ -6,8 +6,9 @@ import type { SenderIdentity } from "../../contracts";
 import type { MailboxDetails } from "../../service/mailbox-details";
 import type { MailboxDetailsHarnessOptions } from "./MailboxDetails.browser-harness";
 
-// Whether the details button is square beside Compose, keeps its place while loading, and whether the dialog takes
-// focus and fits a phone are layout and focus questions, which only a real engine answers.
+// Whether the details button is square beside Compose, fills Compose's place for readers, keeps its place while
+// loading, and whether the dialog takes focus and fits a phone are layout and focus questions, which only a real engine
+// answers.
 const buildHarness = async (): Promise<string> => {
   const ui = new URL("../../../../ui/", import.meta.url).pathname;
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -223,15 +224,55 @@ describe("Mailbox details", () => {
     }, 30_000);
   }
 
+  for (const theme of ["light", "dark"] as const) {
+    test(`gives readers the full Compose slot instead and keeps it steady while loading in ${theme} mode`, async () => {
+      const writer = await load({ theme });
+      const writerSlot = await layoutBox(writer, ".mail-compose-action");
+      const writerBody = await box(writer, ".k2b-app-workspace__sidebar-body");
+      await close(writer);
+      const page = await load({ theme, permission: "read", locale: theme === "dark" ? "de" : "en" });
+      const response = Promise.withResolvers<void>();
+      detailsGate = response.promise;
+      try {
+        const label = theme === "dark" ? "Über dieses Postfach" : "About this mailbox";
+        const button = page.getByRole("button", { name: label, exact: true });
+        await button.waitFor();
+        expect(await page.locator(".mail-compose-action").count()).toBe(0);
+        expect(await page.locator(".mail-details-action").count()).toBe(1);
+        // Exactly where Compose and its info button are for writers: same top, height, and full width, so the sidebar
+        // below starts at the same place for both roles.
+        const slot = await layoutBox(page, ".mail-details-action");
+        const row = await layoutBox(page, ".mail-sidebar-actions");
+        expect(slot.y).toBe(writerSlot.y);
+        expect(slot.height).toBe(writerSlot.height);
+        expect(slot.width).toBe(row.width);
+        expect((await box(page, ".k2b-app-workspace__sidebar-body")).y).toBe(writerBody.y);
+        expect(await button.innerText()).toBe(label);
+
+        await button.click();
+        await page.waitForSelector(".mail-details-action[aria-busy='true'] .ti-loader-2", { state: "attached" });
+        expect(await layoutBox(page, ".mail-details-action")).toEqual(slot);
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("mail-details-action"))).toBe(true);
+
+        response.resolve();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor();
+        await page.keyboard.press("Escape");
+        await dialog.waitFor({ state: "hidden" });
+        await page.waitForFunction(() => document.activeElement?.classList.contains("mail-details-action"));
+        expect(page.errors).toEqual([]);
+      } finally {
+        response.resolve();
+        detailsGate = undefined;
+        await close(page);
+      }
+    }, 30_000);
+  }
+
   test("shows a reader the mailbox, its addresses, and who has which access, without a way to change it", async () => {
     const page = await load({ permission: "read" });
     try {
-      // Readers cannot compose; the details button keeps its place and size.
-      expect(await page.locator(".mail-compose-action").count()).toBe(0);
-      const details = await box(page, ".mail-details-action");
-      expect(details.width).toBe(details.height);
-
-      const dialog = await openDialog(page);
+      const dialog = await openDialog(page, "About this mailbox");
       expect(await dialog.getByRole("heading", { level: 2 }).innerText()).toBe("Support");
       const addresses = await dialog.locator("[data-mailbox-addresses] li").allInnerTexts();
       expect(addresses.map((text) => text.split("\n")[0])).toEqual(["support@example.test", "billing@example.test"]);
@@ -285,7 +326,7 @@ describe("Mailbox details", () => {
           expect(Math.round(button.x + button.width)).toBe(Math.round(row.x + row.width));
           await first.locator(".k2b-navigation__inline-action").click();
         } else {
-          expect(await first.innerText()).toBe("Postfachdetails");
+          expect(await first.innerText()).toBe("Über dieses Postfach");
           await first.locator(".k2b-navigation__control").click();
         }
         const dialog = page.getByRole("dialog");

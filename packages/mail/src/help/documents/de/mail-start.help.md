@@ -52,7 +52,7 @@ Nach der Einrichtung erkennt Mail die Ordner des Anbieters und beginnt mit der S
 
 Die linke Navigation enthält:
 
-- **Verfassen** ganz oben, wenn du senden darfst, und daneben die Schaltfläche **Postfachdetails** (i). Auf dem Smartphone stehen beide in der ersten Zeile des App-Menüs; wer nur lesen darf und nicht verfassen kann, findet die Postfachdetails dort als eigene Zeile.
+- **Verfassen** ganz oben, wenn du senden darfst, und daneben die Schaltfläche **Postfachdetails** (i). Wenn du das Postfach nur lesen darfst, steht dort **Über dieses Postfach** und öffnet dieselben Details. Auf dem Smartphone stehen sie in der ersten Zeile des App-Menüs.
 - **Nachverfolgung** mit Handlungsbedarf, Wartet auf Antwort, Später und Erledigt.
 - **Zuordnung** mit Mir zugewiesen und Nicht zugewiesen.
 - **Mail** mit Posteingang, Entwürfe, Geplant, Gesendet und einer ausklappbaren Mehr-Gruppe.
@@ -63,7 +63,7 @@ Die linke Navigation enthält:
 - **Postfachwerkzeuge** für Synchronisierung, Status, Automatisierungen, Mailinglisten, externe Bilder, geteilte Links und den Umgang des Browsers mit E-Mail-Links. Die verfügbaren Werkzeuge richten sich nach deiner Berechtigung.
 - **Einstellungen** am unteren Rand, sofern deine Berechtigung den Zugriff erlaubt.
 
-**Postfachdetails** zeigt allen, die das Postfach lesen dürfen, denselben Überblick: seine Adressen, jeweils mit einer Schaltfläche zum Kopieren, die Verbindung und wann Mail zuletzt synchronisiert hat, die Zahl der Ordner, deinen eigenen Zugriff und wer welchen Zugriff hat. Bei Gruppen siehst du, welche Personen die Gruppe erreicht, soweit dein Konto sie sehen darf. Gastkonten sehen nur ihren eigenen Zugriff und den ihrer Gruppen sowie, wie viele weitere Einträge es gibt. Der Dialog ändert nichts; Personen mit Postfach-Adminrechten wählen **Zugriff verwalten** und machen unter **Einstellungen > Zugriff** weiter.
+**Postfachdetails** (bei reinem Lesezugriff **Über dieses Postfach**) zeigt allen, die das Postfach lesen dürfen, denselben Überblick: seine Adressen, jeweils mit einer Schaltfläche zum Kopieren, die Verbindung und wann Mail zuletzt synchronisiert hat, die Zahl der Ordner, deinen eigenen Zugriff und wer welchen Zugriff hat. Bei Gruppen siehst du, welche Personen die Gruppe erreicht, soweit dein Konto sie sehen darf. Gastkonten sehen nur ihren eigenen Zugriff und den ihrer Gruppen sowie, wie viele weitere Einträge es gibt. Der Dialog ändert nichts; Personen mit Postfach-Adminrechten wählen **Zugriff verwalten** und machen unter **Einstellungen > Zugriff** weiter.
 
 Die mittlere Liste zeigt eine Zeile pro Unterhaltung. Der Lesebereich gruppiert die Nachrichten dieser Unterhaltung und ordnet aussagekräftige Änderungen an Status, Zuständigkeit, Tags, Zusammenfassung und Workflow zeitlich ein. Technische Verarbeitungsvorgänge bleiben aus dem Lesefluss heraus. Über **Unterhaltungsdetails** öffnest du Teamkontext, lokale Tags, Zuständigkeit, Kommentare, Erinnerungen und die ausführlichere Liste der letzten Aktivitäten. Wenn du mehr Platz zum Lesen brauchst, kannst du die Unterhaltungsliste ausblenden.
 
