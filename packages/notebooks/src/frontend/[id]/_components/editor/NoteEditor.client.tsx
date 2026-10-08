@@ -444,7 +444,8 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   addExtension(
     EditorView.theme({
       ".cm-editor": { minHeight: "100%" },
-      ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
+      // The content pads the other half of the inline inset (see `theme.ts`).
+      ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem 0.5rem" },
     }),
   );
 

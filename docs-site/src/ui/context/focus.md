@@ -27,9 +27,8 @@ browser's default ring; the container still draws it inside.
 A scrolling area that takes focus itself draws its ring inside its own edge.
 This covers a `ScrollArea`, which Firefox focuses when it holds no focusable
 content, and the keyboard-scrollable body of a `DataTable`, whose ring stays
-visible above a sticky header or footer. A Markdown table is the exception:
-its first and last columns line up with the prose, so its ring sits just
-outside its edge, where it never covers text.
+visible above a sticky header or footer. A wide Markdown table does the same:
+its ring sits in the space between its edge and the text.
 
 A filled control, such as a primary or danger button, a checked checkbox, or
 a checked switch, draws its inside ring in the color of its label or check

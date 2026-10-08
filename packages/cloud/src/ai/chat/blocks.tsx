@@ -313,7 +313,12 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
                         </pre>
                       }
                     >
-                      <div class="max-h-72 overflow-auto text-xs text-secondary" role="region" tabIndex={0} aria-label={detail.label}>
+                      <div
+                        class="-mx-2 max-h-72 overflow-auto px-2 text-xs text-secondary"
+                        role="region"
+                        tabIndex={0}
+                        aria-label={detail.label}
+                      >
                         <MarkdownView class="cloud-ai-approval-detail" markdown={detail.value} headingScale="compact" allowImages={false} />
                       </div>
                     </Show>

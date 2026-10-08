@@ -92,6 +92,18 @@ render(
     }),
   pdf,
 );
+// A wide table in a phone-sized column.
+const wideTable = app.appendChild(document.createElement("section"));
+wideTable.id = "wide-table";
+wideTable.style.cssText = "width:280px;margin-inline:24px";
+const months = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August"];
+render(
+  () =>
+    createComponent(MarkdownView, {
+      markdown: "Vorher.\\n\\n| Kennzahl | " + months.join(" | ") + " |\\n| --- |" + " --: |".repeat(8) + "\\n| Reichweite |" + " 12.400 |".repeat(8),
+    }),
+  wideTable,
+);
 // A plain excerpt with its expander, plain JSON, and a plain table in a host that bounds and stretches it.
 const plainExcerpt = app.appendChild(document.createElement("section"));
 plainExcerpt.id = "plain-excerpt";
@@ -248,7 +260,7 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(quote).toEqual(["rgba(0, 0, 0, 0)", "0px", "3px", strong]);
   });
 
-  test("MarkdownView tables are hairlines without a frame, fill or zebra, flush with the prose", async () => {
+  test("MarkdownView tables are hairlines without a frame, fill or zebra, with their outer text flush with the prose", async () => {
     const table = await page.evaluate(() => {
       const style = (element: Element) => getComputedStyle(element);
       const wrapper = document.querySelector("article .k2b-content-markdown__table")!;
@@ -271,6 +283,16 @@ describe("@k2b/ui content previews apply their own styles", () => {
         end:
           paragraph.right -
           (lastHeader.right - Number.parseFloat(style(document.querySelector("article thead th:last-child")!).paddingRight)),
+        // The table bleeds past the prose by the cells' inline padding, so its lines reach as far past the outer text.
+        bleed: [paragraph.left - wrapper.getBoundingClientRect().left, wrapper.getBoundingClientRect().right - paragraph.right],
+        lines: rows.map((row) => {
+          const first = cells(row)[0]!.getBoundingClientRect();
+          const last = cells(row).at(-1)!.getBoundingClientRect();
+          const box = wrapper.getBoundingClientRect();
+          return [first.left - box.left, box.right - last.right];
+        }),
+        pads: [header, ...rows.flatMap(cells)].map((cell) => [style(cell).paddingLeft, style(cell).paddingRight]),
+        above: Number.parseFloat(style(header).paddingTop),
       };
     });
     const tokens = await page.evaluate(() => ({
@@ -287,10 +309,14 @@ describe("@k2b/ui content previews apply their own styles", () => {
     // WebKit rounds the column widths to its layout unit of 1/64 px: here the last column ends 1/32 px past the
     // table, which is as wide as the prose.
     expect(Math.abs(table.end)).toBeLessThanOrEqual(browserName === "webkit" ? 1 / 32 : 0);
+    expect(table.bleed.map((value) => Math.round(value * 10) / 10 + 0)).toEqual([8, 8]);
+    expect(table.lines.flat().map((value) => Math.round(value * 10) / 10 + 0)).toEqual(table.lines.flat().map(() => 0));
+    expect(new Set(table.pads.flat())).toEqual(new Set(["8px"]));
+    expect(table.above).toBe(8);
   });
 
   for (const host of ["article", "#inset"]) {
-    test(`a focused Markdown table in ${host === "article" ? "a plain host" : "a clipping host"} draws its ring outside its flush columns`, async () => {
+    test(`a focused Markdown table in ${host === "article" ? "a plain host" : "a clipping host"} draws its ring inside its bleed`, async () => {
       const wrapper = page.locator(`${host} .k2b-content-markdown__table`);
       await page.focus("#before");
       for (let step = 0; step < 10 && !(await wrapper.evaluate((element) => element === document.activeElement)); step++) {
@@ -305,13 +331,36 @@ describe("@k2b/ui content previews apply their own styles", () => {
           visible: element.matches(":focus-visible"),
           outline: [style.outlineStyle, style.outlineWidth],
           offset: Number.parseFloat(style.outlineOffset),
-          // The columns stay flush with the wrapper, so an inside ring would cover their text.
-          flush: Math.round(text.getBoundingClientRect().left - box.left),
+          // The text starts a bleed inside the wrapper, so an inside ring never covers it and no host clips it.
+          inset: Math.round(text.getBoundingClientRect().left - box.left),
         };
       });
-      expect(ring).toEqual({ visible: true, outline: ["solid", "2px"], offset: 2, flush: 0 });
+      expect(ring).toEqual({ visible: true, outline: ["solid", "2px"], offset: -2, inset: 8 });
     });
   }
+
+  test("a wide MarkdownView table scrolls in itself, bleed included", async () => {
+    const wrapper = page.locator("#wide-table .k2b-content-markdown__table");
+    await wrapper.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    const scroll = await wrapper.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const prose = element.parentElement!.querySelector("p")!.getBoundingClientRect();
+      const last = element.querySelector("tbody td:last-child")!;
+      const cell = last.getBoundingClientRect();
+      return {
+        scrolls: element.scrollWidth > element.clientWidth,
+        bleed: [Math.round(prose.left - box.left), Math.round(box.right - prose.right)],
+        // Scrolled to the end, the last column keeps its band past the text: nothing is cut off.
+        end: Math.round(box.right - cell.right),
+        pad: getComputedStyle(last).paddingRight,
+      };
+    });
+    expect({ ...scroll, end: Math.abs(scroll.end) }).toEqual({ scrolls: true, bleed: [8, 8], end: 0, pad: "8px" });
+    // A scrolling host with at least the bleed as inline padding does not scroll sideways.
+    expect(await page.locator("#inset").evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  });
 
   test("MarkdownView quotes sit on the prose edge and wrap long tokens", async () => {
     const quote = await page.evaluate(() => {
@@ -321,7 +370,8 @@ describe("@k2b/ui content previews apply their own styles", () => {
       return {
         // `@k2b/ui` does not reset the page, so the browser's quote indent must not apply.
         margin: [getComputedStyle(long).marginLeft, getComputedStyle(long).marginRight],
-        fits: long.scrollWidth <= long.clientWidth && article.scrollWidth <= article.clientWidth,
+        // The quote wraps inside the column; only a table's bleed may reach past it.
+        fits: long.scrollWidth <= long.clientWidth && long.getBoundingClientRect().right <= article.getBoundingClientRect().right,
       };
     });
     expect(quote).toEqual({ margin: ["0px", "0px"], fits: true });

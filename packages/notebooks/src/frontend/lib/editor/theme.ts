@@ -27,9 +27,13 @@ const baseEditorCSS = EditorView.theme({
     maxWidth: "100%",
     margin: "0 auto",
   },
+  // The content clips sideways, so it pads the table bleed: a Markdown table
+  // widget reaches into this padding, and its lines and hover extend past the
+  // text as in the Book.
   ".cm-content": {
     maxWidth: "100%",
     overflowX: "hidden",
+    paddingInline: "0.5rem",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",

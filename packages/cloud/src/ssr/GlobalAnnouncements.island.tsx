@@ -102,7 +102,7 @@ export default function GlobalAnnouncements(props: Props) {
                 <MarkdownView
                   trustedHtml={banner.bodyHtml}
                   headingScale="compact"
-                  class="max-h-36 overflow-y-auto overscroll-contain pr-1 [&_p]:my-0"
+                  class="-mx-2 max-h-36 overflow-y-auto overscroll-contain pl-2 pr-3 [&_p]:my-0"
                 />
               </NoticeCard>
               <IconButton size="sm" label={t().dismissBanner} onClick={() => dismissBanner(banner.version)}>

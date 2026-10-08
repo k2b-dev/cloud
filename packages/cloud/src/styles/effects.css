@@ -112,7 +112,7 @@
 }
 
 .assistant-markdown-block :where(.md-table-wrap) {
-  margin-block: 1.125rem;
+  margin-block: calc(1.125rem - var(--md-table-bleed)) 1.125rem;
 }
 
 .assistant-markdown-block :where(hr) {
@@ -669,9 +669,10 @@
   padding: 0;
 }
 
+/* The shared wrapper clips without becoming a scroll box, so scrolling a cell
+   into view cannot shift the table under its column bands. */
 .help-document .md-table-wrap {
-  overflow: hidden;
-  margin-block: 0.875rem 1.5rem;
+  margin-block: calc(0.875rem - var(--md-table-bleed)) 1.5rem;
 }
 
 .help-document .md-table-wrap > .md-table {
@@ -701,7 +702,7 @@
   background: transparent;
   box-shadow: none;
   overflow-wrap: break-word;
-  padding: 0.65rem 0.75rem;
+  padding: 0.65rem var(--md-table-bleed);
   font-size: 0.78rem;
   line-height: 1.45;
   word-break: normal;
