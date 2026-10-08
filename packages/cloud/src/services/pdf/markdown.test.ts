@@ -88,6 +88,24 @@ describe("Markdown PDF renderer", () => {
     expect(html).not.toContain("Please report this to");
   });
 
+  test("prints links as calm text links and reference pills in every preset, without hover", () => {
+    for (const templateId of ["document", "report", "compact"] as const) {
+      const html = buildMarkdownPdfHtml({
+        markdown: "See [the plan](https://example.test/plan), [Offer.pdf](/files/Offer.pdf) and ada@example.test.",
+        templateId,
+      });
+
+      expect(html).toContain('<a href="https://example.test/plan" class="k2b-text-link" data-link="web">the plan<i ');
+      expect(html).toContain(
+        '<a href="/files/Offer.pdf" class="k2b-reference" data-reference="pdf" aria-label="PDF: Offer.pdf"><i class="k2b-reference__icon ti ti-file-type-pdf" aria-hidden="true"></i>Offer.pdf</a>',
+      );
+      expect(html).toContain('<a href="mailto:ada@example.test" class="k2b-text-link" data-link="mail">');
+      expect(html).toContain("--link-accent:");
+      expect(html).toContain("a.k2b-reference { padding:");
+      expect(html).not.toContain(":hover");
+    }
+  });
+
   test("prints info blocks as the shared notice in every preset", () => {
     for (const templateId of ["document", "report", "compact"] as const) {
       const html = buildMarkdownPdfHtml({ markdown: ":::warning Before printing\nCheck <the> **totals**.\n:::", templateId });

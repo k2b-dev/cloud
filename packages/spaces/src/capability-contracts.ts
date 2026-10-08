@@ -23,6 +23,7 @@ import {
   CalendarInvitationResponseSchema,
   CalendarInvitationResponseStateSchema,
   CalendarParticipationStatusSchema,
+  MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH,
   SpacesMailDestinationSchema,
 } from "./integration";
 import { CompletionInputSchema } from "./work-contracts";
@@ -85,6 +86,7 @@ export const TaskDependentDataSchema = SpaceTaskDependentSchema.extend({
   dependent: SpaceTaskDependentSchema.shape.dependent.extend({ ref: resourceRef("spaces.item") }).strict(),
 }).strict();
 export const TaskDependentListDataSchema = z.array(TaskDependentDataSchema).max(100);
+export const TaskDependentListInputSchema = z.object({ itemId: ItemIdSchema, ...PageInputShape, limit: LimitSchema.default(100) }).strict();
 export const TaskDependencyRemoveDataSchema = z
   .object({ itemId: ResourceShortIdSchema, blockerItemId: ResourceShortIdSchema, removed: z.literal(true) })
   .strict();
@@ -268,6 +270,7 @@ const ItemListBaseDataShape = {
   descriptionTruncated: z.boolean(),
   completedAt: TimestampSchema.nullable(),
   assignees: z.array(z.object({ id: UuidSchema, displayName: z.string().min(1).max(100) }).strict()).max(3),
+  assigneeCount: z.number().int().nonnegative().describe("Total number of assignees; assignees may contain fewer entries."),
   tags: z.array(z.object({ id: ResourceShortIdSchema, name: z.string().min(1).max(50), color: z.string().min(1).max(20) }).strict()).max(3),
   relationsTruncated: z.boolean(),
   createdAt: TimestampSchema,
@@ -535,10 +538,7 @@ export const EventInvitationPrepareDataSchema = z
     sequence: z.number().int().nonnegative(),
     filename: z.string().min(1).max(255),
     contentType: z.string().min(1).max(255),
-    calendar: z
-      .string()
-      .min(1)
-      .max(96 * 1024),
+    calendar: z.string().min(1).max(MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH),
   })
   .strict();
 export const EventInvitationCommitInputSchema = z

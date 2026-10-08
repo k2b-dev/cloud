@@ -1,69 +1,8 @@
 import { logger, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
-import { notebookServiceMessages } from "./messages";
 
 const log = logger("notebooks:links");
-
-// ==========================
-// Renderer post-process
-// ==========================
-
-/**
- * Markdown-body scheme for internal note references:
- *
- *   [Some Title](note://k2s8s6)
- *
- * `marked` renders that as a plain `<a href="note://k2s8s6">`. The
- * post-processor below detects the scheme and rewrites it into a
- * navigable URL plus a pill-style `<a class="note-link">`. The
- * `noteShortIdToHref` map is built upstream (in the page handler) by
- * resolving every referenced short-id to a `(notebookShortId, noteShortId)`
- * pair — that lookup is one batched SQL query, not a per-link N+1.
- *
- * Anchored on the `note://` href so non-note `<a>` tags pass through.
- * Tolerant of attribute order: `marked` always emits `<a href="...">`
- * first but other content-source pipelines may inject classes or `target`
- * before `href`. We anchor on `href="note://<id>"` and re-emit the full
- * tag from scratch.
- */
-const NOTE_LINK_HTML_REGEX = /<a\s[^>]*\bhref="note:\/\/([0-9a-zA-Z]{6})"[^>]*>([\s\S]*?)<\/a>/g;
-const MARKED_NOTE_LINK_HTML_REGEX =
-  /<a\s[^>]*\bhref="note:\/\/([0-9a-zA-Z]{6})"[^>]*class="md-link-widget[^"]*">\s*<span class="md-link-label[^"]*">\[([\s\S]*?)\]<\/span>[\s\S]*?<\/a>/g;
-
-const NOTE_PILL_CLASS =
-  "cm-note-link note-link inline-flex items-center gap-1 rounded-md bg-blue-50/80 px-1.5 py-0.5 text-blue-700 no-underline align-baseline font-medium shadow-[var(--ui-shadow-surface)] hover:bg-blue-100/80 dark:bg-blue-950/35 dark:text-blue-300 dark:hover:bg-blue-900/35";
-
-const renderNotePill = (href: string, label: string): string =>
-  `<a class="${NOTE_PILL_CLASS}" href="${href}">` + `<i class="ti ti-connection text-xs"></i>` + `<span>${label}</span>` + `</a>`;
-
-const renderBrokenNotePill = (shortId: string, label: string, locale?: string): string =>
-  `<a class="cm-note-link note-link note-link-broken inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 no-underline align-baseline font-medium" title="${notebookServiceMessages.resolve(locale ? [locale] : []).t.noteNotFound({ id: shortId })}">` +
-  `<i class="ti ti-link-off text-xs"></i>` +
-  `<span>${label}</span>` +
-  `</a>`;
-
-/**
- * Rewrites `<a href="note://<shortId>">` into a navigable pill-style
- * link. `noteShortIdToHref` carries the resolved URL for every short-id
- * — when a short-id isn't in the map (deleted note, cross-notebook
- * reference the caller couldn't resolve), the link is rendered with a
- * "broken" red style so the user spots dangling references at a glance.
- *
- * Run this AFTER `markdown.render(...)`. The map is computed once per
- * page render (see `[id]/page.tsx`) and lives only as long as the
- * SSR call.
- */
-export const transformNoteLinks = (html: string, params: { noteShortIdToHref: Map<string, string>; locale?: string }): string =>
-  html
-    .replace(MARKED_NOTE_LINK_HTML_REGEX, (_match, shortId: string, label: string) => {
-      const href = params.noteShortIdToHref.get(shortId);
-      return href ? renderNotePill(href, label) : renderBrokenNotePill(shortId, label, params.locale);
-    })
-    .replace(NOTE_LINK_HTML_REGEX, (_match, shortId: string, label: string) => {
-      const href = params.noteShortIdToHref.get(shortId);
-      return href ? renderNotePill(href, label) : renderBrokenNotePill(shortId, label, params.locale);
-    });
 
 // ==========================
 // Types

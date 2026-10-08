@@ -198,9 +198,15 @@ describe("MessageRow", () => {
     // A relative link would lead somewhere else on every page that shows the conversation.
     expect(textOf(html)).toContain("rel proto query bare");
     expect(html).not.toMatch(/href="(?:\/|\?|example\.com)/);
-    expect(html).toContain('<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">docs</a>');
-    expect(html).toContain('<a href="mailto:team@example.com" target="_blank" rel="noopener noreferrer">mail</a>');
-    expect(html).toContain('<a href="https://example.org" target="_blank" rel="noopener noreferrer">https://example.org</a>');
+    expect(html).toContain(
+      '<a href="https://example.com/docs" class="k2b-text-link" data-link="web" target="_blank" rel="noopener noreferrer">docs<i class="k2b-text-link__external ti ti-arrow-up-right" aria-hidden="true"></i></a>',
+    );
+    expect(html).toContain(
+      '<a href="mailto:team@example.com" class="k2b-text-link" data-link="mail" target="_blank" rel="noopener noreferrer">mail</a>',
+    );
+    expect(html).toContain(
+      '<a href="https://example.org" class="k2b-text-link" data-link="web" target="_blank" rel="noopener noreferrer">https://example.org<i class="k2b-text-link__external ti ti-arrow-up-right" aria-hidden="true"></i></a>',
+    );
     // Images never load from a message; their description stays.
     expect(textOf(html)).toContain("chart");
     expect(html).toContain("<strong>bold</strong> <em>italic</em> <code>code</code>");

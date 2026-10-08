@@ -23,7 +23,7 @@ import { taskListExtension } from "./extensions/task-list";
 type MarkdownProfile = "content" | "help";
 type LinkStyle = "widget" | "plain";
 
-const createMarked = (profile: MarkdownProfile, links: LinkStyle, infoBlocks: MarkedExtension) => {
+const createMarked = (profile: MarkdownProfile, links: LinkStyle, infoBlocks: MarkedExtension, locale?: string) => {
   const marked = new Marked();
 
   marked.use({
@@ -37,7 +37,8 @@ const createMarked = (profile: MarkdownProfile, links: LinkStyle, infoBlocks: Ma
   marked.use(taskListExtension());
   marked.use(tablesExtension());
   // Plain links keep marked's own renderer: an anchor around the link text.
-  if (links === "widget") marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank" }));
+  // Cloud links are calm reference pills and quiet web links from `@k2b/ui`.
+  if (links === "widget") marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank", locale }));
   marked.use(imagesExtension());
   marked.use(katexExtension());
   marked.use(codeExtension());
@@ -58,7 +59,7 @@ const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale
   const byStyle = instances.get(infoBlocks) ?? new Map<string, Marked>();
   instances.set(infoBlocks, byStyle);
   const key = `${profile}:${links}`;
-  const instance = byStyle.get(key) ?? createMarked(profile, links, infoBlocks);
+  const instance = byStyle.get(key) ?? createMarked(profile, links, infoBlocks, locale);
   byStyle.set(key, instance);
   return instance;
 };
@@ -66,7 +67,7 @@ const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale
 const marked = markedFor("content");
 
 export type MarkdownRenderOptions = {
-  /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. */
+  /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. The default renders references to Cloud content as calm pills and web links as quiet text links. */
   links?: LinkStyle;
   /** Request locale for the screen-reader names of untitled info blocks. Defaults to English on the server and the page language in the browser. */
   locale?: string;
@@ -111,7 +112,15 @@ const sanitizeRenderedHtml = (html: string): string =>
     ],
     allowedAttributes: {
       "*": ["aria-hidden", "aria-label", "class", "data-help-icon", "data-tone", "id", "title"],
-      a: ["href", "name", "rel", "target", "title"],
+      a: [
+        "href",
+        "name",
+        "rel",
+        "target",
+        "title",
+        { name: "data-link", multiple: false, values: ["web", "mail"] },
+        { name: "data-reference", multiple: false, values: ["pdf", "image", "design", "file", "note", "heading", "task", "page"] },
+      ],
       annotation: ["encoding"],
       aside: [{ name: "role", multiple: false, values: ["note"] }],
       code: ["class"],

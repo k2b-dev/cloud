@@ -14,10 +14,12 @@ Use `MarkdownEditor` when the same surface also edits Markdown. Use the [Markdow
 import { MarkdownEditor, MarkdownView, renderSafeMarkdown } from "@k2b/ui";
 ```
 
-Renderers with their own Markdown pipeline import the info-block helpers:
+Renderers with their own Markdown pipeline import the info-block and link
+helpers:
 
 ```ts
 import { markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
+import { markdownLinkReference, markStandaloneLinks, renderMarkdownLink } from "@k2b/ui";
 ```
 
 ## Render Markdown
@@ -94,13 +96,74 @@ given, and `body` uses `\n`. `bodyHtml` crosses a trust boundary: the caller
 sanitizes it. `renderSafeMarkdown(source, { locale })` names untitled blocks
 in that locale; `MarkdownView` passes the inherited render locale.
 
-Prose stays flat on the surrounding surface. Links use the action colour and
-an underline. Inline code and fenced code blocks are text on a light fill
+Prose stays flat on the surrounding surface. Links follow
+[Links and references](#links-and-references). Inline code and fenced code blocks are text on a light fill
 without a frame; quotes are marked by a rule at their start edge. Inside a
 tinted group such as a dialog section, code fills follow
 `--k2b-field-surface`, so they stay visible. Any other tinted host sets
 `--k2b-field-surface` to its base surface, as it does for field wells.
 Long words and URLs wrap instead of widening the page.
+
+### Links and references
+
+Every rendered link is one of two kinds, and the link destination decides
+which:
+
+- A **reference** points to content of the host: any relative URL that stays
+  on the host. `#anchor` is a heading of the same document; a relative URL
+  whose last path segment has a file extension is a file; any other relative
+  URL is a page. A reference is
+  a calm pill: a neutral fill, the text in the prose colour, and an icon whose
+  colour names the type. PDFs are red, images violet, design files orange,
+  notes blue-gray, headings and pages gray, and tasks green. Any other file
+  shows the icon of its file family in the muted text colour.
+- A **web link** (an absolute URL, or a relative one that a browser resolves
+  to another host, such as `//host` or `/\host`) is prose text with a thin
+  underline in the link accent and a small ↗. A **mail link** (`mailto:`,
+  `tel:`) is the same without the arrow.
+
+A link around an image is the image: a plain anchor without pill or arrow,
+named by the image's alternative text.
+
+A reference's accessible name starts with its type in the render locale, as
+in "PDF: Brand-2026.pdf" or "Überschrift: Akzentfarbe". The type names are
+PDF, Image, Design file, File, Note, Heading, Task, and Page.
+
+Hover darkens only a pill's fill and strengthens only a web link's underline;
+keyboard focus draws the shared focus outline. No state changes font weight,
+padding, or borders, so no text moves. A long name wraps inside its pill,
+which repeats its padding and rounded corners on every line. In forced-colour
+modes, where the fill disappears, pills are underlined.
+
+The link accent is the optional host hook `--k2b-link-accent`; it defaults to
+`--k2b-action`. The reference colours are the tokens `--k2b-reference-surface`,
+`--k2b-reference-surface-hover`, `--k2b-reference-pdf`, `--k2b-reference-image`,
+`--k2b-reference-design`, `--k2b-reference-note`, `--k2b-reference-heading`,
+and `--k2b-reference-task`, with light and dark values. On the default
+surfaces, pill text, muted labels, and sizes keep at least 4.5:1 and icons at
+least 3:1, also on the hover fill.
+
+A renderer that knows more about a link than its URL renders it with
+`renderMarkdownLink({ href, html, reference, standalone, locale })`. The
+`reference` names the kind (`file`, `note`, `heading`, `task`, or `page`) and
+optionally the file's name, which decides its type, a formatted `size`, and
+for a heading in another document that document's title, shown first as
+"Notes › Heading". A file shows its size only when the link stands alone on
+its line, as in a list of files; `markStandaloneLinks(token, set)` marks those
+links from `walkTokens` of a renderer with GFM line breaks. Without a
+`reference`, the helper renders a web or mail link. `markdownLinkReference(href)`
+is the classification `MarkdownView` uses. URL classification never yields a
+task: the `task` kind exists for renderers that know a link points to a task,
+and no built-in renderer produces it yet, so a link to a Spaces item renders as
+a page. `html` crosses a trust boundary:
+the caller sanitizes it, and a sanitizer keeps the `class`, `aria-label`,
+`data-reference`, and `data-link` attributes.
+
+A renderer that builds the pill element itself, such as an editor widget,
+reuses the same parts: `markdownReferenceType(reference, text)` gives the
+type, `markdownReferenceIcon(type, fileName)` its Tabler glyph, and
+`markdownReferenceTypeLabel(type, locale)` the localized type name that
+starts the accessible name.
 
 ### Highlight known inline tokens
 

@@ -113,7 +113,7 @@ describe("query block previews", () => {
   test("previews share Book typography without its page-sized container spacing", async () => {
     const app = await mount(async () => ({
       ...response(),
-      blocks: [{ line: 3, html: '<ul><li>Item</li></ul><table><tr><td>Value</td></tr></table><a href="/note">Note</a>' }],
+      blocks: [{ line: 3, html: "<ul><li>Item</li></ul><table><tr><td>Value</td></tr></table>" }],
     }));
     try {
       const style = document.createElement("style");
@@ -126,7 +126,6 @@ describe("query block previews", () => {
       expect(getComputedStyle(preview).padding).toBe("0px");
       expect(getComputedStyle(preview.querySelector("ul")!).listStyle).toBe("disc");
       expect(getComputedStyle(preview.querySelector("table")!).borderCollapse).toBe("collapse");
-      expect(getComputedStyle(preview.querySelector("a")!).textDecoration).toBe("underline");
     } finally {
       app.cleanup();
     }

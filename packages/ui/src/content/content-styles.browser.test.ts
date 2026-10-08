@@ -191,7 +191,7 @@ beforeAll(async () => {
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style><style>#plain-sheet .stretched{flex:1 1 auto;min-height:0}.notice-host :where(p){margin-block:14px}</style></head>` +
-      `<body class="k2b-ui"><button id="before">Before</button><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span><span id="text" style="color:var(--k2b-text)"></span>` +
+      `<body class="k2b-ui"><button id="before">Before</button><main id="app" style="padding:24px"></main><span id="text" style="color:var(--k2b-text)"></span>` +
       `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
       `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
   );
@@ -250,7 +250,7 @@ describe("@k2b/ui content previews apply their own styles", () => {
     ]);
   });
 
-  test("MarkdownView underlines links and sets code as text on a fill without a frame", async () => {
+  test("MarkdownView links are prose text with an underline, and code is text on a fill without a frame", async () => {
     const styles = await page.evaluate(() => {
       const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
       const link = style("article a");
@@ -258,15 +258,16 @@ describe("@k2b/ui content previews apply their own styles", () => {
       const block = style("article pre");
       return {
         link: [link.color, link.textDecorationLine],
+        prose: style("article p").color,
         inline: [inline.color, inline.backgroundColor],
         fenced: [style("article pre code").color, style("article pre code").backgroundColor],
         block: [block.color, block.backgroundColor, block.borderTopColor],
-        action: style("#action").color,
         text: style("#text").color,
         fill: style("#fill").backgroundColor,
       };
     });
-    expect(styles.link).toEqual([styles.action, "underline"]);
+    // A web link keeps the prose colour; its underline, not colour alone, marks it.
+    expect(styles.link).toEqual([styles.prose, "underline"]);
     expect(styles.inline).toEqual([styles.text, styles.fill]);
     expect(styles.block).toEqual([styles.text, styles.fill, "rgba(0, 0, 0, 0)"]);
     expect(styles.fenced).toEqual([styles.text, "rgba(0, 0, 0, 0)"]);

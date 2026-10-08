@@ -1838,14 +1838,94 @@
   border-top: 1px solid var(--k2b-border);
 }
 
-/* Links carry an underline as well as the action colour, so they never rely
-   on colour alone. Inline code is text on a light fill, not a second link
-   colour. */
-.k2b-ui .k2b-content-markdown a {
-  color: var(--k2b-action);
-  text-decoration: underline;
+/* Web and mail links stay prose text with a thin underline in the link
+   accent, so they never rely on colour alone; a web link adds a small arrow.
+   Hover strengthens only the underline. Inline code is text on a light fill,
+   not a second link colour. */
+.k2b-ui .k2b-content-markdown a,
+.k2b-ui .k2b-text-link {
+  color: inherit;
+  text-decoration-line: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 0.2em;
+  text-underline-offset: 0.22em;
+  text-decoration-color: color-mix(in srgb, var(--k2b-link-accent) 55%, transparent);
+  transition: text-decoration-color 120ms ease;
+}
+
+.k2b-ui :is(.k2b-content-markdown a, .k2b-text-link):hover {
+  text-decoration-color: var(--k2b-link-accent);
+  text-decoration-thickness: 1.5px;
+}
+
+.k2b-ui .k2b-text-link__external {
+  position: relative;
+  top: -0.05em;
+  display: inline-block;
+  margin-inline-start: 0.15em;
+  color: var(--k2b-link-accent);
+  font-size: 0.75em;
+  text-decoration: none;
+}
+
+/* A reference to content of the host is a calm pill: a neutral fill, prose
+   text, and an icon whose colour names the type. Hover darkens only the
+   fill and focus draws an outline, so no state moves text. A long name
+   wraps inside the pill, which repeats its padding on every line. */
+.k2b-ui .k2b-reference,
+.k2b-ui .k2b-content-markdown a.k2b-reference {
+  padding: 0.125em 0.375em;
+  border-radius: 0.375rem;
+  background: var(--k2b-reference-surface);
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-color 120ms ease;
+}
+
+.k2b-ui .k2b-reference:hover,
+.k2b-ui .k2b-content-markdown a.k2b-reference:hover {
+  background: var(--k2b-reference-surface-hover);
+}
+
+.k2b-ui :is(.k2b-reference, .k2b-text-link):focus-visible {
+  border-radius: 0.375rem;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-reference__icon {
+  position: relative;
+  top: 0.06em;
+  margin-inline-end: 0.3em;
+  color: var(--k2b-reference-icon, var(--k2b-text-muted));
+}
+
+.k2b-ui .k2b-reference[data-reference="pdf"] { --k2b-reference-icon: var(--k2b-reference-pdf); }
+.k2b-ui .k2b-reference[data-reference="image"] { --k2b-reference-icon: var(--k2b-reference-image); }
+.k2b-ui .k2b-reference[data-reference="design"] { --k2b-reference-icon: var(--k2b-reference-design); }
+.k2b-ui .k2b-reference[data-reference="note"] { --k2b-reference-icon: var(--k2b-reference-note); }
+.k2b-ui .k2b-reference:is([data-reference="heading"], [data-reference="page"]) { --k2b-reference-icon: var(--k2b-reference-heading); }
+.k2b-ui .k2b-reference[data-reference="task"] { --k2b-reference-icon: var(--k2b-reference-task); }
+
+.k2b-ui :is(.k2b-reference__document, .k2b-reference__size) {
+  color: var(--k2b-text-muted);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-reference__size {
+  margin-inline-start: 0.4em;
+  font-size: 0.85em;
+}
+
+/* Forced colours drop the fill; the underline keeps the pill a link. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-reference,
+  .k2b-ui .k2b-content-markdown a.k2b-reference {
+    text-decoration-line: underline;
+  }
 }
 
 .k2b-ui .k2b-content-markdown code {

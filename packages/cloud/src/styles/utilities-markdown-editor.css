@@ -410,47 +410,12 @@
   @apply bg-zinc-200/60 dark:bg-zinc-700/50 rounded-sm;
 }
 
-/* Links — color + underline, both width-safe */
+/* Links — the rendered web link's thin accent underline, width-safe */
 .md-link {
-  @apply text-blue-600 dark:text-blue-400 underline;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--k2b-link-accent) 55%, transparent);
   text-underline-offset: 2px;
-}
-
-/* Rendered links use one anchor for their complete visible hit area. */
-.md-link-widget {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.125rem;
-  color: inherit;
-  font-weight: 600;
-  text-decoration: none;
-  transition: color 150ms ease;
-}
-
-.md-link-widget:hover {
-  color: var(--ui-app-accent-text);
-}
-
-/* The brackets, weight and icon already mark the widget as a link, so it
-   keeps no underline inside MarkdownView, the same as in Assistant chat. */
-.k2b-ui .k2b-content-markdown a.md-link-widget {
-  text-decoration: none;
-}
-
-.md-link-widget:focus-visible {
-  border-radius: 0.125rem;
-  outline: var(--k2b-focus-width) solid var(--ui-app-accent-border);
-  outline-offset: var(--k2b-focus-offset);
-}
-
-.md-link-icon {
-  opacity: 0.7;
-  transition: opacity 150ms ease;
-}
-
-.md-link-widget:hover .md-link-icon,
-.md-link-widget:focus-visible .md-link-icon {
-  opacity: 1;
 }
 
 /* Blockquote — color + inset box-shadow for the left bar (box-shadow

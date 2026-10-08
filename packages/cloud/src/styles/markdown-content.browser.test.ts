@@ -58,7 +58,7 @@ for (const theme of ["light", "dark"] as const) {
         return {
           muted: style("#muted").backgroundColor,
           surface: style("#surface").backgroundColor,
-          link: style("#plain a.md-link-widget").textDecorationLine,
+          link: style("#plain a.k2b-text-link").textDecorationLine,
           plain: code("#plain"),
           group: code("#group"),
           help: code("#help"),
@@ -74,8 +74,8 @@ for (const theme of ["light", "dark"] as const) {
         group: result.group,
         separated: result.tableGap >= result.fontSize - 0.5,
       }).toEqual({
-        // The widget's brackets, weight and icon mark it as a link, as in Assistant chat.
-        link: "none",
+        // A web link is prose text with a thin underline, in MarkdownView as in Assistant chat.
+        link: "underline",
         // Code blocks are a fill without a frame everywhere, Help included.
         plain: frameless(result.muted),
         help: frameless(result.muted),

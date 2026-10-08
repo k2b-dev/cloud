@@ -2,10 +2,13 @@ import { expect, test } from "bun:test";
 import { capabilityResultSchema } from "@k2b/cloud/contracts";
 import {
   CalendarDestinationListInputSchema,
+  EventListItemDataSchema,
   SpaceBrowseDataSchema,
   TaskChecklistListDataSchema,
   TaskChecklistUpdateInputSchema,
+  TaskDependentListInputSchema,
   TaskListInputSchema,
+  TaskListItemDataSchema,
 } from "./capability-contracts";
 
 test("existing Space list inputs retain defaults with additive work filters", () => {
@@ -14,6 +17,20 @@ test("existing Space list inputs retain defaults with additive work filters", ()
   expect(input.deadlineFilter).toBe("all");
   expect(input.limit).toBe(25);
   expect(CalendarDestinationListInputSchema.parse({})).toEqual({ limit: 100 });
+});
+
+test("task and event lists require a nonnegative integer assignee total", () => {
+  for (const schema of [TaskListItemDataSchema, EventListItemDataSchema]) {
+    const count = schema.shape.assigneeCount;
+    expect(count.parse(0)).toBe(0);
+    expect(count.parse(11)).toBe(11);
+    for (const invalid of [undefined, -1, 1.5]) expect(count.safeParse(invalid).success).toBeFalse();
+  }
+});
+
+test("reverse dependency pages default to the existing 100-entry result limit", () => {
+  expect(TaskDependentListInputSchema.parse({ itemId: "Itm001" })).toEqual({ itemId: "Itm001", limit: 100 });
+  expect(TaskDependentListInputSchema.safeParse({ itemId: "Itm001", limit: 101 }).success).toBeFalse();
 });
 
 test("compact selection and complete checklist fit the result envelope", () => {

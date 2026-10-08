@@ -518,13 +518,16 @@
   background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-markdown-editor__preview .md-link,
 .k2b-ui .k2b-markdown-editor__preview .md-completion-match {
   color: var(--k2b-action);
 }
 
+/* Link source reads like a rendered web link: prose text with a thin
+   underline in the link accent. Colour and underline keep the width. */
 .k2b-ui .k2b-markdown-editor__preview .md-link {
-  text-decoration: underline;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, var(--k2b-link-accent) 55%, transparent);
   text-underline-offset: 2px;
 }
 

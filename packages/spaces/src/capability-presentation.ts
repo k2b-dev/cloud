@@ -283,9 +283,11 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         "task.blocks.list": {
           title: "Durch eine Aufgabe blockierte Aufgaben auflisten",
           description:
-            "Listen Sie Aufgaben auf, die derzeit von einer bekannten Aufgabe blockiert werden. ItemId von task.list, item.search oder item.read abrufen; Verwenden Sie task.blocker.list für die entgegengesetzte Richtung.",
+            "Listen Sie Aufgaben auf, die derzeit von einer bekannten Aufgabe blockiert werden, höchstens 100 pro Seite. Folgen Sie page.nextCursor, bis page.hasMore false ist. itemId von task.list, item.search oder item.read abrufen; task.blocker.list liefert die Gegenrichtung.",
           input: {
             itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
+            cursor: "Cursor aus page.nextCursor bei unveränderten Filtern; für die erste Seite weglassen.",
+            limit: "Maximal 100 abhängige Aufgaben pro Seite; page.hasMore beachten.",
           },
         },
         "task.list": {

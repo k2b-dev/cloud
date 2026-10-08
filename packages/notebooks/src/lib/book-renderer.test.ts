@@ -36,7 +36,9 @@ describe("Notebook Book HTML", () => {
     // A link label cannot hold a link: the inner one stays the link and the outer brackets stay text.
     const nested = render("[==[Inner](note://DEF456)==](https://example.test)").html;
     expect(nested).not.toMatch(/<a\b[^>]*>(?:(?!<\/a>)[\s\S])*<a\b/);
-    expect(nested).toContain('<mark><a class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book">');
+    expect(nested).toContain(
+      '<mark><a class="k2b-reference" data-reference="note" aria-label="Note: Inner" href="/app/notebooks/ABC123/notes/DEF456?mode=book">',
+    );
     expect(nested).toContain("Inner</a></mark>");
   });
 
@@ -190,6 +192,15 @@ describe("Notebook Book HTML", () => {
     expect(render(":::query\nsource: secrets\n:::").html).toContain("Invalid block");
   });
 
+  test("a version preview shows each query's definition instead of results", () => {
+    const md = ":::query\nsource: notes\n:::\n\n:::query\nsource: secrets\n:::";
+    const { html } = renderNotebookBook({ markdown: md, notebookId: "ABC123", locale: "en", querySource: true });
+    expect(html).toContain("<pre><code>:::query\nsource: notes\n:::</code></pre>");
+    expect(html).not.toContain("unavailable");
+    // An invalid query still says so.
+    expect(html).toContain("Invalid block");
+  });
+
   test("separate identical query directives keep their own line-keyed results", () => {
     const md = ":::query\nsource: notes\n:::\n\n:::query\nsource: notes\n:::";
     const { html } = render(
@@ -275,7 +286,7 @@ describe("Notebook Book HTML", () => {
     );
     expect(html).toContain('<a class="notebook-book-image-link" href="/api/notebooks/ABC123/attachments/JKL012/content?v=1"><img');
     expect(html).not.toContain('notebook-book-image-link" href="https://example.test/a.png"');
-    // An image that is already a link's label keeps that link, without a second one inside it.
+    // An image that is already a link's label keeps that link, a plain one without a second link inside it.
     expect(html).toContain('<a rel="noopener noreferrer" href="https://example.test"><img class="notebook-book-image"');
     expect(html.match(/notebook-book-image-link/g)).toHaveLength(2);
   });
@@ -306,7 +317,7 @@ describe("Notebook Book HTML", () => {
       "[Restore](note://DEF456#restore) [Steps](note://DEF456#Backup%20&%20Restore) [Top](note://DEF456#---)\n\n| Link |\n| --- |\n| [Cell](note://DEF456#restore) |",
     );
     expect(html).toContain(
-      '<a class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"><i class="ti ti-connection" aria-hidden="true"></i>Restore</a>',
+      '<a class="k2b-reference" data-reference="heading" aria-label="Heading: Restore" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"><i class="k2b-reference__icon ti ti-hash" aria-hidden="true"></i>Restore</a>',
     );
     expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-backup-restore"');
     // An anchor without a heading slug opens the note at its top.
@@ -320,15 +331,89 @@ describe("Notebook Book HTML", () => {
     expect(render("[Note](note://DEF456#restore)", "en").html).toContain("#heading-restore");
     expect(
       renderNotebookBook({ markdown: "[Note](note://DEF456#restore)", notebookId: "ABC123", locale: "en", print: true }).html,
-    ).toContain('class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"');
+    ).toContain('data-reference="heading" aria-label="Heading: Note" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-restore"');
   });
 
   test("note badges preserve inline labels and titles without styling external links as notes", () => {
     const { html } = render('[**Guide**](note://DEF456 "Open guide") [Website](https://example.test)');
-    expect(html).toContain('class="notebook-book-note-link"');
-    expect(html).toContain('title="Open guide"');
-    expect(html).toContain('<i class="ti ti-connection" aria-hidden="true"></i><strong>Guide</strong>');
-    expect(html).toContain('<a rel="noopener noreferrer" href="https://example.test">Website</a>');
+    expect(html).toContain('class="k2b-reference" data-reference="note" aria-label="Note: Guide" title="Open guide"');
+    expect(html).toContain('<i class="k2b-reference__icon ti ti-file-text" aria-hidden="true"></i><strong>Guide</strong>');
+    expect(html).toContain(
+      '<a class="k2b-text-link" data-link="web" rel="noopener noreferrer" href="https://example.test">Website<i class="k2b-text-link__external ti ti-arrow-up-right" aria-hidden="true"></i></a>',
+    );
+  });
+
+  test("references name their type and, for a heading in another note, that note first", () => {
+    const references = {
+      notes: new Map([["DEF456", "Farbsystem"]]),
+      attachments: new Map([
+        ["PDF001", { filename: "Markenrichtlinien-2026.pdf", sizeBytes: 4_200_000 }],
+        ["AFD001", { filename: "brand-guidelines.afdesign", sizeBytes: 18_400_000 }],
+      ]),
+    };
+    const { html } = renderNotebookBook({
+      markdown: [
+        "Siehe [Akzentfarbe](note://DEF456#akzentfarbe), [Kickoff](note://DEF456), [oben](note://SELF01#start) und [Vorlage](attach://AFD001). Fragen an a@b.de, Aufgabe [Freigabe](/app/spaces/Space1?item=Item01).",
+        "",
+        "[Markenrichtlinien-2026.pdf](attach://PDF001)",
+        "[unbekannt.zip](attach://ZIP001)",
+      ].join("\n"),
+      notebookId: "ABC123",
+      noteId: "SELF01",
+      locale: "de",
+      references,
+    });
+    expect(html).toContain(
+      'data-reference="heading" aria-label="Überschrift: Farbsystem › Akzentfarbe" href="/app/notebooks/ABC123/notes/DEF456?mode=book#heading-akzentfarbe"><i class="k2b-reference__icon ti ti-hash" aria-hidden="true"></i><span class="k2b-reference__document">Farbsystem ›</span> Akzentfarbe</a>',
+    );
+    expect(html).toContain('data-reference="note" aria-label="Notiz: Kickoff"');
+    // A heading of the note itself needs no note in front of it.
+    expect(html).toContain('data-reference="heading" aria-label="Überschrift: oben"');
+    // The attachment's own name decides its type; the size shows only on a line of its own.
+    expect(html).toContain('data-reference="design" aria-label="Designdatei: Vorlage"');
+    expect(html).toContain('<i class="k2b-reference__icon ti ti-vector-bezier-2" aria-hidden="true"></i>Vorlage</a>');
+    expect(html).toContain(
+      'aria-label="PDF: Markenrichtlinien-2026.pdf, 4,2 MB" href="/api/notebooks/ABC123/attachments/PDF001/content?v=1"><i class="k2b-reference__icon ti ti-file-type-pdf" aria-hidden="true"></i>Markenrichtlinien-2026.pdf<span class="k2b-reference__size">4,2 MB</span></a>',
+    );
+    expect(html.match(/k2b-reference__size/g)).toHaveLength(1);
+    // Without metadata the link text names the file.
+    expect(html).toContain('data-reference="file" aria-label="Datei: unbekannt.zip"');
+    expect(html).toContain('<a class="k2b-text-link" data-link="mail" href="mailto:a@b.de">a@b.de</a>');
+    expect(html).toContain('data-reference="page" aria-label="Seite: Freigabe" href="/app/spaces/Space1?item=Item01"');
+  });
+
+  test("a heading keeps its author's text, ID and contents entry when it links a heading in another note", () => {
+    const markdown = ":::toc\n:::\n\n## [Restore](note://DEF456#restore)";
+    const withTitles = renderNotebookBook({
+      markdown,
+      notebookId: "ABC123",
+      noteId: "SELF01",
+      locale: "en",
+      references: { notes: new Map([["DEF456", "Runbook"]]) },
+    });
+    const withoutTitles = renderNotebookBook({ markdown, notebookId: "ABC123", noteId: "SELF01", locale: "en" });
+    expect(withTitles.headings).toEqual([{ id: "heading-restore", depth: 2, text: "Restore", line: 4 }]);
+    expect(withoutTitles.headings).toEqual(withTitles.headings);
+    expect(withTitles.html).not.toContain("Runbook");
+    expect(withTitles.html).toContain('<a class="k2b-text-link" href="#heading-restore">Restore</a>');
+    expect(withTitles.html).toContain(
+      '<h2 id="heading-restore"><a class="k2b-reference" data-reference="heading" aria-label="Heading: Restore"',
+    );
+  });
+
+  test("math in a reference's text names it by its source and stays out of the attribute", () => {
+    const { html } = render("[Energy $E=mc^2$ &copy;](note://DEF456)");
+    expect(html).toContain('aria-label="Note: Energy E=mc^2 ©"');
+    expect(html.match(/<span class="katex">/g)).toHaveLength(1);
+    expect(html).not.toMatch(/aria-label="[^"]*</);
+  });
+
+  test("a link around an image is the image, named by its text", () => {
+    const { html } = render("[![Plan](https://example.test/plan.png)](note://DEF456)", "de");
+    expect(html).toContain(
+      '<a href="/app/notebooks/ABC123/notes/DEF456?mode=book"><img class="notebook-book-image" src="https://example.test/plan.png" alt="Plan" loading="lazy" /></a>',
+    );
+    expect(html).not.toContain("k2b-reference");
   });
 
   test("inline decorations and all existing math forms render without a DOM", () => {

@@ -54,6 +54,26 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
     expect(raw).toMatch(/\/top \[\d+ 0 R \/XYZ 0 [\d.]+ 0\]/);
   }, 60_000);
 
+  test("references print as labelled pills and web links with a printed arrow", async () => {
+    const markdown = [
+      "# Brand",
+      "See [Akzentfarbe](note://DEF456#akzentfarbe) and [Affinity Designer](https://affinity.serif.com).",
+      "",
+      "[Markenrichtlinien-2026.pdf](attach://PDF001)",
+    ].join("\n");
+    const references = {
+      notes: new Map([["DEF456", "Farbsystem"]]),
+      attachments: new Map([["PDF001", { filename: "Markenrichtlinien-2026.pdf", sizeBytes: 4_200_000 }]]),
+    };
+    for (const templateId of ["document", "report", "compact"] as const) {
+      const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "de", templateId, references });
+      const text = await pdfText((await renderHtmlToPdfWithConfig({ html, title: "Brand" }, config)).pdf);
+      expect(text).toContain("Farbsystem › Akzentfarbe");
+      expect(text).toMatch(/Affinity Designer ?↗/u);
+      expect(text).toMatch(/Markenrichtlinien-2026\.pdf\s*4,2 MB/u);
+    }
+  }, 120_000);
+
   test("ligatures print like the reader and copy as text", async () => {
     const words = "office, affine, fluffy, finally, ffi, ffl";
     const markdown = [
