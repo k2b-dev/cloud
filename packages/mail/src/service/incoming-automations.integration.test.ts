@@ -36,6 +36,7 @@ import {
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
+import { workflowSnapshotQuery } from "./workflow-data";
 import { runMailWorkflow } from "./workflow-runtime";
 
 const suite = suiteFor("database", "nats");
@@ -184,8 +185,8 @@ suite("incoming automations", () => {
     if (userIds.length > 0) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[])`;
   });
 
-  // Starts a backfill and returns its state once its run settled on the Sync worker, or once the
-  // time is up. It waits for the run's settle event: re-sending the start request would lock the
+  // Starts a backfill and returns its state once its run settled on the Sync worker.
+  // It waits for the run's settle event: re-sending the start request would lock the
   // automation row that the run locks for every message it dispatches.
   const runBackfillUntilSettled = async (request: Parameters<typeof startIncomingAutomationBackfill>[0], timeoutMs: number) => {
     const { automationId, input } = request;
@@ -195,18 +196,26 @@ suite("incoming automations", () => {
     const settled = (async () => {
       const signal = AbortSignal.any([listening.signal, AbortSignal.timeout(timeoutMs)]);
       for await (const event of getProcessSync().events({ signal })) {
-        if (event.type === "pump_run_settled" && event.detail?.key === key) return;
+        if (event.type === "pump_run_settled" && event.detail?.key === key) return true;
       }
+      return false;
     })();
+    let didSettle = false;
     try {
       const started = await startIncomingAutomationBackfill(request);
       if (!started.ok) throw new Error(started.error.message);
-      await settled;
+      didSettle = await settled;
     } finally {
       listening.abort();
     }
     const current = await getIncomingAutomationBackfill({ context: ownerContext, mailboxId, automationId, operationId: input.operationId });
     if (!current.ok) throw new Error(current.error.message);
+    if (!didSettle) {
+      const { state, newlyAcceptedCount, remainingCount } = current.data;
+      throw new Error(
+        `Backfill ${key} did not receive pump_run_settled within ${timeoutMs} ms: status=${state}, newlyAcceptedCount=${newlyAcceptedCount}, remainingCount=${remainingCount}`,
+      );
+    }
     return current.data;
   };
 
@@ -308,6 +317,23 @@ suite("incoming automations", () => {
         captureWorkflowTriggers: false,
       });
     }
+    const [reference] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.remote_message_refs
+      WHERE folder_id = ${inboxFolderId}::uuid AND uid = 20000 AND uid_validity = 1
+    `;
+    if (!reference) throw new Error("Missing ingested backfill message reference");
+    // These freshly ingested rows have no current statistics yet; this read runs once per dispatched message.
+    // An unbounded row estimate made Postgres JIT-compile every read, preventing the backfill from finishing in time.
+    type ExplainRow = { "QUERY PLAN": [{ Plan: { "Plan Rows": number; "Total Cost": number } }] };
+    const [explained] = await sql<ExplainRow[]>`
+      EXPLAIN (FORMAT JSON) ${workflowSnapshotQuery({ mailboxId, remoteMessageRefId: reference.id })}
+    `;
+    if (!explained) throw new Error("Missing workflow snapshot query plan");
+    const plan = explained["QUERY PLAN"][0].Plan;
+    const defaultJitAboveCost = 100_000; // Postgres's default jit_above_cost threshold.
+    expect(plan["Plan Rows"]).toBe(1);
+    expect(plan["Total Cost"]).toBeLessThan(defaultJitAboveCost);
+
     const created = await createIncomingAutomation({
       context: ownerContext,
       mailboxId,
