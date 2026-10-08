@@ -59,6 +59,7 @@ export type AcceptedProfile = {
   from_address: string;
   max_attachment_bytes: number;
   daily_recipient_limit: number | null;
+  pace_per_minute: number;
 };
 type LogRow = Pick<
   MessageRow,
@@ -149,7 +150,7 @@ export const allowedMailProfile = async (db: SQL, appId: string, key?: string): 
   if (!configured?.exists) throw new OutgoingMailError("mail_unavailable", "No outgoing mail profile is configured.");
   const [profile] = await db<
     AcceptedProfile[]
-  >`SELECT id, key, from_address, max_attachment_bytes, daily_recipient_limit FROM outgoing_mail.profiles
+  >`SELECT id, key, from_address, max_attachment_bytes, daily_recipient_limit, pace_per_minute FROM outgoing_mail.profiles
     WHERE ${key === undefined ? db`is_default` : db`key = ${key}`} FOR SHARE`;
   if (!profile)
     throw new OutgoingMailError(key === undefined ? "profile_required" : "profile_unknown", "Choose an available outgoing mail profile.");
@@ -164,6 +165,59 @@ export const allowedMailProfile = async (db: SQL, appId: string, key?: string): 
     );
   return profile;
 };
+const recordMailAcceptance = async (
+  appId: string,
+  actor: ReturnType<typeof mailActorSnapshot>,
+  target: { type: string; id?: string },
+  metadata: Record<string, unknown>,
+  db: SQL,
+  allowed: boolean,
+  errorCode?: string,
+): Promise<void> => {
+  await audit.record(
+    {
+      action: "outgoing_mail.send",
+      outcome: allowed ? "allowed" : "denied",
+      actor: actor ? { ...(actor.type === "user" ? { userId: actor.id } : {}), uid: actor.name, provider: actor.type } : { uid: appId },
+      target,
+      ...(errorCode ? { error: { code: errorCode } } : {}),
+      metadata,
+    },
+    db,
+  );
+};
+export const recordMailBatch = async (
+  appId: string,
+  messages: readonly MailMessage[],
+  rows: readonly MessageRow[] = [],
+  batchId?: string,
+  db: SQL = sql,
+  errorCode?: string,
+): Promise<void> => {
+  const actors = messages.flatMap((message) => {
+    const actor = mailActorSnapshot(message?.actor);
+    return actor ? [actor] : [];
+  });
+  await recordMailAcceptance(
+    appId,
+    actors[0],
+    { type: "outgoing_mail_batch", id: batchId },
+    {
+      appId,
+      batchId: batchId ?? null,
+      count: messages.length,
+      ids: rows.map((row) => row.id),
+      profiles: [...new Set(rows.length ? rows.map((row) => row.profile_key) : messages.map((message) => message?.profile ?? null))],
+      recipientCount: rows.length
+        ? rows.reduce((sum, row) => sum + row.recipient_count, 0)
+        : messages.reduce((sum, message) => sum + (message?.to?.length ?? 0), 0),
+      actors,
+    },
+    db,
+    batchId !== undefined,
+    errorCode,
+  );
+};
 export const recordMailSend = async (
   appId: string,
   message: MailMessage,
@@ -172,22 +226,20 @@ export const recordMailSend = async (
   errorCode?: string,
 ): Promise<void> => {
   const actor = mailActorSnapshot(message.actor);
-  await audit.record(
+  await recordMailAcceptance(
+    appId,
+    actor,
+    { type: "outgoing_mail_message", id: row?.id },
     {
-      action: "outgoing_mail.send",
-      outcome: row ? "allowed" : "denied",
-      actor: actor ? { ...(actor.type === "user" ? { userId: actor.id } : {}), uid: actor.name, provider: actor.type } : { uid: appId },
-      target: { type: "outgoing_mail_message", id: row?.id },
-      ...(errorCode ? { error: { code: errorCode } } : {}),
-      metadata: {
-        appId,
-        profile: row?.profile_key ?? message.profile ?? null,
-        recipientCount: row?.recipient_count ?? message.to.length,
-        ...(actor ? { actor } : {}),
-        id: row?.id ?? null,
-      },
+      appId,
+      profile: row?.profile_key ?? message.profile ?? null,
+      recipientCount: row?.recipient_count ?? message.to.length,
+      ...(actor ? { actor } : {}),
+      id: row?.id ?? null,
     },
     db,
+    !!row,
+    errorCode,
   );
 };
 export class MailQuotaError extends OutgoingMailError {
@@ -204,6 +256,31 @@ export const mailQuotaUsed = async (db: SQL, appId: string, profileId: string): 
     WHERE app_id = ${appId} AND profile_id = ${profileId}::uuid AND status <> 'cancelled' AND created_at > now() - INTERVAL '24 hours'`;
   return usage?.used ?? 0;
 };
+export const insertMailMessage = async (
+  db: SQL,
+  appId: string,
+  id: string,
+  message: MailMessage,
+  uploaded: UploadedAttachments,
+  profile: AcceptedProfile,
+  batchId?: string,
+): Promise<MessageRow | undefined> => {
+  const actor = mailActorSnapshot(message.actor);
+  const created = new Date();
+  const [row] = await db<MessageRow[]>`INSERT INTO outgoing_mail.messages (
+      id, app_id, profile_id, profile_key, lane, batch_id, idempotency_key, ref_scope, ref_id, to_addresses, recipient_count,
+      subject, text_body, html_body, headers, from_name, reply_to, message_id_header, attachments, attachment_refs, status,
+      deadline_at, actor_type, actor_id, actor_name, created_at
+    ) VALUES (${id}::uuid, ${appId}, ${profile.id}::uuid, ${profile.key}, ${batchId ? "bulk" : "immediate"}, ${batchId ?? null}::uuid, ${message.key ?? null},
+      ${message.ref?.scope ?? null}, ${message.ref?.id ?? null}, ${toPgTextArray(message.to)}::text[], ${message.to.length},
+      ${message.subject}, ${message.text}, ${message.html === undefined ? null : sanitizeEmailHtml(message.html)},
+      ${message.headers ? JSON.stringify(message.headers) : null}::text::jsonb, ${message.fromName ?? null}, ${message.replyTo ?? null},
+      ${mailMessageId(id, profile.from_address)}, ${JSON.stringify(uploaded.metadata)}::text::jsonb, ${JSON.stringify(uploaded.refs)}::text::jsonb, 'queued',
+      ${new Date(created.getTime() + 24 * 60 * 60_000)}, ${actor?.type ?? null}, ${actor?.id ?? null}, ${actor?.name ?? null}, ${created})
+      ON CONFLICT (app_id, idempotency_key) DO NOTHING RETURNING *, created_at::text AS cursor_created_at`;
+  return row;
+};
+
 const accept = async (
   appId: string,
   id: string,
@@ -211,9 +288,13 @@ const accept = async (
   uploaded: UploadedAttachments,
 ): Promise<{ row: MessageRow; created: boolean }> =>
   sql.begin(async (tx) => {
-    // Profile policy writers use the exclusive form of this same transaction lock.
+    // Policy writers take this exclusively; batches take the app lock exclusively.
+    // Lock order: policy -> app -> key -> quota. Sends still serialize per key.
     await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
-    if (message.key !== undefined) await tx`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([appId, message.key])}, 1))`;
+    if (message.key !== undefined) {
+      await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended(${appId}, 5))`;
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([appId, message.key])}, 1))`;
+    }
     const existing = await known(appId, message.key, tx);
     if (existing) {
       return { row: existing, created: false };
@@ -225,19 +306,7 @@ const accept = async (
     const used = await mailQuotaUsed(tx, appId, profile.id);
     if (profile.daily_recipient_limit !== null && used + message.to.length > profile.daily_recipient_limit)
       throw new MailQuotaError(profile.daily_recipient_limit, used, message.to.length);
-    const actor = mailActorSnapshot(message.actor);
-    const created = new Date();
-    const [row] = await tx<MessageRow[]>`INSERT INTO outgoing_mail.messages (
-      id, app_id, profile_id, profile_key, lane, idempotency_key, ref_scope, ref_id, to_addresses, recipient_count,
-      subject, text_body, html_body, headers, from_name, reply_to, message_id_header, attachments, attachment_refs, status,
-      deadline_at, actor_type, actor_id, actor_name, created_at
-    ) VALUES (${id}::uuid, ${appId}, ${profile.id}::uuid, ${profile.key}, 'immediate', ${message.key ?? null},
-      ${message.ref?.scope ?? null}, ${message.ref?.id ?? null}, ${toPgTextArray(message.to)}::text[], ${message.to.length},
-      ${message.subject}, ${message.text}, ${message.html === undefined ? null : sanitizeEmailHtml(message.html)},
-      ${message.headers ? JSON.stringify(message.headers) : null}::text::jsonb, ${message.fromName ?? null}, ${message.replyTo ?? null},
-      ${mailMessageId(id, profile.from_address)}, ${JSON.stringify(uploaded.metadata)}::text::jsonb, ${JSON.stringify(uploaded.refs)}::text::jsonb, 'queued',
-      ${new Date(created.getTime() + 24 * 60 * 60_000)}, ${actor?.type ?? null}, ${actor?.id ?? null}, ${actor?.name ?? null}, ${created})
-      ON CONFLICT (app_id, idempotency_key) DO NOTHING RETURNING *, created_at::text AS cursor_created_at`;
+    const row = await insertMailMessage(tx, appId, id, message, uploaded, profile);
     if (row) await recordMailSend(appId, message, row, tx);
     const winner = row ?? (await known(appId, message.key, tx));
     if (!winner) throw new Error("Outgoing mail insert returned no row");

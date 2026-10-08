@@ -199,6 +199,23 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
       async (c) => c.json(await outgoingMailLog.cancel(c.req.valid("param").id, context(c))),
     )
     .get("/profiles", async (c) => c.json({ items: await outgoingMailStore.list() }))
+    .post(
+      "/batches/:batchId/cancel",
+      describeRoute({
+        summary: "Cancel queued outgoing mail in a batch",
+        tags: ["Outgoing mail"],
+        ...requiresAdmin,
+        responses: {
+          200: jsonResponse(z.object({ batchId: z.uuid(), cancelled: z.int().nonnegative() }), "Cancelled queued messages"),
+          404: jsonResponse(
+            z.object({ code: z.literal("batch_unknown"), error: z.literal("batch_unknown"), message: z.string() }),
+            "Unknown batch",
+          ),
+        },
+      }),
+      validate("param", z.object({ batchId: z.uuid() }), "bad_input"),
+      async (c) => c.json(await outgoingMailLog.cancelBatch(c.req.valid("param").batchId, context(c))),
+    )
     .get("/profiles/:key", async (c) => c.json(await outgoingMailStore.get(c.req.param("key"))))
     .put(
       "/profiles/:key",

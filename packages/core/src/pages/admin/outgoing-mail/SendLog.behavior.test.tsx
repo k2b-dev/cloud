@@ -7,7 +7,8 @@ import { createDomTestHarness } from "../../../../../ui/test/dom";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return { ui: await import("@k2b/ui"), SendLog: (await import("./SendLog")).SendLog };
+    const sendLog = await import("./SendLog");
+    return { ui: await import("@k2b/ui"), SendLog: sendLog.SendLog, MessageDialog: sendLog.MessageDialog };
   } finally {
     dom.cleanup();
   }
@@ -103,6 +104,71 @@ else
     } finally {
       dispose();
       timer.mockRestore();
+      fetch.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test.each([
+    { status: "queued" as const, cancelled: 3 },
+    { status: "queued" as const, cancelled: 0 },
+    { status: "sent" as const, cancelled: 3 },
+    { status: "sent" as const, cancelled: 0 },
+  ])("a $status batch member offers batch cancellation and hides it after cancelling $cancelled mails", async ({ status, cancelled }) => {
+    const dom = createDomTestHarness();
+    const { ui, MessageDialog } = modules!;
+    delegateEvents(["click"]);
+    const batchId = crypto.randomUUID();
+    const record: AdminMailRecord = { ...row("Stock update"), status, attempts: status === "queued" ? 0 : 1, batchId };
+    const requests: { method: string; url: URL }[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+          const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+          requests.push({ method, url });
+          if (method === "POST" && url.pathname.endsWith(`/batches/${batchId}/cancel`)) return Response.json({ batchId, cancelled });
+          if (method === "GET" && url.pathname.endsWith(`/messages/${record.id}`))
+            return Response.json(status === "queued" ? { ...record, status: "cancelled", errorCode: "cancelled_by_admin" } : record);
+          throw new Error(`Unexpected request: ${method} ${url}`);
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const confirm = spyOn(ui.prompts, "confirm").mockResolvedValue(true);
+    const toast = spyOn(ui.toast, "success");
+    let changed = 0;
+    const dispose = render(
+      () =>
+        createComponent(ui.LocaleProvider, {
+          locale: "en",
+          get children() {
+            return createComponent(MessageDialog, { record, appName: "Inventory", close: () => {}, onChanged: () => changed++ });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.textContent).toContain(batchId);
+      expect([...dom.root.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Cancel mail")).toBe(status === "queued");
+      const button = [...dom.root.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Cancel batch");
+      if (!button) throw new Error("Expected the batch cancel action");
+      button.click();
+      await flush();
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(requests.map((request) => `${request.method} ${request.url.pathname.split("/outgoing-mail")[1]}`)).toEqual([
+        `POST /batches/${batchId}/cancel`,
+        `GET /messages/${record.id}`,
+      ]);
+      expect(changed).toBe(1);
+      expect(toast).toHaveBeenCalledWith(cancelled === 0 ? "No mail of this batch was still waiting." : "3 mails cancelled.");
+      await flush();
+      expect([...dom.root.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Cancel batch")).toBe(false);
+    } finally {
+      dispose();
+      toast.mockRestore();
+      confirm.mockRestore();
       fetch.mockRestore();
       dom.cleanup();
     }

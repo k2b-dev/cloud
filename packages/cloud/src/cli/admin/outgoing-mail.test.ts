@@ -52,6 +52,26 @@ const invoke = async (
   await module.run(ctx);
   return { requests, output };
 };
+test("log cancel accepts exactly one ID or batch, confirms, and forwards the batch response", async () => {
+  const batchId = crypto.randomUUID();
+  const result = { batchId, cancelled: 3 };
+  expect(await invoke(["log", "cancel"], { batch: batchId, yes: true }, result)).toEqual({
+    requests: [{ path: `/api/admin/core/outgoing-mail/batches/${batchId}/cancel`, method: "POST", body: null }],
+    output: [result],
+  });
+  expect((await invoke(["log", "cancel", "message"], { yes: true })).requests[0]?.path).toBe(
+    "/api/admin/core/outgoing-mail/messages/message/cancel",
+  );
+  for (const [args, flags] of [
+    [["log", "cancel"], { yes: true }],
+    [["log", "cancel", "message"], { batch: batchId, yes: true }],
+    [["log", "cancel"], { batch: batchId }],
+  ] satisfies [string[], CloudCliFlags][]) {
+    const requests: { path: string; method: string; body: unknown }[] = [];
+    await expect(invoke(args, flags, {}, requests)).rejects.toThrow();
+    expect(requests).toHaveLength(0);
+  }
+});
 test("profile reads and replacement forward exact API paths, revision and JSON output", async () => {
   const profiles = { items: [] };
   expect(await invoke(["profiles", "list"], {}, profiles)).toEqual({

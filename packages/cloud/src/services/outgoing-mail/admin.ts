@@ -45,6 +45,31 @@ const cancel = async (id: string, context: MailAuditContext): Promise<AdminMailR
 export const outgoingMailLog = {
   get,
   cancel,
+  async cancelBatch(batchId: string, context: MailAuditContext): Promise<{ batchId: string; cancelled: number }> {
+    const cancelled = await sql.begin(async (tx) => {
+      const apps = await tx<{ app_id: string }[]>`SELECT DISTINCT app_id FROM outgoing_mail.messages WHERE batch_id = ${batchId}::uuid`;
+      if (!apps.length) throw new OutgoingMailError("batch_unknown", "Outgoing mail batch does not exist.", 404);
+      const rows = await tx<{ id: string }[]>`UPDATE outgoing_mail.messages SET status = 'cancelled', error_code = 'cancelled_by_admin',
+        error_message = 'Cancelled by an administrator.', next_attempt_at = NULL, updated_at = now()
+        WHERE batch_id = ${batchId}::uuid AND status = 'queued' RETURNING id`;
+      await audit.record(
+        {
+          ...context,
+          action: "outgoing_mail.batch.cancel",
+          outcome: "allowed",
+          target: { type: "outgoing_mail_batch", id: batchId },
+          metadata: { appIds: apps.map((row) => row.app_id), count: rows.length },
+        },
+        tx,
+      );
+      return rows;
+    });
+    for (const row of cancelled) {
+      await cleanupMailAttachments(row.id).catch(() => {});
+      await publishMailSettled(row.id).catch(() => {});
+    }
+    return { batchId, cancelled: cancelled.length };
+  },
   content: outgoingMailMessages.content,
   list: async (filter: AdminMailFilter, page: MailPageParams): Promise<MailPage<AdminMailRecord>> => {
     const result = await outgoingMailMessages.list(filter, page, true);

@@ -64,8 +64,8 @@ returns an empty list.
 Pass `profile: "alerts"` to choose an allowed sender. Omit it to use the default;
 if your application cannot use that default, pass an explicit allowed profile.
 The quota check and acceptance are atomic, including concurrent sends. Failed
-and queued records count toward quota; cancelled records do not. Pacing is
-reserved for bulk delivery and does not affect this immediate API.
+and queued records count toward quota; cancelled records do not. Pacing applies
+to `mail.enqueue`; immediate `mail.send` delivery does not use it.
 
 ## Send a message
 
@@ -118,7 +118,9 @@ Attachment filenames and content types must be non-empty, at most 998
 characters each, without CR, LF, or NUL. Access and the recipient quota are
 checked before attachments are uploaded. Cloud counts bytes and computes
 SHA-256 while uploading; oversized input stops the upload. All attachments of
-one call share one 60-second upload budget. An attachment is stored outside
+one send or enqueue call share one 60-second upload budget. Batch uploads are
+sequential; the budget covers the entire batch, rather than restarting for
+each message. An attachment is stored outside
 Postgres, and the record keeps only filename, content type, byte size,
 and SHA-256. Core verifies size and checksum before delivery. Missing or
 changed attachments fail the record with `attachment_lost`. Terminal records
@@ -141,6 +143,68 @@ concurrent loser removes its already uploaded objects and returns the winning
 record. Keys live as long as their log rows: after record retention deletes a
 row, the key can accept another message. Idempotency does not remove the
 at-least-once SMTP caveat.
+
+## Enqueue a batch
+
+Use `mail.enqueue(messages)` for bulk delivery. It accepts **1–1000 messages**
+and returns `{ batchId, ids }` immediately after acceptance, without waiting
+for delivery. Each message uses the same fields, profile access rules, headers,
+sanitization, and attachment limits as `send`. Duplicate keys within one call
+are `bad_input`.
+
+```ts
+const batch = await mail.enqueue([
+  { to: ["first@example.org"], subject: "Stock update", text: "New stock arrived.", key: "stock-42-first" },
+  { to: ["second@example.org"], subject: "Stock update", text: "New stock arrived.", key: "stock-42-second" },
+]);
+if (batch.ok) {
+  const status = await mail.list({ batchId: batch.data.batchId }, { perPage: 100 });
+  console.log(status);
+}
+```
+
+Acceptance is **all or nothing**. Invalid input, denied access, attachment
+failures, exhausted quota, or a full backlog reject the whole call and cancel
+all supplied streams.
+Quota counts the batch's new recipients together for each profile, per
+application, over the rolling 24 hours. The check runs before uploads and again
+atomically with acceptance. `quota_exceeded.requested` is the recipient sum for
+the affected profile, excluding known keys.
+
+Known per-application keys map to their first accepted records, and their new
+streams are cancelled without being read. `ids` preserves input order, including
+pre-existing IDs. If every message already belongs to one earlier batch, that
+batch ID is reused. Otherwise a new batch ID contains only new records;
+pre-existing records keep their original batch membership. When every input
+is known but spans batches or immediate sends, the new batch ID has no rows.
+Follow those existing records by their returned IDs in groups of at most 100.
+Concurrent losers delete their uploaded objects and return the winning records.
+
+After a storage outage during acceptance, `mail_unavailable` cannot prove that
+nothing was recorded; retrying with the same keys is safe and returns the
+accepted records.
+
+Core paces the bulk lane per profile across applications and Core replicas.
+Each attempt consumes one slot at `60,000 / pacePerMinute` milliseconds;
+immediate sends use their separate lane. `backlog_full` (status 409) rejects a
+call when queued bulk messages plus its new messages would exceed
+`pacePerMinute × 1440` for any profile: 24 hours of nominal delivery capacity.
+Actual throughput can be lower because each profile's sender is sequential
+and opens a new SMTP connection per message.
+Reduce the batch, wait for capacity, or ask the operator to adjust the pace.
+
+Due retries and fresh mail go out in due-time order. Temporary SMTP errors,
+connection failures, and timeouts use the same retry schedule as `send`: one
+minute, doubling up to one hour. Every new record has a 24-hour delivery deadline.
+The 30-second recovery scan fails expired queued bulk mail with its last answer
+without using a pacing slot. Permanent SMTP failures fail immediately.
+Revoked access cancels delivery before the next attempt. Dropping the
+`mail:send` declaration cancels accepted mail of a registered app before its
+next attempt with `profile_not_allowed`, in both lanes. Temporary absence from
+the registry does not cancel mail. Queued mail of a deleted profile is cancelled
+with `profile_removed`: bulk rows by the next recovery scan, immediate rows
+before their next attempt. Delivery remains at least once: a crash after SMTP
+acceptance and before the log update can repeat a message.
 
 ## Read application delivery status
 
@@ -184,6 +248,7 @@ remain until record retention. SMTP credentials are never returned.
 | `profile_not_allowed` | The application cannot use the requested profile |
 | `profile_required` | No usable default; choose an allowed profile explicitly |
 | `quota_exceeded` | Rolling recipient quota exhausted; error includes `limit`, `used`, `requested` |
+| `backlog_full` | Bulk profile queue exceeds 24 hours at its configured pace; status 409 |
 | `attachments_too_large` | Total attachment bytes exceed the profile's limit |
 | `attachment_storage_full` | Attachment storage has no capacity |
 | `mail_unavailable` | Application not started, no profile configured, or required storage unavailable |
@@ -192,7 +257,7 @@ Recorded delivery errors include `smtp_failed`, `attachment_lost`,
 `profile_removed`, `profile_not_allowed`, and `cancelled_by_admin`.
 Profile administration also uses `profile_exists`, `profile_is_default`,
 `revision_conflict`, and `invalid_profile`. Admin log reads use
-`message_unknown`; cancelling a non-queued row returns `message_not_queued`.
+`message_unknown` and `batch_unknown`; cancelling a non-queued row returns `message_not_queued`.
 
 See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for sender
 configuration, retention, and admin log access, and

@@ -1,6 +1,7 @@
 import { fail, ok, type Result } from "@k2b/stdlib";
 import { getProcessApplicationId, getProcessPlatformPermissions } from "../../_internal/process-identity";
 import {
+  MailBatchSchema,
   type MailFilter,
   MailFilterSchema,
   type MailMessage,
@@ -13,7 +14,8 @@ import {
   type MailServiceError,
 } from "../../contracts/outgoing-mail";
 import { cancelMailStreams } from "./attachments";
-import { outgoingMailMessages, recordMailSend } from "./messages";
+import { enqueueMail } from "./enqueue";
+import { outgoingMailMessages, recordMailBatch, recordMailSend } from "./messages";
 import { sendMail } from "./send";
 import { OutgoingMailError, outgoingMailStore } from "./store";
 
@@ -37,6 +39,31 @@ const failure = (error: unknown): MailServiceError => {
   };
 };
 export const mail = {
+  async enqueue(messages: MailMessage[]): Promise<Result<{ batchId: string; ids: string[] }, MailServiceError>> {
+    const caller = identity();
+    const parsed = caller.ok ? MailBatchSchema.safeParse(messages) : undefined;
+    const cancel = () => {
+      if (Array.isArray(messages)) for (const message of messages) cancelMailStreams(message?.attachments);
+    };
+    if (!caller.ok || !parsed?.success) {
+      cancel();
+      const appId = getProcessApplicationId();
+      const issue: MailServiceError = caller.ok
+        ? { code: "bad_input", message: "Provide 1–1000 valid messages with distinct keys.", status: 400 }
+        : caller.error;
+      if (appId)
+        await recordMailBatch(appId, Array.isArray(messages) ? messages : [], [], undefined, undefined, issue.code).catch(() => {});
+      return fail(issue);
+    }
+    try {
+      return ok(await enqueueMail(caller.data, parsed.data));
+    } catch (error) {
+      cancel();
+      const issue = failure(error);
+      await recordMailBatch(caller.data, parsed.data, [], undefined, undefined, issue.code).catch(() => {});
+      return fail(issue);
+    }
+  },
   async profiles(): Promise<Result<MailProfile[], MailServiceError>> {
     const caller = identity();
     if (!caller.ok) return caller;

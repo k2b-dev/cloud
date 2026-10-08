@@ -152,6 +152,8 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
 export function MessageDialog(props: { record: AdminMailRecord; appName: string; close: () => void; onChanged: () => void }) {
   const t = messages();
   const [record, setRecord] = createSignal(props.record);
+  const [batchCancelled, setBatchCancelled] = createSignal(false);
+  const cancellableBatch = () => !batchCancelled() && record().batchId;
   const content = mutation.create({
     mutation: async (_: void, { abortSignal }): Promise<Content> => {
       const response = await api.messages[":id"].content.$get({ param: { id: record().id } }, { init: { signal: abortSignal } });
@@ -172,9 +174,25 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
     },
     onError: (error) => toast.error(error.message),
   });
+  const cancelBatch = mutation.create({
+    mutation: async (batchId: string, { abortSignal }) => {
+      const response = await api.batches[":batchId"].cancel.$post({ param: { batchId } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await errorText(response, t().cancelBatchFailed));
+      return response.json();
+    },
+    onSuccess: async ({ cancelled }) => {
+      setBatchCancelled(true);
+      props.onChanged();
+      toast.success(cancelled === 0 ? t().cancelBatchEmpty : t().cancelBatchDone({ count: cancelled }));
+      const response = await api.messages[":id"].$get({ param: { id: record().id } }).catch(() => undefined);
+      if (response?.ok) setRecord(await response.json());
+    },
+    onError: (error) => toast.error(error.message),
+  });
   onCleanup(() => {
     content.abort();
     cancel.abort();
+    cancelBatch.abort();
   });
   const confirmCancel = async () => {
     const confirmed = await prompts.confirm(t().cancelConfirm, {
@@ -185,7 +203,16 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
     });
     if (confirmed) void cancel.mutate(undefined);
   };
-  const busy = () => content.loading() || cancel.loading();
+  const confirmCancelBatch = async (batchId: string) => {
+    const confirmed = await prompts.confirm(t().cancelBatchConfirm, {
+      title: t().cancelBatch,
+      icon: "ti ti-mail-x",
+      variant: "danger",
+      confirmText: t().cancelBatch,
+    });
+    if (confirmed) void cancelBatch.mutate(batchId);
+  };
+  const busy = () => content.loading() || cancel.loading() || cancelBatch.loading();
   const body = () => {
     const value = content.data();
     return value && !value.purged ? value : undefined;
@@ -209,6 +236,7 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
       ...(r.sentAt ? [{ term: t().sentAt, description: <Format.DateTime value={r.sentAt} /> }] : []),
       { term: t().attempts, description: <span class="tabular-nums">{r.attempts}</span> },
       ...(r.actor ? [{ term: t().actor, description: r.actor.name }] : []),
+      ...(r.batchId ? [{ term: t().batch, description: <span class="font-mono break-all">{r.batchId}</span> }] : []),
       ...(r.ref
         ? [
             {
@@ -292,12 +320,23 @@ export function MessageDialog(props: { record: AdminMailRecord; appName: string;
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Show when={record().status === "queued"}>
-          <Button type="button" variant="danger" size="sm" onClick={() => void confirmCancel()} disabled={busy()}>
-            {t().cancelMail}
-          </Button>
+        <Show when={record().status === "queued" || cancellableBatch()}>
+          <div class="flex flex-wrap gap-2">
+            <Show when={record().status === "queued"}>
+              <Button type="button" variant="danger" size="sm" onClick={() => void confirmCancel()} disabled={busy()}>
+                {t().cancelMail}
+              </Button>
+            </Show>
+            <Show when={cancellableBatch()}>
+              {(batchId) => (
+                <Button type="button" variant="secondary" size="sm" onClick={() => void confirmCancelBatch(batchId())} disabled={busy()}>
+                  {t().cancelBatch}
+                </Button>
+              )}
+            </Show>
+          </div>
         </Show>
-        <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={cancel.loading()}>
+        <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={cancel.loading() || cancelBatch.loading()}>
           {t().close}
         </Button>
       </PanelDialog.Footer>

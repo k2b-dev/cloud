@@ -55,6 +55,7 @@ test("every outgoing mail route requires administrator authentication", async ()
     [`/messages/${crypto.randomUUID()}`, "GET"],
     [`/messages/${crypto.randomUUID()}/content`, "GET"],
     [`/messages/${crypto.randomUUID()}/cancel`, "POST"],
+    [`/batches/${crypto.randomUUID()}/cancel`, "POST"],
     ["/profiles", "GET"],
     ["/profiles/alerts", "GET"],
     ["/profiles/alerts", "PUT"],
@@ -313,6 +314,7 @@ test("authenticated non-admins cannot read or mutate outgoing mail", async () =>
       [`/messages/${crypto.randomUUID()}`, "GET"],
       [`/messages/${crypto.randomUUID()}/content`, "GET"],
       [`/messages/${crypto.randomUUID()}/cancel`, "POST"],
+      [`/batches/${crypto.randomUUID()}/cancel`, "POST"],
       ["/profiles", "GET"],
       ["/profiles/alerts", "GET"],
       ["/profiles/alerts", "PUT"],
@@ -331,6 +333,26 @@ test("authenticated non-admins cannot read or mutate outgoing mail", async () =>
   }
 });
 
+test("batch cancellation validates its UUID, preserves admin context, and returns unknown batches as 404", async () => {
+  const { outgoingMailLog } = await import("../services/outgoing-mail/admin");
+  const batchId = crypto.randomUUID();
+  const cancel = spyOn(outgoingMailLog, "cancelBatch").mockResolvedValue({ batchId, cancelled: 2 });
+  try {
+    const response = await request(authorized(), `/batches/${batchId}/cancel`, "POST");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ batchId, cancelled: 2 });
+    expect(cancel.mock.calls[0]).toEqual([batchId, expect.objectContaining({ actor: expect.objectContaining({ userId: user.id }) })]);
+    expect((await request(authorized(), "/batches/invalid/cancel", "POST")).status).toBe(400);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    cancel.mockRejectedValue(new OutgoingMailError("batch_unknown", "Unknown batch.", 404));
+    const unknown = await request(authorized(), `/batches/${batchId}/cancel`, "POST");
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toMatchObject({ code: "batch_unknown" });
+  } finally {
+    cancel.mockRestore();
+  }
+});
 test("send-log routes validate filters, return metadata and forward audited content/cancellation context", async () => {
   const { outgoingMailLog } = await import("../services/outgoing-mail/admin");
   const id = crypto.randomUUID();
