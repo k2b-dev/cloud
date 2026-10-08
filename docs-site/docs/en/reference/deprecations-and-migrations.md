@@ -10,6 +10,20 @@ updated: 2026-10-08
 
 # Deprecations and migrations
 
+## Assistant keeps calculate loaded and offers after corrections
+
+`calculate` is no longer a deferred built-in: every turn with the default tool
+source can call it without `load_tools`, and the platform prompt requires it
+for every amount, sum, or other derived number an answer states. The prompt
+also shows dates and times in the runtime time zone, sends references to
+earlier work to `core.ai.chats.search`, and lists the Skill and preference
+offer cases under Suggestions instead of the Skill catalog. The built-in
+`cloud-assistant` Skill template moves to version 3 with a description that
+names such references. An unmodified installation updates at the next start; a
+customized copy shows **Update available** under **Admin > AI > Skills**. No
+setting changes. See
+[Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
+
 ## Notebooks levels keep title order until arranged by hand
 
 Writers can now arrange the notes of a level in Notebooks; the sidebar, Book,

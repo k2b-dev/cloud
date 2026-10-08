@@ -83,7 +83,9 @@ describe("Cloud AI Skill seeds", () => {
     }
 
     const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
-    expect(assistant).toMatchObject({ key: "assistant:cloud-assistant", name: "cloud-assistant" });
+    expect(assistant).toMatchObject({ key: "assistant:cloud-assistant", name: "cloud-assistant", version: 3 });
+    // Phrasings like "like last time" match the user's words, not app names, so the description must name them.
+    expect(assistant?.description).toContain('Also use when a request refers to earlier work, such as "like last time"');
     for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message", "scheduled-tasks"]) {
       expect(assistant?.instructions).toContain(text);
     }

@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Files, Projects, Skills, and personalization
@@ -287,32 +287,39 @@ starts enabled and can be disabled personally.
 
 ### Turn recurring work into a Skill
 
-When a person follows a turn and it can load `skill-creator`, the Skill section
-of the system prompt also explains recurring work. If the user disabled
-`skill-creator` or it was deleted, these rules are left out, even when other
-Skills remain loadable. A request likely recurs when the user says so
-("again", "every week", "like last time", "always"), corrects the same steps
-or format more than once, pastes a long reusable instruction, or a
-personalization workflow default covers that kind of request. The model
-searches earlier chats only when the user refers to one, and claims how often
-something happened only when the user said it or the chat shows it.
+The [Suggestions](#what-the-model-knows-about-the-chat) section of a followed
+turn lists the offer cases as if-then rules, and the model takes the first
+that applies:
 
-After finishing such a task, the model may offer to save the approach as a
-personal Skill if no listed Skill covers it. When Skills are omitted from the
-bounded catalog, it first checks that `search_skills` finds none. A single
-preference belongs in memory, not in a Skill. If a loaded Skill shaped the
-result and the user corrected it, the model offers to add the correction to
-that Skill only if it is the user's own. Built-in and shared Skills change for
-everyone, so they change only when the user asks for that. When the memory
-tool is available, the model instead offers to remember the correction as a
-preference. It asks the user to state the rule in their own words, because
-memory saves only text the user wrote in that turn.
+1. The user corrected the format, tone, or steps of a result for the second
+   time in the chat, and the model delivered the corrected result: it offers
+   to save the approach as a personal Skill, unless a listed Skill already
+   covers it. When Skills are omitted from the bounded catalog, it also checks
+   `search_skills`.
+2. The user corrected a result that their own Skill shaped: it offers to add
+   the correction to that Skill.
+3. The user corrected a result that a built-in or shared Skill shaped: it
+   offers to remember the correction as a preference and suggests a one-line
+   rule the user can send back, because memory saves only text the user wrote
+   in that turn. Built-in and shared Skills change for everyone, so they
+   change only when the user asks for that.
+4. The user says the request recurs ("again", "every week", "like last
+   time", "always"), pastes a long reusable instruction, or a personalization
+   workflow default covers it: it offers a Skill or a scheduled task.
 
-The model makes at most one such offer, in the last sentence of the final
-message. It makes none when the reply reports a failure, asks a clarifying
-question, or waits for approval, or when its previous reply already ended with
-an offer. Once the user declines, it does not offer again in that chat.
-Scheduled task runs do not get these rules.
+Cases 1 and 2 and the Skill part of case 4 need `skill-creator`; if the user
+disabled it or it was deleted, they are left out, even when other Skills
+remain loadable. Case 3 needs the memory tool. A single preference belongs in
+memory, not in a Skill. The model claims how often something happened only
+when the user said it or the chat shows it, and never searches chats only to
+justify an offer.
+
+The general suggestion limits apply: at most one offer, in the last sentence
+of the final message, and none after a failure, while asking a clarifying
+question or waiting for approval, after a reply that already ended with an
+offer, or once the user declined or asked for no suggestions. Asking for a
+shorter draft is a correction, not a request for silence. Scheduled task runs
+do not get these rules.
 
 After a yes to a Skill offer, the model loads `skill-creator` and drafts from
 the conversation. Its template first picks the lightest place: memory for a
@@ -492,8 +499,13 @@ Cloud composes the system prompt in this order:
 
 1. Platform identity, trusted runtime values including the current chat ID and
    request locale, and global rules. Assistant follows the language of the
-   current user message when it is clear and otherwise uses that locale.
-   Turns a person follows also get the visibility and suggestion rules below;
+   current user message when it is clear and otherwise uses that locale. It
+   shows dates and times in the runtime time zone, also in drafts and Skills
+   it writes, and mentions UTC only on request. When `calculate` is available,
+   every amount, sum, or other derived number in an answer must come from it.
+   With app tools, a reference to earlier work such as "like last time" goes
+   to `core.ai.chats.search` first. Turns a person follows also get the
+   visibility and suggestion rules below;
 2. Organization instructions;
 3. Optional turn-specific instructions such as retry style;
 4. The bounded readable Skill catalog;
@@ -524,15 +536,19 @@ there either. The preview in **Assistant settings > System prompt** and
   questions out of status text, and does not list delivered files or visuals
   again.
 - **Suggestions** allows at most one offer, in the last sentence of the final
-  message, and only when a concrete next step saves the user real work. When
-  the user or the chat shows that a request recurs, the offer is to save it as
-  a Skill or scheduled task, as described in
+  message. Corrections and recurring requests lead to a Skill, preference, or
+  scheduled task offer, as described in
   [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
-  otherwise it is the natural next step. The model
-  makes no offer for simple facts, while asking or waiting for approval, after
-  a failure, after a reply that already ended with one, or once the user
-  declined. It never searches data only to justify an offer. Organization,
-  Project, and user instructions about suggestions take precedence.
+  otherwise the offer is a concrete next step that saves the user real work.
+  The model makes no offer for simple facts, while asking or waiting for
+  approval, after a failure, after a reply that already ended with one, once
+  the user declined, or when the user asked for no suggestions or only a short
+  answer. A request to shorten a draft does not count as that. It never
+  searches data only to justify an offer. Organization, Project, and user
+  instructions about suggestions take precedence. Asked what it can do, the
+  model first looks at what the user already works with, such as Spaces,
+  recent chats, or files, leads with that, and leaves out apps without data
+  for them.
 
 Scheduled task runs keep the global rules and give their result without these
 sections. If the platform template fails to render, the minimal fallback prompt
