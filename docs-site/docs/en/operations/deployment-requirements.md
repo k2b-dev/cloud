@@ -98,23 +98,25 @@ stream. Their byte limits come from the declaration:
   the topic `cloud:live:<application ID>`, which reserves 64 MiB plus 1 MiB of
   dead letters. Its `sync.owner` is `cloud`, not the application.
 - A pump reserves 64 MiB.
+- An object store reserves its declared `retention.maxBytes` once; it has no
+  dead-letter stream.
 
 Per replica, the built-in applications reserve:
 
 | Application | Jobs and queues at the default | Larger streams, log and dead letters together | Reservation |
 | --- | --- | --- | --- |
-| Core, with the platform services it runs | 18 | AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB | 2 GiB |
+| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB | 4.1 GiB |
 | Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
-| Grids | 2 | `grids:workflow-record-events` 1 GiB, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.8 GiB |
-| Mail | 10 | `cloud:live:mail` 65 MiB, previous invalidations (`mail:invalidations`) 1 GiB until a later release removes them, automation backfill pump 64 MiB | 1.8 GiB |
+| Grids | 2 | `grids:workflow-record-events` 1 GiB, workflow runtime events 32 MiB, workflow wake hints (`cloud:workflow-wake`) 2 MiB shared with Mail, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.9 GiB |
+| Mail | 10 | workflow wake hints 2 MiB shared with Grids, `cloud:live:mail` 65 MiB, previous invalidations (`mail:invalidations`) 1 GiB until a later release removes them, automation backfill pump 64 MiB | 1.8 GiB |
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
 | Spaces | 0 | `cloud:live:spaces` 65 MiB, previous item events 1 GiB until a later release removes them | 1.1 GiB |
 | Pulse | 5 | none | 330 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
 
-Together, that is about 14 GiB per replica for every built-in application.
+Together, that is about 16 GiB per replica for every built-in application.
 Size `max_file_store` for the applications you deploy with headroom for
 standalone applications, and check the live reservation of your account:
 
