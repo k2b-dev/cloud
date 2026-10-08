@@ -4,7 +4,6 @@ import { createSignal, Show } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import type { AiChatActions } from "./message-actions";
-import { aiChatMessages } from "./messages";
 import {
   type AiRetryMessageInput,
   copyTextFromMessage,
@@ -14,6 +13,7 @@ import {
   userVisibleTextFromMessage,
   vfsAttachmentsFromMessage,
 } from "./message-utils";
+import { aiChatMessages } from "./messages";
 
 const openModifyRetryDialog = (
   entry: AiStoredMessage,

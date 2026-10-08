@@ -4,7 +4,6 @@ import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFi
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAllChatsList from "./AssistantAllChatsList";
-import { assistantMessages } from "./messages";
 import {
   type AssistantLiveHub,
   type AssistantLiveInvalidation,
@@ -13,6 +12,7 @@ import {
   useAssistantLive,
 } from "./assistant-live";
 import type { ConversationOpenResult } from "./assistant-navigation";
+import { assistantMessages } from "./messages";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type ChatView = "done" | "all" | "running" | "needs_attention" | "failed" | "unread" | "archived";
