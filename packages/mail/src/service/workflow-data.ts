@@ -291,13 +291,13 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
   };
 };
 
-export const getWorkflowSnapshot = async (params: {
-  mailboxId: string;
-  remoteMessageRefId: string;
-  db?: SqlClient;
-}): Promise<MailWorkflowTargetSnapshot | null> => {
-  const db = params.db ?? sql;
-  const [row] = await db<WorkflowSnapshotRow[]>`
+/**
+ * The single-message snapshot read, exported so tests can inspect its plan. rmr.id is the primary key
+ * and every join is on a primary or unique key, so LIMIT 1 changes no result. It caps the planned
+ * cost at one row's work: with stale statistics the planner can expect thousands of rows, charge the
+ * per-row aggregates for each, and JIT-compile this point lookup on every call.
+ */
+export const workflowSnapshotQuery = (params: { mailboxId: string; remoteMessageRefId: string }) => sql`
     SELECT ${snapshotColumns}
     FROM mail.remote_message_refs rmr
     ${snapshotJoins}
@@ -306,7 +306,16 @@ export const getWorkflowSnapshot = async (params: {
       AND rmr.stale_at IS NULL
       AND mp.deleted_at IS NULL
       AND folder.discovery_state = 'active'
+    LIMIT 1
   `;
+
+export const getWorkflowSnapshot = async (params: {
+  mailboxId: string;
+  remoteMessageRefId: string;
+  db?: SqlClient;
+}): Promise<MailWorkflowTargetSnapshot | null> => {
+  const db = params.db ?? sql;
+  const [row] = await db<WorkflowSnapshotRow[]>`${workflowSnapshotQuery(params)}`;
   return row ? mapSnapshot(row) : null;
 };
 
