@@ -77,7 +77,9 @@ export const rememberProviderErrors = (provider: Provider, remember: (reason: Ai
     complete: async (request) => {
       remember(null);
       try {
-        return await provider.complete(request);
+        const result = await provider.complete(request);
+        if (result.finishReason === "error") remember({ error: { code: "provider_stopped" } });
+        return result;
       } catch (error) {
         if (!request.signal?.aborted) note(error);
         throw error;
@@ -89,6 +91,8 @@ export const rememberProviderErrors = (provider: Provider, remember: (reason: Ai
         for await (const event of provider.stream(request)) {
           const error = event.type === "issue" ? aiTurnErrorFromProviderIssue(event.issue) : null;
           if (error) remember({ error });
+          // Provider stops are reported by nessi after the adapter finishes, outside this wrapper.
+          if (event.type === "usage" && event.finishReason === "error") remember({ error: { code: "provider_stopped" } });
           yield event;
         }
       } catch (error) {

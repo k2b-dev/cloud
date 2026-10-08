@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { memoryStore, nessi, type StoreEntry } from "@k2b/nessi";
 import { z } from "zod";
 import { createCloudCompactFn } from "./compaction";
-import { createAiProvider } from "./provider";
+import { createAiProvider, taskReasoningEffort } from "./provider";
 import { inferenceProvider } from "./quota-provider";
 import { aiConversations } from "./store";
 import * as structuredRuns from "./structured-runs";
@@ -40,12 +40,12 @@ const expectedThinking = (provider: AiProviderId, disabled = false) => {
     return { generationConfig: { thinkingConfig: disabled ? { thinkingBudget: 0 } : { thinkingLevel: "medium" } } };
   if (provider === "ollama") return disabled ? {} : { think: "medium" };
   if (provider === "mistral") return disabled ? {} : { reasoning_effort: "medium" };
-  if (provider === "openrouter" && !disabled) return { reasoning: { effort: "medium" } };
+  if (provider === "openrouter") return { reasoning: { effort: disabled ? "low" : "medium" } };
   return { reasoning_effort: disabled ? "low" : "medium" };
 };
 
 for (const providerId of providers)
-  test(`${providerId}: loop thinking level, all-call extra parameters and disabled structured/compaction reasoning`, async () => {
+  test(`${providerId}: loop thinking level, all-call extra parameters and preserved structured/compaction reasoning`, async () => {
     const requests: { body: Record<string, unknown>; headers: Headers }[] = [];
     server = Bun.serve({
       port: 0,
@@ -114,15 +114,10 @@ for (const providerId of providers)
       provider: counted,
       input: "title",
       output: z.object({ answer: z.string() }),
-      disableReasoning: true,
+      reasoningEffort: taskReasoningEffort(counted),
     });
     expect(requests[1]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
-    expect(requests[1]!.body.reasoning).toBeUndefined();
-    if (["anthropic", "mistral", "ollama"].includes(providerId)) {
-      expect(requests[1]!.body.reasoning_effort).toBeUndefined();
-      expect(requests[1]!.body.think).toBeUndefined();
-      expect(requests[1]!.body.thinking).toBeUndefined();
-    }
+
     const compactMessages = spyOn(aiConversations, "compactMessages").mockResolvedValue(undefined);
     const recordStructuredRun = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
     const entries: StoreEntry[] = Array.from({ length: 8 }, (_, i) => ({
@@ -153,14 +148,14 @@ for (const providerId of providers)
     }
     expect(requests).toHaveLength(3);
     expect(requests[2]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
+    for (const request of [requests[1]!, requests[2]!]) {
+      if (providerId === "anthropic" || providerId === "mistral" || providerId === "ollama")
+        for (const key of ["thinking", "reasoning_effort", "think", "reasoning"]) expect(request.body[key]).toBeUndefined();
+      if (providerId === "openai" || providerId === "vllm" || providerId === "openai-compatible")
+        expect(request.body.reasoning).toBeUndefined();
+    }
     if (providerId === "vllm" || providerId === "openai-compatible") {
       for (const request of requests) expect(request.headers.get("X-Secret")).toBe("header-secret");
-    }
-    expect(requests[2]!.body.reasoning).toBeUndefined();
-    if (["anthropic", "mistral", "ollama"].includes(providerId)) {
-      expect(requests[2]!.body.reasoning_effort).toBeUndefined();
-      expect(requests[2]!.body.think).toBeUndefined();
-      expect(requests[2]!.body.thinking).toBeUndefined();
     }
     await createAiProvider({ ...profile, reasoningEffort: undefined, extraBody: undefined }, "api-key").complete({ messages: [] });
     const defaultBody = requests[3]!.body;

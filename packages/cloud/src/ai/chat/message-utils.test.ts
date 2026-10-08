@@ -227,3 +227,14 @@ describe("describeResponseEnd", () => {
     expect(describeResponseEnd({ loopDoneReason: null, stopReason: null }, "de")).toBe("Unbekannt");
   });
 });
+
+test("a failed or interrupted message never describes itself as Completed", () => {
+  for (const [locale, failed, interrupted] of [
+    ["en", "Failed", "Interrupted"],
+    ["de", "Fehlgeschlagen", "Unterbrochen"],
+  ]) {
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "error" }, locale!)).toBe(failed!);
+    expect(describeResponseEnd({ loopDoneReason: "stop", stopReason: "interrupted" }, locale!)).toBe(interrupted!);
+    expect(describeResponseEnd({ loopDoneReason: "error", stopReason: "error" }, locale!)).toBe(failed!);
+  }
+});

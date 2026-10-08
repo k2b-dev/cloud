@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Provider } from "@k2b/nessi";
+import { memoryStore, nessi, type Provider } from "@k2b/nessi";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { AiQuotaError } from "./quotas";
@@ -111,4 +111,55 @@ test("the stored error says how to go on only when a new message can", () => {
   expect(aiTurnErrorText({ code: "context_full" }, "en")).toBe(
     "This chat is too long for the model. Start a new chat to continue; this one stays as it is.",
   );
+});
+
+test("a provider-stopped answer keeps its reason through nessi's loop-only issue", async () => {
+  const provider = {
+    ...throwing(null),
+    async *stream() {
+      yield { type: "usage" as const, finishReason: "error" as const, usage: { input: 8, output: 2, total: 10 } };
+    },
+    complete: async () => ({ message: { role: "assistant" as const, content: [] }, finishReason: "error" as const }),
+  };
+  const reasons: (AiTurnFailureReason | null)[] = [];
+  const wrapped = rememberProviderErrors(provider, (reason) => reasons.push(reason));
+  await drain(wrapped.stream({ messages: [] }));
+  await wrapped.complete({ messages: [] });
+  expect(reasons).toEqual([null, { error: { code: "provider_stopped" } }, null, { error: { code: "provider_stopped" } }]);
+});
+
+test("provider-stopped answers explain the stop in EN and DE and offer Continue", () => {
+  expect(aiTurnErrorText({ code: "provider_stopped" }, "en")).toBe(
+    "The model provider ended this answer early. The results so far are kept. Send a new message to continue.",
+  );
+  expect(aiTurnErrorText({ code: "provider_stopped" }, "de")).toBe(
+    "Der KI-Anbieter hat diese Antwort vorzeitig beendet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
+  );
+});
+
+test("nessi provider stops are classified before the loop-only issue and never execute their calls", async () => {
+  const remembered: (AiTurnFailureReason | null)[] = [];
+  const provider = rememberProviderErrors(
+    {
+      ...throwing(null),
+      async *stream() {
+        yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "call", name: "send" };
+        yield { type: "block_end", blockId: "call", index: 0, block: { type: "tool_call", id: "call", name: "send", args: {} } };
+        yield { type: "usage", usage: { input: 8, output: 2, total: 10 }, finishReason: "error" };
+      },
+    },
+    (reason) => {
+      remembered.push(reason);
+    },
+  );
+  let ended = false;
+  for await (const event of nessi({ provider, systemPrompt: "Test", store: memoryStore(), input: "Hello" })) {
+    expect(event.type).not.toBe("tool_execution_start");
+    if (event.type === "loop_end") {
+      ended = true;
+      expect(event.reason).toBe("error");
+      expect(remembered.at(-1)).toEqual({ error: { code: "provider_stopped" } });
+    }
+  }
+  expect(ended).toBe(true);
 });

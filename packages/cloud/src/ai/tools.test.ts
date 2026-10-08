@@ -158,6 +158,7 @@ describe("AI tools", () => {
     const prepared = prepareAiTools({ tools: [tool], actor });
 
     expect(prepared.tools[0]?.kind).toBe("client");
+    expect(prepared.tools[0]?.def.needsApproval).toBe(false);
     expect(prepared.frontendModes.get("survey")).toBe("client_interaction");
     expect(prepared.approvalPolicies.get("survey")).toEqual({ kind: "user-configurable", default: "always", scope: "survey" });
     // Output validation now lives in nessi: the schema travels with the tool definition.

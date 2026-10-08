@@ -144,8 +144,9 @@ export const describeResponseEnd = (entry: Pick<AiStoredMessage, "loopDoneReason
     interrupted: t.infoEndInterrupted,
     error: t.infoEndFailed,
   };
+  const stopped = entry.stopReason && ["error", "aborted", "interrupted"].includes(entry.stopReason);
   const parts = [
-    entry.loopDoneReason ? run[entry.loopDoneReason] : null,
+    entry.loopDoneReason && !(entry.loopDoneReason === "stop" && stopped) ? run[entry.loopDoneReason] : null,
     entry.stopReason ? (Object.hasOwn(message, entry.stopReason) ? message[entry.stopReason] : entry.stopReason) : null,
   ].filter((part): part is string => Boolean(part));
   return [...new Set(parts)].join(" · ") || t.infoUnknown;

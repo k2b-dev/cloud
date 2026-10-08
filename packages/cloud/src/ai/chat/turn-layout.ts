@@ -1,4 +1,5 @@
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
+import type { AiStoredMessage } from "../types";
 import { hasCapabilityTable } from "./capability-result";
 import { isCardToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 import { isFailedTool } from "./tool-groups";
@@ -139,3 +140,14 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
     waitingFor,
   };
 }
+
+/** The loop ending is authoritative; partial messages also carry their own failed or interrupted ending. */
+export const storedPhase = (entries: readonly Pick<AiStoredMessage, "loopDoneReason" | "stopReason">[]): AiTurnPhase => {
+  const reason = entries.findLast((entry) => entry.loopDoneReason)?.loopDoneReason;
+  if (reason === "aborted") return "stopped";
+  if (reason && reason !== "stop") return "failed";
+  const stop = entries.findLast((entry) => entry.stopReason)?.stopReason;
+  if (stop === "error") return "failed";
+  if (stop === "interrupted" || stop === "aborted") return "stopped";
+  return "completed";
+};

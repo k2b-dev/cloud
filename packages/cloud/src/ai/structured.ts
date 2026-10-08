@@ -5,6 +5,7 @@ import type { AccessSubject } from "../server";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
+import { taskReasoningEffort } from "./provider";
 import { inferenceProvider } from "./quota-provider";
 import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
@@ -131,7 +132,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           outputName: input.outputName,
           temperature: input.temperature ?? 0,
           maxOutputTokens: input.maxOutputTokens ?? resolved.profile.maxOutputTokens,
-          disableReasoning: true,
+          reasoningEffort: taskReasoningEffort(resolved.provider),
           signal: input.signal,
         });
         const durationMs = Date.now() - startedAt;
