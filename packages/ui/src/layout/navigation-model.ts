@@ -1,5 +1,9 @@
 import type { LinkNavigateEvent, NavigationScrollMode } from "@k2b/ssr/nav";
 import type { Accessor } from "solid-js";
+import type { IntentTone } from "../semantics";
+
+/** A status icon at a row's end, such as "running". `label` names it for screen readers and as its tooltip. */
+export type NavigationStatus = { icon: string; label: string; tone?: IntentTone };
 
 type NavigationEntry = {
   id: string;
@@ -7,6 +11,11 @@ type NavigationEntry = {
   icon?: string;
   badge?: string | number;
   description?: string;
+  /**
+   * Status icon in a fixed-size slot at the row's end. Set `null` on a row whose status comes and goes: the empty slot
+   * keeps its place, so a status change never rewraps the label or moves the rows below.
+   */
+  status?: NavigationStatus | null;
   active?: boolean;
   disabled?: boolean;
   color?: string;
@@ -26,9 +35,17 @@ type NavigationEntry = {
 /** Serializable presentation. Functions stay with the controller's owning island. */
 export type NavigationItem = NavigationEntry &
   (
-    | { href: string; action?: string; navigation?: "document" | "enhanced"; scroll?: NavigationScrollMode }
-    | { action: string; href?: never; navigation?: never; scroll?: never }
-    | { href?: never; action?: never; navigation?: never; scroll?: never; children: readonly NavigationItem[] }
+    | { href: string; action?: string; navigation?: "document" | "enhanced"; scroll?: NavigationScrollMode; section?: never }
+    | { action: string; href?: never; navigation?: never; scroll?: never; section?: never }
+    | {
+        href?: never;
+        action?: never;
+        navigation?: never;
+        scroll?: never;
+        children: readonly NavigationItem[];
+        /** Shows the group as a plain heading over its rows, always open and not indented, instead of a disclosure. */
+        section?: boolean;
+      }
   );
 
 export type NavigationOptions = {

@@ -301,3 +301,52 @@ test("row actions keep their description, so a disabled action can say why", asy
     dom.cleanup();
   }
 });
+
+test("sections head their rows without a disclosure, and a row's status fills its kept slot in place", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const [running, setRunning] = createSignal(false);
+  const navigation = createNavigation({
+    items: () => [
+      {
+        id: "today",
+        label: "Today",
+        section: true,
+        children: [
+          {
+            id: "offer",
+            label: "Offer",
+            href: "/offer",
+            status: running() ? { icon: "ti ti-loader-2", label: "Running", tone: "info" } : null,
+          },
+          { id: "notes", label: "Notes", href: "/notes" },
+        ],
+      },
+    ],
+  });
+  const dispose = render(() => <Navigation navigation={navigation} label="Chats" />, dom.root);
+  try {
+    expect(dom.root.querySelector(".k2b-navigation__disclosure, [aria-expanded]")).toBeNull();
+    const heading = dom.root.querySelector(".k2b-navigation__heading")!;
+    expect(heading.textContent).toBe("Today");
+    const list = heading.nextElementSibling!;
+    expect(list.getAttribute("aria-labelledby")).toBe(heading.id);
+    expect(list.querySelectorAll("a").length).toBe(2);
+
+    const link = dom.root.querySelector<HTMLAnchorElement>('a[href="/offer"]')!;
+    const slot = link.querySelector(".k2b-navigation__status")!;
+    // Reserved but empty while idle; a row without `status` has no slot at all.
+    expect(slot.textContent).toBe("");
+    expect(dom.root.querySelector('a[href="/notes"] .k2b-navigation__status')).toBeNull();
+
+    setRunning(true);
+    expect(link.querySelector(".k2b-navigation__status")).toBe(slot);
+    expect(slot.getAttribute("data-tone")).toBe("info");
+    expect(slot.getAttribute("title")).toBe("Running");
+    expect(link.textContent).toBe("OfferRunning");
+    expect(dom.root.querySelector('a[href="/offer"] small')).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

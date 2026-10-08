@@ -74,7 +74,9 @@ state.
 ```
 
 `DataTable.Header` accepts primitive `title` and `subtitle` props. Its children
-are actions. `Controls` and `Footer` accept ordinary child composition, so
+are actions. They sit beside the title while they fit and wrap onto further
+rows below it on narrow panels, such as on a phone, so no action is cut off.
+`Controls` and `Footer` accept ordinary child composition, so
 search, filters, settings, bulk actions, and pagination remain replaceable.
 
 The header automatically labels the nested table region. For a standalone

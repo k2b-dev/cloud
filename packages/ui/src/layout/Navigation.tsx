@@ -1,5 +1,5 @@
 import { documentNavigate, Link } from "@k2b/ssr/nav";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
 import { useUiMessages } from "../intl/messages";
@@ -19,12 +19,13 @@ export default function Navigation(props: NavigationProps) {
   const activate = async (id: string) => {
     if (await ready()) await props.navigation.activate(id);
   };
-  const Rows = (rows: { items: readonly NavigationItem[]; disabled?: boolean }) => (
-    <ul class="k2b-navigation__list">
+  const Rows = (rows: { items: readonly NavigationItem[]; disabled?: boolean; labelledBy?: string }) => (
+    <ul class="k2b-navigation__list" aria-labelledby={rows.labelledBy}>
       <For each={rows.items.map((item) => item.id)}>
         {(id) => {
           const item = () => rows.items.find((entry) => entry.id === id)!;
           const disabled = () => rows.disabled || item().disabled;
+          const headingId = `k2b-navigation-section-${createUniqueId()}`;
           // `expanded` hands disclosure to the item's owner; every other toggle stays local to this renderer.
           const open = () => item().expanded ?? expanded()[id] ?? item().defaultExpanded ?? true;
           const toggle = () => {
@@ -48,117 +49,142 @@ export default function Navigation(props: NavigationProps) {
               <Show when={item().badge !== undefined}>
                 <span class="k2b-navigation__badge">{item().badge}</span>
               </Show>
+              {/* `null` keeps the empty slot, so a status that appears later takes no width from the label. */}
+              <Show when={item().status !== undefined}>
+                <span class="k2b-navigation__status" data-tone={item().status?.tone} title={item().status?.label}>
+                  <Show when={item().status}>
+                    {(status) => (
+                      <>
+                        <i class={status().icon} aria-hidden="true" />
+                        <span class="k2b-sr-only">{status().label}</span>
+                      </>
+                    )}
+                  </Show>
+                </span>
+              </Show>
             </>
           );
           return (
-            <li>
-              <div class="k2b-navigation__row" data-active={item().active || undefined}>
-                <Show
-                  when={item().href}
-                  fallback={
-                    <button
-                      type="button"
-                      class="k2b-navigation__control"
-                      disabled={disabled()}
-                      aria-expanded={!item().action ? open() : undefined}
-                      onClick={() => (item().action ? void activate(id) : toggle())}
+            <Show
+              when={item().section}
+              fallback={
+                <li>
+                  <div class="k2b-navigation__row" data-active={item().active || undefined}>
+                    <Show
+                      when={item().href}
+                      fallback={
+                        <button
+                          type="button"
+                          class="k2b-navigation__control"
+                          disabled={disabled()}
+                          aria-expanded={!item().action ? open() : undefined}
+                          onClick={() => (item().action ? void activate(id) : toggle())}
+                        >
+                          {content()}
+                          <Show when={!item().action && item().children?.length}>
+                            <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
+                          </Show>
+                        </button>
+                      }
                     >
-                      {content()}
-                      <Show when={!item().action && item().children?.length}>
+                      {(href) => (
+                        <Link
+                          class="k2b-navigation__control"
+                          href={href()}
+                          aria-current={item().active ? "page" : undefined}
+                          aria-disabled={disabled() || undefined}
+                          tabIndex={disabled() ? -1 : undefined}
+                          scroll={item().scroll}
+                          onNavigate={async (event) => {
+                            if (!(await ready())) return;
+                            if (item().navigation === "enhanced" && props.navigation.onNavigate) await props.navigation.onNavigate(event);
+                            else event.fallback();
+                          }}
+                          onClick={(event) => {
+                            if (disabled()) {
+                              event.preventDefault();
+                              return;
+                            }
+                            if (!item().action || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                              return;
+                            // Local opening can fetch before committing navigation, outside a view transition.
+                            event.preventDefault();
+                            void activate(id);
+                          }}
+                        >
+                          {content()}
+                        </Link>
+                      )}
+                    </Show>
+                    <Show when={(item().href || item().action) && item().children?.length}>
+                      <button
+                        type="button"
+                        class="k2b-navigation__disclosure"
+                        aria-label={item().label}
+                        aria-expanded={open()}
+                        disabled={disabled()}
+                        onClick={toggle}
+                      >
                         <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
-                      </Show>
-                    </button>
-                  }
-                >
-                  {(href) => (
-                    <Link
-                      class="k2b-navigation__control"
-                      href={href()}
-                      aria-current={item().active ? "page" : undefined}
-                      aria-disabled={disabled() || undefined}
-                      tabIndex={disabled() ? -1 : undefined}
-                      scroll={item().scroll}
-                      onNavigate={async (event) => {
-                        if (!(await ready())) return;
-                        if (item().navigation === "enhanced" && props.navigation.onNavigate) await props.navigation.onNavigate(event);
-                        else event.fallback();
+                      </button>
+                    </Show>
+                    {/* Keyed by id like the rows, so a button keeps its identity and focus when the model updates. */}
+                    <For each={(item().inlineActions ?? []).map((action) => action.id)}>
+                      {(actionId) => {
+                        const action = () => item().inlineActions?.find((entry) => entry.id === actionId);
+                        return (
+                          <Show when={action()}>
+                            {(current) => (
+                              <IconButton
+                                class="k2b-navigation__inline-action"
+                                label={current().label}
+                                disabled={disabled() || current().disabled}
+                                onClick={() => void activate(actionId)}
+                              >
+                                <i class={current().icon} aria-hidden="true" />
+                              </IconButton>
+                            )}
+                          </Show>
+                        );
                       }}
-                      onClick={(event) => {
-                        if (disabled()) {
-                          event.preventDefault();
-                          return;
-                        }
-                        if (!item().action || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-                          return;
-                        // Local opening can fetch before committing navigation, outside a view transition.
-                        event.preventDefault();
-                        void activate(id);
-                      }}
-                    >
-                      {content()}
-                    </Link>
-                  )}
-                </Show>
-                <Show when={(item().href || item().action) && item().children?.length}>
-                  <button
-                    type="button"
-                    class="k2b-navigation__disclosure"
-                    aria-label={item().label}
-                    aria-expanded={open()}
-                    disabled={disabled()}
-                    onClick={toggle}
-                  >
-                    <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
-                  </button>
-                </Show>
-                {/* Keyed by id like the rows, so a button keeps its identity and focus when the model updates. */}
-                <For each={(item().inlineActions ?? []).map((action) => action.id)}>
-                  {(actionId) => {
-                    const action = () => item().inlineActions?.find((entry) => entry.id === actionId);
-                    return (
-                      <Show when={action()}>
-                        {(current) => (
-                          <IconButton
-                            class="k2b-navigation__inline-action"
-                            label={current().label}
-                            disabled={disabled() || current().disabled}
-                            onClick={() => void activate(actionId)}
-                          >
-                            <i class={current().icon} aria-hidden="true" />
-                          </IconButton>
-                        )}
-                      </Show>
-                    );
-                  }}
-                </For>
-                <Show when={item().actions?.length}>
-                  <Dropdown.Root
-                    items={(item().actions ?? []).map((action) => ({
-                      label: action.label,
-                      icon: action.icon,
-                      description: action.description,
-                      disabled: disabled() || action.disabled,
-                      action: () => {
-                        if (action.href)
-                          void ready().then((allowed) => {
-                            if (allowed) documentNavigate(action.href!);
-                          });
-                        else void activate(action.id);
-                      },
-                    }))}
-                  >
-                    <Dropdown.Trigger iconOnly label={`${item().label}: ${messages().rowAction}`} variant="ghost">
-                      <i class="ti ti-dots" aria-hidden="true" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
-                </Show>
-              </div>
-              <Show when={item().children?.length}>
-                <div hidden={!open()}>
-                  <Rows items={item().children ?? []} disabled={disabled()} />
+                    </For>
+                    <Show when={item().actions?.length}>
+                      <Dropdown.Root
+                        items={(item().actions ?? []).map((action) => ({
+                          label: action.label,
+                          icon: action.icon,
+                          description: action.description,
+                          disabled: disabled() || action.disabled,
+                          action: () => {
+                            if (action.href)
+                              void ready().then((allowed) => {
+                                if (allowed) documentNavigate(action.href!);
+                              });
+                            else void activate(action.id);
+                          },
+                        }))}
+                      >
+                        <Dropdown.Trigger iconOnly label={`${item().label}: ${messages().rowAction}`} variant="ghost">
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
+                    </Show>
+                  </div>
+                  <Show when={item().children?.length}>
+                    <div hidden={!open()}>
+                      <Rows items={item().children ?? []} disabled={disabled()} />
+                    </div>
+                  </Show>
+                </li>
+              }
+            >
+              <li class="k2b-navigation__section">
+                <div class="k2b-navigation__heading" id={headingId}>
+                  {item().label}
                 </div>
-              </Show>
-            </li>
+                <Rows items={item().children ?? []} disabled={disabled()} labelledBy={headingId} />
+              </li>
+            </Show>
           );
         }}
       </For>

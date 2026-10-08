@@ -53,8 +53,11 @@
   gap: 0.5rem;
 }
 
+/* Actions keep their width beside the title, but never grow past the header:
+   on a phone they wrap onto further rows instead of running out of the panel. */
 .k2b-ui .k2b-panel-header__actions {
   display: flex;
+  max-width: 100%;
   flex-shrink: 0;
   align-items: center;
   flex-wrap: wrap;

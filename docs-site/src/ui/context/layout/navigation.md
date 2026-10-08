@@ -24,9 +24,30 @@ const navigation = createNavigation({
 
 Items use stable, unique `id` values, a `label`, and either `href`, an `action`
 key, or `children`. Optional fields are `icon`, `badge` (string or number),
-`description`, `active`, `disabled`, `color`, secondary `actions`, and
+`description`, `status`, `active`, `disabled`, `color`, secondary `actions`, and
 `inlineActions`. Everything in the item tree is serializable; functions remain
 in the controller.
+
+`status` puts one icon at the row's end, before its buttons, in a slot of fixed
+size: `{ icon, label, tone? }`. The `label` is part of the row's accessible name
+and its tooltip; `tone` takes the intent tones `neutral`, `info`, `success`,
+`warning`, and `danger`. Use it for a state that comes and goes, such as
+"running" or "waiting for you", instead of a `description`, which adds a second
+line. Set `status: null` on rows whose status can appear later: the empty slot
+keeps its place, so a long label wraps the same way and the rows below do not
+move when a status appears.
+
+```tsx
+{ id: "offer", label: "Offer for Jana", href: "/chats/offer", status: running() ? { icon: "ti ti-loader-2", label: "Running" } : null }
+```
+
+A group with `section: true` and no `href` or `action` is a section: a quiet
+heading over its rows, always open and not indented, for lists sorted into
+parts such as days. Its rows form a list labelled by the heading.
+
+```tsx
+{ id: "today", label: "Today", section: true, children: todaysChats().map(chatItem) }
+```
 
 Secondary `actions` open from the row's menu button with their `label`, `icon`,
 `description`, and `disabled` state, so a disabled action can say why.
@@ -94,4 +115,6 @@ The host owns opening, closing, history, and the source of live updates.
 ## Example
 
 The live showcase renders one controller inline and inside a sheet. Simulate a
-live update while the sheet is open to check that the badge changes in place.
+live update while the sheet is open to check that the badge changes in place
+and that the status of the first row under **Today** comes and goes without
+moving a row.

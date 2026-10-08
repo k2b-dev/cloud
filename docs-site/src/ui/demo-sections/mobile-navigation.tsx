@@ -23,6 +23,8 @@ import { DemoCard } from "../DemoCard";
 export function NavigationDemo() {
   const [active, setActive] = createSignal("inbox");
   const [count, setCount] = createSignal(3);
+  // A live update also toggles one row's status; its slot is kept while it is empty, so no row moves.
+  const running = () => count() % 2 === 0;
   const navigation = createNavigation({
     items: () => [
       {
@@ -47,6 +49,27 @@ export function NavigationDemo() {
             actions: [{ id: "rename", action: "rename", label: "Rename project", icon: "ti ti-pencil" }],
           },
           { id: "pending", action: "pending", label: "Waiting for access", disabled: true },
+        ],
+      },
+      {
+        id: "today",
+        label: "Today",
+        section: true,
+        children: [
+          {
+            id: "report",
+            action: "report",
+            label: "Weekly report with a title long enough to wrap on a phone",
+            active: active() === "report",
+            status: running() ? { icon: "ti ti-loader-2", label: "Running" } : null,
+          },
+          {
+            id: "offer",
+            action: "offer",
+            label: "Offer for Jana",
+            active: active() === "offer",
+            status: { icon: "ti ti-hand-stop", label: "Waiting for you", tone: "warning" },
+          },
         ],
       },
       { id: "docs", label: "Workspace documentation", href: "/en/ui/layout/workspace", icon: "ti ti-book" },
@@ -76,7 +99,7 @@ export function NavigationDemo() {
     <DemoCard
       id="navigation"
       chip={{ kind: "component", name: "Navigation", from: "@k2b/ui" }}
-      description="One live navigation model, native links, local actions and readable nested rows. The host chooses where it renders."
+      description="One live navigation model, native links, local actions, readable nested rows, sections and a status slot that keeps its place. The host chooses where it renders."
       code={`const navigation = createNavigation({\n  items: () => [{ id: "inbox", label: "Inbox", action: "inbox", badge: count() }],\n  onAction: id => setActive(id),\n});\n<Navigation navigation={navigation} label="Workspace" />`}
     >
       <div class="flex flex-col gap-3 max-w-xl">
