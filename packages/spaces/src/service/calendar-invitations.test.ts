@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { buildCalendarResponse, decideCalendarImport, parseCalendarInvitation } from "./calendar-invitations";
+import { EventInvitationPrepareDataSchema } from "../capability-contracts";
+import {
+  assertPreparedEventInvitationCalendar,
+  buildCalendarResponse,
+  decideCalendarImport,
+  parseCalendarInvitation,
+} from "./calendar-invitations";
 
 const request = `BEGIN:VCALENDAR\r
 VERSION:2.0\r
@@ -20,6 +26,17 @@ END:VCALENDAR\r
 `;
 
 describe("calendar invitation protocol", () => {
+  test("prepared calendar payload guard enforces the declared capability limit", () => {
+    const calendar = EventInvitationPrepareDataSchema.shape.calendar;
+    const limit = calendar.maxLength;
+    if (limit === null) throw new Error("Expected a bounded prepared invitation");
+    const atLimit = "c".repeat(limit);
+    expect(() => assertPreparedEventInvitationCalendar(atLimit)).not.toThrow();
+    expect(calendar.safeParse(atLimit).success).toBeTrue();
+    const oversized = `${atLimit}c`;
+    expect(calendar.safeParse(oversized).success).toBeFalse();
+    expect(() => assertPreparedEventInvitationCalendar(oversized)).toThrow("Prepared calendar invitation is too large");
+  });
   test("parses a bounded REQUEST with timezone, organizer, attendees, and recurrence", () => {
     const result = parseCalendarInvitation(request);
     expect(result.ok).toBe(true);

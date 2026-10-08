@@ -82,6 +82,7 @@ import {
   TaskDependencyListInputSchema,
   TaskDependencyRemoveDataSchema,
   TaskDependentListDataSchema,
+  TaskDependentListInputSchema,
   TaskListDataSchema,
   TaskListInputSchema,
   TaskSetCompletedInputSchema,
@@ -318,6 +319,7 @@ const mapRelations = (item: SpaceItem) => ({
 
 const mapListRelations = (item: SpaceItem) => ({
   assignees: (item.assignees ?? []).slice(0, 3).map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 100).text })),
+  assigneeCount: item.assignees?.length ?? 0,
   tags: (item.tags ?? [])
     .slice(0, 3)
     .map((entry) => ({ id: entry.id, name: truncateText(entry.name, 50).text, color: truncateText(entry.color, 20).text })),
@@ -483,7 +485,7 @@ const itemRef = (item: { id: string; title: string; description?: string | null 
   type: "spaces.item" as const,
   id: item.id,
   title: item.title,
-  ...(item.description ? { preview: item.description } : {}),
+  ...(item.description ? { preview: truncateText(item.description, 2000).text } : {}),
   icon: kind === "event" ? "ti ti-calendar-event" : "ti ti-checkbox",
 });
 const commentRef = (
@@ -602,7 +604,7 @@ const runItemReferenceFind = async (input: z.infer<typeof ItemResourceReferenceF
     return {
       ref: { type: "spaces.item", id: item.id },
       title: item.title,
-      preview: item.description ?? undefined,
+      preview: item.description === null ? undefined : truncateText(item.description, 2000).text,
       icon: isEvent(item) ? "ti ti-calendar-event" : "ti ti-checkbox",
       metadata: [
         { label: t.space, value: space.name },
@@ -1262,21 +1264,27 @@ const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInp
   });
 };
 
-const runTaskDependentList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
+const runTaskDependentList = async (input: z.infer<typeof TaskDependentListInputSchema>, context: CapabilityExecutionContext) => {
+  const cursor = decodeSpacesCapabilityCursor(input.cursor, context.locale);
+  if (!cursor.ok) return cursor;
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
   if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
-  const dependents = await spacesPublicResources.projectTaskDependents(
-    await spacesService.item.dependencies.listBlocks({ blockerItemId: resolved.data.internalId }),
-  );
-  return ok({
-    data: dependents.map((dependency) => ({
+  const page = await spacesService.item.dependencies.listBlocksPage({
+    blockerItemId: resolved.data.internalId,
+    page: cursor.data,
+    perPage: input.limit,
+  });
+  const dependents = await spacesPublicResources.projectTaskDependents(page.items);
+  return pageResult(
+    page,
+    dependents.map((dependency) => ({
       ...dependency,
       dependent: { ...dependency.dependent, ref: { type: "spaces.item" as const, id: dependency.dependent.id } },
     })),
-    refs: [itemRef(resolved.data.item, "task")],
-    links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
-  });
+    [itemRef(resolved.data.item, "task")],
+    [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+  );
 };
 
 const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSchema>, context: CapabilityExecutionContext) =>
@@ -1298,7 +1306,7 @@ const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSch
     const [data] = await spacesPublicResources.projectTaskDependencies([result.data]);
     if (!data) return capabilityFail(context, err.internal("Failed to project task dependency"), "operationFailed");
     return ok({
-      data,
+      data: { ...data, blocker: { ...data.blocker, ref: { type: "spaces.item" as const, id: data.blocker.id } } },
       summary: boundedCapabilitySummary(
         spacesMessages(context.locale).taskWaitsFor({ task: resolved.data.item.title, blocker: blocker.data.item.title }),
       ),
@@ -1942,8 +1950,8 @@ export const spacesCapabilities = defineCapabilities({
     "task.blocks.list": {
       title: "List tasks blocked by a task",
       description:
-        "List tasks currently blocked by one known task. Get itemId from task.list, item.search, or item.read; use task.blocker.list for the opposite direction.",
-      input: TaskDependencyListInputSchema,
+        "List tasks currently blocked by one known task, at most 100 per page. Follow page.nextCursor for all dependents. Get itemId from task.list, item.search, or item.read; use task.blocker.list for the opposite direction.",
+      input: TaskDependentListInputSchema,
       data: TaskDependentListDataSchema,
       openWorld: false,
       run: runTaskDependentList,

@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Spaces
@@ -193,6 +193,24 @@ calendar integration, and troubleshooting. Developers can read
 [URL state and navigation](/en/docs/frontend/url-state-and-navigation), and
 [App capabilities](/en/docs/platform/capabilities) for the shared contracts
 Spaces adopts.
+
+The `spaces.task.list` and `spaces.event.list` capabilities return at most
+three assignees and tags per item. `assigneeCount` is the total number of
+assignees, including those omitted from the preview. The response budget may
+shorten these lists further; `relationsTruncated` marks partial relations.
+Report assignments as, for example, “3 of 11”, or use `spaces.item.read` for
+more detail before naming everyone. Resource reference previews contain at
+most 2,000 characters; read the resource for its full content.
+
+`spaces.task.blocker.add` returns the saved blocker with a `spaces.item` ref,
+just like `spaces.task.blocker.list`. For the reverse direction,
+`spaces.task.blocks.list` returns up to 100 dependent tasks per page by default;
+use its `cursor` and `limit` inputs and follow `page.nextCursor` until
+`page.hasMore` is false.
+
+Invitation preparation rejects generated calendar payloads longer than 98,304
+characters and rolls back the preparation. Reduce the event content or
+attendee list before trying again.
 
 ## Automate Spaces from the terminal
 

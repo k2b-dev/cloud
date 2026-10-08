@@ -40,12 +40,14 @@ const spaceUuid = "33333333-3333-4333-8333-333333333333";
 const otherSpaceUuid = "44444444-4444-4444-8444-444444444444";
 const columnUuid = "55555555-5555-4555-8555-555555555555";
 const itemUuid = "66666666-6666-4666-8666-666666666666";
+const blockerUuid = "99999999-9999-4999-8999-999999999999";
 const commentUuid = "77777777-7777-4777-8777-777777777777";
 const tagUuid = "88888888-8888-4888-8888-888888888888";
 const spaceId = "Spc001";
 const otherSpaceId = "Spc002";
 const columnId = "Col001";
 const itemId = "Itm001";
+const blockerId = "Itm002";
 const commentId = "Com001";
 const tagId = "Tag001";
 const attachmentId = "Att001";
@@ -299,7 +301,12 @@ test("task list fits escaped maximum previews without skipping rows", async () =
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
   spyOn(spacesService.column, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false });
   spyOn(spacesService.item, "listFiltered").mockResolvedValue({
-    items: Array.from({ length: 100 }, () => ({ ...task, title: "\u0001".repeat(200), description: "\u0001".repeat(1000) })),
+    items: Array.from({ length: 100 }, () => ({
+      ...task,
+      title: "\u0001".repeat(200),
+      description: "\u0001".repeat(1000),
+      assignees: Array.from({ length: 11 }, () => ({ id: userId, displayName: "\u0001".repeat(100), avatarHash: null })),
+    })),
     page: 1,
     pageSize: 100,
     total: 100,
@@ -309,8 +316,150 @@ test("task list fits escaped maximum previews without skipping rows", async () =
   if (!result.ok) throw new Error("Expected bounded task page");
   expect(result.data.data).toHaveLength(100);
   expect(result.data.data[0]?.descriptionTruncated).toBeTrue();
+  expect(result.data.data[0]?.assignees.length).toBeLessThan(3);
+  expect(result.data.data[0]?.assigneeCount).toBe(11);
+  expect(result.data.data[0]?.relationsTruncated).toBeTrue();
   expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
   expect(capabilityResultSchema(TaskListDataSchema).safeParse(result.data).success).toBeTrue();
+});
+
+test.each(["task.list", "event.list"] as const)("%s reports total assignees independently of the relation preview", async (id) => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.column, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false });
+  const item = id === "task.list" ? task : event;
+  spyOn(spacesService.item, "listFiltered").mockResolvedValue({
+    items: [11, 2, 0].map((count) => ({
+      ...item,
+      assignees: Array.from({ length: count }, (_, index) => ({ id: userId, displayName: `Assignee ${index}`, avatarHash: null })),
+    })),
+    page: 1,
+    pageSize: 25,
+    total: 3,
+    totalPages: 1,
+  });
+  const query = spacesCapabilities.queries[id];
+  const result = await query.run(query.input.parse({ spaceId }), userContext);
+  if (!result.ok) throw new Error("Expected item page");
+  const envelope = capabilityResultSchema(query.data).parse(result.data);
+  expect(
+    envelope.data.map(({ assignees, assigneeCount, relationsTruncated }) => ({
+      assignees: assignees.length,
+      assigneeCount,
+      relationsTruncated,
+    })),
+  ).toEqual([
+    { assignees: 3, assigneeCount: 11, relationsTruncated: true },
+    { assignees: 2, assigneeCount: 2, relationsTruncated: false },
+    { assignees: 0, assigneeCount: 0, relationsTruncated: false },
+  ]);
+});
+
+test("blocker add returns a readable blocker ref matching its declared result schema", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.item, "get").mockImplementation(async ({ id }) => (id === blockerUuid ? { ...task, id: blockerUuid } : task));
+  const dependency = { blocker: { id: blockerUuid, spaceId: spaceUuid, title: task.title, completedAt: null }, createdAt };
+  const add = spyOn(spacesService.item.dependencies, "add").mockResolvedValue({ ok: true, data: dependency });
+  spyOn(spacesPublicResources, "projectTaskDependencies").mockResolvedValue([
+    { ...dependency, blocker: { ...dependency.blocker, id: blockerId, spaceId } },
+  ]);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const action = spacesCapabilities.actions["task.blocker.add"];
+  const result = await action.run(action.input.parse({ itemId, blockerItemId: blockerId }), userContext);
+  if (!result.ok) throw new Error("Expected saved blocker");
+  expect(add).toHaveBeenCalledTimes(1);
+  const envelope = capabilityResultSchema(action.data).parse(result.data);
+  expect(envelope.data.blocker.ref).toEqual({ type: "spaces.item", id: blockerId });
+});
+
+test.each([
+  ["item.read", () => spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext)],
+  ["item.search", () => spacesCapabilities.queries["item.search"].run({ query: "Ship", tags: [], limit: 5 }, userContext)],
+  [
+    "item.link-candidate.search",
+    () => spacesCapabilities.queries["item.link-candidate.search"].run({ query: "Ship", limit: 5 }, userContext),
+  ],
+  [
+    "item.reference.find",
+    () =>
+      spacesCapabilities.queries["item.reference.find"].run({ ref: { type: "mail.conversation", id: "Conv01" }, limit: 5 }, userContext),
+  ],
+] as const)("%s bounds long item previews to its declared result schema", async (id, run) => {
+  const item = { ...task, description: "d".repeat(5000) };
+  spyOn(spacesService.item, "get").mockResolvedValue(item);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.space, "list").mockResolvedValue({ items: [space], page: 1, perPage: 25, total: 1, hasNext: false });
+  spyOn(spacesService.item, "searchAcross").mockResolvedValue([{ item, space }]);
+  spyOn(spacesService.item.references, "findItemIds").mockResolvedValue([itemUuid]);
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  const query = spacesCapabilities.queries[id];
+  const result = await run();
+  if (!result.ok) throw new Error("Expected readable item");
+  expect(capabilityResultSchema(query.data).safeParse(result.data).success).toBeTrue();
+});
+
+test.each([
+  [
+    "task.create",
+    () =>
+      spacesCapabilities.actions["task.create"].run({ spaceId, columnId, title: task.title, description: "d".repeat(5000) }, userContext),
+  ],
+  ["task.update", () => spacesCapabilities.actions["task.update"].run({ itemId, description: "d".repeat(5000) }, userContext)],
+  ["task.set-completed", () => spacesCapabilities.actions["task.set-completed"].run({ itemId, completed: true }, userContext)],
+  [
+    "event.create",
+    () =>
+      spacesCapabilities.actions["event.create"].run(
+        { spaceId, columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt!, description: "d".repeat(5000) },
+        userContext,
+      ),
+  ],
+  ["event.update", () => spacesCapabilities.actions["event.update"].run({ itemId, description: "d".repeat(5000) }, userContext)],
+  ["item.tags.set", () => spacesCapabilities.actions["item.tags.set"].run({ itemId, tagIds: [] }, userContext)],
+] as const)("%s with a full description returns a valid reference preview", async (id, run) => {
+  const item = { ...(id.startsWith("event.") ? event : task), description: "d".repeat(5000) };
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.item, "get").mockResolvedValue(item);
+  spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: item });
+  spyOn(spacesService.item, "update").mockResolvedValue({ ok: true, data: item });
+  spyOn(spacesService.item, "setCompleted").mockResolvedValue({ ok: true, data: item });
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const result = await run();
+  if (!result.ok) throw new Error("Expected changed item");
+  expect(capabilityResultSchema(spacesCapabilities.actions[id].data).safeParse(result.data).success).toBeTrue();
+  expect(result.data.data.description).toHaveLength(5000);
+});
+
+test("tasks blocked by one task paginate within the declared result schema", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  const dependent = { dependent: { id: itemUuid, spaceId: spaceUuid, title: task.title, completedAt: null }, createdAt };
+  spyOn(spacesService.item.dependencies, "listBlocks").mockResolvedValue(Array.from({ length: 101 }, () => dependent));
+  const listPage = spyOn(spacesService.item.dependencies, "listBlocksPage")
+    .mockResolvedValueOnce({ items: Array.from({ length: 100 }, () => dependent), page: 1, perPage: 100, total: 101, hasNext: true })
+    .mockResolvedValueOnce({ items: [dependent], page: 2, perPage: 100, total: 101, hasNext: false });
+  spyOn(spacesPublicResources, "projectTaskDependents").mockImplementation(async (entries) =>
+    entries.map((entry) => ({
+      ...entry,
+      dependent: { ...entry.dependent, id: itemId, spaceId },
+    })),
+  );
+  const query = spacesCapabilities.queries["task.blocks.list"];
+  const first = await query.run(query.input.parse({ itemId }), userContext);
+  if (!first.ok) throw new Error("Expected dependent page");
+  expect(capabilityResultSchema(query.data).safeParse(first.data).success).toBeTrue();
+  expect(first.data.data).toHaveLength(100);
+  if (!first.data.page?.hasMore) throw new Error("Expected dependent continuation");
+  const second = await query.run(query.input.parse({ itemId, cursor: first.data.page.nextCursor }), userContext);
+  if (!second.ok) throw new Error("Expected last dependent page");
+  expect(capabilityResultSchema(query.data).safeParse(second.data).success).toBeTrue();
+  expect(second.data.data).toHaveLength(1);
+  expect(second.data.page).toEqual({ hasMore: false });
+  expect(listPage).toHaveBeenLastCalledWith({ blockerItemId: itemUuid, page: 2, perPage: 100 });
 });
 
 test("checklist delete review resolves the label within the current task", async () => {
@@ -356,7 +505,10 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
     [otherSpaceUuid, otherSpaceId],
   ]),
   columns: new Map([[columnUuid, columnId]]),
-  items: new Map([[itemUuid, itemId]]),
+  items: new Map([
+    [itemUuid, itemId],
+    [blockerUuid, blockerId],
+  ]),
   checklist: new Map(),
   comments: new Map([[commentUuid, commentId]]),
   tags: new Map([[tagUuid, tagId]]),
@@ -1358,6 +1510,7 @@ describe("spaces capabilities", () => {
       priority: "urgent" as const,
       completedAt: null,
       assignees: Array.from({ length: 3 }, () => ({ id: userId, displayName: "a".repeat(100) })),
+      assigneeCount: 11,
       tags: Array.from({ length: 3 }, () => ({ id: itemId, name: "n".repeat(50), color: "c".repeat(20) })),
       relationsTruncated: true,
       createdAt,

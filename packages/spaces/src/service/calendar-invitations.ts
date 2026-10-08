@@ -17,6 +17,7 @@ import {
   type CreateEventInvitationDraftInput,
   type EventInvitationContext,
   type EventInvitationDraft,
+  MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH,
 } from "../integration";
 import { withShortId } from "../lib/short-id";
 import { buildSpaceCalendarUid, buildSpaceItemHref } from "../routes";
@@ -691,6 +692,14 @@ export type PreparedEventInvitationAttachment = {
   calendar: string;
 };
 
+class PreparedEventInvitationSizeError extends Error {}
+
+export const assertPreparedEventInvitationCalendar = (calendar: string): void => {
+  if (calendar.length > MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH) {
+    throw new PreparedEventInvitationSizeError("Prepared calendar invitation is too large; reduce the event content or attendees");
+  }
+};
+
 export const prepareEventInvitationAttachment = async (params: {
   spaceId: string;
   itemId: string;
@@ -728,7 +737,7 @@ export const prepareEventInvitationAttachment = async (params: {
   if (!publicRef) return fail(err.notFound("Event"));
   const uid = buildSpaceCalendarUid(publicRef.itemId);
 
-  return sql.begin(async (tx) => {
+  const preparation = sql.begin(async (tx) => {
     await tx`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`spaces:event-invitation:${params.deliveryId}`}, 0)
@@ -762,6 +771,7 @@ export const prepareEventInvitationAttachment = async (params: {
       if (!existing.calendar_payload || !existing.attachment_filename) {
         return fail(err.conflict("Invitation preparation is incomplete; use a new idempotency key"));
       }
+      assertPreparedEventInvitationCalendar(existing.calendar_payload);
       return ok({
         deliveryId: params.deliveryId,
         itemId: params.itemId,
@@ -818,6 +828,8 @@ export const prepareEventInvitationAttachment = async (params: {
       attendees,
       generatedAt: new Date().toISOString(),
     });
+    // Throw inside the transaction so source/sequence changes roll back too.
+    assertPreparedEventInvitationCalendar(calendar);
     await tx`
       INSERT INTO spaces.calendar_invitation_deliveries (
         idempotency_key, item_id, mailbox_id, sender_identity_id, sequence, method, state,
@@ -838,6 +850,10 @@ export const prepareEventInvitationAttachment = async (params: {
       contentType,
       calendar,
     });
+  });
+  return preparation.catch((error: unknown) => {
+    if (error instanceof PreparedEventInvitationSizeError) return fail(err.badInput(error.message));
+    throw error;
   });
 };
 
