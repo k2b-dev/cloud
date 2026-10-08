@@ -1322,7 +1322,8 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
         const dropMove = (event: DragEvent): { side: "before" | "after"; move: AppWorkspaceNavTreeMove } | null => {
           const drag = dragged();
           const row = ownRow();
-          if (!drag || drag.parentId !== (parentId ?? null) || drag.id === item.id || !row?.contains(event.target as Node)) return null;
+          if (!drag || !event.dataTransfer?.types.includes(NAV_TREE_DRAG_TYPE)) return null;
+          if (drag.parentId !== (parentId ?? null) || drag.id === item.id || !row?.contains(event.target as Node)) return null;
           const rect = row.getBoundingClientRect();
           const side = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
           const slot = siblingIndex(item.id) + (side === "after" ? 1 : 0);
@@ -1377,10 +1378,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             data-k2b-nav-tree-dragging={dragged()?.id === item.id ? "" : undefined}
             data-k2b-nav-tree-drop={dropTarget()?.id === item.id ? dropTarget()!.side : undefined}
             style={{ "--k2b-nav-tree-depth": String(props.indented === false ? 0 : depth) }}
-            onFocus={() => {
-              if (refocusId !== item.id) refocusId = null;
-              setFocusedId(item.id);
-            }}
+            onFocus={() => setFocusedId(item.id)}
             onKeyDown={onKeyDown}
             onDragStart={onDragStart}
             onDragEnter={item.onDragEnter}
@@ -1400,16 +1398,23 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     </For>
   );
 
+  // Any other click or focus is the person's choice; only the moved item itself keeps its claim.
   const forgetRefocus = (event: Event) => {
-    if (!root?.contains(event.target as Node | null)) refocusId = null;
+    if (event.type === "pointerdown" || (event.target as HTMLElement | null)?.dataset?.k2bNavTreeId !== refocusId) refocusId = null;
+  };
+  // A row replaced during a drag never receives its dragend; the next pointer movement means the drag is over.
+  const forgetDrag = () => {
+    if (dragged()) endDrag();
   };
   onMount(() => {
     const doc = root?.ownerDocument;
     doc?.addEventListener("pointerdown", forgetRefocus, true);
     doc?.addEventListener("focusin", forgetRefocus, true);
+    doc?.addEventListener("pointermove", forgetDrag, true);
     onCleanup(() => {
       doc?.removeEventListener("pointerdown", forgetRefocus, true);
       doc?.removeEventListener("focusin", forgetRefocus, true);
+      doc?.removeEventListener("pointermove", forgetDrag, true);
     });
   });
 

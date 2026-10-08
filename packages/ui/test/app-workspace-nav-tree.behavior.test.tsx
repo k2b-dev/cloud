@@ -249,4 +249,50 @@ describe("@k2b/ui AppWorkspace.NavTree behavior", () => {
       dom.cleanup();
     }
   });
+  test("the moved item does not take back focus the person moved elsewhere while the move was saving", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    delegateEvents(["keydown"], dom.document);
+    const [rows, setRows] = createSignal([{ id: "a" }, { id: "b" }]);
+    const pending: AppWorkspaceNavTreeMove[] = [];
+    const dispose = render(
+      () => (
+        <AppWorkspace.NavTree ariaLabel="Notes" onMove={(move) => pending.push(move)}>
+          <For each={rows()}>
+            {(row) => (
+              <AppWorkspace.NavTree.Item
+                id={row.id}
+                label={row.id}
+                movable
+                actions={
+                  <button type="button" data-action={row.id}>
+                    Star
+                  </button>
+                }
+              />
+            )}
+          </For>
+        </AppWorkspace.NavTree>
+      ),
+      dom.root,
+    );
+    try {
+      const item = (id: string) => dom.root.querySelector<HTMLElement>(`[data-k2b-nav-tree-id="${id}"]`)!;
+      item("b").focus();
+      item("b").dispatchEvent(
+        new dom.window.KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true }) as unknown as Event,
+      );
+      expect(pending).toEqual([{ id: "b", parentId: null, beforeId: "a", afterId: null }]);
+      const star = dom.root.querySelector<HTMLButtonElement>('[data-action="a"]')!;
+      star.focus();
+      setRows([{ id: "b" }, { id: "a" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+      // The rows were replaced, the chosen button with them; the moved item still does not claim focus.
+      expect(dom.document.activeElement).not.toBe(item("b"));
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 });

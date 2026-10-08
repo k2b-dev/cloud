@@ -303,9 +303,11 @@ const lockLevel = async (tx: TransactionSQL, notebookId: string, parentId: strin
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(
     'notebooks.note-order:' || ${notebookId}::text || ':' || coalesce(${parentId}::text, 'top'), 0
   ))`;
-  // Moves share sibling rows and the target parent's foreign-key lock.
+  // Parent first, then its children, as a cascading delete of the parent locks them; a
+  // different order could deadlock with it. Moves share sibling rows and the parent's foreign-key lock.
+  if (parentId) await tx`SELECT id FROM notebooks.notes WHERE id = ${parentId}::uuid FOR UPDATE`;
   await tx`SELECT id FROM notebooks.notes
-    WHERE id = ${movedId ?? null}::uuid OR id = ${parentId}::uuid
+    WHERE id = ${movedId ?? null}::uuid
       OR (notebook_id = ${notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${parentId}::uuid)
     ORDER BY id FOR UPDATE`;
 };
