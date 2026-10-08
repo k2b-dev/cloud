@@ -4,7 +4,10 @@ import { type SQL, sql } from "bun";
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
-    await tx`CREATE SCHEMA IF NOT EXISTS outgoing_mail`.simple();
+    // Advisory locks do not refresh a stale "missing" schema cache entry.
+    // Read the current catalog snapshot and apply invalidations before creating the schema.
+    const [schema] = await tx<{ exists: boolean }[]>`SELECT EXISTS(SELECT FROM pg_namespace WHERE nspname = 'outgoing_mail') AS exists`;
+    if (!schema?.exists) await tx`CREATE SCHEMA outgoing_mail`.simple();
     await tx`CREATE TABLE IF NOT EXISTS outgoing_mail.profiles (
       id UUID PRIMARY KEY, key TEXT NOT NULL UNIQUE CHECK(key ~ '^[a-z0-9][a-z0-9-]{0,62}$'), name TEXT NOT NULL,
       from_address TEXT NOT NULL, from_name TEXT, smtp_host TEXT NOT NULL,
