@@ -1,5 +1,12 @@
 import type { Socket, SocketHandler } from "bun";
-import { TEST_SERVER_CERT, TEST_SERVER_KEY } from "../../packages/cloud/src/server/services/freeipa/test-certificates.test-fixture";
+import {
+  TEST_CA_CERT,
+  TEST_SERVER_CERT,
+  TEST_SERVER_KEY,
+} from "../../packages/cloud/src/server/services/freeipa/test-certificates.test-fixture";
+
+/** CA that signed the sink's TLS certificate. The certificate names localhost, not the loopback IP. */
+export const IMAP_SINK_CA = TEST_CA_CERT;
 
 export type ImapSinkMessage = { uid: number; bodyStructure: string; sections: Record<string, string> };
 export type ImapSinkOptions = {

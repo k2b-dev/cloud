@@ -4,7 +4,7 @@ import * as logging from "@k2b/cloud/services/logging";
 import * as messages from "@k2b/cloud/services/outgoing-mail/messages";
 import * as store from "@k2b/cloud/services/outgoing-mail/store";
 import { ImapFlow } from "imapflow";
-import { type ImapSinkMessage, imapSink } from "../../../../scripts/fixtures/imap-sink";
+import { IMAP_SINK_CA, type ImapSinkMessage, imapSink } from "../../../../scripts/fixtures/imap-sink";
 import { headers, status, structure, wireStructure } from "./fixtures";
 import { createImapBounceMailbox, IMAP_RESPONSE_BYTES } from "./imap";
 import { DSN_PART_BYTES } from "./parser";
@@ -99,12 +99,15 @@ let log: ReturnType<typeof spyOn<typeof logging, "logger">>;
 const warnings = mock((_message: string, _metadata?: Record<string, unknown>) => {});
 const errors = mock(() => {});
 beforeEach(() => {
-  // The reused FreeIPA fixture certificate names localhost, not the loopback IP.
-  // Trust it only in this test; production keeps normal certificate verification.
+  // The sink's certificate names localhost, not the loopback IP. Trust its CA and check the
+  // certificate against localhost, so validation stays on.
   trust = spyOn(tls, "connect").mockImplementation(
     (input: number | tls.BunConnectionOptions, listener?: string | tls.ConnectionOptions | (() => void)) => {
       if (typeof input === "number") throw new Error("Expected ImapFlow's connection options.");
-      return realConnect({ ...input, rejectUnauthorized: false }, typeof listener === "function" ? listener : undefined);
+      return realConnect(
+        { ...input, ca: IMAP_SINK_CA, checkServerIdentity: (_host, cert) => tls.checkServerIdentity("localhost", cert) },
+        typeof listener === "function" ? listener : undefined,
+      );
     },
   );
   credentials = spyOn(store, "resolveImapMailCredentials").mockResolvedValue("loopback-fixture-password");
