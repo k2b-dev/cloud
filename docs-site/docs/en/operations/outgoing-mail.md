@@ -209,6 +209,28 @@ Choose exactly one of these modes. Applications still need to declare
 declaration. Core's notification, sign-in, and password-reset emails always use
 the default profile, and Core's access cannot be changed.
 
+### Move an application's SMTP account
+
+Coordinate this switch with the application author. They replace their SMTP
+transport with the [application mail API](/en/docs/platform/outgoing-mail#move-from-an-application-owned-smtp-account)
+and declare `platformPermissions: ["mail:send"]`.
+
+1. Create a dedicated sender profile using the app's former SMTP credentials.
+   Follow [Configure a sender](#configure-a-sender) for the complete JSON shape
+   and protect the configuration file containing the password.
+2. Test the profile and check the recipient inbox. Assign it to the application.
+
+   ```bash
+   cld admin outgoing-mail profiles put inventory --config-file inventory-sender.json
+   cld admin outgoing-mail profiles test inventory --to operator@example.org
+   cld admin outgoing-mail apps set inventory --profiles inventory --yes
+   ```
+
+3. Have the updated app pass `profile: "inventory"` explicitly unless that
+   profile is also the installation default. Verify an application send in
+   **Administration → Outgoing mail**, under **Send log**. Then remove the old
+   SMTP secret and settings from the application's deployment.
+
 ## Inspect the send log
 
 The **Send log** section in **Administration → Outgoing mail** lists app mail
