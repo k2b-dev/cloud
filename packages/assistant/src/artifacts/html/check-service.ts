@@ -7,7 +7,7 @@ import { artifactDatabase } from "../database";
 import { databaseConfigLock } from "../database-lock";
 import { CloudError } from "../runtime/errors";
 import { ArtifactError, type ArtifactIdentity, artifacts, readArtifactRevision, requireArtifact, user } from "../service";
-import { CHECK_LIMITS, CheckReport, checkGate, checkHash, readCheckSteps } from "./check-contracts";
+import { CHECK_LIMITS, CheckReport, checkGate, checkHash, readCheckSteps, stepsProblem } from "./check-contracts";
 
 // Allow current and preceding checked revisions for as many apps as the
 // host runtime's retained-run budget. One-off hashes share this window.
@@ -62,12 +62,9 @@ export const appChecks = {
           : undefined;
         const source = ArtifactSource.parse(saved?.source ?? { entry: "index.html", files: input.files });
         if (!hasInterface(source)) throw new CloudError("invalid", "code_check needs an index.html app; scripts use code_run.");
-        let steps: ReturnType<typeof readCheckSteps>;
-        try {
-          steps = readCheckSteps(source.files);
-        } catch (error) {
-          throw new CloudError("invalid", `Invalid steps.json: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        const problem = stepsProblem(source.files);
+        if (problem) throw new CloudError("invalid", problem);
+        const steps = readCheckSteps(source.files);
         const tables = input.id ? await artifactDatabase.checkDefinitions(input.id, identity, signal, db) : [];
         const hash = checkHash(source, tables);
         const scratch = await artifacts.create({ kind: "app", title: "Code check", source }, identity, true);

@@ -12,7 +12,9 @@ import {
   matchTarget,
   modelCheckReport,
   readCheckSteps,
+  stepsProblem,
 } from "./check-contracts";
+import { shownProblems } from "./check-layout";
 
 test("target matching prefers exact, then case-insensitive, then substring", () => {
   expect(matchTarget(["Add item", "Add"], "Add")).toBe(1);
@@ -148,4 +150,58 @@ test("check-unavailable diagnostics warn even with a console prefix", () => {
   expect(diagnosticSeverity(`Load failed: ${CHECK_UNAVAILABLE}`)).toBe("warning");
   expect(diagnosticSeverity("Error: unexpected failure")).toBe("error");
   expect(diagnosticSeverity("ResizeObserver loop completed with undelivered notifications.")).toBe("warning");
+});
+
+test("steps.json problems name the step, the field and the valid forms", () => {
+  const problem = (steps: unknown) => stepsProblem([{ path: "steps.json", content: JSON.stringify(steps) }]);
+  expect(problem([{ action: "click", target: { role: "button", name: "Save" } }])).toBeNull();
+  expect(stepsProblem([{ path: "index.html", content: "<main></main>" }])).toBeNull();
+  // The two invalid files of the first Studio evaluation run.
+  expect(problem([{ action: "click", target: { role: "button", name: "Save", exact: true } }])).toStartWith(
+    'Invalid steps.json: step 1 (click): target must be exactly one of {role, name?}, {label} or {text}, not "exact". Steps are',
+  );
+  expect(problem([{ action: "fill", target: { label: "Hours", role: "spinbutton" }, value: "2" }])).toStartWith(
+    "Invalid steps.json: step 1 (fill): target must be exactly one of {role, name?}, {label} or {text}.",
+  );
+  expect(problem([{ action: "tap", target: { text: "Save" } }])).toContain(
+    "step 1 (tap): action must be click, check, uncheck, fill, select, press, upload or reload",
+  );
+  expect(problem([{ action: "fill", target: { label: "Amount" }, value: 12 }])).toContain('step 1 (fill): "value" must be a string');
+  expect(problem([{ action: "reload" }, { action: "press" }])).toContain('step 2 (press): "value" is missing');
+  expect(problem({ steps: [] })).toContain("the file must be a JSON array of steps");
+  expect(problem(Array(21).fill({ action: "reload" }))).toContain("more than 20 steps");
+  expect(stepsProblem([{ path: "steps.json", content: "[{" }])).toStartWith("steps.json is not valid JSON (");
+});
+test("modelCheckReport asks view_image a review question about every screenshot and PDF", () => {
+  const report = modelCheckReport({
+    passed: true,
+    hash: "a".repeat(64),
+    height: 10,
+    issues: [],
+    calls: [],
+    downloads: [
+      { name: "Quote.pdf", type: "application/pdf", size: 10, path: "/files/h/desktop-1-Quote.pdf" },
+      { name: "rows.csv", type: "text/csv", size: 10, path: "/files/h/desktop-2-rows.csv" },
+      { name: "Quote.pdf", type: "application/pdf", size: 10, path: "/files/h/mobile-3-Quote.pdf" },
+    ],
+    screenshots: [{ view: "desktop", theme: "light", path: "/files/h/desktop-light.png", cropped: false }],
+    aria: "",
+  });
+  expect(report.review.paths).toEqual(["/files/h/desktop-light.png", "/files/h/desktop-1-Quote.pdf"]);
+  for (const words of ["different heights", "cut off", "error message", "No visible defects"])
+    expect(report.review.prompt).toContain(words);
+});
+test("shown text: engine errors fail, broken values warn, ordinary prose passes", () => {
+  for (const message of [
+    "Cannot read properties of null (reading 'elements')",
+    "null is not an object (evaluating 'event.currentTarget.elements')",
+    'can\'t access property "elements", event.currentTarget is null',
+    "rows.map is not a function",
+    "TypeError: Failed to fetch",
+  ])
+    expect(shownProblems(`Expenses\n${message}`)).toEqual([expect.objectContaining({ severity: "error", kind: "shown-error" })]);
+  for (const value of ["Total: NaN €", "Customer: undefined", "[object Object]", "Due Invalid Date"])
+    expect(shownProblems(value)).toEqual([expect.objectContaining({ severity: "warning", kind: "shown-value" })]);
+  for (const prose of ["This is not a function of the price", "Category is not defined yet", "Nancy and Nandu", "Undefined behaviour"])
+    expect(shownProblems(prose)).toEqual([]);
 });

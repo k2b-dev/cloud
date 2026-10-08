@@ -1420,9 +1420,9 @@ test.each(["explicit", "temporary"])("code check saves every chat output locally
     calls: [],
     aria: "",
     screenshots: [
-      { view: "desktop-start", theme: "light", path: `/files/hash/${files[0]}` },
-      { view: "desktop", theme: "light", path: `/files/hash/${files[1]}` },
-      { view: "mobile", theme: "dark", path: `/files/hash/${files[2]}` },
+      { view: "desktop-start", theme: "light", path: `/files/hash/${files[0]}`, cropped: false },
+      { view: "desktop", theme: "light", path: `/files/hash/${files[1]}`, cropped: false },
+      { view: "mobile", theme: "dark", path: `/files/hash/${files[2]}`, cropped: false },
     ],
     downloads: [{ name: "../export.csv", type: "text/csv", size: 3, path: `/files/hash/${files[3]}` }],
   });

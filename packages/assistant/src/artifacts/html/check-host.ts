@@ -1,15 +1,17 @@
 // Browser half of code_check: composes and mounts through the existing host.
 import { artifactClient } from "../client";
 import type { ArtifactSource } from "../contracts";
+import { PdfRequest } from "../pdf-contracts";
 import type { RuntimeContext } from "../runtime/cloud";
 import { CloudError, cloudError } from "../runtime/errors";
 import { sharedStorage } from "../runtime/shared-storage";
 import type { AppFrameAssets } from "./assets";
 import { CHECK_LIMITS, CHECK_UNAVAILABLE } from "./check-contracts";
+import { type LayoutFinding, misalignedRows, shownProblems } from "./check-layout";
 import type { CheckCommand } from "./check-realm";
 import { type Mount, type MountEvent, mountApp } from "./host";
 
-export type CheckState = { events: MountEvent[]; lint: Mount["lint"]; ready: boolean };
+export type CheckState = { events: MountEvent[]; lint: Mount["lint"]; ready: boolean; pdf: LayoutFinding[] };
 declare global {
   interface Window {
     assistantCheckMount: (input: {
@@ -33,6 +35,46 @@ let hash = "",
   downloadCount = 0,
   outputBytes = 0;
 let downloadQueue = Promise.resolve();
+
+/** Page sizes in millimetres, as the PDF renderer uses them; 15 mm is its default margin. */
+const PAGES = { A4: [210, 297], A3: [297, 420], A5: [148, 210], Letter: [215.9, 279.4], Legal: [215.9, 355.6] } as const;
+const PDF_FINDINGS = 10;
+/**
+ * Lays out the HTML of a PDF at its printed width, the way the renderer receives it (base stylesheet first), and
+ * measures it like the app before it is printed. The frame runs no script and loads nothing.
+ */
+async function inspectPdf(input: unknown, baseCss: string): Promise<LayoutFinding[]> {
+  const parsed = PdfRequest.safeParse(input);
+  if (!parsed.success || parsed.data.operation === "attach") return [];
+  const { html, page } = parsed.data;
+  const [short, long] = PAGES[page.format];
+  const margin = { left: 15, right: 15, ...page.margin };
+  const width = ((page.landscape ? long : short) - margin.left - margin.right) * (96 / 25.4);
+  const frame = document.createElement("iframe");
+  frame.setAttribute("sandbox", "allow-same-origin");
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.cssText = `position:fixed;left:-20000px;top:0;width:${Math.max(1, Math.round(width))}px;height:1000px;border:0`;
+  const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
+  frame.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${baseCss}</style>${html}`;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("PDF layout timed out")), 5000);
+      frame.addEventListener("load", () => (clearTimeout(timer), resolve()), { once: true });
+      document.body.append(frame);
+    });
+    const doc = frame.contentDocument;
+    if (!doc?.body) return [];
+    await Promise.race([doc.fonts.ready, new Promise((resolve) => setTimeout(resolve, 2000))]);
+    return [...misalignedRows(doc.body), ...shownProblems(doc.body.innerText, "The PDF")].map((finding) => ({
+      ...finding,
+      kind: `pdf-${finding.kind}`,
+      key: `pdf ${finding.key}`,
+      message: finding.message.startsWith("The PDF") ? finding.message : `In the PDF: ${finding.message}`,
+    }));
+  } finally {
+    frame.remove();
+  }
+}
 window.assistantCheckMount = (input) => {
   mounted?.stop();
   // Mobile Chromium otherwise gives this host a 980px layout viewport,
@@ -53,7 +95,7 @@ window.assistantCheckMount = (input) => {
   const style = document.createElement("style");
   style.textContent = ".studio-app-frame{width:100%;height:100%;border:0;display:block}";
   document.head.append(style);
-  state = { events: [], lint: [], ready: false };
+  state = { events: [], lint: [], ready: false, pdf: [] };
   mounted = mountApp(container, Object.fromEntries(input.source.files.map((file) => [file.path, file.content])), {
     ...input.assets,
     context: input.context,
@@ -70,7 +112,14 @@ window.assistantCheckMount = (input) => {
           }
         : {}),
       ai: (request, signal) => artifactClient.ai(request, { conversationId: input.conversationId }, signal),
-      pdf: (request, signal) => artifactClient.pdf(request, { conversationId: input.conversationId }, signal),
+      pdf: async (request, signal) => {
+        // A measurement problem never fails the app's PDF; the renderer still decides.
+        const findings = await inspectPdf(request, input.assets.baseCss).catch(() => []);
+        const pending = state.pdf;
+        for (const finding of findings)
+          if (pending.length < PDF_FINDINGS && !pending.some((known) => known.key === finding.key)) pending.push(finding);
+        return artifactClient.pdf(request, { conversationId: input.conversationId }, signal);
+      },
       http: async () => {
         throw new CloudError("unavailable", CHECK_UNAVAILABLE);
       },

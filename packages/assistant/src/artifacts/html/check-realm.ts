@@ -3,6 +3,7 @@
 import axe from "axe-core";
 import { z } from "zod";
 import { CheckTarget, matchTarget } from "./check-contracts";
+import { misalignedRows, shownProblems } from "./check-layout";
 
 // axe 4.11 ships this runtime API but omits it from its public Aria declaration.
 // Describe that exact dependency surface instead of casting away the type.
@@ -12,7 +13,7 @@ declare module "axe-core" {
   }
 }
 const Request = z.object({
-  op: z.enum(["locate", "focus", "set", "select", "upload", "measure", "axe", "aria", "settle"]),
+  op: z.enum(["locate", "focus", "set", "select", "upload", "measure", "shown", "axe", "aria", "settle"]),
   target: CheckTarget.optional(),
   value: z.string().optional(),
   name: z.string().optional(),
@@ -71,6 +72,8 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
     await settle();
     return null;
   }
+  // Cheap enough to run after every step: a caught error shown in the page may be gone by the end.
+  if (input.op === "shown") return shownProblems(document.body.innerText);
   if (input.op === "axe") {
     const results = await axe.run(document, { runOnly: ["wcag2a", "wcag2aa", "wcag21aa", "best-practice"], resultTypes: ["violations"] });
     return results.violations.map((v) => ({
@@ -161,6 +164,7 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
           .slice(0, 20),
         interactive: controls.some((el) => !el.matches('a[href],[role="link"]')),
         password: !!document.querySelector('input[type="password"]'),
+        layout: [...misalignedRows(document.body), ...shownProblems(document.body.innerText)],
         untyped: [...document.forms].some((form) => form.querySelectorAll("button:not([type])").length > 1),
       };
     });

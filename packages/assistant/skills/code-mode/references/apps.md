@@ -26,6 +26,8 @@ Patterns that need no CSS:
   fields side by side: `<form class="row"><label>Name <input name="name"></label><button>Add</button></form>`.
 - `grid`: `<div class="grid"><label>Name <input></label><label>City <input></label></div>`.
 - `stat`: `<div class="stat"><span>Revenue</span><strong>12.400 €</strong></div>`.
+- Key figures in a row: `.stat` blocks in a `.grid`, two or three to a phone row,
+  without CSS: `<div class="grid"><div class="stat">…</div><div class="stat">…</div><div class="stat">…</div></div>`.
 - `scroll`: `<div class="scroll"><table>…</table></div>` (horizontal scrolling).
 - `tag`: `<span class="tag" data-tone="success">Paid</span>` (info, success, warning, danger).
 - `muted`: `<p class="muted">Last saved today</p>`.
@@ -34,9 +36,11 @@ Patterns that need no CSS:
 - `danger`: `<button type="button" class="danger">Delete</button>`.
 - `sr-only`: `<label class="sr-only" for="name">Name</label>`.
 
-Custom flex or grid layouts set `gap` and `> * { margin: 0 }`; otherwise gap and
-the flow spacing add up. On phones, put secondary values in a `<small>` under the
-main cell instead of adding columns.
+Every `div` spaces its children from above. A custom flex or grid layout sets
+`gap` and `> * { margin: 0 }`; otherwise the second child of a row, such as the
+value beside its label or the second button, sits lower than the first. On
+phones, put secondary values in a `<small>` under the main cell instead of adding
+columns.
 
 ## Platform API
 
@@ -167,7 +171,10 @@ the self-test is a workflow guard, not a security mechanism.
 
 `steps.json` contains at most 20 main-flow steps: add an item, upload the sample,
 open a detail, export. Apps with fields or buttons and no steps fail; links
-alone need none. Targets are
+alone need none. The screenshots show the state after the last step, so end in
+the typical, filled main state: delete or clear first, then add realistic
+entries, and leave the view, filter or detail the person uses most open.
+`code_write` reports an invalid `steps.json` right away. Targets are
 `{role,name?}`, `{label}` or `{text}`. Matching tries exact, then case-insensitive,
 then substring; ambiguity is an error listing candidates. Use accessible names,
 never placeholders. `press` without a target uses focus. Fill numbers with a dot
@@ -193,9 +200,16 @@ A chat file: inspect it, use `code_file_copy` to put it into app storage, read i
 with `cloud.files.read`, and replay it with `upload` and `reload`. `upload.file`
 is the chat path/name or an app-relative source path such as `samples/x.csv`.
 
-`passed` only means not broken. Is anything cut off, red, too tight or doubled?
-Does a note look like a button? "Choose File" and US date formats come from the
-test browser, not the app. Inspect desktop-start, desktop and mobile screenshots.
+The check fails on errors, also on a JavaScript error message the app caught and
+shows in the page. It warns about rows whose siblings sit at different heights,
+in the app and in the HTML of every PDF before it is printed, with the CSS that
+fixes them, and about values such as `NaN` or `undefined` on screen. Fix those
+warnings as well.
+
+`passed` only means not broken. Call `view_image` with `review.prompt` for every
+path in `review.paths`: the desktop-start, desktop and mobile screenshots and
+every PDF. Screenshots show the whole page up to 2000 px; `cropped` marks a longer
+one. "Choose File" and US date formats come from the test browser, not the app.
 
 For the todo example, write `steps.json`:
 
