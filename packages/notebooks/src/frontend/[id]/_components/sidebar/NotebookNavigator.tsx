@@ -65,8 +65,11 @@ const compareNotes = (mode: SortMode) => (left: NoteTreeNode, right: NoteTreeNod
   return rightDate.localeCompare(leftDate) || left.title.localeCompare(right.title);
 };
 
-const branchNodes = (nodes: NoteTreeNode[]): NoteTreeNode[] =>
-  nodes.filter((note) => note.children.length > 0).map((note) => ({ ...note, children: branchNodes(note.children) }));
+// The tree lists folders, the notes with sub-notes. The homepage always has a row, so it is listed even without sub-notes.
+const branchNodes = (nodes: NoteTreeNode[], homepageId: string | null): NoteTreeNode[] =>
+  nodes
+    .filter((note) => note.children.length > 0 || note.id === homepageId)
+    .map((note) => ({ ...note, children: branchNodes(note.children, homepageId) }));
 
 const noteFolderContext = (nodes: NoteTreeNode[], selectedNoteId: string | null): string | null => {
   if (!selectedNoteId) return null;
@@ -178,7 +181,7 @@ export default function NotebookNavigator(props: Props) {
 
   const allNotes = createMemo(() => flattenTree(props.tree));
   const notesById = createMemo(() => new Map(allNotes().map((note) => [note.id, note])));
-  const branchTree = createMemo(() => branchNodes(homepageFirst(props.tree, props.notebook.homepageNoteId)));
+  const branchTree = createMemo(() => branchNodes(homepageFirst(props.tree, props.notebook.homepageNoteId), props.notebook.homepageNoteId));
   const [expandedTreeIds, setExpandedTreeIds] = createSignal<readonly string[]>(expandedNavigationIds(branchTree()));
   const homepageNote = createMemo(() => (props.notebook.homepageNoteId ? (notesById().get(props.notebook.homepageNoteId) ?? null) : null));
   const selectedRoot = () => selection().root;
@@ -212,10 +215,9 @@ export default function NotebookNavigator(props: Props) {
     return [...notes].sort(compareNotes(sortMode()));
   });
 
-  // Top-level notes without sub-notes have no folder, so the tree lists them after the folders. The homepage leads its own level.
-  const homepageLeaf = createMemo(() => props.tree.find((note) => note.id === homepageNote()?.id && note.children.length === 0) ?? null);
+  // Top-level notes without sub-notes have no folder, so the tree lists them after the folders.
   const rootLeafNotes = createMemo(() =>
-    props.tree.filter((note) => note.children.length === 0 && note !== homepageLeaf()).sort(compareNotes(sortMode())),
+    props.tree.filter((note) => note.children.length === 0 && note.id !== props.notebook.homepageNoteId).sort(compareNotes(sortMode())),
   );
 
   const pinnedNote = createMemo(() => {
@@ -328,21 +330,15 @@ export default function NotebookNavigator(props: Props) {
               icon="ti ti-folder"
               onSelect={() => select({ root: "notes", noteId: null })}
             >
-              <Show when={homepageLeaf()}>
-                {(home) => (
-                  <AppWorkspace.NavTree.Item
-                    id={noteTreeId(home().id)}
-                    label={home().title || t().untitled}
-                    icon="ti ti-home"
-                    iconLabel={t().homepage}
-                    onSelect={() => openNote(home())}
-                  />
-                )}
-              </Show>
               <NoteNavigationItems
                 nodes={branchTree()}
                 homepageId={homepageNote()?.id ?? null}
-                onSelect={(noteId) => select({ root: "notes", noteId })}
+                onSelect={(noteId) => {
+                  // A folder becomes the list's context; a homepage without sub-notes opens like any other note.
+                  const note = notesById().get(noteId);
+                  if (note && note.children.length === 0) openNote(note);
+                  else select({ root: "notes", noteId });
+                }}
               />
               <For each={rootLeafNotes()}>
                 {(note) => (

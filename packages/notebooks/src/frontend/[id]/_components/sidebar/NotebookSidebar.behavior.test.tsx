@@ -133,6 +133,43 @@ describe("notebook sidebar homepage", () => {
     }
   });
 
+  test("the phone menu keeps the lock of a locked homepage next to its home icon", async () => {
+    const dom = createDomTestHarness();
+    const { default: NotebookSidebar } = await import("./NotebookSidebar.island");
+    const base = ctx("Home01");
+    const tree = base.tree.map((node) =>
+      node.id === "Home01" || node.id === "Zeta01" ? { ...node, lockedAt: "2026-02-01T00:00:00.000Z" } : node,
+    );
+    const dispose = render(() => createComponent(NotebookSidebar, { ctx: { ...base, tree } }), dom.root);
+    try {
+      const script = dom.root.querySelector<HTMLScriptElement>("script[data-cloud-workspace-navigation]");
+      const notes = (JSON.parse(script?.textContent ?? "{}") as { items: NavigationItem[] }).items.filter((item) =>
+        item.id.startsWith("note:"),
+      );
+      expect(notes.find((item) => item.id === "note:Home01")).toMatchObject({
+        icon: "ti ti-home",
+        status: { icon: "ti ti-lock", label: "Locked" },
+      });
+      // Every other locked note keeps the lock as its icon.
+      expect(notes.find((item) => item.id === "note:Zeta01")).toMatchObject({ icon: "ti ti-lock" });
+      expect(notes.find((item) => item.id === "note:Zeta01")?.status).toBeUndefined();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("the phone menu keeps an empty status slot on an unlocked homepage, so locking it moves nothing", async () => {
+    const view = await mount("Home01");
+    try {
+      const notes = view.phoneNotes();
+      expect(notes[0]?.status).toBeNull();
+      expect(notes.slice(1).every((item) => item.status === undefined)).toBe(true);
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("without a homepage the tree keeps its sort order and the note icon", async () => {
     const view = await mount(null);
     try {

@@ -130,11 +130,14 @@ export default function NotebookSidebar(props: Props) {
   const favorites = useFavoriteNotes({ notebookId: notebook().id, initialFavoriteNoteIds: () => [...favoriteNoteIds()] });
   const noteActions = (node: NoteTreeNode) =>
     noteActionItems(node, actions, t(), canDeleteOrLockNotes()).flatMap((item) => ("items" in item ? item.items : [item]));
+  const isHomepage = (node: NoteTreeNode) => node.id === notebook().homepageNoteId;
   const noteEntry = (node: NoteTreeNode): NavigationItem => ({
     id: `note:${node.id}`,
     label: node.title || t().untitled,
-    icon: node.id === notebook().homepageNoteId ? "ti ti-home" : node.lockedAt ? "ti ti-lock" : "ti ti-file-text",
-    iconLabel: node.id === notebook().homepageNoteId ? t().homepage : undefined,
+    icon: isHomepage(node) ? "ti ti-home" : node.lockedAt ? "ti ti-lock" : "ti ti-file-text",
+    iconLabel: isHomepage(node) ? t().homepage : undefined,
+    // The home icon takes the lock's place, so the homepage shows its lock at the row's end; the empty slot keeps the label in place.
+    status: isHomepage(node) ? (node.lockedAt ? { icon: "ti ti-lock", label: t().locked } : null) : undefined,
     href: buildNoteUrl(notebook().id, node.id, props.ctx.presentationMode),
     active: selectedNoteId() === node.id,
     children: node.children.map(noteEntry),

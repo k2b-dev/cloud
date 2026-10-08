@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import type { Notebook, NoteTreeNode } from "./types";
@@ -142,6 +142,90 @@ if (!isServer) {
       expect(home?.getAttribute("aria-label")).toBe("Homepage");
     } finally {
       view.dispose();
+    }
+  });
+
+  test("a childless homepage below another note leads that folder in the tree and opens like a note", async () => {
+    const date = { created: "2026-01-01T00:00:00.000Z", updated: "2026-01-01T00:00:00.000Z" };
+    const nested = [
+      note("Alpha1", "Alpha", date),
+      note("Proj01", "Projects", date, [note("Aaa001", "Aaa", date, [], "Proj01"), note("Nest01", "Nested home", date, [], "Proj01")]),
+    ];
+    const view = await renderNavigator("title", { tree: nested, homepageNoteId: "Nest01" });
+    navigated.length = 0;
+    try {
+      expect(view.treeIds()).toEqual(["notes", "note:Proj01", "note:Nest01", "note:Alpha1", "tags"]);
+      const home = view.dom.root.querySelector<HTMLElement>('[data-k2b-nav-tree-id="note:Nest01"]');
+      expect(home?.dataset.k2bNavTreeParentId).toBe("note:Proj01");
+      expect(home?.querySelector(".k2b-app-workspace__sidebar-item-icon i")?.className).toBe("ti ti-home");
+      // The other sub-note without children stays in the note list, as before.
+      expect(view.treeIds()).not.toContain("note:Aaa001");
+      home?.querySelector<HTMLElement>(".k2b-app-workspace__nav-tree-row")?.click();
+      expect(navigated).toEqual(["/app/notebooks/Book01/notes/Nest01"]);
+      expect(window.location.search).toBe("");
+    } finally {
+      view.dispose();
+    }
+  });
+
+  test("follows renames and a new homepage while it stays mounted", async () => {
+    const date = { created: "2026-01-01T00:00:00.000Z", updated: "2026-01-01T00:00:00.000Z" };
+    const flat = (homeTitle: string) => [
+      note("Alpha1", "Alpha", date),
+      note("Home01", homeTitle, date),
+      note("Proj01", "Projects", date, [note("Nest01", "Nested", date, [], "Proj01")]),
+      note("Zeta01", "Zeta", date),
+    ];
+    const [currentTree, setCurrentTree] = createSignal(flat("Home"));
+    const [homepageNoteId, setHomepageNoteId] = createSignal<string | null>("Home01");
+    const dom = createDomTestHarness();
+    const { default: NotebookNavigator } = await import("./NotebookNavigator");
+    const dispose = render(
+      () =>
+        createComponent(NotebookNavigator, {
+          get notebook() {
+            return { ...notebook, homepageNoteId: homepageNoteId() };
+          },
+          get tree() {
+            return currentTree();
+          },
+          selectedNoteId: null,
+          permission: "read",
+          canWrite: false,
+          favoriteNoteIds: [],
+          tags: [],
+          initialSortMode: "title",
+          dateConfig: { locale: "en", timeZone: "UTC" },
+          initialQuery: {},
+        }),
+      dom.root,
+    );
+    const rows = () =>
+      Array.from(dom.root.querySelectorAll<HTMLElement>('[data-k2b-nav-tree-parent-id="notes"]')).map(
+        (item) =>
+          `${item.dataset.k2bNavTreeId}|${item.querySelector(".k2b-app-workspace__nav-tree-row")?.textContent?.trim()}|${item.querySelector(".k2b-app-workspace__sidebar-item-icon i")?.className}`,
+      );
+    navigated.length = 0;
+    try {
+      setCurrentTree(flat("Overview"));
+      expect(rows()).toEqual([
+        "note:Home01|Overview|ti ti-home",
+        "note:Proj01|Projects|ti ti-folder",
+        "note:Alpha1|Alpha|ti ti-file-text",
+        "note:Zeta01|Zeta|ti ti-file-text",
+      ]);
+      setHomepageNoteId("Zeta01");
+      expect(rows()).toEqual([
+        "note:Zeta01|Zeta|ti ti-home",
+        "note:Proj01|Projects|ti ti-folder",
+        "note:Alpha1|Alpha|ti ti-file-text",
+        "note:Home01|Overview|ti ti-file-text",
+      ]);
+      dom.root.querySelector<HTMLElement>('[data-k2b-nav-tree-id="note:Zeta01"] .k2b-app-workspace__nav-tree-row')?.click();
+      expect(navigated).toEqual(["/app/notebooks/Book01/notes/Zeta01"]);
+    } finally {
+      dispose();
+      dom.cleanup();
     }
   });
 
