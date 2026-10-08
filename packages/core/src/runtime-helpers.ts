@@ -17,6 +17,7 @@ import {
 } from "@k2b/cloud/services";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
 import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
+import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
@@ -97,6 +98,7 @@ export const startCoreServices = async (
     await aiMaintenanceJobs.start();
     await aiChatTaskRuntime.start();
     await deliverPendingAiMessages();
+    await startOutgoingMailRuntime();
     await startNotificationRuntime();
     await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
@@ -118,6 +120,7 @@ export const startCoreServices = async (
       lifecycleJobs.stop(),
       appApprovalRuntime.stop(),
       stopNotificationRuntime(),
+      stopOutgoingMailRuntime(),
     ]);
     browserNotifications.stop();
     throw error;
@@ -140,7 +143,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await Promise.all([lifecycleJobs.stop(), appApprovalRuntime.stop()]);
   } finally {
     try {
-      await stopNotificationRuntime();
+      await Promise.all([stopNotificationRuntime(), stopOutgoingMailRuntime()]);
     } finally {
       try {
         stopCloudAiRuntime?.();

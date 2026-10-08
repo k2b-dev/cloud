@@ -18,6 +18,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: OutgoingMail, AccessDialog } = await import("./OutgoingMail.island.tsx");
+const { MessageDialog } = await import("./SendLog.tsx");
 const { buildFontAssets } = await import("../../../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../../../scripts/tabler-assets");
 const publicDir = join(root, "public");
@@ -66,6 +67,47 @@ const state: OutgoingMailState = {
       { appId: "invoices", name: "Invoices", registered: true, declared: true, mode: "selected", profiles: ["billing", "noreply"] },
       { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [] },
     ],
+  },
+  log: {
+    filter: {},
+    retention: { contentDays: 90, recordDays: 365 },
+    page: {
+      items: [
+        {
+          id: "0b1f4d43-34c9-4f0e-9a39-6c4c7b2c5f10",
+          appId: "invoices",
+          profile: "billing",
+          to: ["a-very-long-recipient-address-for-layout@customer-domain.example.org", "grace@example.org"],
+          subject: "Invoice 2026-104 for the order placed on 6 October with a long subject line",
+          attachments: [{ filename: "invoice.pdf", contentType: "application/pdf", size: 48213, sha256: "ab".repeat(32) }],
+          status: "sent",
+          failures: [{ recipient: "grace@example.org", reason: "550 5.1.1 Mailbox unavailable", at: "2026-10-07T10:00:01.000Z" }],
+          attempts: 1,
+          ref: { scope: "invoice", id: "2026-104" },
+          response: "250 2.0.0 OK queued as 4F2A1",
+          createdAt: "2026-10-07T10:00:00.000Z",
+          sentAt: "2026-10-07T10:00:01.000Z",
+        },
+        {
+          id: "7d0c1c55-3f43-4f6b-a2a3-1d1f3f0c9e21",
+          appId: "files",
+          profile: "noreply",
+          to: ["ada@example.org"],
+          subject: "Shared folder",
+          attachments: [],
+          status: "queued",
+          error: "451 4.7.1 Try again later",
+          failures: [],
+          attempts: 2,
+          createdAt: "2026-10-07T09:58:00.000Z",
+        },
+      ],
+      page: 1,
+      perPage: 25,
+      total: 2,
+      hasNext: true,
+      nextCursor: "next",
+    },
   },
 };
 
@@ -139,9 +181,9 @@ describe("outgoing mail page in a browser", () => {
               dark,
               locale,
               overflow: 0,
-              tables: 2,
+              tables: 3,
             });
-            expect(layout.headings).toHaveLength(3);
+            expect(layout.headings).toHaveLength(4);
           } finally {
             await tab.close();
           }
@@ -200,6 +242,26 @@ describe("outgoing mail page in a browser", () => {
           [false, false],
         ]);
         for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
+      }
+  }, 60_000);
+
+  test("a send log entry fits a phone and a desktop without horizontal overflow", async () => {
+    const entry = state.log.page.items[0]!;
+    const dialog = () => createComponent(MessageDialog, { record: entry, appName: "Invoices", close: () => {}, onChanged: () => {} });
+    for (const view of [phone, desktop])
+      for (const dark of [false, true]) {
+        const tab = await open(view, dark, "de", dialog, "width: min(calc(100vw - 2rem), 40rem)");
+        try {
+          const layout = await tab.evaluate(() => ({
+            overflow: document.documentElement.scrollWidth - window.innerWidth,
+            text: document.body.textContent ?? "",
+          }));
+          expect({ width: view.width, dark, overflow: Math.max(0, layout.overflow) }).toEqual({ width: view.width, dark, overflow: 0 });
+          expect(layout.text).toContain("Inhalt anzeigen");
+          expect(layout.text).toContain("550 5.1.1 Mailbox unavailable");
+        } finally {
+          await tab.close();
+        }
       }
   }, 60_000);
 });

@@ -25,11 +25,13 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { outgoingMailMessages } from "./messages";
+import { SendLog, type SendLogState } from "./SendLog";
 
-export type OutgoingMailState = {
+type SendersState = {
   profiles: AdminMailProfile[];
   apps: { defaultProfile: string | null; items: AdminMailApp[] };
 };
+export type OutgoingMailState = SendersState & { log: SendLogState };
 type Props = { initial: OutgoingMailState };
 type Messages = ReturnType<typeof outgoingMailMessages.resolve>["t"];
 type AccessMode = "default" | "selected" | "none";
@@ -63,7 +65,7 @@ const failure = async (response: { json: () => Promise<unknown> }, fallback: str
   return new Error((code ? known[code] : undefined) ?? message ?? fallback);
 };
 
-const loadState = async (signal: AbortSignal, t: Messages): Promise<OutgoingMailState> => {
+const loadState = async (signal: AbortSignal, t: Messages): Promise<SendersState> => {
   const [profiles, apps] = await Promise.all([api.profiles.$get({}, { init: { signal } }), api.apps.$get({}, { init: { signal } })]);
   if (!profiles.ok) throw await failure(profiles, t.loadFailed, t);
   if (!apps.ok) throw await failure(apps, t.loadFailed, t);
@@ -495,7 +497,7 @@ export default function OutgoingMail(props: Props) {
   const [revision, setRevision] = createSignal(0);
   const state = query.create({
     source: () => revision(),
-    load: async (current, { abortSignal }) => (current === 0 ? props.initial : loadState(abortSignal, t())),
+    load: async (current, { abortSignal }): Promise<SendersState> => (current === 0 ? props.initial : loadState(abortSignal, t())),
   });
   const data = () => state.data() ?? props.initial;
   const refresh = () => setRevision((value) => value + 1);
@@ -737,6 +739,8 @@ export default function OutgoingMail(props: Props) {
           }}
         />
       </section>
+
+      <SendLog initial={props.initial.log} apps={data().apps.items} />
     </div>
   );
 }

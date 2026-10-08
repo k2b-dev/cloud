@@ -75,3 +75,75 @@ test("platform send paths resolve profiles without a Core process identity or ma
     await expect(resolveMailCredentials("INVALID")).rejects.toMatchObject({ code: "invalid_profile" });
   }
 });
+
+test("send and list require startup and a process declaration", async () => {
+  const { audit } = await import("../audit");
+  const record = spyOn(audit, "record").mockResolvedValue();
+  const message = { to: ["reader@example.org"], subject: "Hello", text: "Hello" };
+  try {
+    expect(await mail.send(message)).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    expect(await mail.list()).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    bindProcessApplicationId("inventory");
+    expect(await mail.send(message)).toMatchObject({ ok: false, error: { code: "mail_not_declared" } });
+    expect(await mail.list()).toMatchObject({ ok: false, error: { code: "mail_not_declared" } });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0]?.[0]).toMatchObject({
+      action: "outgoing_mail.send",
+      outcome: "denied",
+      metadata: { appId: "inventory", recipientCount: 1 },
+    });
+    expect(JSON.stringify(record.mock.calls)).not.toContain(message.to[0]!);
+  } finally {
+    record.mockRestore();
+  }
+});
+test("list scopes every filter to the calling app and validates paging", async () => {
+  const { outgoingMailMessages } = await import("./messages");
+  bindProcessApplicationId("inventory", ["mail:send"]);
+  const page = { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+  const list = spyOn(outgoingMailMessages, "list").mockResolvedValue(page);
+  try {
+    expect(await mail.list({ ref: { scope: "order" }, status: ["failed"] }, { perPage: 20 })).toEqual({ ok: true, data: page });
+    expect(list).toHaveBeenCalledWith({ app: "inventory", ref: { scope: "order" }, status: ["failed"] }, { perPage: 20 });
+    expect(await mail.list({}, { perPage: 101 })).toMatchObject({ ok: false, error: { code: "bad_input" } });
+    expect(list).toHaveBeenCalledTimes(1);
+  } finally {
+    list.mockRestore();
+  }
+});
+test("send returns recorded outcomes and quota details without leaking infrastructure errors", async () => {
+  const sendModule = await import("./send");
+  const { audit } = await import("../audit");
+  const { OutgoingMailError } = await import("./store");
+  bindProcessApplicationId("inventory", ["mail:send"]);
+  const record = {
+    id: crypto.randomUUID(),
+    profile: "alerts",
+    to: ["reader@example.org"],
+    subject: "Hello",
+    status: "failed" as const,
+    error: "550 mailbox unavailable",
+    failures: [],
+    attempts: 1,
+    attachments: [],
+    createdAt: new Date().toISOString(),
+  };
+  const send = spyOn(sendModule, "sendMail").mockResolvedValue(record);
+  const recordAudit = spyOn(audit, "record").mockResolvedValue();
+  const message = { to: record.to, subject: "Hello", text: "Hello" };
+  try {
+    expect(await mail.send(message)).toEqual({ ok: true, data: record });
+    expect(send.mock.calls[0]?.[0]).toBe("inventory");
+    send.mockRejectedValue(
+      Object.assign(new OutgoingMailError("quota_exceeded", "Quota exhausted."), { limit: 10, used: 9, requested: 2 }),
+    );
+    expect(await mail.send(message)).toMatchObject({ ok: false, error: { code: "quota_exceeded", limit: 10, used: 9, requested: 2 } });
+    send.mockRejectedValue(new Error("connection string secret"));
+    expect(await mail.send(message)).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    expect(JSON.stringify(await mail.send(message))).not.toContain("secret");
+    expect(await mail.send({ ...message, headers: { Bcc: "spy@example.org" } })).toMatchObject({ ok: false, error: { code: "bad_input" } });
+  } finally {
+    send.mockRestore();
+    recordAudit.mockRestore();
+  }
+});

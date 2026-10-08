@@ -1,0 +1,118 @@
+import { expect, spyOn, test } from "bun:test";
+import type { ObjectStore } from "@k2b/sync";
+import { cancelMailStreams, uploadMailAttachments, verifyMailAttachment } from "./attachments";
+import * as sync from "./sync";
+
+const fakeStore = () => {
+  const objects = new Map<string, Uint8Array>();
+  const store: ObjectStore = {
+    ready: async () => {},
+    put: async ({ tenantId = "", key, body }) => {
+      const buffer = new Uint8Array(await new Response(body).arrayBuffer());
+      objects.set(key, buffer);
+      return { storeId: "cloud-outgoing-mail-attachments", tenantId, key, size: buffer.byteLength, digest: "fixture" };
+    },
+    get: async (ref) => {
+      const value = objects.get(ref.key);
+      return value ? { ref, metadata: {}, updatedAt: new Date(), body: new Blob([new Uint8Array(value)]).stream() } : null;
+    },
+    delete: async ({ key }) => objects.delete(key),
+    info: async () => null,
+    list: async function* () {},
+    watch: async function* () {},
+  };
+  return { objects, store };
+};
+const attachment = (content: Uint8Array | Blob | ReadableStream<Uint8Array>) => ({
+  filename: "hello.txt",
+  contentType: "text/plain",
+  content,
+});
+test("attachments stream once, persist only metadata, and verify both size and SHA-256", async () => {
+  const { objects, store } = fakeStore();
+  const factory = spyOn(sync, "mailAttachments").mockReturnValue(store);
+  let pulls = 0;
+  try {
+    const source = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(new TextEncoder().encode("hello"));
+        controller.close();
+      },
+    });
+    const uploaded = await uploadMailAttachments("id", [attachment(source)], 5);
+    expect(pulls).toBe(1);
+    expect(uploaded.metadata).toEqual([
+      {
+        filename: "hello.txt",
+        contentType: "text/plain",
+        size: 5,
+        sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      },
+    ]);
+    const ref = uploaded.refs[0]!;
+    await verifyMailAttachment(ref, uploaded.metadata[0]!);
+    objects.set(ref.key, new TextEncoder().encode("other"));
+    await expect(verifyMailAttachment(ref, uploaded.metadata[0]!)).rejects.toMatchObject({ code: "attachment_lost" });
+    objects.set(ref.key, new Uint8Array(4));
+    await expect(verifyMailAttachment(ref, uploaded.metadata[0]!)).rejects.toMatchObject({ code: "attachment_lost" });
+    objects.delete(ref.key);
+    await expect(verifyMailAttachment(ref, uploaded.metadata[0]!)).rejects.toMatchObject({ code: "attachment_lost" });
+  } finally {
+    factory.mockRestore();
+  }
+});
+test("aggregate attachment overflow cleans prior uploads and cancels remaining streams", async () => {
+  const { objects, store } = fakeStore();
+  const factory = spyOn(sync, "mailAttachments").mockReturnValue(store);
+  let cancelled = false;
+  const untouched = new ReadableStream<Uint8Array>(
+    {
+      cancel() {
+        cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  try {
+    await expect(
+      uploadMailAttachments("id", [attachment(new Uint8Array(3)), attachment(new Blob([new Uint8Array(3)])), attachment(untouched)], 5),
+    ).rejects.toMatchObject({ code: "attachments_too_large" });
+    expect(objects.size).toBe(0);
+    expect(cancelled).toBe(true);
+  } finally {
+    factory.mockRestore();
+  }
+});
+test("duplicate stream cancellation never reads source attachments", async () => {
+  let reads = 0;
+  let cancelled = false;
+  const source = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        reads++;
+      },
+      cancel() {
+        cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  await cancelMailStreams([attachment(source)]);
+  expect(reads).toBe(0);
+  expect(cancelled).toBe(true);
+});
+test("attachment store exhaustion has a stable acceptance error", async () => {
+  const { store } = fakeStore();
+  store.put = async () => {
+    throw new Error("maximum bytes exceeded");
+  };
+  const factory = spyOn(sync, "mailAttachments").mockReturnValue(store);
+  try {
+    await expect(uploadMailAttachments("id", [attachment(new Uint8Array(1))], 5)).rejects.toMatchObject({
+      code: "attachment_storage_full",
+    });
+  } finally {
+    factory.mockRestore();
+  }
+});

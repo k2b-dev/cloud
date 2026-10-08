@@ -555,6 +555,12 @@ cld admin outgoing-mail apps list --json
 cld admin outgoing-mail apps set inventory --default --yes
 cld admin outgoing-mail apps set inventory --profiles noreply,alerts --yes
 cld admin outgoing-mail apps set inventory --none --yes
+cld admin outgoing-mail log list --app inventory --status queued,failed --limit 20 --json
+cld admin outgoing-mail log show <id> --json
+cld admin outgoing-mail log show <id> --content --json
+cld admin outgoing-mail log cancel <id> --yes
+cld admin outgoing-mail retention show --json
+cld admin outgoing-mail retention set --content-days 90 --record-days 365 --yes
 ```
 
 SMTP passwords belong only in `--config-file` or `--stdin`, never inline
@@ -564,3 +570,17 @@ kept, and null clears it. Default access follows the current default profile;
 If a password is stored, changing the SMTP host requires supplying the password
 again or clearing it with null. Core's notification, sign-in, and password-reset
 emails always use the default profile; Core's access cannot be changed.
+
+Outgoing mail log reads require an administrator. `log list` supports `--app`,
+`--profile`, `--status` (comma-separated), `--since` (ISO), `--ref scope[:id]`,
+`--recipient` (substring), `--cursor`, and `--limit` (1–100). Use `nextCursor`
+to continue. List and show return metadata only. `show --content` reads bodies
+and headers through an audited endpoint, or reports purged content. Cancel
+needs `--yes` and accepts only queued records; other states return 409,
+`message_not_queued`. Record retention deletes idempotency keys with their rows.
+
+`retention show` returns the effective `{ contentDays, recordDays }` settings.
+`retention set` requires both day flags and `--yes`. Values must be positive
+whole numbers, with record retention at least as long as content retention.
+The API saves both settings in one transaction and audits their old and new
+values as `outgoing_mail.retention.update`.

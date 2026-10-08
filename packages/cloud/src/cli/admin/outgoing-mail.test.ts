@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { defineCliCommands } from "../commands";
-import type { CloudCliContext, CloudCliFlags } from "../index";
+import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "../index";
 import { outgoingMailCommands } from "./outgoing-mail";
 
 const module = defineCliCommands({ name: "admin", summary: "Outgoing mail", commands: outgoingMailCommands });
@@ -21,12 +21,13 @@ const invoke = async (
   flags: CloudCliFlags = {},
   result: unknown = {},
   requests: { path: string; method: string; body: unknown }[] = [],
+  mode: CloudCliOutputMode = "json",
 ) => {
   const output: unknown[] = [];
   const ctx: CloudCliContext = {
     args: ["outgoing-mail", ...args],
     flags,
-    options: { profile: "test", server: "http://test", token: "test", output: "json" },
+    options: { profile: "test", server: "http://test", token: "test", output: mode },
     getDefault: async () => undefined,
     setDefault: async () => {},
     createApiClient: () => {
@@ -43,7 +44,9 @@ const invoke = async (
     json: (value) => {
       output.push(value);
     },
-    jsonLine: () => {},
+    jsonLine: (value) => {
+      output.push(value);
+    },
     table: () => {},
   };
   await module.run(ctx);
@@ -67,6 +70,49 @@ test("profile reads and replacement forward exact API paths, revision and JSON o
   await expect(invoke(["profiles", "put", "alerts"], { config: JSON.stringify({ ...input, smtpPassword: null }) })).rejects.toThrow(
     "--config-file",
   );
+});
+test("retention show and set forward exact API paths, both day counts and JSON output", async () => {
+  const retention = { contentDays: 30, recordDays: 90 };
+  expect(await invoke(["retention", "show"], {}, retention)).toEqual({
+    requests: [{ path: "/api/admin/core/outgoing-mail/retention", method: "GET", body: null }],
+    output: [retention],
+  });
+  expect(await invoke(["retention", "set"], { "content-days": "30", "record-days": "90", yes: true }, retention)).toEqual({
+    requests: [{ path: "/api/admin/core/outgoing-mail/retention", method: "PUT", body: retention }],
+    output: [retention],
+  });
+});
+test("retention set requires both positive integer flags, valid ordering and --yes before a request", async () => {
+  const invalid: CloudCliFlags[] = [
+    {},
+    { "content-days": "30" },
+    { "record-days": "90" },
+    { "content-days": "0", "record-days": "90" },
+    { "content-days": "30", "record-days": "-1" },
+    { "content-days": "1.5", "record-days": "90" },
+    { "content-days": "30", "record-days": "90.5" },
+    { "content-days": "90", "record-days": "30" },
+    { "content-days": "30garbage", "record-days": "90" },
+  ];
+  for (const flags of invalid) {
+    const requests: { path: string; method: string; body: unknown }[] = [];
+    await expect(invoke(["retention", "set"], { ...flags, yes: true }, {}, requests)).rejects.toThrow();
+    expect(requests).toHaveLength(0);
+  }
+  const requests: { path: string; method: string; body: unknown }[] = [];
+  await expect(invoke(["retention", "set"], { "content-days": "30", "record-days": "90" }, {}, requests)).rejects.toThrow("--yes");
+  expect(requests).toHaveLength(0);
+  expect((await invoke(["retention", "set"], { "content-days": "30", "record-days": "30", yes: true })).requests[0]?.body).toEqual({
+    contentDays: 30,
+    recordDays: 30,
+  });
+});
+test("retention commands preserve the JSONL output contract", async () => {
+  const retention = { contentDays: 30, recordDays: 90 };
+  expect((await invoke(["retention", "show"], {}, retention, [], "jsonl")).output).toEqual([retention]);
+  expect(
+    (await invoke(["retention", "set"], { "content-days": "30", "record-days": "90", yes: true }, retention, [], "jsonl")).output,
+  ).toEqual([retention]);
 });
 test("destructive commands require confirmation and DELETE handles an empty 204", async () => {
   for (const action of ["set-default", "delete"]) {
@@ -137,4 +183,50 @@ test("malformed profile JSON from stdin never exposes secrets or sends a request
   } finally {
     stdin.mockRestore();
   }
+});
+
+test("log list forwards filters and cursor without exposing content", async () => {
+  const page = { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
+  const result = await invoke(
+    ["log", "list"],
+    {
+      app: "inventory",
+      profile: "alerts",
+      status: "queued,failed",
+      since: "2026-10-01T00:00:00Z",
+      ref: "order:42",
+      recipient: "@example.org",
+      cursor: "abc",
+      limit: "20",
+    },
+    page,
+  );
+  const url = new URL(result.requests[0]!.path, "http://test");
+  expect(url.pathname).toBe("/api/admin/core/outgoing-mail/messages");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    app: "inventory",
+    profile: "alerts",
+    status: "queued,failed",
+    since: "2026-10-01T00:00:00Z",
+    ref: "order:42",
+    recipient: "@example.org",
+    cursor: "abc",
+    limit: "20",
+  });
+  expect(result.output).toEqual([page]);
+  await expect(invoke(["log", "list"], { limit: "101" })).rejects.toThrow("1 to 100");
+});
+test("log show content uses the audited endpoint and cancel needs --yes", async () => {
+  expect((await invoke(["log", "show", "id"])).requests[0]?.path).toBe("/api/admin/core/outgoing-mail/messages/id");
+  expect((await invoke(["log", "show", "id"], { content: true })).requests[0]?.path).toBe(
+    "/api/admin/core/outgoing-mail/messages/id/content",
+  );
+  const requests: { path: string; method: string; body: unknown }[] = [];
+  await expect(invoke(["log", "cancel", "id"], {}, {}, requests)).rejects.toThrow("--yes");
+  expect(requests).toHaveLength(0);
+  expect((await invoke(["log", "cancel", "id"], { yes: true })).requests[0]).toEqual({
+    path: "/api/admin/core/outgoing-mail/messages/id/cancel",
+    method: "POST",
+    body: null,
+  });
 });

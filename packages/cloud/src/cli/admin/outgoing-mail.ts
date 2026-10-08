@@ -1,5 +1,13 @@
-import { type AdminMailApp, type AdminMailProfile, MailProfileInputSchema } from "../../contracts/outgoing-mail";
-import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "../index";
+import {
+  type AdminMailApp,
+  type AdminMailProfile,
+  type AdminMailRecord,
+  type MailPage,
+  MailProfileInputSchema,
+  type MailRetention,
+  MailRetentionSchema,
+} from "../../contracts/outgoing-mail";
+import { arg, type CloudCliContext, command, confirmFlag, flag, printStructured, readCliInput } from "../index";
 import { apiGet, apiJson, printJsonOrTable } from "./shared";
 
 const root = "/api/admin/core/outgoing-mail";
@@ -13,6 +21,73 @@ const confirmed = (yes: boolean) => {
   if (!yes) throw new Error("Outgoing mail policy changes require --yes.");
 };
 export const outgoingMailCommands = [
+  command("outgoing-mail retention show", {
+    summary: "Show outgoing mail retention in days",
+    async run({ ctx }) {
+      const result = await apiGet<MailRetention>(ctx, `${root}/retention`);
+      if (!printStructured(ctx, result)) print(ctx, result);
+    },
+  }),
+  command("outgoing-mail retention set", {
+    summary: "Set outgoing mail content and record retention",
+    flags: {
+      contentDays: flag.string({ required: true, description: "Content retention in days" }),
+      recordDays: flag.string({ required: true, description: "Record retention in days (at least content retention)" }),
+      yes: confirmFlag("Confirm changing outgoing mail retention"),
+    },
+    async run({ ctx, flags }) {
+      confirmed(flags.yes);
+      const retention = MailRetentionSchema.parse({ contentDays: Number(flags.contentDays), recordDays: Number(flags.recordDays) });
+      if (retention.recordDays < retention.contentDays) throw new Error("Record retention must be at least content retention.");
+      const result = await apiJson<MailRetention>(ctx, "PUT", `${root}/retention`, retention);
+      if (!printStructured(ctx, result)) print(ctx, result);
+    },
+  }),
+  command("outgoing-mail log list", {
+    summary: "List outgoing mail metadata",
+    flags: {
+      app: flag.string({ description: "Application ID" }),
+      profile: flag.string({ description: "Sender profile key" }),
+      status: flag.string({ description: "Comma-separated statuses" }),
+      since: flag.string({ description: "ISO timestamp" }),
+      ref: flag.string({ description: "Reference scope[:id]" }),
+      recipient: flag.string({ description: "Recipient substring" }),
+      cursor: flag.string({ description: "Next-page cursor" }),
+      limit: flag.int({ description: "Page size (1–100)" }),
+    },
+    async run({ ctx, flags }) {
+      if (flags.limit !== undefined && (!Number.isInteger(flags.limit) || flags.limit < 1 || flags.limit > 100))
+        throw new Error("--limit must be a whole number from 1 to 100.");
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(flags)) if (value !== undefined) query.set(key, String(value));
+      const result = await apiGet<MailPage<AdminMailRecord>>(ctx, `${root}/messages${query.size ? `?${query}` : ""}`);
+      printJsonOrTable(ctx, result, result.items, [
+        { key: "id" },
+        { key: "appId" },
+        { key: "profile" },
+        { key: "status" },
+        { key: "createdAt" },
+      ]);
+      if (ctx.options.output === "text" && result.nextCursor) ctx.print(`Next cursor: ${result.nextCursor}`);
+    },
+  }),
+  command("outgoing-mail log show", {
+    summary: "Read outgoing mail metadata, or audited content",
+    args: { id: arg.required({ valueLabel: "id" }) },
+    flags: { content: flag.boolean({ description: "Read message content (audited)" }) },
+    async run({ ctx, args, flags }) {
+      print(ctx, await apiGet(ctx, `${root}/messages/${encodeURIComponent(args.id)}${flags.content ? "/content" : ""}`));
+    },
+  }),
+  command("outgoing-mail log cancel", {
+    summary: "Cancel queued outgoing mail",
+    args: { id: arg.required({ valueLabel: "id" }) },
+    flags: { yes: confirmFlag("Confirm cancelling queued outgoing mail") },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Cancelling outgoing mail requires --yes.");
+      print(ctx, await apiJson(ctx, "POST", `${root}/messages/${encodeURIComponent(args.id)}/cancel`));
+    },
+  }),
   command("outgoing-mail profiles list", {
     summary: "List outgoing mail sender profiles",
     async run({ ctx }) {

@@ -3,9 +3,9 @@ title: Outgoing mail operations
 navTitle: Outgoing mail
 section: Operations
 order: 945
-description: Configure SMTP sender profiles, choose a default, and control application access.
+description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Outgoing mail operations
@@ -19,7 +19,8 @@ is independent of the Mail application and its `cld mail` commands.
 A profile has an immutable lowercase key, a display name, a sender address,
 and SMTP connection settings. Keys may contain lowercase letters, digits,
 and hyphens; they begin with a letter or digit and contain at most 63 characters.
-A null sender name uses the installation's `app.name` when sending.
+A null sender name uses the registered application name for `mail.send`;
+existing system notifications and test sends use the installation's `app.name`.
 Profile and sender names are limited to 120 characters, sender addresses and
 SMTP usernames to 320, SMTP hosts to 253, and SMTP passwords to 16384.
 
@@ -80,8 +81,8 @@ inferred from the port for profiles you create. Authentication is omitted when
 
 Pacing must be 1–6000 per minute. The rolling daily recipient limit
 must be at least 1 or null for unlimited. Attachment limits must be 1–26214400
-bytes; the default is 15728640 bytes (15 MiB). These limits are stored for
-policy administration; this release does not enforce them during delivery.
+bytes; the default is 15728640 bytes (15 MiB). `mail.send` enforces recipient quota and the total attachment byte limit.
+Immediate sending does not use the bulk pacing setting.
 
 ## Choose the default profile
 
@@ -118,6 +119,107 @@ Choose exactly one of these modes. Applications still need to declare
 declaration. Core's notification, sign-in, and password-reset emails always use
 the default profile, and Core's access cannot be changed.
 
+## Inspect the send log
+
+The **Send log** section in **Administration → Outgoing mail** lists app mail
+newest first. Filter it by app, status, or recipient; the filters stay in the
+page URL. Select an entry to see its recipients, status, attempts, SMTP answer,
+rejected recipients, and attachment metadata. **Show content** loads the text
+and HTML and writes an audit entry. **Cancel mail** stops a queued entry. The
+CLI and admin API offer the same reads:
+
+```bash
+cld admin outgoing-mail log list --app inventory --status queued,failed --limit 20 --json
+cld admin outgoing-mail log list --profile alerts --since 2026-10-01T00:00:00Z --ref order:42 --recipient @example.org --json
+cld admin outgoing-mail log show <id> --json
+cld admin outgoing-mail log show <id> --content --json
+cld admin outgoing-mail log cancel <id> --yes
+```
+
+`list` accepts `--app`, `--profile`, comma-separated `--status`, ISO `--since`,
+`--ref scope[:id]`, recipient substring `--recipient`, `--cursor`, and `--limit`
+(1–100). Continue with the returned `nextCursor`. Metadata includes recipient
+addresses, subject, actor snapshot, attachment names, sizes and checksums,
+attempt count, delivery errors, and the SMTP response line. Metadata reads
+never return text, HTML, or custom headers. Treat send-log access as sensitive.
+
+`show --content` calls a separate audited endpoint and returns text, HTML, and
+headers, or a marker that content was purged. Every such read writes
+`outgoing_mail.message.read`. `cancel --yes` changes only `queued` mail to
+`cancelled`, with `cancelled_by_admin`, deletes attachment objects, and writes
+`outgoing_mail.message.cancel`. Other states return HTTP 409,
+`message_not_queued`; unknown IDs return `message_unknown` (404).
+
+The administrator-only routes use `Cache-Control: no-store`:
+
+| Route under `/api/admin/core/outgoing-mail` | Result |
+| --- | --- |
+| `GET /messages` | Filtered metadata page; query parameters mirror the CLI flags |
+| `GET /messages/:id` | One metadata record |
+| `GET /messages/:id/content` | Audited content read or purge marker |
+| `POST /messages/:id/cancel` | Cancel queued mail and audit the cancellation |
+
+## Set retention
+
+Open **Administration → Outgoing mail**, then choose **Retention** in the
+**Send log** section to read and change both retention periods.
+
+| Setting | Default | Constraint |
+| --- | --- | --- |
+| `outgoing_mail.content_retention_days` | 90 days | Positive whole number |
+| `outgoing_mail.record_retention_days` | 365 days | Positive whole number, at least content retention |
+
+The CLI offers the same settings:
+
+```sh
+cld admin outgoing-mail retention show --json
+cld admin outgoing-mail retention set --content-days 90 --record-days 365 --yes
+```
+
+Both day flags are required for `set`. Administrators can also use
+`GET /api/admin/core/outgoing-mail/retention` and
+`PUT /api/admin/core/outgoing-mail/retention` with JSON
+`{ "contentDays": 90, "recordDays": 365 }`. Updates through this API require
+positive whole days and record retention at least as long as content retention;
+they save both values together and audit the old and new values as
+`outgoing_mail.retention.update`.
+
+Core runs daily retention in batches of at most 1000 rows,
+stopping after five minutes. Content retention removes text, HTML, and custom
+headers and records the purge time. Record retention deletes the entire row;
+subject, recipients, actor, and attachment metadata remain until then. An
+idempotency key is reusable after its row is deleted. If values set through
+generic settings make record retention shorter than content retention, the row
+is deleted at record age, including any content that has not yet been purged.
+
+## Plan delivery capacity and recovery
+
+Application mail is committed to Postgres before a Sync job wakes Core. Core
+runs up to eight immediate SMTP attempts concurrently per worker. SMTP egress
+for `mail.send` comes from Core only; existing system notification delivery is
+unchanged in this slice.
+
+Reserve JetStream capacity for the Core-owned object store
+`cloud-outgoing-mail-attachments`: **2 GiB**, plus replication overhead,
+25 MiB maximum per object, and 48-hour object expiry. The settled topic
+`cloud-outgoing-mail-settled` retains message-ID wakeups for five minutes with
+a 2 MiB stream limit (plus its dead-letter stream and replication overhead).
+The send job uses Sync's default bounded job retention. Losing a wakeup does
+not remove the durable mail row.
+
+Every 30 seconds, Core recovers attempts stuck in `sending` for more than five
+minutes and resubmits due immediate rows. Temporary SMTP failures retry after
+one minute, doubling to at most one hour until the 24-hour deadline. Revoked
+access cancels accepted mail before its next attempt; removed profiles cancel
+it with `profile_removed`. Terminal mail releases attachment objects. Failed
+cleanup is retried by recovery; object expiry bounds orphan lifetime.
+
+Delivery is at least once. A crash between SMTP acceptance and the log update
+can produce duplicate delivery with the same Message-ID. A `sent` status
+records SMTP acceptance, including individual recipient rejections in
+`failures`; it does not prove inbox delivery. Bounce collection, bulk enqueue,
+pacing, and notification migration are separate slices.
+
 ## Upgrade and rollback
 
 On upgrade, Core imports the stored `mail.noreply.*` settings when there are
@@ -143,7 +245,10 @@ values before rolling back.
 Every administration route requires the admin role. Profile writes, deletion,
 default changes, test sends, and application policy changes produce
 `outgoing_mail.*` audit events without SMTP secrets. Profile and access
-mutations commit together with their audit entries.
+mutations commit together with their audit entries. Each application send
+call also writes `outgoing_mail.send` with application, actor, profile,
+recipient count, and record ID; it omits subject, body, addresses, and
+attachment content.
 
 Passwords are encrypted at rest using `APP_SECRET`, never returned by the API,
 CLI, or `mail.profiles()`, and decrypted only on the platform email send path.

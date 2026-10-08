@@ -51,7 +51,33 @@ const state: OutgoingMailState = {
       { appId: "legacy", name: "legacy", registered: false, declared: false, mode: "selected", profiles: [] },
     ],
   },
+  log: {
+    filter: {},
+    retention: { contentDays: 90, recordDays: 365 },
+    page: {
+      items: [
+        {
+          id: "0b1f4d43-34c9-4f0e-9a39-6c4c7b2c5f10",
+          appId: "invoices",
+          profile: "billing",
+          to: ["ada@example.org", "grace@example.org"],
+          subject: "Invoice 2026-104",
+          attachments: [{ filename: "invoice.pdf", contentType: "application/pdf", size: 48213, sha256: "ab".repeat(32) }],
+          status: "sent",
+          failures: [],
+          attempts: 1,
+          createdAt: "2026-10-07T10:00:00.000Z",
+          sentAt: "2026-10-07T10:00:01.000Z",
+        },
+      ],
+      page: 1,
+      perPage: 25,
+      total: 1,
+      hasNext: false,
+    },
+  },
 };
+const emptyLog: OutgoingMailState["log"] = { ...state.log, page: { ...state.log.page, items: [], total: 0 } };
 
 const render = (locale: string, initial: OutgoingMailState) =>
   renderToString(() =>
@@ -96,8 +122,32 @@ test("lists apps that request mail before the others", () => {
 });
 
 test("an installation without profiles explains what to do first", () => {
-  const html = render("en", { profiles: [], apps: { defaultProfile: null, items: state.apps.items } });
+  const html = render("en", { profiles: [], apps: { defaultProfile: null, items: state.apps.items }, log: emptyLog });
   expect(html).toContain("No sender profile yet");
   expect(html).toContain("Add profile");
   expect(html).toContain(">Default profile<");
+});
+
+test("the send log shows metadata, retention, and status in English and German, never content", () => {
+  const en = render("en", state);
+  expect(en).toContain("Send log");
+  expect(en).toContain("Text is kept for 90 days, the record for 365 days.");
+  expect(en).toContain("Invoice 2026-104");
+  expect(en).toContain("ada@example.org");
+  expect(en).toContain("+1");
+  expect(en).toContain(">Sent<");
+  expect(en).toContain("Search recipients");
+  expect(en).not.toContain("grace@example.org");
+
+  const de = render("de", state);
+  expect(de).toContain("Sendeprotokoll");
+  expect(de).toContain("Der Text bleibt 90 Tage, der Eintrag 365 Tage erhalten.");
+  expect(de).toContain(">Gesendet<");
+  expect(de).toContain("Aufbewahrung");
+});
+
+test("an empty send log explains when mail appears", () => {
+  const html = render("en", { ...state, log: emptyLog });
+  expect(html).toContain("No mail sent yet");
+  expect(html).toContain("Mail appears here as soon as an app sends it.");
 });
