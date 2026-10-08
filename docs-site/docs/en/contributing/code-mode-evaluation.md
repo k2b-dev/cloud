@@ -31,7 +31,7 @@ requests, each in a fresh chat with its own disposable user:
 
 | Case | Request |
 | --- | --- |
-| `todo` | personal todo list that keeps its tasks, with check, delete and filters |
+| `todo` | personal to-do list that keeps its tasks, with check, delete and filters |
 | `csv-dashboard` | dashboard from an uploaded Windows-1252 order export, stored in the app |
 | `travel-expenses` | travel expense report with a PDF for signing |
 | `quote-pdf` | quote generator with items, VAT and a PDF |
