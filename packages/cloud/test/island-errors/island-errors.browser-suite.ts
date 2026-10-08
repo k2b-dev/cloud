@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { routes } from "@k2b/ssr/hono";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
@@ -12,10 +12,10 @@ import { browserName, launchBrowser } from "../../../ui/test/browser";
 // This directory is a small Cloud app: `src/` holds its islands. The server render
 // must give each island the ID that the app's own build gives it, so both use it
 // as their root. This plugin only renders; the app build below emits the bundles
-// into `_ssr/` here, where the production adapter looks: next to `Bun.main`, the
-// test file that `island-errors.browser.test.ts` runs in a process of its own.
+// into a directory of this process, so runs side by side in one checkout, such as
+// Chromium and WebKit, never build over or delete each other's bundles.
 const appRoot = import.meta.dir;
-const ssrDir = join(appRoot, "_ssr");
+const outdir = mkdtempSync(join(tmpdir(), "cloud-island-errors-"));
 const { plugin } = createConfig({ rootDir: appRoot, componentRoots: [] });
 Bun.plugin(plugin());
 
@@ -40,14 +40,15 @@ let browser: Browser;
 
 beforeAll(async () => {
   // The app's plugin builds every island of the app and of Cloud, as `bun run build` does.
-  const islands = await Bun.build({ entrypoints: [join(appRoot, "src/probe-store.ts")], plugins: [app.plugin()] });
+  const islands = await Bun.build({ entrypoints: [join(appRoot, "src/probe-store.ts")], plugins: [app.plugin()], outdir });
   if (!islands.success) throw new AggregateError(islands.logs, "Could not build the islands.");
   const css = await Bun.build({ entrypoints: [resolve(appRoot, "../../src/styles/global.css")], plugins: [tailwind] });
   if (!css.success) throw new AggregateError(css.logs, "Could not compile the global stylesheet.");
   const globalCss = await css.outputs[0]!.text();
 
   const routesApp = new Hono()
-    .route("/_ssr", routes(app.config))
+    // The page asks for `/_ssr/<build version>/<id>.js`; its chunks sit next to it.
+    .get("/_ssr/*", (c) => new Response(Bun.file(join(outdir, "_ssr", basename(c.req.path)))))
     .get("/public/global.css", (c) => c.body(globalCss, 200, { "content-type": "text/css" }))
     .get("/public/tabler-icons.css", () => new Response(Bun.file(join(ui, "tabler.css"))))
     .get("/public/:file{tabler-icons-.+\\.woff2}", (c) => new Response(Bun.file(join(ui, c.req.param("file")))))
@@ -64,7 +65,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);
-  rmSync(ssrDir, { recursive: true, force: true });
+  rmSync(outdir, { recursive: true, force: true });
 });
 
 const open = async (locale: "en-US" | "de-DE") => {
