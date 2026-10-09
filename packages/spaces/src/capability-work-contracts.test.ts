@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { decodeWorkCursor, EventAgendaInputSchema, encodeWorkCursor, TaskFocusInputSchema } from "./capability-work-contracts";
+import {
+  decodeWorkCursor,
+  EventAgendaInputSchema,
+  encodeWorkCursor,
+  TaskFocusDataSchema,
+  TaskFocusInputSchema,
+} from "./capability-work-contracts";
 import { CalendarReadLimitError, expandRecurringEvents } from "./service/recurrence";
 
 describe("Spaces work query contracts", () => {
+  test("focus requires an overdue boolean", () => {
+    const overdue = TaskFocusDataSchema.element.shape.overdue;
+    expect(overdue.parse(true)).toBeTrue();
+    expect(overdue.parse(false)).toBeFalse();
+    for (const invalid of [undefined, null, "false", 0]) expect(overdue.safeParse(invalid).success).toBeFalse();
+  });
   test("focus defaults to a small cross-space page and accepts domain filters", () => {
     expect(TaskFocusInputSchema.parse({})).toEqual({ limit: 25, query: "", assignedTo: "all", activity: "all", deadlineFilter: "all" });
     expect(TaskFocusInputSchema.parse({ activity: "inactive", deadlineFilter: "overdue", blocked: true }).blocked).toBe(true);

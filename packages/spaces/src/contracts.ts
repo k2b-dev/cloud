@@ -890,6 +890,18 @@ export const ItemListResultSchema = z.object({
 });
 export type ItemListResult = z.infer<typeof ItemListResultSchema>;
 
+export const ItemFilterResponseSchema = ItemListResultSchema.extend({
+  items: z
+    .array(
+      SpaceItemSchema.extend({
+        overdue: z
+          .boolean()
+          .describe("True only for an open task whose deadline is before today in the viewer's timezone; false for events."),
+      }),
+    )
+    .describe("Items matching the filter"),
+});
+
 export type {
   AccessEntry,
   MessageResponse,

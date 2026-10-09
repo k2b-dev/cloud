@@ -16,7 +16,7 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
-import { dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   CalendarDestinationListDataSchema,
@@ -133,6 +133,7 @@ import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./serv
 import { spacesPublicResources } from "./service/public-resources";
 import { CalendarReadLimitError } from "./service/recurrence";
 import * as taskWork from "./service/task-work";
+import { isTaskOverdue } from "./task-overdue";
 import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
 
 const encodeCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
@@ -421,7 +422,7 @@ const mapAttachment = (item: SpaceItem, attachment: SpaceItemAttachment) => {
   };
 };
 
-const mapTaskSummary = (item: SpaceItem) => {
+const mapTaskSummary = (item: SpaceItem, dateConfig?: DateContext) => {
   const description = boundedText(item.description, 1000);
   return {
     kind: "task" as const,
@@ -432,6 +433,7 @@ const mapTaskSummary = (item: SpaceItem) => {
     descriptionPreview: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    overdue: isTaskOverdue(item, dateConfig),
     estimatedDurationMinutes: item.estimatedDurationMinutes,
     activeBlockerCount: item.activeBlockerCount,
     priority: item.priority,
@@ -788,10 +790,11 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   if (!columnIds)
     return capabilityFail(context, err.badInput("Unknown columnIds value; use a column ID returned by Read space"), "unknownColumnIds");
   if (!tagIds) return capabilityFail(context, err.badInput("Unknown tagIds value; use a tag ID returned by Read space"), "unknownTagIds");
+  const dateConfig = kind === "task" || input.deadlineFilter !== "all" ? await capabilityDateConfig(context) : undefined;
   const page = await spacesService.item.listFiltered({
     spaceId: access.data.internalId,
     currentUserId: context.user?.id,
-    ...(input.deadlineFilter !== "all" ? { dateConfig: await capabilityDateConfig(context) } : {}),
+    ...(dateConfig ? { dateConfig } : {}),
     filter: {
       type: kind,
       status: input.status,
@@ -817,7 +820,9 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   const columnNames = new Map(columns.items.map((column) => [column.id, column.name]));
   const itemColumnNames = new Map(publicItems.map((item, index) => [item.id, columnNames.get(page.items[index]!.columnId) ?? null]));
   const items = (
-    kind === "event" ? publicItems.filter(isEvent).map(mapEventSummary) : publicItems.filter((item) => !isEvent(item)).map(mapTaskSummary)
+    kind === "event"
+      ? publicItems.filter(isEvent).map(mapEventSummary)
+      : publicItems.filter((item) => !isEvent(item)).map((item) => mapTaskSummary(item, dateConfig))
   ).map((item) => ({
     ...item,
     columnName: itemColumnNames.get(item.id) ?? null,

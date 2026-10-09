@@ -289,6 +289,7 @@ export const TaskListItemDataSchema = z
     kind: z.literal("task"),
     ...ItemListBaseDataShape,
     deadline: TimestampSchema.nullable(),
+    overdue: z.boolean().describe("True only for an open task whose deadline is before today in the configured application timezone."),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
     activeBlockerCount: z.number().int().nonnegative(),
     priority: PrioritySchema.nullable(),

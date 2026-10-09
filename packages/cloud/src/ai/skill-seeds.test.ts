@@ -230,16 +230,18 @@ describe("Cloud AI Skill seeds", () => {
     expect(seed).not.toHaveBeenCalled();
   });
 
-  test("Spaces seed upgrades instructions for incomplete assignee previews", async () => {
+  test("Spaces seed upgrades instructions for assignee previews and overdue tasks", async () => {
     const seed = spyOn(aiSkills, "seedOnce").mockResolvedValue();
     await seedCloudAiSkills();
     const spaces = seed.mock.calls.map(([input]) => input).find((input) => input.key === "spaces:cloud-spaces");
-    expect(spaces?.version).toBe(3);
+    expect(spaces?.version).toBe(4);
     expect(spaces?.instructions).toContain("spaces.template.list");
     expect(spaces?.instructions).toContain("Never guess a date from a vague request");
     expect(spaces?.instructions).toContain("at most three assignees and tags");
     expect(spaces?.instructions).toContain("relationsTruncated");
     expect(spaces?.instructions).toContain("assigneeCount");
+    expect(spaces?.instructions).toContain("overdue");
+    expect(spaces?.instructions).toContain("never infer it from `deadline` alone");
     expect(spaces?.instructions).toContain("is larger than the number of `assignees`");
     expect(spaces?.instructions).toContain("3 of 11");
   });
