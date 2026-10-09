@@ -17,16 +17,17 @@ export type AssistantTurnStreamResult = {
   pending?: { type: "approval" | "client_tool"; callId: string; name: string };
 };
 
-const assistantText = (messages: AiStoredMessage[]): string => {
-  let text = "";
+const assistantTextParts = (messages: AiStoredMessage[]): string[] => {
+  const parts: string[] = [];
   for (const stored of messages) {
     if (stored.message.role !== "assistant") continue;
     for (const part of stored.message.content) {
-      if (typeof part !== "string" && part.type === "text") text += part.text;
+      if (typeof part !== "string" && part.type === "text" && part.text.trim()) parts.push(part.text);
     }
   }
-  return text;
+  return parts;
 };
+const assistantText = (messages: AiStoredMessage[]): string => assistantTextParts(messages).join("\n\n");
 
 /** The chat path of a file that `present` delivered; the CLI names it because the terminal shows no file card. */
 const presentedPath = (name: string, result: unknown): string | null =>
@@ -61,8 +62,9 @@ export const streamAssistantTurn = async (input: {
   let initialResponse = input.initialResponse;
   let reconnectDelayMs = 250;
   let emittedText = "";
+  const printedBlocks: string[] = [];
   const blocks = new Map<string, AiTurnBlock>();
-  const emittedByBlock = new Map<string, string>();
+  const toolStatuses = new Map<string, Extract<AiTurnBlock, { kind: "tool" }>["status"]>();
   const renderedTables = new Set<string>();
   const namedFiles = new Set<string>();
   const emitTable = (callId: string, result: unknown) => {
@@ -73,15 +75,24 @@ export const streamAssistantTurn = async (input: {
   const emitJsonLine = (value: Record<string, unknown>) => {
     if (ctx.options.output === "jsonl") ctx.jsonLine({ v: 1, conversationId, turnId: targetTurnId, ...value });
   };
-  const emitTextBlock = (blockId: string, text: string) => {
-    const previous = emittedByBlock.get(blockId) ?? "";
-    if (!text.startsWith(previous)) return;
-    const delta = text.slice(previous.length);
-    if (!delta) return;
-    emittedByBlock.set(blockId, text);
-    emittedText += delta;
-    if (ctx.options.output === "text") ctx.write(delta);
-    emitJsonLine({ type: "text_delta", blockId, delta });
+  const emitTextBlock = (text: string, blockId?: string) => {
+    // Rebuilt snapshots may rename IDs, lag behind live deltas, or omit
+    // compacted rounds. Remember content independently of the current baseline.
+    if (!text.trim() || printedBlocks.some((printed) => printed.startsWith(text))) return;
+    const last = printedBlocks.at(-1);
+    const extending = last !== undefined && text.startsWith(last);
+    const delta = extending ? text.slice(last.length) : text;
+    const separator = !extending && printedBlocks.length > 0 ? "\n\n" : "";
+    if (extending) printedBlocks[printedBlocks.length - 1] = text;
+    else printedBlocks.push(text);
+    emittedText += separator + delta;
+    if (ctx.options.output === "text") ctx.write(separator + delta);
+    if (blockId !== undefined) emitJsonLine({ type: "text_delta", blockId, delta });
+  };
+  const emitText = () => {
+    for (const block of blocks.values()) {
+      if (block.kind === "text") emitTextBlock(block.text, block.id);
+    }
   };
   const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
     for (const stored of result.messages) {
@@ -93,23 +104,17 @@ export const streamAssistantTurn = async (input: {
         ctx.error(`present: completed ${terminalSafeText(path)}`);
       }
     }
-    const text = result.text;
+    for (const text of assistantTextParts(result.messages)) emitTextBlock(text);
     if (ctx.options.output === "text") {
-      if (text.startsWith(emittedText)) {
-        const missing = text.slice(emittedText.length);
-        if (missing) ctx.write(missing);
-      }
-      if (text || emittedText) ctx.write("\n");
+      if (result.text || emittedText) ctx.write("\n");
     }
     return result;
   };
 
-  const handleToolBlock = async (
-    block: Extract<AiTurnBlock, { kind: "tool" }>,
-    previous?: AiTurnBlock,
-  ): Promise<AssistantTurnStreamResult | null> => {
+  const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
     if (block.status === "completed") emitTable(block.callId, block.result);
-    if (previous?.kind !== "tool" || previous.status !== block.status) {
+    if (toolStatuses.get(block.callId) !== block.status) {
+      toolStatuses.set(block.callId, block.status);
       input.onToolBlock?.(block);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
       if (ctx.options.output === "text") {
@@ -190,12 +195,12 @@ export const streamAssistantTurn = async (input: {
         }
       }
       if (event.activeTurn?.turnId === targetTurnId) {
+        blocks.clear();
+        for (const block of event.activeTurn.blocks) blocks.set(block.id, block);
+        emitText();
         for (const block of event.activeTurn.blocks) {
-          const previous = blocks.get(block.id);
-          blocks.set(block.id, block);
-          if (block.kind === "text") emitTextBlock(block.id, block.text);
           if (block.kind === "tool") {
-            const result = await handleToolBlock(block, previous);
+            const result = await handleToolBlock(block);
             if (result) return result;
           }
         }
@@ -219,6 +224,11 @@ export const streamAssistantTurn = async (input: {
 
     if (event.turnId !== targetTurnId) return null;
     if (event.type === "turn_started") {
+      if (event.blocks) {
+        blocks.clear();
+        for (const block of event.blocks) blocks.set(block.id, block);
+        emitText();
+      }
       emitJsonLine({ type: "turn_started", modelProfileId: event.modelProfileId, providerModel: event.providerModel });
       return null;
     }
@@ -230,16 +240,15 @@ export const streamAssistantTurn = async (input: {
         { kind: "text" | "thinking" }
       >;
       blocks.set(event.blockId, block);
-      if (event.blockKind === "text") emitTextBlock(event.blockId, block.text);
+      if (event.blockKind === "text") emitText();
       else emitJsonLine({ type: "thinking_delta", blockId: event.blockId, delta: event.delta });
       return null;
     }
     if (event.type === "block_set") {
-      const previous = blocks.get(event.block.id);
       blocks.set(event.block.id, event.block);
-      if (event.block.kind === "text") emitTextBlock(event.block.id, event.block.text);
+      if (event.block.kind === "text") emitText();
       if (event.block.kind !== "tool") return null;
-      return handleToolBlock(event.block, previous);
+      return handleToolBlock(event.block);
     }
 
     if (event.type === "message_saved") {

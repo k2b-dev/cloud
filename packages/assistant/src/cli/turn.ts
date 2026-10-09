@@ -49,14 +49,17 @@ export const validateLocalAttachments = async (paths: readonly string[]): Promis
 export const resolveConversation = async (
   ctx: CloudCliContext,
   input: { conversationId?: string; title?: string; projectId?: string },
-): Promise<AiConversation> =>
-  input.conversationId
-    ? readConversationDetail(ctx, input.conversationId).then((detail) => detail.conversation)
-    : readApi<AiConversation>(
-        ctx,
-        "/conversations",
-        jsonRequest("POST", { ...(input.title ? { title: input.title } : {}), ...(input.projectId ? { projectId: input.projectId } : {}) }),
-      );
+): Promise<AiConversation> => {
+  if (input.conversationId) return (await readConversationDetail(ctx, input.conversationId)).conversation;
+  const conversation = await readApi<AiConversation>(
+    ctx,
+    "/conversations",
+    jsonRequest("POST", { ...(input.projectId ? { projectId: input.projectId } : {}) }),
+  );
+  return input.title
+    ? readApi<AiConversation>(ctx, conversationPath(conversation.id), jsonRequest("PATCH", { title: input.title }))
+    : conversation;
+};
 
 export const uploadAttachment = async (
   ctx: CloudCliContext,

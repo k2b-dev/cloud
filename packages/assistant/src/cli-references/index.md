@@ -55,14 +55,14 @@ short chat and Project IDs above.
 
 Useful options:
 
-- `--title <title>` names a newly created chat.
+- `--title <title>` names a newly created chat and preserves that title through the first message and automatic enrichment. `chats create --title <title>` does the same. The exact title `New chat` matches the default placeholder and keeps automatic naming.
 - `--model <profile-id>` selects a model from `cld assistant models`.
 - `--project <project-id>` creates the new chat in an accessible Project.
 - Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID.
 - `--detach` submits the turn and returns its ID without waiting in print mode.
 - Repeat `--approve <exact-tool-name>` in print mode to approve only those tools for that turn. There is deliberately no approve-all flag.
 
-Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
+Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Separate non-blank text blocks have a blank line between them, including in the final JSON result. Reconnecting prints only new text and does not repeat unchanged tool progress; `turns watch` behaves the same way. Tool progress and `--approve` use canonical capability IDs such as `spaces.task.create`. JSONL text deltas keep their block content without added separators. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
 `--allow-bash` is deliberately rejected with `--print`, structured output, and
 detached execution.
 
@@ -94,7 +94,7 @@ These commands share the Studio Advanced menu's permission-aware services.
 Personal JSON uses scope:"user" and always belongs to the signed-in viewer across devices.
 
 Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
-an open Assistant browser tab. Install Playwright Chromium, or set
+an open Assistant browser tab. The served plugin includes Playwright and its browser metadata. Install Playwright Chromium, or set
 `CLOUD_CLI_CHROMIUM` to an existing Chromium executable. A host that does not
 start within 45 seconds fails without running code, and the error names the
 startup step that stalled.

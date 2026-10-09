@@ -85,6 +85,14 @@ A failed refresh retains the last usable route table and logs its failure.
 
 ## Create a conversation draft
 
+Both `cld assistant -p --title "Research" "Hello"` and
+`cld assistant chats create --title "Research"` preserve the chosen title through
+the first message and automatic enrichment. The CLI creates the conversation,
+then renames it through `PATCH /api/ai/conversations/:id` with `{ title }`.
+Create-time titles, including localized web "New chat" placeholders, keep
+automatic naming. An explicit CLI title of `New chat` matches the default title
+and keeps automatic naming.
+
 ```ts
 import { launchAssistant } from "@k2b/cloud/ai/browser";
 
@@ -268,6 +276,14 @@ Repeated execution failures end the turn as failed. Set concurrency for the
 deployment, not per request.
 
 ## Stream state
+
+In text output, `cld assistant -p` and `cld assistant turns watch` separate
+non-blank assistant text blocks with a blank line. Reconnecting prints only
+new text and does not repeat a tool's unchanged status. JSON result text uses
+the same separators; JSONL `text_delta` events contain block deltas without
+added separators. Tool progress and approval matching use canonical capability
+IDs such as `spaces.task.create`. Persisted provider tool names stay unchanged;
+hashed names that cannot be decoded retain their stored name.
 
 Assistant renders capability table presentation metadata in both web chat and
 text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,
