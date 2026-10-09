@@ -53,37 +53,6 @@ synchronized Cloud copy for search, collaboration, durable commands, and
 observable delivery. Credentials and refresh tokens are stored as write-only
 secrets.
 
-## Share only assigned conversations
-
-Mailbox administrators can grant people or groups access with scope `assigned`
-and permission `read` or `write`. Mailbox scope covers all conversations;
-assigned scope covers only conversations assigned to the person now. Several
-people can share an assignment.
-
-Assigned readers can read those conversations, leave and edit their own comments
-within the existing ten-minute window, set personal reminders, and show viewing
-presence. Assigned writers can also change message flags, move, copy or delete
-messages, mark conversations done or snooze them, choose existing local tags,
-maintain the shared summary, and reply or forward. They can manage those drafts
-and attachments, use compose templates, and send or schedule replies.
-Delivery recovery drafts stay in the original assigned conversation too.
-
-Changing assignees, creating new conversations or edit-as-new/resend drafts,
-recipient suggestions, mailbox settings and resources, and automation management
-require mailbox-wide access. Hidden conversations, messages and drafts return
-`404`. Assigned users see and cancel only commands they initiated whose targets
-remain visible. Pending commands and scheduled sends recheck the current grant
-and assignment before acting, so removing either ends access to queued work.
-
-For example, grant a team permission to reply only to its assignments:
-
-```bash
-cld mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
-```
-
-`cld mail ls` shows each mailbox's access scope. Omit `--scope` when updating a
-grant to preserve its current scope.
-
 ## Choose where a folder's mail appears
 
 Each folder has one display setting, the same for everyone in the mailbox:
@@ -185,20 +154,31 @@ Next to View, Edit, and Manage, a mailbox grant for a person or group can cover
 only the conversations assigned to the person: **View assigned only** (`read`)
 or **Edit assigned only** (`write`). The access API takes it as
 `"scope": "assigned"` on `POST` and `PATCH /api/mail/mailboxes/{mailboxId}/access`
-and returns it on each such entry; `cld mail access grant|set --scope assigned`
-and `cld mail admin mailbox access` do the same. Such people:
+and returns it on each such entry; a `PATCH` without `scope` keeps the grant's
+scope. `cld mail access grant|set` and `cld mail admin mailbox access grant|set`
+take `--scope assigned`, and `cld mail ls` shows each mailbox's scope:
+
+```bash
+cld mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
+```
+
+Such people:
 
 - see no mail until a conversation is assigned to them, then that
   conversation with all its messages, including later replies;
 - see only the folders that hold one of their conversations, and counts,
   search, the overview, live updates, Assistant actions, and `cld` cover only
   their conversations;
-- with `write`, reply, forward, change mail state, move, comment, tag, and mark
-  done in their conversations, but never compose new mail, assign anyone,
-  manage tags, folders, or settings, or merge and split conversations.
+- with `read`, comment, set personal reminders, and show that they are viewing;
+- with `write`, also reply and forward with drafts, attachments, and scheduled
+  sends, change mail state, move, delete, choose existing tags, edit the summary,
+  and mark done or snooze their conversations, but never compose new mail or
+  recover a failed delivery as a new message, assign anyone, use the mailbox's
+  recipient suggestions, manage tags, folders, or settings, or merge and split
+  conversations.
 
 Every other conversation, message, draft, and attachment answers 404 to them,
-as if it did not exist. When an assignment ends, access ends at once: lists,
+as if it did not exist, and they see and cancel only the commands they started. When an assignment ends, access ends at once: lists,
 open views, search, attachment downloads in progress, reminders, and queued or
 scheduled actions they started for the conversation stop. A person with
 mailbox-wide access keeps it; an additional assigned-only grant changes

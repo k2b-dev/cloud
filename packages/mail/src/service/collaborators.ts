@@ -178,12 +178,15 @@ export const listLapsedAssignees = async (params: { mailboxIds: readonly string[
   return lapsed;
 };
 
-/** Whether a conversation, `c` unless named otherwise, has no eligible assignee. */
+/**
+ * Whether a conversation, `c` unless named otherwise, has no eligible assignee. The lapsed list is an
+ * uncorrelated `NOT IN`, so PostgreSQL hashes it once instead of reading it again for every assignee.
+ */
 export const isUnassignedConversation = (lapsed: readonly LapsedAssignee[], c: Bun.SQL.Query<unknown> = sql`c`) => sql`NOT EXISTS (
   SELECT 1 FROM mail.conversation_assignees a
   WHERE a.conversation_id = ${c}.id
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_to_recordset(${lapsed}::jsonb) AS lapsed(mailbox_id uuid, user_id uuid)
-      WHERE lapsed.mailbox_id = ${c}.mailbox_id AND lapsed.user_id = a.user_id
+    AND (${c}.mailbox_id, a.user_id) NOT IN (
+      SELECT lapsed.mailbox_id, lapsed.user_id
+      FROM jsonb_to_recordset(${lapsed}::jsonb) AS lapsed(mailbox_id uuid, user_id uuid)
     )
 )`;

@@ -701,6 +701,14 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     }
   });
 
+  test("the conversation details of an assigned reader load completely, without the list of people to assign", async () => {
+    const detail = await loadMailboxConversationDetail({ context: contextFor(readerA), mailboxId, conversationId: c1.id });
+    expect(detail?.assignableUsers).toEqual([]);
+    expect(Object.values(detail?.detailErrors ?? { missing: "detail" }).filter(Boolean)).toEqual([]);
+    expect(detail?.collaborationState?.assignees.map((user) => user.id)).toEqual([readerA.id]);
+    expect(await loadMailboxConversationDetail({ context: contextFor(readerA), mailboxId, conversationId: c3.id })).toBeNull();
+  });
+
   test("mailbox-wide services keep refusing assigned readers, including assigned writers", async () => {
     forbidden(await savedViews.listSavedConversationViews({ context: contextFor(readerA), mailboxId }));
     forbidden(await collaboration.listAssignableUsers({ context: contextFor(readerA), mailboxId }));

@@ -20,7 +20,7 @@ import {
   replaceMailSearchReferences,
   resolveMailSearchRoute,
 } from "../search-state";
-import { requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
+import { getMailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
 import * as collaboration from "./collaboration";
@@ -330,6 +330,8 @@ const loadConversationDetails = async (params: {
   locale?: string | null;
 }) => {
   const errorMessage = (error: ServiceError) => localizeMailError(error, params.locale).message;
+  // Only mailbox-wide writers assign; people who see assigned conversations only get no list to choose from.
+  const assignedOnly = (await getMailboxAccess(params.context, params.mailboxId))?.scope === "assigned";
   const [
     detailResult,
     stateResult,
@@ -346,11 +348,13 @@ const loadConversationDetails = async (params: {
     collaboration.getConversationCollaboration(params),
     localTags.getConversationLocalTags(params),
     collaboration.listConversationComments({ ...params, limit: 100, order: "newest" }),
-    collaboration.listAssignableUsers({
-      context: params.context,
-      mailboxId: params.mailboxId,
-      limit: 200,
-    }),
+    assignedOnly
+      ? Promise.resolve(ok<MailAssignableUser[]>([]))
+      : collaboration.listAssignableUsers({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          limit: 200,
+        }),
     collaboration.listActivity({ ...params, limit: 30 }),
     reminders.getConversationReminder(params),
     conversationReferences.listConversationReferences(params),
