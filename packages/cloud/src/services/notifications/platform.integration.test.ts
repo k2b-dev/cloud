@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { z } from "zod";
-import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { databaseSuite, testFor } from "../../../../../scripts/fixtures/test-infra";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { defineApp, notification } from "../..";
+import { decryptSecret } from "../secrets";
 import { notifications } from ".";
+import { browserNotifications } from "./browser";
 import { registerNotificationDefinitions } from "./catalog";
 import { registerNotificationChannel } from "./channels";
 import { processNotificationDelivery } from "./dispatcher";
@@ -21,6 +23,84 @@ declare module "../../contracts/notification-types" {
 const suite = databaseSuite();
 
 suite("typed notification delivery integration", () => {
+  testFor("database", "nats")("keeps previews only in encrypted browser deliveries, never events or history", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`notification-preview-${suffix}`}, 'local', 'user', 'Preview Test', ${`preview-${suffix}@example.test`}, 'Preview', 'Test')
+      RETURNING id
+    `;
+    const userId = user!.id;
+    const subscription = {
+      endpoint: `https://push.example.test/subscriptions/${suffix}`,
+      expirationTime: null,
+      keys: { p256dh: "p".repeat(65), auth: "a".repeat(24) },
+    };
+    const preview = "Vertrauliche Vorschau";
+    const app = defineApp({
+      id: "notification-preview-test",
+      name: "Preview Test",
+      icon: "ti ti-bell",
+      description: "Browser preview persistence fixture.",
+      baseUrl: "http://notification-preview-test:3000",
+      routes: ["/notification-preview-test"],
+      notifications: {
+        update: notification({
+          recipient: "user",
+          label: "Update",
+          description: "An update with an optional browser preview.",
+          delivery: { recommended: ["browser"] },
+          data: z.object({}),
+          render: (_data, { locale }) => ({
+            title: "Ready",
+            body: "Private email body",
+            preview: locale === "de" ? `  ${preview}\n ` : "Private preview",
+          }),
+        }),
+      },
+    });
+
+    try {
+      await browserNotifications.registerEndpoint({ userId, subscription, label: "Preview device" });
+      const sent = await notifications.send(app.notifications.update, {
+        recipient: { userId },
+        data: {},
+        locale: "de",
+        idempotencyKey: suffix,
+      });
+      expect(sent.status).toBe("queued");
+      const [delivery] = await sql<{ id: string; payload_encrypted: string | null }[]>`
+        SELECT id, payload_encrypted FROM notifications.deliveries WHERE event_id = ${sent.id}::uuid AND channel = 'browser'
+      `;
+      expect(delivery?.payload_encrypted).toBeString();
+      expect(delivery!.payload_encrypted).not.toContain(preview);
+      const payload = await decryptSecret(delivery!.payload_encrypted!);
+      expect(payload).toMatchObject({ eventId: sent.id, title: "Ready", preview });
+      expect(payload).not.toHaveProperty("body");
+
+      const [event] = await sql<Record<string, unknown>[]>`SELECT * FROM notifications.events WHERE id = ${sent.id}::uuid`;
+      expect(event).toBeDefined();
+      expect(event).not.toHaveProperty("preview");
+      expect(JSON.stringify(event)).not.toContain(preview);
+      const history = await userNotifications.history.list({ userId, page: 1, perPage: 20, locale: "de" });
+      const item = history.items.find((entry) => entry.eventId === sent.id);
+      expect(item).toBeDefined();
+      expect(item).not.toHaveProperty("preview");
+      expect(JSON.stringify(history)).not.toContain(preview);
+
+      // A terminal attempt clears the encrypted preview without contacting a push service.
+      await browserNotifications.disableEndpoint({ userId, subscription });
+      expect((await processNotificationDelivery(delivery!.id)).status).toBe("failed");
+      const [finished] = await sql<{ payload_encrypted: string | null }[]>`
+        SELECT payload_encrypted FROM notifications.deliveries WHERE id = ${delivery!.id}::uuid
+      `;
+      expect(finished?.payload_encrypted).toBeNull();
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      await sql`DELETE FROM notifications.definitions WHERE app_id = 'notification-preview-test'`;
+    }
+  });
+
   test("persists encrypted delivery state and deduplicates sends", async () => {
     const suffix = crypto.randomUUID();
     const rows = await sql<{ id: string }[]>`

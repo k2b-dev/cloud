@@ -123,6 +123,28 @@ describe("browser notification service worker", () => {
     ]);
   });
 
+  test("shows the preview as the native notification body without using the presentation body", async () => {
+    const { listeners, shown } = loadWorker([]);
+    const push = pushEvent({
+      type: "cloud-notification",
+      eventId: crypto.randomUUID(),
+      title: "Ready",
+      preview: "Short preview",
+      body: "Sensitive presentation body",
+    });
+    listeners.get("push")!(push.event);
+    await push.completion();
+    expect(shown[0]?.options.body).toBe("Short preview");
+  });
+
+  test.each([null, 1, {}, []].map((preview) => ({ preview })))("rejects a non-string preview: %j", ({ preview }) => {
+    const { listeners, shown } = loadWorker([]);
+    const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", preview });
+    listeners.get("push")!(push.event);
+    expect(push.completion()).toBeNull();
+    expect(shown).toEqual([]);
+  });
+
   test("replaces a group's visible notification and renotifies for each event", async () => {
     const { listeners, shown, visible } = loadWorker([]);
     for (const title of ["First", "Second"]) {
@@ -152,13 +174,21 @@ describe("browser notification service worker", () => {
       ["Second", 2000, 5],
       ["First", 1000, 3],
     ]) {
-      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title, createdAt, badge, group: "chat:one" });
+      const push = pushEvent({
+        type: "cloud-notification",
+        eventId: crypto.randomUUID(),
+        title,
+        createdAt,
+        badge,
+        preview: `${title} preview`,
+        group: "chat:one",
+      });
       listeners.get("push")!(push.event);
       await push.completion();
     }
     expect(visible.get("chat:one")).toEqual({
       title: "Second",
-      options: { icon: "/branding/logo", tag: "chat:one", data: { targetHref: "/", createdAt: 2000 } },
+      options: { icon: "/branding/logo", tag: "chat:one", body: "Second preview", data: { targetHref: "/", createdAt: 2000 } },
     });
     expect(shown[0]?.options.renotify).toBe(true);
     expect(shown[1]?.options).not.toHaveProperty("renotify");

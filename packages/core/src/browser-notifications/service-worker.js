@@ -21,6 +21,7 @@ const parsePayload = (event) => {
       value?.type !== PAYLOAD_TYPE ||
       typeof value.eventId !== "string" ||
       typeof value.title !== "string" ||
+      (value.preview !== undefined && typeof value.preview !== "string") ||
       (value.targetHref !== undefined && safeTargetHref(value.targetHref) === null) ||
       (value.group !== undefined && (typeof value.group !== "string" || !/^[A-Za-z0-9._:-]+$/.test(value.group))) ||
       (value.badge !== undefined && (!Number.isSafeInteger(value.badge) || value.badge < 0)) ||
@@ -81,6 +82,7 @@ const showNotification = async (payload) => {
     if (newer) {
       await self.registration.showNotification(newer.title, {
         icon: newer.icon,
+        ...(newer.body ? { body: newer.body } : {}),
         tag: newer.tag,
         data: newer.data,
       });
@@ -89,6 +91,7 @@ const showNotification = async (payload) => {
   }
   await self.registration.showNotification(payload.title, {
     icon: "/branding/logo",
+    ...(payload.preview !== undefined ? { body: payload.preview } : {}),
     tag: payload.group ?? payload.eventId,
     ...(payload.group !== undefined ? { renotify: true } : {}),
     data: { targetHref: targetHref(payload.targetHref), ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}) },

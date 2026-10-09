@@ -430,6 +430,21 @@ replace each other on one registered device. Check badges in a browser that
 supports the Badging API; lack of badge support must not prevent notification
 display.
 
+### Update browser notifications for previews
+
+Deploy the updated platform package and Core together to enable optional
+[browser notification previews](/en/docs/platform/notifications#browser-delivery).
+No database migration or configuration change is required. Existing applications
+send no preview, so their notifications keep the same behavior.
+
+Older service workers ignore `preview` and show only the title until they update,
+with the same page-load, push, and click timing described above. Reload a Cloud
+page, then send a notification with a harmless test preview to a registered
+device and verify that its text appears below the title. Send another without a
+preview and verify that it shows only the title. Confirm that notification
+history contains neither preview. Review the application's preview controls
+before enabling sensitive content on lock screens or paired devices.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
