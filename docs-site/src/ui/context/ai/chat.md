@@ -232,8 +232,7 @@ Raw files selected, dropped, or pasted are handed to
 `fileSelection.onSelect`. With `fileSelection.choose`, **Attach files** calls it
 inside the menu activation instead of opening the device's file dialog, and
 hands its files to `onSelect`, only the first one when `multiple` is `false`;
-a rejection reaches `onError`. Cloud
-applications pass `chooseFiles` from `@k2b/cloud/browser/files`. The package never uploads, persists, streams,
+a rejection reaches `onError`. The package never uploads, persists, streams,
 authorizes, retries, or executes tools.
 
 The family uses `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`, and `--k2b-ai-surface`, which can be themed independently from the general accent stack.

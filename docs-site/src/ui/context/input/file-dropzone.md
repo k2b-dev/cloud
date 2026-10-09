@@ -51,8 +51,7 @@ when the user cancels; they reach `onDrop` like dropped files, with
 `multiple` applied. A rejection shows its message as the field's error until
 the next choice or drop. With `choose`, the zone renders no hidden file input,
 so the zone is the only file control: a dialog's first focus or a key press
-cannot open the device's dialog past `choose`. In Cloud applications, pass
-`chooseFiles` from `@k2b/cloud/browser/files`.
+cannot open the device's dialog past `choose`.
 
 The component does not retain selected files. Store them or start the upload in `onDrop`.
 

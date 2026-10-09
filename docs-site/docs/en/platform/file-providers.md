@@ -82,7 +82,7 @@ A chosen file is a copy. `chooseFiles()` does not return where it came from,
 and later changes in the provider do not reach your copy. Keep one upload
 action: do not add a second "From Cloud" button next to it.
 
-### Use it with `@k2b/ui` file controls
+### Use it with the dropzone and chat composer
 
 `FileDropzone` and `ChatComposer` open the device's file dialog by default.
 Pass `chooseFiles` as their `choose` function, and their click or **Attach
