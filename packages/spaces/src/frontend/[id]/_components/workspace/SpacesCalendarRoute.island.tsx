@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, InlineGuidance } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
+import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import Calendar from "../calendar";
 import type { CalendarFilter } from "../calendar/filter";
@@ -21,6 +21,7 @@ type Props = {
   baseUrl: string;
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  templates?: SpaceItemTemplate[];
   initialState: CalendarState;
   selectedItemId: string;
   dateConfig?: DateContext;
@@ -60,6 +61,7 @@ export default function SpacesCalendarRoute(props: Props) {
         items={state().items}
         columns={props.columns}
         tags={props.tags}
+        templates={props.templates}
         filter={state().filter}
         selectedItemId={selectedItemId()}
         view={state().view}

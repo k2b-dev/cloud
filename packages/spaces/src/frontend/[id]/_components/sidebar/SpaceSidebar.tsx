@@ -33,6 +33,7 @@ export default function SpaceSidebar(props: Props) {
                     spaceId={props.ctx.space.id}
                     columns={props.ctx.columns}
                     tags={props.ctx.tags}
+                    templates={props.ctx.space.templates}
                     dateConfig={props.dateConfig}
                     variant="icon"
                     defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
@@ -62,6 +63,7 @@ export default function SpaceSidebar(props: Props) {
                 spaceId={props.ctx.space.id}
                 columns={props.ctx.columns}
                 tags={props.ctx.tags}
+                templates={props.ctx.space.templates}
                 dateConfig={props.dateConfig}
                 variant="icon"
                 defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}

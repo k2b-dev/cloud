@@ -92,6 +92,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 currentView={state.currentView}
                 columns={state.space.columns}
                 tags={state.space.tags}
+                templates={state.space.templates}
                 filter={route.filter}
                 initialItemsResult={state.itemsResult}
                 initialSelectedItemId={selectedItemId}
@@ -107,6 +108,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 baseUrl={route.itemLinkBaseUrl}
                 columns={state.space.columns}
                 tags={state.space.tags}
+                templates={state.space.templates}
                 wormholes={state.wormholes}
                 initialBuckets={state.kanbanBuckets}
                 foldedColumns={state.settings.foldedColumns ?? []}
@@ -122,6 +124,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 baseUrl={route.itemLinkBaseUrl}
                 columns={state.space.columns}
                 tags={state.space.tags}
+                templates={state.space.templates}
                 initialState={{
                   view: state.calendarView,
                   date: state.calendarDate,
