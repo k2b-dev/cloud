@@ -5,6 +5,7 @@ import {
   auth,
   getDateConfig,
   getLocale,
+  getTimeZone,
   hasPermission,
   jsonResponse,
   rateLimit,
@@ -27,6 +28,7 @@ import {
   CreateColumnSchema,
   CreateCommentSchema,
   CreateItemSchema,
+  CreateItemTemplateSchema,
   CreateSpaceSchema,
   CreateTagSchema,
   CreateTaskChecklistEntrySchema,
@@ -35,7 +37,11 @@ import {
   GrantAccessSchema,
   ItemFilterSchema,
   ItemListResultSchema,
+  ItemTemplateDraftQuerySchema,
+  ItemTemplateDraftSchema,
+  ItemTemplateKindSchema,
   isPlayableVideoType,
+  MAX_ITEM_TEMPLATES_PER_KIND,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
   MessageResponseSchema,
   MoveItemSchema,
@@ -56,6 +62,7 @@ import {
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
   SpaceItemSchema,
+  SpaceItemTemplateSchema,
   SpaceSchema,
   SpaceTagSchema,
   SpaceTaskChecklistEntrySchema,
@@ -72,6 +79,7 @@ import {
   UpdateColumnSchema,
   UpdateCommentSchema,
   UpdateItemSchema,
+  UpdateItemTemplateSchema,
   UpdateSpaceSchema,
   UpdateTagSchema,
   UpdateTaskChecklistEntrySchema,
@@ -106,10 +114,12 @@ import {
   projectComments,
   projectItems,
   projectOverlapItems,
+  projectSpaceDetail,
   projectSpaces,
   projectTags,
   projectTaskDependencies,
   projectTaskDependents,
+  projectTemplates,
   projectWormholeDestinations,
   projectWormholes,
   projectWormholeTargets,
@@ -126,6 +136,8 @@ import legacyLiveRoutes from "../ws";
 // ==========================
 
 const SpaceListSchema = z.array(SpaceSchema);
+const SpaceItemTemplateListSchema = z.array(SpaceItemTemplateSchema);
+const TemplateListQuerySchema = z.object({ kind: ItemTemplateKindSchema.optional() });
 /** Candidates listed by an ambiguous title; the item filter's page size bounds them. */
 const MAX_RESOLVE_CANDIDATES = 100;
 const ResolveQuerySchema = z.object({
@@ -445,6 +457,21 @@ const requireTagInSpace = async (spaceId: string, tagShortId: string) => {
     return fail(err.notFound("Tag"));
   }
   return ok(tag);
+};
+
+const requireTemplateInSpace = async (spaceId: string, templateShortId: string) => {
+  const templateId = await resolvePublicId("templates", templateShortId);
+  if (!templateId) return fail(err.notFound("Template"));
+  const template = await spacesService.template.get({ id: templateId });
+  if (!template || template.spaceId !== spaceId) return fail(err.notFound("Template"));
+  return ok(template);
+};
+
+/** Template input names tags by public ID; the service works on internal ones. */
+const resolveTemplateTags = async <T extends { tagIds?: string[] }>(spaceId: string, data: T): Promise<Result<T>> => {
+  if (!data.tagIds) return ok(data);
+  const tagIds = await resolveSpacePublicIds("tags", spaceId, data.tagIds);
+  return tagIds ? ok({ ...data, tagIds }) : fail(err.notFound("Tag"));
 };
 
 const projectMutation = async <T extends object>(
@@ -1452,12 +1479,7 @@ const app = new Hono<AuthContext>()
 
       const space = await spacesService.space.getDetail({ id: internalId! });
       if (!space) return respond(c, fail(err.notFound("Space")));
-      const [projectedSpace, columns, tags] = await Promise.all([
-        projectSpaces([space]),
-        projectColumns(space.columns),
-        projectTags(space.tags),
-      ]);
-      return respond(c, ok({ ...projectedSpace[0]!, columns, virtualColumns: space.virtualColumns, tags }));
+      return respond(c, ok(await projectSpaceDetail(space)));
     },
   )
 
@@ -2044,6 +2066,172 @@ const app = new Hono<AuthContext>()
       const tagCheck = await requireTagInSpace(spaceId!, tagId);
       if (!tagCheck.ok) return respond(c, tagCheck);
       return respondMessage(c, spacesService.tag.remove({ id: tagCheck.data.id }), "tagDeleted");
+    },
+  )
+
+  // ==========================
+  // TEMPLATES
+  // ==========================
+
+  .get(
+    "/:id/templates",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List templates",
+      description: "List the task and event templates of a space, ordered by kind and name. Requires read access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemTemplateListSchema, "Templates"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    v("query", TemplateListQuerySchema),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "");
+      if (error) return error;
+      const templates = await spacesService.template.list({ spaceId: spaceId!, kind: c.req.valid("query").kind });
+      return respond(c, ok(await projectTemplates(templates)));
+    },
+  )
+
+  .post(
+    "/:id/templates",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Create template",
+      description: `Create a task or event template. Requires admin access; names are unique per space and kind, and a space keeps at most ${MAX_ITEM_TEMPLATES_PER_KIND} templates per kind.`,
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemTemplateSchema, "Created template"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "Space or tag not found"),
+        409: jsonResponse(ErrorResponseSchema, "Name taken or template limit reached"),
+      },
+    }),
+    v("json", CreateItemTemplateSchema),
+    async (c) => {
+      const { internalId: spaceId, user, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      if (error) return error;
+      const data = await resolveTemplateTags(spaceId!, c.req.valid("json"));
+      if (!data.ok) return respond(c, data);
+      return respond(
+        c,
+        projectMutation(
+          spacesService.template.create({ spaceId: spaceId!, data: data.data, createdBy: user?.id ?? null }),
+          projectTemplates,
+        ),
+      );
+    },
+  )
+
+  .get(
+    "/:id/templates/:templateId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Get template",
+      description: "Get one template of a space. Requires read access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemTemplateSchema, "Template"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Template not found"),
+      },
+    }),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "");
+      if (error) return error;
+      const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
+      if (!template.ok) return respond(c, template);
+      const [projected] = await projectTemplates([template.data]);
+      return respond(c, ok(projected!));
+    },
+  )
+
+  .patch(
+    "/:id/templates/:templateId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Update template",
+      description:
+        "Change template fields; tag and assignee lists are replaced. Requires admin access. Items already created stay as they are.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemTemplateSchema, "Updated template"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "Template or tag not found"),
+        409: jsonResponse(ErrorResponseSchema, "Name taken"),
+      },
+    }),
+    v("json", UpdateItemTemplateSchema),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      if (error) return error;
+      const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
+      if (!template.ok) return respond(c, template);
+      const data = await resolveTemplateTags(spaceId!, c.req.valid("json"));
+      if (!data.ok) return respond(c, data);
+      return respond(c, projectMutation(spacesService.template.update({ id: template.data.id, data: data.data }), projectTemplates));
+    },
+  )
+
+  .delete(
+    "/:id/templates/:templateId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Delete template",
+      description: "Delete a template. Requires admin access. Items created from it stay.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(MessageResponseSchema, "Template deleted"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "Template not found"),
+      },
+    }),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
+      if (error) return error;
+      const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
+      if (!template.ok) return respond(c, template);
+      return respondMessage(c, spacesService.template.remove({ id: template.data.id }), "templateDeleted");
+    },
+  )
+
+  .get(
+    "/:id/templates/:templateId/draft",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Draft an item from a template",
+      description:
+        "Fill a new task or event from a template: the proposed dates and the create request for one of them, with placeholders resolved. Nothing is saved; post the item to create it. Requires write access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ItemTemplateDraftSchema, "Proposed dates and the filled item"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid date or time zone"),
+        403: jsonResponse(ErrorResponseSchema, "Write access required"),
+        404: jsonResponse(ErrorResponseSchema, "Template not found"),
+      },
+    }),
+    v("query", ItemTemplateDraftQuerySchema),
+    async (c) => {
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (error) return error;
+      const template = await requireTemplateInSpace(spaceId!, c.req.param("templateId") ?? "");
+      if (!template.ok) return respond(c, template);
+      const [projected] = await projectTemplates([template.data]);
+      const query = c.req.valid("query");
+      const draft = await spacesService.template.draft({
+        template: projected!,
+        internalSpaceId: spaceId!,
+        date: query.date,
+        noDate: query.noDate === "true",
+        timeZone: query.timeZone ?? getTimeZone(c),
+        locale: getLocale(c),
+      });
+      if (!draft.ok) return respond(c, draft);
+      return respond(c, ok({ templateId: projected!.id, kind: projected!.kind, ...draft.data }));
     },
   )
 

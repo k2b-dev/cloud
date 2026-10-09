@@ -318,6 +318,66 @@ export const SpaceCommentSchema = z.object({
 });
 export type SpaceComment = z.infer<typeof SpaceCommentSchema>;
 
+// === Item templates ===
+
+/** Templates per Space and kind; the same order of magnitude as the other per-Space bounds. */
+export const MAX_ITEM_TEMPLATES_PER_KIND = 100;
+export const MAX_TEMPLATE_OFFSET_DAYS = 365;
+export const ItemTemplateKindSchema = z.enum(["task", "event"]);
+export type ItemTemplateKind = z.infer<typeof ItemTemplateKindSchema>;
+/** RFC 5545 weekday codes, as in a recurrence rule. */
+export const TemplateWeekdaySchema = z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
+export type TemplateWeekday = z.infer<typeof TemplateWeekdaySchema>;
+export const TimeOfDaySchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+  .describe("Local wall-clock time as HH:MM");
+
+export const TemplateDateRuleSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("none").describe("No proposed date") }).strict(),
+  z
+    .object({
+      type: z.literal("weekdays").describe("Propose the next matching weekdays"),
+      weekdays: z
+        .array(TemplateWeekdaySchema)
+        .min(1)
+        .max(7)
+        .describe("Weekdays a new item may fall on; the next matching days are proposed"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("offset").describe("Propose today plus a number of days"),
+      days: z.number().int().min(0).max(MAX_TEMPLATE_OFFSET_DAYS).describe("Days after today; 0 proposes today"),
+    })
+    .strict(),
+]);
+export type TemplateDateRule = z.infer<typeof TemplateDateRuleSchema>;
+
+export const SpaceItemTemplateSchema = z.object({
+  id: ResourceShortIdSchema.describe("Template ID"),
+  spaceId: ResourceShortIdSchema.describe("Parent space ID"),
+  kind: ItemTemplateKindSchema.describe("Whether the template creates tasks or events"),
+  name: z.string().describe("Template name, unique per Space and kind"),
+  title: z.string().describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
+  description: z.string().nullable().describe("Default description (markdown); may contain the same placeholders"),
+  priority: PrioritySchema.nullable().describe("Default priority"),
+  tags: z.array(SpaceTagSchema).describe("Default tags"),
+  assignees: z.array(SpaceItemAssigneeSchema).describe("Default assignees"),
+  assignCreator: z.boolean().describe("Also assign the person who creates the item"),
+  checklist: z.array(z.string()).describe("Checklist entries of a new task"),
+  estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Task estimate in minutes"),
+  location: z.string().nullable().describe("Event location"),
+  url: z.string().nullable().describe("Event URL"),
+  allDay: z.boolean().describe("Whether a new event is all-day"),
+  durationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Event duration in minutes; 60 when unset"),
+  timeOfDay: TimeOfDaySchema.nullable().describe("Task due time or event start time; 17:00 for tasks and 09:00 for events when unset"),
+  dateRule: TemplateDateRuleSchema.describe("Which dates a new item proposes"),
+  createdAt: z.string().describe("Creation timestamp (ISO)"),
+  updatedAt: z.string().describe("Last update timestamp (ISO)"),
+});
+export type SpaceItemTemplate = z.infer<typeof SpaceItemTemplateSchema>;
+
 // Space with columns and tags (for detail view)
 export const SpaceDetailSchema = SpaceSchema.extend({
   columns: z.array(SpaceColumnSchema).describe("Space columns"),
@@ -325,6 +385,7 @@ export const SpaceDetailSchema = SpaceSchema.extend({
     .array(SpaceVirtualColumnSchema)
     .describe("Enabled automatic Kanban columns; items are never stored in them and they are not statuses"),
   tags: z.array(SpaceTagSchema).describe("Space tags"),
+  templates: z.array(SpaceItemTemplateSchema).describe("Task and event templates, ordered by kind and name"),
 });
 export type SpaceDetail = z.infer<typeof SpaceDetailSchema>;
 
@@ -441,6 +502,139 @@ export const UpdateTagSchema = z.object({
 });
 export type UpdateTag = z.infer<typeof UpdateTagSchema>;
 
+const ItemTemplateFieldsShape = {
+  name: z.string().trim().min(1).max(100).describe("Template name, unique per Space and kind"),
+  title: z.string().max(200).describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
+  description: z.string().max(5000).nullable().describe("Default description (markdown)"),
+  priority: PrioritySchema.nullable().describe("Default priority"),
+  tagIds: z.array(ResourceShortIdSchema).max(100).describe("Default tag IDs"),
+  assigneeIds: z.array(UuidSchema).max(100).describe("Default assignee user UUIDs with access to the Space"),
+  assignCreator: z.boolean().describe("Also assign the person who creates the item"),
+  checklist: z
+    .array(z.string().trim().min(1).max(500))
+    .max(MAX_TASK_CHECKLIST_ENTRIES)
+    .describe("Checklist entries of a new task (tasks only)"),
+  estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Task estimate in minutes (tasks only)"),
+  location: z.string().max(500).nullable().describe("Event location (events only)"),
+  url: z.string().url().max(2000).nullable().describe("Event URL (events only)"),
+  allDay: z.boolean().describe("Whether a new event is all-day (events only)"),
+  durationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Event duration in minutes (events only)"),
+  timeOfDay: TimeOfDaySchema.nullable().describe("Task due time or event start time"),
+  dateRule: TemplateDateRuleSchema.describe("Which dates a new item proposes"),
+};
+
+type ItemTemplateKindFields = {
+  checklist?: string[];
+  estimatedDurationMinutes?: number | null;
+  location?: string | null;
+  url?: string | null;
+  allDay?: boolean;
+  durationMinutes?: number | null;
+};
+
+/** The field that does not belong to a template of `kind`, or null when every set field fits. */
+export const itemTemplateKindMismatch = (kind: ItemTemplateKind, fields: ItemTemplateKindFields): string | null => {
+  if (kind === "task") {
+    if (fields.location) return "location";
+    if (fields.url) return "url";
+    if (fields.allDay) return "allDay";
+    if (fields.durationMinutes != null) return "durationMinutes";
+    return null;
+  }
+  if (fields.checklist?.length) return "checklist";
+  if (fields.estimatedDurationMinutes != null) return "estimatedDurationMinutes";
+  return null;
+};
+
+export const CreateItemTemplateSchema = z
+  .object({
+    kind: ItemTemplateKindSchema.describe("Whether the template creates tasks or events"),
+    ...ItemTemplateFieldsShape,
+    title: ItemTemplateFieldsShape.title.default(""),
+    description: ItemTemplateFieldsShape.description.optional(),
+    priority: ItemTemplateFieldsShape.priority.optional(),
+    tagIds: ItemTemplateFieldsShape.tagIds.optional(),
+    assigneeIds: ItemTemplateFieldsShape.assigneeIds.optional(),
+    assignCreator: ItemTemplateFieldsShape.assignCreator.default(false),
+    checklist: ItemTemplateFieldsShape.checklist.optional(),
+    estimatedDurationMinutes: ItemTemplateFieldsShape.estimatedDurationMinutes.optional(),
+    location: ItemTemplateFieldsShape.location.optional(),
+    url: ItemTemplateFieldsShape.url.optional(),
+    allDay: ItemTemplateFieldsShape.allDay.default(false),
+    durationMinutes: ItemTemplateFieldsShape.durationMinutes.optional(),
+    timeOfDay: ItemTemplateFieldsShape.timeOfDay.optional(),
+    dateRule: ItemTemplateFieldsShape.dateRule.default({ type: "none" }),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const field = itemTemplateKindMismatch(value.kind, value);
+    if (field) ctx.addIssue({ code: "custom", message: `${field} is not available for ${value.kind} templates`, path: [field] });
+  });
+export type CreateItemTemplate = z.infer<typeof CreateItemTemplateSchema>;
+
+export const UpdateItemTemplateSchema = z
+  .object({
+    name: ItemTemplateFieldsShape.name.optional(),
+    title: ItemTemplateFieldsShape.title.optional(),
+    description: ItemTemplateFieldsShape.description.optional(),
+    priority: ItemTemplateFieldsShape.priority.optional(),
+    tagIds: ItemTemplateFieldsShape.tagIds.optional(),
+    assigneeIds: ItemTemplateFieldsShape.assigneeIds.optional(),
+    assignCreator: ItemTemplateFieldsShape.assignCreator.optional(),
+    checklist: ItemTemplateFieldsShape.checklist.optional(),
+    estimatedDurationMinutes: ItemTemplateFieldsShape.estimatedDurationMinutes.optional(),
+    location: ItemTemplateFieldsShape.location.optional(),
+    url: ItemTemplateFieldsShape.url.optional(),
+    allDay: ItemTemplateFieldsShape.allDay.optional(),
+    durationMinutes: ItemTemplateFieldsShape.durationMinutes.optional(),
+    timeOfDay: ItemTemplateFieldsShape.timeOfDay.optional(),
+    dateRule: ItemTemplateFieldsShape.dateRule.optional(),
+  })
+  .strict()
+  .refine((value) => Object.values(value).some((field) => field !== undefined), { message: "At least one template field is required" });
+export type UpdateItemTemplate = z.infer<typeof UpdateItemTemplateSchema>;
+
+export const LocalDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const day = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === value;
+  }, "Expected a calendar date")
+  .describe("Local calendar date as YYYY-MM-DD");
+
+export const ItemTemplateDraftQuerySchema = z.object({
+  date: LocalDateSchema.optional().describe("Date to fill in; the first proposal when omitted"),
+  noDate: z.enum(["true", "false"]).optional().describe("true creates a task without a due date"),
+  timeZone: z.string().min(1).max(100).optional().describe("IANA time zone of the person; the installation zone when omitted"),
+});
+
+/** A new item filled from a template: the create request plus the dates the template proposes. */
+export const ItemTemplateDraftSchema = z.object({
+  templateId: ResourceShortIdSchema.describe("Template ID"),
+  kind: ItemTemplateKindSchema,
+  proposals: z.array(LocalDateSchema).describe("Proposed local dates, earliest first"),
+  date: LocalDateSchema.nullable().describe("Date the draft uses, or null for a task without a due date"),
+  timeZone: z.string().describe("Time zone the dates were resolved in"),
+  item: z.object({
+    title: z.string().describe("Title with resolved placeholders; may be empty"),
+    description: z.string().optional(),
+    priority: PrioritySchema.optional(),
+    tagIds: z.array(ResourceShortIdSchema),
+    assigneeIds: z.array(UuidSchema).describe("Default assignees that still have access to the Space"),
+    assignCreator: z.boolean(),
+    checklist: z.array(z.string()),
+    deadline: z.string().datetime().optional(),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    allDay: z.boolean().optional(),
+    location: z.string().optional(),
+    url: z.string().optional(),
+  }),
+});
+export type ItemTemplateDraft = z.infer<typeof ItemTemplateDraftSchema>;
+
 export const CreateItemSchema = z
   .object({
     columnId: ResourceShortIdSchema.describe("Target column ID"),
@@ -464,6 +658,12 @@ export const CreateItemSchema = z
       .max(MAX_ITEM_RESOURCE_REFERENCES)
       .optional()
       .describe("Cloud resources linked to the item"),
+    checklist: z
+      .array(z.string().trim().min(1).max(500))
+      .max(MAX_TASK_CHECKLIST_ENTRIES)
+      .optional()
+      .describe("Checklist entries of the new task, created with it (tasks only)"),
+    assignCreator: z.boolean().optional().describe("Also assign the person who creates the item; ignored for service accounts"),
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
     message: "End time must be after start time",
@@ -472,6 +672,10 @@ export const CreateItemSchema = z
   .refine((data) => data.estimatedDurationMinutes === undefined || (!data.startsAt && !data.endsAt), {
     message: "Estimated duration is only available for tasks",
     path: ["estimatedDurationMinutes"],
+  })
+  .refine((data) => !data.checklist?.length || (!data.startsAt && !data.endsAt), {
+    message: "A checklist is only available for tasks",
+    path: ["checklist"],
   });
 export type CreateItem = z.infer<typeof CreateItemSchema>;
 

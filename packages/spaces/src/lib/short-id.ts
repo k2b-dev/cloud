@@ -5,7 +5,7 @@ import { sql } from "bun";
 export const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;
 export const SHORT_ID_LENGTH = 6;
 
-export type ShortIdTable = "space" | "column" | "item" | "attachment" | "checklist" | "comment" | "tag" | "wormhole";
+export type ShortIdTable = "space" | "column" | "item" | "attachment" | "checklist" | "comment" | "tag" | "wormhole" | "template";
 
 const MAX_ATTEMPTS = 10;
 const BACKFILL_BATCH_SIZE = 500;
@@ -19,6 +19,7 @@ const constraintByTable: Record<ShortIdTable, string> = {
   comment: "idx_comments_short_id",
   tag: "idx_tags_short_id",
   wormhole: "idx_wormholes_short_id",
+  template: "idx_item_templates_short_id",
 };
 
 const isShortIdCollision = (error: unknown, tables: readonly ShortIdTable[]): boolean => {
@@ -70,6 +71,9 @@ const isTaken = async (db: SqlExecutor, table: ShortIdTable, shortId: string): P
     case "wormhole":
       rows = await db`SELECT EXISTS (SELECT 1 FROM spaces.wormholes WHERE short_id = ${shortId}) AS exists`;
       break;
+    case "template":
+      rows = await db`SELECT EXISTS (SELECT 1 FROM spaces.item_templates WHERE short_id = ${shortId}) AS exists`;
+      break;
   }
   return rows[0]?.exists ?? false;
 };
@@ -100,6 +104,8 @@ const selectMissing = async (db: SqlExecutor, table: ShortIdTable): Promise<{ id
       return db`SELECT id FROM spaces.tags WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
     case "wormhole":
       return db`SELECT id FROM spaces.wormholes WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
+    case "template":
+      return db`SELECT id FROM spaces.item_templates WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
   }
 };
 
@@ -128,6 +134,9 @@ const updateMissing = async (db: SqlExecutor, table: ShortIdTable, id: string, s
       return;
     case "wormhole":
       await db`UPDATE spaces.wormholes SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;
+      return;
+    case "template":
+      await db`UPDATE spaces.item_templates SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;
   }
 };
 

@@ -546,6 +546,67 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ spaces.item_tags table");
 
+  // Defaults for new tasks and events of one Space. Created items keep no link to their template.
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_templates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL CONSTRAINT item_templates_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+      space_id UUID NOT NULL REFERENCES spaces.spaces(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('task', 'event')),
+      name TEXT NOT NULL CHECK (char_length(btrim(name)) BETWEEN 1 AND 100),
+      title TEXT NOT NULL DEFAULT '' CHECK (char_length(title) <= 200),
+      description TEXT CHECK (char_length(description) <= 5000),
+      priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+      assign_creator BOOLEAN NOT NULL DEFAULT false,
+      checklist TEXT[] NOT NULL DEFAULT '{}' CHECK (cardinality(checklist) <= 100),
+      estimated_duration_minutes INTEGER CHECK (estimated_duration_minutes > 0),
+      location TEXT CHECK (char_length(location) <= 500),
+      url TEXT CHECK (char_length(url) <= 2000),
+      all_day BOOLEAN NOT NULL DEFAULT false,
+      duration_minutes INTEGER CHECK (duration_minutes > 0),
+      time_of_day TIME,
+      date_rule TEXT NOT NULL DEFAULT 'none' CHECK (date_rule IN ('none', 'weekdays', 'offset')),
+      date_weekdays TEXT[] NOT NULL DEFAULT '{}' CHECK (date_weekdays <@ ARRAY['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']),
+      date_offset_days INTEGER CHECK (date_offset_days BETWEEN 0 AND 365),
+      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT item_templates_weekdays_rule CHECK ((date_rule = 'weekdays') = (cardinality(date_weekdays) > 0)),
+      CONSTRAINT item_templates_offset_rule CHECK ((date_rule = 'offset') = (date_offset_days IS NOT NULL)),
+      CONSTRAINT item_templates_task_fields CHECK (
+        kind = 'event' OR (location IS NULL AND url IS NULL AND NOT all_day AND duration_minutes IS NULL)
+      ),
+      CONSTRAINT item_templates_event_fields CHECK (
+        kind = 'task' OR (cardinality(checklist) = 0 AND estimated_duration_minutes IS NULL)
+      )
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_templates_short_id ON spaces.item_templates(short_id)`.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_item_templates_space_kind_name
+    ON spaces.item_templates(space_id, kind, lower(name))
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_template_tags (
+      template_id UUID NOT NULL REFERENCES spaces.item_templates(id) ON DELETE CASCADE,
+      tag_id UUID NOT NULL REFERENCES spaces.tags(id) ON DELETE CASCADE,
+      PRIMARY KEY (template_id, tag_id)
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_template_assignees (
+      template_id UUID NOT NULL REFERENCES spaces.item_templates(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      PRIMARY KEY (template_id, user_id)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_item_template_tags_tag ON spaces.item_template_tags(tag_id)`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_item_template_assignees_user
+    ON spaces.item_template_assignees(user_id)
+  `.simple();
+  console.log("  ✓ spaces.item_templates tables");
+
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.comments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

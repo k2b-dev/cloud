@@ -48,6 +48,7 @@ const space: SpaceDetail = {
   columns,
   virtualColumns: [],
   tags: [],
+  templates: [],
 };
 
 const renderSettings = (permission: "read" | "admin", locale = "en") =>
