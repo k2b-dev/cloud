@@ -52,26 +52,28 @@ describe("compose renderer", () => {
         get display_name() {
           reads++;
           const start = performance.now();
-          while (performance.now() - start < 2) {
-            // Keep each segment below one second with measurable work.
+          while (performance.now() - start < 1) {
+            // About 100 ms per segment: the first segment finishes even on a loaded runner,
+            // while all segments together need far more than one second.
           }
           return "";
         },
       },
     };
     const signature = markComposeTemplateSegment(
-      "{% for a in (1..20) %}{% for b in (1..20) %}{{ actor.display_name }}{% endfor %}{% endfor %}",
+      "{% for a in (1..10) %}{% for b in (1..10) %}{{ actor.display_name }}{% endfor %}{% endfor %}",
     );
     const start = performance.now();
     const result = renderComposeContent({
-      body: signature.repeat(8),
+      body: signature.repeat(80),
       format: "markdown",
       customCss: "",
       context: loopingContext,
       renderLiquid: true,
     });
     expect(result).toMatchObject({ ok: false, error: { message: "Template rendering exceeded its time budget" } });
-    expect(reads).toBeGreaterThan(400);
+    // More reads than one segment has: the time budget carried over into later segments.
+    expect(reads).toBeGreaterThan(100);
     expect(performance.now() - start).toBeLessThan(3_000);
   });
 
