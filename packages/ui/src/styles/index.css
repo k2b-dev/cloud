@@ -7951,6 +7951,15 @@
   pointer-events: auto;
 }
 
+/* Inside GestureMenu, keyboard focus on the element or on the list item around it shows them. A tap there leaves them
+   hidden: the long press opens the message's whole menu, and the tap stays free for a double tap instead of landing on
+   an action that the first tap revealed. */
+.k2b-ui :focus-visible > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions,
+.k2b-ui :focus-visible > * > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Only a pointer that really hovers shows them: a tap's emulated hover would show them and press the action under the
    finger in the same tap. On a touch screen, the tap focuses the message instead. */
 @media (hover: hover) {
@@ -8313,7 +8322,22 @@
 }
 
 .k2b-ui .k2b-message-row:focus-within .k2b-message-row__reactions[data-empty] .k2b-message-row__react,
-.k2b-ui :focus > .k2b-message-row .k2b-message-row__reactions[data-empty] .k2b-message-row__react {
+.k2b-ui :focus > .k2b-message-row .k2b-message-row__reactions[data-empty] .k2b-message-row__react,
+.k2b-ui
+  :focus-visible
+  > .k2b-gesture-menu
+  > .k2b-gesture-menu__content
+  > .k2b-message-row
+  .k2b-message-row__reactions[data-empty]
+  .k2b-message-row__react,
+.k2b-ui
+  :focus-visible
+  > *
+  > .k2b-gesture-menu
+  > .k2b-gesture-menu__content
+  > .k2b-message-row
+  .k2b-message-row__reactions[data-empty]
+  .k2b-message-row__react {
   opacity: 1;
   pointer-events: auto;
 }
@@ -10181,6 +10205,15 @@
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .k2b-gesture-menu[data-settling] > .k2b-gesture-menu__content {
     transition: none;
+  }
+
+  /* The content stays in place, so the icon fills in above it instead of behind it. */
+  .k2b-ui .k2b-gesture-menu[data-swipe] {
+    isolation: isolate;
+  }
+
+  .k2b-ui .k2b-gesture-menu[data-swipe] > .k2b-gesture-menu__swipe {
+    z-index: 1;
   }
 }
 

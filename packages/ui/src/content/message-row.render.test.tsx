@@ -575,11 +575,16 @@ describe("MessageRow styles", () => {
     for (const [selector, context] of [
       [".k2b-ui .k2b-message-row:focus-within .k2b-message-row__actions", ""],
       [".k2b-ui :focus > .k2b-message-row .k2b-message-row__actions", ""],
+      // Inside GestureMenu, keyboard focus on the element or on the feed item around it.
+      [".k2b-ui :focus-visible > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions", ""],
+      [".k2b-ui :focus-visible > * > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions", ""],
       // A tap's emulated hover must not show the actions and press one in the same tap.
       [".k2b-ui .k2b-message-row:hover .k2b-message-row__actions", "@media (hover: hover)"],
     ] as const)
       expect([...declarations(selector, context).keys()].sort()).toEqual(["opacity", "pointer-events"]);
     expect(rules.some((rule) => rule.selector.includes(".k2b-message-row:hover") && rule.context === "")).toBe(false);
+    // A tap that focuses a GestureMenu leaves them hidden, so the second tap of a double tap never presses one.
+    expect(rules.some((rule) => /:focus > (?:\* > )?\.k2b-gesture-menu\b/.test(rule.selector))).toBe(false);
     expect(declarations(".k2b-ui .k2b-message-row__line").get("height")).toEqual(["1.25rem"]);
     expect(declarations(".k2b-ui .k2b-message-row__meta").get("height")).toEqual(["1.25rem"]);
     const clamp = declarations(".k2b-ui .k2b-message-row__text[data-collapsed]");

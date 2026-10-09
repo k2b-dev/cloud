@@ -5,10 +5,12 @@ import type { Browser, BrowserContext, BrowserContextOptions, CDPSession, Page }
 import { browserName, launchBrowser } from "../../test/browser";
 
 // Whether a finger scrolls the list or swipes a row, whether a long press survives the release, and whether anything
-// moves are decided by a real engine's touch handling and layout. Rows sit in a scrolling list, as in a conversation.
+// moves are decided by a real engine's touch handling and layout. Rows sit in a scrolling list; the conversation
+// fixture wraps MessageRow in VirtualFeed, as the documentation recommends for a chat.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "gesture-menu.fixture.ts");
+const conversationEntry = resolve(import.meta.dir, "gesture-menu-conversation.fixture.ts");
 const fixtureSource = `
 import { createComponent, insert, render } from "solid-js/web";
 import { GestureMenu, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
@@ -49,7 +51,7 @@ render(
         insert(
           list,
           Array.from({ length: 30 }, (_, index) =>
-            createComponent(GestureMenu, { label: "Message " + index, items, tabIndex: -1, children: row(index) }),
+            createComponent(GestureMenu, { label: "Message " + index, items, children: row(index) }),
           ),
         );
         return list;
@@ -67,17 +69,74 @@ if (PerformanceObserver.supportedEntryTypes.includes("layout-shift"))
     for (const shift of list.getEntries()) window.shift += shift.value;
   }).observe({ type: "layout-shift", buffered: true });
 `;
-const build = await Bun.build({
-  entrypoints: [entry],
-  files: { [entry]: fixtureSource },
-  target: "browser",
-  conditions: ["browser"],
-  format: "iife",
-});
-if (!build.success) throw new AggregateError(build.logs, "Could not bundle the GestureMenu fixture for the browser.");
-const script = await build.outputs[0]!.text();
+const conversationSource = `
+import { createComponent, render } from "solid-js/web";
+import { GestureMenu, LocaleProvider, MessageRow, VirtualFeed } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+
+window.calls = { reply: 0, react: 0, copy: 0, toolbar: 0 };
+const people = { nora: { name: "Nora Brandt" }, me: { name: "Robin Example" } };
+const messages = Array.from({ length: 12 }, (_, index) => ({
+  id: "m" + index,
+  author: index % 3 === 2 ? "me" : "nora",
+  text: "Message " + index + " with enough words to fill most of a line on a phone",
+}));
+const actions = [
+  { id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => window.calls.toolbar++ },
+  { id: "react", label: "React", icon: "ti ti-mood-smile", onSelect: () => window.calls.toolbar++ },
+];
+const items = [
+  { label: "Reply", icon: "ti ti-arrow-back-up", action: () => window.calls.reply++, gesture: "swipe-right" },
+  { label: "React with thumbs up", icon: "ti ti-thumb-up", action: () => window.calls.react++, gesture: "double-tap" },
+  { label: "Copy text", icon: "ti ti-copy", action: () => window.calls.copy++ },
+];
+render(
+  () =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(VirtualFeed, {
+          items: messages,
+          getKey: (message) => message.id,
+          estimateSize: () => 72,
+          label: "Conversation",
+          itemLabel: (message) => people[message.author].name,
+          children: (message) =>
+            createComponent(GestureMenu, {
+              label: "Message from " + people[message.author].name,
+              items,
+              get children() {
+                return createComponent(MessageRow, {
+                  author: people[message.author],
+                  text: message.text,
+                  time: "10:42",
+                  own: message.author === "me",
+                  groupStart: true,
+                  actions,
+                });
+              },
+            }),
+        });
+      },
+    }),
+  document.getElementById("app"),
+);
+`;
+const bundle = async (path: string, source: string) => {
+  const build = await Bun.build({
+    entrypoints: [path],
+    files: { [path]: source },
+    target: "browser",
+    conditions: ["browser"],
+    format: "iife",
+  });
+  if (!build.success) throw new AggregateError(build.logs, "Could not bundle a GestureMenu fixture for the browser.");
+  return build.outputs[0]!.text();
+};
+const script = await bundle(entry, fixtureSource);
+const conversationScript = await bundle(conversationEntry, conversationSource);
 
 type Fixture = { calls: { reply: number; react: number; copy: number }; swipes: number; shift: number };
+type Conversation = { calls: { reply: number; react: number; copy: number; toolbar: number } };
 
 let browser: Browser;
 beforeAll(async () => {
@@ -91,7 +150,7 @@ const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, de
 
 const open = async (
   context: BrowserContextOptions,
-  options: { pausedClock?: boolean } = {},
+  options: { pausedClock?: boolean; conversation?: boolean } = {},
 ): Promise<{ page: Page; context: BrowserContext }> => {
   const browserContext = await browser.newContext(context);
   const page = await browserContext.newPage();
@@ -105,9 +164,10 @@ html, body { margin: 0; }
 .row { padding: 8px 16px; font: 16px/24px sans-serif; }
 .text { margin: 0; }
 .code { margin: 0; overflow-x: auto; }
-</style></head><body class="k2b-ui" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`,
+#app.conversation { display: flex; height: 100vh; }
+</style></head><body class="k2b-ui" style="background:var(--k2b-surface)"><div id="app"${options.conversation ? ' class="conversation"' : ""}></div></body></html>`,
   );
-  await page.addScriptTag({ content: script });
+  await page.addScriptTag({ content: options.conversation ? conversationScript : script });
   await page.locator(".k2b-gesture-menu").first().waitFor();
   if (options.pausedClock) await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000);
   return { page, context: browserContext };
@@ -249,6 +309,10 @@ describe(`GestureMenu in ${browserName}`, () => {
           .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
         expect(heights).toHaveLength(3);
         for (const height of heights) expect(height).toBeGreaterThanOrEqual(44);
+        // A connected keyboard reaches the items from the sheet, which holds focus after the long press.
+        expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("DIALOG");
+        await page.keyboard.press("ArrowDown");
+        expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Reply");
         await page.touchscreen.tap(...(Object.values(await center(page, "dialog[open] [role='menuitem'] >> nth=2")) as [number, number]));
         await until(page, `window.calls.copy === 1 && !document.querySelector("dialog[open]")`);
         expect(await fixture(page)).toMatchObject({ calls: { reply: 0, react: 0, copy: 1 }, shift: 0 });
@@ -303,6 +367,86 @@ describe(`GestureMenu in ${browserName}`, () => {
       await expect(menu.isVisible()).resolves.toBe(true);
       expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(["Reply", "React with thumbs up", "Copy text"]);
       expect(await page.locator("dialog[open]").count()).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  const conversation = (page: Page) =>
+    page.evaluate(() => ({ calls: { ...(window as unknown as Conversation).calls } }) satisfies Conversation);
+  const toolbar = (page: Page, key: string) =>
+    page.locator(`[data-key="${key}"] .k2b-message-row__actions`).evaluate((actions) => getComputedStyle(actions).opacity);
+
+  test("in a conversation a tap leaves the message's toolbar hidden, so a double tap where it sits reacts", async () => {
+    const { page, context } = await open(phone, { pausedClock: true, conversation: true });
+    try {
+      const reply = page.locator('[data-key="m7"] .k2b-message-row__actions').getByRole("button", { name: "Reply" });
+      const box = (await reply.boundingBox())!;
+      const point = [box.x + box.width / 2, box.y + box.height / 2] as const;
+      await page.touchscreen.tap(...point);
+      expect(await toolbar(page, "m7")).toBe("0");
+      await page.touchscreen.tap(...point);
+      await until(page, "window.calls.react === 1");
+      expect(await conversation(page)).toEqual({ calls: { reply: 0, react: 1, copy: 0, toolbar: 0 } });
+      expect(await toolbar(page, "m7")).toBe("0");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test("in a conversation the keyboard shows the toolbar, and Tab then Shift+F10 open the message's menu", async () => {
+    const { page, context } = await open({ viewport: { width: 1024, height: 768 } }, { conversation: true });
+    try {
+      await page.mouse.move(1023, 767);
+      await page.locator('[data-key="m6"]').focus();
+      await page.keyboard.press("ArrowDown");
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("m7");
+      expect(await toolbar(page, "m7")).toBe("1");
+      expect(await toolbar(page, "m6")).toBe("0");
+
+      await page.keyboard.press("Tab");
+      const group = await page.evaluate(() => ({
+        role: document.activeElement?.getAttribute("role"),
+        popup: document.activeElement?.getAttribute("aria-haspopup"),
+        row: (document.activeElement?.closest("[data-key]") as HTMLElement | null)?.dataset.key,
+      }));
+      expect(group).toEqual({ role: "group", popup: "menu", row: "m7" });
+      expect(await toolbar(page, "m7")).toBe("1");
+
+      await page.keyboard.press("Shift+F10");
+      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await menu.waitFor();
+      expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(["Reply", "React with thumbs up", "Copy text"]);
+      await until(page, `document.activeElement?.textContent === "Reply"`);
+      await page.keyboard.press("Escape");
+      expect(await menu.count()).toBe(0);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("group");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test.skipIf(browserName === "webkit")("with reduced motion the swipe's icon shows above the message that stays in place", async () => {
+    const { page, context } = await open({ ...phone, reducedMotion: "reduce" }, { conversation: true });
+    try {
+      const cdp = await context.newCDPSession(page);
+      const from = await center(page, '[data-key="m7"] .k2b-message-row__text');
+      const points = Array.from({ length: 8 }, (_, step) => ({ x: from.x - 60 + step * 14, y: from.y }));
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [points[0]!] });
+      for (const point of points.slice(1)) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] });
+      await until(page, `document.querySelector('[data-key="m7"] .k2b-gesture-menu')?.hasAttribute("data-armed")`);
+      // Hit testing follows paint order; the icon takes no pointer events of its own.
+      const top = await page.evaluate(() => {
+        const icon = document.querySelector<HTMLElement>('[data-key="m7"] .k2b-gesture-menu__swipe')!;
+        icon.style.pointerEvents = "auto";
+        const box = icon.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        icon.style.pointerEvents = "";
+        return hit?.closest(".k2b-gesture-menu__swipe") === icon;
+      });
+      expect(top).toBe(true);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await until(page, "window.calls.reply === 1");
     } finally {
       await context.close();
     }

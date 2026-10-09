@@ -285,7 +285,8 @@ const stream = (id: string, token: string) =>
 over the top corner of the row while a mouse or pen rests on it or focus is
 inside it, so they never move anything. On a phone or tablet, the first tap
 on a message focuses its row and shows them without pressing the action under
-the finger. Keep the list short, about two to four actions.
+the finger. Inside `GestureMenu`, keyboard focus still shows them but a tap
+does not; see Gestures. Keep the list short, about two to four actions.
 
 ### Gestures
 
@@ -295,6 +296,12 @@ message's whole menu as a bottom sheet, each the shortcut of an entry in that
 menu. The row marks its code blocks, link preview, and card with
 `data-gesture-ignore`, so gestures never start there and a code block keeps
 scrolling sideways.
+
+In a wrapped row, a tap leaves the actions hidden: the long press opens the
+whole menu, so pass the actions there as well, and the tap stays free for a
+double tap. Keyboard focus on the article or on the wrapped element still
+shows them. Keep the element in the tab order, so Tab moves from the article
+to it and the Context Menu key or Shift+F10 opens the menu.
 
 ### Touch screens
 

@@ -115,9 +115,10 @@ type Press = {
   second: boolean;
   /** The press started at a side edge of the screen. */
   edge: boolean;
-  swipe?: GestureMenuAction;
   direction?: SwipeDirection;
 };
+
+type Entry = GestureMenuAction | DropdownAction | DropdownChoice;
 
 const gestureAction = (items: readonly GestureMenuItem[], kind: GestureKind): GestureMenuAction | undefined => {
   for (const item of items)
@@ -126,33 +127,56 @@ const gestureAction = (items: readonly GestureMenuItem[], kind: GestureKind): Ge
   return undefined;
 };
 
+const swipeKind = (direction: SwipeDirection): GestureKind => (direction === "right" ? "swipe-right" : "swipe-left");
+
+/**
+ * The sheet's items hand their action to `run` instead of running it while the sheet closes: `dialogCore` settles the
+ * sheet after it left the history, and only then may an action navigate or open the next dialog. A choice that keeps
+ * the menu open runs at once.
+ */
+const afterClose = (items: readonly GestureMenuItem[], run: (action: () => void) => void): GestureMenuItem[] => {
+  const entry = (item: Entry): Entry => {
+    const action = item.action;
+    if (!action || ("choice" in item && item.closeOnSelect === false)) return item;
+    return { ...item, action: () => run(action) };
+  };
+  return items.map((item) => ("items" in item ? { ...item, items: item.items.map(entry) } : entry(item)));
+};
+
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const menuItems = (menu: HTMLElement): HTMLElement[] =>
   Array.from(menu.querySelectorAll<HTMLElement>("[role^='menuitem']:not([aria-disabled='true'])"));
 
-/** The menu inside the long-press sheet: the same items, at touch size, with arrow keys for a connected keyboard. */
-function SheetMenu(props: { items: readonly GestureMenuItem[]; label: string; close: () => void }): JSX.Element {
+/**
+ * The menu inside the long-press sheet: the same items, at touch size, with arrow keys for a connected keyboard. Focus
+ * starts on the sheet itself, which shows no ring on a phone; the first arrow key moves it into the menu.
+ */
+function SheetMenu(props: { items: readonly GestureMenuItem[]; label: string; close: () => void; dialog: HTMLDialogElement }): JSX.Element {
   let menu!: HTMLDivElement;
   const focus = (index: number) => {
     const items = menuItems(menu);
     items[(index + items.length) % items.length]?.focus();
   };
+  const onKeyDown = (event: KeyboardEvent) => {
+    const items = menuItems(menu);
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "ArrowDown") focus(current + 1);
+    else if (event.key === "ArrowUp") focus(current < 0 ? -1 : current - 1);
+    else if (event.key === "Home" || event.key === "End") focus(event.key === "Home" ? 0 : -1);
+    else if (!focusRowSegment(items, event.key)) return;
+    event.preventDefault();
+  };
+  // Keys pressed on the sheet itself, while it is the top level of the shared dialog.
+  const onSheetKeyDown = (event: KeyboardEvent) => {
+    if (event.target === props.dialog && props.dialog.lastElementChild?.contains(menu)) onKeyDown(event);
+  };
+  onMount(() => {
+    props.dialog.addEventListener("keydown", onSheetKeyDown);
+    onCleanup(() => props.dialog.removeEventListener("keydown", onSheetKeyDown));
+  });
   return (
-    <div
-      ref={menu}
-      class="k2b-gesture-menu__sheet-menu"
-      role="menu"
-      aria-label={props.label}
-      onKeyDown={(event) => {
-        const items = menuItems(menu);
-        const current = items.indexOf(document.activeElement as HTMLElement);
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") focus(current + (event.key === "ArrowDown" ? 1 : -1));
-        else if (event.key === "Home" || event.key === "End") focus(event.key === "Home" ? 0 : -1);
-        else if (!focusRowSegment(items, event.key)) return;
-        event.preventDefault();
-      }}
-    >
+    <div ref={menu} class="k2b-gesture-menu__sheet-menu" role="menu" aria-label={props.label} onKeyDown={onKeyDown}>
       <DropdownItems items={props.items} close={() => props.close()} />
     </div>
   );
@@ -170,9 +194,14 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   let press: Press | undefined;
   let lastTap: { x: number; y: number; at: number } | undefined;
   let lastPointer = "mouse";
-  /** The touch that just ended did something; its `touchend` is cancelled, so no click or mouse events follow. */
+  /**
+   * The touch or pen press that just ended did something: its `touchend` is cancelled, so no click or mouse events
+   * follow, and a pen's click, which comes without touch events, is cancelled itself.
+   */
   let consumed = false;
   let sheetOpen = false;
+  /** Closes an open sheet when the element goes, for example when its message is deleted. */
+  const disposed = new AbortController();
   let reduced = false;
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -190,6 +219,10 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     if (sheetOpen || !active()) return;
     sheetOpen = true;
     const current = locale();
+    let chosen: (() => void) | undefined;
+    const choose = (action: () => void) => {
+      chosen = action;
+    };
     void dialogCore
       .open<void>(
         (close, context) => (
@@ -197,21 +230,30 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
             <BottomSheet onDismiss={context.requestDismiss}>
               <BottomSheet.Body>
                 {props.sheetTop?.(() => close())}
-                <SheetMenu items={props.items} label={props.label} close={() => close()} />
+                <SheetMenu items={afterClose(props.items, choose)} label={props.label} close={() => close()} dialog={context.dialog} />
               </BottomSheet.Body>
             </BottomSheet>
           </LocaleProvider>
         ),
-        { ...bottomSheetOptions, ariaLabel: props.label, history: true },
+        { ...bottomSheetOptions, ariaLabel: props.label, history: true, signal: disposed.signal },
       )
+      .then(() => chosen?.())
       .finally(() => {
         sheetOpen = false;
       });
   };
 
+  /** Another pointer that goes down anywhere while a finger presses, as in a pinch, ends the gesture. */
+  const onOtherPointer = (event: PointerEvent) => {
+    if (!press || event.pointerId === press.id) return;
+    if (press.direction) settle();
+    endPress();
+  };
+
   const endPress = () => {
     clearTimeout(press?.timer);
     press = undefined;
+    document.removeEventListener("pointerdown", onOtherPointer, true);
     delete surface.dataset.pressing;
   };
 
@@ -227,13 +269,14 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     settleTimer = setTimeout(() => setSwipe(undefined), SETTLE_MS);
   };
 
-  const moveSwipe = (current: Press, dx: number) => {
-    const travel = Math.max(0, current.direction === "right" ? dx : -dx);
+  const moveSwipe = (current: Press, direction: SwipeDirection, dx: number) => {
+    const travel = Math.max(0, direction === "right" ? dx : -dx);
     const moved = travel <= SWIPE_THRESHOLD ? travel : SWIPE_THRESHOLD + (travel - SWIPE_THRESHOLD) * SWIPE_RESISTANCE;
-    const offset = reduced ? 0 : Math.min(SWIPE_MAX, moved) * (current.direction === "right" ? 1 : -1);
+    const offset = reduced ? 0 : Math.min(SWIPE_MAX, moved) * (direction === "right" ? 1 : -1);
+    current.direction = direction;
     setSwipe({
-      direction: current.direction ?? "right",
-      icon: current.swipe?.icon,
+      direction,
+      icon: action(swipeKind(direction))?.icon,
       offset,
       progress: Math.min(1, travel / SWIPE_THRESHOLD),
       armed: travel >= SWIPE_THRESHOLD,
@@ -250,22 +293,18 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
 
   const onPointerDown = (event: PointerEvent) => {
     lastPointer = event.pointerType;
-    if (event.pointerType === "mouse") return;
-    // A second finger, as in a pinch, ends the gesture.
-    if (!event.isPrimary) {
-      if (press?.direction) settle();
-      endPress();
-      return;
-    }
-    endPress();
     consumed = false;
-    if (!active() || ignored(event.target)) return;
-    const now = performance.now();
-    const second =
-      lastTap !== undefined &&
-      now - lastTap.at <= DOUBLE_TAP_MS &&
-      Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) <= DOUBLE_TAP_DISTANCE;
+    // Any press in between, on a link, with a mouse, or with another finger, ends a pending double tap.
+    const previous = lastTap;
     lastTap = undefined;
+    // Another finger ends the gesture through `onOtherPointer` and starts none.
+    if (event.pointerType === "mouse" || !event.isPrimary) return;
+    endPress();
+    if (!active() || ignored(event.target)) return;
+    const second =
+      previous !== undefined &&
+      performance.now() - previous.at <= DOUBLE_TAP_MS &&
+      Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= DOUBLE_TAP_DISTANCE;
     press = {
       id: event.pointerId,
       x: event.clientX,
@@ -276,6 +315,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
       edge: event.clientX < EDGE || event.clientX > window.innerWidth - EDGE,
       timer: setTimeout(longPress, LONG_PRESS_MS),
     };
+    document.addEventListener("pointerdown", onOtherPointer, true);
     // Hybrid devices keep text selection for the mouse; a finger on the element selects nothing.
     surface.dataset.pressing = "";
   };
@@ -286,7 +326,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     const dx = event.clientX - current.x;
     const dy = event.clientY - current.y;
     if (current.direction) {
-      moveSwipe(current, dx);
+      moveSwipe(current, current.direction, dx);
       return;
     }
     if (current.moved || Math.hypot(dx, dy) < SLOP) return;
@@ -294,13 +334,10 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     clearTimeout(current.timer);
     if (current.edge || Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
     const direction: SwipeDirection = dx > 0 ? "right" : "left";
-    const swipeAction = action(direction === "right" ? "swipe-right" : "swipe-left");
-    if (!swipeAction) return;
+    if (!action(swipeKind(direction))) return;
     clearTimeout(settleTimer);
     reduced = reducedMotion();
-    current.direction = direction;
-    current.swipe = swipeAction;
-    moveSwipe(current, dx);
+    moveSwipe(current, direction, dx);
   };
 
   const onPointerUp = (event: PointerEvent) => {
@@ -312,11 +349,13 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
       return;
     }
     if (current.direction) {
-      const armed = swipe()?.armed === true;
+      // Where the finger lifts decides, and the item as it is now.
+      moveSwipe(current, current.direction, event.clientX - current.x);
+      const swipeAction = swipe()?.armed ? action(swipeKind(current.direction)) : undefined;
       settle();
-      if (armed) {
+      if (swipeAction) {
         consumed = true;
-        current.swipe?.action();
+        swipeAction.action();
       }
       return;
     }
@@ -345,7 +384,17 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     if (event.cancelable) event.preventDefault();
   };
 
+  // A pen sends no touch events; the click after its gesture is cancelled here. A keyboard's click has no detail.
+  const onClick = (event: MouseEvent) => {
+    if (!consumed || event.detail === 0) return;
+    consumed = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   const onContextMenu = (event: MouseEvent) => {
+    // Without items the element has no menu, and the browser keeps its own.
+    if (!active()) return;
     // Links, fields, and code keep the browser's own menu.
     if (ignored(event.target)) {
       event.stopPropagation();
@@ -382,10 +431,12 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     surface.addEventListener("pointerup", onPointerUp);
     surface.addEventListener("pointercancel", onPointerCancel);
     surface.addEventListener("touchend", onTouchEnd, { passive: false });
+    surface.addEventListener("click", onClick, true);
     surface.addEventListener("contextmenu", onContextMenu);
     surface.addEventListener("mousedown", onMouseDown);
     surface.addEventListener("dblclick", onDoubleClick);
     onCleanup(() => {
+      disposed.abort();
       endPress();
       clearTimeout(settleTimer);
       surface.removeEventListener("pointerdown", onPointerDown);
@@ -393,6 +444,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
       surface.removeEventListener("pointerup", onPointerUp);
       surface.removeEventListener("pointercancel", onPointerCancel);
       surface.removeEventListener("touchend", onTouchEnd);
+      surface.removeEventListener("click", onClick, true);
       surface.removeEventListener("contextmenu", onContextMenu);
       surface.removeEventListener("mousedown", onMouseDown);
       surface.removeEventListener("dblclick", onDoubleClick);

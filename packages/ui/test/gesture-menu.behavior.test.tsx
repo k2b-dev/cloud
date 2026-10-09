@@ -253,6 +253,54 @@ else
       expect(disabled.calls.reply).toBe(0);
     });
 
+    test("the release decides a swipe: where the finger lifts, and whether its item is still enabled", async () => {
+      let disabled = false;
+      const view = await mount({
+        items: (calls) => [
+          {
+            label: "Reply",
+            action: () => calls.reply++,
+            gesture: "swipe-right",
+            get disabled() {
+              return disabled;
+            },
+          },
+        ],
+      });
+      // Armed at the last move, but lifted short of the threshold.
+      view.pointer("pointerdown", view.text, 120, 40);
+      view.pointer("pointermove", view.text, 190, 40);
+      expect(view.surface.dataset.armed).toBe("");
+      view.pointer("pointerup", view.text, 180, 40);
+      expect(view.calls.reply).toBe(0);
+      expect(view.touchEnd(view.text)).toBe(false);
+      await settle(200);
+      // The item was disabled while the finger was down.
+      view.pointer("pointerdown", view.text, 120, 40);
+      view.pointer("pointermove", view.text, 200, 40);
+      disabled = true;
+      view.pointer("pointerup", view.text, 200, 40);
+      expect(view.calls.reply).toBe(0);
+    });
+
+    test("another finger anywhere ends the gesture", async () => {
+      const view = await mount();
+      const elsewhere = { pointerId: 4, isPrimary: false };
+      // Two fingers held still open no sheet.
+      view.pointer("pointerdown", view.text, 120, 40);
+      view.pointer("pointerdown", dom.document.body as unknown as HTMLElement, 300, 600, elsewhere);
+      await settle(LONG_PRESS);
+      expect(view.sheet()).toBeNull();
+      view.pointer("pointerup", view.text, 120, 40);
+      // An armed swipe runs nothing once another finger landed outside the element.
+      view.pointer("pointerdown", view.text, 120, 40);
+      view.pointer("pointermove", view.text, 200, 40);
+      expect(view.surface.dataset.armed).toBe("");
+      view.pointer("pointerdown", dom.document.body as unknown as HTMLElement, 300, 600, elsewhere);
+      view.pointer("pointerup", view.text, 200, 40);
+      expect(view.calls.reply).toBe(0);
+    });
+
     test("with reduced motion the content stays put while the swipe still works", async () => {
       Object.defineProperty(globalThis, "matchMedia", {
         configurable: true,
@@ -302,6 +350,38 @@ else
       expect(view.calls.react).toBe(1);
     });
 
+    test("a press on a link or with a mouse between two taps ends the double tap", async () => {
+      const view = await mount();
+      view.tap(view.text);
+      view.tap(view.link);
+      view.tap(view.text);
+      expect(view.calls.react).toBe(0);
+      view.tap(view.text, 300, 40);
+      view.pointer("pointerdown", view.text, 300, 40, { pointerType: "mouse" });
+      view.tap(view.text, 300, 40);
+      expect(view.calls.react).toBe(0);
+    });
+
+    test("the click after a pen gesture is cancelled, a keyboard click is not", async () => {
+      const view = await mount();
+      let clicks = 0;
+      const count = () => clicks++;
+      dom.root.addEventListener("click", count);
+      for (let index = 0; index < 2; index++) {
+        view.pointer("pointerdown", view.text, 120, 40, { pointerType: "pen" });
+        view.pointer("pointerup", view.text, 120, 40, { pointerType: "pen" });
+      }
+      expect(view.calls.react).toBe(1);
+      // A pen sends no touch events, so its click arrives.
+      const click = new view.win.MouseEvent("click", { bubbles: true, cancelable: true, detail: 2 });
+      view.text.dispatchEvent(click);
+      expect(click.defaultPrevented).toBe(true);
+      expect(clicks).toBe(0);
+      view.text.dispatchEvent(new view.win.MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+      expect(clicks).toBe(1);
+      dom.root.removeEventListener("click", count);
+    });
+
     test("a mouse double-click reacts instead of selecting a word, and keeps the link's own", async () => {
       const view = await mount();
       view.pointer("pointerdown", view.text, 120, 40, { pointerType: "mouse" });
@@ -339,17 +419,73 @@ else
       expect(view.touchEnd(view.text)).toBe(true);
       expect(view.calls).toEqual({ reply: 0, react: 0, copy: 0, archive: 0 });
 
-      // Arrow keys move through the items for a connected keyboard.
+      // Focus starts on the sheet itself; the arrow keys of a connected keyboard move from there into the menu.
+      await settle(20);
+      const dialog = dom.document.querySelector("dialog")!;
+      expect(dom.document.activeElement).toBe(dialog);
       const items = [...(menu?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? [])];
-      items[0]?.focus();
-      menu?.dispatchEvent(new view.win.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
       expect(items).toHaveLength(3);
+      const key = (target: Element, name: string) =>
+        target.dispatchEvent(new view.win.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+      key(dialog, "ArrowDown");
+      expect(dom.document.activeElement).toBe(items[0]!);
+      key(items[0]!, "ArrowUp");
+      expect(dom.document.activeElement).toBe(items[2]!);
+      dialog.focus();
+      key(dialog, "ArrowUp");
+      expect(dom.document.activeElement).toBe(items[2]!);
+      dialog.focus();
+      key(dialog, "End");
       expect(dom.document.activeElement).toBe(items[2]!);
 
-      menu?.querySelectorAll<HTMLElement>("[role='menuitem']")[2]?.click();
+      items[2]!.click();
       await settle(20);
       expect(view.calls.copy).toBe(1);
       expect(view.sheet()).toBeNull();
+    });
+
+    test("the sheet closes with its element", async () => {
+      const view = await mount();
+      view.pointer("pointerdown", view.text, 120, 40);
+      await settle(LONG_PRESS);
+      expect(view.sheet()).not.toBeNull();
+      view.pointer("pointerup", view.text, 120, 40);
+      // For example, the message was deleted while its sheet was open.
+      dispose?.();
+      dispose = undefined;
+      await settle(20);
+      expect(view.sheet()).toBeNull();
+      const { dialogCore } = await import("../src/feedback/dialog-core");
+      expect(dialogCore.isOpen()).toBe(false);
+    });
+
+    test("a sheet action runs once the sheet has closed and left the history, so it may navigate", async () => {
+      const { dialogCore } = await import("../src/feedback/dialog-core");
+      const marker = () => (history.state as { k2bDialog?: number } | null)?.k2bDialog;
+      let seen: { open: boolean; marker: number | undefined } | undefined;
+      const view = await mount({
+        items: () => [
+          {
+            label: "Open thread",
+            action: () => {
+              seen = { open: dialogCore.isOpen(), marker: marker() };
+              history.pushState({ thread: 1 }, "", "/thread");
+            },
+          },
+        ],
+      });
+      view.pointer("pointerdown", view.text, 120, 40);
+      await settle(LONG_PRESS);
+      view.pointer("pointerup", view.text, 120, 40);
+      view.sheet()?.querySelector<HTMLElement>("[role='menuitem']")?.click();
+      await settle(50);
+      expect(seen).toEqual({ open: false, marker: undefined });
+      // Back from the thread returns to the page itself, not to a leftover entry of the sheet.
+      const back = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+      history.back();
+      await back;
+      expect(location.pathname).toBe("/");
+      expect(marker()).toBeUndefined();
     });
 
     test("the sheet speaks the locale the element inherits", async () => {
@@ -406,5 +542,12 @@ else
       view.link.dispatchEvent(onLink);
       expect(onLink.defaultPrevented).toBe(false);
       expect(onLink.cancelBubble).toBe(true);
+      dispose?.();
+
+      // Without items, a long press keeps the browser's own menu everywhere.
+      const empty = await mount({ items: () => [] });
+      const inactive = new view.win.PointerEvent("contextmenu", { bubbles: true, cancelable: true, pointerType: "touch" });
+      empty.text.dispatchEvent(inactive);
+      expect(inactive.defaultPrevented).toBe(false);
     });
   });

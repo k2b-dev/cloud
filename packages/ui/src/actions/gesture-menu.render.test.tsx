@@ -74,5 +74,9 @@ describe("GestureMenu on the server", () => {
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.k2b-ui \.k2b-gesture-menu\[data-settling\] > \.k2b-gesture-menu__content \{\s*transition: none;/,
     );
+    // With reduced motion the content stays over the icon, so the icon is raised above it, inside the element.
+    expect(css).toMatch(
+      /\.k2b-ui \.k2b-gesture-menu\[data-swipe\] \{\s*isolation: isolate;\s*\}\s*\.k2b-ui \.k2b-gesture-menu\[data-swipe\] > \.k2b-gesture-menu__swipe \{\s*z-index: 1;\s*\}\s*\}/,
+    );
   });
 });
