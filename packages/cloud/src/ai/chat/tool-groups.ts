@@ -1,10 +1,18 @@
+import { aiSkillFilePathFromMount } from "../file-mount";
 import type { AiTurnBlock } from "../protocol";
 import { aiChatMessages } from "./messages";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 type Text = Extract<AiTurnBlock, { kind: "text" }>;
 export type AiWorkEntry = Exclude<AiTurnBlock, { kind: "text" } | { kind: "steer_message" }>;
-export type AiWorkGroup = { kind: "text"; block: Text } | { kind: "steps"; id: string; entries: AiWorkEntry[] };
+/**
+ * One row of the expanded work, all at one indent: an intermediate text, a step, or a group that folds housekeeping
+ * steps and opens in place.
+ */
+export type AiWorkItem =
+  | { kind: "text"; block: Text }
+  | { kind: "step"; entry: AiWorkEntry }
+  | { kind: "housekeeping"; id: string; entries: AiWorkEntry[] };
 
 /** A failed call, including a code run that reported an error. A rejected approval is a decision, not a failure. */
 export function isFailedTool(tool: Tool): boolean {
@@ -20,46 +28,72 @@ export function isFailedTool(tool: Tool): boolean {
   );
 }
 
-/**
- * Split folded work into intermediate texts and the step groups between them. Reasoning stays inside its group so it
- * does not break up the tools around it. A group is keyed by its first tool, whose id is the same live and in history.
- */
-export function groupWorkBlocks(blocks: readonly AiTurnBlock[]): AiWorkGroup[] {
-  const groups: AiWorkGroup[] = [];
-  for (const block of blocks) {
-    if (block.kind === "steer_message") continue;
-    if (block.kind === "text") {
-      groups.push({ kind: "text", block });
-      continue;
-    }
-    const last = groups.at(-1);
-    if (last?.kind === "steps") last.entries.push(block);
-    else groups.push({ kind: "steps", id: block.id, entries: [block] });
-  }
-  for (const group of groups) {
-    if (group.kind === "steps") group.id = (group.entries.find((entry) => entry.kind === "tool") ?? group.entries[0]!).id;
-  }
-  return groups;
-}
+const HOUSEKEEPING_TOOLS = new Set([
+  "load_skill",
+  "search_skills",
+  "load_tools",
+  "search_tools",
+  "list_apps",
+  "search_help",
+  "read_help",
+  "search_project",
+  "read_project_knowledge",
+]);
 
-/** What a group of tools did, in categories; failures and rejections are counted separately. */
-export function summarizeToolGroup(tools: readonly Tool[], locale: string): string {
-  const t = aiChatMessages(locale);
-  const categories = tools.map((tool) => {
-    if (tool.name === "todo_write") return t.groupPlan;
-    if (tool.name === "present" || tool.name === "code_present" || tool.name === "card" || tool.name === "cloud_card")
-      return t.groupDelivered;
-    if (tool.name.startsWith("code_")) return t.groupCode;
-    if (tool.presentation?.kind === "capability" || tool.name === "read_cloud_resource") return t.groupCloud;
-    if (["read_file", "list_files", "view_image"].includes(tool.name)) return t.groupReadFiles;
-    if (tool.name === "write_file") return t.groupWriteFiles;
-    if (["markdown_to_pdf", "html_to_pdf"].includes(tool.name)) return t.groupPdf;
-    if (["load_skill", "load_tools", "search_tools", "list_apps"].includes(tool.name)) return t.groupLoad;
-    if (tool.name.startsWith("web_") || tool.name === "fetch_file") return t.groupWeb;
-    if (tool.name === "memory") return t.groupMemory;
-    return t.groupTools;
-  });
-  return [...new Set(categories)].join(", ");
+/** Preparation the reader rarely needs: loading tools, skills, and knowledge, and reading a loaded skill's files. */
+export const isHousekeepingTool = (tool: Tool): boolean => {
+  if (HOUSEKEEPING_TOOLS.has(tool.name)) return true;
+  if (tool.name !== "read_file" && tool.name !== "list_files") return false;
+  const path = tool.args !== null && typeof tool.args === "object" && "path" in tool.args ? tool.args.path : undefined;
+  return typeof path === "string" && aiSkillFilePathFromMount(path.trim()) !== null;
+};
+
+const isStep = (entry: AiWorkEntry) => entry.kind === "tool" || entry.kind === "compaction";
+
+/**
+ * The rows of the expanded work, in the original order. A run of at least two housekeeping steps, with the reasoning
+ * between them, folds into one group, unless it would hold all but one of the work's steps: then the steps show
+ * directly, so the work line never opens to a summary of itself. Runs listed in `direct` stay unfolded, so steps a
+ * reader is watching never fold away; `unfolded` names every run this call left unfolded. A group is keyed by its
+ * first tool, whose id is the same live and in history.
+ */
+export function groupWorkBlocks(
+  blocks: readonly AiTurnBlock[],
+  direct: ReadonlySet<string> = new Set(),
+): { items: AiWorkItem[]; unfolded: string[] } {
+  const entries = blocks.filter((block): block is AiWorkEntry | Text => block.kind !== "steer_message");
+  const steps = entries.filter((entry) => entry.kind !== "text" && isStep(entry)).length;
+  const items: AiWorkItem[] = [];
+  const unfolded: string[] = [];
+  let run: AiWorkEntry[] = [];
+  let trailing: AiWorkEntry[] = [];
+  const flush = () => {
+    if (run.length > 0) {
+      const id = run[0]!.id;
+      const runSteps = run.filter(isStep).length;
+      if (runSteps >= 2 && steps - runSteps >= 2 && !direct.has(id)) items.push({ kind: "housekeeping", id, entries: run });
+      else {
+        unfolded.push(id);
+        for (const entry of run) items.push({ kind: "step", entry });
+      }
+    }
+    // Reasoning after the last housekeeping step belongs to what comes next.
+    for (const entry of trailing) items.push({ kind: "step", entry });
+    run = [];
+    trailing = [];
+  };
+  for (const entry of entries) {
+    if (entry.kind === "tool" && isHousekeepingTool(entry)) {
+      run.push(...trailing, entry);
+      trailing = [];
+    } else if (entry.kind === "thinking" && run.length > 0) trailing.push(entry);
+    else {
+      flush();
+      items.push(entry.kind === "text" ? { kind: "text", block: entry } : { kind: "step", entry });
+    }
+  }
+  flush();
+  return { items, unfolded };
 }
 
 /** "9 steps · 1 failed · 1 rejected" for a group of steps. */

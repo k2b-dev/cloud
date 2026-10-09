@@ -8708,6 +8708,16 @@
   color: var(--k2b-text-secondary);
 }
 
+/* A row's text and icons re-render while it streams. Presses land on the summary itself, so a node replaced under the
+   pointer between press and release cannot swallow the toggle; controls inside the row stay clickable. */
+.k2b-ui summary.k2b-chat-activity__row * {
+  pointer-events: none;
+}
+
+.k2b-ui summary.k2b-chat-activity__row :is(a, button, input, select, textarea, label, [tabindex]) {
+  pointer-events: auto;
+}
+
 .k2b-ui summary.k2b-chat-activity__row:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);

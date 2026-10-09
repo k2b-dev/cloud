@@ -40,3 +40,38 @@ else
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("a controlled row shows its body when it opens, before the host passes its new state back", async () => {
+    const dom = createDomTestHarness();
+    const { ChatActivity } = await import("../src/chat/ChatPrimitives");
+    const [open, setOpen] = createSignal<boolean | undefined>(false);
+    const changes: boolean[] = [];
+    const dispose = render(
+      () =>
+        createComponent(ChatActivity, {
+          label: "Worked 3 min",
+          get open() {
+            return open();
+          },
+          onOpenChange: (next: boolean) => void changes.push(next),
+          renderBody: () => "Steps",
+        }),
+      dom.root,
+    );
+    try {
+      const details = dom.root.querySelector("details")!;
+      details.open = true;
+      details.dispatchEvent(new Event("toggle"));
+      expect(changes.at(-1)).toBe(true);
+      expect(dom.root.textContent).toContain("Steps");
+      // The host's state wins once it changes.
+      setOpen(true);
+      setOpen(false);
+      expect(details.open).toBe(false);
+      expect(dom.root.textContent).not.toContain("Steps");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });

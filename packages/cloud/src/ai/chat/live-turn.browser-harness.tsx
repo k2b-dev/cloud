@@ -11,15 +11,18 @@ import { AiChatActionsProvider, createAiChatTimeline } from "./presentation";
  * controller does. `window.emit(event)` applies one event,
  * `window.steer(text)` appends a pending steer as the controller does,
  * `window.reconnect(on)` sets whether the stream reconnects,
- * `window.continued` lists the messages that **Continue** sent, and
+ * `window.continued` lists the messages that **Continue** sent,
+ * `window.approvals` lists the approval decisions, and
  * `window.opened` lists the chat files the timeline opened. Chat files load from `/files?path=`.
  */
 const [state, setState] = createStore(emptyProjection());
 const [reconnecting, setReconnecting] = createSignal(false);
 const continued: string[] = [];
 const opened: string[] = [];
+const approvals: unknown[] = [];
 Object.assign(window, {
   continued,
+  approvals,
   opened,
   reconnect: (on: boolean) => setReconnecting(on),
   emit: (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true })),
@@ -38,6 +41,7 @@ render(
     <AiChatActionsProvider
       actions={{
         onContinueTurn: (message) => void continued.push(message),
+        onApproval: async (request, input) => void approvals.push({ callId: request.callId, ...input }),
         fileUrl: (path) => `/files?path=${encodeURIComponent(path)}`,
         onOpenFile: (path) => void opened.push(path),
       }}

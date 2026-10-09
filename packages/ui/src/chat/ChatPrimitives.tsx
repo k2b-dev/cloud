@@ -1,4 +1,4 @@
-import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { createRenderEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
@@ -319,8 +319,14 @@ const ActivityContent = (props: ChatActivityProps & { disclosure?: boolean }) =>
 );
 
 export function ChatActivity(props: ChatActivityProps): JSX.Element {
-  const [expanded, setExpanded] = createSignal(props.defaultOpen ?? false);
-  const open = () => props.open ?? expanded();
+  // The disclosure's real state. A controlled `open` sets it, and every toggle reports it, so the body renders whenever
+  // the row is open, also when a host has not yet passed its new `open` back.
+  const [expanded, setExpanded] = createSignal(props.open ?? props.defaultOpen ?? false);
+  createRenderEffect(() => {
+    const open = props.open;
+    if (open !== undefined) setExpanded(open);
+  });
+  const open = expanded;
   const tone = () => props.tone ?? "neutral";
   const style = () => (props.accent ? { "--k2b-chat-activity-accent": props.accent } : undefined);
   return (

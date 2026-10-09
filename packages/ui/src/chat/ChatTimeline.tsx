@@ -78,6 +78,8 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   let followFrame: number | undefined;
   let userScrollFrame: number | undefined;
   let userScrollingAway = false;
+  /** Set while a row the reader toggled settles; the timeline does not follow the end meanwhile. */
+  let disclosureHold = 0;
   let touchY: number | undefined;
   let lastConversationKey: string | null | undefined;
 
@@ -126,7 +128,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   };
 
   const scheduleFollow = () => {
-    if (!pinned() || followFrame !== undefined) return;
+    if (!pinned() || disclosureHold !== 0 || followFrame !== undefined) return;
     followFrame = requestAnimationFrame(() => {
       followFrame = undefined;
       if (pinned()) scrollToLatest();
@@ -158,6 +160,22 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
     });
   };
 
+  // A reader who opens or closes a row reads there. The row stays where it was instead of following the newest message,
+  // which would move it away from the pointer; once it has settled, the timeline keeps following only from the end.
+  const holdForDisclosure = (event: MouseEvent) => {
+    if (!(event.target instanceof Element) || !event.target.closest("summary")) return;
+    cancelFollow();
+    const hold = ++disclosureHold;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (hold !== disclosureHold) return;
+        disclosureHold = 0;
+        if (viewportRef && !isChatNearBottom(viewportRef.scrollHeight, viewportRef.scrollTop, viewportRef.clientHeight, threshold()))
+          setPinned(false);
+      }),
+    );
+  };
+
   const updatePinned = () => {
     if (!viewportRef) return;
     const nearBottom = isChatNearBottom(viewportRef.scrollHeight, viewportRef.scrollTop, viewportRef.clientHeight, threshold());
@@ -187,12 +205,15 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
             { root: viewportRef, rootMargin: "160px 0px 0px" },
           );
     if (topSentinelRef) historyObserver?.observe(topSentinelRef);
+    // Keyboard activation of a row also arrives as a click.
+    contentRef?.addEventListener("click", holdForDisclosure);
 
     onCleanup(() => {
       cancelFollow();
       if (userScrollFrame !== undefined) cancelAnimationFrame(userScrollFrame);
       resizeObserver?.disconnect();
       historyObserver?.disconnect();
+      contentRef?.removeEventListener("click", holdForDisclosure);
     });
   });
 

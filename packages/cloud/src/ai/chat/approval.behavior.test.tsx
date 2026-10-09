@@ -57,3 +57,140 @@ domTest("an approval announces its progress and a failed decision to screen read
     dom.cleanup();
   }
 });
+
+const runCode: Extract<AiTurnBlock, { kind: "tool" }> = {
+  id: "tool-run",
+  callId: "run",
+  kind: "tool",
+  name: "code_run",
+  status: "awaiting_approval",
+  args: { path: "report.ts" },
+  approval: { message: "Run report.ts", allowAlways: false },
+};
+
+const mountTurn = async (initial: AiTurnBlock[], options: { locale?: string; phase?: "running" | "waiting" | "stopped" } = {}) => {
+  const dom = createDomTestHarness();
+  const { createSignal } = await import("solid-js");
+  const { LocaleProvider } = await import("@k2b/ui");
+  const { AiChatActionsProvider } = await import("./message-actions");
+  const { AiTurnView } = await import("./turn-view");
+  const { layoutAiTurn } = await import("./turn-layout");
+  const { createAiToolDisclosureState } = await import("./tool-disclosure");
+  const [blocks, setBlocks] = createSignal(initial);
+  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped">(options.phase ?? "waiting");
+  const decisions: unknown[] = [];
+  const dispose = render(
+    () => (
+      <LocaleProvider locale={options.locale ?? "en"}>
+        <AiChatActionsProvider actions={{ onApproval: async (_request, input) => void decisions.push(input) }}>
+          <AiTurnView
+            segment={() => ({
+              id: "ai-turn:turn:start",
+              turnId: "turn",
+              phase: phase(),
+              layout: layoutAiTurn(blocks(), { phase: phase() }),
+              earlier: false,
+              duration: () => null,
+            })}
+            disclosureState={createAiToolDisclosureState()}
+          />
+        </AiChatActionsProvider>
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  const button = (label: string) => Array.from(dom.root.querySelectorAll("button")).find((node) => node.textContent?.trim() === label)!;
+  const place = () => dom.root.querySelector<HTMLElement>(".ai-turn__action")!;
+  return {
+    dom,
+    decisions,
+    setBlocks,
+    setPhase,
+    button,
+    place,
+    cleanup: () => {
+      dispose();
+      dom.cleanup();
+    },
+  };
+};
+
+domTest("a decided approval becomes a one-line receipt in its place at once, and focus stays there", async () => {
+  const view = await mountTurn([runCode]);
+  try {
+    const place = view.place();
+    expect(place.querySelector(".ai-approval")?.textContent).toContain("Runs only after you approve it");
+    const approve = view.button("Run code");
+    approve.focus();
+    approve.click();
+    await tick();
+    await tick();
+    expect(view.decisions).toEqual([{ approved: true }]);
+    // The server has not reported the decision yet; the card already is its receipt, named for what runs.
+    expect(view.place()).toBe(place);
+    expect(place.querySelector(".ai-approval")).toBeNull();
+    const receipt = place.querySelector<HTMLElement>(".ai-turn-receipt")!;
+    expect(receipt.textContent).toBe("Running: Run code · report.ts");
+    expect(document.activeElement).toBe(place);
+
+    // The turn reports the decision and then the outcome: the same row changes only its words.
+    view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
+    view.setPhase("running");
+    expect(place.querySelector(".ai-turn-receipt")).toBe(receipt);
+    view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
+    expect(place.querySelector(".ai-turn-receipt")).toBe(receipt);
+    expect(receipt.textContent).toBe("Approved: Run code · report.ts");
+    expect(receipt.textContent).not.toContain("code_run");
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a rejected approval and one a stop left open read as receipts in the reader's language", async () => {
+  const view = await mountTurn([runCode], { locale: "de" });
+  try {
+    view.button("Ablehnen").click();
+    await tick();
+    await tick();
+    expect(view.decisions).toEqual([{ approved: false }]);
+    const receipt = view.place().querySelector<HTMLElement>(".ai-turn-receipt")!;
+    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen · report.ts");
+    view.setBlocks([{ ...runCode, status: "rejected", approval: undefined }]);
+    expect(view.place().querySelector(".ai-turn-receipt")).toBe(receipt);
+    expect(receipt.textContent).toBe("Abgelehnt: Code ausführen · report.ts");
+  } finally {
+    view.cleanup();
+  }
+
+  const stopped = await mountTurn([{ ...runCode, status: "running", approved: true, approval: undefined }], {
+    locale: "de",
+    phase: "stopped",
+  });
+  try {
+    expect(stopped.place().textContent).toBe("Nicht ausgeführt: Code ausführen · report.ts · gestoppt");
+  } finally {
+    stopped.cleanup();
+  }
+});
+
+domTest("an approval a stop left undecided becomes a quiet receipt where its card stood", async () => {
+  const send: Extract<AiTurnBlock, { kind: "tool" }> = {
+    ...request,
+    presentation: { ...request.presentation!, appName: "Mail", title: "E-Mail senden" },
+    args: { to: "Tom Weber" },
+  };
+  const view = await mountTurn([send], { locale: "de" });
+  try {
+    const place = view.place();
+    expect(place.querySelector(".ai-approval")).not.toBeNull();
+    // History rebuilds the call without its approval; the stopped turn reports it as not run, in the same place.
+    view.setBlocks([{ ...send, status: "running", approval: undefined }]);
+    view.setPhase("stopped");
+    expect(view.place()).toBe(place);
+    expect(place.querySelector(".ai-approval")).toBeNull();
+    expect(place.textContent).toBe("Nicht ausgeführt: E-Mail senden · gestoppt");
+    expect(place.querySelector(".ti-circle-off")).not.toBeNull();
+  } finally {
+    view.cleanup();
+  }
+});
