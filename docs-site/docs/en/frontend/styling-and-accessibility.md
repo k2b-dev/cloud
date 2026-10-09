@@ -156,12 +156,13 @@ variables or `currentColor`:
 ```css
 .project-highlight {
   background: color-mix(in oklab, var(--k2b-action) 12%, var(--k2b-surface));
-  border-color: color-mix(in oklab, var(--k2b-action) 40%, var(--k2b-surface));
+  border: 1px solid color-mix(in oklab, var(--k2b-action) 40%, var(--k2b-surface));
 }
 ```
 
-The same applies to mixed-color custom properties and `@apply` utilities with
-opacity modifiers. There is no need to split them into separate rules.
+Shorthands, gradients, mixed-color custom properties, and `@apply` utilities
+with opacity modifiers are covered too. There is no need to split them into
+separate rules.
 
 ### Render Mermaid diagrams with Cloud colors
 

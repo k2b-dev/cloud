@@ -1,9 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { BunPlugin, OnLoadResult, PluginBuilder } from "bun";
 import { compile } from "tailwindcss";
-import tailwind, { wrapTailwindPlugin } from "./tailwind";
+import { wrapTailwindPlugin } from "./tailwind";
+
+const compoundDeclarations = [
+  "background: color-mix(in oklab, var(--a) 12%, var(--b));",
+  "border: 1px solid color-mix(in oklab, var(--a) 40%, var(--b));",
+  "box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--a) 30%, var(--b));",
+  "outline: 2px solid color-mix(in oklab, var(--a) 50%, var(--b));",
+  "background-image: linear-gradient(color-mix(in oklab, var(--a) 20%, var(--b)), color-mix(in oklab, var(--b) 60%, var(--a)));",
+  "--färbe: color-mix(in oklab, var(--a) 70%, var(--b));",
+];
 
 const fixture = `
 @theme { --color-action: #0080ff; --color-surface: white; }
@@ -15,6 +25,9 @@ const fixture = `
     color: color-mix(in oklab, var(--color-action) 60%, var(--color-surface));
     outline-color: color-mix(in oklab, currentColor 30%, var(--color-surface));
   }
+}
+.compound {
+  ${compoundDeclarations.join("\n  ")}
 }
 `;
 
@@ -32,7 +45,7 @@ describe("Cloud Tailwind build wrapper", () => {
   let directory: string;
 
   beforeEach(async () => {
-    directory = await mkdtemp(resolve(import.meta.dir, ".tailwind-test-"));
+    directory = await mkdtemp(join(tmpdir(), "cloud-tailwind-wrapper-"));
   });
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
@@ -68,9 +81,9 @@ describe("Cloud Tailwind build wrapper", () => {
     },
   });
 
-  test("preserve every mixed value from genuinely polyfilled Tailwind output", async () => {
+  test("preserve leading and compound mixes from Tailwind 4.3.3 flat polyfills", async () => {
     const polyfilled = (await compile(fixture)).build([]);
-    expect(polyfilled.match(new RegExp(supports.source, "g"))).toHaveLength(5);
+    expect(polyfilled.match(new RegExp(supports.source, "g"))).toHaveLength(11);
     const css = normalize(await buildCss(wrapTailwindPlugin(cssPlugin(polyfilled))));
     for (const declaration of [
       "background: color-mix(in oklab, var(--color-action) 12%, var(--color-surface));",
@@ -78,8 +91,53 @@ describe("Cloud Tailwind build wrapper", () => {
       "--highlight: color-mix(in oklab, currentColor 20%, var(--color-surface));",
       "color: color-mix(in oklab, var(--color-action) 60%, var(--color-surface));",
       "outline-color: color-mix(in oklab, currentColor 30%, var(--color-surface));",
+      ...compoundDeclarations,
     ])
       expect(css).toContain(declaration);
+    expect(css).not.toMatch(supports);
+  });
+
+  test("preserve leading and compound mixes from Tailwind 4.1.14 nested polyfills", async () => {
+    const source = `.compound {
+  background: var(--a);
+  @supports (color: color-mix(in lab, red, red)) {
+    & {
+      background: color-mix(in oklab, var(--a) 12%, var(--b));
+    }
+  }
+  border: 1px solid var(--a);
+  @supports (color: color-mix(in lab, red, red)) {
+    & {
+      border: 1px solid color-mix(in oklab, var(--a) 40%, var(--b));
+    }
+  }
+  box-shadow: inset 0 0 0 1px var(--a);
+  @supports (color: color-mix(in lab, red, red)) {
+    & {
+      box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--a) 30%, var(--b));
+    }
+  }
+  outline: 2px solid var(--a);
+  @supports (color: color-mix(in lab, red, red)) {
+    & {
+      outline: 2px solid color-mix(in oklab, var(--a) 50%, var(--b));
+    }
+  }
+  background-image: linear-gradient(var(--a), var(--b));
+  @supports (color: color-mix(in lab, red, red)) {
+    & {
+      background-image: linear-gradient(color-mix(in oklab, var(--a) 20%, var(--b)), color-mix(in oklab, var(--b) 60%, var(--a)));
+    }
+  }
+  --färbe: var(--a);
+  @supports (color: color-mix(in lab, red, red)) {
+    & {
+      --färbe: color-mix(in oklab, var(--a) 70%, var(--b));
+    }
+  }
+}`;
+    const css = normalize(await buildCss(wrapTailwindPlugin(cssPlugin(source))));
+    for (const declaration of compoundDeclarations) expect(css).toContain(declaration);
     expect(css).not.toMatch(supports);
   });
 
@@ -102,6 +160,24 @@ describe("Cloud Tailwind build wrapper", () => {
 }`,
       },
     ]);
+  });
+
+  test.each([
+    ["flat", " !important", ""],
+    ["flat", "", " !important"],
+    ["nested", " !important", ""],
+    ["nested", "", " !important"],
+  ])("preserve %s CSS with mismatched importance (%s / %s) byte-identically", async (shape, fallback, inner) => {
+    const declaration = `color: color-mix(in srgb, red 50%, blue)${inner};`;
+    const source = `.x {
+  color: red${fallback};
+  @supports (color: color-mix(in lab, red, red)) {
+${shape === "nested" ? `    & {\n      ${declaration}\n    }` : `    ${declaration}`}
+  }
+}`;
+    const results: OnLoadResult[] = [];
+    await buildCss(observe(wrapTailwindPlugin(cssPlugin(source)), results));
+    expect(results).toEqual([{ loader: "css", contents: source }]);
   });
 
   test("pass unpolyfilled CSS and unrelated supports rules through byte-identically", async () => {
@@ -136,13 +212,5 @@ describe("Cloud Tailwind build wrapper", () => {
     };
     await buildCss(observe(wrapTailwindPlugin(plugin), results), ".x { color: red; }");
     expect(results).toEqual([undefined, undefined]);
-  });
-
-  test("build an application stylesheet with the wrapped real plugin", async () => {
-    const css = normalize(await buildCss(tailwind, fixture));
-    expect(css).toContain("background: color-mix(in oklab, var(--color-action) 12%, var(--color-surface));");
-    expect(css).toContain("border-color: color-mix(in oklab, var(--color-action) 40%, var(--color-surface)) !important;");
-    expect(css).toContain("--highlight: color-mix(in oklab, currentColor 20%, var(--color-surface));");
-    expect(css).not.toMatch(supports);
   });
 });
