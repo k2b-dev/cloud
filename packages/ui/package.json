@@ -38,7 +38,7 @@
     "fixture:build": "bun run build && NODE_ENV=production bun run fixture/scripts/build.ts",
     "fixture:typecheck": "tsc -p fixture/tsconfig.json --noEmit --pretty false",
     "test": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' src scripts && bun run scripts/check-packed-consumer.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false && bun run check:declarations && bun run typecheck:dom",
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false && bun run check:declarations && bun run typecheck:dom",
     "typecheck:dom": "tsc -p test/tsconfig.json --noEmit --pretty false",
     "prepack": "bun run build"
   },

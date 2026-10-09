@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
     "@k2b/ui": "workspace:*",

@@ -13,6 +13,7 @@
 import { readdirSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import type { Finding, Rule } from "./checks/rule";
+import { runUnderHeavyLock } from "./heavy-lock";
 import { workspaceRoot } from "./workspace";
 
 const checksDir = join(import.meta.dir, "checks");
@@ -76,4 +77,5 @@ const main = async (): Promise<number> => {
   return failed > 0 ? 1 : 0;
 };
 
+runUnderHeavyLock();
 process.exit(await main());

@@ -39,6 +39,7 @@ import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { applyTestRuntimeEnv, dotenvLeak, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { sweepStaleTestNamespaces } from "./fixtures/test-sync";
+import { runUnderHeavyLock } from "./heavy-lock";
 
 type PackageJson = {
   name?: string;
@@ -191,6 +192,7 @@ export const parseArgs = (argv: string[]): Options => {
 };
 
 const run = async (): Promise<void> => {
+  runUnderHeavyLock();
   const workspaceRoot = join(import.meta.dir, "..");
   const options = parseArgs(Bun.argv.slice(2));
   if (options.integration && !hasIntegrationTarget()) {
