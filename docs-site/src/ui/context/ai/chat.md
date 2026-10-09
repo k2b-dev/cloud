@@ -61,7 +61,8 @@ call `preventDefault()` synchronously only when the application replaces the
 native paste. Attachments may expose one compact application-owned action such
 as moving a text attachment back into the message field. Composer attachments
 stay on one horizontally scrollable row, and the controlled text field grows
-up to approximately fifteen visible lines.
+up to approximately fifteen visible lines. The conversation variant grows
+differently; see [Conversations between people](#conversations-between-people).
 
 `Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
 
@@ -190,6 +191,19 @@ type ChatComposerProps = {
   contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element; modelDetails?: JSX.Element;
   submitTools?: JSX.Element; footerContent?: JSX.Element; placeholder?: string; label?: string;
   inputLabel?: string; disabled?: boolean; error?: string; focusToken?: unknown; class?: string;
+  variant?: "default" | "conversation"; sendKey?: "enter" | "mod-enter"; formatting?: boolean;
+  emoji?: ChatComposerEmoji; microphone?: ChatComposerMicrophone; hint?: JSX.Element;
+};
+
+type ChatDictationState = "listening" | "refining" | "refined" | "unrefined" | "interrupted";
+
+type ChatComposerMicrophone = {
+  onDictate?: () => void; onVoiceMessage?: () => void; dictation?: ChatDictationState | null;
+  onRestoreOriginal?: () => void; disabled?: boolean;
+};
+
+type ChatComposerEmoji = {
+  onOpen: (context: { anchor: HTMLElement; insert: (text: string) => void }) => void;
 };
 
 ```
@@ -377,4 +391,106 @@ import { reconcileChatMentions, type ChatMention } from "@k2b/ui";
 function replaceDraft(before: string, after: string, mentions: readonly ChatMention[]) {
   return { text: after, mentions: reconcileChatMentions(before, after, mentions) };
 }
+```
+
+## Conversations between people
+
+Set `variant="conversation"` for messages between people, for example under a
+[`VirtualFeed`](/en/ui/content/virtual-feed) of
+[message rows](/en/ui/content/message-rows). Without it, the composer keeps
+the assistant prompt's behavior.
+
+The conversation composer is one row without a card: an attach button, a
+quiet pill-shaped field, and a round Send button. The field is muted at rest
+and shows the surface with a ring while it has focus; only its paint changes.
+Formatting, emoji, and the microphone sit inside the field at its end. Send is
+dimmed until there is something to send. With `fileSelection` alone, the
+attach button opens the file choice directly; with `menuActions`, it opens the
+add menu. The footer props of the assistant prompt (`models`, `modelDetails`,
+`contextUsage`, `contextActions`, `contextPopupAction`, `footerTools`,
+`submitTools`, `footerContent`) have no place in this row and are not rendered.
+
+- **Size:** the field starts with one line and grows with its text up to a
+  third of the nearest size container, then scrolls. Give the conversation's
+  frame `container-type: size`; without one, the cap is a third of the small
+  viewport height. A hidden copy measures the text, so the field never
+  collapses for a frame and the feed above keeps the newest message in place.
+- **Hint line:** one line of fixed height above the field, always reserved,
+  so a hint never moves the field. Pass `hint` for short application notes,
+  such as what people without access see after a reference was attached.
+  Longer text ends with an ellipsis. The default variant shows the line only
+  while it has content.
+- **Enter:** `sendKey="enter"` (the default) sends on Enter and breaks the
+  line on Shift+Enter; `sendKey="mod-enter"` breaks the line on Enter. Ctrl/⌘+Enter
+  always sends, also while command suggestions are open; there, Enter and Tab
+  pick a suggestion. In both modes, Enter breaks the line while the caret is
+  inside an open fenced code block (with backticks or tildes, also in a quote)
+  and on touch-only devices, where Send sends. It never sends during IME input,
+  including the Enter that confirms a conversion. The application stores the
+  person's choice.
+- **Focus:** pressing Send or another composer button keeps the field
+  focused, so a phone's keyboard stays open. The field also stays editable
+  while an asynchronous `onSubmit` runs. If the submission is rejected, the
+  draft comes back in front of anything typed in the meantime.
+
+`sendKey` also works without the conversation variant: `"mod-enter"` there
+breaks the line on Enter and sends on Ctrl/⌘+Enter.
+
+### Formatting, emoji, and microphone
+
+These work in both variants. In the conversation variant they sit inside the
+field; in the default variant, in the footer.
+
+- **`formatting`** adds "Aa". It opens one row of fixed height with Bold,
+  Italic, Strikethrough, Code, Code block, Bullet list, Quote, and Link: above
+  the field in the conversation variant, above the footer in the default
+  variant. The composer grows upward by that row, like a new line of text, so
+  the field and every control stay where they are and a feed that follows the
+  newest message keeps it in view. All eight buttons show at once, also on a
+  phone: on a coarse pointer they share the row's width, 2.75rem each where it
+  fits, and the row never scrolls. The buttons write Markdown into the field
+  and keep the selection.
+  Every button except Link removes its formatting on a second press; inside a
+  fenced block, Code block removes that block's fences, and a selection that
+  already holds a fence gets a longer one. Ctrl/⌘+B, I, and E, and
+  Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
+- **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
+  and an `insert` function that puts the chosen text at the caret. Touch-only
+  devices hide the button, because their keyboard has emoji.
+- **`microphone`** adds a microphone before Send, or at the end of the field
+  in the conversation variant. Dictation comes first: a
+  tap calls `onDictate`, which starts or stops the application's live
+  dictation. Holding the microphone for half a second calls `onVoiceMessage`
+  instead, unless the composer was disabled during the press. The small menu
+  next to it offers both, so keyboard and screen reader users reach each
+  action. Without `onDictate`, a tap opens that menu; a key press also moves
+  the focus into it. Omit `onVoiceMessage` where the browser cannot record.
+
+Pass the dictation state as `microphone.dictation`. The composer shows it at
+fixed places: the microphone turns into Stop while `listening` and waits
+while `refining`, and the hint line says what happens. With `refined`,
+the hint line offers "Restore original", which calls `onRestoreOriginal` and is
+disabled whenever the microphone is.
+`unrefined` and `interrupted` keep the text and say so. The application owns
+the audio, the transcription, the text it writes into the draft, and when a
+state ends; the composer never records or sends anything itself.
+
+```tsx
+<Chat.Composer
+  variant="conversation"
+  value={draft()}
+  onValueChange={setDraft}
+  onSubmit={({ text }) => send(text)}
+  sendKey={preferences.sendKey}
+  formatting
+  emoji={{ onOpen: ({ anchor, insert }) => openEmojiPicker(anchor, insert) }}
+  microphone={{
+    onDictate: dictation.toggle,
+    onVoiceMessage: recordVoiceMessage,
+    dictation: dictation.state(),
+    onRestoreOriginal: dictation.restore,
+  }}
+  hint={hint()}
+  placeholder="Message Workshop"
+/>
 ```

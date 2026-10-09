@@ -205,6 +205,60 @@ describe("@k2b/ui portable chat family", () => {
     expect(html).not.toContain('aria-label="Steer response"');
   });
 
+  test("renders the conversation composer with its hint line, formatting, emoji and microphone in English and German", () => {
+    const conversation = (locale: "en" | "de", dictation: "listening" | "refined" | null) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(Chat.Composer, {
+              variant: "conversation",
+              value: "",
+              onValueChange: () => undefined,
+              onSubmit: () => undefined,
+              formatting: true,
+              emoji: { onOpen: () => undefined },
+              microphone: { onDictate: () => undefined, onVoiceMessage: () => undefined, dictation, onRestoreOriginal: () => undefined },
+            });
+          },
+        }),
+      );
+    const idle = conversation("en", null);
+    expect(idle).toContain('data-variant="conversation"');
+    // The hint line keeps its place while it is empty.
+    expect(idle).toMatch(
+      /<div class="k2b-chat-composer__hint" aria-live="polite"><span class="k2b-chat-composer__hint-text"><\/span><\/div>/,
+    );
+    expect(idle).toContain('enterkeyhint="enter"');
+    expect(idle).toContain('placeholder="Write a message"');
+    expect(idle).toContain('class="k2b-chat-composer__measure"');
+    expect(idle).toContain('aria-label="Formatting" aria-pressed="false"');
+    expect(idle).toContain('aria-label="Insert emoji"');
+    expect(idle).toContain('aria-label="Dictate"');
+    expect(idle).toContain('aria-label="Microphone options"');
+    expect(idle).not.toContain('k2b-chat-composer__format"');
+    // One row: the field with its tools between attach and Send, and no footer.
+    expect(idle).toMatch(/class="k2b-chat-composer__row"[\s\S]*class="k2b-chat-composer__field"[\s\S]*class="k2b-chat-composer__send /);
+    expect(idle).not.toContain("<footer");
+    expect(idle).toContain("ti ti-send");
+
+    const listening = conversation("de", "listening");
+    expect(listening).toContain("Diktat läuft …");
+    expect(listening).toMatch(/aria-pressed="true" aria-label="Diktieren"/);
+    expect(listening).toContain('placeholder="Nachricht schreiben"');
+    const refined = conversation("de", "refined");
+    expect(refined).toContain("Text verfeinert");
+    expect(refined).toContain("Original wiederherstellen");
+
+    // The assistant prompt keeps its markup: no variant, hint line, measuring copy, or key hint.
+    const assistant = renderToString(() =>
+      createComponent(Chat.Composer, { value: "", onValueChange: () => undefined, onSubmit: () => undefined }),
+    );
+    for (const absent of ["data-variant", "k2b-chat-composer__hint", "k2b-chat-composer__measure", "enterkeyhint"]) {
+      expect(assistant).not.toContain(absent);
+    }
+  });
+
   test("lets applications queue drafts during a running response without changing the compatibility default", () => {
     const queued = renderToString(() =>
       createComponent(Chat.Composer, {

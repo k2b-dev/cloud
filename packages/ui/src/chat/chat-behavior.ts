@@ -67,3 +67,18 @@ export const executeChatAction = async (action: ChatAction): Promise<void> => {
   }
   await action.onSelect();
 };
+
+export type ChatEnterKey = { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean };
+
+/**
+ * What Enter does in a conversation composer: Ctrl/⌘+Enter always sends; Shift+Enter, Enter inside an open code
+ * block, and Enter on a touch-only device break the line; otherwise `sendKey` decides. IME input is the caller's check.
+ */
+export const conversationEnterAction = (
+  key: ChatEnterKey,
+  context: { sendKey: "enter" | "mod-enter"; touchOnly: boolean; inCodeBlock: boolean },
+): "send" | "newline" => {
+  if (key.ctrlKey || key.metaKey) return "send";
+  if (key.shiftKey || key.altKey || context.touchOnly || context.inCodeBlock || context.sendKey === "mod-enter") return "newline";
+  return "send";
+};

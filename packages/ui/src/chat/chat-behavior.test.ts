@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  conversationEnterAction,
   executeChatAction,
   isChatNearBottom,
   nextChatCommandIndex,
@@ -154,5 +155,28 @@ describe("@k2b/ui chat behavior", () => {
 
     expect(errors.map((error) => (error as Error).message)).toEqual(["sync stop failure", "async stop failure"]);
     expect(() => reportChatFailure(() => undefined)).not.toThrow();
+  });
+});
+
+describe("conversation Enter", () => {
+  const key = (init: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
+    shiftKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    ...init,
+  });
+  const desk = { sendKey: "enter" as const, touchOnly: false, inCodeBlock: false };
+
+  test("sends on Enter, breaks the line otherwise, and always sends on Ctrl/⌘+Enter", () => {
+    expect(conversationEnterAction(key(), desk)).toBe("send");
+    expect(conversationEnterAction(key({ shiftKey: true }), desk)).toBe("newline");
+    expect(conversationEnterAction(key(), { ...desk, sendKey: "mod-enter" })).toBe("newline");
+    expect(conversationEnterAction(key(), { ...desk, touchOnly: true })).toBe("newline");
+    expect(conversationEnterAction(key(), { ...desk, inCodeBlock: true })).toBe("newline");
+    for (const context of [desk, { sendKey: "mod-enter" as const, touchOnly: true, inCodeBlock: true }]) {
+      expect(conversationEnterAction(key({ ctrlKey: true }), context)).toBe("send");
+      expect(conversationEnterAction(key({ metaKey: true }), context)).toBe("send");
+    }
   });
 });

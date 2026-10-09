@@ -180,7 +180,7 @@ type ContextMenuProps = {
 
 `DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. `DropdownChoice.closeOnSelect` defaults to true; ordinary actions close on activation. A section contains actions/choices, not nested sections.
 
-`position` defaults to `"bottom-right"`; `align` (`"start" | "end"`) is an optional alignment override. `variant="default"`; `width` is an optional exact CSS length, and without it the menu sizes to its entries. Pair controlled `open` with `onOpenChange`, or omit both for internal state. `ContextMenu` has no controlled `open` prop. `DropdownItem` is also a low-level JSX export; normal consumers use the declarative `items` API above.
+`position` defaults to `"bottom-right"`; `align` (`"start" | "end"`) is an optional alignment override. `variant="default"`; `width` is an optional exact CSS length, and without it the menu sizes to its entries. Pair controlled `open` with `onOpenChange`, or omit both for internal state. When a key on the trigger opens a controlled menu and `onOpenChange` sets `open` right away, the focus moves to the first or last item, as in an uncontrolled menu; setting `open` from elsewhere leaves the focus where it is. `ContextMenu` has no controlled `open` prop. `DropdownItem` is also a low-level JSX export; normal consumers use the declarative `items` API above.
 
 ## Accessibility
 

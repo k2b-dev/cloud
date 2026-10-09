@@ -71,3 +71,29 @@ export type ChatSubmitInput = {
 
 /** Ranges use UTF-16 offsets into the untrimmed composer text. Payloads stay application-owned. */
 export type ChatMention = { start: number; end: number; attachment: ChatAttachment };
+
+/**
+ * Live dictation as the caller runs it: `listening` while speech arrives, `refining` after the stop until the refined
+ * text replaced it, `refined` afterwards, `unrefined` when the raw text stays, and `interrupted` when the connection
+ * ended early and the text so far stays.
+ */
+export type ChatDictationState = "listening" | "refining" | "refined" | "unrefined" | "interrupted";
+
+/** The composer's microphone. Dictation comes first; a voice message is the deliberate second action. */
+export type ChatComposerMicrophone = {
+  /** A tap starts or stops live dictation. Without it, a tap opens the microphone menu. */
+  onDictate?: () => void;
+  /** Holding the microphone, or "Record voice message" in its menu. Omit it where recording is not available. */
+  onVoiceMessage?: () => void;
+  /** The dictation state, shown on the microphone and in the hint line. */
+  dictation?: ChatDictationState | null;
+  /** Offered as "Restore original" while `dictation` is `refined`. */
+  onRestoreOriginal?: () => void;
+  disabled?: boolean;
+};
+
+/** The composer's emoji button. The application opens its own emoji choice. */
+export type ChatComposerEmoji = {
+  /** Opens the emoji choice next to `anchor`; `insert` puts the chosen text at the caret. */
+  onOpen: (context: { anchor: HTMLElement; insert: (text: string) => void }) => void;
+};

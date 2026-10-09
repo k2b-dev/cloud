@@ -1,6 +1,6 @@
-import type { ChatMention } from "@k2b/ui";
-import { Chat, type ChatTimelineItem, CodeDisplay, ProgressBar, ProgressRing } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import type { ChatDictationState, ChatMention } from "@k2b/ui";
+import { Button, Chat, type ChatTimelineItem, CodeDisplay, MessageRow, ProgressBar, ProgressRing, Toolbar } from "@k2b/ui";
+import { createSignal, For, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -234,6 +234,97 @@ const ChatDemo = () => {
   );
 };
 
+const ConversationComposerDemo = () => {
+  const [draft, setDraft] = createSignal("");
+  const [sent, setSent] = createSignal<string[]>([]);
+  const [dictation, setDictation] = createSignal<ChatDictationState | null>(null);
+  const [hint, setHint] = createSignal<string | undefined>();
+  const [sendKey, setSendKey] = createSignal<"enter" | "mod-enter">("enter");
+  let original = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  // Stands in for live dictation: the application owns the audio, the text, and the refinement.
+  const dictate = () => {
+    if (dictation() !== "listening") {
+      original = draft();
+      setDraft(`${original}${original ? " " : ""}so we can unload the new saw at seven`);
+      setDictation("listening");
+      return;
+    }
+    setDictation("refining");
+    timer = setTimeout(() => {
+      setDraft(`${original}${original ? " " : ""}So we can unload the new saw at 7:00.`);
+      setDictation("refined");
+    }, 900);
+  };
+  return (
+    <DemoCard
+      id="chat-conversation-composer"
+      chip={{ kind: "component", name: "Chat.Composer", from: "@k2b/ui" }}
+      description='The conversation variant: one row with attach, a pill field that grows from one line to a third of its size container, and Send. "Aa" opens one formatting row above the field, emoji and microphone sit inside it, and a hint line never moves it. Tap the microphone to dictate, hold it for a voice message.'
+      code={`<Chat.Composer
+  variant="conversation"
+  value={draft()}
+  onValueChange={setDraft}
+  onSubmit={({ text }) => send(text)}
+  sendKey={settings.sendKey}
+  formatting
+  emoji={{ onOpen: ({ anchor, insert }) => openEmojiPicker(anchor, insert) }}
+  microphone={{ onDictate: dictation.toggle, onVoiceMessage: recordVoiceMessage, dictation: dictation.state(), onRestoreOriginal: dictation.restore }}
+  hint={hint()}
+  placeholder="Message Workshop"
+/>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Toolbar label="Composer settings" wrap>
+          <Button size="sm" variant="subtle" onClick={() => setHint(hint() ? undefined : "People without access see only “No access”.")}>
+            Toggle a hint
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => setDictation(dictation() === "interrupted" ? null : "interrupted")}>
+            Interrupt dictation
+          </Button>
+          <Button size="sm" variant="subtle" onClick={() => setSendKey(sendKey() === "enter" ? "mod-enter" : "enter")}>
+            {sendKey() === "enter" ? "Enter sends" : "Ctrl/⌘+Enter sends"}
+          </Button>
+        </Toolbar>
+        <div style={{ display: "flex", "flex-direction": "column", height: "26rem", "container-type": "size" }}>
+          <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+            <For each={sent()}>{(text) => <MessageRow author={{ name: "Robin Example" }} own text={text} time="now" groupStart />}</For>
+          </div>
+          <Chat.Composer
+            variant="conversation"
+            value={draft()}
+            onValueChange={(value) => {
+              setDraft(value);
+              if (dictation() !== "listening" && dictation() !== "refining") setDictation(null);
+            }}
+            onSubmit={({ text }) => {
+              if (!text.trim()) return false;
+              setSent((current) => [...current, text]);
+              setDictation(null);
+            }}
+            sendKey={sendKey()}
+            formatting
+            fileSelection={{ onSelect: () => undefined }}
+            emoji={{ onOpen: ({ insert }) => insert("👍") }}
+            microphone={{
+              onDictate: dictate,
+              onVoiceMessage: () => setHint("A voice message would start recording now."),
+              dictation: dictation(),
+              onRestoreOriginal: () => {
+                setDraft(`${original}${original ? " " : ""}so we can unload the new saw at seven`);
+                setDictation(null);
+              },
+            }}
+            hint={hint()}
+            placeholder="Message Workshop"
+          />
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
 const ContextUsageDemo = () => (
   <DemoCard
     id="context-usage"
@@ -259,6 +350,7 @@ const demos: DemoSection = {
   chat: () => (
     <DemoGrid columns="one">
       <ChatDemo />
+      <ConversationComposerDemo />
     </DemoGrid>
   ),
   "context-usage": () => (
