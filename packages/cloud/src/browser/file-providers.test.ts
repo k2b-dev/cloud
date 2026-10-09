@@ -8,17 +8,29 @@ import {
   type CapabilityQueryDefinition,
   defineCapabilities,
 } from "../contracts/capabilities";
-import { FileProviderListDataSchema, FileProviderListInputSchema, FileProviderReadInputSchema } from "../contracts/file-provider";
+import {
+  FILE_PROVIDER_NAME_CONFLICT,
+  FileProviderListDataSchema,
+  FileProviderListInputSchema,
+  FileProviderReadInputSchema,
+  FileProviderSaveDataSchema,
+  FileProviderSaveInputSchema,
+} from "../contracts/file-provider";
 import {
   eachLimited,
   entryProblem,
   FileProviderError,
   type FileProviderSource,
   fileProviderSources,
+  isSaveableName,
   listProviderFolder,
   loadFileProviders,
+  nextFreeName,
   providerIcon,
   readProviderFile,
+  readSaveSource,
+  saveableName,
+  saveProviderFile,
 } from "./file-providers";
 
 const run = (): CapabilityInvocationResult<never> => ({ ok: false, error: { code: "INTERNAL", message: "Not invoked.", status: 500 } });
@@ -131,6 +143,340 @@ describe("file provider discovery", () => {
   });
 });
 
+describe("discovering where files can be saved", () => {
+  const save = (maxBytes: number) => ({
+    title: "Save",
+    description: "Save one new file.",
+    input: FileProviderSaveInputSchema,
+    data: FileProviderSaveDataSchema,
+    openWorld: false,
+    destructive: false,
+    idempotency: "required" as const,
+    stream: {
+      direction: "write" as const,
+      maxBytes,
+      write: async () => ({ data: {} }),
+      status: async () => ({ state: "open" as const }),
+      abort: async () => undefined,
+    },
+    run,
+  });
+  const saver = (appId: string, saveAction: ReturnType<typeof save>) =>
+    app(
+      appId,
+      appId,
+      defineCapabilities({
+        protocolVersion: 2,
+        queries: { "folder.list": list, "file.read": read(1024) },
+        actions: { "file.save": saveAction },
+        fileProvider: { list: "folder.list", read: "file.read", save: "file.save" },
+      }),
+    );
+
+  test("a provider with a fitting save names it with its write limit; one that does not fit stays a source to choose from", () => {
+    const odd = saver("odd", save(64));
+    // A manifest from another release whose save has no write stream: Core would drop it, this reader drops only save.
+    odd.manifest = { ...odd.manifest, actions: odd.manifest.actions.map(({ stream: _stream, ...action }) => action) };
+    const [good, broken] = fileProviderSources([saver("good", save(2048)), odd], "en");
+    expect(good?.save).toEqual({ id: "file.save", maxBytes: 2048 });
+    expect(broken?.appId).toBe("odd");
+    expect(broken?.save).toBeUndefined();
+    expect(fileProviderSources([providerApp("read-only", "Read only")], "en")[0]?.save).toBeUndefined();
+  });
+});
+
+describe("naming a saved file", () => {
+  test("keeps a usable name and repairs one no provider takes", () => {
+    expect(saveableName("Q3 report.pdf")).toBe("Q3 report.pdf");
+    expect(saveableName("../etc/passwd")).toBe(".._etc_passwd");
+    expect(saveableName("a\\b\u0007c")).toBe("a_b_c");
+    expect(saveableName("  ")).toBe("file");
+    expect(saveableName("..")).toBe("file");
+    expect(saveableName("x".repeat(300))).toHaveLength(255);
+    expect(isSaveableName("ok.txt")).toBe(true);
+    expect(isSaveableName("a/b")).toBe(false);
+  });
+
+  test("a conflict suggests the next number before the extension", () => {
+    expect(nextFreeName("Report.pdf")).toBe("Report (2).pdf");
+    expect(nextFreeName("Report (2).pdf")).toBe("Report (3).pdf");
+    expect(nextFreeName("README")).toBe("README (2)");
+    expect(nextFreeName(".env")).toBe(".env (2)");
+    expect(nextFreeName("archive.tar.gz")).toBe("archive.tar (2).gz");
+    const long = nextFreeName(`${"x".repeat(250)}.pdf`);
+    expect(long).toHaveLength(255);
+    expect(long.endsWith(" (2).pdf")).toBe(true);
+  });
+});
+
+describe("reading what a consumer saves", () => {
+  test("a Blob keeps its bytes and gets a media type the contract takes", async () => {
+    const blob = await readSaveSource({ name: "a.txt", content: new Blob(["hi"], { type: "text/plain;charset=utf-8" }) }, { maxBytes: 10 });
+    expect(await blob.text()).toBe("hi");
+    // Bun adds a charset to text types; the Action input drops parameters either way.
+    expect(blob.type).toStartWith("text/plain");
+    const opaque = await readSaveSource({ name: "a", content: new Blob(["hi"]) }, { maxBytes: 10 });
+    expect(opaque.type).toBe("application/octet-stream");
+    await expect(readSaveSource({ name: "a", content: new Blob(["too long"]) }, { maxBytes: 2 })).rejects.toMatchObject({
+      code: "FILE_TOO_LARGE",
+    });
+  });
+
+  test("a URL is read with the session, with progress, and the response type", async () => {
+    const requests: RequestInit[] = [];
+    const progress: [number, number][] = [];
+    const blob = await readSaveSource(
+      { name: "a.pdf", content: "/api/mail/attachments/1" },
+      {
+        maxBytes: 10,
+        fetch: async (_url, init) => {
+          requests.push(init ?? {});
+          return new Response("%PDF", { headers: { "content-type": "application/pdf", "content-length": "4" } });
+        },
+        onProgress: (loaded, total) => progress.push([loaded, total]),
+      },
+    );
+    expect(await blob.text()).toBe("%PDF");
+    expect(blob.type).toBe("application/pdf");
+    expect(requests[0]?.credentials).toBe("same-origin");
+    expect(progress).toEqual([
+      [0, 4],
+      [4, 4],
+    ]);
+  });
+
+  test("never holds more than the limit: a known size or content-length refuses early, a growing body is cancelled", async () => {
+    let fetched = 0;
+    const count = async () => {
+      fetched++;
+      return new Response("x");
+    };
+    await expect(readSaveSource({ name: "a", content: "/big", size: 11 }, { maxBytes: 10, fetch: count })).rejects.toMatchObject({
+      code: "FILE_TOO_LARGE",
+    });
+    expect(fetched).toBe(0);
+
+    let pulls = 0;
+    const endless = () =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls++;
+          controller.enqueue(new Uint8Array(4));
+        },
+      });
+    const announced = readSaveSource(
+      { name: "a", content: "/big" },
+      { maxBytes: 10, fetch: async () => new Response(endless(), { headers: { "content-length": "40" } }) },
+    );
+    await expect(announced).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+    pulls = 0;
+    const growing = readSaveSource({ name: "a", content: "/big" }, { maxBytes: 10, fetch: async () => new Response(endless()) });
+    await expect(growing).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+    expect(pulls).toBeLessThan(6);
+  });
+
+  test("a refused or failed read says so with its status", async () => {
+    const refused = readSaveSource(
+      { name: "a", content: "/gone" },
+      { maxBytes: 10, fetch: async () => new Response("no", { status: 403 }) },
+    );
+    await expect(refused).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE", status: 403 });
+    const broken = readSaveSource(
+      { name: "a", content: "/down" },
+      {
+        maxBytes: 10,
+        fetch: async () => {
+          throw new TypeError("network");
+        },
+      },
+    );
+    await expect(broken).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE", status: 503 });
+  });
+});
+
+describe("saving into a provider", () => {
+  const drive: FileProviderSource = { ...provider, save: { id: "file.save", maxBytes: 100 } };
+  const writeDescriptor = (size: number) => ({
+    id: "sealed-write",
+    direction: "write",
+    name: "a.txt",
+    mediaType: "text/plain",
+    size,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  /** Answers the save Action and the stream verbs; `write` decides how the write ends, `status` how status and abort answer. */
+  const transport = (write: (body: string) => Response | Promise<Response>, status?: (verb: string) => Response) => {
+    const calls: { url: string; key: string | null; input?: unknown }[] = [];
+    const fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      const path = String(url);
+      if (path.endsWith("/streams/write")) {
+        calls.push({ url: path, key: headers.get("x-cloud-stream-id") });
+        return write(await new Response(init?.body).text());
+      }
+      if (path.endsWith("/streams/status") || path.endsWith("/streams/abort")) {
+        calls.push({ url: path, key: headers.get("x-cloud-stream-id") });
+        return status?.(path.split("/").at(-1)!) ?? json({ state: "open" });
+      }
+      const { input } = JSON.parse(String(init?.body)) as { input: { size: number } };
+      calls.push({ url: path, key: headers.get("idempotency-key"), input });
+      return json({ data: {}, stream: writeDescriptor(input.size) });
+    };
+    return { calls, fetch };
+  };
+  const done = (name: string, size: number) =>
+    json({ data: { file: { id: `id:${name}`, name, size } }, links: [{ rel: "open", href: "/app/drive?path=Docs" }] });
+
+  test("opens the save Action with an idempotency key, writes the bytes, and returns the file with its link", async () => {
+    const { calls, fetch } = transport((body) => done("a.txt", body.length));
+    const saved = await saveProviderFile(
+      drive,
+      { parent: "docs", name: "a.txt", body: new Blob(["hello"], { type: "text/plain" }), idempotencyKey: "key-1" },
+      { locale: "en", fetch },
+    );
+    expect(saved).toEqual({ id: "id:a.txt", name: "a.txt", size: 5, href: "/app/drive?path=Docs" });
+    expect(calls).toEqual([
+      {
+        url: "/api/capabilities/v1/actions/drive/file.save",
+        key: "key-1",
+        input: { parent: "docs", name: "a.txt", mediaType: "text/plain", size: 5 },
+      },
+      { url: "/api/capabilities/v1/streams/write", key: "sealed-write" },
+    ]);
+  });
+
+  test("a taken name fails with the contract code, from the Action or from the write", async () => {
+    const conflict = () => json({ code: FILE_PROVIDER_NAME_CONFLICT, message: "Taken" }, 409);
+    const atWrite = transport(conflict);
+    const body = new Blob(["hello"]);
+    const input = { parent: "docs", name: "a.txt", body, idempotencyKey: "key-1" };
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: atWrite.fetch })).rejects.toMatchObject({
+      code: FILE_PROVIDER_NAME_CONFLICT,
+      status: 409,
+    });
+    const atAction = async () => conflict();
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: atAction })).rejects.toMatchObject({
+      code: FILE_PROVIDER_NAME_CONFLICT,
+    });
+    // Storage that is full keeps its own code, even with 409.
+    const full = async () => json({ code: "insufficient_space", message: "Full" }, 409);
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: full })).rejects.toMatchObject({ code: "insufficient_space" });
+  });
+
+  test("refuses a body above the write limit before asking the provider", async () => {
+    const { calls, fetch } = transport(() => done("a", 0));
+    const big = { parent: "docs", name: "a", body: new Blob([new Uint8Array(101)]), idempotencyKey: "k" };
+    await expect(saveProviderFile(drive, big, { locale: "en", fetch })).rejects.toMatchObject({ code: "FILE_TOO_LARGE" });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a write whose answer was lost asks the stream's status before it fails", async () => {
+    const lost = transport(
+      () => {
+        throw new TypeError("network");
+      },
+      () => json({ state: "completed", result: { data: { file: { id: "id:a", name: "a.txt", size: 5 } } } }),
+    );
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    expect(await saveProviderFile(drive, input, { locale: "en", fetch: lost.fetch })).toEqual({ id: "id:a", name: "a.txt", size: 5 });
+    expect(lost.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status"]);
+
+    const open = transport(() => {
+      throw new TypeError("network");
+    });
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: open.fetch })).rejects.toMatchObject({ code: "APP_UNAVAILABLE" });
+  });
+
+  test("a write that Core reports as broken off asks the stream's status before it fails", async () => {
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    const completed = () => json({ state: "completed", result: { data: { file: { id: "id:a", name: "a.txt", size: 5 } } } });
+    const interrupted = (code: string, status: number) => () =>
+      json({ code, message: "Transfer interrupted; inspect write status before retrying" }, status);
+    // Files committed the bytes, but its answer never reached Core.
+    const lost = transport(interrupted("STREAM_FAILED", 502), completed);
+    expect(await saveProviderFile(drive, input, { locale: "en", fetch: lost.fetch })).toEqual({ id: "id:a", name: "a.txt", size: 5 });
+    expect(lost.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status"]);
+
+    // Still open: the write keeps its own code.
+    const late = transport(interrupted("DEADLINE_EXCEEDED", 504));
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: late.fetch })).rejects.toMatchObject({
+      code: "DEADLINE_EXCEEDED",
+      status: 504,
+    });
+    expect(late.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status"]);
+
+    // A provider's own answer is final and needs no status.
+    const full = transport(() => json({ code: "insufficient_space", message: "Full" }, 507), completed);
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: full.fetch })).rejects.toMatchObject({ code: "insufficient_space" });
+    expect(full.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write"]);
+  });
+
+  test("a status that refuses keeps its code, so a taken name still asks for another", async () => {
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    const broken = () => {
+      throw new TypeError("network");
+    };
+    const taken = transport(broken, () => json({ code: FILE_PROVIDER_NAME_CONFLICT, message: "Taken" }, 409));
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: taken.fetch })).rejects.toMatchObject({
+      code: FILE_PROVIDER_NAME_CONFLICT,
+      status: 409,
+    });
+    const forbidden = transport(broken, () => json({ code: "forbidden", message: "No" }, 403));
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: forbidden.fetch })).rejects.toMatchObject({
+      code: "forbidden",
+      status: 403,
+    });
+  });
+
+  test("Cancel while the status is looked up aborts the stream", async () => {
+    const controller = new AbortController();
+    const { calls, fetch } = transport(
+      () => {
+        throw new TypeError("network");
+      },
+      (verb) => {
+        if (verb === "abort") return json({ state: "aborted" });
+        controller.abort();
+        throw new DOMException("Aborted", "AbortError");
+      },
+    );
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch, signal: controller.signal })).rejects.toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status", "abort"]);
+  });
+
+  test("reports an opened stream once, and never for an Action that failed", async () => {
+    let streams = 0;
+    const onStream = () => streams++;
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    const { fetch } = transport((body) => done("a.txt", body.length));
+    await saveProviderFile(drive, input, { locale: "en", fetch, onStream });
+    expect(streams).toBe(1);
+    const down = async () => json({ code: "APP_UNAVAILABLE", message: "Down" }, 503);
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: down, onStream })).rejects.toMatchObject({ status: 503 });
+    expect(streams).toBe(1);
+  });
+
+  test("a cancelled write aborts the stream, so the provider releases what it reserved", async () => {
+    const controller = new AbortController();
+    const { calls, fetch } = transport(() => {
+      controller.abort();
+      throw new DOMException("Aborted", "AbortError");
+    });
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch, signal: controller.signal })).rejects.toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "abort"]);
+  });
+
+  test("a provider that answers with another stream is not trusted with the bytes", async () => {
+    const fetch = async () => json({ data: {}, stream: writeDescriptor(99) });
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch })).rejects.toMatchObject({ code: "INVALID_APP_RESPONSE" });
+  });
+});
+
 describe("browsing a provider", () => {
   test("asks for one page of a folder with the chooser's page size", async () => {
     let body: unknown;
@@ -147,7 +493,7 @@ describe("browsing a provider", () => {
       },
     );
     expect(body).toEqual({ input: { parent: "f1", query: "inv", cursor: "c1", limit: 50 } });
-    expect(page).toEqual({ items: [file("a", 3)], next: "c2" });
+    expect(page).toEqual({ items: [file("a", 3)], next: "c2", writable: false });
   });
 
   test("keeps the provider's status, so the chooser can tell no access from an outage", async () => {

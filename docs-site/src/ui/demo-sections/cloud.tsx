@@ -153,17 +153,22 @@ import { EntitySearch } from "@k2b/cloud/account/ui";
 const FileChooserReference = () => (
   <DemoCard
     id="cloud-file-chooser"
-    chip={[{ kind: "component", name: "chooseFiles", from: "@k2b/cloud/browser/files" }]}
-    description="Backend-required file choosing from this device or from Cloud apps that offer files."
-    code={`import { chooseFiles } from "@k2b/cloud/browser/files";
+    chip={[
+      { kind: "component", name: "chooseFiles", from: "@k2b/cloud/browser/files" },
+      { kind: "component", name: "SaveFilesButton", from: "@k2b/cloud/browser/files" },
+    ]}
+    description="Backend-required file choosing from this device or from Cloud apps that offer files, and saving copies into them."
+    code={`import { chooseFiles, SaveFilesButton } from "@k2b/cloud/browser/files";
 
 const files = await chooseFiles({ multiple: true, maxBytes: 100 * 1024 * 1024 });
-if (files.length > 0) await uploadAttachments(files);`}
+if (files.length > 0) await uploadAttachments(files);
+
+<SaveFilesButton size="sm" files={() => [{ name: "report.pdf", content: downloadHref, size: 48_213 }]} />;`}
   >
     <BackendRequiredNote title="Live file providers and permissions required">
       The chooser discovers providers in the capability catalog and reads their folders and files as the signed-in user. Without providers
-      it opens the device's file dialog directly. The catalog shows this contract without inventing files; the list itself is the FileGrid
-      picker layout.
+      it opens the device's file dialog directly. Saving lists the apps that store files and creates each file through their save action.
+      The catalog shows this contract without inventing files; the list itself is the FileGrid picker layout.
     </BackendRequiredNote>
   </DemoCard>
 );

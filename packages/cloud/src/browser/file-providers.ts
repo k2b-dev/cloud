@@ -1,12 +1,17 @@
 import { checkMimeType } from "@k2b/stdlib/browser";
 import { invokeCapabilityWithDataSchema, listCapabilityCatalog } from "../capabilities/client";
+import { readCapabilityResponse } from "../capabilities/response";
 import { transferCapabilityStream } from "../capabilities/streams";
 import type { CapabilityCatalogApp, CapabilityClientError, CapabilityHttpOptions } from "../capabilities/types";
-import { CapabilityErrorSchema } from "../contracts/capabilities";
+import { CapabilityErrorSchema, type CapabilityStream, capabilityResultSchema } from "../contracts/capabilities";
+import { CapabilityStreamStatusSchema } from "../contracts/capability-streams";
 import {
   type FileProviderEntry,
+  type FileProviderIssue,
   FileProviderListDataSchema,
   FileProviderReadDataSchema,
+  FileProviderSaveDataSchema,
+  FileProviderSaveInputSchema,
   fileProviderIssues,
 } from "../contracts/file-provider";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -20,6 +25,8 @@ export type FileProviderSource = {
   read: string;
   /** The provider's read limit; a consumer combines it with its own. */
   maxBytes: number;
+  /** The provider's `save` Action and its write limit, when it stores new files. */
+  save?: { id: string; maxBytes: number };
 };
 
 export type FileProviderCaller = Pick<CapabilityHttpOptions, "fetch" | "baseUrl"> & { locale: string };
@@ -55,11 +62,11 @@ const failure = (error: CapabilityClientError): FileProviderError =>
   new FileProviderError(error.code, error.message, typeof navigator !== "undefined" && navigator.onLine === false ? 0 : error.status);
 
 /** One unreadable manifest leaves out that application, not the whole list. */
-const usable = (app: CapabilityCatalogApp): boolean => {
+const issuesOf = (app: CapabilityCatalogApp): FileProviderIssue[] | null => {
   try {
-    return !fileProviderIssues(app.manifest).some((issue) => issue.function !== "save");
+    return fileProviderIssues(app.manifest);
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -71,9 +78,12 @@ export const fileProviderSources = (apps: readonly CapabilityCatalogApp[], local
   apps
     .flatMap((app) => {
       const declaration = app.manifest.fileProvider;
-      if (!declaration || !usable(app)) return [];
+      const issues = declaration ? issuesOf(app) : null;
+      if (!declaration || !issues || issues.some((issue) => issue.function !== "save")) return [];
       const read = app.manifest.queries.find((query) => query.localId === declaration.read);
       if (!read?.stream) return [];
+      // A `save` that does not fit leaves a provider to choose from, not one to save into.
+      const save = issues.length === 0 ? app.manifest.actions.find((action) => action.localId === declaration.save) : undefined;
       return [
         {
           appId: app.appId,
@@ -82,6 +92,7 @@ export const fileProviderSources = (apps: readonly CapabilityCatalogApp[], local
           list: declaration.list,
           read: declaration.read,
           maxBytes: read.stream.maxBytes,
+          ...(save?.stream ? { save: { id: save.localId, maxBytes: save.stream.maxBytes } } : {}),
         },
       ];
     })
@@ -105,7 +116,7 @@ export const loadFileProviders = async (caller: FileProviderCaller, signal?: Abo
   return fileProviderSources(apps, caller.locale);
 };
 
-export type FileProviderPage = { items: FileProviderEntry[]; next: string | null };
+export type FileProviderPage = { items: FileProviderEntry[]; next: string | null; writable: boolean };
 
 /** One folder page. Without `parent` it is the provider's root. */
 export const listProviderFolder = async (
@@ -131,7 +142,7 @@ export const listProviderFolder = async (
     options(caller),
   );
   if (!result.ok) throw failure(result.error);
-  return { items: result.data.data.items, next: result.data.data.next };
+  return { items: result.data.data.items, next: result.data.data.next, writable: result.data.data.writable };
 };
 
 export type EntryProblem = "type" | "size";
@@ -217,4 +228,240 @@ export const eachLimited = async <T>(items: readonly T[], limit: number, work: (
     while (index < items.length) await work(items[index++]!);
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+};
+
+/** What a consumer offers to save: the bytes, or a same-origin URL the page reads them from with its session. */
+export type SaveFileSource = {
+  /** The file name to save under. Path separators and control characters become `_`. */
+  name: string;
+  /** The bytes, or a same-origin URL such as the app's own download route. */
+  content: Blob | string;
+  /** Defaults to the Blob's or the response's type, then `application/octet-stream`. */
+  mediaType?: string;
+  /** The size when it is known before reading, so a file above the provider's limit is refused before it downloads. */
+  size?: number;
+};
+
+/** A file the provider created, with the provider's `open` link when it returned one. */
+export type SavedProviderFile = { id: string; name: string; size: number; href?: string };
+
+const nameSchema = FileProviderSaveInputSchema.shape.name;
+/** Whether a provider accepts this as a file name: one path segment without control characters, not `.` or `..`. */
+export const isSaveableName = (name: string): boolean => nameSchema.safeParse(name).success;
+
+/** A name every provider accepts: separators and control characters become `_`, and an empty name becomes `file`. */
+export const saveableName = (name: string): string => {
+  const cleaned = name
+    .replace(/[/\\\u0000-\u001f\u007f]/g, "_")
+    .trim()
+    .slice(0, 255);
+  return isSaveableName(cleaned) ? cleaned : "file";
+};
+
+/** The name a conflict suggests next: `Report.pdf` becomes `Report (2).pdf`, and `Report (2).pdf` becomes `Report (3).pdf`. */
+export const nextFreeName = (name: string): string => {
+  const dot = name.lastIndexOf(".");
+  const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+  const numbered = /^(.*) \((\d{1,9})\)$/.exec(stem);
+  const [base, count] = numbered ? [numbered[1]!, Number(numbered[2]) + 1] : [stem, 2];
+  const suffix = ` (${count})${extension}`;
+  return `${base.slice(0, Math.max(1, 255 - suffix.length))}${suffix}`;
+};
+
+/** The contract takes a printable media type without parameters; anything else is sent as `application/octet-stream`. */
+const saveMediaType = (value: string | null | undefined): string => {
+  const type = value?.split(";", 1)[0]?.trim().toLowerCase();
+  return type && /^[\x21-\x7e]{1,255}$/.test(type) ? type : "application/octet-stream";
+};
+
+const tooLarge = () => new FileProviderError("FILE_TOO_LARGE", "The file is larger than allowed", 413);
+const offline = () => typeof navigator !== "undefined" && navigator.onLine === false;
+
+/**
+ * Reads what a consumer offers into a Blob, never more than `maxBytes`: a known `size` or `content-length` above it
+ * fails before any byte moves, and a body that grows past it is cancelled. Aborting the signal cancels the read.
+ */
+export const readSaveSource = async (
+  source: SaveFileSource,
+  options: Pick<CapabilityHttpOptions, "fetch"> & {
+    maxBytes: number;
+    signal?: AbortSignal;
+    onProgress?: (loaded: number, total: number) => void;
+  },
+): Promise<Blob> => {
+  if (source.content instanceof Blob) {
+    if (source.content.size > options.maxBytes) throw tooLarge();
+    const type = saveMediaType(source.mediaType ?? source.content.type);
+    return source.content.type === type ? source.content : new Blob([source.content], { type });
+  }
+  if (source.size !== undefined && source.size > options.maxBytes) throw tooLarge();
+  let response: Response;
+  try {
+    response = await (options.fetch ?? fetch)(source.content, { credentials: "same-origin", signal: options.signal });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    throw new FileProviderError("SOURCE_UNAVAILABLE", "The file could not be read", offline() ? 0 : 503);
+  }
+  if (!response.ok || !response.body) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new FileProviderError("SOURCE_UNAVAILABLE", `The file could not be read (status ${response.status})`, response.status);
+  }
+  const announced = Number(response.headers.get("content-length") ?? Number.NaN);
+  if (announced > options.maxBytes) {
+    await response.body.cancel().catch(() => undefined);
+    throw tooLarge();
+  }
+  const total = Number.isFinite(announced) && announced > 0 ? announced : (source.size ?? 0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let loaded = 0;
+  options.onProgress?.(0, total);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      options.signal?.throwIfAborted();
+      if (done) break;
+      loaded += value.byteLength;
+      if (loaded > options.maxBytes) throw tooLarge();
+      chunks.push(value);
+      options.onProgress?.(loaded, Math.max(total, loaded));
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    if (error instanceof FileProviderError || options.signal?.aborted) throw error;
+    throw new FileProviderError("SOURCE_UNAVAILABLE", "The file could not be read", offline() ? 0 : 503);
+  }
+  return new Blob(chunks, { type: saveMediaType(source.mediaType ?? response.headers.get("content-type")) });
+};
+
+const SaveResultSchema = capabilityResultSchema(FileProviderSaveDataSchema, { consumer: true });
+
+/**
+ * Sends a write stream's body. Browsers report upload progress only for XMLHttpRequest, so the page uses it; a caller
+ * with its own `fetch`, such as a test, sends through that transport instead.
+ */
+const sendWriteStream = (
+  stream: CapabilityStream,
+  body: Blob,
+  caller: FileProviderCaller,
+  signal: AbortSignal | undefined,
+  onProgress: (loaded: number) => void,
+): Promise<Response> => {
+  if (caller.fetch || typeof XMLHttpRequest === "undefined")
+    return transferCapabilityStream(stream, "write", { ...options(caller), body, signal });
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const abort = () => request.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    const settle = () => signal?.removeEventListener("abort", abort);
+    request.open("POST", `${(caller.baseUrl ?? "/api").replace(/\/$/, "")}/capabilities/v1/streams/write`);
+    request.setRequestHeader("x-cloud-stream-id", stream.id);
+    request.setRequestHeader("content-type", "application/octet-stream");
+    request.setRequestHeader(LOCALE_HEADER, caller.locale);
+    request.upload.onprogress = (event) => onProgress(event.loaded);
+    request.onload = () => {
+      settle();
+      if (request.status < 200 || request.status > 599) return reject(new TypeError("The write was interrupted"));
+      resolve(new Response(request.responseText, { status: request.status, headers: { "content-type": "application/json" } }));
+    };
+    request.onerror = () => {
+      settle();
+      reject(new TypeError("The write was interrupted"));
+    };
+    request.onabort = () => {
+      settle();
+      reject(signal?.reason ?? new DOMException("The write was cancelled", "AbortError"));
+    };
+    request.send(body);
+  });
+};
+
+/** A completed write's receipt: the provider's file and its `open` link. */
+const receipt = (data: unknown, name: string, size: number): SavedProviderFile => {
+  const parsed = SaveResultSchema.safeParse(data);
+  if (!parsed.success) throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned an invalid receipt", 502);
+  const file = parsed.data.data.file;
+  const href = parsed.data.links?.find((link) => link.rel === "open")?.href;
+  return { id: file?.id ?? "", name: file?.name ?? name, size: file?.size ?? size, ...(href ? { href } : {}) };
+};
+
+/** Core and gateways answer a write that broke off with these; whether the provider committed it is unknown. */
+const INTERRUPTED_WRITE = [499, 502, 504];
+
+/**
+ * Creates one file in a provider folder: the provider's `save` Action opens a write stream, the bytes follow, and the
+ * receipt names the file. A taken name fails with `FILE_PROVIDER_NAME_CONFLICT`, from the Action or from the write.
+ * `idempotencyKey` belongs to this name and folder: retrying with it never creates a second file. `onStream` reports
+ * that the Action opened a stream, so bytes may follow under this key. A write whose answer was lost, or that broke
+ * off with 499, 502, or 504, is looked up through the stream's status before it fails; a cancelled one is aborted.
+ */
+export const saveProviderFile = async (
+  provider: FileProviderSource,
+  input: { parent: string; name: string; body: Blob; idempotencyKey: string },
+  caller: FileProviderCaller & {
+    signal?: AbortSignal;
+    onStream?: () => void;
+    onProgress?: (loaded: number, total: number) => void;
+  },
+): Promise<SavedProviderFile> => {
+  if (!provider.save) throw new FileProviderError("NOT_FOUND", "This app does not store files", 404);
+  if (input.body.size > provider.save.maxBytes) throw tooLarge();
+  const opened = await invokeCapabilityWithDataSchema(
+    {
+      appId: provider.appId,
+      capabilityId: provider.save.id,
+      kind: "action",
+      input: { parent: input.parent, name: input.name, mediaType: saveMediaType(input.body.type), size: input.body.size },
+      idempotencyKey: input.idempotencyKey,
+      signal: caller.signal,
+    },
+    FileProviderSaveDataSchema,
+    options(caller),
+  );
+  if (!opened.ok) throw failure(opened.error);
+  const stream = opened.data.stream;
+  if (stream?.direction !== "write" || stream.size !== input.body.size)
+    throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned no matching write stream", 502);
+  caller.onStream?.();
+  const control = (verb: "status" | "abort") =>
+    transferCapabilityStream(stream, verb, { ...options(caller), signal: verb === "status" ? caller.signal : undefined });
+  const abort = () => void control("abort").catch(() => undefined);
+  caller.onProgress?.(0, stream.size);
+  let response: Response | undefined;
+  try {
+    response = await sendWriteStream(stream, input.body, caller, caller.signal, (loaded) => caller.onProgress?.(loaded, stream.size));
+  } catch (error) {
+    if (caller.signal?.aborted) {
+      abort();
+      throw error;
+    }
+  }
+  let lost = new FileProviderError("APP_UNAVAILABLE", "The file could not be saved", offline() ? 0 : 503);
+  if (response) {
+    const answer = await readCapabilityResponse(response, SaveResultSchema);
+    if (answer.ok) {
+      caller.onProgress?.(stream.size, stream.size);
+      return receipt(answer.data, input.name, input.body.size);
+    }
+    if (!INTERRUPTED_WRITE.includes(answer.error.status)) throw failure(answer.error);
+    lost = failure(answer.error);
+  }
+  // The bytes may have arrived and only the answer was lost; the stream's status knows.
+  const status = await control("status").then(
+    async (answer) => {
+      const body: unknown = await answer.json().catch(() => null);
+      return { ok: answer.ok, status: answer.status, body };
+    },
+    () => null,
+  );
+  const state = status?.ok ? CapabilityStreamStatusSchema.safeParse(status.body) : null;
+  if (state?.success && state.data.state === "completed") return receipt(state.data.result, input.name, input.body.size);
+  if (caller.signal?.aborted) {
+    abort();
+    throw caller.signal.reason;
+  }
+  // The status's own refusal, such as a taken name or a lost permission, says more than the interrupted write.
+  const refused = status && !status.ok ? CapabilityErrorSchema.safeParse(status.body) : null;
+  if (status && refused?.success) throw failure({ ...refused.data, status: status.status });
+  throw lost;
 };

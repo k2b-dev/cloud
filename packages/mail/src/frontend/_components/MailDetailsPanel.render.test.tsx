@@ -282,6 +282,8 @@ describe("Mail conversation detail panel", () => {
     expect(html).toContain('class="k2b-content-markdown');
     expect(html).toContain('href="/api/mail/mailboxes/Box001/messages/Msg001/attachments/Att001"');
     expect(html).toContain('download="review.pdf"');
+    // Beside each download, the attachment can be saved into an app that stores files.
+    expect(html).toContain('aria-label="Save review.pdf to…"');
     expect(html).toContain("Recent activity");
     expect(html).toContain("Mail details");
     expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="false"/g)).toHaveLength(2);

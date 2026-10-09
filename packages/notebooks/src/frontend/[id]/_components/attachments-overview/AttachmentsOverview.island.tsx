@@ -14,6 +14,7 @@
  * other notes stay broken by design (KISS — see dex task `vnzej6v5`).
  */
 
+import { SaveFilesButton } from "@k2b/cloud/browser/files";
 import { fileIcons } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
@@ -156,6 +157,18 @@ const AttachmentsOverview = (props: Props) => {
                       <i class="ti ti-download text-xs" />
                     </IconButton>
                   </Tooltip.Anchor>
+                  <SaveFilesButton
+                    size="xs"
+                    class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80 [&_i]:text-xs"
+                    files={() => [
+                      {
+                        name: att.filename,
+                        content: buildAttachmentContentUrl(props.notebookId, att.id),
+                        mediaType: att.mimeType,
+                        size: att.sizeBytes,
+                      },
+                    ]}
+                  />
                   <Tooltip.Anchor content={t().copyAttachmentMarkdown}>
                     <IconButton
                       label={t().copyNamedAttachmentMarkdown({ filename: att.filename })}

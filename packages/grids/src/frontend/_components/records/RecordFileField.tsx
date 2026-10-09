@@ -1,4 +1,4 @@
-import { chooseFiles } from "@k2b/cloud/browser/files";
+import { chooseFiles, SaveFilesButton } from "@k2b/cloud/browser/files";
 import { fileIcons, text } from "@k2b/stdlib";
 import {
   Button,
@@ -82,18 +82,26 @@ function RecordFilePreviewDialog(props: { location: RecordFileLocation; file: Gr
           mimeType: props.file.mimeType,
         })}`}
         actions={
-          <Tooltip.Anchor content={t().downloadFile}>
-            <IconButtonLink
-              variant="ghost"
+          <>
+            <SaveFilesButton
               size="sm"
-              href={downloadHref()}
-              download={props.file.filename}
-              label={t().downloadNamed({ name: props.file.filename })}
-            >
-              <i class="ti ti-download" aria-hidden="true" />
-              <span class="sr-only">{t().downloadNamed({ name: props.file.filename })}</span>
-            </IconButtonLink>
-          </Tooltip.Anchor>
+              files={() => [
+                { name: props.file.filename, content: downloadHref(), mediaType: props.file.mimeType, size: props.file.sizeBytes },
+              ]}
+            />
+            <Tooltip.Anchor content={t().downloadFile}>
+              <IconButtonLink
+                variant="ghost"
+                size="sm"
+                href={downloadHref()}
+                download={props.file.filename}
+                label={t().downloadNamed({ name: props.file.filename })}
+              >
+                <i class="ti ti-download" aria-hidden="true" />
+                <span class="sr-only">{t().downloadNamed({ name: props.file.filename })}</span>
+              </IconButtonLink>
+            </Tooltip.Anchor>
+          </>
         }
         close={props.close}
       />

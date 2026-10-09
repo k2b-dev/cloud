@@ -1,19 +1,15 @@
 import { fileIcons, text } from "@k2b/stdlib";
-import { timed } from "@k2b/stdlib/solid";
 import {
-  announce,
   Button,
   createCollectionSelection,
   FileDropTarget,
   FileGrid,
   Format,
-  IconButton,
   PanelDialog,
   Placeholder,
   ProgressBar,
   StatusBadge,
   type StatusTone,
-  TextInput,
   useLocale,
 } from "@k2b/ui";
 import { batch, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
@@ -28,10 +24,10 @@ import {
   type FileProviderCaller,
   FileProviderError,
   type FileProviderSource,
-  listProviderFolder,
   providerIcon,
   readProviderFile,
 } from "./file-providers";
+import { createProviderFolder, FolderContents, FolderToolbar } from "./provider-folder";
 
 export type ChooseFilesOptions = {
   /** `<input accept>` syntax, for example `"image/*,.pdf"`. */
@@ -50,8 +46,6 @@ export type ChooseFilesOptions = {
 export type FileProviderList = { state: "loading" } | { state: "ready"; providers: readonly FileProviderSource[] } | { state: "error" };
 
 type FileEntry = Extract<FileProviderEntry, { kind: "file" }>;
-type Crumb = { id?: string; name: string };
-type Location = { provider: FileProviderSource; trail: readonly Crumb[] } | null;
 type SourceRow = { id: string; name: string; icon: string; provider?: FileProviderSource };
 type Download = {
   entry: FileEntry;
@@ -63,9 +57,6 @@ type Download = {
   reason?: EntryProblem;
 };
 
-/** Empty pages may still continue; the chooser follows at most this many of them before it shows "Load more". */
-const EMPTY_PAGES_FOLLOWED = 5;
-
 const TAG_TONES: Record<NonNullable<FileProviderTag["tone"]>, StatusTone> = {
   neutral: "neutral",
   info: "info",
@@ -74,8 +65,8 @@ const TAG_TONES: Record<NonNullable<FileProviderTag["tone"]>, StatusTone> = {
   danger: "error",
 };
 
-const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-const entryIcon = (entry: FileProviderEntry) =>
+export const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const entryIcon = (entry: FileProviderEntry) =>
   providerIcon(entry.icon, `ti ${fileIcons.getFileIcon({ name: entry.name, type: entry.kind === "folder" ? "directory" : "file" })}`);
 
 /**
@@ -95,21 +86,21 @@ export function FileChooser(props: {
   let deviceInput: HTMLInputElement | undefined;
   let root: HTMLDivElement | undefined;
 
-  const [location, setLocation] = createSignal<Location>(null);
-  const [filter, setFilter] = createSignal("");
-  const [query, setQuery] = createSignal("");
-  const [items, setItems] = createSignal<FileProviderEntry[]>([]);
-  const [next, setNext] = createSignal<string | null>(null);
-  const [status, setStatus] = createSignal<"loading" | "ready" | "more" | "error">("ready");
-  const [error, setError] = createSignal<FileProviderError | null>(null);
+  /** After navigation the activated row is gone; give focus to the first row so the keyboard continues there. */
+  const refocus = () => {
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
+      const first = location() ? items()[0]?.id : sources()[0]?.id;
+      if (first) (location() ? selection : sourceSelection).focus(first);
+    });
+  };
+  const folder = createProviderFolder({ caller: props.caller, t, settled: refocus });
+  const { location, items, openFolder } = folder;
   const [downloads, setDownloads] = createStore<Download[]>([]);
   const [downloading, setDownloading] = createSignal(false);
-  let request: AbortController | undefined;
   let transfer: AbortController | undefined;
-  onCleanup(() => {
-    request?.abort();
-    transfer?.abort();
-  });
+  onCleanup(() => transfer?.abort());
 
   const budget = props.options.maxBytes ?? Number.POSITIVE_INFINITY;
   /** The largest single file: the consumer's budget or the provider's read limit, whichever is smaller. */
@@ -127,7 +118,7 @@ export function FileChooser(props: {
   const sources = createMemo<SourceRow[]>(() => {
     const list = props.providers();
     const rows = [device(), ...(list.state === "ready" ? list.providers.map(providerRow) : [])];
-    const needle = filter().trim().toLocaleLowerCase();
+    const needle = folder.filter().trim().toLocaleLowerCase();
     return needle ? rows.filter((row) => row.name.toLocaleLowerCase().includes(needle)) : rows;
   });
   // Sources open on activation and keep no selection, so Escape always closes the chooser from here.
@@ -145,106 +136,11 @@ export function FileChooser(props: {
   );
   const overBudget = () => chosen().reduce((sum, entry) => sum + entry.size, 0) > budget;
 
-  const folderName = () => location()?.trail.at(-1)?.name ?? t().sources;
-
-  const load = async (more = false) => {
-    const current = location();
-    if (!current) return;
-    request?.abort();
-    const pending = new AbortController();
-    request = pending;
-    if (!more) {
-      batch(() => {
-        setItems([]);
-        setNext(null);
-      });
-    }
-    setStatus(more ? "more" : "loading");
-    setError(null);
-    try {
-      let cursor = more ? (next() ?? undefined) : undefined;
-      let followed = 0;
-      for (;;) {
-        const page = await listProviderFolder(
-          current.provider,
-          { parent: current.trail.at(-1)?.id, query: query() || undefined, cursor },
-          props.caller(),
-          pending.signal,
-        );
-        if (pending.signal.aborted) return;
-        batch(() => {
-          setItems((previous) => [...previous, ...page.items]);
-          setNext(page.next);
-        });
-        if (items().length > 0 || !page.next || ++followed >= EMPTY_PAGES_FOLLOWED) break;
-        cursor = page.next;
-      }
-      setStatus("ready");
-      if (!more) {
-        announce(t().folderAnnounced({ folder: folderName(), count: items().length, more: Boolean(next()) }));
-        refocus();
-      }
-    } catch (cause) {
-      if (pending.signal.aborted) return;
-      setError(
-        cause instanceof FileProviderError ? cause : new FileProviderError("INTERNAL", cause instanceof Error ? cause.message : "", 500),
-      );
-      setStatus(more ? "ready" : "error");
-    }
-  };
-
-  /** After navigation the activated row is gone; give focus to the first row so the keyboard continues there. */
-  const refocus = () => {
-    queueMicrotask(() => {
-      const active = document.activeElement;
-      if (active && root?.contains(active) && active.isConnected && active.tagName !== "DIALOG") return;
-      const first = location() ? items()[0]?.id : sources()[0]?.id;
-      if (first) (location() ? selection : sourceSelection).focus(first);
-    });
-  };
-
-  const applyQuery = (value: string) => {
-    setQuery(value.trim());
-    void load();
-  };
-  const { debouncedFn: applyFilter, cancel: cancelFilter } = timed.debounce(applyQuery, 250);
-  const clearFilter = () => {
-    cancelFilter();
-    setFilter("");
-    if (location() && query()) applyQuery("");
-  };
-
-  const navigate = (next: Location) => {
-    cancelFilter();
-    request?.abort();
-    batch(() => {
-      setFilter("");
-      setQuery("");
-      setLocation(next);
-      setItems([]);
-      setNext(null);
-      setError(null);
-      setStatus(next ? "loading" : "ready");
-    });
-    if (next) void load();
-    else refocus();
-  };
-  const openProvider = (provider: FileProviderSource) => navigate({ provider, trail: [{ name: provider.name }] });
-  const openFolder = (entry: FileProviderEntry) => {
-    const current = location();
-    if (current) navigate({ provider: current.provider, trail: [...current.trail, { id: entry.id, name: entry.name }] });
-  };
-  const up = () => {
-    const current = location();
-    if (!current) return;
-    navigate(current.trail.length > 1 ? { provider: current.provider, trail: current.trail.slice(0, -1) } : null);
-  };
-
   const openSource = (row: SourceRow) => {
     sourceSelection.clear();
     // A click or key press on the row is the user activation the native picker needs.
     if (!row.provider) deviceInput?.click();
-    else openProvider(row.provider);
+    else folder.openProvider(row.provider);
   };
 
   const add = async () => {
@@ -302,18 +198,6 @@ export function FileChooser(props: {
   const ready = () => downloads.filter((item) => item.state === "done").length;
   const progress = () => t().downloading({ done: ready(), total: downloads.length, failed: failures() });
 
-  const errorView = createMemo(() => {
-    const value = error();
-    if (!value) return null;
-    const app = location()?.provider.name ?? "";
-    if (value.status === 0) return { title: t().offline, description: t().offlineHint, retry: true };
-    if (value.status === 403) return { title: t().noAccess, description: t().backHint, retry: false };
-    if (value.status === 404) return { title: t().notFound, description: t().backHint, retry: false };
-    if (value.status >= 502 || value.code === "APP_UNAVAILABLE")
-      return { title: t().unavailable({ app }), description: t().unavailableHint, retry: true };
-    return { title: t().loadFailed, description: value.message || undefined, retry: true };
-  });
-
   const renderTags = (tags: readonly FileProviderTag[] | undefined) => (
     <For each={tags ?? []}>
       {(tag) => <StatusBadge tone={TAG_TONES[tag.tone ?? "neutral"]} icon={null} label={tag.label} class="cloud-file-chooser__tag" />}
@@ -335,64 +219,7 @@ export function FileChooser(props: {
             if (files.length > 0) props.close(files);
           }}
         />
-        <div class="cloud-file-chooser__toolbar">
-          <nav class="cloud-file-chooser__crumbs" aria-label={t().breadcrumbs}>
-            <IconButton size="sm" variant="ghost" label={t().up} disabled={!location() || downloading()} onClick={up}>
-              <i class="ti ti-arrow-up" aria-hidden="true" />
-            </IconButton>
-            <ol>
-              <li>
-                <Button
-                  size="sm"
-                  variant={location() ? "text" : "subtle"}
-                  aria-current={location() ? undefined : "location"}
-                  disabled={downloading()}
-                  onClick={() => navigate(null)}
-                >
-                  {t().sources}
-                </Button>
-              </li>
-              <For each={location()?.trail ?? []}>
-                {(crumb, index) => {
-                  const last = () => index() === (location()?.trail.length ?? 0) - 1;
-                  return (
-                    <li>
-                      <span aria-hidden="true">/</span>
-                      <Button
-                        size="sm"
-                        variant={last() ? "subtle" : "text"}
-                        aria-current={last() ? "location" : undefined}
-                        disabled={downloading()}
-                        onClick={() => {
-                          const current = location();
-                          if (current && !last()) navigate({ provider: current.provider, trail: current.trail.slice(0, index() + 1) });
-                        }}
-                      >
-                        {crumb.name}
-                      </Button>
-                    </li>
-                  );
-                }}
-              </For>
-            </ol>
-          </nav>
-          <TextInput
-            class="cloud-file-chooser__filter"
-            type="search"
-            icon="ti ti-filter"
-            aria-label={t().filter}
-            placeholder={t().filter}
-            maxLength={200}
-            disabled={downloading()}
-            value={filter}
-            onValueChange={(value) => {
-              setFilter(value);
-              if (location()) applyFilter(value);
-            }}
-            clearable
-            onClear={clearFilter}
-          />
-        </div>
+        <FolderToolbar folder={folder} t={t} disabled={downloading()} sources />
         <PanelDialog.Body>
           <input
             ref={deviceInput}
@@ -469,113 +296,62 @@ export function FileChooser(props: {
                 </Match>
               </Switch>
             </Match>
-            <Match when={status() === "loading"}>
-              <Placeholder state="loading" variant="panel" class="cloud-file-chooser__state" description={t().loading} />
-            </Match>
-            <Match when={status() === "error" && errorView()}>
-              {(view) => (
-                <Placeholder
-                  state="error"
-                  variant="panel"
-                  class="cloud-file-chooser__state"
-                  title={view().title}
-                  description={view().description}
-                  action={
-                    view().retry ? (
-                      <Button size="sm" variant="secondary" onClick={() => void load()}>
-                        {t().retry}
-                      </Button>
-                    ) : (
-                      <Button size="sm" variant="secondary" onClick={up}>
-                        <i class="ti ti-arrow-up" aria-hidden="true" /> {t().up}
-                      </Button>
+            <Match when={true}>
+              <FolderContents folder={folder} t={t}>
+                <FileGrid
+                  rows={items()}
+                  getRowId={(entry) => entry.id}
+                  selection={selection}
+                  label={t().entries({ folder: folder.folderName() })}
+                  layout="list"
+                  renderPreview={(entry) => (
+                    <i
+                      class={`${selection.selected().has(entry.id) && entry.kind === "file" ? "ti ti-circle-check" : entryIcon(entry)} cloud-file-chooser__icon`}
+                      data-selected={selection.selected().has(entry.id) && entry.kind === "file" ? "true" : undefined}
+                      aria-hidden="true"
+                    />
+                  )}
+                  renderLabel={(entry) => <span title={entry.name}>{entry.name}</span>}
+                  renderMeta={(entry) =>
+                    entry.kind === "folder" && !entry.tags?.length ? null : (
+                      <span class="cloud-file-chooser__meta">
+                        <Switch>
+                          <Match when={entry.kind === "file" && problem(entry) === "size"}>
+                            <span>{t().tooLarge({ limit: text.pprintBytes(limit(), { locale: locale() }) })}</span>
+                          </Match>
+                          <Match when={entry.kind === "file" && problem(entry) === "type"}>
+                            <span>{t().wrongType}</span>
+                          </Match>
+                          <Match when={entry.kind === "file" ? entry : undefined}>
+                            {(file) => (
+                              <>
+                                <Format.Bytes value={file().size} />
+                                <Show when={file().updatedAt}>
+                                  {(updated) => (
+                                    <>
+                                      <span aria-hidden="true">·</span>
+                                      <Format.Date value={updated()} timeZone={localTimeZone()} />
+                                    </>
+                                  )}
+                                </Show>
+                              </>
+                            )}
+                          </Match>
+                        </Switch>
+                        {renderTags(entry.tags)}
+                      </span>
                     )
                   }
+                  onRowClick={(entry) => {
+                    if (entry.kind === "folder") openFolder(entry);
+                  }}
+                  onOpen={(entry) => {
+                    if (entry.kind === "folder") return openFolder(entry);
+                    if (!selection.selected().has(entry.id)) selection.toggle(entry.id);
+                    void add();
+                  }}
                 />
-              )}
-            </Match>
-            <Match when={items().length === 0 && !next()}>
-              <Show
-                when={query()}
-                fallback={<Placeholder variant="panel" class="cloud-file-chooser__state" icon="ti ti-folder" title={t().emptyFolder} />}
-              >
-                <Placeholder
-                  variant="panel"
-                  class="cloud-file-chooser__state"
-                  icon="ti ti-filter-off"
-                  title={t().noMatches({ query: query() })}
-                  action={
-                    <Button size="sm" variant="secondary" onClick={clearFilter}>
-                      {t().clearFilter}
-                    </Button>
-                  }
-                />
-              </Show>
-            </Match>
-            <Match when={true}>
-              <FileGrid
-                rows={items()}
-                getRowId={(entry) => entry.id}
-                selection={selection}
-                label={t().entries({ folder: folderName() })}
-                layout="list"
-                renderPreview={(entry) => (
-                  <i
-                    class={`${selection.selected().has(entry.id) && entry.kind === "file" ? "ti ti-circle-check" : entryIcon(entry)} cloud-file-chooser__icon`}
-                    data-selected={selection.selected().has(entry.id) && entry.kind === "file" ? "true" : undefined}
-                    aria-hidden="true"
-                  />
-                )}
-                renderLabel={(entry) => <span title={entry.name}>{entry.name}</span>}
-                renderMeta={(entry) =>
-                  entry.kind === "folder" && !entry.tags?.length ? null : (
-                    <span class="cloud-file-chooser__meta">
-                      <Switch>
-                        <Match when={entry.kind === "file" && problem(entry) === "size"}>
-                          <span>{t().tooLarge({ limit: text.pprintBytes(limit(), { locale: locale() }) })}</span>
-                        </Match>
-                        <Match when={entry.kind === "file" && problem(entry) === "type"}>
-                          <span>{t().wrongType}</span>
-                        </Match>
-                        <Match when={entry.kind === "file" ? entry : undefined}>
-                          {(file) => (
-                            <>
-                              <Format.Bytes value={file().size} />
-                              <Show when={file().updatedAt}>
-                                {(updated) => (
-                                  <>
-                                    <span aria-hidden="true">·</span>
-                                    <Format.Date value={updated()} timeZone={localTimeZone()} />
-                                  </>
-                                )}
-                              </Show>
-                            </>
-                          )}
-                        </Match>
-                      </Switch>
-                      {renderTags(entry.tags)}
-                    </span>
-                  )
-                }
-                onRowClick={(entry) => {
-                  if (entry.kind === "folder") openFolder(entry);
-                }}
-                onOpen={(entry) => {
-                  if (entry.kind === "folder") return openFolder(entry);
-                  if (!selection.selected().has(entry.id)) selection.toggle(entry.id);
-                  void add();
-                }}
-              />
-              <div class="cloud-file-chooser__more">
-                <Show when={error() && status() === "ready"}>
-                  <Placeholder state="error" variant="inline" align="left" description={errorView()?.title} />
-                </Show>
-                <Show when={next()}>
-                  <Button variant="secondary" size="sm" loading={status() === "more"} onClick={() => void load(true)}>
-                    {error() ? t().retry : t().loadMore}
-                  </Button>
-                </Show>
-              </div>
+              </FolderContents>
             </Match>
           </Switch>
         </PanelDialog.Body>

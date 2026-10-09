@@ -1,4 +1,4 @@
-import { chooseFiles } from "@k2b/cloud/browser/files";
+import { chooseFiles, SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
   ButtonLink,
   DetailPanel,
@@ -13,6 +13,7 @@ import {
   prompts,
   Tooltip,
   toast,
+  useLocale,
   VideoPlayer,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -39,6 +40,7 @@ export default function TaskAttachmentsSection(props: {
   onChanged: () => void;
 }) {
   const t = useSpaceMessages();
+  const locale = useLocale();
   const retryToast = createRetryToasts();
   const [attachments, setAttachments] = createSignal([...props.attachments]);
   const [uploading, setUploading] = createSignal(false);
@@ -52,6 +54,13 @@ export default function TaskAttachmentsSection(props: {
 
   const contentUrl = (attachment: SpaceItemAttachment, download = false) =>
     `/api/spaces/${encodeURIComponent(props.spaceId)}/items/${encodeURIComponent(props.itemId)}/attachments/${encodeURIComponent(attachment.id)}/content${download ? "?download=true" : ""}`;
+  /** "Save to Files" reads the same download the Download action serves. */
+  const saveSource = (attachment: SpaceItemAttachment): SaveFileSource => ({
+    name: attachment.filename,
+    content: contentUrl(attachment, true),
+    mediaType: attachment.mimeType,
+    size: attachment.sizeBytes,
+  });
   const isVideo = (attachment: SpaceItemAttachment) => isPlayableVideoType(attachment.mimeType);
   const images = createMemo(() => attachments().filter((attachment) => attachment.kind === "image"));
   /** Images and playable videos, in upload order; other files have no tile. */
@@ -61,6 +70,7 @@ export default function TaskAttachmentsSection(props: {
       src: contentUrl(attachment),
       alt: attachment.filename,
       downloadUrl: contentUrl(attachment, true),
+      actions: [{ label: saveFilesLabel(locale()), icon: SAVE_FILES_ICON, onClick: () => void saveFiles([saveSource(attachment)]) }],
     })),
   );
 
@@ -152,9 +162,12 @@ export default function TaskAttachmentsSection(props: {
           <PanelDialog.Header
             title={attachment.filename}
             actions={
-              <IconButtonLink size="sm" href={contentUrl(attachment, true)} download={attachment.filename} label={t.downloadAttachment}>
-                <i class="ti ti-download" aria-hidden="true" />
-              </IconButtonLink>
+              <>
+                <SaveFilesButton size="sm" files={() => [saveSource(attachment)]} />
+                <IconButtonLink size="sm" href={contentUrl(attachment, true)} download={attachment.filename} label={t.downloadAttachment}>
+                  <i class="ti ti-download" aria-hidden="true" />
+                </IconButtonLink>
+              </>
             }
             close={() => close()}
           />

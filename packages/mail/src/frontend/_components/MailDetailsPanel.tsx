@@ -1,4 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -783,16 +784,26 @@ export default function MailDetailsPanel(props: {
               <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>
                 <div class="flex flex-col gap-1">
                   <For each={attachments()}>
-                    {(attachment) => (
-                      <DetailPanel.Action
-                        href={`/api/mail/mailboxes/${props.mailboxId}/messages/${attachment.messageId}/attachments/${attachment.id}`}
-                        download={attachment.filename ?? "attachment"}
-                        leading={<i class="ti ti-paperclip" aria-hidden="true" />}
-                        title={attachment.filename ?? attachment.contentType}
-                        description={`${attachment.contentType} · ${formatFileViewSize(attachment.sizeBytes)}`}
-                        trailing={<i class="ti ti-download" aria-hidden="true" />}
-                      />
-                    )}
+                    {(attachment) => {
+                      const href = `/api/mail/mailboxes/${props.mailboxId}/messages/${attachment.messageId}/attachments/${attachment.id}`;
+                      const name = attachment.filename ?? "attachment";
+                      return (
+                        <DetailPanel.Action
+                          href={href}
+                          download={name}
+                          leading={<i class="ti ti-paperclip" aria-hidden="true" />}
+                          title={attachment.filename ?? attachment.contentType}
+                          description={`${attachment.contentType} · ${formatFileViewSize(attachment.sizeBytes)}`}
+                          trailing={<i class="ti ti-download" aria-hidden="true" />}
+                          secondaryAction={{
+                            icon: SAVE_FILES_ICON,
+                            label: saveFilesLabel(locale(), { name }),
+                            onClick: () =>
+                              void saveFiles([{ name, content: href, mediaType: attachment.contentType, size: attachment.sizeBytes }]),
+                          }}
+                        />
+                      );
+                    }}
                   </For>
                 </div>
               </DetailPanel.Section>

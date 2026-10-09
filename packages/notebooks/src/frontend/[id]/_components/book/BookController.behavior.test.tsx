@@ -57,6 +57,9 @@ describe("Book controller", () => {
     globalThis.fetch = Object.assign(
       (input: string | URL | Request, init?: RequestInit) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
+        // Only the notebook's own requests count: once the preview code loaded, the page's file-provider discovery
+        // asks the catalog when idle, at a moment no test controls.
+        if (!url.pathname.startsWith("/api/notebooks/")) return Promise.resolve(new Response(null, { status: 404 }));
         return new Promise<Response>((resolve) =>
           requests.push({ href: url.searchParams.get("href")!, path: url.pathname, signal: init?.signal, resolve }),
         );
@@ -229,7 +232,8 @@ describe("Book controller", () => {
     Object.defineProperties(app.article.querySelector("#image img")!, { complete: { value: true }, naturalWidth: { value: 640 } });
     try {
       expect(app.click("file").defaultPrevented).toBe(true);
-      await flush();
+      // The preview code loads on the first click; wait for it instead of guessing how long loading takes.
+      for (let attempt = 0; attempt < 100 && app.requests.length === 0; attempt++) await flush();
       // The stored type decides the preview, so the click reads it instead of loading another Book page.
       expect(app.requests.map((request) => request.path)).toEqual([`${content}/Att001`]);
       app.requests[0]!.resolve(

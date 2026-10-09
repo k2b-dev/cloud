@@ -314,7 +314,7 @@ const cloudPages: UiCatalogPage[] = [
     slug: "file-chooser",
     title: "Cloud file chooser",
     icon: "ti ti-paperclip",
-    summary: "Add files from this device or from any Cloud app that offers files, as ordinary File objects.",
+    summary: "Add files from this device or from any Cloud app that offers files, and save copies into apps such as Files.",
   },
 ];
 

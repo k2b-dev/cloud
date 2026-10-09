@@ -76,7 +76,7 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
-export type { LightboxImage } from "./Lightbox";
+export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";

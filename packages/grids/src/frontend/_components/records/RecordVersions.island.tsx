@@ -1,3 +1,4 @@
+import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -81,17 +82,26 @@ const openRevision = (props: { tableId: string; recordId: string; revision: Publ
           <Show when={props.revision.files.length > 0}>
             <PanelDialog.Section title={t().files} icon="ti ti-paperclip">
               <For each={props.revision.files}>
-                {(file) => (
-                  <DetailPanel.Action
-                    href={`/api/grids/records/${encodeURIComponent(props.tableId)}/${encodeURIComponent(props.recordId)}/versions/${encodeURIComponent(props.revision.id)}/files/${encodeURIComponent(file.id)}`}
-                    navigation="document"
-                    download={file.filename}
-                    title={file.filename}
-                    description={`${new Intl.NumberFormat(locale(), { maximumFractionDigits: file.sizeBytes < 1024 ? 1 : 0 }).format(file.sizeBytes / 1024)} KiB`}
-                    leading={<i class="ti ti-file" aria-hidden="true" />}
-                    trailing={<i class="ti ti-download" aria-hidden="true" />}
-                  />
-                )}
+                {(file) => {
+                  const href = `/api/grids/records/${encodeURIComponent(props.tableId)}/${encodeURIComponent(props.recordId)}/versions/${encodeURIComponent(props.revision.id)}/files/${encodeURIComponent(file.id)}`;
+                  return (
+                    <DetailPanel.Action
+                      href={href}
+                      navigation="document"
+                      download={file.filename}
+                      title={file.filename}
+                      description={`${new Intl.NumberFormat(locale(), { maximumFractionDigits: file.sizeBytes < 1024 ? 1 : 0 }).format(file.sizeBytes / 1024)} KiB`}
+                      leading={<i class="ti ti-file" aria-hidden="true" />}
+                      trailing={<i class="ti ti-download" aria-hidden="true" />}
+                      secondaryAction={{
+                        icon: SAVE_FILES_ICON,
+                        label: saveFilesLabel(locale(), { name: file.filename }),
+                        onClick: () =>
+                          void saveFiles([{ name: file.filename, content: href, mediaType: file.mimeType, size: file.sizeBytes }]),
+                      }}
+                    />
+                  );
+                }}
               </For>
             </PanelDialog.Section>
           </Show>

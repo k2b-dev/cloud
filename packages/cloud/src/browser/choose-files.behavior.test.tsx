@@ -25,17 +25,19 @@ const cancelDeviceDialog = (document: Document) => {
 domTest("a catalog refusal sends Attach to the device's dialog and asks again, so a renewed session finds its apps", async () => {
   const dom = createDomTestHarness();
   const { createFileChoosing } = await import("./choose-files");
+  const { createProviderList } = await import("./provider-list");
   const { FileProviderError } = await import("./file-providers");
   const answers = [() => Promise.reject(new FileProviderError("UNAUTHORIZED", "Sign in", 401)), () => Promise.resolve([drive])];
   let loads = 0;
-  const choosing = createFileChoosing(() => answers[loads++]!());
+  const providers = createProviderList(() => answers[loads++]!());
+  const chooseFiles = createFileChoosing(providers);
   try {
-    choosing.prefetch();
+    providers.prefetch();
     await settle();
     expect(loads).toBe(1);
 
     // Refused: no chooser that could only show an error, the device's dialog opens at once.
-    const refusedChoice = choosing.chooseFiles();
+    const refusedChoice = chooseFiles();
     expect(dom.document.querySelector("dialog[open]")).toBeNull();
     expect(cancelDeviceDialog(dom.document)).toBe(true);
     expect(await refusedChoice).toEqual([]);
@@ -44,7 +46,7 @@ domTest("a catalog refusal sends Attach to the device's dialog and asks again, s
     await settle();
 
     const controller = new AbortController();
-    const choice = choosing.chooseFiles({ signal: controller.signal });
+    const choice = chooseFiles({ signal: controller.signal });
     await settle();
     expect(dom.document.querySelector("dialog[open] .cloud-file-chooser")?.textContent).toContain("Drive");
     controller.abort();
@@ -58,16 +60,18 @@ domTest("a catalog refusal sends Attach to the device's dialog and asks again, s
 domTest("a catalog without file providers is asked once per page", async () => {
   const dom = createDomTestHarness();
   const { createFileChoosing } = await import("./choose-files");
+  const { createProviderList } = await import("./provider-list");
   let loads = 0;
-  const choosing = createFileChoosing(async () => {
+  const providers = createProviderList(async () => {
     loads++;
     return [];
   });
+  const chooseFiles = createFileChoosing(providers);
   try {
-    choosing.prefetch();
+    providers.prefetch();
     await settle();
     for (let attempt = 0; attempt < 2; attempt++) {
-      const choice = choosing.chooseFiles();
+      const choice = chooseFiles();
       expect(cancelDeviceDialog(dom.document)).toBe(true);
       expect(await choice).toEqual([]);
     }

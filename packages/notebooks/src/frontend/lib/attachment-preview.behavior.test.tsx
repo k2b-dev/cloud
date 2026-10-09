@@ -54,7 +54,9 @@ describe("Notebook attachment preview", () => {
     globalThis.fetch = Object.assign(
       (input: RequestInfo | URL) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
-        requests.push(`${url.pathname}${url.search}`);
+        // Only the notebook's own requests count: the page's file-provider discovery asks the catalog once idle,
+        // at a moment no test controls.
+        if (url.pathname.startsWith("/api/notebooks/")) requests.push(`${url.pathname}${url.search}`);
         const [, id, rest] = /^\/api\/notebooks\/nb0001\/attachments\/(\w+)(\/content)?$/.exec(url.pathname) ?? [];
         const meta = attachments.find((candidate) => candidate.id === id);
         if (!meta) return Promise.resolve(Response.json({ message: "Attachment not found" }, { status: 404 }));

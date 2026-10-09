@@ -18,6 +18,7 @@ Use `ZoomPanViewport` when content has detail that does not fit its box, such as
 import {
   Lightbox,
   PdfPreview,
+  type LightboxAction,
   type LightboxImage,
   type PdfPreviewProps,
   type PdfPreviewRequest,
@@ -33,6 +34,8 @@ import {
 ## Images
 
 Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. Pass a meaningful `alt` for informative images. Omit it only when the image is decorative.
+
+An image may also carry `actions`: further things to do with that image, each a short `label`, a Tabler `icon` class, and `onClick`. They sit before **Download** in the same style and show their label on wider screens. Cloud apps use one for **Save to Files**. Keep the list short; the bar holds a few buttons, not a menu.
 
 `initialIndex` selects the first visible image. The parent owns the open state and removes the component through `onClose`.
 
@@ -104,7 +107,10 @@ Without a height, the viewport takes the height of its content. Give it a height
 ```ts
 type LightboxImage = {
   src: string; alt?: string; downloadUrl?: string;
+  actions?: readonly LightboxAction[];
 };
+
+type LightboxAction = { label: string; icon: string; onClick: () => void };
 
 type PdfPreviewRequest = () => Promise<Response | Blob>;
 
@@ -141,7 +147,7 @@ type ZoomPanViewportProps = {
 
 ## Accessibility
 
-The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`.
+The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`. A dialog that an image action opens above the lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
 `PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a rendered document turns the loading state into the missing-viewer hint, the preview announces the hint politely. When a retry removes the focused retry action, focus moves to the open action once the document is shown; when the host leaves `actions` out, it waits in the viewer until the frame has loaded the document and then moves to the document; after another failure it moves to the retry of the new error state.
 

@@ -11,6 +11,9 @@ describe("record durable history UI contract", () => {
     expect(source).toContain("<DetailPanel.Section");
     expect(source).toContain("<DetailPanel.Action");
     expect(source).toContain("/versions/${encodeURIComponent(props.revision.id)}/files/");
+    // Each historical file can also be saved into an app that stores files, read from the same route.
+    expect(source).toContain("icon: SAVE_FILES_ICON");
+    expect(source).toContain("saveFiles([{ name: file.filename, content: href");
     expect(source).not.toContain("custom-app");
   });
 

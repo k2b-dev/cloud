@@ -1,3 +1,4 @@
+import { type SaveFileSource, SaveFilesButton } from "@k2b/cloud/browser/files";
 import { fileIcons } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -34,6 +35,14 @@ type Attachment = {
   contentType: string;
   sizeBytes: number;
 };
+
+/** What "Save to Files" reads: the attachment's own download route, with its known size. */
+const saveSource = (attachment: Attachment, downloadHref: string): SaveFileSource => ({
+  name: attachment.filename ?? "attachment",
+  content: downloadHref,
+  mediaType: attachment.contentType,
+  size: attachment.sizeBytes,
+});
 
 const attachmentFile = (attachment: Attachment) => ({
   path: attachment.filename ?? "attachment",
@@ -126,6 +135,7 @@ function MailAttachmentPreviewDialog(props: {
             <Show when={props.kind === "text" || props.kind === "delimited-text" || props.kind === "json"}>
               <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
             </Show>
+            <SaveFilesButton files={() => [saveSource(props.attachment, props.downloadHref)]} />
             <Tooltip.Anchor content={messages().downloadAttachment}>
               <IconButtonLink href={props.downloadHref} download={filename()} label={messages().downloadNamed({ name: filename() })}>
                 <i class="ti ti-download" aria-hidden="true" />
@@ -222,7 +232,17 @@ export default function MailMessageAttachments(props: {
 
   return (
     <div class="mt-4">
-      <p class="mb-1.5 text-xs font-medium text-dimmed">{messages().attachments}</p>
+      <div class="mb-1.5 flex items-center justify-between gap-2 pr-2">
+        <p class="text-xs font-medium text-dimmed">{messages().attachments}</p>
+        <Show when={props.attachments.length > 1}>
+          <SaveFilesButton
+            all
+            size="xs"
+            class="text-sm"
+            files={() => props.attachments.map((attachment) => saveSource(attachment, baseUrl(attachment)))}
+          />
+        </Show>
+      </div>
       <div class="flex flex-col gap-1.5">
         <For each={props.attachments}>
           {(attachment) => {
@@ -257,6 +277,7 @@ export default function MailMessageAttachments(props: {
                     <i class={`ti ${createLink.loading() ? "ti-loader-2 animate-spin" : "ti-link"}`} aria-hidden="true" />
                   </IconButton>
                 </Show>
+                <SaveFilesButton class="!h-7 !w-7 !p-0 text-sm" files={() => [saveSource(attachment, downloadHref)]} />
                 <IconButtonLink
                   class="!h-7 !w-7 !p-0 text-sm"
                   href={downloadHref}
