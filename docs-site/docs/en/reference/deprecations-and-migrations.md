@@ -10,6 +10,30 @@ updated: 2026-10-08
 
 # Deprecations and migrations
 
+## A failing island shows a notice instead of freezing
+
+Cloud now uses `@k2b/ssr` 0.15 and `@k2b/stdlib` 0.28. Each island mounts
+inside its own error boundary, and `defineApp` gives it Cloud's localized
+notice with **Try again**. See
+[When an island fails](/en/docs/frontend/islands-and-hydration#when-an-island-fails).
+Remove root `ErrorBoundary` wrappers that an island only had for protection.
+Dialogs and floating windows from `@k2b/ui` get their own boundary and notice.
+A dialog whose content throws while it opens no longer closes and rejects its
+promise; it shows the notice and resolves `undefined` once closed.
+
+Query and mutation state now describes only the load or the write. A component
+that throws while it renders a query's or mutation's data no longer sets
+`error()` or calls `onError`. `onSuccess` runs after `data()` and `loading()`
+are updated, and `mutate()` and `retry()` reject with an error thrown by
+`onSuccess`. Code that relied on `onError` for such errors moves that handling
+to `try`/`catch` around `await mutate()`. See
+[Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations#run-a-mutation).
+
+A `Link` from `@k2b/ssr/nav` without `onNavigate` is now a plain link with a
+full page load; `replace` and `scroll` apply only together with `onNavigate`.
+The `@k2b/ui` navigation components already pass `onNavigate` when they enhance
+navigation.
+
 ## AI provider behavior with Nessi 0.17
 
 Review AI model output limits and budgets when upgrading:

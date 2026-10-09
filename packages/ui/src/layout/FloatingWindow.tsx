@@ -2,6 +2,7 @@ import { createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from
 import { Portal, render } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
+import { RenderErrorBoundary } from "../internal/render-error";
 import { useUiMessages } from "../intl/messages";
 import { FLOATING_WINDOW_VIEWPORT_GAP, type FloatingWindowRect, fitFloatingWindowRect } from "./floating-window-geometry";
 
@@ -290,7 +291,7 @@ export const openFloatingWindow = (
   dispose = render(
     () => (
       <FloatingWindow {...options} resolveScope={options.resolveScope ?? (() => owner)} onClose={close}>
-        {view(close)}
+        <RenderErrorBoundary content={() => view(close)} />
       </FloatingWindow>
     ),
     owner,

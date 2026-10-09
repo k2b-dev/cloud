@@ -387,6 +387,9 @@ export const defineApp = <
     rootDir,
     componentRoots: [resolve(env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
     basePath: opts.basePath,
+    // Every island instance already mounts inside its own error boundary; this
+    // only gives the fallback Cloud's look and the reader's language.
+    errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
     template: ({ body, scripts, title, description, theme, lang, performanceRoute, pwa }) => {
       const themeFixed = theme !== undefined;
       // App pages paint the canvas before any stylesheet and give it to the

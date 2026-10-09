@@ -411,6 +411,8 @@ Prompts are browser interactions and must be called from hydrated code. Their co
 
 Do not call a prompt during server rendering. Await it from an event handler, then start the mutation only after a confirmed result.
 
+Each dialog is a Solid root of its own, outside the island that opened it, and has its own error boundary. When the content throws while it opens or on a later update, the dialog shows "This content could not be displayed." with **Close** in a plain small frame, also for a `bare` or custom panel class, and passes the error to `reportError()`. The page and the opening island keep working, and the promise resolves `undefined` when the notice closes. Do not wrap dialog content in an `ErrorBoundary` for protection.
+
 ## Example
 
 ```tsx

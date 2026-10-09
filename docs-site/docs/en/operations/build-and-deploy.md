@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Build and deploy
@@ -98,7 +98,7 @@ artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 
 The build precompresses supported static files with Brotli and gzip.
 
-SSR 0.14 serves island modules under an application-scoped version directory,
+SSR serves island modules under an application-scoped version directory,
 such as `/inventory/_ssr/<version>/<island>.js`. The files remain flat in
 `dist/_ssr/`; the SSR adapter resolves the URL and serves compressed siblings.
 Rebuild affected application images when updating SSR so entry modules and lazy

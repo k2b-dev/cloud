@@ -1,7 +1,8 @@
-import type { JSX } from "solid-js";
+import { createComponent, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
+import { RenderErrorBoundary } from "../internal/render-error";
 import { resolveUiMessages } from "../intl/messages";
 import { isPointInsideToast } from "./toast";
 
@@ -74,6 +75,8 @@ type DialogState = {
 
 const DEFAULT_PANEL_CLASS = "k2b-dialog";
 const DEFAULT_CONTENT_CLASS = "k2b-dialog__viewport";
+/** The frame of a dialog whose content could not render: a custom or bare surface may draw no frame of its own. */
+const RENDER_ERROR_PANEL_CLASS = "k2b-dialog k2b-dialog--small";
 let nextDialogTitleId = 0;
 /** The history state key that marks a dialog's same-URL entry. */
 const HISTORY_MARKER = "k2bDialog";
@@ -439,20 +442,29 @@ export const createDialogCore = (): DialogCore => {
       try {
         entry.dispose = render(
           () =>
-            view(closeTyped, {
-              dialog,
-              setModal: (modal) => {
-                entry.modal = modal;
-                applyPresentation(entry);
-              },
-              setPosition: (position) => {
-                if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
-                entry.position = position;
-                applyPresentation(entry);
-              },
-              requestDismiss: () => requestDismiss(entry),
-              setDismissHandler: (handler) => {
-                entry.dismissHandler = handler;
+            createComponent(RenderErrorBoundary, {
+              content: () =>
+                view(closeTyped, {
+                  dialog,
+                  setModal: (modal) => {
+                    entry.modal = modal;
+                    applyPresentation(entry);
+                  },
+                  setPosition: (position) => {
+                    if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) return;
+                    entry.position = position;
+                    applyPresentation(entry);
+                  },
+                  requestDismiss: () => requestDismiss(entry),
+                  setDismissHandler: (handler) => {
+                    entry.dismissHandler = handler;
+                  },
+                }),
+              onClose: () => closeTyped(undefined),
+              onError: () => {
+                entry.panelClassName = RENDER_ERROR_PANEL_CLASS;
+                container.className = DEFAULT_CONTENT_CLASS;
+                if (state.stack[state.stack.length - 1] === entry) dialog.className = RENDER_ERROR_PANEL_CLASS;
               },
             }),
           container,

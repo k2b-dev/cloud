@@ -5,7 +5,7 @@ section: Frontend
 order: 850
 description: Call typed application APIs and handle user-initiated writes consistently.
 tags: [browser, api, mutations]
-updated: 2026-10-04
+updated: 2026-10-08
 ---
 
 # Browser clients and mutations
@@ -91,6 +91,14 @@ different payload.
 `onSuccess`, `onError`, `onAbort`, and `onFinally` are synchronous hooks. Their
 return values are not awaited. Put work that defines the command outcome in the
 mutation function. Track post-write reconciliation separately.
+
+`error()` and `onError` report only a failed mutation function. `onSuccess`
+runs after `data()` and `loading()` are updated; an error thrown there, or by a
+component that renders the result, does not count as a failed write. A render
+error reaches the island's boundary
+([When an island fails](/en/docs/frontend/islands-and-hydration#when-an-island-fails)),
+and `mutate()` and `retry()` reject with the remaining ones. Await `mutate()`
+in `try`/`catch` only when the caller must react to such an error.
 
 ## Add optimistic state carefully
 

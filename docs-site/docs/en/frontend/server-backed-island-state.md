@@ -5,7 +5,7 @@ section: Frontend
 order: 855
 description: Keep an authorized SSR snapshot current with owner-local Solid queries, pagination, mutations, and live invalidation.
 tags: [frontend, solidjs, queries, state]
-updated: 2026-10-04
+updated: 2026-10-08
 ---
 
 # Keep server-backed island state current
@@ -119,6 +119,11 @@ Use the query states deliberately:
 - `stale()` means visible data is not yet confirmed for the current source or
   invalidation;
 - `error()` reports the latest failed load.
+
+`error()` belongs to the load. When a component throws while it renders the
+committed data, the query stays committed and `error()` stays empty; the
+error reaches the island's boundary instead. See
+[When an island fails](/en/docs/frontend/islands-and-hydration#when-an-island-fails).
 
 Existing data does not make a refresh error irrelevant. Show a visible retry
 or warning when stale data remains, especially before a revision-sensitive
