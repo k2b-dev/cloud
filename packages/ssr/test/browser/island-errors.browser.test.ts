@@ -1,10 +1,11 @@
 import { afterAll, afterEach, expect, mock, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
+import { makeTempRoot } from "../temp-root";
 
-const root = mkdtempSync(join(process.cwd(), ".ssr-island-errors-"));
+const root = makeTempRoot(".ssr-island-errors-");
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const tempRoots: string[] = [];
@@ -65,7 +66,7 @@ test("one instance failing on first render does not blank or block the others", 
 });
 
 const buildTogether = async (files: Record<string, string>, options: { dev?: boolean; errorFallback?: string } = {}) => {
-  const directory = mkdtempSync(join(process.cwd(), ".ssr-island-errors-"));
+  const directory = makeTempRoot(".ssr-island-errors-");
   tempRoots.push(directory);
   for (const [name, source] of Object.entries(files)) writeFileSync(join(directory, name), source);
   const outdir = join(directory, "_ssr");

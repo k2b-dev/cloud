@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { routes as honoRoutes } from "../../src/adapter/hono";
 import { buildIslands, dedupeSharedChunkExports } from "../../src/build";
 import { createConfig } from "../../src/index";
 import { islandIdFromFile } from "../../src/island-id";
+import { makeTempRoot as makeRoot } from "../temp-root";
 
 const tempRoots: string[] = [];
 
 const makeTempRoot = (): string => {
-  const root = mkdtempSync(join(process.cwd(), ".ssr-build-test-"));
+  const root = makeRoot(".ssr-build-test-");
   tempRoots.push(root);
   return root;
 };

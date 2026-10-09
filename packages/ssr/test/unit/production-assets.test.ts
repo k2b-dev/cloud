@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
+import { makeTempRoot } from "../temp-root";
 
 test("production adapters preserve one module URL through lazy imports", async () => {
-  const root = mkdtempSync(join(process.cwd(), ".ssr-production-test-"));
+  const root = makeTempRoot(".ssr-production-test-");
   try {
     const source = join(root, "Counter.island.tsx");
     writeFileSync(
