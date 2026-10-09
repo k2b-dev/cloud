@@ -76,6 +76,26 @@ describe("proposeTemplateDates", () => {
     ]);
   });
 
+  test("today is judged by the instant the template time resolves to, also in daylight-saving hours", () => {
+    const sunday = { type: "weekdays" as const, weekdays: ["SU" as const] };
+    // 2026-10-25 02:15 CET, after the repeated hour: 02:30 resolves to its first occurrence, 00:30Z, already past.
+    expect(
+      proposeTemplateDates(task({ dateRule: sunday, timeOfDay: "02:30" }), {
+        now: new Date("2026-10-25T01:15:00Z"),
+        timeZone: BERLIN,
+        count: 1,
+      }),
+    ).toEqual(["2026-11-01"]);
+    // 2027-03-28 03:00 CEST, just after the skipped hour: 02:30 moves forward to 01:30Z, still ahead.
+    expect(
+      proposeTemplateDates(task({ dateRule: sunday, timeOfDay: "02:30" }), {
+        now: new Date("2027-03-28T01:00:00Z"),
+        timeZone: BERLIN,
+        count: 1,
+      }),
+    ).toEqual(["2027-03-28"]);
+  });
+
   test("the person's time zone decides which day today is", () => {
     const now = new Date("2026-10-13T23:30:00Z"); // Wednesday 01:30 in Berlin, Tuesday 19:30 in New York
     const template = task({ dateRule: { type: "weekdays", weekdays: ["TU", "WE"] } });
@@ -175,6 +195,17 @@ describe("draftFromTemplate", () => {
       deadline: "2026-10-14T15:00:00.000Z",
     });
     expect(draftFromTemplate(event({ checklist: ["x"] }), { date: null, timeZone: BERLIN }).checklist).toEqual([]);
+  });
+
+  test("filled-in text stops at the item limits", () => {
+    const draft = draftFromTemplate(task({ title: "{{date}}".repeat(25), description: "{{date}}".repeat(625) }), {
+      date: "2026-10-14",
+      timeZone: BERLIN,
+      locale: "de",
+    });
+    expect(draft.title).toHaveLength(200);
+    expect(draft.title.startsWith("14.10.2026")).toBeTrue();
+    expect(draft.description).toHaveLength(5000);
   });
 
   test("a task without a date has no deadline and fills placeholders with today", () => {

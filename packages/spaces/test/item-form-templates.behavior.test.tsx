@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { ItemFormData } from "../src/frontend/[id]/_components/shared/ItemForm";
 import { templateDraftSource } from "../src/frontend/[id]/_components/shared/item-form/templates";
-import { formatTemplateDate, proposeTemplateDates, templateSchedule } from "../src/presentation/item-templates";
+import { addCalendarDays, formatTemplateDate, localNow, proposeTemplateDates, templateSchedule } from "../src/presentation/item-templates";
 
 const SPACE_ID = "Space1";
 const TIME_ZONE = "Europe/Berlin";
@@ -57,6 +58,20 @@ const review: SpaceItemTemplate = {
   timeOfDay: "10:00",
   dateRule: { type: "offset", days: 2 },
 };
+const offsite: SpaceItemTemplate = {
+  ...review,
+  id: "Tpl004",
+  name: "Offsite",
+  title: "Offsite {{date}}",
+  location: null,
+  durationMinutes: null,
+  timeOfDay: null,
+  allDay: true,
+};
+
+/** The weekday a placeholder shows for a local date. */
+const weekdayOf = (date: string) =>
+  new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
 
 afterEach(() => mock.restore());
 
@@ -67,7 +82,12 @@ describe("Spaces templates in the new item dialog", () => {
   }
 
   const open = async (
-    options: { type?: "task" | "event"; templates?: SpaceItemTemplate[]; defaults?: { startsAt: string; endsAt: string } } = {},
+    options: {
+      type?: "task" | "event";
+      templates?: SpaceItemTemplate[];
+      defaults?: { startsAt: string; endsAt: string };
+      timeZone?: string;
+    } = {},
   ) => {
     const dom = createDomTestHarness();
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
@@ -81,7 +101,7 @@ describe("Spaces templates in the new item dialog", () => {
           templates: options.templates ?? [weekly, notes, review],
           quickCreate: true,
           defaults: { type: options.type ?? "task", ...options.defaults },
-          dateConfig: { timeZone: TIME_ZONE, locale: "en" },
+          dateConfig: { timeZone: options.timeZone ?? TIME_ZONE, locale: "en" },
           onSubmit: (data) => {
             submitted.push(data);
           },
@@ -109,7 +129,11 @@ describe("Spaces templates in the new item dialog", () => {
       dispose();
       dom.cleanup();
     };
-    return { dom, radio, input, type, submit, submitted, close };
+    const button = (label: string, scope: ParentNode = dom.root) =>
+      [...scope.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent?.trim() === label)!;
+    const allDaySwitch = () => dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+    const title = () => input('input[placeholder="What needs to be done?"], input[placeholder="Event title"]').value;
+    return { dom, radio, input, type, submit, submitted, close, button, allDaySwitch, title };
   };
 
   test("a Space without templates of the kind keeps today's dialog", async () => {
@@ -212,6 +236,87 @@ describe("Spaces templates in the new item dialog", () => {
     expect(view.submitted[0]).toMatchObject({ title: "Review", startsAt: schedule.startsAt, endsAt: schedule.endsAt, location: "Room 2" });
     expect(view.submitted[0]?.checklist).toBeUndefined();
     view.close();
+  });
+
+  for (const timeZone of ["UTC", "America/New_York", "Europe/Berlin"]) {
+    test(`an all-day event template keeps its day in ${timeZone}`, async () => {
+      const view = await open({ type: "event", templates: [offsite], timeZone });
+      view.radio("Template", "Offsite")!.click();
+      await Promise.resolve();
+      const [date] = proposeTemplateDates(offsite, { now: new Date(), timeZone });
+      view.submit();
+      await Promise.resolve();
+      const schedule = templateSchedule(templateDraftSource(offsite), date!, timeZone);
+      expect(view.dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(view.submitted[0]).toMatchObject({ startsAt: schedule.startsAt, endsAt: schedule.endsAt, allDay: true });
+      view.close();
+    });
+  }
+
+  test("turning all-day off and on again keeps the template's day", async () => {
+    const timeZone = "America/New_York";
+    const local = (date: string, time: string) => dates.zonedDateTimeToInstant(`${date}T${time}`, timeZone);
+    const view = await open({ type: "event", templates: [offsite], timeZone });
+    view.radio("Template", "Offsite")!.click();
+    await Promise.resolve();
+    const [date] = proposeTemplateDates(offsite, { now: new Date(), timeZone });
+    view.allDaySwitch().click();
+    view.submit();
+    await Promise.resolve();
+    expect(view.submitted[0]).toMatchObject({ startsAt: local(date!, "09:00"), endsAt: local(date!, "10:00"), allDay: false });
+
+    view.allDaySwitch().click();
+    view.submit();
+    await Promise.resolve();
+    expect(view.submitted[1]).toMatchObject({
+      startsAt: local(date!, "00:00"),
+      endsAt: local(addCalendarDays(date!, 1), "00:00"),
+      allDay: true,
+    });
+    view.close();
+  });
+
+  test("an all-day range from the picker keeps its days west of UTC", async () => {
+    const timeZone = "America/New_York";
+    const view = await open({ type: "event", templates: [], timeZone });
+    view.type('input[placeholder="Event title"]', "Offsite");
+    view.allDaySwitch().click();
+    view.button("Tomorrow").click();
+    view.button("Apply").click();
+    view.submit();
+    await Promise.resolve();
+    const tomorrow = addCalendarDays(localNow(new Date(), timeZone).date, 1);
+    expect(view.submitted[0]).toMatchObject({
+      startsAt: dates.zonedDateTimeToInstant(`${tomorrow}T00:00`, timeZone),
+      endsAt: dates.zonedDateTimeToInstant(`${addCalendarDays(tomorrow, 1)}T00:00`, timeZone),
+      allDay: true,
+    });
+    view.close();
+  });
+
+  test("untouched placeholders follow No date, the deadline picker, and the event range", async () => {
+    const today = localNow(new Date(), TIME_ZONE).date;
+    const task = await open();
+    task.radio("Template", "Weekly report")!.click();
+    await Promise.resolve();
+    task.radio("Due", "No date")!.click();
+    expect(task.title()).toBe(`Weekly report ${weekdayOf(today)}`);
+    task.radio("Due", "Other date…")!.click();
+    task.button("Tomorrow").click();
+    expect(task.title()).toBe(`Weekly report ${weekdayOf(addCalendarDays(today, 1))}`);
+    // Own text stays.
+    task.type('input[placeholder="What needs to be done?"]', "My report");
+    task.button("Today").click();
+    expect(task.title()).toBe("My report");
+    task.close();
+
+    const event = await open({ type: "event", templates: [{ ...review, title: "Review {{weekday}}" }] });
+    event.radio("Template", "Review")!.click();
+    await Promise.resolve();
+    event.button("Tomorrow").click();
+    event.button("Apply").click();
+    expect(event.title()).toBe(`Review ${weekdayOf(addCalendarDays(today, 1))}`);
+    event.close();
   });
 
   test("an event from a calendar slot keeps the slot until a proposal is chosen", async () => {

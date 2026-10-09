@@ -1,5 +1,12 @@
 import { dates, i18n } from "@k2b/stdlib";
-import type { Priority, SpaceItemTemplate, TemplateDateRule, TemplateWeekday } from "../contracts";
+import {
+  MAX_ITEM_DESCRIPTION_LENGTH,
+  MAX_ITEM_TITLE_LENGTH,
+  type Priority,
+  type SpaceItemTemplate,
+  type TemplateDateRule,
+  type TemplateWeekday,
+} from "../contracts";
 
 /**
  * Item templates turn into create requests here, for the browser, the API, capabilities, and `cld` alike. Everything
@@ -110,7 +117,8 @@ const toInstant = (date: string, time: string, timeZone: string): string =>
 
 /**
  * The dates a template proposes, earliest first: the next `count` matching weekdays, today plus the offset, or none.
- * Today only counts while the template's time still lies ahead; an all-day event keeps today for the whole day.
+ * For weekdays, today only counts while the template's time still lies ahead, compared as instants so a time in a
+ * skipped or repeated daylight-saving hour is judged by when it really happens; an all-day event keeps today all day.
  */
 export const proposeTemplateDates = (template: TemplateTiming, options: { now: Date; timeZone: string; count?: number }): string[] => {
   const rule = template.dateRule;
@@ -119,7 +127,9 @@ export const proposeTemplateDates = (template: TemplateTiming, options: { now: D
   if (rule.type === "offset") return [addCalendarDays(today.date, rule.days)];
   const wanted = new Set(rule.weekdays.map((weekday) => WEEKDAY_INDEX[weekday]));
   const count = options.count ?? TEMPLATE_PROPOSAL_COUNT;
-  const todayStillOpen = (template.kind === "event" && template.allDay) || today.time < templateTime(template);
+  const todayStillOpen =
+    (template.kind === "event" && template.allDay) ||
+    options.now.getTime() < new Date(toInstant(today.date, templateTime(template), options.timeZone)).getTime();
   const proposals: string[] = [];
   // Seven days hold every weekday once, so `count` matches lie within `count` weeks.
   for (let offset = todayStillOpen ? 0 : 1; proposals.length < count && offset <= count * 7; offset++) {
@@ -141,6 +151,18 @@ export const resolveTemplateText = (text: string, options: { date: string; local
     if (name === "weekday") return formatLocalDate(options.date, options.locale, { weekday: "long" });
     return String(isoWeek(options.date));
   });
+
+/**
+ * The title and description of a new item for `date`. A placeholder can be longer than the date it stands for, so
+ * both stop at the item limits and every filled template stays a valid create request.
+ */
+export const templateText = (
+  template: Pick<SpaceItemTemplate, "title" | "description">,
+  options: { date: string; locale?: string },
+): { title: string; description: string } => ({
+  title: resolveTemplateText(template.title, options).trim().slice(0, MAX_ITEM_TITLE_LENGTH),
+  description: template.description ? resolveTemplateText(template.description, options).slice(0, MAX_ITEM_DESCRIPTION_LENGTH) : "",
+});
 
 // ---------- Drafts ----------
 
@@ -176,10 +198,9 @@ export const draftFromTemplate = (
   options: { date: string | null; timeZone: string; locale?: string; now?: Date },
 ): TemplateItemDraft => {
   const textDate = options.date ?? localNow(options.now ?? new Date(), options.timeZone).date;
-  const text = (value: string) => resolveTemplateText(value, { date: textDate, locale: options.locale });
-  const description = template.description ? text(template.description) : "";
+  const { title, description } = templateText(template, { date: textDate, locale: options.locale });
   return {
-    title: text(template.title).trim(),
+    title,
     ...(description.trim() ? { description } : {}),
     ...(template.priority ? { priority: template.priority } : {}),
     tagIds: [...template.tagIds],

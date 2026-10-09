@@ -4,6 +4,7 @@ import {
   ChoiceChips,
   DatePicker,
   DateRangePicker,
+  type DateRangeValue,
   DateTimePicker,
   MultiSelectInput,
   NumberInput,
@@ -22,9 +23,10 @@ import {
   describeTemplateDateRule,
   draftFromTemplate,
   formatTemplateDate,
+  localNow,
   proposeTemplateDates,
-  resolveTemplateText,
   templateSchedule,
+  templateText,
 } from "@/presentation/item-templates";
 import {
   emptyRecurrenceState,
@@ -127,21 +129,24 @@ export default function ItemForm(props: ItemFormProps) {
       return;
     }
     if (!date) return;
-    // The form keeps all-day ranges as inclusive calendar dates and timed ranges as instants.
     setAllDay(template.allDay);
-    setStartsAt(template.allDay ? date : (schedule.startsAt ?? ""));
-    setEndsAt(template.allDay ? date : (schedule.endsAt ?? ""));
+    setStartsAt(schedule.startsAt ?? "");
+    setEndsAt(schedule.endsAt ?? "");
   };
 
+  /** Fills the template's text for `date`; null means the event's day, or today for a task without a date. */
   const fillText = (date: string | null) => {
     const template = selectedTemplate();
     if (!template) return;
-    const textDate = date ?? datePart(startsAt() || new Date().toISOString(), props.dateConfig);
-    const nextTitle = resolveTemplateText(template.title, { date: textDate, locale: locale() }).trim();
-    const nextDescription = template.description ? resolveTemplateText(template.description, { date: textDate, locale: locale() }) : "";
-    setTitle(nextTitle);
-    setDescription(nextDescription);
-    applied = { title: nextTitle, description: nextDescription };
+    const eventDay = template.kind === "event" && startsAt() ? datePart(startsAt(), props.dateConfig) : null;
+    const text = templateText(template, { date: date ?? eventDay ?? localNow(new Date(), timeZone()).date, locale: locale() });
+    setTitle(text.title);
+    setDescription(text.description);
+    applied = text;
+  };
+  /** Untouched placeholders follow every date change, from a chip or from a picker. */
+  const followDate = (date: string | null) => {
+    if (!ownInput()) fillText(date);
   };
 
   const chooseTemplate = async (id: string) => {
@@ -196,10 +201,29 @@ export default function ItemForm(props: ItemFormProps) {
     if (choice === OTHER_DATE) return;
     if (choice === NO_DATE) {
       setDeadline("");
+      followDate(null);
       return;
     }
     applySchedule(choice);
-    if (!ownInput()) fillText(choice);
+    followDate(choice);
+  };
+  const changeDeadline = (value: string | null) => {
+    setDeadline(value ?? "");
+    setError("");
+    followDate(value ? datePart(value, props.dateConfig) : null);
+  };
+  /**
+   * The form keeps event times as instants and an all-day range as local midnights with an exclusive end, the way
+   * items store them; the picker shows and returns an all-day range as inclusive calendar dates.
+   */
+  const changeEventRange = (value: DateRangeValue) => {
+    const start = value.start && allDay() ? allDayStart(value.start, props.dateConfig) : value.start;
+    const end = value.end && allDay() ? allDayEnd(value.end, props.dateConfig) : value.end;
+    setStartsAt(start ?? "");
+    setEndsAt(end ?? "");
+    setDateChoice(null);
+    setError("");
+    if (start) followDate(datePart(start, props.dateConfig));
   };
 
   const templateOptions = (): { value: string; label: string; icon?: string }[] => [
@@ -292,15 +316,15 @@ export default function ItemForm(props: ItemFormProps) {
 
   const handleAllDayChange = (enabled: boolean) => {
     if (enabled === allDay()) return;
+    // Both directions read the range as calendar days, so the exclusive all-day end never adds a day.
+    const days = dateOnlyRange(startsAt(), endsAt(), props.dateConfig);
+    const lastDay = days.end ?? days.start;
     if (enabled) {
-      const nextRange = dateOnlyRange(startsAt(), endsAt(), props.dateConfig);
-      setStartsAt(nextRange.start ?? "");
-      setEndsAt(nextRange.end ?? nextRange.start ?? "");
-    } else if (startsAt()) {
-      const start = instantFromLocalDateTime(datePart(startsAt(), props.dateConfig), "09:00", props.dateConfig);
-      const end = instantFromLocalDateTime(datePart(endsAt() || startsAt(), props.dateConfig), "10:00", props.dateConfig);
-      setStartsAt(start);
-      setEndsAt(end);
+      setStartsAt(days.start ? allDayStart(days.start, props.dateConfig) : "");
+      setEndsAt(lastDay ? allDayEnd(lastDay, props.dateConfig) : "");
+    } else if (days.start) {
+      setStartsAt(instantFromLocalDateTime(days.start, "09:00", props.dateConfig));
+      setEndsAt(instantFromLocalDateTime(days.end ?? days.start, "10:00", props.dateConfig));
     }
     setAllDay(enabled);
     setError("");
@@ -490,7 +514,7 @@ export default function ItemForm(props: ItemFormProps) {
                         label={t.deadline}
                         description={!isEditMode() ? t.deadlineDescription : undefined}
                         value={() => deadline() || null}
-                        onValueChange={(value) => setDeadline(value ?? "")}
+                        onValueChange={changeDeadline}
                         dateConfig={props.dateConfig}
                         presets={deadlinePresets(props.dateConfig)}
                         clearable
@@ -516,12 +540,7 @@ export default function ItemForm(props: ItemFormProps) {
                       label={t.schedule}
                       description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
                       value={eventRange}
-                      onValueChange={(value) => {
-                        setStartsAt(value.start ?? "");
-                        setEndsAt(value.end ?? "");
-                        setDateChoice(null);
-                        setError("");
-                      }}
+                      onValueChange={changeEventRange}
                       dateConfig={props.dateConfig}
                       datePresets={scheduleDatePresets(props.dateConfig)}
                       durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
@@ -778,7 +797,7 @@ export default function ItemForm(props: ItemFormProps) {
                 <DateTimePicker
                   label={t.deadline}
                   value={() => deadline() || null}
-                  onValueChange={(value) => setDeadline(value ?? "")}
+                  onValueChange={changeDeadline}
                   dateConfig={props.dateConfig}
                   presets={deadlinePresets(props.dateConfig)}
                   clearable
@@ -797,12 +816,7 @@ export default function ItemForm(props: ItemFormProps) {
                   label={t.schedule}
                   description={allDay() ? t.calendarDaysDescription : t.startAndEnd}
                   value={eventRange}
-                  onValueChange={(value) => {
-                    setStartsAt(value.start ?? "");
-                    setEndsAt(value.end ?? "");
-                    setDateChoice(null);
-                    setError("");
-                  }}
+                  onValueChange={changeEventRange}
                   dateConfig={props.dateConfig}
                   datePresets={scheduleDatePresets(props.dateConfig)}
                   durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}

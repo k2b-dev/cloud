@@ -363,7 +363,9 @@ export const SpaceItemTemplateSchema = z.object({
   description: z.string().nullable().describe("Default description (markdown); may contain the same placeholders"),
   priority: PrioritySchema.nullable().describe("Default priority"),
   tags: z.array(SpaceTagSchema).describe("Default tags"),
-  assignees: z.array(SpaceItemAssigneeSchema).describe("Default assignees"),
+  assignees: z
+    .array(SpaceItemAssigneeSchema)
+    .describe("Default assignees who can access the Space; one who loses access drops out until it returns"),
   assignCreator: z.boolean().describe("Also assign the person who creates the item"),
   checklist: z.array(z.string()).describe("Checklist entries of a new task"),
   estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Task estimate in minutes"),
@@ -502,10 +504,14 @@ export const UpdateTagSchema = z.object({
 });
 export type UpdateTag = z.infer<typeof UpdateTagSchema>;
 
+/** The longest title and description of an item; text a template fills in stops there too. */
+export const MAX_ITEM_TITLE_LENGTH = 200;
+export const MAX_ITEM_DESCRIPTION_LENGTH = 5000;
+
 const ItemTemplateFieldsShape = {
   name: z.string().trim().min(1).max(100).describe("Template name, unique per Space and kind"),
-  title: z.string().max(200).describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
-  description: z.string().max(5000).nullable().describe("Default description (markdown)"),
+  title: z.string().max(MAX_ITEM_TITLE_LENGTH).describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
+  description: z.string().max(MAX_ITEM_DESCRIPTION_LENGTH).nullable().describe("Default description (markdown)"),
   priority: PrioritySchema.nullable().describe("Default priority"),
   tagIds: z.array(ResourceShortIdSchema).max(100).describe("Default tag IDs"),
   assigneeIds: z.array(UuidSchema).max(100).describe("Default assignee user UUIDs with access to the Space"),
@@ -638,8 +644,8 @@ export type ItemTemplateDraft = z.infer<typeof ItemTemplateDraftSchema>;
 export const CreateItemSchema = z
   .object({
     columnId: ResourceShortIdSchema.describe("Target column ID"),
-    title: z.string().min(1).max(200).describe("Item title"),
-    description: z.string().max(5000).optional().describe("Item description (markdown)"),
+    title: z.string().min(1).max(MAX_ITEM_TITLE_LENGTH).describe("Item title"),
+    description: z.string().max(MAX_ITEM_DESCRIPTION_LENGTH).optional().describe("Item description (markdown)"),
     location: z.string().max(500).optional().describe("Event location"),
     url: z.string().url().max(2000).optional().describe("Event URL"),
     startsAt: z.string().datetime().optional().describe("Event start time (ISO)"),
