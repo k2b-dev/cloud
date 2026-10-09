@@ -527,6 +527,7 @@ const readIncomingAutomationDefinition = async (
 
 const mailboxAccessCommands = createAccessCommands({
   resourceLabel: "mailbox",
+  scopes: ["mailbox", "assigned"],
   resourceArgLabel: "mailbox",
   resourceArgDescription: "Optional mailbox id or exact name.",
   resolveResource: async (ctx, args) => {
@@ -534,10 +535,18 @@ const mailboxAccessCommands = createAccessCommands({
     return { id: mailbox.id, label: `${mailbox.name} (${mailbox.id})` };
   },
   list: (ctx, mailbox) => readApi<AccessEntry[]>(ctx, `/mailboxes/${mailbox.id}/access`),
-  grant: (ctx, mailbox, principal: Principal, permission: PermissionLevel) =>
-    readApi<AccessEntry>(ctx, `/mailboxes/${mailbox.id}/access`, jsonRequest("POST", { principal, permission })),
-  update: async (ctx, mailbox, accessId, permission) => {
-    await readApi(ctx, `/mailboxes/${mailbox.id}/access/${accessId}`, jsonRequest("PATCH", { permission }));
+  grant: (ctx, mailbox, principal: Principal, permission: PermissionLevel, scope) =>
+    readApi<AccessEntry>(
+      ctx,
+      `/mailboxes/${mailbox.id}/access`,
+      jsonRequest("POST", { principal, permission, ...(scope === undefined ? {} : { scope }) }),
+    ),
+  update: async (ctx, mailbox, accessId, permission, scope) => {
+    await readApi(
+      ctx,
+      `/mailboxes/${mailbox.id}/access/${accessId}`,
+      jsonRequest("PATCH", { permission, ...(scope === undefined ? {} : { scope }) }),
+    );
   },
   revoke: async (ctx, mailbox, accessId) => {
     await readApi(ctx, `/mailboxes/${mailbox.id}/access/${accessId}`, {
@@ -583,14 +592,23 @@ const resolveAdminMailbox = async (ctx: CloudCliContext, ref?: string): Promise<
 
 const adminMailboxAccessCommands = createAccessCommands({
   resourceLabel: "mailbox",
+  scopes: ["mailbox", "assigned"],
   resourceArgLabel: "mailbox",
   resourceArgDescription: "Mailbox id or exact name.",
   resolveResource: async (ctx, args) => resolveAdminMailbox(ctx, args[0]),
   list: (ctx, mailbox) => readApi<AccessEntry[]>(ctx, `/admin/mailboxes/${mailbox.id}/access`),
-  grant: (ctx, mailbox, principal: Principal, permission: PermissionLevel) =>
-    readApi<AccessEntry>(ctx, `/admin/mailboxes/${mailbox.id}/access`, jsonRequest("POST", { principal, permission })),
-  update: async (ctx, mailbox, accessId, permission) => {
-    await readApi(ctx, `/admin/mailboxes/${mailbox.id}/access/${accessId}`, jsonRequest("PATCH", { permission }));
+  grant: (ctx, mailbox, principal: Principal, permission: PermissionLevel, scope) =>
+    readApi<AccessEntry>(
+      ctx,
+      `/admin/mailboxes/${mailbox.id}/access`,
+      jsonRequest("POST", { principal, permission, ...(scope === undefined ? {} : { scope }) }),
+    ),
+  update: async (ctx, mailbox, accessId, permission, scope) => {
+    await readApi(
+      ctx,
+      `/admin/mailboxes/${mailbox.id}/access/${accessId}`,
+      jsonRequest("PATCH", { permission, ...(scope === undefined ? {} : { scope }) }),
+    );
   },
   revoke: async (ctx, mailbox, accessId) => {
     await readApi(ctx, `/admin/mailboxes/${mailbox.id}/access/${accessId}`, { method: "DELETE" });
@@ -1736,11 +1754,18 @@ const everydayCommands = (t: Translate) => {
           printTable(
             ctx,
             mailboxes,
-            mailboxes.map((mailbox) => ({ name: mailbox.name, health: mailbox.health, permission: mailbox.permission, id: mailbox.id })),
+            mailboxes.map((mailbox) => ({
+              name: mailbox.name,
+              health: mailbox.health,
+              permission: mailbox.permission,
+              scope: mailbox.accessScope ?? "mailbox",
+              id: mailbox.id,
+            })),
             [
               { key: "name", label: "NAME" },
               { key: "health", label: t({ en: "HEALTH", de: "ZUSTAND" }) },
               { key: "permission", label: t({ en: "ACCESS", de: "ZUGRIFF" }) },
+              { key: "scope", label: t({ en: "SCOPE", de: "BEREICH" }) },
               { key: "id", label: "ID" },
             ],
           );

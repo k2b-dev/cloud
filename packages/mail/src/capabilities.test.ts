@@ -221,6 +221,8 @@ const tagFixture = {
 } as const;
 
 beforeEach(() => {
+  spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
+  spyOn(mailboxAccess, "requireDraftAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
   spyOn(focus, "listMailboxCounts").mockResolvedValue({ ok: true, data: [{ mailboxId: internalMailboxId, unread: 7, needsAction: 3 }] });
   spyOn(resourceParents, "messageConversation").mockResolvedValue(internalConversationId);
   spyOn(publicResources, "resolvePublicId").mockImplementation(
@@ -604,6 +606,7 @@ describe("mail capabilities", () => {
   test("aligns action reviews with their run permissions", async () => {
     const denied = { ok: false as const, error: { code: "FORBIDDEN", message: "Denied", status: 403 as const } };
     const requirePermission = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
+    const requireAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
 
     await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ mailboxId, senderIdentityId }), context);
     await mailCapabilities.actions["delivery.cancel"].review({ mailboxId, deliveryId, disposition: "draft" }, context);
@@ -618,8 +621,8 @@ describe("mail capabilities", () => {
       context,
     );
 
-    expect(requirePermission.mock.calls.slice(0, 5).map((call) => call[2])).toEqual(["write", "write", "write", "write", "write"]);
-    expect(requirePermission.mock.calls[5]?.[2]).toBe("read");
+    expect(requirePermission.mock.calls.map((call) => call[2])).toEqual(["write", "write", "write", "write"]);
+    expect(requireAccess.mock.calls.map((call) => call[2])).toEqual(["write", "read"]);
   });
 
   test("reviews a new draft with its user-visible envelope", async () => {

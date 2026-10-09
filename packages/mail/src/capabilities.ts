@@ -2222,7 +2222,7 @@ const requireDraftForReview = async (mailboxId: string, draftId: string, context
   const resolvedDraft = await resolveMailboxResource("drafts", scope.data.id, draftId);
   if (!resolvedDraft.ok) return resolvedDraft;
   const mailContext = requestContext(context);
-  const access = await mailboxAccess.requireMailboxPermission(mailContext, scope.data.id, "write");
+  const access = await mailboxAccess.requireDraftAccess(mailContext, scope.data.id, resolvedDraft.data, "write");
   if (!access.ok) return access;
   return drafts.getDraft(mailContext, scope.data.id, resolvedDraft.data);
 };
@@ -2252,7 +2252,7 @@ const requireConversationForReview = async (
   const resolvedConversation = await resolveMailboxResource("conversations", scope.data.id, conversationId);
   if (!resolvedConversation.ok) return resolvedConversation;
   const mailContext = requestContext(context);
-  const access = await mailboxAccess.requireMailboxPermission(mailContext, scope.data.id, permission);
+  const access = await mailboxAccess.requireMailboxAccess(mailContext, scope.data.id, permission);
   if (!access.ok) return access;
   const page = await messages.listConversationMessages({
     context: mailContext,
@@ -2798,7 +2798,7 @@ const actionDefinitions = {
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
       if (!deliveryId.ok) return deliveryId;
-      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
       const delivery = await scheduledSends.getScheduledSend({
         context: requestContext(context),
@@ -3107,6 +3107,8 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), conversation.data.mailboxInternalId, "write");
+      if (!access.ok) return access;
       const assignees =
         input.mode === "remove"
           ? await collaboration.listAssigneeCollaborators(input.assigneeUserIds)
@@ -3143,6 +3145,8 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), conversation.data.mailboxInternalId, "write");
+      if (!access.ok) return access;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       return mapResult(
@@ -3472,7 +3476,7 @@ const actionDefinitions = {
     approval: "rememberable",
     review: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       return ok({
         message: t.addCommentReview({ subject: conversation.data.subject }),
@@ -3491,7 +3495,7 @@ const actionDefinitions = {
     },
     run: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;

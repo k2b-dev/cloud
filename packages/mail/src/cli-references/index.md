@@ -219,6 +219,20 @@ Mailbox access uses the same direct permission model as the Mail settings UI:
 - `write` can also change and send mail.
 - `admin` can configure the mailbox, providers, access, references, and workflows.
 
+A grant's scope is `mailbox` (the default) or `assigned`. Assigned grants are
+available to people and groups with `read` or `write`; `ls` and `access list`
+show the scope. With assigned `write`, a person can act on their currently
+assigned conversations, reply or forward, manage those drafts and attachments,
+and send or schedule them. Assigned `read` permits comments, personal reminders,
+and viewing presence on those conversations. Composing presence requires `write`.
+
+Assigned access cannot change assignees, create new conversations or edit-as-new
+or resend drafts, manage mailbox resources, or browse recipient suggestions.
+Queued commands and scheduled sends recheck current access before acting.
+Removing an assignment or grant stops work that has not executed yet. Command
+reads and cancellation expose only the person's own commands with visible targets.
+Hidden conversations, messages and drafts return `404`.
+
 Search users and groups before creating a grant:
 
 ```bash
@@ -231,11 +245,12 @@ Grant direct access, idempotently create or update it, or revoke one direct gran
 ```bash
 cld --json mail access grant <mailbox-id> --user ada@example.org --permission write
 cld --json mail access set <mailbox-id> --group "Support Team" --permission read
+cld --json mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
 cld --json mail access set <mailbox-id> --access-id <access-id> --permission admin
 cld mail access revoke <mailbox-id> --access-id <access-id> --yes
 ```
 
-Use exactly one of `--user`, `--group`, `--authenticated`, or `--access-id` where supported. `access grant` fails when a direct grant already exists; `access set` is the agent-friendly idempotent command. Effective access can also come from group membership or authenticated-user access, so revoking one direct entry does not necessarily remove every effective permission.
+Use exactly one of `--user`, `--group`, `--service-account`, or `--access-id` where supported. `access grant` fails when a direct grant already exists; `access set` is the agent-friendly idempotent command. Effective access can also come from group membership or authenticated-user access, so revoking one direct entry does not necessarily remove every effective permission.
 
 ## Connect a provider and identity
 

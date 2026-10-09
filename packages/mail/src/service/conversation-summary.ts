@@ -3,7 +3,7 @@ import { sql } from "bun";
 import type { ActorRef, UpdateConversationSummary } from "../contracts";
 import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import type { MailRequestContext } from "./auth";
-import { insertActivity, requireMailboxCollaborationPermission } from "./collaboration";
+import { insertActivity, requireConversationCollaborationPermission } from "./collaboration";
 import { type MailActivityChange, mailLive } from "./live";
 
 type SqlClient = typeof sql;
@@ -142,7 +142,13 @@ export const updateConversationSummaryInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
 }): Promise<Result<ConversationSummaryMutation>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write", params.db);
+  const allowed = await requireConversationCollaborationPermission(
+    params.context,
+    params.mailboxId,
+    params.conversationId,
+    "write",
+    params.db,
+  );
   return allowed.ok ? applyConversationSummaryInTransaction(params) : allowed;
 };
 

@@ -53,6 +53,37 @@ synchronized Cloud copy for search, collaboration, durable commands, and
 observable delivery. Credentials and refresh tokens are stored as write-only
 secrets.
 
+## Share only assigned conversations
+
+Mailbox administrators can grant people or groups access with scope `assigned`
+and permission `read` or `write`. Mailbox scope covers all conversations;
+assigned scope covers only conversations assigned to the person now. Several
+people can share an assignment.
+
+Assigned readers can read those conversations, leave and edit their own comments
+within the existing ten-minute window, set personal reminders, and show viewing
+presence. Assigned writers can also change message flags, move, copy or delete
+messages, mark conversations done or snooze them, choose existing local tags,
+maintain the shared summary, and reply or forward. They can manage those drafts
+and attachments, use compose templates, and send or schedule replies.
+Delivery recovery drafts stay in the original assigned conversation too.
+
+Changing assignees, creating new conversations or edit-as-new/resend drafts,
+recipient suggestions, mailbox settings and resources, and automation management
+require mailbox-wide access. Hidden conversations, messages and drafts return
+`404`. Assigned users see and cancel only commands they initiated whose targets
+remain visible. Pending commands and scheduled sends recheck the current grant
+and assignment before acting, so removing either ends access to queued work.
+
+For example, grant a team permission to reply only to its assignments:
+
+```bash
+cld mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
+```
+
+`cld mail ls` shows each mailbox's access scope. Omit `--scope` when updating a
+grant to preserve its current scope.
+
 ## Choose where a folder's mail appears
 
 Each folder has one display setting, the same for everyone in the mailbox:

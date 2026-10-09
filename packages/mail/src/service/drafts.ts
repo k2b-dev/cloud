@@ -35,9 +35,11 @@ import { deriveReplyAddressObjects } from "../reply-recipients";
 import {
   conversationVisibleTo,
   messageVisibleTo,
+  requireDraftAccess,
   requireMailboxAccess,
   requireMailboxPermission,
   requireVisibleConversation,
+  requireVisibleMessages,
 } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
@@ -652,8 +654,17 @@ const prepareComposeDraftInTransaction = async (params: {
     FOR SHARE
   `;
   if (!mailbox) return fail(err.notFound("Mailbox"));
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", params.db);
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", params.db);
   if (!allowed.ok) return allowed;
+  if (allowed.data.scope === "assigned") {
+    const intent = parsed.data.intent ?? (parsed.data.conversationId ? "reply" : "new");
+    if (intent === "new") return fail(err.forbidden("New conversations require mailbox-wide write access"));
+    if (!parsed.data.conversationId) return fail(err.notFound("Conversation"));
+    const visible = await requireVisibleConversation(allowed.data, parsed.data.conversationId, params.db);
+    if (!visible.ok) return visible;
+    const source = await requireVisibleMessages(allowed.data, parsed.data.sourceMessageId ? [parsed.data.sourceMessageId] : [], params.db);
+    if (!source.ok) return source;
+  }
   const identity = await validateIdentity({
     mailboxId: params.mailboxId,
     senderIdentityId: parsed.data.senderIdentityId,
@@ -666,6 +677,12 @@ const prepareComposeDraftInTransaction = async (params: {
     db: params.db,
   });
   if (!draftContext.ok) return draftContext;
+  const visibleSource = await requireVisibleMessages(
+    allowed.data,
+    draftContext.data.sourceMessageId ? [draftContext.data.sourceMessageId] : [],
+    params.db,
+  );
+  if (!visibleSource.ok) return visibleSource;
   if (parsed.data.includeSourceAttachments && draftContext.data.intent !== "forward") {
     return fail(err.badInput("Original attachments can only be included when forwarding a message"));
   }
@@ -1033,8 +1050,10 @@ const prepareDraftSeedOriginInTransaction = async (params: {
   mailboxId: string;
   origin: DraftSeedOrigin;
 }): Promise<Result<Omit<MailDraftSeed, "id" | "mailboxId" | "origin" | "createdAt">>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", params.db);
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", params.db);
   if (!allowed.ok) return allowed;
+  if (allowed.data.scope === "assigned" && params.origin.kind === "derive")
+    return fail(err.forbidden("New conversations require mailbox-wide write access"));
   if (params.origin.kind === "compose") {
     const prepared = await prepareComposeDraftInTransaction({
       db: params.db,
@@ -1163,6 +1182,17 @@ export const materializeDraftSeed = async (params: {
               `
             )[0];
       if (existing) {
+        const access = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", tx);
+        if (!access.ok) return access;
+        if (access.data.scope === "assigned") {
+          const originAccess = await prepareDraftSeedOriginInTransaction({
+            db: tx,
+            context: params.context,
+            mailboxId: params.mailboxId,
+            origin: parsed.data.origin,
+          });
+          if (!originAccess.ok) return originAccess;
+        }
         return existing.request_hash === requestHash
           ? ok(mapDraft(existing))
           : fail(capabilityIdempotencyConflict("Compose idempotency key conflicts with a different request"));
@@ -1325,10 +1355,16 @@ export const createDeliveryRecoveryDraft = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
+      // Recovery starts a new conversation, which only mailbox-wide writers may do.
+      if (allowed.data.scope === "assigned") return fail(err.forbidden("New conversations require mailbox-wide write access"));
       const [delivery] = await tx<
         {
+          draft_id: string;
+          conversation_id: string | null;
+          intent: MailDraft["intent"];
+          source_message_id: string | null;
           message_id: string;
           sender_identity_id: string;
           state: string;
@@ -1336,13 +1372,20 @@ export const createDeliveryRecoveryDraft = async (params: {
           provider_response: Record<string, unknown> | string;
         }[]
       >`
-        SELECT message_id, sender_identity_id, state, last_error_code, provider_response
-        FROM mail.outbox_submissions
-        WHERE id = ${params.deliveryId}::uuid
-          AND mailbox_id = ${params.mailboxId}::uuid
-        FOR SHARE
+        SELECT outbox.draft_id, draft.conversation_id, draft.intent, draft.source_message_id,
+               outbox.message_id, outbox.sender_identity_id, outbox.state, outbox.last_error_code, outbox.provider_response
+        FROM mail.outbox_submissions outbox
+        JOIN mail.drafts draft ON draft.id = outbox.draft_id
+        WHERE outbox.id = ${params.deliveryId}::uuid
+          AND outbox.mailbox_id = ${params.mailboxId}::uuid
+          AND ${conversationVisibleTo(allowed.data, sql`draft.conversation_id`)}
+        FOR SHARE OF outbox, draft
       `;
       if (!delivery) return fail(err.notFound("Delivery"));
+      const draftAccess = await requireDraftAccess(params.context, params.mailboxId, delivery.draft_id, "write", tx);
+      if (!draftAccess.ok) return draftAccess;
+      const visibleMessage = await requireVisibleMessages(allowed.data, [delivery.message_id], tx);
+      if (!visibleMessage.ok) return visibleMessage;
       const partial = delivery.last_error_code === "SMTP_PARTIAL_ACCEPTANCE" && delivery.state === "needs_attention";
       const ambiguous = delivery.state === "unknown" || delivery.last_error_code === "AMBIGUOUS_SMTP_OUTCOME";
       if (parsed.data.recipientMode === "remaining" && !partial) {
@@ -1368,6 +1411,8 @@ export const createDeliveryRecoveryDraft = async (params: {
           AND d.derivation_key = ${parsed.data.idempotencyKey}
       `;
       if (existing) {
+        const visible = await requireDraftAccess(params.context, params.mailboxId, existing.id, "write", tx);
+        if (!visible.ok) return visible;
         return existing.derivation_request_hash === requestHash
           ? ok(mapDraft(existing))
           : fail(capabilityIdempotencyConflict("Delivery recovery idempotency key conflicts with a different request"));
@@ -1671,7 +1716,7 @@ export const updateDraft = async (params: {
   if (!lease.ok) return lease;
   try {
     const result = await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [current] = await tx<{ state: string; revision: string | number }[]>`
@@ -1904,7 +1949,7 @@ export const listDraftFolder = async (params: {
 };
 
 export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "read");
+  const allowed = await requireDraftAccess(context, mailboxId, draftId, "read");
   if (!allowed.ok) return allowed;
   const [row] = await sql<DbDraft[]>`
     SELECT
@@ -1925,6 +1970,7 @@ export const getDraft = async (context: MailRequestContext, mailboxId: string, d
       FROM mail.outbox_submissions outbox
       JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
       WHERE outbox.draft_id = d.id
+        AND ${conversationVisibleTo(allowed.data, sql`link.conversation_id`)}
       ORDER BY outbox.created_at DESC, outbox.id DESC
       LIMIT 1
     ) lifecycle ON true
@@ -1938,7 +1984,7 @@ export const listDraftRecoveryCopies = async (params: {
   mailboxId: string;
   draftId: string;
 }): Promise<Result<DraftRecoveryCopy[]>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<DbRecoveryCopy[]>`
     SELECT ${recoveryColumns}
@@ -1973,7 +2019,7 @@ export const restoreDraftRecoveryCopy = async (params: {
       token: params.leaseToken,
       operation: () =>
         sql.begin(async (tx) => {
-          const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+          const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
           if (!allowed.ok) return allowed;
           const [draft] = await tx<{ revision: string | number; state: string }[]>`
         SELECT revision, state
@@ -2122,7 +2168,7 @@ export const removeDraftAttachment = async (params: {
   if (!lease.ok) return lease;
   try {
     const result = await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const { draftId, attachmentId } = params;
       const [draft] = await tx<{ revision: string | number; state: string }[]>`
@@ -2175,7 +2221,7 @@ export const openDraftAttachment = async (params: {
   draftId: string;
   attachmentId: string;
 }): Promise<Result<AttachmentDownload>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "read");
   if (!allowed.ok) return allowed;
   const { draftId, attachmentId } = params;
   const [attachment] = await sql<
@@ -2236,7 +2282,7 @@ export const discardDraft = async (params: {
   try {
     let retirementSnapshotId: string | null = null;
     const result = await sql.begin(async (tx) => {
-      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
       if (!allowed.ok) return allowed;
       const draftId = params.draftId;
       const [updated] = await tx<DbDraft[]>`

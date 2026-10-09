@@ -53,14 +53,17 @@ export const listCurrentMailboxUsers = async (params: {
 
 export const currentMailboxUserIds = async (params: {
   mailboxId: string;
+  conversationId?: string;
   userIds: string[];
   minimumPermission: "read" | "write" | "admin";
   db?: SqlClient;
 }): Promise<Set<string>> => {
   const db = params.db ?? sql;
   const active = await activeUsers(db, params.userIds);
-  const result = new Set(active.filter((user) => user.admin).map((user) => user.id));
-  const candidates = active.filter((user) => !user.admin).map((user) => user.id);
+  // Platform administration never substitutes for a mailbox grant. In particular, an
+  // administrator with assigned-only access must not receive mailbox-wide workflow notices.
+  const result = new Set<string>();
+  const candidates = active.map((user) => user.id);
   if (candidates.length === 0) return result;
   const users = await listCurrentMailboxUsers({
     mailboxId: params.mailboxId,
@@ -70,6 +73,22 @@ export const currentMailboxUserIds = async (params: {
     limit: candidates.length,
   });
   for (const user of users) result.add(user.id);
+  if (params.conversationId && params.minimumPermission !== "admin") {
+    const grants = await db<
+      { access_id: string }[]
+    >`SELECT access_id FROM mail.mailbox_assigned_access WHERE mailbox_id = ${params.mailboxId}::uuid`;
+    const assigned = await listUsersWithAccess({
+      accessIds: grants.map((row) => row.access_id),
+      userIds: candidates,
+      minimumPermission: params.minimumPermission,
+      limit: ACCESS_LOOKUP_LIMIT,
+      db,
+    });
+    const assignees = await db<
+      { user_id: string }[]
+    >`SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${params.conversationId}::uuid AND user_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${assigned.map((user) => user.id)}::jsonb))`;
+    for (const assignee of assignees) result.add(assignee.user_id);
+  }
   return result;
 };
 

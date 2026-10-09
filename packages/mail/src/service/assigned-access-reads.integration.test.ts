@@ -705,8 +705,10 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     forbidden(await savedViews.listSavedConversationViews({ context: contextFor(readerA), mailboxId }));
     forbidden(await collaboration.listAssignableUsers({ context: contextFor(readerA), mailboxId }));
     forbidden(await collaboration.listActivity({ context: contextFor(readerA), mailboxId }));
-    forbidden(await drafts.getDraft(contextFor(readerA), mailboxId, draft3));
-    forbidden(await resolveMailAddress({ context: contextFor(readerA), mailbox: mailboxShortId }));
+    notFound(await drafts.getDraft(contextFor(readerA), mailboxId, draft3));
+    // The CLI addresses the mailbox by name for assigned readers too; its folders are filtered.
+    const address = await resolveMailAddress({ context: contextFor(readerA), mailbox: mailboxShortId });
+    expect(address.ok && [address.data.mailbox.permission, address.data.mailbox.accessScope]).toEqual(["read", "assigned"]);
     for (const token of [tokenA, tokenB])
       for (const path of [
         "saved-views",

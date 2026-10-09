@@ -5364,3 +5364,71 @@ test("incoming automation CRUD accepts complete mixed-flow definitions and prese
     },
   ]);
 }, 20_000);
+
+test("both mailbox access adapters forward scope, preserve omitted scope, and reject invalid scopes", async () => {
+  const writes: Array<{ path: string; body: unknown }> = [];
+  const accessId = "00000000-0000-4000-8000-000000000031";
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/mail/admin/operations") return api({ mailboxes: [platformMailboxSummary], nextCursor: null });
+    if (path.endsWith("/access") && request.method === "GET") return api([]);
+    if (request.method === "POST" || request.method === "PATCH") {
+      const body: unknown = await request.json();
+      writes.push({ path, body });
+      return api({
+        id: accessId,
+        principal: { type: "user", userId: USER_ID },
+        permission: "write",
+        scope: "assigned",
+        createdAt: "2026-07-12T00:00:00.000Z",
+      });
+    }
+    return api({ error: "Unexpected request" }, { status: 404 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  for (const prefix of [["mail"], ["mail", "admin", "mailbox"]]) {
+    for (const args of [
+      ["access", "grant", MAILBOX_ID, "--user", USER_ID, "--permission", "write", "--scope", "assigned"],
+      ["access", "set", MAILBOX_ID, "--access-id", accessId, "--permission", "write", "--scope", "mailbox"],
+      ["access", "set", MAILBOX_ID, "--access-id", accessId, "--permission", "read"],
+    ]) {
+      const result = await runCli(origin, [...prefix, ...args]);
+      expect(result.stderr).toBe("");
+      expect(result.exitCode).toBe(0);
+    }
+    const invalid = await runCli(origin, [
+      ...prefix,
+      "access",
+      "grant",
+      MAILBOX_ID,
+      "--user",
+      USER_ID,
+      "--permission",
+      "write",
+      "--scope",
+      "all",
+    ]);
+    expect(invalid.exitCode).toBe(1);
+    expect(invalid.stderr).toContain("Scope must be one of: mailbox, assigned");
+  }
+  for (const [index, base] of ["/api/mail/mailboxes", "/api/mail/admin/mailboxes"].entries()) {
+    expect(writes.slice(index * 3, index * 3 + 3)).toEqual([
+      {
+        path: `${base}/${MAILBOX_ID}/access`,
+        body: { principal: { type: "user", userId: USER_ID }, permission: "write", scope: "assigned" },
+      },
+      { path: `${base}/${MAILBOX_ID}/access/${accessId}`, body: { permission: "write", scope: "mailbox" } },
+      { path: `${base}/${MAILBOX_ID}/access/${accessId}`, body: { permission: "read" } },
+    ]);
+  }
+});
+
+test("mail ls displays assigned access scope", async () => {
+  const server = Bun.serve({ port: 0, fetch: () => api([{ ...mailbox, permission: "write", accessScope: "assigned" }]) });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "ls"]);
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("SCOPE");
+  expect(result.stdout).toContain("assigned");
+});

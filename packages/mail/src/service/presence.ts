@@ -4,7 +4,7 @@ import { sql } from "bun";
 import type { ConversationPresenceHeartbeat, ConversationPresenceMode } from "../contracts";
 import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
+import { requireConversationCollaborationPermission } from "./collaboration";
 import { currentMailboxUserIds } from "./collaborators";
 
 const PRESENCE_TTL_MS = 30_000;
@@ -49,7 +49,12 @@ const authorizeConversation = async (params: {
 }) => {
   const user = userBackedActor(params.context);
   if (!user) return fail(err.forbidden("Conversation presence requires a user-backed actor"));
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, params.permission);
+  const allowed = await requireConversationCollaborationPermission(
+    params.context,
+    params.mailboxId,
+    params.conversationId,
+    params.permission,
+  );
   if (!allowed.ok) return allowed;
   const [conversation] = await sql<{ id: string }[]>`
     SELECT id FROM mail.conversations
@@ -84,6 +89,7 @@ const snapshotState = async (mailboxId: string, conversationId: string): Promise
   const presence = await presenceStore().snapshot({ tenantId: conversationId });
   const readableUserIds = await currentMailboxUserIds({
     mailboxId,
+    conversationId,
     userIds: presence.entries.map((entry) => entry.value.userId),
     minimumPermission: "read",
   });

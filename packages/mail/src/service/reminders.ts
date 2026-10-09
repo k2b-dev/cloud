@@ -67,7 +67,7 @@ const lockConversationReminder = async (params: {
   conversationId: string;
   userId: string;
 }): Promise<Result<ReminderRow | null>> => {
-  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", params.db);
+  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", params.db, params.conversationId);
   if (!allowed.ok) return allowed;
   const [conversation] = await params.db<{ id: string }[]>`
     SELECT id FROM mail.conversations

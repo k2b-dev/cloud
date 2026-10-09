@@ -10,7 +10,14 @@ import type {
 } from "../contracts";
 import { createConversationCommentSchema, MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { messageVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
+import {
+  type MailboxAccess,
+  messageVisibleTo,
+  requireMailboxAccess,
+  requireMailboxPermission,
+  requireVisibleConversation,
+  requireVisibleMessages,
+} from "./access";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
@@ -128,6 +135,7 @@ type ActivityRow = {
 };
 
 type MutableCommentRow = {
+  referenced_message_id: string | null;
   revision: string | number;
   body_markdown: string;
   author_kind: CommentActorKind;
@@ -235,6 +243,21 @@ export const requireMailboxCollaborationPermission = async (
   return execution.ok ? allowed : execution;
 };
 
+export const requireConversationCollaborationPermission = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  conversationId: string,
+  permission: "read" | "write",
+  db: SqlClient = sql,
+): Promise<Result<PermissionLevel>> => {
+  const allowed = await requireMailboxAccess(context, mailboxId, permission, db);
+  if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, conversationId, db);
+  if (!visible.ok) return visible;
+  const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true, db });
+  return execution.ok ? ok(allowed.data.permission) : execution;
+};
+
 const validateAssignees = async (mailboxId: string, userIds: readonly string[], db: SqlClient): Promise<Result<void>> => {
   if (userIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
     return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
@@ -316,6 +339,7 @@ export const lockMailboxForCollaboration = async (
   mailboxId: string,
   permission: "read" | "write",
   db: SqlClient,
+  conversationId?: string,
 ): Promise<Result<PermissionLevel>> => {
   const [mailbox] = await db<{ id: string }[]>`
     SELECT id FROM mail.mailboxes
@@ -323,7 +347,9 @@ export const lockMailboxForCollaboration = async (
     FOR SHARE
   `;
   if (!mailbox) return fail(err.notFound("Mailbox"));
-  return requireMailboxCollaborationPermission(context, mailboxId, permission, db);
+  return conversationId
+    ? requireConversationCollaborationPermission(context, mailboxId, conversationId, permission, db)
+    : requireMailboxCollaborationPermission(context, mailboxId, permission, db);
 };
 
 const loadCollaboration = async (
@@ -607,7 +633,11 @@ export const updateConversationCollaborationInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
 }): Promise<Result<ConversationCollaborationMutation>> => {
-  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db);
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "write", params.db);
+  if (!access.ok) return access;
+  if (access.data.scope === "assigned" && params.input.assigneeUserIds !== undefined)
+    return fail(err.forbidden("Assignments require mailbox-wide write access"));
+  const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db, params.conversationId);
   return allowed.ok ? applyConversationCollaborationInTransaction(params) : allowed;
 };
 
@@ -868,7 +898,7 @@ export const releaseDueSnoozes = async (batchSize = 500): Promise<number> => {
   }
 };
 
-const commentColumns = sql`
+const commentColumns = (access?: MailboxAccess) => sql`
   comment.id,
   comment.conversation_id,
   comment.body_markdown,
@@ -885,7 +915,7 @@ const commentColumns = sql`
     END
   ) AS author_display_name,
   author_user.avatar_hash AS author_avatar_hash,
-  comment.referenced_message_id,
+  CASE WHEN ${access ? messageVisibleTo(access, sql`comment.referenced_message_id`) : sql`true`} THEN comment.referenced_message_id ELSE NULL END AS referenced_message_id,
   comment.revision,
   comment.edited_at,
   comment.deleted_at,
@@ -934,9 +964,10 @@ const loadComment = async (params: {
   conversationId: string;
   commentId: string;
   actor?: { kind: CommentActorKind; id: string };
+  access?: MailboxAccess;
 }): Promise<ConversationComment | null> => {
   const [row] = await params.db<CommentRow[]>`
-    SELECT ${commentColumns}
+    SELECT ${commentColumns(params.access)}
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
     LEFT JOIN auth.users author_user ON comment.author_kind = 'user' AND author_user.id = comment.author_id
@@ -959,7 +990,7 @@ export const getConversationComment = async (params: {
   if (!allowed.ok) return allowed;
   const visible = await requireVisibleConversation(allowed.data, params.conversationId);
   if (!visible.ok) return visible;
-  const comment = await loadComment({ db: sql, ...params, actor: actorIdentity(params.context) });
+  const comment = await loadComment({ db: sql, ...params, actor: actorIdentity(params.context), access: allowed.data });
   return comment ? ok(comment) : fail(err.notFound("Comment"));
 };
 
@@ -981,6 +1012,7 @@ const validateCommentReferences = async (params: {
 
 const lockCommentForMutation = async (params: {
   db: SqlClient;
+  context: MailRequestContext;
   mailboxId: string;
   conversationId: string;
   commentId: string;
@@ -989,7 +1021,7 @@ const lockCommentForMutation = async (params: {
   action: "edit" | "delete";
 }): Promise<Result<MutableCommentRow>> => {
   const [comment] = await params.db<MutableCommentRow[]>`
-    SELECT comment.revision, comment.body_markdown, comment.author_kind, comment.author_id, comment.deleted_at, comment.created_at
+    SELECT comment.referenced_message_id, comment.revision, comment.body_markdown, comment.author_kind, comment.author_id, comment.deleted_at, comment.created_at
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
     WHERE comment.id = ${params.commentId}::uuid
@@ -998,6 +1030,14 @@ const lockCommentForMutation = async (params: {
     FOR UPDATE OF comment
   `;
   if (!comment) return fail(err.notFound("Comment"));
+  const access = await requireMailboxAccess(params.context, params.mailboxId, "read", params.db);
+  if (!access.ok) return access;
+  const reference = await requireVisibleMessages(
+    access.data,
+    comment.referenced_message_id ? [comment.referenced_message_id] : [],
+    params.db,
+  );
+  if (!reference.ok) return reference;
   if (comment.deleted_at)
     return fail(err.badInput(params.action === "edit" ? "Deleted comments cannot be edited" : "Comment is already deleted"));
   if (Number(comment.revision) !== params.expectedRevision) return fail(err.conflict("Comment was changed by another collaborator"));
@@ -1030,7 +1070,7 @@ export const listConversationComments = async (params: {
     : sql`(comment.created_at, comment.id) > (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)`;
   const ordering = newestFirst ? sql`comment.created_at DESC, comment.id DESC` : sql`comment.created_at, comment.id`;
   const rows = await sql<(CommentRow & { cursor_at: string })[]>`
-    SELECT ${commentColumns},
+    SELECT ${commentColumns(allowed.data)},
            to_char(comment.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM mail.conversation_comments comment
     JOIN mail.conversations conversation ON conversation.id = comment.conversation_id
@@ -1066,8 +1106,16 @@ export const createConversationComment = async (params: {
 }): Promise<Result<ConversationComment>> => {
   try {
     const result = await sql.begin(async (tx): Promise<Result<CollaborationMutation<ConversationComment>>> => {
-      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx, params.conversationId);
       if (!allowed.ok) return allowed;
+      const access = await requireMailboxAccess(params.context, params.mailboxId, "read", tx);
+      if (!access.ok) return access;
+      const visibleReference = await requireVisibleMessages(
+        access.data,
+        params.input.referencedMessageId ? [params.input.referencedMessageId] : [],
+        tx,
+      );
+      if (!visibleReference.ok) return visibleReference;
       const [conversation] = await tx<{ id: string }[]>`
         SELECT id FROM mail.conversations
         WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
@@ -1205,11 +1253,12 @@ export const updateConversationComment = async (params: {
 }): Promise<Result<ConversationComment>> => {
   try {
     const result = await sql.begin(async (tx): Promise<Result<CollaborationMutation<ConversationComment>>> => {
-      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx, params.conversationId);
       if (!allowed.ok) return allowed;
       const actor = actorIdentity(params.context);
       const current = await lockCommentForMutation({
         db: tx,
+        context: params.context,
         mailboxId: params.mailboxId,
         conversationId: params.conversationId,
         commentId: params.commentId,
@@ -1290,11 +1339,12 @@ export const deleteConversationComment = async (params: {
 }): Promise<Result<ConversationComment>> => {
   try {
     const result = await sql.begin(async (tx): Promise<Result<CollaborationMutation<ConversationComment>>> => {
-      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx);
+      const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "read", tx, params.conversationId);
       if (!allowed.ok) return allowed;
       const actor = actorIdentity(params.context);
       const current = await lockCommentForMutation({
         db: tx,
+        context: params.context,
         mailboxId: params.mailboxId,
         conversationId: params.conversationId,
         commentId: params.commentId,

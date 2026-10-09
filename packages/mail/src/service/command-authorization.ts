@@ -1,11 +1,13 @@
 import type { AccessSubject } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
-import { mailboxAccessPrincipalCondition } from "./access";
+import { conversationVisibleTo, type MailboxAccess, mailboxAccessPrincipalCondition, messageVisibleTo } from "./access";
 
 type SqlClient = typeof sql;
 
 export type StoredCommandAuthorization = {
+  kind: string;
+  target: Record<string, unknown> | string;
   mailbox_id: string;
   actor_kind: "user" | "service_account" | "workflow" | "system";
   actor_id: string | null;
@@ -17,6 +19,51 @@ export type StoredCommandAuthorization = {
   credential_id: string | null;
   credential_expires_at: Date | string | null;
 };
+
+/** Only these command kinds have a conversation target; all others remain mailbox-wide. */
+export const conversationCommandKinds: ReadonlySet<string> = new Set([
+  "set_flags",
+  "change_message_state",
+  "move",
+  "copy",
+  "delete",
+  "send",
+]);
+
+export const commandTargetVisibleTo = (
+  access: MailboxAccess,
+  kind: Bun.SQL.Query<unknown>,
+  target: Bun.SQL.Query<unknown>,
+  mailboxId: string,
+) =>
+  access.scope === "mailbox"
+    ? sql`true`
+    : sql`(
+  (${kind} IN ('set_flags', 'change_message_state', 'move', 'copy', 'delete') AND EXISTS (
+    SELECT 1 FROM mail.remote_message_refs command_ref
+    JOIN mail.folders command_folder ON command_folder.id = command_ref.folder_id
+    JOIN mail.remote_resources command_resource ON command_resource.id = command_folder.remote_resource_id
+    WHERE command_ref.id::text = (${target})->>'remoteMessageRefId'
+      AND command_resource.mailbox_id = ${mailboxId}::uuid
+      AND ${messageVisibleTo(access, sql`command_ref.message_id`)}
+  )) OR (${kind} = 'send' AND EXISTS (
+    SELECT 1 FROM mail.drafts command_draft
+    WHERE command_draft.id::text = (${target})->>'draftId'
+      AND command_draft.mailbox_id = ${mailboxId}::uuid
+      AND command_draft.origin = 'user'
+      AND ${conversationVisibleTo(access, sql`command_draft.conversation_id`)}
+  ))
+)`;
+
+/** An assigned person sees only their own commands, while the current target remains visible. */
+export const commandVisibleTo = (access: MailboxAccess, mailboxId: string) =>
+  access.scope === "mailbox"
+    ? sql`true`
+    : sql`(
+  c.access_subject_kind = 'user' AND c.access_subject_id = ${access.userId}::uuid
+  AND c.actor_kind IN ('user', 'service_account')
+  AND ${commandTargetVisibleTo(access, sql`c.kind`, sql`c.target`, mailboxId)}
+)`;
 
 const permissionRank = (permission: string | null | undefined): number => {
   if (permission === "admin") return 3;
@@ -154,5 +201,27 @@ export const commandStillAuthorized = async (
   }
   if (!(await serviceAccountActorAllowed(command, permission, db))) return false;
   if (!(await accessSubjectIsActive(command, db))) return false;
-  return permissionRank(await loadMailboxGrant(command, db)) >= requiredRank(permission);
+  if (permissionRank(await loadMailboxGrant(command, db)) >= requiredRank(permission)) return true;
+  if (
+    permission !== "write" ||
+    command.access_subject_kind !== "user" ||
+    !command.access_subject_id ||
+    !command.kind ||
+    !conversationCommandKinds.has(command.kind) ||
+    !command.target ||
+    (command.actor_kind !== "user" && command.actor_kind !== "service_account")
+  )
+    return false;
+  const subject: AccessSubject = { type: "user", userId: command.access_subject_id };
+  const [grant] = await db<{ authorized: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM mail.mailbox_assigned_access assigned
+      JOIN auth.access a ON a.id = assigned.access_id
+      JOIN mail.mailboxes mailbox ON mailbox.id = assigned.mailbox_id AND mailbox.deleted_at IS NULL
+      WHERE assigned.mailbox_id = ${command.mailbox_id}::uuid
+        AND a.permission IN ('write', 'admin')
+        AND ${mailboxAccessPrincipalCondition(subject)}
+    ) AND ${commandTargetVisibleTo({ scope: "assigned", permission: "write", userId: command.access_subject_id }, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id)} AS authorized
+  `;
+  return grant?.authorized === true;
 };

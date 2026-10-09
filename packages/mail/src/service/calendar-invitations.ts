@@ -5,7 +5,7 @@ import { sql } from "bun";
 import type { CalendarAddress, CalendarParticipationStatus, SpacesMailDestinationContext } from "../app-integration-contracts";
 import type { MailDraft } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { messageVisibleTo, requireMailboxAccess, requireMailboxPermission } from "./access";
+import { messageVisibleTo, requireDraftAccess, requireMailboxAccess, requireMailboxPermission } from "./access";
 import {
   type AppIntegrationRequest,
   buildCalendarInvitationResponse,
@@ -324,7 +324,7 @@ export const attachEventInvitation = async (params: {
   idempotencyKey: string;
   request: AppIntegrationRequest;
 }): Promise<Result<MailDraft>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
+  const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write");
   if (!allowed.ok) return allowed;
   const [current, identities] = await Promise.all([
     drafts.getDraft(params.context, params.mailboxId, params.draftId),

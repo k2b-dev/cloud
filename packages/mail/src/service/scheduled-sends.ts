@@ -10,9 +10,9 @@ import type {
   ScheduledSend,
   ScheduledSendPage,
 } from "../contracts";
-import { conversationVisibleTo, type MailboxAccess, requireMailboxAccess } from "./access";
+import { conversationVisibleTo, type MailboxAccess, requireDraftAccess, requireMailboxAccess, requireVisibleMessages } from "./access";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
+import { commandVisibleTo } from "./command-authorization";
 import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { mailLive } from "./live";
 import { OUTBOX_MAILBOX_AUTH_REQUIRED } from "./outbound-delivery";
@@ -288,17 +288,18 @@ const cancelScheduledSendBy = async (params: {
   input: CancelScheduledSendInput;
 }): Promise<Result<CancelScheduledSendResult>> => {
   if (!params.scheduledSendId && !params.commandId) return fail(err.badInput("Scheduled send id is required"));
-  const permission = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write");
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "write");
   if (!permission.ok) return permission;
   try {
     const result = await sql.begin(async (tx) => {
-      const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "write", tx);
+      const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       const [outbox] = await tx<
         {
           id: string;
           command_id: string;
           draft_id: string;
+          message_id: string;
           conversation_id: string | null;
           requested_at: Date | string;
           scheduled_at: Date | string;
@@ -310,20 +311,27 @@ const cancelScheduledSendBy = async (params: {
           outbox.id,
           outbox.command_id,
           outbox.draft_id,
+          outbox.message_id,
           draft.conversation_id,
           outbox.requested_at,
           outbox.scheduled_at,
           outbox.state,
-          command.state AS command_state
+          c.state AS command_state
         FROM mail.outbox_submissions outbox
-        JOIN mail.commands command ON command.id = outbox.command_id
+        JOIN mail.commands c ON c.id = outbox.command_id
         JOIN mail.drafts draft ON draft.id = outbox.draft_id
         WHERE outbox.mailbox_id = ${params.mailboxId}::uuid
           AND (${params.scheduledSendId ?? null}::uuid IS NULL OR outbox.id = ${params.scheduledSendId ?? null}::uuid)
           AND (${params.commandId ?? null}::uuid IS NULL OR outbox.command_id = ${params.commandId ?? null}::uuid)
-        FOR UPDATE OF outbox, command, draft
+          AND ${conversationVisibleTo(allowed.data, sql`draft.conversation_id`)}
+          AND ${commandVisibleTo(allowed.data, params.mailboxId)}
+        FOR UPDATE OF outbox, c, draft
       `;
       if (!outbox) return fail(err.notFound("Scheduled send"));
+      const draftAccess = await requireDraftAccess(params.context, params.mailboxId, outbox.draft_id, "write", tx);
+      if (!draftAccess.ok) return draftAccess;
+      const visibleMessage = await requireVisibleMessages(allowed.data, [outbox.message_id], tx);
+      if (!visibleMessage.ok) return visibleMessage;
       if (!["scheduled", "undo_window"].includes(outbox.state) || outbox.command_state !== "queued") {
         return fail(err.conflict("The message is already being processed and can no longer be cancelled"));
       }

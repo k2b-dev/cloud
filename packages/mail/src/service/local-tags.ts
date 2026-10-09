@@ -70,13 +70,23 @@ const mutationActor = (context: MailRequestContext): ActorIdentity => {
   throw new Error("Request actor cannot mutate local tags");
 };
 
-const lockMailboxForWrite = async (context: MailRequestContext, mailboxId: string, db: SqlClient): Promise<Result<void>> => {
+const lockMailboxForWrite = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  db: SqlClient,
+  conversationId?: string,
+): Promise<Result<void>> => {
   const [mailbox] = await db<{ id: string }[]>`
     SELECT id FROM mail.mailboxes
     WHERE id = ${mailboxId}::uuid AND deleted_at IS NULL
     FOR UPDATE
   `;
   if (!mailbox) return fail(err.notFound("Mailbox"));
+  if (conversationId) {
+    const access = await requireMailboxAccess(context, mailboxId, "write", db);
+    if (!access.ok) return access;
+    return requireVisibleConversation(access.data, conversationId, db);
+  }
   const allowed = await requireMailboxPermission(context, mailboxId, "write", db);
   return allowed.ok ? ok() : allowed;
 };
@@ -592,7 +602,7 @@ export const setConversationLocalTags = async (params: {
   try {
     const result = await sql.begin(
       async (tx): Promise<Result<{ state: ConversationLocalTags; activityId: string | null; conversationId: string }>> => {
-        const allowed = await lockMailboxForWrite(params.context, params.mailboxId, tx);
+        const allowed = await lockMailboxForWrite(params.context, params.mailboxId, tx, params.conversationId);
         if (!allowed.ok) return allowed;
         const conversationId = params.conversationId;
         const tagIds = requestedTagIds;

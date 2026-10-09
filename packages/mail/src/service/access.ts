@@ -346,6 +346,26 @@ export const requireVisibleConversation = async (
   return row?.visible === true ? ok() : fail(err.notFound("Conversation"));
 };
 
+/** Draft operations always authorize the conversation before content, leases or attachments. */
+export const requireDraftAccess = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  draftId: string,
+  required: "read" | "write",
+  db: SqlClient = sql,
+): Promise<Result<MailboxAccess>> => {
+  const allowed = await requireMailboxAccess(context, mailboxId, required, db);
+  if (!allowed.ok || allowed.data.scope === "mailbox") return allowed;
+  const [draft] = await db<{ visible: boolean }[]>`
+    SELECT (${conversationVisibleTo(allowed.data, sql`d.conversation_id`)}
+      AND (d.source_message_id IS NULL OR ${messageVisibleTo(allowed.data, sql`d.source_message_id`)})
+      AND (d.derived_from_message_id IS NULL OR ${messageVisibleTo(allowed.data, sql`d.derived_from_message_id`)})) AS visible
+    FROM mail.drafts d
+    WHERE d.id = ${draftId}::uuid AND d.mailbox_id = ${mailboxId}::uuid AND d.origin = 'user'
+  `;
+  return draft?.visible === true ? allowed : fail(err.notFound("Draft"));
+};
+
 /** Like `requireVisibleConversation()`, for messages; every message must lie in a visible conversation. */
 export const requireVisibleMessages = async (
   access: MailboxAccess,
