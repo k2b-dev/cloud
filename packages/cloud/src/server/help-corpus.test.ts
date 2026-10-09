@@ -10,6 +10,7 @@ const helpPackages = [
   "accounts",
   "api-docs",
   "assistant",
+  "chat",
   "contacts",
   "core",
   "dashboard",
