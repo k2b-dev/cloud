@@ -122,6 +122,19 @@ export type AiTurnContentPart = z.infer<typeof AiUserContentPartSchema>;
 
 export const AiClientToolIdSchema = z.enum(["local_bash", ...CODE_RUNTIME_TOOL_NAMES] satisfies [AiClientToolId, ...AiClientToolId[]]);
 
+// Allow retired tools in older clients' lists while bounding name text to 4 KiB.
+const AI_CLIENT_TOOL_MAX_ITEMS = 64;
+const AiClientToolIdsSchema = z
+  .array(
+    z
+      .string()
+      .max(64)
+      .regex(/^[a-z][a-z0-9_]*$/),
+  )
+  .max(AI_CLIENT_TOOL_MAX_ITEMS)
+  .refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique")
+  .transform((ids) => ids.filter((id): id is AiClientToolId => AiClientToolIdSchema.safeParse(id).success));
+
 export const AiTurnInputSchema = z
   .object({
     message: z.string().trim().max(20000).optional(),
@@ -131,11 +144,7 @@ export const AiTurnInputSchema = z
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
-    clientToolIds: z
-      .array(AiClientToolIdSchema)
-      .max(1 + CODE_RUNTIME_TOOL_NAMES.length)
-      .refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique")
-      .optional(),
+    clientToolIds: AiClientToolIdsSchema.optional(),
   })
   .refine((input) => Boolean(input.message?.trim() || input.content?.length), {
     message: "Message or content is required.",
@@ -156,11 +165,7 @@ export const AiSubmitConversationDraftInputSchema = z.object({
   queueId: z.uuid().optional(),
   draftRevision: z.number().int().min(1),
   modelProfileId: z.string().trim().min(1).optional(),
-  clientToolIds: z
-    .array(AiClientToolIdSchema)
-    .max(1 + CODE_RUNTIME_TOOL_NAMES.length)
-    .refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique")
-    .optional(),
+  clientToolIds: AiClientToolIdsSchema.optional(),
 });
 
 export const AiSteerInputSchema = z.object({
