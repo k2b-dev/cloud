@@ -409,23 +409,38 @@ for (const view of [
           blockKind: "text",
           delta: "Looking at the screenshot.",
         });
+        const view = { id: "tool-view", kind: "tool" as const, callId: "view", name: "view_image", args: { path } };
+        await emit(page, { ...base, seq: 5, type: "block_set", block: { ...view, status: "running" } });
+        const label = de ? "Bild ansehen" : "View image";
+        // While the turn runs, both steps share one group; the step is the innermost activity that names it.
+        await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
+        const step = page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: label }).last();
+        await step.locator("summary").click();
+        await frames(page);
+        // A reader who opened the step while it ran keeps the step and its input in place when the image arrives.
+        const opened = async () => {
+          const { nodes } = await layout(page);
+          const index = nodes.findLastIndex((node) => node.text.includes(label));
+          const region = await step.getByRole("region").evaluate((node) => {
+            const content = document.querySelector(".k2b-chat-timeline__content")!.getBoundingClientRect();
+            const box = node.getBoundingClientRect();
+            return [box.left - content.left, box.top - content.top].map(Math.round);
+          });
+          return { above: nodes.slice(0, index + 1).map(({ box }) => box.slice(0, 2)), region };
+        };
+        const running = await opened();
         await emit(page, {
           ...base,
-          seq: 5,
+          seq: 6,
           type: "block_set",
           block: {
-            id: "tool-view",
-            kind: "tool",
-            callId: "view",
-            name: "view_image",
-            args: { path },
+            ...view,
             status: "completed",
             result: { path, mediaType: "image/png", description: "A budget table whose totals row sits lower than its label." },
           },
         });
-        await emit(page, { ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "I fix the totals row." });
-        const step = page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: de ? "Bild ansehen" : "View image" });
-        await step.locator("summary").click();
+        expect(await opened()).toEqual(running);
+        await emit(page, { ...base, seq: 7, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "I fix the totals row." });
         const thumbnail = page.getByRole("button", { name: de ? "Bild desktop.png öffnen" : "Open image desktop.png" });
         await thumbnail.waitFor();
         const loading = await layout(page);
@@ -440,6 +455,10 @@ for (const view of [
         expect(size!.width).toBeLessThanOrEqual(192);
         expect(size!.height).toBeLessThanOrEqual(128);
         expect(await thumbnail.locator("img").getAttribute("alt")).toBe("A budget table whose totals row sits lower than its label.");
+        // The button is named for opening the image and described by what the step saw in it.
+        expect(
+          await thumbnail.evaluate((button) => document.getElementById(button.getAttribute("aria-describedby") ?? "")?.getAttribute("alt")),
+        ).toBe("A budget table whose totals row sits lower than its label.");
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
         await thumbnail.click();

@@ -1536,7 +1536,10 @@ describe("Studio check steps", () => {
     isError: status === "failed",
     result: { path, mediaType, description: "A budget table with three rows.\nThe totals line up." },
   });
-  const renderExpanded = (blocks: AiTurnBlock[], options: { locale?: string; open?: string[]; openFile?: boolean } = {}) => {
+  const renderExpanded = (
+    blocks: AiTurnBlock[],
+    options: { locale?: string; open?: string[]; openFile?: boolean; files?: boolean } = {},
+  ) => {
     const disclosureState = createAiToolDisclosureState();
     for (const id of ["work:ai-turn:turn-1:start", ...(options.open ?? [])]) disclosureState.set(id, true);
     return renderToString(() =>
@@ -1544,10 +1547,13 @@ describe("Studio check steps", () => {
         locale: options.locale ?? "en",
         get children() {
           return createComponent(AiChatActionsProvider, {
-            actions: {
-              fileUrl: (path: string) => `/files/content?path=${encodeURIComponent(path)}`,
-              ...(options.openFile === false ? {} : { onOpenFile: () => undefined }),
-            },
+            actions:
+              options.files === false
+                ? {}
+                : {
+                    fileUrl: (path: string) => `/files/content?path=${encodeURIComponent(path)}`,
+                    ...(options.openFile === false ? {} : { onOpenFile: () => undefined }),
+                  },
             get children() {
               return createComponent(AiTurnView, {
                 segment: () => ({
@@ -1611,6 +1617,34 @@ describe("Studio check steps", () => {
     expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
   });
 
+  test("names built-in tools a tool search found in the reader's language and keeps capability titles", () => {
+    const search: AiTurnBlock = {
+      id: "search-studio",
+      kind: "tool",
+      callId: "search-studio",
+      name: "search_tools",
+      args: { query: "check app" },
+      status: "completed",
+      result: {
+        tools: [
+          { name: "code_check", title: "Code Check", description: "Check a Studio app.", kind: "builtin" },
+          { name: "contacts__query__search", title: "Kontakte suchen", description: "Find contacts.", kind: "query", appId: "contacts" },
+        ],
+      },
+    };
+    const german = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiTurnBlockView, { block: search, turnId: "turn-1" });
+        },
+      }),
+    );
+    expect(german).toContain("App-Prüfung");
+    expect(german).toContain("Kontakte suchen");
+    expect(german).not.toContain("Code Check");
+  });
+
   test("shows the image a step looked at as a lazy thumbnail that opens larger", () => {
     const html = renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"] });
     expect(html).toContain('class="ai-step-image focus-ui"');
@@ -1618,6 +1652,12 @@ describe("Studio check steps", () => {
     expect(html).toContain(`src="/files/content?path=${encodeURIComponent("/checks/abc/desktop.png")}"`);
     expect(html).toContain('alt="A budget table with three rows."');
     expect(html).toContain('loading="lazy"');
+    // The button's name is the action; the image's alt text stays its description.
+    const describedBy = html.match(/aria-describedby="([^"]+)"/)?.[1];
+    expect(describedBy).toBeTruthy();
+    expect(html).toMatch(new RegExp(`<img[^>]*id="${describedBy}"[^>]*alt="A budget table with three rows."`));
+    // The thumbnail grows in below the input and output, so a result arriving in an open step moves nothing above it.
+    expect(html.indexOf("ai-step-image")).toBeGreaterThan(html.indexOf('role="region"'));
 
     // Without a host file viewer the thumbnail is only an image; the German reader gets a German button name.
     const plain = renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"], openFile: false });
@@ -1625,6 +1665,11 @@ describe("Studio check steps", () => {
     expect(plain).not.toContain('<button type="button" class="ai-step-image');
     expect(renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"], locale: "de" })).toContain(
       'aria-label="Bild desktop.png öffnen"',
+    );
+
+    // A host without chat file URLs, such as a background run transcript, shows no empty box.
+    expect(renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"], files: false })).not.toContain(
+      "ai-step-image",
     );
 
     // Folded steps load nothing; Project files, PDFs, and failed calls have no chat image to show.

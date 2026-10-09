@@ -232,11 +232,15 @@ order:
    "rejected". An app check (`code_check`) reads "Checking the app" while it
    runs, and its row names the outcome in words with its own icon: "passed",
    "3 findings", or "not passed", with warnings counted separately, such as
-   "passed · 2 warnings". A `view_image` step of a chat image shows that image
-   when expanded, as a small thumbnail with a fixed box that loads lazily
-   through the chat's file route, so it shows only what the reader may open.
-   Its alt text is the start of the image description; with the host's
-   `onOpenFile`, a click opens the file larger.
+   "passed · 2 warnings". When the host provides `fileUrl`, an expanded
+   `view_image` step of a chat image shows that image below its input and
+   output, as a small thumbnail with a fixed box that loads lazily through the
+   chat's file route, so it shows only what the reader may open and nothing
+   above it moves when the result arrives. Its alt text is the start of what
+   the step saw, the image description or the answer to its prompt. With the
+   host's `onOpenFile`, the thumbnail is a button that opens the file larger;
+   its name is that action, and the alt text describes it. Without `fileUrl`,
+   such as in a background run transcript, the step shows no thumbnail.
 2. **Results.** Presented files, `code_present` apps, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for

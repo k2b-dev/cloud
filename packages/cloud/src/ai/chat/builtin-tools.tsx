@@ -116,7 +116,8 @@ function SearchToolsView(props: { block: ToolBlock }) {
             {(tool) => (
               <ResultRow
                 icon={tool.kind === "action" ? "ti-bolt" : tool.kind === "query" ? "ti-search" : aiToolIcon(text(tool.name))}
-                title={text(tool.title) || displayToolName(text(tool.name), locale())}
+                // The catalog titles a built-in tool in English, so the reader's language names it; a capability brings its own title.
+                title={tool.kind !== "builtin" && text(tool.title) ? text(tool.title) : displayToolName(text(tool.name), locale())}
                 description={text(tool.description)}
                 meta={text(tool.appId) || text(tool.kind)}
               />

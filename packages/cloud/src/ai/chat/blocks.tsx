@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
-import { createSignal, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
+import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
@@ -771,19 +771,18 @@ const altText = (description: string): string => {
 /**
  * The image a view_image step looked at, as a small fixed-size thumbnail: it loads lazily through the chat's own file
  * route, so it shows only what the viewer may read, and it keeps its box while it loads or fails. A host that opens
- * chat files shows it larger on click.
+ * chat files shows it larger on click; the button is named for that action and described by the image's alt text.
  */
-function StepImage(props: { path: string; description: string }) {
+function StepImage(props: { path: string; src: string; description: string }) {
   const actions = useAiChatActions();
   const locale = useLocale();
+  const imageId = createUniqueId();
   const [failed, setFailed] = createSignal(false);
-  const src = () => actions.fileUrl?.(props.path) ?? null;
   const name = () => props.path.slice(props.path.lastIndexOf("/") + 1) || props.path;
+  const alt = () => altText(props.description);
   const image = () => (
-    <Show when={!failed() && src()} fallback={<i class="ti ti-photo-off text-lg text-dimmed" aria-hidden="true" />}>
-      {(url) => (
-        <img src={url()} alt={altText(props.description) || name()} loading="lazy" decoding="async" onError={() => setFailed(true)} />
-      )}
+    <Show when={!failed()} fallback={<i class="ti ti-photo-off text-lg text-dimmed" aria-hidden="true" />}>
+      <img id={imageId} src={props.src} alt={alt() || name()} loading="lazy" decoding="async" onError={() => setFailed(true)} />
     </Show>
   );
   return (
@@ -793,6 +792,7 @@ function StepImage(props: { path: string; description: string }) {
           type="button"
           class="ai-step-image focus-ui"
           aria-label={aiChatMessages(locale()).openImage({ name: name() })}
+          aria-describedby={!failed() && alt() ? imageId : undefined}
           onClick={() => open()(props.path)}
         >
           {image()}
@@ -822,7 +822,13 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const result = value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
     return value.warnings > 0 ? `${result} · ${t().checkWarnings({ count: value.warnings })}` : result;
   };
-  const image = () => (finished() ? viewedChatImage(props.block.name, props.block.result) : null);
+  const actions = useAiChatActions();
+  /** Only a host that resolves chat file URLs shows the image; without one there is no preview, not an empty box. */
+  const image = () => {
+    const viewed = finished() ? viewedChatImage(props.block.name, props.block.result) : null;
+    const src = viewed ? actions.fileUrl?.(viewed.path) : null;
+    return viewed && src ? { ...viewed, src } : null;
+  };
   const icon = () => {
     if (waiting()) return "ti ti-clock";
     const value = check();
@@ -845,7 +851,6 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
       busy={props.busy && props.block.status === "running"}
       renderBody={() => (
         <div class="flex min-w-0 flex-col gap-2">
-          <Show when={image()}>{(viewed) => <StepImage path={viewed().path} description={viewed().description} />}</Show>
           <div
             class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
             tabIndex={0}
@@ -855,6 +860,8 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
             <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
             <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
           </div>
+          {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
+          <Show when={image()}>{(viewed) => <StepImage path={viewed().path} src={viewed().src} description={viewed().description} />}</Show>
         </div>
       )}
     />
