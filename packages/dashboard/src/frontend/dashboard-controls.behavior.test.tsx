@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
@@ -33,6 +33,37 @@ domTest("adding a shortcut asks before discarding pending dashboard edits", asyn
     expect(dom.document.body.textContent).toContain("Add shortcut");
   } finally {
     dialogCore.close();
+    dispose();
+    dom.cleanup();
+  }
+});
+
+domTest("the Apps shortcut opens the app grid with each app's badge route, like the shell's", async () => {
+  const dom = createDomTestHarness();
+  const { render } = await import("solid-js/web");
+  const islands = await import("@k2b/cloud/ssr/islands");
+  const open = spyOn(islands, "openAppLaunchpad").mockImplementation(() => {});
+  const { default: DashboardControls } = await import("./dashboard-controls");
+  const { DEFAULT_DASHBOARD_SETTINGS } = await import("../shared");
+  const apps = [
+    { id: "chat", name: "Chat", icon: "ti ti-message", href: "/app/chat", description: "Talk", badge: "/api/chat/badge" },
+    { id: "mail", name: "Mail", icon: "ti ti-mail", href: "/app/mail", description: "Write" },
+  ];
+  const dispose = render(
+    () => <DashboardControls apps={apps} legalLinks={[]} settings={DEFAULT_DASHBOARD_SETTINGS} available={[]} inaccessible={[]} />,
+    dom.root,
+  );
+  try {
+    Array.from(dom.document.querySelectorAll("button"))
+      .find((entry) => entry.textContent?.trim() === "Apps")!
+      .click();
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]?.[0]?.map((app) => [app.id, app.badge])).toEqual([
+      ["chat", "/api/chat/badge"],
+      ["mail", undefined],
+    ]);
+  } finally {
+    open.mockRestore();
     dispose();
     dom.cleanup();
   }

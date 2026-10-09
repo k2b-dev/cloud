@@ -7,6 +7,32 @@ const isString = (value: unknown): value is string => typeof value === "string";
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
 const isStringRecord = (value: unknown): value is Record<string, string> => isRecord(value) && Object.values(value).every(isString);
 
+/** An absolute path on the current origin: one leading slash, no backslash or whitespace. */
+const SAME_ORIGIN_PATH = /^\/(?![\/\\])[^\\\s]*$/;
+
+/** A route as the gateway reads it: trimmed and without empty segments, so `//pwa/x/` is `/pwa/x`. */
+export const canonicalRoute = (route: string): string => {
+  const trimmed = route.trim();
+  return trimmed.startsWith("/") ? `/${trimmed.split("/").filter(Boolean).join("/")}` : trimmed;
+};
+
+/**
+ * Whether a `nav.badge` path stays below one of the app's own `routes`. It is
+ * checked on the path the browser actually requests, after dot segments, and
+ * never starts with `//`, which a URL resolver reads as another host.
+ */
+export const isOwnNavBadge = (badge: string, routes: readonly string[]): boolean => {
+  if (!SAME_ORIGIN_PATH.test(badge)) return false;
+  const path = new URL(badge, "https://cloud.invalid").pathname;
+  return (
+    !path.startsWith("//") &&
+    routes.some((route) => {
+      const prefix = canonicalRoute(route);
+      return prefix === "/" || path === prefix || path.startsWith(`${prefix}/`);
+    })
+  );
+};
+
 const invalid = (path: string, expected: string): string => `${path} must be ${expected}`;
 
 export const validateAppRegistryEntry = (value: unknown): string | null => {
@@ -61,6 +87,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (value.nav.requiresRoles !== undefined && !isStringArray(value.nav.requiresRoles)) {
       return invalid("nav.requiresRoles", "an array of strings");
     }
+    if (value.nav.badge !== undefined && (!isString(value.nav.badge) || !isOwnNavBadge(value.nav.badge, value.routes))) {
+      return invalid("nav.badge", "a same-origin path below one of the entry's routes");
+    }
   }
   if (value.adminNav !== undefined) {
     if (
@@ -98,7 +127,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
           !link.label.trim() ||
           (link.description !== undefined && !isString(link.description)) ||
           !isString(link.href) ||
-          !/^\/(?![\/\\])[^\\\s]*$/.test(link.href) ||
+          !SAME_ORIGIN_PATH.test(link.href) ||
           (link.icon !== undefined && !isString(link.icon)) ||
           (link.keywords !== undefined && !isStringArray(link.keywords)),
       )

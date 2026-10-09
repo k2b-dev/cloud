@@ -46,6 +46,28 @@ describe("validateAppRegistryEntry", () => {
     expect(validateAppRegistryEntry({ ...valid, pwa: "/pwa/core" })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: "user" } })).toContain("pwa.requiresRoles");
   });
+  test("accepts a navigation badge only as a same-origin path below the entry's own routes", () => {
+    const nav = { href: "/", section: "primary" };
+    const reason = "nav.badge must be a same-origin path below one of the entry's routes";
+    expect(validateAppRegistryEntry({ ...valid, nav: { ...nav, badge: "/api/core/badge" } })).toBeNull();
+    for (const badge of [
+      7,
+      "api/core/badge",
+      "//evil.example/badge",
+      "https://evil.example/badge",
+      "/api/core/ badge",
+      // Even an entry that owns "/" may not name a path the browser sends as "//host/...".
+      "/api/..//evil.example/badge",
+      "/api/%2e%2e//evil.example/badge",
+    ]) {
+      expect(validateAppRegistryEntry({ ...valid, nav: { ...nav, badge } })).toBe(reason);
+    }
+    const inventory = { ...valid, id: "inventory", routes: ["/api/inventory"], nav: { href: "/app/inventory", section: "primary" } };
+    expect(validateAppRegistryEntry({ ...inventory, nav: { ...inventory.nav, badge: "/api/inventory/badge" } })).toBeNull();
+    for (const badge of ["/api/core/badge", "/api/inventory-other/badge", "/api/inventory/%2e%2e/core/badge"]) {
+      expect(validateAppRegistryEntry({ ...inventory, nav: { ...inventory.nav, badge } })).toBe(reason);
+    }
+  });
   test("rejects a relative Help route", () =>
     expect(
       validateAppRegistryEntry({

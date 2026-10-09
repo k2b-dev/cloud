@@ -32,6 +32,8 @@ export const railMessages = i18n.define({
       saveFailed: "Could not save app bar settings. Your edits are still here.",
       conflict: "The app bar changed in another editor. Cancel and reopen this editor to load the latest settings.",
       invalid: "Check shortcut titles, links and icons. Each app can be pinned once; settings must fit within 16 KiB.",
+      badge: ({ count }: { count: number }) => `${count} new`,
+      badgeMany: "more than 99 new",
     },
     de: {
       managed: "Von der Administration bereitgestellt",
@@ -63,6 +65,8 @@ export const railMessages = i18n.define({
       conflict:
         "Die App-Leiste wurde in einem anderen Editor geändert. Brich ab und öffne den Editor erneut, um den aktuellen Stand zu laden.",
       invalid: "Prüfe Titel, Links und Icons. Jede App kann einmal angeheftet werden; die Einstellungen dürfen höchstens 16 KiB belegen.",
+      badge: ({ count }) => `${count} neu`,
+      badgeMany: "mehr als 99 neu",
     },
   },
 });

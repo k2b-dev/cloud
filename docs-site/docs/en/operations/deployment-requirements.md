@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Deployment requirements
@@ -444,6 +444,25 @@ device and verify that its text appears below the title. Send another without a
 preview and verify that it shows only the title. Confirm that notification
 history contains neither preview. Review the application's preview controls
 before enabling sensitive content on lock screens or paired devices.
+
+### Show app badges in the rail and app grid
+
+The rail and the app grid can show a count on an application's icon when the
+application declares
+[`nav.badge`](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon).
+No database migration or configuration change is required, and no built-in
+application declares a badge yet, so the shell looks and behaves as before.
+
+Each application renders the shell with its own platform package, so badges
+appear on the pages of applications built with this release; pages of older
+images show the same rail without counts. Older releases ignore the field in
+the registry. Once an application declares a badge, every open, visible tab of
+a signed-in person sends one `GET` to that route after the page loads, at most
+one per minute after that, and one more whenever a page asks for a fresh count
+after a change. Each tab keeps at most one such request per route in flight
+and gives up on one after a minute; requests asked for meanwhile share one
+read after it. Hidden tabs send nothing. Count these requests when sizing the
+application.
 
 ## Coordinate an existing installation's identity upgrade
 

@@ -126,6 +126,7 @@ export default function DashboardControls(props: DashboardControlsProps) {
         label: app.name,
         href: app.href,
         description: app.description,
+        badge: app.badge,
       })),
       props.legalLinks,
     );

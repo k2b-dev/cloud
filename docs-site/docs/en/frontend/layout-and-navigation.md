@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-10-03
+updated: 2026-10-09
 ---
 
 # Layout and navigation
@@ -207,6 +207,62 @@ the current request identity.
 
 The live app registry supplies the navigation. Do not hardcode links to every
 other Cloud application.
+
+## Show a count on the app icon
+
+An application can show how many items wait for the signed-in person, such as
+unread mentions, as a count on its icon in the app bar and the app grid.
+Declare a route the application serves:
+
+```ts
+nav: {
+  href: "/app/inventory",
+  section: "primary",
+  badge: "/api/inventory/badge",
+}
+```
+
+Serve it like any other authenticated route and return an `AppNavBadge` from
+`@k2b/cloud/contracts`:
+
+```ts
+import type { AppNavBadge } from "@k2b/cloud/contracts";
+
+router.get("/api/inventory/badge", async (c) => {
+  const count = await countOpenRequests(c.get("accessSubject"));
+  return c.json({ count } satisfies AppNavBadge);
+});
+```
+
+- **Route:** `badge` is a same-origin path below one of the application's
+  `routes`, also after resolving `.` and `..` segments. `defineApp()` throws
+  at startup for any other value, and the registry rejects such an entry.
+  The browser calls it with the person's session, so the route policy and
+  the application's permission checks apply as for every request.
+- **Count:** a positive safe integer shows the count, above 99 as `99+`. `0`,
+  any status other than `200`, a body without a valid `count`, a failed
+  request, and a request still running after a minute show no badge. Keep the
+  route cheap: count, do not list.
+- **When it is read:** the server render never calls the route and never
+  shows a count. After the page loads, the shell reads every badge route of
+  the person's navigation once, then at most once per minute while the tab is
+  visible, and again when a hidden tab becomes visible after a minute or more.
+  Hidden tabs send nothing. Each route has at most one request in flight per
+  tab, and each count appears as soon as its own answer arrives, so a slow
+  application delays only its own badge.
+- **Layout:** the count sits over the corner of the icon, so appearing,
+  growing, or clearing moves nothing. Screen readers hear it with the app's
+  name, for example "Chat, 3 new".
+- **Fresh after a change:** after the person changed what the badge counts,
+  for example by reading a conversation, call `refreshAppBadges()` from
+  `@k2b/cloud/browser/app-badges` so the app bar agrees with the page at once.
+  Calls while a read is still running share one more read after it, so
+  frequent calls never stack up requests. It does nothing in a hidden tab or
+  outside the Cloud layout.
+
+An application without `badge` renders exactly as before. A badge is a hint to
+open the application, not authorization or a live view; the application's own
+pages show the current state.
 
 ## Personalize the app bar
 

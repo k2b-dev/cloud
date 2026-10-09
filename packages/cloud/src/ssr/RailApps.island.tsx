@@ -1,25 +1,29 @@
 import { ScrollArea, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { RailSnapshot } from "../contracts/rail-preferences";
+import { AppBadge, useAppBadgeDescription } from "./AppBadge";
 import { appAccentStyle } from "./app-appearance";
+import { watchAppBadges } from "./app-badges";
 import { RAIL_PREFERENCES_EVENT, readRailContext } from "./rail-context";
 import { projectRailNavigation, type RailApp, type RailLink, railLinkActive } from "./rail-navigation";
 
 function RailIcon(props: { link: RailLink; currentPath: string }) {
   let target: HTMLAnchorElement | undefined;
   const active = () => railLinkActive(props.link, props.currentPath);
+  const badge = useAppBadgeDescription(() => props.link.badge);
   return (
     <>
       <a
         ref={target}
         href={props.link.href}
-        class={`rail-item shrink-0 ${active() ? "rail-item-active" : ""}`}
-        aria-label={props.link.label}
+        class={`rail-item relative shrink-0 ${active() ? "rail-item-active" : ""}`}
+        aria-label={badge() ? `${props.link.label}, ${badge()}` : props.link.label}
         aria-current={active() ? "page" : undefined}
         style={appAccentStyle(props.link.accent)}
       >
         <i class={`${props.link.iconClass} text-base`} aria-hidden="true" />
         <span class="sr-only">{props.link.label}</span>
+        <AppBadge endpoint={props.link.badge} />
       </a>
       <Tooltip target={() => target} content={props.link.label} placement="right" delay={0} />
     </>
@@ -36,10 +40,13 @@ export default function RailApps(props: { apps: RailApp[]; settings: RailSnapsho
     const syncLocation = () => setCurrentPath(`${window.location.pathname}${window.location.search}${window.location.hash}`);
     sync();
     syncLocation();
+    // Every visible app, not only the rail's: the app grid shows the same counts.
+    const stopBadges = watchAppBadges(props.apps.flatMap((app) => (app.badge ? [app.badge] : [])));
     window.addEventListener(RAIL_PREFERENCES_EVENT, sync);
     window.addEventListener("popstate", syncLocation);
     window.addEventListener("hashchange", syncLocation);
     onCleanup(() => {
+      stopBadges();
       window.removeEventListener(RAIL_PREFERENCES_EVENT, sync);
       window.removeEventListener("popstate", syncLocation);
       window.removeEventListener("hashchange", syncLocation);

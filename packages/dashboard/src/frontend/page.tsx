@@ -283,6 +283,7 @@ export default ssr<AuthContext>(async (c) => {
         icon: entry.icon,
         href: entry.nav?.href ?? entry.routes[0] ?? "#",
         description: entry.description,
+        badge: entry.nav?.badge,
       })),
     ...(hasRole(user, "admin")
       ? [

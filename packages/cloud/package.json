@@ -30,6 +30,7 @@
     "./server/*": "./src/server/*",
     "./browser": "./src/server/api-client.ts",
     "./browser/app-approval": "./src/browser/app-approval.ts",
+    "./browser/app-badges": "./src/browser/app-badges.ts",
     "./browser/live": "./src/browser/live.ts",
     "./browser/mermaid": "./src/browser/mermaid.ts",
     "./browser/reload": "./src/browser/reload.ts",

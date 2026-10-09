@@ -16,6 +16,7 @@ export type AppRegistryNav = {
   section: "primary" | "more" | "hidden";
   requiresAuth?: boolean;
   requiresRoles?: Role[];
+  badge?: string;
   adminHref?: string;
 };
 

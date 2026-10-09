@@ -119,6 +119,8 @@ export type AppMeta = {
     section: "primary" | "more" | "hidden";
     requiresAuth?: boolean;
     requiresRoles?: Role[];
+    /** Same-origin path of a `GET` route this app serves that returns an `AppNavBadge`; see `defineApp()`. */
+    badge?: string;
   };
   /**
    * Legal/info pages this app owns. Aggregated app-wide and rendered in
@@ -145,6 +147,14 @@ export type AppMeta = {
   /** `cld` modules this app serves as plugins. */
   cli?: AppCliModules;
 };
+
+/**
+ * Response of an app's `nav.badge` route: how many items wait for the signed-in
+ * person. A positive safe integer shows a count on the app's icon in the rail
+ * and the app grid (above 99 as "99+"); `0`, a non-200 response, or anything
+ * else shows none.
+ */
+export type AppNavBadge = { count: number };
 
 export type WidgetEndpoint = {
   /** Unique-within-the-app id, e.g. "open-requests". */
