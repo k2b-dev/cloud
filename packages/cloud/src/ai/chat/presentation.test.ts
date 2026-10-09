@@ -79,3 +79,21 @@ test("a long step shows its duration in place of its target, in the reader's lan
   expect(liveStepLabel(read, aiChatMessages("en"))).toBe("Reading q1.csv");
   expect(liveStepLabel(read, aiChatMessages("en"), 60_000)).toBe("Reading a file · 1 min");
 });
+
+test("an app check has its own calm live label in the reader's language", async () => {
+  const { liveStepLabel } = await import("./turn-view");
+  const { aiChatMessages } = await import("./messages");
+  const check: AiTurnBlock = {
+    id: "tool-check",
+    kind: "tool",
+    callId: "check",
+    name: "code_check",
+    args: { id: "app-1" },
+    status: "running",
+  };
+  const inspect: AiTurnBlock = { ...check, id: "tool-inspect", callId: "inspect", name: "code_inspect", args: { runId: "run-1" } };
+  expect(liveStepLabel(check, aiChatMessages("en"))).toBe("Checking the app");
+  expect(liveStepLabel(check, aiChatMessages("de"))).toBe("Prüft die App");
+  expect(liveStepLabel(inspect, aiChatMessages("en"))).toBe("Checking the run");
+  expect(liveStepLabel(inspect, aiChatMessages("de"))).toBe("Prüft den Lauf");
+});

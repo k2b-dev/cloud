@@ -1513,3 +1513,125 @@ describe("turn places in the reader's language", () => {
     expect(renderPlaces(blocks, { workedMs: 240_000 })).not.toMatch(/interrupted|stopped/);
   });
 });
+
+describe("Studio check steps", () => {
+  const check = (id: string, result: unknown, isError = false): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: "code_check",
+    args: { id: "app-1" },
+    status: "completed",
+    result,
+    isError,
+  });
+  const issue = (severity: "error" | "warning") => ({ severity, kind: "layout", message: "Row is misaligned" });
+  const viewed = (path: string, mediaType = "image/png", status: "completed" | "failed" = "completed"): AiTurnBlock => ({
+    id: `view-${path}`,
+    kind: "tool",
+    callId: `view-${path}`,
+    name: "view_image",
+    args: { path },
+    status,
+    isError: status === "failed",
+    result: { path, mediaType, description: "A budget table with three rows.\nThe totals line up." },
+  });
+  const renderExpanded = (blocks: AiTurnBlock[], options: { locale?: string; open?: string[]; openFile?: boolean } = {}) => {
+    const disclosureState = createAiToolDisclosureState();
+    for (const id of ["work:ai-turn:turn-1:start", ...(options.open ?? [])]) disclosureState.set(id, true);
+    return renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: options.locale ?? "en",
+        get children() {
+          return createComponent(AiChatActionsProvider, {
+            actions: {
+              fileUrl: (path: string) => `/files/content?path=${encodeURIComponent(path)}`,
+              ...(options.openFile === false ? {} : { onOpenFile: () => undefined }),
+            },
+            get children() {
+              return createComponent(AiTurnView, {
+                segment: () => ({
+                  id: "ai-turn:turn-1:start",
+                  turnId: "turn-1",
+                  phase: "completed",
+                  layout: layoutAiTurn(blocks, { phase: "completed" }),
+                  earlier: false,
+                  duration: () => ({ workedMs: 60_000, waitingMs: null }),
+                }),
+                disclosureState,
+              });
+            },
+          });
+        },
+      }),
+    );
+  };
+
+  test("names the outcome of a check in words and with its own icon", () => {
+    const blocks = [
+      check("check-failed", { passed: false, issues: [issue("error"), issue("error"), issue("error"), issue("warning")] }),
+      check("check-passed", { passed: true, issues: [issue("warning"), issue("warning")] }),
+      check("check-clean", { passed: true, issues: [] }),
+      { id: "final", kind: "text", text: "Done." } satisfies AiTurnBlock,
+    ];
+    const english = renderExpanded(blocks, { open: ["group:check-failed"] });
+    expect(english).toContain("App check");
+    expect(english).toContain("3 findings · 1 warning");
+    expect(english).toContain("passed · 2 warnings");
+    expect(english).toContain("<strong>App check</strong><small>passed</small>");
+    expect(english).toContain("ti-alert-triangle");
+    expect(english).toContain("ti-circle-check");
+    expect(english).not.toContain('data-tone="danger"');
+
+    const german = renderExpanded(blocks, { locale: "de", open: ["group:check-failed"] });
+    expect(german).toContain("App-Prüfung");
+    expect(german).toContain("3 Befunde · 1 Warnung");
+    expect(german).toContain("bestanden · 2 Warnungen");
+    expect(german).not.toMatch(/App check|findings|passed/);
+
+    // A check that did not pass without a counted finding still says so; a check that failed to run is a failed step.
+    expect(renderExpanded([check("check-steps", { passed: false, issues: [] })])).toContain("not passed");
+    const broken = renderExpanded([check("check-broken", { failed: true, error: "Host unavailable" }, true)]);
+    expect(broken).toContain("failed");
+    expect(broken).not.toMatch(/passed|findings/);
+  });
+
+  test("names every Studio step in the reader's language", () => {
+    const blocks: AiTurnBlock[] = ["code_write", "code_check", "code_present"].map((name) => ({
+      id: `tool-${name}`,
+      kind: "tool",
+      callId: name,
+      name,
+      args: {},
+      status: "completed",
+      result: {},
+    }));
+    const german = renderExpanded([...blocks, viewed("/checks/abc/desktop.png")], { locale: "de", open: ["group:tool-code_write"] });
+    for (const label of ["App-Dateien speichern", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"]) expect(german).toContain(label);
+    expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
+  });
+
+  test("shows the image a step looked at as a lazy thumbnail that opens larger", () => {
+    const html = renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"] });
+    expect(html).toContain('class="ai-step-image focus-ui"');
+    expect(html).toContain('aria-label="Open image desktop.png"');
+    expect(html).toContain(`src="/files/content?path=${encodeURIComponent("/checks/abc/desktop.png")}"`);
+    expect(html).toContain('alt="A budget table with three rows."');
+    expect(html).toContain('loading="lazy"');
+
+    // Without a host file viewer the thumbnail is only an image; the German reader gets a German button name.
+    const plain = renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"], openFile: false });
+    expect(plain).toContain('<div class="ai-step-image">');
+    expect(plain).not.toContain('<button type="button" class="ai-step-image');
+    expect(renderExpanded([viewed("/checks/abc/desktop.png")], { open: ["view-/checks/abc/desktop.png"], locale: "de" })).toContain(
+      'aria-label="Bild desktop.png öffnen"',
+    );
+
+    // Folded steps load nothing; Project files, PDFs, and failed calls have no chat image to show.
+    expect(renderExpanded([viewed("/checks/abc/desktop.png")])).not.toContain("<img");
+    for (const block of [viewed("/project/plan.png"), viewed("/checks/report.pdf", "application/pdf")])
+      expect(renderExpanded([block], { open: [block.id] })).not.toContain("ai-step-image");
+    const failed = viewed("/checks/abc/desktop.png", "image/png", "failed");
+    expect(renderExpanded([failed], { open: [failed.id] })).not.toContain("ai-step-image");
+  });
+});

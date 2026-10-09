@@ -13,6 +13,7 @@ import { useAiChatActions } from "./message-actions";
 import {
   aiToolIcon,
   capabilityErrorDescription,
+  codeCheckOutcome,
   displayToolName,
   fetchFileErrorPresentation,
   formatToolDetailText,
@@ -22,6 +23,7 @@ import {
   isTextEditorToolName,
   jsonPreview,
   memoryToolPresentation,
+  viewedChatImage,
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
@@ -200,7 +202,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
   const submit = (input: { approved: boolean; remember?: "always" }) => {
     if (!actionDisabled() && !approval.loading()) void approval.mutate(input);
   };
-  const title = () => props.block.presentation?.title ?? displayToolName(props.block.name);
+  const title = () => props.block.presentation?.title ?? displayToolName(props.block.name, locale());
   const ownerName = () => props.block.presentation?.appName ?? t().assistant;
   const description = () => {
     const reviewMessage = props.block.approval?.review?.message.trim();
@@ -535,7 +537,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
 function RejectedToolView(props: { block: ToolBlock }) {
   const locale = useLocale();
   const presentation = () => props.block.presentation;
-  const title = () => presentation()?.title ?? displayToolName(props.block.name);
+  const title = () => presentation()?.title ?? displayToolName(props.block.name, locale());
   return (
     <Chat.Activity
       icon={aiToolIcon(props.block.name, presentation()?.appIcon)}
@@ -664,7 +666,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         fallback={
           <ToolResultDisclosure
             blockId={props.block.id}
-            name={displayToolName(props.block.name)}
+            name={displayToolName(props.block.name, locale())}
             toolName={props.block.name}
             args={props.block.args}
             result={props.block.result}
@@ -718,11 +720,14 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           <TextEditorToolView turnId={props.turnId} block={props.block} active={props.active} />
         </Match>
         <Match when={status() === "running" || status() === "awaiting_client"}>
-          <Chat.Activity label={displayToolName(props.block.name)} icon={aiToolIcon(props.block.name)} busy />
+          <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)} busy />
         </Match>
       </Switch>
       <Show when={hasCapabilityTable(props.block)}>
-        <CapabilityTablePreview result={props.block.result} label={props.block.presentation?.title ?? displayToolName(props.block.name)} />
+        <CapabilityTablePreview
+          result={props.block.result}
+          label={props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
+        />
       </Show>
     </>
   );
@@ -751,7 +756,56 @@ export function AiTurnBlockView(props: { block: AiTurnBlock; turnId: string; str
   );
 }
 
-/** One step in the expanded work list: its title, target, and state, with input and output on demand. */
+/** An alt text is a short description: the first line of the image description, clipped at a word. */
+const altText = (description: string): string => {
+  const line =
+    description
+      .split("\n")
+      .find((entry) => entry.trim())
+      ?.trim() ?? "";
+  if (line.length <= 240) return line;
+  const clipped = line.slice(0, 240);
+  return `${clipped.slice(0, Math.max(clipped.lastIndexOf(" "), 160))}…`;
+};
+
+/**
+ * The image a view_image step looked at, as a small fixed-size thumbnail: it loads lazily through the chat's own file
+ * route, so it shows only what the viewer may read, and it keeps its box while it loads or fails. A host that opens
+ * chat files shows it larger on click.
+ */
+function StepImage(props: { path: string; description: string }) {
+  const actions = useAiChatActions();
+  const locale = useLocale();
+  const [failed, setFailed] = createSignal(false);
+  const src = () => actions.fileUrl?.(props.path) ?? null;
+  const name = () => props.path.slice(props.path.lastIndexOf("/") + 1) || props.path;
+  const image = () => (
+    <Show when={!failed() && src()} fallback={<i class="ti ti-photo-off text-lg text-dimmed" aria-hidden="true" />}>
+      {(url) => (
+        <img src={url()} alt={altText(props.description) || name()} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+      )}
+    </Show>
+  );
+  return (
+    <Show when={actions.onOpenFile} fallback={<div class="ai-step-image">{image()}</div>}>
+      {(open) => (
+        <button
+          type="button"
+          class="ai-step-image focus-ui"
+          aria-label={aiChatMessages(locale()).openImage({ name: name() })}
+          onClick={() => open()(props.path)}
+        >
+          {image()}
+        </button>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * One step in the expanded work list: its title, target, state, and outcome, with input and output on demand. An app
+ * check names its outcome in words and with its own icon, so a passed and a failed check differ without colour.
+ */
 export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
@@ -760,28 +814,47 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   const waiting = () => props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
   const state = () =>
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";
+  const finished = () => props.block.status === "completed" && !props.block.isError;
+  const check = () => (finished() ? codeCheckOutcome(props.block.name, props.block.result) : null);
+  const outcome = () => {
+    const value = check();
+    if (!value) return "";
+    const result = value.passed ? t().checkPassed : value.errors > 0 ? t().checkFindings({ count: value.errors }) : t().checkNotPassed;
+    return value.warnings > 0 ? `${result} · ${t().checkWarnings({ count: value.warnings })}` : result;
+  };
+  const image = () => (finished() ? viewedChatImage(props.block.name, props.block.result) : null);
+  const icon = () => {
+    if (waiting()) return "ti ti-clock";
+    const value = check();
+    if (value) return value.passed ? "ti ti-circle-check" : "ti ti-alert-triangle";
+    return aiToolIcon(props.block.name, props.block.presentation?.appIcon);
+  };
   return (
     <AiToolActivity
       blockId={props.block.id}
-      label={props.block.presentation?.title ?? displayToolName(props.block.name)}
+      label={props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
       description={[
         props.block.status === "running" ? (props.block.progress ?? "") : "",
         typeof detail() === "string" ? String(detail()) : "",
         state(),
+        outcome(),
       ]
         .filter(Boolean)
         .join(" · ")}
-      icon={waiting() ? "ti ti-clock" : aiToolIcon(props.block.name, props.block.presentation?.appIcon)}
+      icon={icon()}
       busy={props.busy && props.block.status === "running"}
       renderBody={() => (
-        <div
-          class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
-          tabIndex={0}
-          role="region"
-          aria-label={t().toolInputOutput}
-        >
-          <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
-          <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
+        <div class="flex min-w-0 flex-col gap-2">
+          <Show when={image()}>{(viewed) => <StepImage path={viewed().path} description={viewed().description} />}</Show>
+          <div
+            class="max-h-72 overflow-auto overscroll-contain rounded-md bg-zinc-100 p-3 dark:bg-zinc-950"
+            tabIndex={0}
+            role="region"
+            aria-label={t().toolInputOutput}
+          >
+            <ToolDetail title={t().input} toolName={props.block.name} value={props.block.args} />
+            <ToolDetail title={t().output} toolName={props.block.name} value={props.block.result} />
+          </div>
         </div>
       )}
     />
