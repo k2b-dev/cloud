@@ -1,6 +1,6 @@
 # Dev containers — run with:
 #   bun run dev          (core set, 7 containers)
-#   bun run dev:full     (core + extras, 24 containers; --profile extra)
+#   bun run dev:full     (core + extras, 25 containers; --profile extra)
 #   bun run dev:start FOO    (ad-hoc: start a single extra app in the running stack)
 #   bun run dev:restart FOO  (reload mounted source without rebuilding the image)
 #
@@ -172,6 +172,18 @@ services:
       - ./packages/notebooks/src:/app/packages/notebooks/src
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/notebooks/src/index.ts
+
+  app-chat:
+    <<: *app
+    container_name: app-chat
+    environment: { <<: *env, APP_ID: chat }
+    profiles: [extra]
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/chat/src:/app/packages/chat/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/chat/src/index.ts
 
   app-contacts:
     <<: *app

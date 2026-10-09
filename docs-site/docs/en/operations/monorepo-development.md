@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Monorepo development
@@ -360,6 +360,17 @@ The development service needs:
 
 An HTTP application registers itself at startup. The gateway discovers it from
 the shared registry.
+
+An application that is built on `main` before its release gets
+`profiles: ["unreleased"]` on its `compose.prod.yml` service. Its image is
+built and published, but a plain `docker compose up`, the release smoke, and
+the upgrade preflight leave it out. Compose starts it only with
+`--profile unreleased` or when the command names the service, and both are
+for test installations. Until its release it has no row in the
+deployment requirements and no catalog page. Chat (`app-chat`) is unreleased
+this way; in development it is an optional application, so start it with
+`bun run dev:start chat` or `bun run dev:full`. The release pull request
+removes the profile line.
 
 A worker without HTTP routes should be a separate service. It should not
 register application routes.
