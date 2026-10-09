@@ -60,7 +60,10 @@ export type DropdownChoice = DropdownActionBase & {
 
 export type DropdownSection = {
   sectionLabel?: string;
-  /** `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. */
+  /**
+   * `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. Give it a
+   * `sectionLabel`: the label names the choice above the row and for screen readers.
+   */
   layout?: "row";
   items: readonly (DropdownAction | DropdownChoice)[];
 };
@@ -330,7 +333,10 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
               class="k2b-dropdown__section"
               data-divided={index() > 0 ? "true" : undefined}
               role="group"
-              aria-label={(item as DropdownSection).sectionLabel ?? messages().actions}
+              // A row of choices is no set of actions: without a label it stays unnamed rather than misnamed.
+              aria-label={
+                (item as DropdownSection).sectionLabel ?? ((item as DropdownSection).layout === "row" ? undefined : messages().actions)
+              }
             >
               <Show when={(item as DropdownSection).sectionLabel}>{(label) => <div class="k2b-dropdown__label">{label()}</div>}</Show>
               <Show

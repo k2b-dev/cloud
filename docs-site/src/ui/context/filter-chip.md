@@ -26,9 +26,10 @@ Each section chooses its selection behavior:
 - the default is single-select within that section;
 - `multiple: true` allows several values from that section;
 - `layout: "row"` sets a few short single-select options side by side as one
-  segmented row (see [menus](/en/ui/actions/menus#items-and-sections)); the row
-  always keeps one choice, so selecting the chosen option again changes
-  nothing;
+  segmented row under its `label`, which names the choice (see
+  [menus](/en/ui/actions/menus#items-and-sections)); selecting the chosen
+  option again keeps it, and a row value in `defaultValue` keeps a choice
+  through Reset too;
 - selections from other sections stay intact;
 - option values must be unique across all sections.
 
@@ -78,6 +79,8 @@ The menu shows up to 32rem (and at most 80 % of the viewport height) before it s
 Without `defaultValue`, an active filter shows its selected count and offers **Clear**. An empty `defaultValue={[]}` has the same clear/count behavior.
 
 With a non-empty `defaultValue`, the trigger hides the count and offers **Reset** whenever the current values differ from the baseline. At the baseline, no reset action is shown.
+
+Reset emits `defaultValue` as it is, and Clear emits an empty selection. A row section with no value in `defaultValue` ends up with no choice either way, so give every row its baseline value there. For a display choice that Reset should leave alone, such as what a color shows, put the current choice into `defaultValue`: Reset then appears only for changed filters and keeps the choice.
 
 ## Accessibility
 

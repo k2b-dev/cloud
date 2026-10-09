@@ -42,6 +42,9 @@ a point in time, such as a deadline, as a small colored marker beside its title
 on the plain surface instead of a filled band; hover and selection tint it like
 an event, and a custom `renderEvent` output replaces the default marker.
 `href` or `getEventHref` makes an event a canonical link.
+`accessibleDetail` adds short text to the event's accessible name for state
+that its content shows only visually, such as a priority flag in a custom
+`renderEvent` output.
 
 `description` is optional plain text. The default timed-event card shows up to
 two lines when its duration is at least 90 minutes; compact, all-day, and
@@ -141,7 +144,8 @@ type CalendarRecurrence = {
 type CalendarEvent = {
   id: string; title: string; start: Date | string; end?: Date | string; allDay?: boolean;
   color?: CalendarEventColor; colorHex?: string; href?: string; dataSpaceItemId?: string; meta?: string;
-  description?: string; display?: "event" | "background" | "marker"; location?: string; calendarName?: string;
+  description?: string; display?: "event" | "background" | "marker"; accessibleDetail?: string;
+  location?: string; calendarName?: string;
   attendees?: CalendarAttendee[]; resources?: CalendarResource[]; recurrence?: CalendarRecurrence;
 };
 
@@ -204,7 +208,14 @@ events, and interaction handles have text or accessible labels. Color is
 supplementary to event title, time, and metadata.
 A timed event's accessible name combines its title and time range in the
 render locale, for example “Review, 09:00 to 10:00” or “Review, 09:00 bis
-10:00”; an all-day event uses its title alone.
+10:00”; an all-day event uses its title alone. `accessibleDetail` follows
+after a comma, for example “Review, 09:00 to 10:00, Priority: High”. The name
+replaces the event's visible content for screen readers, so custom
+`renderEvent` output that shows state only as an icon or color passes that
+state here.
+
+The day and week views scroll to `startHour` once they mount: smoothly by
+default, and at once when the person prefers reduced motion.
 
 ## Runtime
 

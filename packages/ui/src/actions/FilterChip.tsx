@@ -14,7 +14,10 @@ export type FilterChipSection = {
   label?: string;
   options: readonly FilterChipOption[];
   multiple?: boolean;
-  /** `row` sets a few short single-select options side by side as one segmented row that always keeps one choice. */
+  /**
+   * `row` sets a few short single-select options side by side as one segmented row under its `label`. Selecting the
+   * chosen option again keeps it; give the row a value in `defaultValue` so Reset keeps a choice too.
+   */
   layout?: "row";
 };
 

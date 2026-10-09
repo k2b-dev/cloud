@@ -30,6 +30,11 @@ export type CalendarEvent = {
    * beside its title instead of a filled band.
    */
   display?: "event" | "background" | "marker";
+  /**
+   * Short text the accessible name adds after the title and time, for state the event shows only visually, such as
+   * a priority flag in custom `renderEvent` content.
+   */
+  accessibleDetail?: string;
   location?: string;
   calendarName?: string;
   attendees?: CalendarAttendee[];
@@ -348,14 +353,16 @@ const EventChip = (props: {
   const showDescription = () =>
     Boolean(props.event.description?.trim() && props.fill && !props.event.allDay && !props.compact && durationHours() >= 1.5);
   const timeLabel = () => `${formatTime(props.event.startDate, dateConfig())} - ${formatTime(props.event.endDate, dateConfig())}`;
-  const ariaLabel = () =>
-    props.event.allDay
+  const ariaLabel = () => {
+    const label = props.event.allDay
       ? props.event.title
       : messages().calendarEventTime({
           title: props.event.title,
           start: formatTime(props.event.startDate, dateConfig()),
           end: formatTime(props.event.endDate, dateConfig()),
         });
+    return props.event.accessibleDetail ? `${label}, ${props.event.accessibleDetail}` : label;
+  };
   const renderedEvent = () =>
     props.owner.renderEvent?.(props.event, {
       compact: props.compact ?? false,
@@ -1198,7 +1205,9 @@ const TimeGridView = (props: {
     requestAnimationFrame(() => {
       if (!scrollContainer || !defaultHourMarker) return;
       const targetTop = defaultHourMarker.getBoundingClientRect().top - scrollContainer.getBoundingClientRect().top;
-      scrollContainer.scrollTo({ top: Math.max(0, scrollContainer.scrollTop + targetTop), behavior: "smooth" });
+      // Reduced motion jumps to the business hours instead of gliding there, like every transition of the library.
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      scrollContainer.scrollTo({ top: Math.max(0, scrollContainer.scrollTop + targetTop), behavior });
     });
   });
   return (

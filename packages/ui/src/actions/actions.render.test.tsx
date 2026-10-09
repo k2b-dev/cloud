@@ -525,6 +525,20 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule(".k2b-ui .k2b-dropdown__row")).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
     expect(rule(".k2b-ui .k2b-dropdown__row > .k2b-dropdown__item > i")).toContain("display: none");
     expect(rule('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]')).toContain("background: var(--k2b-surface)");
+
+    // A row of choices is no set of actions: without a label its group stays unnamed instead of "Actions".
+    const unlabeled = renderToString(() =>
+      createComponent(FilterChip, {
+        label: "View",
+        icon: "ti ti-filter",
+        value: ["sort:asc"],
+        defaultValue: ["sort:asc"],
+        onValueChange: () => {},
+        options: [{ layout: "row", options: [{ value: "sort:asc", label: "Ascending" }] }],
+      }),
+    );
+    expect(unlabeled).toMatch(/role="group"(?:(?!aria-label)[^>])*>(?:<!--[^>]*-->)*<div class="k2b-dropdown__row">/);
+    expect(unlabeled).not.toContain('aria-label="Actions"');
   });
 
   test("treats an empty filter default as clear mode and keeps the selected count", () => {

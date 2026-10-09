@@ -9,6 +9,10 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceItemAssignee, SpaceTag } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { defaultFilter } from "../filter/types";
+import { buildSpacesItemLinkBaseUrl } from "../workspace/workspace-types";
+import { calendarPersonColor } from "./colors";
+import { parseCalendarRoute } from "./filter";
 
 // Whether a color choice moves anything is a layout question, so the calendar route renders on the server and then
 // runs its real island bundle in a real browser, as the workspace page does. The island bundle resolves Solid from
@@ -106,36 +110,39 @@ const items: CalendarItem[] = [
   event("Item18", "Debrief", 28, "09:00", "10:00", { columnId: "Col002" }),
 ];
 
-type Scenario = { locale: "en" | "de"; view: "week" | "month"; colorBy?: string };
+/** By default the URL names the calendar view, as after switching to it; `search` replaces the whole query. */
+type Scenario = { locale: "en" | "de"; view: "week" | "month"; colorBy?: string; search?: string };
 const query = (scenario: Scenario) =>
-  `?view=calendar&cv=${scenario.view}&cd=2026-10-12${scenario.colorBy ? `&ccolor=${scenario.colorBy}` : ""}`;
-const serverBody = (scenario: Scenario) =>
-  renderToString(() =>
+  scenario.search ?? `?view=calendar&cv=${scenario.view}&cd=2026-10-12${scenario.colorBy ? `&ccolor=${scenario.colorBy}` : ""}`;
+/** The route as the workspace page renders it for a URL, with the island's base URL from the page's own builder. */
+const serverBody = (url: URL) => {
+  const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
+  const dateConfig = { locale, timeZone: "UTC", weekStartsOn: 1 } as const;
+  const route = parseCalendarRoute(url, dateConfig);
+  const view = route.view === "week" ? "week" : "month";
+  return renderToString(() =>
     createComponent(CalendarFixture, {
-      locale: scenario.locale,
+      locale,
       spaceId: "Space1",
-      baseUrl: `/app/spaces/Space1${query(scenario)}`,
+      baseUrl: buildSpacesItemLinkBaseUrl({
+        baseSpaceUrl: "/app/spaces/Space1",
+        currentView: "calendar",
+        filter: defaultFilter,
+        hasViewOverride: url.searchParams.has("view"),
+        calendarView: view,
+        calendarDate: route.date,
+        calendarFilter: route.filter,
+        dateConfig,
+      }),
       columns,
       tags,
-      initialState: {
-        view: scenario.view,
-        date: "2026-10-12T00:00:00.000Z",
-        filter: {
-          type: "all",
-          assignedTo: "all",
-          priorities: [],
-          columnIds: [],
-          tagIds: [],
-          colorBy: (scenario.colorBy ?? "tag") as "tag",
-        },
-        items,
-        weather: {},
-      },
-      selectedItemId: "",
-      dateConfig: { locale: scenario.locale, timeZone: "UTC", weekStartsOn: 1 },
+      initialState: { view, date: route.date, filter: route.filter, items, weather: {} },
+      selectedItemId: url.searchParams.get("item") ?? "",
+      dateConfig,
       canWrite: true,
     }),
   );
+};
 
 let css = "";
 let server: ReturnType<typeof Bun.serve>;
@@ -162,12 +169,7 @@ beforeAll(async () => {
       }
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
       // The page renders what its URL asks for, as the workspace page does on a reload.
-      const scenario: Scenario = {
-        locale: url.searchParams.get("lang") === "de" ? "de" : "en",
-        view: url.searchParams.get("cv") === "week" ? "week" : "month",
-        colorBy: url.searchParams.get("ccolor") ?? undefined,
-      };
-      return new Response(pageHtml(scenario, url.searchParams.get("theme") === "dark" ? "dark" : "light"), {
+      return new Response(pageHtml(url, url.searchParams.get("theme") === "dark" ? "dark" : "light"), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     },
@@ -180,12 +182,12 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const pageHtml = (scenario: Scenario, theme: "light" | "dark") =>
-  `<!doctype html><html lang="${scenario.locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+const pageHtml = (url: URL, theme: "light" | "dark") =>
+  `<!doctype html><html lang="${url.searchParams.get("lang") === "de" ? "de" : "en"}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(scenario)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(url)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 type View = { width: number; height: number; touch: boolean };
@@ -231,16 +233,24 @@ const layout = (page: Page) =>
       items: chips.map((chip) => ({ title: chip.getAttribute("aria-label"), box: box(chip) })),
     };
   });
-/** The layout once the day and week views have finished their smooth scroll to the working hours. */
+/**
+ * The layout once the day and week views have scrolled to the working hours, at once under the reduced motion these
+ * pages ask for. A loaded engine can run that scroll late, so two equal samples prove nothing; the scroll is done
+ * when the first working hour sits at the top of the time grid, or the grid cannot scroll further.
+ */
 const settledLayout = async (page: Page) => {
-  let previous = await layout(page);
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await page.waitForTimeout(100);
-    const next = await layout(page);
-    if (JSON.stringify(next) === JSON.stringify(previous)) return next;
-    previous = next;
-  }
-  throw new Error("The calendar layout did not settle.");
+  await page.waitForFunction(
+    () => {
+      const grid = window.document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll");
+      const start = window.document.querySelector(".k2b-calendar-time-grid__hour:not([data-outside-business])");
+      if (!grid || !start) return false;
+      const atStart = Math.abs(start.getBoundingClientRect().top - grid.getBoundingClientRect().top) <= 1;
+      return atStart || grid.scrollTop >= grid.scrollHeight - grid.clientHeight - 1;
+    },
+    undefined,
+    { timeout: 15_000 },
+  );
+  return layout(page);
 };
 type Look = { accent: string; fill: string; marker: boolean; flag: boolean; dots: number };
 const looks = (page: Page): Promise<Record<string, Look>> =>
@@ -261,7 +271,7 @@ const looks = (page: Page): Promise<Record<string, Look>> =>
       }),
     ),
   );
-/** The open menu: whether it needs scrolling, and whether the color choice sits in one row. */
+/** The open menu: whether it needs scrolling, whether the color choice sits in one row, and whether it offers Reset. */
 const openMenu = (page: Page) =>
   page.evaluate(() => {
     const menu = window.document.querySelector<HTMLElement>(".k2b-dropdown__menu:popover-open")!;
@@ -277,6 +287,7 @@ const openMenu = (page: Page) =>
       segments: segments.length,
       rows: new Set(segments).size,
       wrapped: wrapped.length,
+      resets: menu.querySelectorAll("[role='group'][aria-label='Filter actions'], [role='group'][aria-label='Filteraktionen']").length,
     };
   });
 /** Opens the scope menu and picks a color by its visible label. */
@@ -318,7 +329,7 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       // The choice is one section of the scope menu, so the toolbar keeps its row.
       await page.getByRole("button", { name: "Scope" }).click();
       expect(await page.getByRole("menuitemradio", { name: "Tag" }).getAttribute("aria-checked")).toBe("true");
-      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0 });
+      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0, resets: 0 });
       await shoot(page, "07-color-menu");
       await page.keyboard.press("Escape");
       await chooseColor(page, "Scope", "Person");
@@ -330,6 +341,10 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       expect(await layout(page)).toEqual(before);
       expect(viewRequests).toEqual([]);
       await shoot(page, "03-month-by-person");
+      // Another color is no filter: the menu keeps its size and offers no Reset.
+      await page.getByRole("button", { name: "Scope" }).click();
+      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0, resets: 0 });
+      await page.keyboard.press("Escape");
 
       await chooseColor(page, "Scope", "Status");
       await page.waitForURL(/ccolor=status/);
@@ -350,6 +365,27 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       await chooseColor(page, "Scope", "Tag");
       await page.waitForURL((url) => !url.searchParams.has("ccolor"));
       expect(await looks(page)).toEqual(tagged);
+      expect(viewRequests).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("desktop month from the saved view with a filter and an open item: another color keeps the item and loads nothing", async () => {
+    // Without a view override the page's base URL names no view, while the calendar's own links always name it and
+    // write the filters after it; both describe the same calendar data.
+    const page = await open(desktop, { locale: "en", view: "month", search: "?cv=month&cd=2026-10-12&cassigned=assigned&item=Item03" });
+    try {
+      const before = await layout(page);
+      expect(await page.locator('[data-space-item-id="Item03"]').getAttribute("data-selected")).toBe("true");
+      await chooseColor(page, "Scope", "Person");
+      await page.waitForURL(/ccolor=person/);
+      const url = new URL(page.url());
+      expect(url.searchParams.get("item")).toBe("Item03");
+      expect(url.searchParams.get("cassigned")).toBe("assigned");
+      expect((await looks(page)).Item03!.accent).toBe(calendarPersonColor("Kim Example"));
+      expect(await page.locator('[data-space-item-id="Item03"]').getAttribute("data-selected")).toBe("true");
+      expect(await layout(page)).toEqual(before);
       expect(viewRequests).toEqual([]);
     } finally {
       await page.context().close();
@@ -380,7 +416,7 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       expect(before.toolbar[3]).toBeLessThanOrEqual(56);
       await page.getByRole("button", { name: "Umfang" }).click();
       // The whole menu, color row included, fits without scrolling on a phone too.
-      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0 });
+      expect(await openMenu(page)).toEqual({ scrolls: false, segments: 4, rows: 1, wrapped: 0, resets: 0 });
       await shoot(page, "08-phone-color-menu");
       await page.keyboard.press("Escape");
       await chooseColor(page, "Umfang", "Person");

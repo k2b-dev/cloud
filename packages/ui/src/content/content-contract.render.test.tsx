@@ -305,6 +305,22 @@ describe("@k2b/ui Cloud content contract", () => {
       expect(html).toContain('aria-label="Sommerfest"');
       expect(html).not.toContain(" to ");
     }
+
+    // State that custom content shows only visually follows the title and time.
+    const detailed = renderToString(() =>
+      createComponent(Calendar, {
+        date: "2026-07-15T12:00:00Z",
+        events: [
+          { ...events[0]!, accessibleDetail: "Urgent" },
+          { ...events[1]!, accessibleDetail: "Deadline, High" },
+        ],
+        view: "week",
+        timeZone: "UTC",
+        renderEvent: (event) => event.title,
+      }),
+    );
+    expect(detailed).toContain('aria-label="Frühschicht, 09:30 to 13:30, Urgent"');
+    expect(detailed).toContain('aria-label="Sommerfest, Deadline, High"');
   });
 
   test("renders default boolean and date cells with the inherited locale", () => {

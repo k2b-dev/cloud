@@ -26,12 +26,18 @@ type PendingNavigation = {
 
 const pathWithQuery = (url: URL) => `${url.pathname}${url.search}`;
 const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"), url.searchParams.get("occurrence")]);
-/** The calendar data an href needs: the selected item and the color choice change no calendar data. */
+/**
+ * The calendar data an href needs, in one form for equal data: the selected item and the color choice change no
+ * calendar data, this query only loads the calendar view, and the order of the parameters means nothing. The page's
+ * base URL names the view only when it overrides the saved one, while the calendar's own links always name it.
+ */
 const calendarViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
   url.searchParams.delete("occurrence");
   url.searchParams.delete(CALENDAR_COLOR_PARAM);
+  url.searchParams.set("view", "calendar");
+  url.searchParams.sort();
   return pathWithQuery(url);
 };
 const colorByOf = (href: string) => parseCalendarColorBy(new URL(href, "http://spaces.local"));
@@ -172,7 +178,8 @@ export const useSpacesCalendarQuery = (params: {
       id: ++nextNavigationId,
       href,
       source: nextSource,
-      history,
+      // A replacing change, such as a filter, during a pending push still adds that push's entry, so Back returns.
+      history: history === "replace" && pending()?.history === "push" ? "push" : history,
       started: false,
       selection: selectionKey(new URL(window.location.href)),
     });

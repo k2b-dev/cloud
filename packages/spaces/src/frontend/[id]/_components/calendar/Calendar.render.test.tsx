@@ -193,6 +193,16 @@ describe("Spaces calendar colors", () => {
         expect(urgent).toContain("--k2b-calendar-accent:#ec4899");
         expect(urgent).toContain("ti ti-checkbox");
         expect(urgent).toContain(`title="${locale === "de" ? "Dringend" : "Urgent"}"`);
+        // Marker and flag are visual only; the accessible name says what they show.
+        expect(urgent).toContain(
+          locale === "de"
+            ? 'aria-label="Send the press kit, Fälligkeitsdatum, Priorität: Dringend"'
+            : 'aria-label="Send the press kit, Deadline, Priority: Urgent"',
+        );
+        expect(calm).toContain(`aria-label="Count the chairs, ${locale === "de" ? "Fälligkeitsdatum" : "Deadline"}"`);
+        expect(event).toContain(
+          locale === "de" ? 'aria-label="Stand meeting, 09:00 bis 10:00"' : 'aria-label="Stand meeting, 09:00 to 10:00"',
+        );
         // Without a tag, the status color; without one either, the calm neutral. Low priority shows no flag.
         expect(calm).toContain(`--k2b-calendar-accent:${CALENDAR_NEUTRAL_COLOR}`);
         expect(calm).not.toContain("data-spaces-calendar-flag");
@@ -222,6 +232,26 @@ describe("Spaces calendar colors", () => {
     const person = renderView("month", "en", "person");
     expect(chip(person, "Stand meeting")).toContain(`--k2b-calendar-accent:${calendarPersonColor("Robin Example")}`);
     expect(chip(person, "Send the press kit")).toContain(`--k2b-calendar-accent:${CALENDAR_NEUTRAL_COLOR}`);
+  });
+
+  test("offers Reset in the scope menu for a changed filter, not for another color, and Reset keeps the color", () => {
+    const resetSection = /role="group" aria-label="Filter actions"/;
+    expect(renderView("month", "en", "person")).not.toMatch(resetSection);
+    const filtered = renderToString(() =>
+      createComponent(Calendar, {
+        spaceId: "Space1",
+        items,
+        columns,
+        tags: [fair, press],
+        filter: { ...defaultCalendarFilter, type: "task", colorBy: "person" },
+        view: "month",
+        date: new Date("2026-08-12T00:00:00.000Z"),
+        baseUrl: "/app/spaces/Space1",
+        dateConfig: { locale: "en", timeZone: "UTC", weekStartsOn: 1 },
+        canWrite: true,
+      }),
+    );
+    expect(filtered).toMatch(resetSection);
   });
 
   test("keeps the color choice in every calendar link", () => {

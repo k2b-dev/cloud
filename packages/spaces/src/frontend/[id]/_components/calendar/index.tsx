@@ -33,7 +33,7 @@ import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
-import { CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
+import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import type { CalendarProps, CalendarView } from "./types";
 
@@ -87,6 +87,11 @@ const toCalendarEvent = (
     allDay: item.allDay || !item.startsAt,
     colorHex: calendarItemColors(item, filter.colorBy, columns).color,
     display: isDeadline ? "marker" : undefined,
+    // The checkbox marker and the flag are visual only, so the accessible name says what they show.
+    accessibleDetail:
+      [isDeadline ? t.deadline : null, isCalendarFlagged(item) ? `${t.priority}: ${item.priority === "urgent" ? t.urgent : t.high}` : null]
+        .filter(Boolean)
+        .join(", ") || undefined,
     href: buildCalendarHref(baseUrl, view, date, filter, detailItemId, occurrenceId, dateConfig),
     dataSpaceItemId: detailItemId,
     calendarName: item.spaceName,
@@ -322,6 +327,16 @@ export default function Calendar(props: CalendarProps) {
   const setFilter = (patch: Partial<CalendarFilter>) => {
     void navigateRoute(
       buildCalendarHref(props.baseUrl, props.view, props.date, { ...props.filter, ...patch }, undefined, undefined, props.dateConfig),
+      { replace: true },
+    );
+  };
+  // Another color re-colors the same items, so an open item stays open; a filter change starts without one.
+  const setColorBy = (colorBy: CalendarColorBy) => {
+    const selection = new URL(window.location.href).searchParams;
+    const item = selection.get("item") ?? undefined;
+    const occurrence = selection.get("occurrence") ?? undefined;
+    void navigateRoute(
+      buildCalendarHref(props.baseUrl, props.view, props.date, { ...props.filter, colorBy }, item, occurrence, props.dateConfig),
       { replace: true },
     );
   };
@@ -580,21 +595,25 @@ export default function Calendar(props: CalendarProps) {
               icon="ti ti-filter"
               options={scopeOptions}
               value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`, `color:${props.filter.colorBy}`]}
+              // The color is a display choice, not a filter: Reset keeps it and appears only for a changed filter.
               defaultValue={[
                 `type:${defaultCalendarFilter.type}`,
                 `assigned:${defaultCalendarFilter.assignedTo}`,
-                `color:${defaultCalendarFilter.colorBy}`,
+                `color:${props.filter.colorBy}`,
               ]}
               isActive={props.filter.type !== defaultCalendarFilter.type || props.filter.assignedTo !== defaultCalendarFilter.assignedTo}
               onValueChange={(values) => {
-                const type = values.find((value) => value.startsWith("type:"))?.slice(5);
-                const assignedTo = values.find((value) => value.startsWith("assigned:"))?.slice(9);
-                const colorBy = values.find((value) => value.startsWith("color:"))?.slice(6);
-                setFilter({
-                  type: ItemTypeSchema.catch(defaultCalendarFilter.type).parse(type),
-                  assignedTo: AssignedToFilterSchema.catch(defaultCalendarFilter.assignedTo).parse(assignedTo),
-                  colorBy: CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(colorBy),
-                });
+                const type = ItemTypeSchema.catch(defaultCalendarFilter.type).parse(
+                  values.find((value) => value.startsWith("type:"))?.slice(5),
+                );
+                const assignedTo = AssignedToFilterSchema.catch(defaultCalendarFilter.assignedTo).parse(
+                  values.find((value) => value.startsWith("assigned:"))?.slice(9),
+                );
+                const colorBy = CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(
+                  values.find((value) => value.startsWith("color:"))?.slice(6),
+                );
+                if (type === props.filter.type && assignedTo === props.filter.assignedTo) setColorBy(colorBy);
+                else setFilter({ type, assignedTo, colorBy });
               }}
             />
             <FilterChip
