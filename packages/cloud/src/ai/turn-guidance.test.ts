@@ -300,6 +300,16 @@ describe("text shapes", () => {
     expect(endsWithQuestion("Erledigt.\n\nSoll ich das als Skill speichern? 🙂")).toBe(true);
     expect(endsWithQuestion("Erledigt.\n\nSoll ich das als Skill speichern? [Mehr zu Skills](https://example.com/skills)")).toBe(true);
     expect(endsWithQuestion("Soll ich das speichern?\n\nhttps://example.com/skills")).toBe(true);
+    expect(endsWithQuestion("Soll ich das speichern? <https://example.com/skills> 🙂")).toBe(true);
+  });
+
+  test("reads only the end of a reply, so long or crafted endings stay fast", () => {
+    expect(endsWithQuestion(`${"Ein langer Absatz. ".repeat(2_000)}Soll ich das als Skill speichern?`)).toBe(true);
+    // Each link could also be split inside the previous one; this took exponential time.
+    expect(endsWithQuestion(`Soll ich das speichern? ${"http://!".repeat(40)}>>`)).toBe(false);
+    const started = performance.now();
+    expect(endsWithQuestion(`Soll ich das speichern?${")".repeat(100_000)}>x`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   test("S11: recognizes the capability question, but not longer requests", () => {

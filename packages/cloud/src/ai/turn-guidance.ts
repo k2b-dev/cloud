@@ -243,14 +243,24 @@ const OFFER_LINE = words(
   "(?:just )?(?:say|reply) (?:yes|the word)",
 );
 
-/** Closing decoration after the last sentence: emphasis, quotes, emoji, emoticons, and links. */
+/**
+ * Closing decoration after the last sentence: emphasis, quotes, emoji, emoticons, and links.
+ * A bare link runs to the next space or ">", so text such as "http://a!http://b" can be split only
+ * one way; otherwise the repetition backtracks exponentially.
+ */
 const TRAILING_DECORATION =
-  /(?:\s|[*_)"'»«“”„]|\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u{FE0F}|\u{200D}|[:;]-?[)(DP]|\[[^\]\n]*\]\([^)\n]*\)|<?https?:\/\/[^\s>]+>?)+$/u;
+  /(?:\s|[*_)"'»«“”„]|\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u{FE0F}|\u{200D}|[:;]-?[)(DP]|\[[^\]\n]*\]\([^)\n]*\)|<?https?:\/\/[^\s>]+(?:>|(?=\s|$)))+$/u;
+
+/**
+ * Characters read from the end of a reply: room for a last sentence and its decoration. The
+ * decoration match is quadratic in its input, so the tail keeps it within a few milliseconds.
+ */
+const REPLY_TAIL_CHARS = 500;
 
 /** The reply ended with a question or an offer the user can answer with yes. */
 export const endsWithQuestion = (reply: string): boolean => {
-  // The last lines suffice and keep the trailing-decoration match bounded on long replies.
-  const last = plainLines(plainLines(reply).slice(-3).join("\n").replace(TRAILING_DECORATION, "")).at(-1) ?? "";
+  const tail = plainLines(reply).slice(-3).join("\n").slice(-REPLY_TAIL_CHARS);
+  const last = plainLines(tail.replace(TRAILING_DECORATION, "")).at(-1) ?? "";
   return /\?$/u.test(last) || OFFER_LINE.test(last);
 };
 
