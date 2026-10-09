@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.19.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.18.0...npm-ui-v0.19.0) (2026-10-09)
+
+
+### Features
+
+* **ai:** show the Studio check calmly in the chat ([#766](https://github.com/k2b-dev/cloud/issues/766)) ([f3c6342](https://github.com/k2b-dev/cloud/commit/f3c63426d16e2ffe512f4b08b4ac9463ca53e03f))
+* attach files from Cloud apps in Spaces, Grids, Notebooks and Assistant ([#749](https://github.com/k2b-dev/cloud/issues/749)) ([435d7ae](https://github.com/k2b-dev/cloud/commit/435d7aedea05cf4ab42d7911e2b2fc57c2f84815))
+* **cloud:** show a calm error state instead of a frozen app view ([#740](https://github.com/k2b-dev/cloud/issues/740)) ([1fd7220](https://github.com/k2b-dev/cloud/commit/1fd7220f21382424ded073a5e843a02949a25930))
+* save attachments into Files from Mail and other apps ([#765](https://github.com/k2b-dev/cloud/issues/765)) ([a6d9ae9](https://github.com/k2b-dev/cloud/commit/a6d9ae939a94886750904160ab904524b1e79d45))
+* **spaces:** add a timeline calendar view ([#763](https://github.com/k2b-dev/cloud/issues/763)) ([fae29fa](https://github.com/k2b-dev/cloud/commit/fae29fa06de80b69059ab04f794ff7eedde59a76))
+* **spaces:** add task and event templates ([#764](https://github.com/k2b-dev/cloud/issues/764)) ([8c98ecd](https://github.com/k2b-dev/cloud/commit/8c98ecd44e17bf517554caad1c74eb9051d2b076))
+* **spaces:** color calendar items by their tags and choose what the color shows ([#754](https://github.com/k2b-dev/cloud/issues/754)) ([c396691](https://github.com/k2b-dev/cloud/commit/c3966915d0fdaaef59182a7d75d99f8035dcf5aa))
+* **ui:** add a resource card that keeps its height in every state ([#746](https://github.com/k2b-dev/cloud/issues/746)) ([01c1a95](https://github.com/k2b-dev/cloud/commit/01c1a95d60fff513fa574bec9f1384584ce0c974))
+* **ui:** add a SignatureInput that draws with finger, pen or mouse or types the name ([#782](https://github.com/k2b-dev/cloud/issues/782)) ([b85ebd8](https://github.com/k2b-dev/cloud/commit/b85ebd8bef26699613b8e3c56d209944b17f7efc)), closes [#708](https://github.com/k2b-dev/cloud/issues/708)
+* **ui:** add a Timeline that shows time as a continuous filmstrip ([#751](https://github.com/k2b-dev/cloud/issues/751)) ([fe0980d](https://github.com/k2b-dev/cloud/commit/fe0980d684e6b0a7596737aa8abd18e9cd3658da))
+* **ui:** add an emoji picker with search, recents and skin tones ([#778](https://github.com/k2b-dev/cloud/issues/778)) ([1e291a9](https://github.com/k2b-dev/cloud/commit/1e291a9b5e3f4dc69b25a50bdef30ddef97f89c0))
+* **ui:** grow the chat composer from one line with formatting on demand ([#770](https://github.com/k2b-dev/cloud/issues/770)) ([d5e7ff2](https://github.com/k2b-dev/cloud/commit/d5e7ff2c5f4b222ec20a59ac3756728f165274ba))
+* **ui:** show counts, dots and mention marks in sidebar items ([#756](https://github.com/k2b-dev/cloud/issues/756)) ([16122af](https://github.com/k2b-dev/cloud/commit/16122afd3883741c79911ef6753758160443742d))
+
+
+### Bug Fixes
+
+* **ui:** keep PdfPreview loading until the PDF has loaded and explain a missing viewer ([#767](https://github.com/k2b-dev/cloud/issues/767)) ([938dbb1](https://github.com/k2b-dev/cloud/commit/938dbb14c1979e6349feeb3c0fe1f67f56979fd8))
+* **ui:** make a renewed VideoPlayer address continue where it stopped in WebKit ([#768](https://github.com/k2b-dev/cloud/issues/768)) ([be7b95c](https://github.com/k2b-dev/cloud/commit/be7b95ce52dd64600700207af4f37d706e5b2a37))
+
 ## [0.18.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.17.0...npm-ui-v0.18.0) (2026-10-08)
 
 
