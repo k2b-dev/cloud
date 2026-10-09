@@ -95,11 +95,13 @@ const registerTopic = (topic: HelpTopic) => {
 /** Register an app's server-prepared Markdown manifest with the shared help UI. */
 export function LayoutHelpDocuments(props: LayoutHelpDocumentsProps) {
   onMount(() => {
-    window.__cloudLayoutHelpPageBase = props.pageBase;
+    // Cleanup runs while this unmounts, when a parent `<Show>` may already have dropped the props' source.
+    const pageBase = props.pageBase;
+    window.__cloudLayoutHelpPageBase = pageBase;
     const disposers = props.documents.map((document) => registerTopic({ ...document, kind: "document" }));
     onCleanup(() => {
       disposers.forEach((dispose) => dispose());
-      if (window.__cloudLayoutHelpPageBase === props.pageBase) delete window.__cloudLayoutHelpPageBase;
+      if (window.__cloudLayoutHelpPageBase === pageBase) delete window.__cloudLayoutHelpPageBase;
     });
   });
   return null;

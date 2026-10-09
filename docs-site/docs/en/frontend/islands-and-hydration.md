@@ -124,6 +124,42 @@ import { isServer } from "solid-js/web";
 </div>;
 ```
 
+## Clean up with values from creation
+
+A non-keyed `<Show>` or `<Match>` passes its children an accessor. Once the
+condition turns false, that accessor throws: `Stale read from <Show>.` (or
+`<Match>`) in production builds, a longer "stale value" message in development.
+That is also the moment its children unmount, so everything that runs during
+unmount sees the closed accessor:
+
+- `onCleanup` handlers and effect cleanups;
+- props that the parent wrote as `value={item().field}`, because each read
+  calls the accessor again;
+- parent callbacks that a cleanup calls, such as a selection, dirty, or
+  pending report.
+
+A throw there stops the whole update: the island stops following clicks, or
+the island error notice replaces it.
+
+Capture what a cleanup needs when the component or effect starts, and let
+callbacks receive the id instead of reading it from the accessor:
+
+```tsx
+function MessageBody(props: { messageId: string; onSelectionChange: (messageId: string, text: string) => void }) {
+  // A body shows one message for its whole life.
+  const messageId = props.messageId;
+  onCleanup(() => props.onSelectionChange(messageId, ""));
+  // ...
+}
+```
+
+Use `<Show keyed>` when the child should start over for each value. It then
+receives the value itself instead of an accessor.
+
+No repository check covers this, because the stale read usually happens in a
+parent's getter or callback. A behavior test that closes the `<Show>` while
+the child is mounted catches it.
+
 ## When an island fails
 
 Each island and client component instance mounts inside its own error

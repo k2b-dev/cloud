@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import type { CustomAppRenderedAction } from "./Actions";
 
 const domTest = isServer ? test.skip : test;
 
@@ -59,6 +60,38 @@ domTest("issuing an invoice blocks mutating siblings through running and ambiguo
     await Bun.sleep(5);
     expect(discard().disabled).toBe(false);
     expect(calls).toEqual(["POST /issue", "GET /issue", "POST /issue", "GET /issue"]);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+domTest("removing an action's background run releases its pending report without reading the closed action", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json({ status: "running" }), { preconnect: originalFetch.preconnect });
+  const { createStore } = await import("solid-js/store");
+  const { default: Actions } = await import("./Actions.island");
+  const [actions, setActions] = createStore<Extract<CustomAppRenderedAction, { kind: "workflow" }>[]>([
+    {
+      id: "issue",
+      label: "Issue invoice",
+      kind: "workflow",
+      endpoint: "/issue",
+      launcherId: "ISSUE1",
+      background: { acceptedMessage: "Requested", state: { status: "running" } },
+    },
+    { id: "archive", label: "Archive", kind: "workflow", endpoint: "/archive", launcherId: "ARCHIVE1" },
+  ]);
+  const dispose = render(() => createComponent(Actions, { actions }), dom.root);
+  const archive = () =>
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent === "Archive")!;
+  try {
+    expect(archive().disabled).toBe(true);
+    // The background run unmounts when its Show closes, which is exactly when that Show's accessor throws.
+    expect(() => setActions(0, "background", undefined)).not.toThrow();
+    expect(archive().disabled).toBe(false);
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
