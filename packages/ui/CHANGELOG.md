@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.19.0...npm-ui-v0.20.0) (2026-10-09)
+
+
+### Features
+
+* **ui:** add swipe, long-press and double-tap gestures ([#786](https://github.com/k2b-dev/cloud/issues/786)) ([6f72eae](https://github.com/k2b-dev/cloud/commit/6f72eae8d64a6d9f5a728a93e6cee31e83a04579))
+
+
+### Bug Fixes
+
+* **scripts:** run one heavy check or test run per machine with bounded type checkers ([#791](https://github.com/k2b-dev/cloud/issues/791)) ([bbc4932](https://github.com/k2b-dev/cloud/commit/bbc493290e9088dbbf2c3f14b4ea141a6609eca5))
+* **ui:** keep phone keyboards from capitalizing user names and addresses ([#792](https://github.com/k2b-dev/cloud/issues/792)) ([5b9b9a1](https://github.com/k2b-dev/cloud/commit/5b9b9a14d91593014a8f1f71e50d4e5e650b2a6b))
+* **ui:** keep short table columns readable next to long ones ([#785](https://github.com/k2b-dev/cloud/issues/785)) ([4f12a78](https://github.com/k2b-dev/cloud/commit/4f12a7807795dc66e68e38d834bb7be4e8ed2967))
+* **ui:** keep the chat composer's formatting row short and aligned with the field ([#789](https://github.com/k2b-dev/cloud/issues/789)) ([ae018fc](https://github.com/k2b-dev/cloud/commit/ae018fc7a8a27389aaad7bd33aeb89f78d2ed607))
+
 ## [0.19.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.18.0...npm-ui-v0.19.0) (2026-10-09)
 
 
