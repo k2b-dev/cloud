@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-05
+updated: 2026-10-08
 ---
 
 # Notebooks
@@ -44,7 +44,9 @@ note list.
   remove their own comment for ten minutes.
 - Keep small tables, lists, todos, data blocks, and sections beside the prose
   that explains them.
-- Attach images and files to the notebook and reference them from notes.
+- Attach images and files to the notebook and reference them from notes. Drop
+  or paste them into the editor, or choose them with the paperclip from this
+  device or, when Cloud apps offer files, from one of them, such as Files.
 - Open **Edit with AI** from a writable note's detail panel to start an
   Assistant chat with the current page and its discussion. Notebooks reviews
   and authorizes every proposed page change before it is applied.

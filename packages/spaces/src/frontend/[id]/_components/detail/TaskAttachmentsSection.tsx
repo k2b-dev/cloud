@@ -1,3 +1,4 @@
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import {
   ButtonLink,
   DetailPanel,
@@ -128,12 +129,17 @@ export default function TaskAttachmentsSection(props: {
     }
   };
 
+  /**
+   * From this device or from a Cloud app, then the same path as dropped files. Files from an app are read into the
+   * browser first, so together they stay within what the remaining attachments may hold. The budget counts an image
+   * before it is downscaled, so with few attachments left an app image above it is refused, which a device pick
+   * would still shrink; bounded memory is worth that rare case.
+   */
   const chooseAndUploadMedia = async () => {
     try {
-      const { files } = await import("@k2b/stdlib/browser");
-      await uploadMedia(await files.showFileDialog({ accept: MEDIA_ACCEPT, multiple: true }));
+      const chosen = await chooseFiles({ accept: MEDIA_ACCEPT, multiple: true, maxBytes: remaining() * MAX_TASK_ATTACHMENT_SIZE_BYTES });
+      if (chosen.length > 0) await uploadMedia(chosen);
     } catch (error) {
-      if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) return;
       toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
     }
   };

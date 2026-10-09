@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-07
+updated: 2026-10-09
 ---
 
 # Chat interface
@@ -178,6 +178,13 @@ reader and authorization before attaching the resource.
 A turn can attach up to 16 files or Cloud resources. The composer keeps them
 on one horizontal row and scrolls that row instead of growing into multiple
 attachment rows. Repeated same-named uploads receive distinct durable paths.
+
+To let **Attach files** take files from other Cloud applications as well, pass
+[`chooseFiles`](/en/docs/platform/file-providers) as `fileSelection.choose`
+with `maxBytes: aiComposerChooseMaxBytes(attachments.length)`. Files from an
+application are read into the browser before `readAiComposerFiles` checks
+them; that budget keeps them within the draft's free slots, at most 50 MiB
+each. It is `0` when the draft is full: say so instead of opening the chooser.
 
 `Chat.Composer` submits a draft entered during an active response as `steer` by
 default. Set `runningSubmitIntent="queue"` when the application owns a local or

@@ -20,6 +20,7 @@ import {
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
+  aiComposerChooseMaxBytes,
   aiComposerDraft,
   aiComposerFileAccept,
   aiComposerSendInput,
@@ -30,6 +31,7 @@ import {
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
@@ -1106,6 +1108,16 @@ export default function AssistantWorkspace(props: Props) {
     setComposerAttachmentsFor(sessionKey, [...composerAttachmentsFor(sessionKey), ...result.attachments]);
   };
 
+  /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
+  const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
+    const maxBytes = aiComposerChooseMaxBytes(composerAttachmentsFor(sessionKey).length);
+    if (maxBytes === 0) {
+      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+      return Promise.resolve([]);
+    }
+    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes });
+  };
+
   const composerAttachmentsBlocked = (sessionKey: string) => chat.activeConversationId() === sessionKey && chat.running();
 
   const requireComposerAttachmentsAvailable = (sessionKey: string) => {
@@ -1493,6 +1505,7 @@ export default function AssistantWorkspace(props: Props) {
           onPaste={(event) => pasteComposerContent(sessionKey(), event)}
           fileSelection={{
             onSelect: (files) => addComposerFiles(sessionKey(), files),
+            choose: () => chooseComposerFiles(sessionKey()),
             accept: aiComposerFileAccept,
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,

@@ -1,5 +1,5 @@
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { fileIcons, text } from "@k2b/stdlib";
-import { showFileDialog } from "@k2b/stdlib/browser";
 import {
   Button,
   canPreviewFile,
@@ -216,14 +216,13 @@ export default function RecordFileField(props: {
     for (const file of dropped) await upload(file);
   };
 
+  /** From this device or from a Cloud app; either way the file takes the same upload path and limits. */
   const chooseFile = async () => {
     if (uploading()) return;
     try {
-      await upload(await showFileDialog({ accept: accept() }));
+      const [file] = await chooseFiles({ accept: accept() });
+      if (file) await upload(file);
     } catch (error) {
-      if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) {
-        return;
-      }
       toast.error(error instanceof Error ? error.message : t().pickerFailed);
     }
   };
@@ -231,11 +230,9 @@ export default function RecordFileField(props: {
   const chooseReplacement = async (current: GridFile) => {
     if (uploading()) return;
     try {
-      await replace(current, await showFileDialog({ accept: accept() }));
+      const [file] = await chooseFiles({ accept: accept() });
+      if (file) await replace(current, file);
     } catch (error) {
-      if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) {
-        return;
-      }
       toast.error(error instanceof Error ? error.message : t().pickerFailed);
     }
   };

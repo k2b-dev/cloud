@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-07
+updated: 2026-10-09
 ---
 
 # Assistant
@@ -188,8 +188,10 @@ available when the work continues later.
   message, optionally choose a Project below the composer to use its shared
   context.
 - Attach source files or Cloud resources when the answer must use material
-  beyond the message. Files and screenshots can also be pasted directly into
-  the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
+  beyond the message. **Attach files** takes files from this device or, when
+  Cloud apps offer files, a copy from one of them, such as Files; **Choose
+  resource** links the resource itself. Files and screenshots can also be
+  dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
   **Show in text field** moves a bounded text attachment back into the draft.
   You can attach up to 16 items.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV
@@ -286,7 +288,9 @@ palette, `/new`, and the keyboard shortcut behave the same. A new chat is named
 | Project | Shared instructions, knowledge, files, references, and defaults used by private chats |
 
 Project members with write access can manage knowledge, files and Cloud
-references. Project administrators manage instructions, the default model and
+references. **Add files** and **Add images** take files from this device or,
+when Cloud apps offer files, copies from one of them, such as Files; files
+dropped on the Project context are added too. Project administrators manage instructions, the default model and
 access. Reference search can be narrowed to one Cloud application.
 
 Project chats present that shared context together with chat sources and files,

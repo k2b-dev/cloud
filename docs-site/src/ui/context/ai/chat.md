@@ -132,7 +132,7 @@ type ChatCommand = {
 
 type ChatFileSelection = {
   onSelect: (files: readonly File[]) => void | Promise<void>; onError?: (error: unknown) => void;
-  accept?: string; multiple?: boolean; disabled?: boolean; label?: string;
+  choose?: () => Promise<readonly File[]>; accept?: string; multiple?: boolean; disabled?: boolean; label?: string;
 };
 
 type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
@@ -229,7 +229,10 @@ User metadata appears on hover or keyboard focus and remains visible on devices 
 Initial messages render on the server. Editing, commands, scrolling, file selection, menus, model changes, and submission require hydration.
 
 Raw files selected, dropped, or pasted are handed to
-`fileSelection.onSelect`. The package never uploads, persists, streams,
+`fileSelection.onSelect`. With `fileSelection.choose`, **Attach files** calls it
+inside the menu activation instead of opening the device's file dialog, and
+hands its files to `onSelect`, only the first one when `multiple` is `false`;
+a rejection reaches `onError`. The package never uploads, persists, streams,
 authorizes, retries, or executes tools.
 
 The family uses `--k2b-ai-accent`, `--k2b-ai-accent-hover`, `--k2b-ai-border`, and `--k2b-ai-surface`, which can be themed independently from the general accent stack.
