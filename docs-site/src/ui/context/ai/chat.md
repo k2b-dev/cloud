@@ -204,6 +204,7 @@ type ChatComposerMicrophone = {
 
 type ChatComposerEmoji = {
   onOpen: (context: { anchor: HTMLElement; insert: (text: string) => void }) => void;
+  skinTone?: EmojiSkinTone; onPick?: (emoji: string) => void;
 };
 
 ```
@@ -455,8 +456,18 @@ field; in the default variant, in the footer.
   already holds a fence gets a longer one. Ctrl/⌘+B, I, and E, and
   Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
 - **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
-  and an `insert` function that puts the chosen text at the caret. Touch-only
+  and an `insert` function that puts the chosen text at the caret; open
+  [`EmojiPicker.Popover`](/en/ui/input/emoji-picker) there. Touch-only
   devices hide the button, because their keyboard has emoji.
+  It also completes shortcodes: a colon after a space or at the start, then two
+  letters, such as `:th` or `:dau`, lists up to eight matching emoji by
+  English or German name or GitHub shortcode above the field. Up and Down
+  choose, Enter or Tab inserts, Escape closes the list. Typing the closing
+  colon of a known shortcode, such as `:tada:`, turns it into 🎉. Inline code,
+  URLs, and times such as `10:30` stay text, and the browser's undo brings the
+  shortcode back. Emoji with skin tones come in `skinTone`, and `onPick`
+  reports every emoji the completion inserted, for example to remember it with
+  `rememberEmoji`. The emoji data loads with the first shortcode.
 - **`microphone`** adds a microphone before Send, or at the end of the field
   in the conversation variant. Dictation comes first: a
   tap calls `onDictate`, which starts or stops the application's live
@@ -483,7 +494,7 @@ state ends; the composer never records or sends anything itself.
   onSubmit={({ text }) => send(text)}
   sendKey={preferences.sendKey}
   formatting
-  emoji={{ onOpen: ({ anchor, insert }) => openEmojiPicker(anchor, insert) }}
+  emoji={{ onOpen: setEmojiTarget, skinTone: tone(), onPick: remember }}
   microphone={{
     onDictate: dictation.toggle,
     onVoiceMessage: recordVoiceMessage,
@@ -492,5 +503,16 @@ state ends; the composer never records or sends anything itself.
   }}
   hint={hint()}
   placeholder="Message Workshop"
+/>
+<EmojiPicker.Popover
+  anchor={emojiTarget()?.anchor}
+  recent={recent()}
+  skinTone={tone()}
+  onSkinToneChange={setTone}
+  onPick={(emoji) => {
+    emojiTarget()?.insert(emoji);
+    remember(emoji);
+  }}
+  onClose={() => setEmojiTarget(undefined)}
 />
 ```
