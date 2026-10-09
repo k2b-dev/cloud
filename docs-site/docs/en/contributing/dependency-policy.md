@@ -5,7 +5,7 @@ section: Contributing
 order: 1306
 description: Where dependencies are declared, which root overrides and patches exist, why, and when each one can go.
 tags: [contributing, dependencies, security]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Dependency policy
@@ -69,7 +69,7 @@ cannot be upstreamed.
 | Patch | Reason | Remove when |
 | --- | --- | --- |
 | `hucre@1.1.0` | The ODS reader skipped rows nested in `table-row-group`, `table-header-rows`, and `table-rows`; Assistant code mode read incomplete workbooks. Added in `feat(assistant): read ODS workbooks in code mode`. | An upstream `hucre` release walks nested row containers. |
-| `bun-plugin-tailwind@0.1.2` | Bun 1.4.2 keeps only the first of adjacent `@supports` rules with the same condition ([oven-sh/bun#24770](https://github.com/oven-sh/bun/issues/24770)). Tailwind's `color-mix()` polyfill nests one such rule per declaration, so compiled stylesheets kept only the first mixed color of each rule; dark-mode selection turned solid blue. The patch compiles with only the `@property` polyfill, since Tailwind v4's supported browsers implement `color-mix()`. `packages/cloud/src/styles/tokens.test.ts` checks that the tokens keep their mixed values and that the polyfill stays off. Like every root patch, it applies only inside this repository: a standalone application compiles its `app.css` with the unpatched plugin, so a rule there with several `color-mix()` declarations that reference variables still keeps only one mixed value; [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#mix-variable-colors-in-separate-rules) tells application authors how to avoid it. Added in `fix(cloud): keep mixed token colors in compiled stylesheets`. | A Bun release merges same-condition `@supports` rules ([oven-sh/bun#38589](https://github.com/oven-sh/bun/pull/38589)) and the mixed-value test passes without the patch; remove the polyfill test and the styling note with it. |
+| `bun-plugin-tailwind@0.1.2` | Bun 1.4.2 keeps only the first of adjacent `@supports` rules with the same condition ([oven-sh/bun#24770](https://github.com/oven-sh/bun/issues/24770)). Tailwind's `color-mix()` polyfill nests one such rule per declaration, so compiled stylesheets lost mixed colors. The root patch keeps only the `@property` polyfill; `packages/cloud/src/styles/tokens.test.ts` checks mixed token values and the absence of the color-mix polyfill. Standalone applications are covered by the build wrapper shipped in `@k2b/cloud/scripts/tailwind.ts`, used by both the build and preload scripts. It removes the generated color-mix fallback blocks before Bun bundles CSS; Tailwind v4's supported browsers implement `color-mix()`. `packages/cloud/scripts/tailwind.test.ts` checks independently generated polyfilled CSS, preservation of every mixed value and `!important`, and unchanged output without the polyfill. The root patch still covers direct in-repository plugin consumers. See [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors). | A Bun release merges same-condition `@supports` rules ([oven-sh/bun#38589](https://github.com/oven-sh/bun/pull/38589)) and the mixed-value tests pass without either workaround; remove both the wrapper and root patch, and their polyfill-removal assertions. |
 
 To change a patch, edit the installed package under `node_modules`, run
 `bun patch --commit <package>`, and describe the reason in the pull request.

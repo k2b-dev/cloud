@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-09-29
+updated: 2026-10-09
 ---
 
 # Styling and accessibility
@@ -147,51 +147,21 @@ borders. They break dark mode, focus treatment, or application theming. Do not
 override a shared component to make one screen look different; fix a recurring
 gap in the owning primitive and update its UI context and showcase.
 
-### Mix variable colors in separate rules
+### Mix semantic colors
 
-In a standalone application, give each `color-mix()` that references a CSS
-variable or `currentColor` its own rule in `src/styles/app.css`. Until a Bun
-release includes [oven-sh/bun#38589](https://github.com/oven-sh/bun/pull/38589),
-the `@k2b/cloud` build keeps only one such value per rule. The others show
-Tailwind's fallback, usually the first color of the mix. Mixes of literal
-colors are computed at build time and are not affected.
+Applications built with the `@k2b/cloud` build or preload scripts can keep
+multiple `color-mix()` declarations in one rule, including mixes that use CSS
+variables or `currentColor`:
 
 ```css
-/* Avoid: only the background keeps its mixed color. */
 .project-highlight {
   background: color-mix(in oklab, var(--k2b-action) 12%, var(--k2b-surface));
   border-color: color-mix(in oklab, var(--k2b-action) 40%, var(--k2b-surface));
 }
-
-/* Use: both keep their mixed colors. */
-.project-highlight {
-  background: color-mix(in oklab, var(--k2b-action) 12%, var(--k2b-surface));
-}
-
-.project-highlight {
-  border-color: color-mix(in oklab, var(--k2b-action) 40%, var(--k2b-surface));
-}
 ```
 
-The same applies to `@apply`: an opacity modifier on a variable or
-`currentColor` color, such as `bg-(--k2b-action)/12`, compiles to such a
-`color-mix()`. Split `@apply bg-(--k2b-action)/12 border-(--k2b-action)/40`
-into one rule per utility. Used as classes in markup, the same utilities are not
-affected, because each class compiles to its own rule.
-
-A custom property that holds a mixed color counts as such a declaration. To
-reuse a mixed color, declare it in its own rule and read it with `var()`:
-
-```css
-.project-highlight {
-  --project-highlight-border: color-mix(in oklab, var(--k2b-action) 40%, var(--k2b-surface));
-}
-
-.project-highlight {
-  background: color-mix(in oklab, var(--k2b-action) 12%, var(--k2b-surface));
-  border: 1px solid var(--project-highlight-border);
-}
-```
+The same applies to mixed-color custom properties and `@apply` utilities with
+opacity modifiers. There is no need to split them into separate rules.
 
 ### Render Mermaid diagrams with Cloud colors
 

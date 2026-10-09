@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Build and deploy
@@ -14,6 +14,10 @@ The Cloud build creates one self-contained Bun bundle for one application.
 
 It emits the server, Solid island chunks, application CSS, static assets, and
 optional application-specific build output.
+
+The build and development preload scripts preserve every `color-mix()` value
+in application CSS, including multiple variable-based mixes in one rule.
+See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors).
 
 ## Build a standalone application
 

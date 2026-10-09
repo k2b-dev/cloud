@@ -21,9 +21,9 @@ import { existsSync, watch } from "node:fs";
 import { cp, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import tailwind from "bun-plugin-tailwind";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
+import tailwind from "./tailwind";
 
 const appId = process.env.APP_ID ?? "core";
 
