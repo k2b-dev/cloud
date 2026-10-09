@@ -233,6 +233,28 @@ cld mail tag add <conversation-id> --tag Priority
 cld mail rm <conversation-id> --yes
 ```
 
+A conversation can have up to 20 assignees. `assign --to maria,me` adds users;
+`--to maria --replace` replaces the set, `--remove maria` removes a user,
+and `--to none` clears it. `conversation update --assignee` replaces the set
+and accepts repeated flags or comma-separated users.
+
+`conversation users` lists eligible active users: those with mailbox-wide
+write/admin access or assigned-only read/write grants, directly or through
+groups. Platform administrator status alone does not confer eligibility.
+Changing assignees requires mailbox-wide write/admin access. Each newly added
+user receives one notification per request; self-assignment and removal send
+none. A limit or eligibility failure leaves the entire assignment batch unchanged.
+
+API and capability consumers use `assigneeUserIds` arrays and assignment modes
+`add`, `remove`, and `replace`. Assignment capabilities need no revision;
+the collaboration PATCH still requires `expectedRevision`. Collaboration returns ordered `assignees`;
+batch results resolve the users named in the request. Workflow action
+`assignConversation` keeps its single `user` configuration: a user replaces
+the set with that user, and `null` clears it. “Mine” includes conversations
+assigned to the current user; “Unassigned” includes conversations with no
+eligible assignee. Operators can run an older Mail image after this update;
+it shows the earliest assignee from each set.
+
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:
 

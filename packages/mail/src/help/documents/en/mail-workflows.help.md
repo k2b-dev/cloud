@@ -120,7 +120,7 @@ Message paths:
 
 Conversation paths:
 
-- `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserId`
+- `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
 - `inputs.conversation.workStatus`, `latestMessageAt`
 
 Mail resource IDs exposed to a workflow use the same stable six-character IDs as Mail URLs and capabilities. Provider references and database UUIDs are internal and are not workflow fields.

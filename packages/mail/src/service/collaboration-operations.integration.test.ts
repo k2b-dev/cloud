@@ -8,7 +8,7 @@ import { migrate } from "../migrate";
 import { createMailNotificationService, type MailNotificationSendInput } from "../notifications";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { getConversationCollaboration, listActivity, listConversationComments } from "./collaboration";
+import { getConversationCollaboration, listActivity, listConversationComments, writeConversationAssignees } from "./collaboration";
 import { createMailbox } from "./mailboxes";
 import { getConversationPresence, heartbeatConversationPresence, leaveConversationPresence } from "./presence";
 import { cancelConversationReminder, getConversationReminder, setConversationReminder } from "./reminders";
@@ -147,18 +147,18 @@ suite("mail collaboration operations", () => {
     `;
     const [conversation] = await sql<{ id: string }[]>`
       INSERT INTO mail.conversations (short_id,
-        mailbox_id, subject, participant_summary, latest_message_at, assignee_user_id, work_status
+        mailbox_id, subject, participant_summary, latest_message_at, work_status
       ) VALUES (${newShortId()},
         ${mailboxId}::uuid,
         'Collaboration operations',
         'customer@example.com',
         ${messageDate},
-        ${writer.id}::uuid,
         'needs_action'
       )
       RETURNING id
     `;
     conversationId = conversation!.id;
+    await sql.begin((tx) => writeConversationAssignees(tx, { mailboxId, conversationId, userIds: [writer.id] }));
     await sql`
       INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
       VALUES (${conversationId}::uuid, ${message!.id}::uuid, ${messageDate.getTime()}, 'headers')

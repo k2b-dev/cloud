@@ -11,6 +11,7 @@ import { migrate } from "../migrate";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import type { MailRequestContext } from "./auth";
+import { writeConversationAssignees } from "./collaboration";
 import { executeMutationCommand, executeOutboxSubmission, executeOutboxSubmissionWithHeartbeat } from "./command-runtime";
 import { createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
@@ -2006,10 +2007,21 @@ suite("mail PostgreSQL foundation", () => {
     await sql`
       UPDATE mail.conversations
       SET
-        work_status = 'waiting',
-        assignee_user_id = ${context.actor.kind === "user" ? context.actor.user.id : null}::uuid
+        work_status = 'waiting'
       WHERE id = ${attachmentConversation!.id}::uuid
     `;
+    const [secondaryAssignee] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile) VALUES (${`search-second-assignee-${suffix}`}, 'local', 'user') RETURNING id
+    `;
+    if (!secondaryAssignee) throw new Error("Search assignee fixture missing");
+    ids.userIds.push(secondaryAssignee.id);
+    await sql.begin((tx) =>
+      writeConversationAssignees(tx, {
+        mailboxId: mailbox.data.id,
+        conversationId: attachmentConversation!.id,
+        userIds: context.actor.kind === "user" ? [secondaryAssignee.id, context.actor.user.id] : [secondaryAssignee.id],
+      }),
+    );
     const [secondMatchingMessage] = await sql<{ id: string; short_id: string }[]>`
       INSERT INTO mail.message_contents (
         short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash,
@@ -2077,7 +2089,7 @@ suite("mail PostgreSQL foundation", () => {
         participantSummary: "Alice Fixture",
         participantLabels: ["Alice Fixture", "Bob Fixture"],
         workStatus: "waiting",
-        assigneeUserId: context.actor.kind === "user" ? context.actor.user.id : null,
+        assigneeUserIds: context.actor.kind === "user" ? [secondaryAssignee.id, context.actor.user.id] : [secondaryAssignee.id],
         unread: true,
         messageCount: 2,
         sourceFolderId: folder!.id,
@@ -2368,6 +2380,12 @@ suite("mail PostgreSQL foundation", () => {
       expect(hit?.snippet).toContain("second unique integration body phrase");
       expect(hit?.snippet).not.toContain(",");
     }
+    const assignedSearch = await searchMessages({
+      context,
+      mailboxId: mailbox.data.id,
+      request: { expression: { type: "assignee", userId: secondaryAssignee.id }, sort: "newest", limit: 10 },
+    });
+    expect(assignedSearch.ok && assignedSearch.data.items.map((item) => item.conversationId)).toEqual([attachmentConversation!.id]);
     const assignedRelevancePage = await searchMessages({
       context,
       mailboxId: mailbox.data.id,

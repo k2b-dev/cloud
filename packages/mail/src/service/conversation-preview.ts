@@ -210,7 +210,8 @@ export const getConversationPreview = async (params: {
     SELECT
       c.id,
       LEFT(c.summary, ${SOURCE_SUMMARY_MAX_LENGTH}) AS summary,
-      CASE WHEN c.assignee_user_id IS NULL THEN NULL ELSE COALESCE(NULLIF(assignee.display_name, ''), assignee.uid) END AS assignee_name,
+      (SELECT string_agg(COALESCE(NULLIF(u.display_name, ''), u.uid), ', ' ORDER BY a.assigned_at, a.user_id)
+        FROM mail.conversation_assignees a JOIN auth.users u ON u.id = a.user_id WHERE a.conversation_id = c.id) AS assignee_name,
       (SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id) AS message_count,
       latest.id AS latest_id,
       LEFT(latest_body.plain_text, ${SOURCE_TEXT_MAX_LENGTH}) AS latest_plain_text,
@@ -229,7 +230,6 @@ export const getConversationPreview = async (params: {
       ) AS attachment_count,
       first_attachment.filename AS first_attachment_name
     FROM mail.conversations c
-    LEFT JOIN auth.users assignee ON assignee.id = c.assignee_user_id
     -- Only the newest message's id here: Postgres evaluates select-list expressions on every
     -- row before the top-1 sort, which would decompress every body of a long conversation.
     LEFT JOIN LATERAL (

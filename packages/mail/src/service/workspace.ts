@@ -63,7 +63,7 @@ export type MailListItem = {
   hasAttachments: boolean;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   snoozedUntil: string | null;
   sourceFolderId: string | null;
   unreadFolderIds: string[];
@@ -253,7 +253,7 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   hasAttachments: conversation.hasAttachments,
   messageCount: conversation.messageCount,
   workStatus: conversation.workStatus,
-  assigneeUserId: conversation.assigneeUserId,
+  assigneeUserIds: conversation.assigneeUserIds,
   snoozedUntil: conversation.snoozedUntil,
   sourceFolderId: conversation.folderId,
   unreadFolderIds: conversation.unreadFolderIds,
@@ -289,7 +289,7 @@ export const searchHitToListItem = (item: search.MessageSearchHit, listMode: Mai
     hasAttachments: item.hasAttachments,
     messageCount: item.messageCount,
     workStatus: item.workStatus,
-    assigneeUserId: item.assigneeUserId,
+    assigneeUserIds: item.assigneeUserIds,
     snoozedUntil: item.snoozedUntil,
     sourceFolderId: item.sourceFolderId,
     unreadFolderIds: item.unreadFolderIds,

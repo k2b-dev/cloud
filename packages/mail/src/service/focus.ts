@@ -21,7 +21,7 @@ export type MailFocusItem = {
   participantSummary: string;
   latestMessageAt: string;
   workStatus: "needs_action" | "waiting" | "done";
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   revision: number;
   sourceFolderId: string | null;
   unread: boolean;
@@ -47,7 +47,7 @@ type DbFocusItem = {
   latest_message_at: Date | string;
   cursor_at: string;
   work_status: MailFocusItem["workStatus"];
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   revision: number;
   source_folder_id: string | null;
   unread: boolean;
@@ -208,7 +208,7 @@ export const listFocusConversations = async (params: {
         c.latest_message_at,
         to_char(c.latest_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
         c.work_status,
-        c.assignee_user_id,
+        COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
         c.revision,
         (SELECT CASE WHEN count(DISTINCT mp.folder_id) = 1 THEN min(mp.folder_id::text) ELSE NULL END
           FROM mail.conversation_messages cm
@@ -250,9 +250,9 @@ export const listFocusConversations = async (params: {
       WHERE c.follow_up
         AND ${shown}
         AND (
-          (${view} = 'mine' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})
+          (${view} = 'mine' AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'needs_action' AND ${visibleNow})
           OR (${view} = 'unassigned' AND c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
-          OR (${view} = 'waiting' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})
+          OR (${view} = 'waiting' AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'waiting' AND ${visibleNow})
           OR (${view} = 'all' AND c.aggregated AND c.work_status <> 'done' AND ${visibleNow})
         )
         AND (
@@ -265,9 +265,9 @@ export const listFocusConversations = async (params: {
     sql<Array<{ mine: number; unassigned: number; waiting: number; all: number }>>`
       WITH readable_conversations AS (${readableConversations(params.context, scope)})
       SELECT
-        COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
+        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
         COUNT(*) FILTER (WHERE c.aggregated AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
-        COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
+        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid) AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
         COUNT(*) FILTER (WHERE c.aggregated AND c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
       WHERE c.follow_up AND ${shown}
@@ -285,7 +285,7 @@ export const listFocusConversations = async (params: {
     participantSummary: row.participant_summary,
     latestMessageAt: toIso(row.latest_message_at),
     workStatus: row.work_status,
-    assigneeUserId: row.assignee_user_id,
+    assigneeUserIds: row.assignee_user_ids,
     revision: Number(row.revision),
     sourceFolderId: row.source_folder_id,
     unread: row.unread,

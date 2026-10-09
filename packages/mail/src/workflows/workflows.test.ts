@@ -729,7 +729,7 @@ steps:
       folder: "\${{ inputs.message.folderId }}"
   - assignConversation:
       conversation: inputs.conversation
-      user: "\${{ inputs.conversation.assigneeUserId }}"
+      user: "\${{ inputs.conversation.assigneeUserIds.0 }}"
 `;
     const result = await bindMailWorkflow(await compile(dynamicSource), catalog());
     expect(result.ok).toBe(false);

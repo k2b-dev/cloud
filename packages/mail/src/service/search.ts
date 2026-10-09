@@ -58,7 +58,7 @@ export type MessageSearchHit = {
   unread: boolean;
   messageCount: number;
   workStatus: "needs_action" | "waiting" | "done" | null;
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   snoozedUntil: string | null;
   revision: number;
   updatedAt: string;
@@ -106,7 +106,7 @@ type DbSearchHit = {
   unread: boolean;
   message_count: number;
   work_status: "needs_action" | "waiting" | "done" | null;
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   snoozed_until: Date | string | null;
   revision: string | number;
   updated_at: Date | string;
@@ -440,7 +440,7 @@ export const compileSearchExpression = (
     return sql`${currentUserId}::uuid IS NOT NULL AND EXISTS (
       SELECT 1
       FROM mail.conversations state
-      WHERE state.id = ${conversationId} AND state.assignee_user_id = ${currentUserId}::uuid
+      WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.user_id = ${currentUserId}::uuid)
     )`;
   }
   if (expression.type === "text") return compileTextTerm(expression, conversationId);
@@ -477,7 +477,7 @@ export const compileSearchExpression = (
     return expression.userId
       ? sql`EXISTS (
           SELECT 1 FROM mail.conversations state
-          WHERE state.id = ${conversationId} AND state.assignee_user_id = ${expression.userId}::uuid
+          WHERE state.id = ${conversationId} AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = state.id AND a.user_id = ${expression.userId}::uuid)
         )`
       : sql`EXISTS (
           SELECT 1 FROM mail.conversations state
@@ -790,7 +790,7 @@ const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => (
   unread: row.unread,
   messageCount: row.message_count,
   workStatus: row.work_status,
-  assigneeUserId: row.assignee_user_id,
+  assigneeUserIds: row.assignee_user_ids,
   snoozedUntil: row.snoozed_until
     ? (row.snoozed_until instanceof Date ? row.snoozed_until : new Date(row.snoozed_until)).toISOString()
     : null,
@@ -1361,7 +1361,7 @@ const runSearch = async (params: {
           )
         END AS message_count,
         conversation.work_status,
-        conversation.assignee_user_id,
+        COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
         conversation.snoozed_until,
         COALESCE(conversation.revision, 1) AS revision,
         COALESCE(conversation.updated_at, deduplicated.internal_date) AS updated_at,

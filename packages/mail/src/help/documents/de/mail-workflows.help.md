@@ -120,7 +120,7 @@ Nachrichtenpfade:
 
 Unterhaltungspfade:
 
-- `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserId`
+- `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
 - `inputs.conversation.workStatus`, `latestMessageAt`
 
 Ressourcen-IDs, die einem Workflow in Mail bereitgestellt werden, verwenden dieselben stabilen sechsstelligen IDs wie Mail-URLs und Capabilities. Anbieterreferenzen und Datenbank-UUIDs sind intern und keine Workflow-Felder.

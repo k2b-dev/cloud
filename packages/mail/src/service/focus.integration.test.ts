@@ -5,6 +5,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { writeConversationAssignees } from "./collaboration";
 import { listFocusConversations, listMailboxCounts } from "./focus";
 import { createMailbox } from "./mailboxes";
 import { getConversationViewCounts, listConversations } from "./messages";
@@ -76,7 +77,7 @@ suite("cross-mailbox focus", () => {
     subject: string;
     date: Date;
     status: "needs_action" | "waiting" | "done";
-    assigneeUserId: string | null;
+    assigneeUserIds: string[];
   }) => {
     const [message] = await sql<{ id: string }[]>`
       INSERT INTO mail.message_contents (
@@ -102,16 +103,18 @@ suite("cross-mailbox focus", () => {
     `;
     const [conversation] = await sql<{ id: string }[]>`
       INSERT INTO mail.conversations (
-        short_id, mailbox_id, subject, participant_summary, latest_message_at, work_status, assignee_user_id
+        short_id, mailbox_id, subject, participant_summary, latest_message_at, work_status
       ) VALUES (
-        ${newShortId()}, ${params.mailboxId}::uuid, ${params.subject}, 'Customer', ${params.date}, ${params.status},
-        ${params.assigneeUserId}::uuid
+        ${newShortId()}, ${params.mailboxId}::uuid, ${params.subject}, 'Customer', ${params.date}, ${params.status}
       ) RETURNING id
     `;
     await sql`
       INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
       VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, ${params.date.getTime()}, 'headers')
     `;
+    await sql.begin((tx) =>
+      writeConversationAssignees(tx, { mailboxId: params.mailboxId, conversationId: conversation!.id, userIds: params.assigneeUserIds }),
+    );
     return conversation!.id;
   };
 
@@ -131,7 +134,7 @@ suite("cross-mailbox focus", () => {
       subject: "Assigned support",
       date: new Date(now - 1_000),
       status: "needs_action",
-      assigneeUserId: owner.id,
+      assigneeUserIds: [outsider.id, owner.id],
     });
     await createConversation({
       mailboxId: finance.id,
@@ -139,7 +142,7 @@ suite("cross-mailbox focus", () => {
       subject: "Unassigned finance",
       date: new Date(now - 2_000),
       status: "needs_action",
-      assigneeUserId: null,
+      assigneeUserIds: [],
     });
     await createConversation({
       mailboxId: support.id,
@@ -147,7 +150,7 @@ suite("cross-mailbox focus", () => {
       subject: "Waiting support",
       date: new Date(now - 3_000),
       status: "waiting",
-      assigneeUserId: owner.id,
+      assigneeUserIds: [owner.id],
     });
     await createConversation({
       mailboxId: hidden.id,
@@ -155,7 +158,7 @@ suite("cross-mailbox focus", () => {
       subject: "Hidden mail",
       date: new Date(now),
       status: "needs_action",
-      assigneeUserId: outsider.id,
+      assigneeUserIds: [outsider.id],
     });
   });
 
@@ -188,7 +191,7 @@ suite("cross-mailbox focus", () => {
           subject: "Focus cursor precision",
           date: new Date("2026-01-01T00:00:00.000Z"),
           status: "waiting",
-          assigneeUserId: user.id,
+          assigneeUserIds: [user.id],
         });
         expected.push(id);
         await sql`UPDATE mail.conversations SET latest_message_at = ${`2026-01-01T00:00:00.000${micros}Z`}::timestamptz WHERE id = ${id}::uuid`;
@@ -229,6 +232,7 @@ suite("cross-mailbox focus", () => {
         { mailboxId: mailboxIds[1], unread: 1, needsAction: 1 },
       ]),
     );
+    expect(mine.data.items[0]?.assigneeUserIds).toEqual([outsider.id, owner.id]);
     expect(mine.data.items[0]?.mailboxName).toBe(`Support ${suffix}`);
     expect(mine.data.items[0]?.revision).toBeGreaterThan(0);
     const mailboxCounts = await listMailboxCounts(ownerContext);
@@ -308,21 +312,21 @@ suite("cross-mailbox focus", () => {
     await sql`UPDATE auth.users SET account_expires = now() - interval '1 day' WHERE id = ${expired.id}::uuid`;
 
     const now = Date.now();
-    const open = { mailboxId: team.id, status: "needs_action" as const, assigneeUserId: null };
+    const open = { mailboxId: team.id, status: "needs_action" as const, assigneeUserIds: [] };
     await createConversation({ ...open, folderId: team.folderId, subject: "Open question", date: new Date(now - 1_000) });
     await createConversation({
       ...open,
       folderId: team.folderId,
       subject: "Left by a former colleague",
       date: new Date(now - 2_000),
-      assigneeUserId: former.id,
+      assigneeUserIds: [former.id],
     });
     await createConversation({
       ...open,
       folderId: team.folderId,
       subject: "Left by an expired account",
       date: new Date(now - 3_000),
-      assigneeUserId: expired.id,
+      assigneeUserIds: [expired.id],
     });
     const spamId = await createConversation({ ...open, folderId: junkFolderId, subject: "Win a prize", date: new Date(now) });
     await createConversation({ ...open, folderId: trashFolderId, subject: "Deleted request", date: new Date(now - 500) });

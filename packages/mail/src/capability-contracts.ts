@@ -5,6 +5,7 @@ import {
   composeSafetyReviewSchema,
   draftEditableContentInputSchema,
   folderDisplaySchema,
+  MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAIL_CONVERSATION_BATCH_LIMIT,
   type MailSearchExpression,
   mailAddressSchema,
@@ -570,10 +571,9 @@ export const ConversationGetDataSchema = z
     summaryRevision: z.number().int().positive().describe("Revision to use when updating the shared summary."),
     collaboration: z
       .object({
-        assignee: z
-          .object({ id: UuidSchema, uid: z.string(), displayName: z.string(), avatarHash: NullableTextSchema })
-          .strict()
-          .nullable(),
+        assignees: z
+          .array(z.object({ id: UuidSchema, uid: z.string(), displayName: z.string(), avatarHash: NullableTextSchema }).strict())
+          .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT),
         workStatus: z.enum(["needs_action", "waiting", "done"]),
         snoozedUntil: NullableTimestampSchema,
         revision: z.number().int().positive(),
@@ -956,7 +956,7 @@ const CollaboratorDataSchema = z
 export const CollaborationDataSchema = z
   .object({
     conversationId: ResourceShortIdSchema,
-    assignee: CollaboratorDataSchema.nullable(),
+    assignees: z.array(CollaboratorDataSchema).max(MAIL_CONVERSATION_ASSIGNEE_LIMIT),
     workStatus: z.enum(["needs_action", "waiting", "done"]),
     snoozedUntil: NullableTimestampSchema,
     revision: z.number().int().positive(),
@@ -969,10 +969,16 @@ const CollaborationMutationBaseShape = {
 };
 export const ConversationAssignInputSchema = z
   .object({
-    ...CollaborationMutationBaseShape,
-    assigneeUserId: UuidSchema.nullable().describe("User UUID to assign, or null to unassign."),
+    mailboxId: MailboxIdInputSchema,
+    conversationId: ConversationIdInputSchema,
+    assigneeUserIds: z
+      .array(UuidSchema)
+      .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+      .describe("User UUIDs to add, remove, or replace; empty with replace clears all assignees."),
+    mode: z.enum(["add", "remove", "replace"]).describe("Add users, remove users, or replace the entire assignee set."),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
 export const ConversationAssignBatchInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
@@ -982,12 +988,17 @@ export const ConversationAssignBatchInputSchema = z
       .max(MAIL_CONVERSATION_BATCH_LIMIT)
       .refine((ids) => new Set(ids).size === ids.length, "Conversation IDs must be unique")
       .describe(`Up to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations of this mailbox.`),
-    assigneeUserId: UuidSchema.nullable().describe("User UUID to assign, or null to unassign."),
+    assigneeUserIds: z
+      .array(UuidSchema)
+      .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+      .describe("User UUIDs to add, remove, or replace; empty with replace clears all assignees."),
+    mode: z.enum(["add", "remove", "replace"]).describe("Add users, remove users, or replace the entire assignee set."),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one user");
 export const ConversationAssignBatchDataSchema = z
   .object({
-    assignee: CollaboratorDataSchema.nullable(),
+    assignees: z.array(CollaboratorDataSchema).max(MAIL_CONVERSATION_ASSIGNEE_LIMIT),
     results: z.array(
       z
         .object({

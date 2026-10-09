@@ -1413,7 +1413,7 @@ const queryDefinitions = {
           summary: summary.data.summary,
           summaryRevision: summary.data.summaryRevision,
           collaboration: {
-            assignee: state.data.assignee,
+            assignees: state.data.assignees,
             workStatus: state.data.workStatus,
             snoozedUntil: state.data.snoozedUntil,
             revision: state.data.revision,
@@ -3096,7 +3096,7 @@ const actionDefinitions = {
   },
   "conversation.assign": {
     title: "Assign conversation",
-    description: "Assign one conversation to an eligible mailbox member, or clear its assignee.",
+    description: "Add, remove, or replace the assignees of one conversation.",
     input: c.ConversationAssignInputSchema,
     data: c.CollaborationDataSchema,
     destructive: false,
@@ -3107,22 +3107,33 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
-      const assignee = input.assigneeUserId
-        ? await collaboration.listCurrentUsers({
-            mailboxId: conversation.data.mailboxInternalId,
-            userIds: [input.assigneeUserId],
-            minimumPermission: "write",
-            limit: 1,
-          })
-        : [];
-      if (input.assigneeUserId && !assignee[0]) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      const assignees =
+        input.mode === "remove"
+          ? await collaboration.listAssigneeCollaborators(input.assigneeUserIds)
+          : input.assigneeUserIds.length === 0
+            ? []
+            : await collaboration.listEligibleAssignees({
+                mailboxId: conversation.data.mailboxInternalId,
+                userIds: [...new Set(input.assigneeUserIds)],
+                limit: input.assigneeUserIds.length,
+              });
+      if (input.mode !== "remove" && new Set(input.assigneeUserIds).size !== assignees.length)
+        return fail(err.badInput(t.invalidAssignees));
+      const names =
+        input.assigneeUserIds.length === 0
+          ? ""
+          : [...new Set(input.assigneeUserIds)]
+              .map((id) => {
+                const user = assignees.find((user) => user.id === id);
+                return user ? `${user.displayName} · ${user.uid}` : id;
+              })
+              .join(", ");
       return ok({
-        message: input.assigneeUserId
-          ? t.assignReview({ subject: conversation.data.subject, assignee: assignee[0]!.displayName })
-          : t.unassignReview({ subject: conversation.data.subject }),
+        message: t.assignmentReview({ mode: t.assignmentMode({ mode: input.mode }), users: names || t.unassigned }),
         details: [
           { label: t.conversation, value: conversation.data.subject },
-          { label: t.assignee, value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : t.unassigned },
+          { label: t.assignee, value: names || t.unassigned },
+          { label: t.assignmentModeLabel, value: t.assignmentMode({ mode: input.mode }) },
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
@@ -3135,21 +3146,22 @@ const actionDefinitions = {
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       return mapResult(
-        await conversationAssignments.updateConversationCollaboration({
+        await conversationAssignments.assignConversation({
           context: requestContext(context),
           mailboxId: scope.data.mailbox.id,
-          conversationId: scope.data.conversationId,
-          input: {
-            expectedRevision: input.expectedRevision,
-            assigneeUserId: input.assigneeUserId,
-          },
+          conversationId: input.conversationId,
+          assigneeUserIds: input.assigneeUserIds,
+          mode: input.mode,
           locale: context.locale,
         }),
         (item) => ({ ...item, conversationId: input.conversationId }),
         (item) => ({
           summary: capabilitySummary(
-            item.assignee
-              ? t.assignedConversation({ subject: conversation.data.subject, assignee: item.assignee.displayName })
+            item.assignees.length > 0
+              ? t.assignedConversation({
+                  subject: conversation.data.subject,
+                  assignee: item.assignees.map((user) => user.displayName).join(", "),
+                })
               : t.unassignedConversation({ subject: conversation.data.subject }),
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
@@ -3160,7 +3172,7 @@ const actionDefinitions = {
   "conversation.assign.batch": {
     title: "Assign conversations",
     description:
-      "Assign up to 50 conversations of one mailbox to one eligible mailbox member, or clear their assignee. Reports each conversation as ok or not_found; the assignee gets one notification.",
+      "Add, remove, or replace assignees on up to 50 conversations of one mailbox. Reports ok or not_found for each conversation; each newly added user gets one notification.",
     input: c.ConversationAssignBatchInputSchema,
     data: c.ConversationAssignBatchDataSchema,
     destructive: false,
@@ -3173,29 +3185,41 @@ const actionDefinitions = {
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
-      const assignee = input.assigneeUserId
-        ? await collaboration.listCurrentUsers({
-            mailboxId: scope.data.id,
-            userIds: [input.assigneeUserId],
-            minimumPermission: "write",
-            limit: 1,
-          })
-        : [];
-      if (input.assigneeUserId && !assignee[0]) return fail(err.badInput("Assignee must have current write access to this mailbox"));
+      const assignees =
+        input.mode === "remove"
+          ? await collaboration.listAssigneeCollaborators(input.assigneeUserIds)
+          : input.assigneeUserIds.length === 0
+            ? []
+            : await collaboration.listEligibleAssignees({
+                mailboxId: scope.data.id,
+                userIds: [...new Set(input.assigneeUserIds)],
+                limit: input.assigneeUserIds.length,
+              });
+      if (input.mode !== "remove" && new Set(input.assigneeUserIds).size !== assignees.length)
+        return fail(err.badInput(t.invalidAssignees));
+      const names =
+        input.assigneeUserIds.length === 0
+          ? ""
+          : [...new Set(input.assigneeUserIds)]
+              .map((id) => {
+                const user = assignees.find((user) => user.id === id);
+                return user ? `${user.displayName} · ${user.uid}` : id;
+              })
+              .join(", ");
       const shown = input.conversationIds.slice(0, 3);
       const subjects = (
         await Promise.all(shown.map((conversationId) => requireConversationForReview(input.mailboxId, conversationId, context)))
       ).flatMap((conversation) => (conversation.ok ? [conversation.data.subject] : []));
       const hidden = input.conversationIds.length - shown.length;
-      const count = input.conversationIds.length;
       return ok({
-        message: assignee[0] ? t.assignBatchReview({ count, assignee: assignee[0].displayName }) : t.unassignBatchReview({ count }),
+        message: t.assignmentReview({ mode: t.assignmentMode({ mode: input.mode }), users: names || t.unassigned }),
         details: [
           {
             label: t.conversations,
             value: i18n.formatList(hidden > 0 ? [...subjects, t.moreConversations({ count: hidden })] : subjects, context.locale),
           },
-          { label: t.assignee, value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : t.unassigned },
+          { label: t.assignee, value: names || t.unassigned },
+          { label: t.assignmentModeLabel, value: t.assignmentMode({ mode: input.mode }) },
         ],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
@@ -3209,7 +3233,8 @@ const actionDefinitions = {
           context: requestContext(context),
           mailboxId: scope.data.id,
           conversationIds: input.conversationIds,
-          assigneeUserId: input.assigneeUserId,
+          assigneeUserIds: input.assigneeUserIds,
+          mode: input.mode,
           locale: context.locale,
         }),
         (result) => result,
@@ -3218,8 +3243,13 @@ const actionDefinitions = {
           const missing = result.results.length - count;
           return {
             summary: capabilitySummary(
-              result.assignee
-                ? t.assignedConversations({ count, assignee: result.assignee.displayName, missing })
+              input.assigneeUserIds.length > 0
+                ? t.assignmentSummary({
+                    count,
+                    mode: t.assignmentMode({ mode: input.mode }),
+                    users: result.assignees.map((user) => user.displayName).join(", ") || input.assigneeUserIds.join(", "),
+                    missing,
+                  })
                 : t.unassignedConversations({ count, missing }),
             ),
           };

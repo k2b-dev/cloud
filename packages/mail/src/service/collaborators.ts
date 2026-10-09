@@ -83,45 +83,88 @@ export const hasCurrentMailboxUserPermission = async (params: {
   return users.has(params.userId);
 };
 
+export type EligibleAssignee = AccessUser & { scope: "mailbox" | "assigned" };
+
+export const listEligibleAssignees = async (params: {
+  mailboxId: string;
+  db?: SqlClient;
+  userIds?: string[];
+  search?: string;
+  limit?: number;
+}): Promise<EligibleAssignee[]> => {
+  if (params.userIds?.length === 0) return [];
+  const db = params.db ?? sql;
+  const grants = await db<{ access_id: string; scope: "mailbox" | "assigned" }[]>`
+    SELECT access_id, 'mailbox' AS scope FROM mail.mailbox_access WHERE mailbox_id = ${params.mailboxId}::uuid
+    UNION ALL
+    SELECT access_id, 'assigned' AS scope FROM mail.mailbox_assigned_access WHERE mailbox_id = ${params.mailboxId}::uuid
+  `;
+  const users = new Map<string, EligibleAssignee>();
+  for (const scope of ["mailbox", "assigned"] as const) {
+    const found = await listUsersWithAccess({
+      accessIds: grants.filter((grant) => grant.scope === scope).map((grant) => grant.access_id),
+      userIds: params.userIds,
+      search: params.search,
+      minimumPermission: scope === "mailbox" ? "write" : "read",
+      limit: ACCESS_LOOKUP_LIMIT,
+      db,
+    });
+    for (const user of found) if (!users.has(user.id)) users.set(user.id, { ...user, scope });
+  }
+  if (params.search) {
+    const assignedIds = [...users.values()].filter((user) => user.scope === "assigned").map((user) => user.id);
+    if (assignedIds.length > 0) {
+      // Search may match only an assigned grant's group; scope still reflects all eligible grants.
+      const mailboxUsers = await listUsersWithAccess({
+        accessIds: grants.filter((grant) => grant.scope === "mailbox").map((grant) => grant.access_id),
+        userIds: assignedIds,
+        minimumPermission: "write",
+        limit: ACCESS_LOOKUP_LIMIT,
+        db,
+      });
+      for (const user of mailboxUsers) users.set(user.id, { ...user, scope: "mailbox" });
+    }
+  }
+  const active = new Set((await activeUsers(db, [...users.keys()])).map((user) => user.id));
+  const limit = Math.min(Math.max(params.limit ?? params.userIds?.length ?? 50, 1), ACCESS_LOOKUP_LIMIT);
+  return [...users.values()]
+    .filter((user) => active.has(user.id))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName) || a.id.localeCompare(b.id))
+    .slice(0, limit);
+};
+
+export const currentEligibleAssigneeIds = async (params: { mailboxId: string; userIds: string[]; db?: SqlClient }): Promise<Set<string>> =>
+  new Set((await listEligibleAssignees({ ...params, limit: params.userIds.length })).map((user) => user.id));
+
 export type LapsedAssignee = { mailbox_id: string; user_id: string };
 
-/**
- * Assignees of conversations in these mailboxes who no longer have write access there, for example
- * because their access was revoked or their account expired. Views, counts, and search treat their
- * conversations as unassigned so the team still finds them; the conversation keeps its assignee.
- */
+/** Views treat a conversation with no eligible assignee as unassigned, retaining its stored assignments. */
 export const listLapsedAssignees = async (params: { mailboxIds: readonly string[]; db?: SqlClient }): Promise<LapsedAssignee[]> => {
   const db = params.db ?? sql;
   if (params.mailboxIds.length === 0) return [];
   const assigned = await db<LapsedAssignee[]>`
-    SELECT DISTINCT mailbox_id, assignee_user_id AS user_id
-    FROM mail.conversations
-    WHERE mailbox_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[...new Set(params.mailboxIds)]}::jsonb))
-      AND assignee_user_id IS NOT NULL
+    SELECT DISTINCT c.mailbox_id, a.user_id
+    FROM mail.conversations c
+    JOIN mail.conversation_assignees a ON a.conversation_id = c.id
+    WHERE c.mailbox_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[...new Set(params.mailboxIds)]}::jsonb))
   `;
-  const byMailbox = Map.groupBy(assigned, (row) => row.mailbox_id);
   const lapsed: LapsedAssignee[] = [];
-  for (const [mailboxId, rows] of byMailbox) {
-    // One access lookup answers for at most ACCESS_LOOKUP_LIMIT users.
+  for (const [mailboxId, rows] of Map.groupBy(assigned, (row) => row.mailbox_id)) {
     for (let start = 0; start < rows.length; start += ACCESS_LOOKUP_LIMIT) {
       const batch = rows.slice(start, start + ACCESS_LOOKUP_LIMIT);
-      const current = await currentMailboxUserIds({
-        mailboxId,
-        userIds: batch.map((row) => row.user_id),
-        minimumPermission: "write",
-        db,
-      });
+      const current = await currentEligibleAssigneeIds({ mailboxId, userIds: batch.map((row) => row.user_id), db });
       lapsed.push(...batch.filter((row) => !current.has(row.user_id)));
     }
   }
   return lapsed;
 };
 
-/** Whether a conversation, `c` unless named otherwise, has no assignee who can still work on it. */
-export const isUnassignedConversation = (lapsed: readonly LapsedAssignee[], c: Bun.SQL.Query<unknown> = sql`c`) => sql`(
-  ${c}.assignee_user_id IS NULL
-  OR (${c}.mailbox_id, ${c}.assignee_user_id) IN (
-    SELECT lapsed.mailbox_id, lapsed.user_id
-    FROM jsonb_to_recordset(${lapsed}::jsonb) AS lapsed(mailbox_id uuid, user_id uuid)
-  )
+/** Whether a conversation, `c` unless named otherwise, has no eligible assignee. */
+export const isUnassignedConversation = (lapsed: readonly LapsedAssignee[], c: Bun.SQL.Query<unknown> = sql`c`) => sql`NOT EXISTS (
+  SELECT 1 FROM mail.conversation_assignees a
+  WHERE a.conversation_id = ${c}.id
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_to_recordset(${lapsed}::jsonb) AS lapsed(mailbox_id uuid, user_id uuid)
+      WHERE lapsed.mailbox_id = ${c}.mailbox_id AND lapsed.user_id = a.user_id
+    )
 )`;

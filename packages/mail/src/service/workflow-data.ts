@@ -53,7 +53,7 @@ export type FrozenMailConversation = {
   subject: string;
   summary: string | null;
   summaryRevision: number;
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   workStatus: "needs_action" | "waiting" | "done";
   revision: number;
   latestMessageAt: string;
@@ -121,7 +121,7 @@ type WorkflowSnapshotRow = {
   conversation_summary: string | null;
   summary_revision: string | number | null;
   collaboration_revision: string | number | null;
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   work_status: "needs_action" | "waiting" | "done" | null;
   latest_message_at: Date | string | null;
 };
@@ -173,7 +173,7 @@ const snapshotColumns = sql`
   conversation.summary AS conversation_summary,
   conversation.summary_revision,
   conversation.revision AS collaboration_revision,
-  conversation.assignee_user_id,
+  COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
   conversation.work_status,
   conversation.latest_message_at
 `;
@@ -236,7 +236,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
           subject: row.conversation_subject ?? "",
           summary: row.conversation_summary,
           summaryRevision: Number(row.summary_revision ?? 1),
-          assigneeUserId: row.assignee_user_id,
+          assigneeUserIds: row.assignee_user_ids,
           workStatus: row.work_status,
           revision: Number(row.collaboration_revision),
           latestMessageAt: toIso(row.latest_message_at),

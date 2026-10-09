@@ -400,23 +400,26 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "conversation.assign": {
           title: "Gespräch zuordnen",
-          description: "Weisen Sie einem berechtigten Postfachmitglied eine Konversation zu oder löschen Sie den Zuweisungsempfänger.",
+          description: "Zuständige einer Konversation hinzufügen, entfernen oder ersetzen.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
-            expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
-            assigneeUserId: "Benutzer UUID zum Zuweisen oder Null zum Aufheben der Zuweisung.",
+            assigneeUserIds:
+              "Benutzer-UUIDs zum Hinzufügen, Entfernen oder Ersetzen; eine leere Liste mit replace hebt alle Zuweisungen auf.",
+            mode: "Benutzer hinzufügen, entfernen oder alle Zuständigen ersetzen.",
           },
         },
         "conversation.assign.batch": {
           title: "Konversationen zuweisen",
           description:
-            "Weisen Sie bis zu 50 Konversationen eines Postfachs einem berechtigten Postfachmitglied zu oder entfernen Sie die Zuweisung. Meldet jede Konversation als ok oder not_found; die zugewiesene Person erhält eine Benachrichtigung.",
+            "Zuständige für bis zu 50 Konversationen eines Postfachs hinzufügen, entfernen oder ersetzen. Meldet ok oder not_found je Konversation; jede neu zugewiesene Person erhält eine Benachrichtigung.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
-            assigneeUserId: "Benutzer UUID zum Zuweisen oder Null zum Aufheben der Zuweisung.",
+            assigneeUserIds:
+              "Benutzer-UUIDs zum Hinzufügen, Entfernen oder Ersetzen; eine leere Liste mit replace hebt alle Zuweisungen auf.",
+            mode: "Benutzer hinzufügen, entfernen oder alle Zuständigen ersetzen.",
           },
         },
         "conversation.comment.create": {

@@ -58,6 +58,7 @@ import {
   folderDisplaySchema,
   type IncomingAutomationBackfill,
   type IncomingAutomationMatchPreview,
+  MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAIL_CONVERSATION_BATCH_LIMIT,
   type Mailbox,
   type MailboxComposeStyle,
@@ -1074,23 +1075,48 @@ const printCollaboration = (ctx: CloudCliContext, value: ConversationCollaborati
   ctx.print(`Conversation: ${value.conversationId}`);
   ctx.print(`Revision: ${value.revision}`);
   ctx.print(`Status: ${value.workStatus}`);
-  ctx.print(`Assignee: ${value.assignee ? `${value.assignee.displayName} (${value.assignee.id})` : "unassigned"}`);
+  ctx.print(
+    `${localizeCloudCliText(ctx.options.locale, { en: "Assignee", de: "Zuständig" })}: ${value.assignees.length ? value.assignees.map((user) => `${user.displayName} (${user.id})`).join(", ") : localizeCloudCliText(ctx.options.locale, { en: "unassigned", de: "niemand" })}`,
+  );
   ctx.print(`Show again at: ${value.snoozedUntil ?? "not in Later"}`);
 };
 
 const collaborationPath = (mailboxId: string, conversationId: string): string =>
   `/mailboxes/${mailboxId}/conversations/${requireMailResourceId(conversationId, "Conversation id")}/collaboration`;
 
-const resolveAssigneeUserId = async (ctx: CloudCliContext, mailboxId: string, target: string): Promise<string | null> => {
-  if (target === "none") return null;
+const resolveAssigneeUserId = async (ctx: CloudCliContext, mailboxId: string, target: string): Promise<string> => {
   if (target === "me") return (await ctx.readJson<{ id: string }>(await ctx.fetch("/api/me"))).id;
   if (LEGACY_UUID_PATTERN.test(target)) return target;
   const query = new URLSearchParams({ search: target, limit: "200" });
   const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailboxId}/assignable-users?${query}`);
   const match = users.find((user) => user.uid.toLowerCase() === target.toLowerCase());
   if (!match)
-    throw new Error(`No person with username "${target}" can be assigned in this mailbox. List them with \`cld mail conversation users\`.`);
+    throw new Error(
+      localizeCloudCliText(ctx.options.locale, {
+        en: `No person with username "${target}" can be assigned in this mailbox. List them with \`cld mail conversation users\`.`,
+        de: `Niemand mit dem Benutzernamen "${target}" kann diesem Postfach zugewiesen werden. \`cld mail conversation users\` listet berechtigte Benutzer auf.`,
+      }),
+    );
   return match.id;
+};
+
+const resolveAssigneeUserIds = async (ctx: CloudCliContext, mailboxId: string, targets: readonly string[]): Promise<string[]> => {
+  const values = targets.flatMap((target) => target.split(",")).map((target) => target.trim());
+  if (values.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
+    throw new Error(
+      localizeCloudCliText(ctx.options.locale, {
+        en: `Pass at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees.`,
+        de: `Höchstens ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} Zuständige angeben.`,
+      }),
+    );
+  if (values.length === 0 || values.some((value) => !value || value === "none"))
+    throw new Error(
+      localizeCloudCliText(ctx.options.locale, {
+        en: "Name at least one user; use none alone to clear all assignees.",
+        de: "Mindestens einen Benutzer angeben; none allein hebt alle Zuweisungen auf.",
+      }),
+    );
+  return [...new Set(await Promise.all(values.map((target) => resolveAssigneeUserId(ctx, mailboxId, target))))];
 };
 
 const printCollaborators = (ctx: CloudCliContext, users: MailAssignableUser[]): void =>
@@ -1099,12 +1125,14 @@ const printCollaborators = (ctx: CloudCliContext, users: MailAssignableUser[]): 
     users,
     users.map((user) => ({
       name: user.displayName,
+      scope: user.scope,
       permission: user.permission,
       access: user.description,
       id: user.id,
     })),
     [
       { key: "name", label: "NAME" },
+      { key: "scope", label: localizeCloudCliText(ctx.options.locale, { en: "SCOPE", de: "BEREICH" }) },
       { key: "permission", label: "PERMISSION" },
       { key: "access", label: "ACCESS" },
       { key: "id", label: "USER ID" },
@@ -1781,7 +1809,7 @@ const everydayCommands = (t: Translate) => {
           summary: summary.summary,
           summaryRevision: summary.summaryRevision,
           collaboration: {
-            assignee: collaborationState.assignee,
+            assignees: collaborationState.assignees,
             workStatus: collaborationState.workStatus,
             snoozedUntil: collaborationState.snoozedUntil,
             revision: collaborationState.revision,
@@ -1798,7 +1826,7 @@ const everydayCommands = (t: Translate) => {
         );
         ctx.print(`Status: ${value.collaboration.workStatus}`);
         ctx.print(
-          `${t({ en: "Assignee", de: "Zuständig" })}: ${value.collaboration.assignee ? `${value.collaboration.assignee.displayName} (${value.collaboration.assignee.id})` : t({ en: "unassigned", de: "niemand" })}`,
+          `${t({ en: "Assignee", de: "Zuständig" })}: ${value.collaboration.assignees.length ? value.collaboration.assignees.map((user) => `${user.displayName} (${user.id})`).join(", ") : t({ en: "unassigned", de: "niemand" })}`,
         );
         ctx.print(`Tags: ${value.tags.length > 0 ? value.tags.map((tag) => tag.name).join(", ") : none}`);
         ctx.print(`${t({ en: "Recent messages", de: "Neueste Nachrichten" })}: ${value.messages.length}`);
@@ -1839,10 +1867,86 @@ const everydayCommands = (t: Translate) => {
         ctx.print(message.plainText ?? t({ en: "[Body not loaded yet]", de: "[Text noch nicht geladen]" }));
       },
     }),
+    command("conversation update", {
+      summary: "Update assignment, completion, or when the conversation reappears",
+      args: {
+        conversationId: arg.required({ description: "Conversation id" }),
+      },
+      flags: {
+        ...mailboxFlag,
+        revision: flag.int({
+          required: true,
+          min: 1,
+          description: "Expected current conversation revision",
+        }),
+        assignee: flag.stringList({
+          description: t({
+            en: "Eligible user ID, username, or me; repeatable or comma-separated; replaces all assignees",
+            de: "Berechtigte Benutzer-ID, Benutzername oder me; wiederholbar oder kommagetrennt; ersetzt alle Zuständigen",
+          }),
+        }),
+        unassign: flag.boolean({ description: t({ en: "Clear all assignees", de: "Alle Zuweisungen aufheben" }) }),
+        done: flag.boolean({ description: "Mark the conversation done" }),
+        reopen: flag.boolean({ description: "Reopen the conversation and derive its next step" }),
+        snoozeUntil: flag.string({
+          name: "snooze-until",
+          description: "Future ISO date-time",
+        }),
+        unsnooze: flag.boolean({ description: "Show the conversation again now" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (!flags.revision) throw new Error("Missing expected conversation revision.");
+        if (flags.assignee.length > 0 && flags.unassign) throw new Error("Use either --assignee or --unassign.");
+        if (flags.done && flags.reopen) throw new Error("Use either --done or --reopen.");
+        if (flags.snoozeUntil && flags.unsnooze) throw new Error("Use either --snooze-until or --unsnooze.");
+        if ((flags.done || flags.reopen) && (flags.snoozeUntil || flags.unsnooze)) {
+          throw new Error("Change completion and the time to show the conversation again in separate commands.");
+        }
+        let snoozedUntil: string | null | undefined;
+        if (flags.snoozeUntil) {
+          const date = new Date(flags.snoozeUntil);
+          if (!Number.isFinite(date.getTime())) throw new Error("--snooze-until must be a valid ISO date-time.");
+          snoozedUntil = date.toISOString();
+        } else if (flags.unsnooze) snoozedUntil = null;
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const input = {
+          expectedRevision: flags.revision,
+          ...(flags.assignee.length > 0 || flags.unassign
+            ? { assigneeUserIds: flags.unassign ? [] : await resolveAssigneeUserIds(ctx, mailbox.id, flags.assignee) }
+            : {}),
+          ...(flags.done || flags.reopen ? { completion: flags.done ? ("done" as const) : ("open" as const) } : {}),
+          ...(snoozedUntil !== undefined ? { snoozedUntil } : {}),
+        };
+        if (Object.keys(input).length === 1) throw new Error("Pass at least one collaboration change.");
+        const value = await readApi<ConversationCollaboration>(
+          ctx,
+          collaborationPath(mailbox.id, args.conversationId),
+          jsonRequest("PATCH", input),
+        );
+        printCollaboration(ctx, value);
+      },
+    }),
+    command("conversation users", {
+      summary: "List users eligible for assignment",
+      flags: {
+        ...mailboxFlag,
+        search: flag.string({
+          description: "Search display name, uid, or granting group",
+        }),
+        limit: flag.int({ min: 1, max: 200, default: 50 }),
+      },
+      run: async ({ ctx, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
+        if (flags.search) query.set("search", flags.search);
+        const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailbox.id}/assignable-users?${query}`);
+        printCollaborators(ctx, users);
+      },
+    }),
     command("assign", {
       summary: t({
-        en: "Assign conversations to a person, or clear their assignee",
-        de: "Unterhaltungen einer Person zuweisen oder die Zuweisung aufheben",
+        en: "Add, remove, or replace conversation assignees",
+        de: "Zuständige für Unterhaltungen hinzufügen, entfernen oder ersetzen",
       }),
       description: t({
         en: "`cld mail conversation users` lists who can be assigned.",
@@ -1852,31 +1956,50 @@ const everydayCommands = (t: Translate) => {
       flags: {
         ...mailboxOption,
         to: flag.string({
-          required: true,
           valueLabel: "user",
-          description: t({ en: "User ID, exact username, me, or none", de: "Benutzer-ID, exakter Benutzername, me oder none" }),
+          description: t({
+            en: "Comma-separated user IDs, exact usernames, me, or none",
+            de: "Kommagetrennte Benutzer-IDs, exakte Benutzernamen, me oder none",
+          }),
+        }),
+        replace: flag.boolean({ description: t({ en: "Replace all assignees with --to", de: "Alle Zuständigen durch --to ersetzen" }) }),
+        remove: flag.string({
+          valueLabel: "users",
+          description: t({
+            en: "Remove comma-separated user IDs, usernames, or me",
+            de: "Kommagetrennte Benutzer-IDs, Benutzernamen oder me entfernen",
+          }),
         }),
       },
       examples: ["cld mail assign Convo1 Convo2 --to ada", "cld mail assign Convo1 --to me", "cld mail assign Convo1 --to none"],
       run: async ({ ctx, args, flags }) => {
         const conversationIds = requireConversationIds(args.conversations, t);
         const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
-        const assigneeUserId = await resolveAssigneeUserId(ctx, mailbox.id, flags.to!.trim());
+        if (Boolean(flags.to) === Boolean(flags.remove))
+          throw new Error(t({ en: "Use exactly one of --to or --remove.", de: "Genau eine Option verwenden: --to oder --remove." }));
+        if (flags.replace && !flags.to) throw new Error(t({ en: "--replace requires --to.", de: "--replace erfordert --to." }));
+        const clear = flags.to?.trim() === "none";
+        const mode = clear || flags.replace ? "replace" : flags.remove ? "remove" : "add";
+        const assigneeUserIds = clear ? [] : await resolveAssigneeUserIds(ctx, mailbox.id, [flags.to ?? flags.remove ?? ""]);
         const result = await readApi<ConversationAssignmentResult>(
           ctx,
           `/mailboxes/${mailbox.id}/conversations/assign`,
-          jsonRequest("POST", { conversationIds, assigneeUserId }),
+          jsonRequest("POST", { conversationIds, assigneeUserIds, mode }),
         );
         const missing = result.results.filter((item) => item.status !== "ok");
         if (!printStructured(ctx, result)) {
           const count = result.results.length - missing.length;
+          const names = result.assignees.map((user) => `${user.displayName} (${user.uid})`).join(", ") || assigneeUserIds.join(", ");
           ctx.print(
-            result.assignee
+            names
               ? t({
-                  en: `Assigned ${count} conversation(s) to ${result.assignee.displayName} (${result.assignee.uid}).`,
-                  de: `${count} Unterhaltung(en) ${result.assignee.displayName} (${result.assignee.uid}) zugewiesen.`,
+                  en: `${mode === "remove" ? "Removed" : mode === "add" ? "Added" : "Replaced"} assignees: ${names}; ${count} conversation(s).`,
+                  de: `Zuständige ${mode === "remove" ? "entfernt" : mode === "add" ? "hinzugefügt" : "ersetzt"}: ${names}; ${count} Unterhaltung(en).`,
                 })
-              : t({ en: `Cleared the assignee of ${count} conversation(s).`, de: `Zuweisung von ${count} Unterhaltung(en) aufgehoben.` }),
+              : t({
+                  en: `Cleared all assignees of ${count} conversation(s).`,
+                  de: `Alle Zuweisungen von ${count} Unterhaltung(en) aufgehoben.`,
+                }),
           );
           for (const item of missing)
             ctx.error(`${item.conversationId}: ${t({ en: "not found in this mailbox", de: "in diesem Postfach nicht gefunden" })}`);
@@ -5122,77 +5245,6 @@ const specialistCommands = {
           ctx.print(`Conversation revision: ${state.conversationRevision}`);
           printLocalTags(ctx, state.tags);
         }
-      },
-    }),
-    command("conversation update", {
-      summary: "Update assignment, completion, or when the conversation reappears",
-      args: {
-        conversationId: arg.required({ description: "Conversation id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        revision: flag.int({
-          required: true,
-          min: 1,
-          description: "Expected current conversation revision",
-        }),
-        assignee: flag.string({
-          description: "User id with current mailbox write access",
-        }),
-        unassign: flag.boolean({ description: "Clear the current assignee" }),
-        done: flag.boolean({ description: "Mark the conversation done" }),
-        reopen: flag.boolean({ description: "Reopen the conversation and derive its next step" }),
-        snoozeUntil: flag.string({
-          name: "snooze-until",
-          description: "Future ISO date-time",
-        }),
-        unsnooze: flag.boolean({ description: "Show the conversation again now" }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (!flags.revision) throw new Error("Missing expected conversation revision.");
-        if (flags.assignee && flags.unassign) throw new Error("Use either --assignee or --unassign.");
-        if (flags.done && flags.reopen) throw new Error("Use either --done or --reopen.");
-        if (flags.snoozeUntil && flags.unsnooze) throw new Error("Use either --snooze-until or --unsnooze.");
-        if ((flags.done || flags.reopen) && (flags.snoozeUntil || flags.unsnooze)) {
-          throw new Error("Change completion and the time to show the conversation again in separate commands.");
-        }
-        let snoozedUntil: string | null | undefined;
-        if (flags.snoozeUntil) {
-          const date = new Date(flags.snoozeUntil);
-          if (!Number.isFinite(date.getTime())) throw new Error("--snooze-until must be a valid ISO date-time.");
-          snoozedUntil = date.toISOString();
-        } else if (flags.unsnooze) snoozedUntil = null;
-        const input = {
-          expectedRevision: flags.revision,
-          ...(flags.assignee !== undefined || flags.unassign ? { assigneeUserId: flags.unassign ? null : flags.assignee } : {}),
-          ...(flags.done || flags.reopen ? { completion: flags.done ? ("done" as const) : ("open" as const) } : {}),
-          ...(snoozedUntil !== undefined ? { snoozedUntil } : {}),
-        };
-        if (Object.keys(input).length === 1) throw new Error("Pass at least one collaboration change.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const value = await readApi<ConversationCollaboration>(
-          ctx,
-          collaborationPath(mailbox.id, args.conversationId),
-          jsonRequest("PATCH", input),
-        );
-        printCollaboration(ctx, value);
-      },
-    }),
-    command("conversation users", {
-      summary: "List users eligible for assignment",
-      flags: {
-        ...mailboxFlag,
-        search: flag.string({
-          description: "Search display name, uid, or granting group",
-        }),
-        limit: flag.int({ min: 1, max: 200, default: 50 }),
-      },
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
-        if (flags.search) query.set("search", flags.search);
-        const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailbox.id}/assignable-users?${query}`);
-        printCollaborators(ctx, users);
       },
     }),
     command("conversation counts", {

@@ -222,7 +222,7 @@ export type ConversationSummary = {
   participantLabels: string[];
   latestMessageAt: string;
   workStatus: "needs_action" | "waiting" | "done";
-  assigneeUserId: string | null;
+  assigneeUserIds: string[];
   snoozedUntil: string | null;
   revision: number;
   updatedAt: string;
@@ -245,7 +245,7 @@ type DbConversation = {
   participant_labels: unknown;
   latest_message_at: Date | string;
   work_status: ConversationSummary["workStatus"];
-  assignee_user_id: string | null;
+  assignee_user_ids: string[];
   snoozed_until: Date | string | null;
   revision: string | number;
   updated_at: Date | string;
@@ -308,7 +308,7 @@ export const listConversations = async (params: {
       participant_state.labels AS participant_labels,
       c.latest_message_at,
       c.work_status,
-      c.assignee_user_id,
+      COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
       c.snoozed_until,
       c.revision,
       c.updated_at,
@@ -425,7 +425,7 @@ export const listConversations = async (params: {
         OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
         OR (
           ${view} = 'mine'
-          AND c.assignee_user_id = ${currentUserId}::uuid
+          AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${currentUserId}::uuid)
           AND c.work_status <> 'done'
           AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
         )
@@ -510,7 +510,7 @@ export const listConversations = async (params: {
     participantLabels: participantLabelsSchema.parse(row.participant_labels),
     latestMessageAt: toIso(row.latest_message_at),
     workStatus: row.work_status,
-    assigneeUserId: row.assignee_user_id,
+    assigneeUserIds: row.assignee_user_ids,
     snoozedUntil: row.snoozed_until ? toIso(row.snoozed_until) : null,
     revision: Number(row.revision),
     updatedAt: toIso(row.updated_at),
@@ -570,7 +570,7 @@ export const getConversationViewCounts = async (params: {
         )::int AS needs_action,
         COUNT(*) FILTER (
           WHERE scope.follow_up
-            AND scope.assignee_user_id = ${currentUserId}::uuid
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.user_id = ${currentUserId}::uuid)
             AND scope.work_status <> 'done'
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS mine,
@@ -593,10 +593,10 @@ export const getConversationViewCounts = async (params: {
         COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active
       FROM (
         SELECT
+          c.id,
           c.mailbox_id,
           c.work_status,
           c.snoozed_until,
-          c.assignee_user_id,
           bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
           bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
           ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated
