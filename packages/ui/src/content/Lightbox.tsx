@@ -73,8 +73,16 @@ export default function Lightbox(props: LightboxProps) {
     props.onClose();
   };
 
+  // A key belongs to the Lightbox while focus is inside it, or on the page with no other dialog open. A dialog opened
+  // from one of its actions keeps its own keys: Escape closes that dialog, and arrows stay in its fields.
+  const ownsKey = (target: EventTarget | null) =>
+    target instanceof Node &&
+    (dialogRef.contains(target) ||
+      (target === document.body && Array.from(document.querySelectorAll("dialog[open]")).every((dialog) => dialog === dialogRef)));
+
   // Keyboard navigation
   const handleKeyDown = (e: KeyboardEvent) => {
+    if (!ownsKey(e.target)) return;
     switch (e.key) {
       case "Escape":
         // Handled here, so WebKit does not light the returned focus for this key.

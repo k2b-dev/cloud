@@ -33,6 +33,8 @@ type Item = {
   name: string;
   /** Idempotency key for this name in this folder: a retry never creates a second file, a new name gets a new key. */
   key: string;
+  /** The provider opened a write stream under `key`, so bytes may have arrived and a retry must keep the key. */
+  streamed: boolean;
   state: "waiting" | "loading" | "done" | "conflict" | "error";
   progress: number;
   draft: string;
@@ -51,7 +53,8 @@ const problemOf = (cause: unknown): Problem => {
 /**
  * The shared save dialog: the person picks a provider that stores files and one of its folders, then every file is
  * read from the consumer and created there through the provider's `save`. Saving never replaces: a taken name asks
- * for another, prefilled as `Name (2).ext`. `saved` collects every created file, however the dialog closes.
+ * for another, prefilled as `Name (2).ext`. `saved` collects every created file, however the dialog closes, and
+ * `running` holds each round of transfers, which settles soon after the dialog closed and stopped them.
  */
 export function FileSaver(props: {
   files: readonly SaveFileSource[];
@@ -59,6 +62,7 @@ export function FileSaver(props: {
   retryProviders: () => void;
   caller: () => FileProviderCaller;
   saved: SavedFile[];
+  running: Set<Promise<void>>;
   close: () => void;
 }): JSX.Element {
   const locale = useLocale();
@@ -109,6 +113,7 @@ export function FileSaver(props: {
       source,
       name: saveableName(source.name),
       key: "",
+      streamed: false,
       state: "waiting",
       progress: 0,
       draft: "",
@@ -132,7 +137,7 @@ export function FileSaver(props: {
     const signal = transfer.signal;
     for (const index of indexes) setItems(index, { state: "waiting", progress: 0, problem: undefined });
     setRunning((count) => count + indexes.length);
-    await eachLimited(indexes, PARALLEL_SAVES, async (index) => {
+    const round = eachLimited(indexes, PARALLEL_SAVES, async (index) => {
       const item = items[index]!;
       // A URL is read first and then sent, so each half of the bar is one direction; a Blob is only sent.
       const share = typeof item.source.content === "string" ? 0.5 : 0;
@@ -151,11 +156,13 @@ export function FileSaver(props: {
           {
             ...props.caller(),
             signal,
+            onStream: () => setItems(index, "streamed", true),
             onProgress: (loaded, total) => setItems(index, "progress", share + (total ? loaded / total : 1) * (1 - share)),
           },
         );
-        if (signal.aborted) return;
+        // The file exists even when Cancel came with its receipt.
         props.saved.push({ name: file.name, app: where.provider.name, ...(file.href ? { href: file.href } : {}) });
+        if (signal.aborted) return;
         setItems(index, { state: "done", progress: 1 });
       } catch (cause) {
         if (signal.aborted) return;
@@ -166,6 +173,8 @@ export function FileSaver(props: {
         setRunning((count) => count - 1);
       }
     });
+    props.running.add(round);
+    await round;
     if (signal.aborted) return;
     if (items.every((item) => item.state === "done")) props.close();
     else if (running() === 0) {
@@ -184,18 +193,24 @@ export function FileSaver(props: {
     if (!current || !into || !canSave()) return;
     batch(() => {
       setTarget({ provider: current.provider, parent: into });
-      items.forEach((_, index) => setItems(index, "key", crypto.randomUUID()));
+      items.forEach((_, index) => setItems(index, { key: crypto.randomUUID(), streamed: false }));
     });
     queueMicrotask(() => root?.querySelector<HTMLButtonElement>("[data-file-saver-cancel]")?.focus());
     void saveItems(items.map((_, index) => index));
   };
-  const retry = () => void saveItems(items.flatMap((item, index) => (item.state === "error" ? [index] : [])));
+  const retry = () => {
+    const failed = items.flatMap((item, index) => (item.state === "error" ? [index] : []));
+    // Without a stream no byte was sent, so a new key cannot create a second file. Core may have frozen the old one
+    // after an Action whose outcome it does not know. With a stream, the same key replays it and finds a committed file.
+    for (const index of failed) if (!items[index]!.streamed) setItems(index, "key", crypto.randomUUID());
+    void saveItems(failed);
+  };
   /** A new name waits until the files still running are done, so no more than two ever transfer at once. */
   const canRename = (item: Item) => running() === 0 && isSaveableName(item.draft) && item.draft !== item.name;
   const rename = (index: number) => {
     const item = items[index]!;
     if (!canRename(item)) return;
-    setItems(index, { name: item.draft, key: crypto.randomUUID() });
+    setItems(index, { name: item.draft, key: crypto.randomUUID(), streamed: false });
     void saveItems([index]);
   };
 

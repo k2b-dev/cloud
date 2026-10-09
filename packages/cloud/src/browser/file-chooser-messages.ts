@@ -61,7 +61,7 @@ export const fileChooserMessages = i18n.define({
       savesInto: ({ folder }: { folder: string }) => `Saves to ${folder}`,
       save: "Save",
       saving: ({ done, total, failed }: { done: number; total: number; failed: number }) =>
-        `${done} of ${total} saved${failed > 0 ? `, ${failed} need attention` : ""}`,
+        `${done} of ${total} saved${failed > 0 ? `, ${i18n.plural(failed, "en", { one: "1 needs attention", other: `${failed} need attention` })}` : ""}`,
       saveProgress: ({ name }: { name: string }) => `Saving ${name}`,
       saved: "Saved",
       nameTaken: "This name is taken",
@@ -132,7 +132,8 @@ export const fileChooserMessages = i18n.define({
       notWritable: "In diesem Ordner kannst du nicht speichern",
       savesInto: ({ folder }) => `Wird in ${folder} gespeichert`,
       save: "Speichern",
-      saving: ({ done, total, failed }) => `${done} von ${total} gespeichert${failed > 0 ? `, ${failed} brauchen dich` : ""}`,
+      saving: ({ done, total, failed }) =>
+        `${done} von ${total} gespeichert${failed > 0 ? `, ${i18n.plural(failed, "de", { one: "1 braucht dich", other: `${failed} brauchen dich` })}` : ""}`,
       saveProgress: ({ name }) => `${name} wird gespeichert`,
       saved: "Gespeichert",
       nameTaken: "Dieser Name ist vergeben",

@@ -304,8 +304,8 @@ describe("saving into a provider", () => {
     size,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   });
-  /** Answers the save Action and the stream verbs; `write` decides how the write ends. */
-  const transport = (write: (body: string) => Response | Promise<Response>, status?: () => Response) => {
+  /** Answers the save Action and the stream verbs; `write` decides how the write ends, `status` how status and abort answer. */
+  const transport = (write: (body: string) => Response | Promise<Response>, status?: (verb: string) => Response) => {
     const calls: { url: string; key: string | null; input?: unknown }[] = [];
     const fetch = async (url: string | URL | Request, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
@@ -316,7 +316,7 @@ describe("saving into a provider", () => {
       }
       if (path.endsWith("/streams/status") || path.endsWith("/streams/abort")) {
         calls.push({ url: path, key: headers.get("x-cloud-stream-id") });
-        return status?.() ?? json({ state: "open" });
+        return status?.(path.split("/").at(-1)!) ?? json({ state: "open" });
       }
       const { input } = JSON.parse(String(init?.body)) as { input: { size: number } };
       calls.push({ url: path, key: headers.get("idempotency-key"), input });
@@ -385,6 +385,77 @@ describe("saving into a provider", () => {
       throw new TypeError("network");
     });
     await expect(saveProviderFile(drive, input, { locale: "en", fetch: open.fetch })).rejects.toMatchObject({ code: "APP_UNAVAILABLE" });
+  });
+
+  test("a write that Core reports as broken off asks the stream's status before it fails", async () => {
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    const completed = () => json({ state: "completed", result: { data: { file: { id: "id:a", name: "a.txt", size: 5 } } } });
+    const interrupted = (code: string, status: number) => () =>
+      json({ code, message: "Transfer interrupted; inspect write status before retrying" }, status);
+    // Files committed the bytes, but its answer never reached Core.
+    const lost = transport(interrupted("STREAM_FAILED", 502), completed);
+    expect(await saveProviderFile(drive, input, { locale: "en", fetch: lost.fetch })).toEqual({ id: "id:a", name: "a.txt", size: 5 });
+    expect(lost.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status"]);
+
+    // Still open: the write keeps its own code.
+    const late = transport(interrupted("DEADLINE_EXCEEDED", 504));
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: late.fetch })).rejects.toMatchObject({
+      code: "DEADLINE_EXCEEDED",
+      status: 504,
+    });
+    expect(late.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status"]);
+
+    // A provider's own answer is final and needs no status.
+    const full = transport(() => json({ code: "insufficient_space", message: "Full" }, 507), completed);
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: full.fetch })).rejects.toMatchObject({ code: "insufficient_space" });
+    expect(full.calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write"]);
+  });
+
+  test("a status that refuses keeps its code, so a taken name still asks for another", async () => {
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    const broken = () => {
+      throw new TypeError("network");
+    };
+    const taken = transport(broken, () => json({ code: FILE_PROVIDER_NAME_CONFLICT, message: "Taken" }, 409));
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: taken.fetch })).rejects.toMatchObject({
+      code: FILE_PROVIDER_NAME_CONFLICT,
+      status: 409,
+    });
+    const forbidden = transport(broken, () => json({ code: "forbidden", message: "No" }, 403));
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: forbidden.fetch })).rejects.toMatchObject({
+      code: "forbidden",
+      status: 403,
+    });
+  });
+
+  test("Cancel while the status is looked up aborts the stream", async () => {
+    const controller = new AbortController();
+    const { calls, fetch } = transport(
+      () => {
+        throw new TypeError("network");
+      },
+      (verb) => {
+        if (verb === "abort") return json({ state: "aborted" });
+        controller.abort();
+        throw new DOMException("Aborted", "AbortError");
+      },
+    );
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch, signal: controller.signal })).rejects.toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls.map((call) => call.url.split("/").at(-1))).toEqual(["file.save", "write", "status", "abort"]);
+  });
+
+  test("reports an opened stream once, and never for an Action that failed", async () => {
+    let streams = 0;
+    const onStream = () => streams++;
+    const input = { parent: "docs", name: "a.txt", body: new Blob(["hello"]), idempotencyKey: "k" };
+    const { fetch } = transport((body) => done("a.txt", body.length));
+    await saveProviderFile(drive, input, { locale: "en", fetch, onStream });
+    expect(streams).toBe(1);
+    const down = async () => json({ code: "APP_UNAVAILABLE", message: "Down" }, 503);
+    await expect(saveProviderFile(drive, input, { locale: "en", fetch: down, onStream })).rejects.toMatchObject({ status: 503 });
+    expect(streams).toBe(1);
   });
 
   test("a cancelled write aborts the stream, so the provider releases what it reserved", async () => {

@@ -27,7 +27,8 @@ export const createFileSaving = (
 ) => {
   const saveFiles = async (files: readonly SaveFileSource[], options: SaveFilesOptions = {}): Promise<SavedFile[]> => {
     if (files.length === 0 || options.signal?.aborted) return [];
-    const known = list.known();
+    // Only a refusal leaves an empty list without a request; asking again lets a renewed session find its apps.
+    const known = list.known()?.length === 0 && !list.requested() ? undefined : list.known();
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
     const load = () => {
       setProviders({ state: "loading" });
@@ -38,9 +39,18 @@ export const createFileSaving = (
     };
     if (!known) load();
     const saved: SavedFile[] = [];
+    const running = new Set<Promise<void>>();
     await dialogCore.open<void>(
       (close) => (
-        <FileSaver files={files} providers={providers} retryProviders={load} caller={caller} saved={saved} close={() => close()} />
+        <FileSaver
+          files={files}
+          providers={providers}
+          retryProviders={load}
+          caller={caller}
+          saved={saved}
+          running={running}
+          close={() => close()}
+        />
       ),
       {
         ...panelDialogWorkspaceOptions,
@@ -51,6 +61,8 @@ export const createFileSaving = (
         history: true,
       },
     );
+    // Closing stops the transfers; a receipt that was already on its way still counts.
+    await Promise.all(running);
     const first = saved[0];
     if (first) {
       const t = fileChooserMessages.resolve([caller().locale]).t;

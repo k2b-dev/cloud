@@ -392,6 +392,7 @@ function ResultButtons(props: { result: AssistantChatResult; actions: ChatSideba
               <i class="ti ti-external-link" aria-hidden="true" />
               {copy().open}
             </Button>
+            <Show when={resultSaveSource(props.files, file())}>{(source) => <SaveFilesButton size="xs" files={() => [source()]} />}</Show>
             <ButtonLink
               size="xs"
               variant="ghost"
@@ -402,7 +403,6 @@ function ResultButtons(props: { result: AssistantChatResult; actions: ChatSideba
               <i class="ti ti-download" aria-hidden="true" />
               {copy().download}
             </ButtonLink>
-            <Show when={resultSaveSource(props.files, file())}>{(source) => <SaveFilesButton size="xs" files={() => [source()]} />}</Show>
           </>
         )}
       </Show>

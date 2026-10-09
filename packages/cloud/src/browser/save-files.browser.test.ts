@@ -307,7 +307,7 @@ describe("saving files into a provider in a browser", () => {
       await input.waitFor();
       expect(await input.inputValue()).toBe("report (2).pdf");
       await page.waitForFunction(() => document.activeElement?.closest(".cloud-file-saver__rename") !== null);
-      expect(await status(page)).toBe("0 of 1 saved, 1 need attention");
+      expect(await status(page)).toBe("0 of 1 saved, 1 needs attention");
       expect(await dialogBox(page)).toEqual(frame);
       await page.keyboard.press("Enter");
       await waitSaved(page, 1);

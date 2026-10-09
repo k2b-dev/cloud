@@ -385,16 +385,24 @@ const receipt = (data: unknown, name: string, size: number): SavedProviderFile =
   return { id: file?.id ?? "", name: file?.name ?? name, size: file?.size ?? size, ...(href ? { href } : {}) };
 };
 
+/** Core and gateways answer a write that broke off with these; whether the provider committed it is unknown. */
+const INTERRUPTED_WRITE = [499, 502, 504];
+
 /**
  * Creates one file in a provider folder: the provider's `save` Action opens a write stream, the bytes follow, and the
  * receipt names the file. A taken name fails with `FILE_PROVIDER_NAME_CONFLICT`, from the Action or from the write.
- * `idempotencyKey` belongs to this name and folder: retrying with it never creates a second file. A write whose
- * answer was lost is looked up through the stream's status before it fails; a cancelled one is aborted.
+ * `idempotencyKey` belongs to this name and folder: retrying with it never creates a second file. `onStream` reports
+ * that the Action opened a stream, so bytes may follow under this key. A write whose answer was lost, or that broke
+ * off with 499, 502, or 504, is looked up through the stream's status before it fails; a cancelled one is aborted.
  */
 export const saveProviderFile = async (
   provider: FileProviderSource,
   input: { parent: string; name: string; body: Blob; idempotencyKey: string },
-  caller: FileProviderCaller & { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void },
+  caller: FileProviderCaller & {
+    signal?: AbortSignal;
+    onStream?: () => void;
+    onProgress?: (loaded: number, total: number) => void;
+  },
 ): Promise<SavedProviderFile> => {
   if (!provider.save) throw new FileProviderError("NOT_FOUND", "This app does not store files", 404);
   if (input.body.size > provider.save.maxBytes) throw tooLarge();
@@ -414,26 +422,46 @@ export const saveProviderFile = async (
   const stream = opened.data.stream;
   if (stream?.direction !== "write" || stream.size !== input.body.size)
     throw new FileProviderError("INVALID_APP_RESPONSE", "The provider returned no matching write stream", 502);
+  caller.onStream?.();
   const control = (verb: "status" | "abort") =>
     transferCapabilityStream(stream, verb, { ...options(caller), signal: verb === "status" ? caller.signal : undefined });
+  const abort = () => void control("abort").catch(() => undefined);
   caller.onProgress?.(0, stream.size);
-  let response: Response;
+  let response: Response | undefined;
   try {
     response = await sendWriteStream(stream, input.body, caller, caller.signal, (loaded) => caller.onProgress?.(loaded, stream.size));
   } catch (error) {
     if (caller.signal?.aborted) {
-      void control("abort").catch(() => undefined);
+      abort();
       throw error;
     }
-    // The bytes may have arrived and only the answer was lost; the stream's status knows.
-    const status = await control("status")
-      .then(async (answer) => (answer.ok ? CapabilityStreamStatusSchema.safeParse(await answer.json()) : null))
-      .catch(() => null);
-    if (status?.success && status.data.state === "completed") return receipt(status.data.result, input.name, input.body.size);
-    throw new FileProviderError("APP_UNAVAILABLE", "The file could not be saved", offline() ? 0 : 503);
   }
-  const answer = await readCapabilityResponse(response, SaveResultSchema);
-  if (!answer.ok) throw failure(answer.error);
-  caller.onProgress?.(stream.size, stream.size);
-  return receipt(answer.data, input.name, input.body.size);
+  let lost = new FileProviderError("APP_UNAVAILABLE", "The file could not be saved", offline() ? 0 : 503);
+  if (response) {
+    const answer = await readCapabilityResponse(response, SaveResultSchema);
+    if (answer.ok) {
+      caller.onProgress?.(stream.size, stream.size);
+      return receipt(answer.data, input.name, input.body.size);
+    }
+    if (!INTERRUPTED_WRITE.includes(answer.error.status)) throw failure(answer.error);
+    lost = failure(answer.error);
+  }
+  // The bytes may have arrived and only the answer was lost; the stream's status knows.
+  const status = await control("status").then(
+    async (answer) => {
+      const body: unknown = await answer.json().catch(() => null);
+      return { ok: answer.ok, status: answer.status, body };
+    },
+    () => null,
+  );
+  const state = status?.ok ? CapabilityStreamStatusSchema.safeParse(status.body) : null;
+  if (state?.success && state.data.state === "completed") return receipt(state.data.result, input.name, input.body.size);
+  if (caller.signal?.aborted) {
+    abort();
+    throw caller.signal.reason;
+  }
+  // The status's own refusal, such as a taken name or a lost permission, says more than the interrupted write.
+  const refused = status && !status.ok ? CapabilityErrorSchema.safeParse(status.body) : null;
+  if (status && refused?.success) throw failure({ ...refused.data, status: status.status });
+  throw lost;
 };

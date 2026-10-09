@@ -175,16 +175,17 @@ const menu = [
 ];
 ```
 
-Mail attachments, one or all of a message, Spaces task media, Notebooks
-attachments, Grids file fields, and Assistant chat and Project files save
-this way.
+Mail attachments, one or all of a message and each in the details panel,
+Spaces task media, Notebooks attachments, Grids file fields and record
+versions, and Assistant chat and Project files save this way.
 
 - **Where:** the dialog lists every provider whose `save` passes
   `fileProviderIssues`. With one, such as Files, it opens straight in that
   provider; with none, it says calmly that no application can store files and
-  points to the download. Inside a provider, people browse and filter folders
-  as in the chooser. Files are listed so that taken names are visible, but
-  only folders open. **Save** is enabled in a folder whose page reports
+  points to the download. When the catalog refused the page earlier, such as
+  during a session renewal, the dialog asks it again. Inside a provider,
+  people browse and filter folders as in the chooser. Files are listed so
+  that taken names are visible, but only folders open. **Save** is enabled in a folder whose page reports
   `writable`; a provider's root is never a target.
 - **Content:** a `Blob` is saved as it is. A URL is read only after the
   person chose a folder and pressed **Save**. Pass `size` when you know it: a
@@ -198,16 +199,21 @@ this way.
 - **Transfer:** each file is created through the provider's `save` Action
   with an idempotency key for its name and folder, then its bytes go through
   the write stream with progress. A double click or a retry never creates a
-  second file. A write whose answer was lost is checked through the stream's
-  status before it fails. **Cancel**, Escape, or `signal` stops what is still
-  running and aborts its stream; files saved before stay saved.
+  second file. A write whose answer was lost, or that Core answers with 499,
+  502, or 504 because the transfer broke off, is checked through the
+  stream's status before it fails. **Cancel**, Escape, or `signal` stops what
+  is still running and aborts its stream; files saved before stay saved.
 - **Failures:** each file says why it failed: too large, not readable from
   your URL, no permission to save in the folder, or offline. **Save** tries
-  the failed files again.
+  the failed files again. A file whose provider never opened a stream gets a
+  new idempotency key, because no byte was sent; one with a stream keeps its
+  key, so the provider can return a file it already created.
 - **Confirmation:** when the dialog closes after saving, a confirmation names
   the file or the number of files and links to the provider's `open` link,
-  for example **Show in Files**. `saveFiles()` resolves the saved files as
-  `{ name, app, href? }`, or `[]` when nothing was saved.
+  for example **Show in Files**. `saveFiles()` resolves once the stopped
+  transfers settled, with the saved files as `{ name, app, href? }`, including
+  one whose receipt arrived as the dialog closed, or `[]` when nothing was
+  saved.
 - **Access:** every call runs as the signed-in person, and the provider
   authorizes each one again. A folder that is listed or `writable` is not a
   grant.
