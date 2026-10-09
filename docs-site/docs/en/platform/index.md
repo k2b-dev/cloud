@@ -5,7 +5,7 @@ section: Platform services
 order: 500
 description: Choose the platform boundary that removes shared infrastructure from an application.
 tags: [platform, api, applications]
-updated: 2026-10-06
+updated: 2026-10-09
 ---
 
 # Platform services
@@ -25,7 +25,7 @@ do not copy files into an application or take ownership of its data model.
 | Need | Application contributes | Cloud provides |
 | --- | --- | --- |
 | Runtime configuration | Typed setting declarations and defaults | Validation, encrypted persistence, caching, and request snapshots |
-| [Outgoing mail](/en/docs/platform/outgoing-mail) | A `mail:send` declaration | Sender profiles and operator-controlled application access |
+| [Outgoing mail](/en/docs/platform/outgoing-mail) | A `mail:send` or `mail:read` declaration | Sender profiles, a searchable send log, and operator-controlled application access |
 | Operational events | A source, message, and structured metadata | Console output, redaction, persistence, retention, and operations views |
 | One operation across boundaries | Span names, events, and safe attributes | Trace storage, timing, status, and operations views |
 | Security evidence | An action, outcome, actor, and target | Durable, sanitized audit storage |

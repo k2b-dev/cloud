@@ -2,7 +2,7 @@ import type { PageParams, Paginated, ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import { type RequestActor, ServiceAccountSchema, UserSchema } from "./shared";
 
-export const PlatformPermissionSchema = z.enum(["mail:send"]);
+export const PlatformPermissionSchema = z.enum(["mail:send", "mail:read"]);
 export type PlatformPermission = z.infer<typeof PlatformPermissionSchema>;
 export const MailRetentionSchema = z.object({ contentDays: z.int().min(1).max(36500), recordDays: z.int().min(1).max(36500) }).strict();
 export type MailRetention = z.infer<typeof MailRetentionSchema>;
@@ -74,6 +74,7 @@ export type MailProfile = z.infer<typeof MailProfileSchema>;
 export const MailErrorCodeSchema = z.enum([
   "bad_input",
   "profile_not_allowed",
+  "app_not_allowed",
   "profile_required",
   "quota_exceeded",
   "backlog_full",
@@ -110,14 +111,33 @@ export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword
   appCount: z.int(),
 });
 export type AdminMailProfile = z.infer<typeof AdminMailProfileSchema>;
-export type AdminMailApp = {
-  appId: string;
-  name: string;
-  registered: boolean;
-  declared: boolean;
-  mode: "default" | "selected";
-  profiles: string[];
-};
+export const AdminMailAppSchema = z.object({
+  appId: z.string(),
+  name: z.string(),
+  registered: z.boolean(),
+  declared: z.boolean(),
+  mode: z.enum(["default", "selected"]),
+  profiles: z.array(z.string()),
+  /** Whether the registered app declares `mail:read`; grants in `logApps` only apply with it. */
+  readDeclared: z.boolean(),
+  /** Other apps whose send log this app may read, besides its own. */
+  logApps: z.array(z.string()),
+});
+export type AdminMailApp = z.infer<typeof AdminMailAppSchema>;
+/** Application IDs as registered; Core's own mail is never readable by apps. */
+export const MailLogAppIdSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z][a-z0-9-]*$/);
+export const MailLogAccessSchema = z
+  .object({ apps: z.array(MailLogAppIdSchema).max(100) })
+  .strict()
+  .refine(
+    (value) => new Set(value.apps).size === value.apps.length && !value.apps.includes("core"),
+    "Choose distinct apps other than core",
+  );
+export type MailLogAccess = z.infer<typeof MailLogAccessSchema>;
 
 export const MailStatusSchema = z.enum(["queued", "sending", "sent", "failed", "bounced", "cancelled"]);
 export type MailStatus = z.infer<typeof MailStatusSchema>;
@@ -218,11 +238,32 @@ export const MailFilterSchema = z
     batchId: z.uuid().optional(),
     status: z.array(MailStatusSchema).max(6).optional(),
     since: z.iso.datetime({ offset: true }).optional(),
+    /** Exclusive upper bound on `createdAt`. */
+    until: z.iso.datetime({ offset: true }).optional(),
+    /** Apps whose records to read; omitted means only the calling app. Others need `mail:read` and an administrator grant. */
+    apps: z
+      .array(MailLogAppIdSchema)
+      .min(1)
+      .max(100)
+      .refine((apps) => new Set(apps).size === apps.length, "Choose distinct apps")
+      .optional(),
+    /** Case-insensitive substring of a recipient address or the subject; at least three characters. */
+    q: z
+      .string()
+      .refine((value) => !/[\x00-\x1f\x7f]/.test(value), "Search must not contain control characters")
+      .trim()
+      .min(3)
+      .max(200)
+      .optional(),
+    /** One recipient address, matched exactly but case-insensitively. */
+    recipient: z.string().trim().pipe(mailAddress).optional(),
   })
   .strict();
 export type MailFilter = z.infer<typeof MailFilterSchema>;
 export const MailRecordSchema = z.object({
   id: z.uuid(),
+  /** The app that sent the record. */
+  appId: z.string(),
   batchId: z.uuid().optional(),
   profile: z.string(),
   ref: ref.optional(),
@@ -241,7 +282,6 @@ export const MailRecordSchema = z.object({
 });
 export type MailRecord = z.infer<typeof MailRecordSchema>;
 export const AdminMailRecordSchema = MailRecordSchema.omit({ text: true }).extend({
-  appId: z.string(),
   errorCode: z.string().optional(),
   response: z.string().optional(),
 });
@@ -252,9 +292,10 @@ export type MailPage<T = MailRecord> = Paginated<T> & { nextCursor?: string };
 export const MailPageParamsSchema = z
   .object({ page: z.int().min(1).optional(), perPage: z.int().min(1).max(100).optional(), cursor: z.string().max(1024).optional() })
   .strict();
-export const AdminMailFilterSchema = MailFilterSchema.extend({
+export const AdminMailFilterSchema = MailFilterSchema.omit({ apps: true }).extend({
   app: z.string().min(1).optional(),
   profile: MailProfileKeySchema.optional(),
+  /** Administrators search a recipient substring. */
   recipient: z.string().max(320).optional(),
 });
 export type AdminMailFilter = z.infer<typeof AdminMailFilterSchema>;

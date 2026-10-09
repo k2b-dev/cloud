@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   type AdminMailFilter,
   type AdminMailRecord,
+  type MailFilter,
   type MailMessage,
   type MailPage,
   type MailPageParams,
@@ -86,16 +87,17 @@ type LogRow = Pick<
   | "sent_at"
   | "content_purged_at"
 >;
-const logColumns = (db: SQL, includeText: boolean) => db`id, app_id, profile_key, batch_id, ref_scope, ref_id, to_addresses, subject,
-  ${includeText ? db`text_body` : db`NULL::text AS text_body`}, attachments, status, error_code, error_message, smtp_response,
+const logColumns = (db: SQL, ownApp?: string) => db`id, app_id, profile_key, batch_id, ref_scope, ref_id, to_addresses, subject,
+  ${ownApp === undefined ? db`NULL::text AS text_body` : db`CASE WHEN app_id = ${ownApp} THEN text_body END AS text_body`}, attachments, status, error_code, error_message, smtp_response,
   failures, attempt_count, actor_id, actor_name, created_at, created_at::text AS cursor_created_at, sent_at, content_purged_at`;
 const metadata = async (id: string): Promise<AdminMailRecord | undefined> => {
-  const [row] = await sql<LogRow[]>`SELECT ${logColumns(sql, false)} FROM outgoing_mail.messages WHERE id = ${id}::uuid`;
+  const [row] = await sql<LogRow[]>`SELECT ${logColumns(sql)} FROM outgoing_mail.messages WHERE id = ${id}::uuid`;
   return row ? adminMessageRecord(row) : undefined;
 };
 const date = (value: Date | string) => new Date(value).toISOString();
 export const messageRecord = (row: LogRow): MailRecord => ({
   id: row.id,
+  appId: row.app_id,
   profile: row.profile_key,
   to: row.to_addresses,
   subject: row.subject,
@@ -329,26 +331,32 @@ export const decodeMailCursor = (cursor?: string) => {
     throw new OutgoingMailError("bad_input", "Invalid outgoing mail cursor.");
   }
 };
+type LogFilter = AdminMailFilter & Pick<MailFilter, "apps"> & { recipientExact?: string };
 const list = async (
-  filter: AdminMailFilter,
+  filter: LogFilter,
   page: MailPageParams = {},
   metadata = false,
+  ownApp?: string,
 ): Promise<MailPage<MailRecord | AdminMailRecord>> => {
   const cursor = decodeMailCursor(page.cursor);
   const perPage = page.perPage ?? 50;
   const pageNumber = cursor?.page ?? page.page ?? 1;
   const where = sql`WHERE TRUE
+    ${filter.apps === undefined ? sql`` : sql`AND app_id = ANY(${toPgTextArray(filter.apps)}::text[])`}
     ${filter.app === undefined ? sql`` : sql`AND app_id = ${filter.app}`}
     ${filter.profile === undefined ? sql`` : sql`AND profile_key = ${filter.profile}`}
     ${filter.ids === undefined ? sql`` : sql`AND id = ANY(${toPgUuidArray(filter.ids)}::uuid[])`}
     ${filter.batchId === undefined ? sql`` : sql`AND batch_id = ${filter.batchId}::uuid`}
     ${filter.status === undefined ? sql`` : sql`AND status = ANY(${toPgTextArray(filter.status)}::text[])`}
     ${filter.since === undefined ? sql`` : sql`AND created_at >= ${filter.since}::timestamptz`}
+    ${filter.until === undefined ? sql`` : sql`AND created_at < ${filter.until}::timestamptz`}
+    ${filter.q === undefined ? sql`` : sql`AND outgoing_mail.search_text(subject, to_addresses) ILIKE ${`%${escapeLikePattern(filter.q.toLowerCase())}%`}`}
+    ${filter.recipientExact === undefined ? sql`` : sql`AND outgoing_mail.lower_addresses(to_addresses) @> ARRAY[pg_catalog.lower(${filter.recipientExact})]`}
     ${filter.ref === undefined ? sql`` : sql`AND ref_scope = ${filter.ref.scope}`}
     ${filter.ref?.id === undefined ? sql`` : sql`AND ref_id = ${filter.ref.id}`}
     ${filter.recipient === undefined ? sql`` : sql`AND EXISTS(SELECT 1 FROM unnest(to_addresses) AS address WHERE address ILIKE ${`%${escapeLikePattern(filter.recipient)}%`})`}`;
   const [count] = await sql<{ total: number }[]>`SELECT count(*)::int AS total FROM outgoing_mail.messages ${where}`;
-  const rows = await sql<LogRow[]>`SELECT ${logColumns(sql, !metadata)} FROM outgoing_mail.messages ${where}
+  const rows = await sql<LogRow[]>`SELECT ${logColumns(sql, metadata ? undefined : ownApp)} FROM outgoing_mail.messages ${where}
     ${cursor ? sql`AND (created_at < ${cursor.createdAt}::timestamptz OR (created_at = ${cursor.createdAt}::timestamptz AND id > ${cursor.id}::uuid))` : sql``}
     ORDER BY created_at DESC, id LIMIT ${perPage + 1} OFFSET ${cursor ? 0 : (pageNumber - 1) * perPage}`;
   const hasNext = rows.length > perPage;

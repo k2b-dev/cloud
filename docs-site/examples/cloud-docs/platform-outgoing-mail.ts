@@ -1,6 +1,8 @@
 import { defineApp } from "@k2b/cloud";
 import type { MailFilter, MailMessage, MailPage, MailProfile, MailRecord, PlatformPermission, RequestActor } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, expectUserBackedActor } from "@k2b/cloud/server";
 import { mail, renderHtmlToPdf } from "@k2b/cloud/services";
+import { Hono } from "hono";
 
 const permissions: readonly PlatformPermission[] = ["mail:send"];
 export const outgoingMailApp = defineApp({
@@ -152,3 +154,36 @@ export const readStockBatch = async (batchId: string, cursor?: string) => {
   }
   return { items, nextCursor: cursor };
 };
+
+export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<boolean>) =>
+  new Hono<AuthContext>()
+    .use("*", auth.requireRole("authenticated"))
+    .use("*", auth.requireUser())
+    .get("/emails", async (c) => {
+      // Cloud decides whose mail this app may read; this app decides who sees it.
+      if (!(await mayReadSentMail(expectUserBackedActor(c).id))) return c.json({ code: "forbidden" }, 403);
+      const apps = await mail.readableApps();
+      if (!apps.ok) return c.json({ code: apps.error.code }, apps.error.status);
+      const { q, recipient, since, until, cursor } = c.req.query();
+      const filter: MailFilter = {
+        apps: apps.data,
+        ...(q ? { q } : {}),
+        ...(recipient ? { recipient } : {}),
+        ...(since ? { since } : {}),
+        ...(until ? { until } : {}),
+      };
+      const page = await mail.list(filter, { perPage: 50, cursor });
+      if (!page.ok) return c.json({ code: page.error.code, message: page.error.message }, page.error.status);
+      return c.json({
+        items: page.data.items.map(({ id, appId, to, subject, status, failures, createdAt }) => ({
+          id,
+          appId,
+          to,
+          subject,
+          status,
+          failures,
+          createdAt,
+        })),
+        nextCursor: page.data.nextCursor,
+      });
+    });

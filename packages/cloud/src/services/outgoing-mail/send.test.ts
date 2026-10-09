@@ -5,6 +5,7 @@ import { waitForMail } from "./send";
 import * as sync from "./sync";
 
 const queued: MailRecord = {
+  appId: "inventory",
   id: crypto.randomUUID(),
   profile: "alerts",
   to: ["reader@example.org"],

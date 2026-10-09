@@ -72,7 +72,7 @@ and durable data.
 ## Reuse public building blocks
 
 Choose documented Cloud entry points and services before creating a parallel
-mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks.
+mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. To show mail across related apps, declare `mail:read` and let the operator grant the apps; your app still authorizes which of its users see it. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks.
 
 Prefer the documented K2B foundations before building an application-local
 alternative:

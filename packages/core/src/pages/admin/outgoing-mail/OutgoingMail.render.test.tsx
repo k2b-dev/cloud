@@ -13,7 +13,7 @@ const root = mkdtempSync(join(tmpdir(), "cloud-outgoing-mail-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: OutgoingMail } = await import("./OutgoingMail.island.tsx");
+const { default: OutgoingMail, LogAccessDialog } = await import("./OutgoingMail.island.tsx");
 
 const profile = (overrides: Partial<AdminMailProfile>): AdminMailProfile => ({
   key: "noreply",
@@ -47,10 +47,28 @@ const state: OutgoingMailState = {
   apps: {
     defaultProfile: "noreply",
     items: [
-      { appId: "core", name: "Core", registered: true, declared: true, mode: "default", profiles: [] },
-      { appId: "invoices", name: "Invoices", registered: true, declared: true, mode: "selected", profiles: ["billing"] },
-      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [] },
-      { appId: "legacy", name: "legacy", registered: false, declared: false, mode: "selected", profiles: [] },
+      { appId: "core", name: "Core", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      {
+        appId: "invoices",
+        name: "Invoices",
+        registered: true,
+        declared: true,
+        mode: "selected",
+        profiles: ["billing"],
+        readDeclared: true,
+        logApps: ["files"],
+      },
+      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      {
+        appId: "legacy",
+        name: "legacy",
+        registered: false,
+        declared: false,
+        mode: "selected",
+        profiles: [],
+        readDeclared: false,
+        logApps: [],
+      },
     ],
   },
   log: {
@@ -115,6 +133,36 @@ test("shows profiles, the default, and each app's effective access in English an
   expect(de).toContain("Fordert keine Mail an");
   expect(de).toContain("Absendername: Cloud-Name");
   expect(de).toContain("Systemmails, immer über das Standardprofil");
+});
+
+test("shows whose sent mail each app may read, on the page and in its dialog", () => {
+  const en = render("en", state);
+  expect(en).toContain("Own mail and Files");
+  expect(en).toContain("Requests send log access");
+  expect(en).toContain("Own mail only");
+  expect(en).toContain("Does not request send log access");
+  const de = render("de", state);
+  expect(de).toContain("Eigene Mails und Files");
+  expect(de).toContain("Fordert keine Einsicht ins Sendeprotokoll an");
+
+  const dialog = (locale: string, appId: string) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          const app = state.apps.items.find((entry) => entry.appId === appId)!;
+          return createComponent(LogAccessDialog, { app, apps: state.apps.items, close: () => {}, onSaved: () => {} });
+        },
+      }),
+    );
+  const invoices = dialog("en", "invoices");
+  // Core's system email is never offered, and an app does not need a grant for its own mail.
+  expect(invoices).not.toContain(">Core<");
+  expect(invoices).not.toContain(">Invoices<");
+  expect(invoices).toContain(">Files<");
+  expect(invoices).toContain("legacy · Not registered");
+  expect(invoices).not.toContain("does not request send log access");
+  expect(dialog("de", "files")).toContain("liest daher unabhängig von dieser Auswahl nur ihre eigenen Mails");
 });
 
 test("lists apps that request mail before the others", () => {

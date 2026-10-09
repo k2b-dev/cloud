@@ -17,7 +17,7 @@ const root = mkdtempSync(join(tmpdir(), "core-outgoing-mail-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: OutgoingMail, AccessDialog } = await import("./OutgoingMail.island.tsx");
+const { default: OutgoingMail, AccessDialog, LogAccessDialog } = await import("./OutgoingMail.island.tsx");
 const { MessageDialog } = await import("./SendLog.tsx");
 const { buildFontAssets } = await import("../../../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../../../scripts/tabler-assets");
@@ -67,9 +67,18 @@ const state: OutgoingMailState = {
   apps: {
     defaultProfile: "noreply",
     items: [
-      { appId: "core", name: "Core", registered: true, declared: true, mode: "default", profiles: [] },
-      { appId: "invoices", name: "Invoices", registered: true, declared: true, mode: "selected", profiles: ["billing", "noreply"] },
-      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [] },
+      { appId: "core", name: "Core", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      {
+        appId: "invoices",
+        name: "Invoices",
+        registered: true,
+        declared: true,
+        mode: "selected",
+        profiles: ["billing", "noreply"],
+        readDeclared: true,
+        logApps: ["files"],
+      },
+      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [], readDeclared: false, logApps: [] },
     ],
   },
   log: {
@@ -215,6 +224,8 @@ describe("outgoing mail page in a browser", () => {
       name: "Invoices",
       registered: true,
       declared: true,
+      readDeclared: false,
+      logApps: [],
       mode,
       profiles,
     });
@@ -259,6 +270,70 @@ describe("outgoing mail page in a browser", () => {
           [false, true],
           [false, false],
         ]);
+        for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
+      }
+  }, 60_000);
+
+  test("every app's action menu stays in view on a phone and a desktop", async () => {
+    for (const view of [phone, desktop])
+      for (const locale of ["en", "de"]) {
+        const tab = await open(view, false, locale);
+        try {
+          const label = locale === "de" ? "Aktionen für " : "Actions for ";
+          const triggers = await tab.evaluate((label) => {
+            const section = document.querySelector('[aria-labelledby="outgoing-mail-apps"]')!;
+            const scroller = section.querySelector("table")!.parentElement!.getBoundingClientRect();
+            return Array.from(section.querySelectorAll<HTMLElement>(`[aria-label^="${label}"]`)).map((trigger) => {
+              const box = trigger.getBoundingClientRect();
+              return box.width > 0 && box.left >= scroller.left - 1 && box.right <= Math.min(scroller.right, window.innerWidth) + 1;
+            });
+          }, label);
+          // Core's row has no actions; Invoices and Files each keep their menu reachable without scrolling the table.
+          expect({ width: view.width, locale, triggers }).toEqual({ width: view.width, locale, triggers: [true, true] });
+        } finally {
+          await tab.close();
+        }
+      }
+  }, 60_000);
+
+  test("the send log access dialog keeps one height whichever apps are chosen", async () => {
+    const invoices = state.apps.items.find((app) => app.appId === "invoices")!;
+    const apps = [...state.apps.items, { ...invoices, appId: "crm", name: "Customer relationships", logApps: [] }];
+    const selections = [[], ["files"], ["crm", "files"]];
+    const frame = "width: min(calc(100vw - 2rem), 28rem); padding: 1rem";
+    for (const view of [phone, desktop])
+      for (const locale of ["en", "de"]) {
+        const layouts = [];
+        for (const logApps of selections) {
+          const dialog = () =>
+            createComponent(LogAccessDialog, { app: { ...invoices, logApps }, apps, close: () => {}, onSaved: () => {} });
+          const tab = await open(view, false, locale, dialog, frame);
+          try {
+            layouts.push(
+              await tab.evaluate(() => {
+                const form = document.querySelector("form")!;
+                const top = form.getBoundingClientRect().top;
+                return {
+                  overflow: document.documentElement.scrollWidth - window.innerWidth,
+                  children: Array.from(form.children).map((child) => {
+                    const box = child.getBoundingClientRect();
+                    return [Math.round(box.top - top), Math.round(box.height)];
+                  }),
+                  checked: Array.from(form.querySelectorAll<HTMLInputElement>("input[type=checkbox]")).map((box) => box.checked),
+                };
+              }),
+            );
+          } finally {
+            await tab.close();
+          }
+        }
+        // Core and the app itself are never offered: Customer relationships and Files remain.
+        expect(layouts.map((layout) => layout.checked)).toEqual([
+          [false, false],
+          [false, true],
+          [true, true],
+        ]);
+        for (const layout of layouts) expect(Math.max(0, layout.overflow)).toBe(0);
         for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
       }
   }, 60_000);

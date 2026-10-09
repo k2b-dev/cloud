@@ -98,4 +98,54 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       ADD COLUMN IF NOT EXISTS imap_checked_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS imap_error TEXT`.simple();
   });
+  await db.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
+    await tx`CREATE EXTENSION IF NOT EXISTS pg_trgm`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS outgoing_mail.app_log_access (
+      app_id TEXT NOT NULL, source_app_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), created_by TEXT,
+      PRIMARY KEY(app_id, source_app_id), CHECK(app_id <> source_app_id), CHECK(source_app_id <> 'core')
+    )`.simple();
+    await tx`CREATE OR REPLACE FUNCTION outgoing_mail.search_text(subject pg_catalog.text, addresses pg_catalog.text[])
+      RETURNS pg_catalog.text LANGUAGE sql IMMUTABLE PARALLEL SAFE
+      AS $$ SELECT pg_catalog.lower(subject OPERATOR(pg_catalog.||) E'\\n' OPERATOR(pg_catalog.||)
+        pg_catalog.array_to_string(addresses, E'\\n')) $$`.simple();
+    await tx`CREATE OR REPLACE FUNCTION outgoing_mail.lower_addresses(addresses pg_catalog.text[])
+      RETURNS pg_catalog.text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE
+      AS $$ SELECT ARRAY(SELECT pg_catalog.lower(address) FROM pg_catalog.unnest(addresses) AS address) $$`.simple();
+  });
+  await buildSearchIndexes(db);
+};
+
+/** Send-log search indexes; built without blocking new mail, since the log can hold millions of rows. */
+const searchIndexes = {
+  outgoing_mail_messages_search: "USING gin (outgoing_mail.search_text(subject, to_addresses) gin_trgm_ops)",
+  outgoing_mail_messages_recipients: "USING gin (outgoing_mail.lower_addresses(to_addresses))",
+};
+const buildSearchIndexes = async (db: SQL): Promise<void> => {
+  // CONCURRENTLY cannot run in a transaction; a session lock keeps parallel Core replicas from racing.
+  const connection = await db.reserve();
+  try {
+    // Poll instead of waiting inside a statement: a waiting statement holds a snapshot that the
+    // other replica's concurrent build would wait for in turn.
+    for (;;) {
+      const [lock] = await connection<
+        { locked: boolean }[]
+      >`SELECT pg_try_advisory_lock(hashtextextended('core.outgoing_mail.search_indexes', 0)) AS locked`;
+      if (lock?.locked) break;
+      await Bun.sleep(1000);
+    }
+    for (const [name, definition] of Object.entries(searchIndexes)) {
+      const [index] = await connection<{ valid: boolean }[]>`SELECT i.indisvalid AS valid FROM pg_catalog.pg_index i
+        JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'outgoing_mail' AND c.relname = ${name}`;
+      if (index?.valid) continue;
+      // An interrupted concurrent build leaves an invalid index behind; rebuild it.
+      if (index) await connection.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS outgoing_mail.${name}`).simple();
+      await connection.unsafe(`CREATE INDEX CONCURRENTLY ${name} ON outgoing_mail.messages ${definition}`).simple();
+    }
+  } finally {
+    await connection`SELECT pg_advisory_unlock(hashtextextended('core.outgoing_mail.search_indexes', 0))`.catch(() => {});
+    connection.release();
+  }
 };

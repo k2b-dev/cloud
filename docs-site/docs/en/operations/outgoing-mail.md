@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Outgoing mail operations
@@ -209,6 +209,44 @@ Choose exactly one of these modes. Applications still need to declare
 declaration. Core's notification, sign-in, and password-reset emails always use
 the default profile, and Core's access cannot be changed.
 
+### Let an app read other apps' mail
+
+Every application can read the send log of its own mail. An application that
+declares `platformPermissions: ["mail:read"]` can also read the mail of the
+applications you choose, for example a back-office application with an
+"Emails" page across the invoice, customer, and HR applications. Nothing is
+shared until you choose.
+
+In **Administration → Outgoing mail → Apps**, the **Send log** column shows
+whose mail each application reads and whether it requests `mail:read`; on
+narrow screens the same line appears under the application name when it
+reads more than its own mail. Open the application's **⋯** menu and choose
+**Change send log access** to select the applications. The CLI shows and
+changes the same setting:
+
+```bash
+cld admin outgoing-mail apps list --json
+cld admin outgoing-mail apps set-log-access backoffice --apps invoices,customers,hr --yes
+cld admin outgoing-mail apps set-log-access backoffice --own-only --yes
+```
+
+`apps list` shows `reads` (whether the application declares `mail:read`) and
+`logApps` (the applications it may read besides its own). Choose exactly one of
+`--apps` with comma-separated application IDs or `--own-only`, which removes
+every grant. The selection replaces the previous one, takes effect on the
+application's next call, and writes `outgoing_mail.app_log_access.update` to
+the audit log. The administrator API is
+`PUT /api/admin/core/outgoing-mail/apps/:appId/log-access` with
+`{ "apps": ["invoices", "customers"] }`.
+
+Grants are kept when the application stops declaring `mail:read`, but they
+have no effect until it declares it again. Core's mail cannot be granted, and
+Core cannot be a reader. A granted application sees the recipients, subject,
+status, delivery errors, actor, and attachment metadata of the chosen
+applications' mail, never its text, and it cannot cancel or change that mail.
+Which of its users see that information is the reading application's own
+decision: ask its author how the page is protected before you grant access.
+
 ### Move an application's SMTP account
 
 Coordinate this switch with the application author. They replace their SMTP
@@ -394,6 +432,15 @@ mark the record `bounced` when a standard delivery report identifies failed
 recipients.
 
 ## Upgrade and rollback
+
+Core adds the send log access table and two search indexes on recipients and
+subjects during setup. The indexes are built without blocking new mail, but
+on a large send log the first start of Core takes longer: about a minute per
+million records on a single core. Core needs the PostgreSQL extension
+`pg_trgm`, which Grids and Mail already use. An interrupted build is
+repeated on the next start. No application can read another application's mail until you
+grant it. Rolling back leaves the table and indexes in place; older versions
+ignore them.
 
 Core adds nullable IMAP configuration and cursor columns automatically during
 setup. Existing profiles keep bounce collection off. Enable it explicitly with

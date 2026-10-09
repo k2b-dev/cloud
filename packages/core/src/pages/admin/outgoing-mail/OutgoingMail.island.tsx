@@ -82,6 +82,12 @@ const accessLabel = (app: AdminMailApp, profiles: readonly AdminMailProfile[], t
   return app.profiles.map((key) => profiles.find((profile) => profile.key === key)?.name ?? key).join(", ");
 };
 
+/** Names the other apps whose send log this app may read; its own mail is always readable. */
+const logLabel = (app: AdminMailApp, apps: readonly AdminMailApp[], t: Messages): string =>
+  app.logApps.length
+    ? t.logAlso({ names: app.logApps.map((id) => apps.find((entry) => entry.appId === id)?.name ?? id).join(", ") })
+    : t.logOwnOnly;
+
 type BounceError = NonNullable<NonNullable<AdminMailProfile["bounces"]>["error"]>;
 const bounceReason = (error: BounceError, t: Messages): string =>
   ({
@@ -651,6 +657,75 @@ export function AccessDialog(props: { app: AdminMailApp; profiles: readonly Admi
   );
 }
 
+/** Exported for the layout test: toggling apps never changes the dialog's height. */
+export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly AdminMailApp[]; close: () => void; onSaved: () => void }) {
+  const t = messages();
+  const [selected, setSelected] = createSignal<string[]>(props.app.logApps);
+  // Core's system email is never readable by apps; grants for apps that went offline stay visible.
+  const candidates = () =>
+    [
+      ...props.apps.filter((app) => app.appId !== props.app.appId && app.appId !== CORE_APP_ID),
+      ...props.app.logApps
+        .filter((id) => !props.apps.some((app) => app.appId === id))
+        .map((id): Pick<AdminMailApp, "appId" | "name" | "registered"> => ({ appId: id, name: id, registered: false })),
+    ].sort((a, b) => a.name.localeCompare(b.name) || a.appId.localeCompare(b.appId));
+  const save = mutation.create({
+    mutation: async (_: void, { abortSignal }) => {
+      const response = await api.apps[":appId"]["log-access"].$put(
+        { param: { appId: props.app.appId }, json: { apps: selected() } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw await failure(response, t().logAccessFailed, t());
+    },
+    onSuccess: () => {
+      props.onSaved();
+      props.close();
+    },
+  });
+  onCleanup(() => save.abort());
+  const toggle = (appId: string, checked: boolean) =>
+    setSelected((current) => (checked ? [...new Set([...current, appId])] : current.filter((entry) => entry !== appId)));
+  return (
+    <form
+      class="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!save.loading()) void save.mutate(undefined);
+      }}
+    >
+      <Show when={!props.app.readDeclared}>
+        <NoticeCard tone="warning" title={t().logAccessNotDeclared} />
+      </Show>
+      <p class="text-sm text-secondary">{t().logAccessHint}</p>
+      <Show when={candidates().length} fallback={<p class="text-sm text-dimmed">{t().noOtherApps}</p>}>
+        <div class="flex flex-col gap-2" role="group" aria-label={t().apps}>
+          <For each={candidates()}>
+            {(app) => (
+              <CheckboxCard
+                variant="input"
+                label={app.name}
+                description={app.registered ? app.appId : `${app.appId} · ${t().notRegistered}`}
+                value={selected().includes(app.appId)}
+                onValueChange={(checked) => toggle(app.appId, checked)}
+                disabled={save.loading()}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={save.error()}>{(error) => <NoticeCard tone="danger" title={t().logAccessFailed} detail={error().message} />}</Show>
+      <div class="flex justify-end gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={() => props.close()} disabled={save.loading()}>
+          {t().cancel}
+        </Button>
+        <Button type="submit" size="sm" disabled={save.loading()}>
+          {t().save}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export default function OutgoingMail(props: Props) {
   const t = messages();
   const [revision, setRevision] = createSignal(0);
@@ -678,6 +753,11 @@ export default function OutgoingMail(props: Props) {
     void prompts.dialog<void>((close) => <AccessDialog app={app} profiles={data().profiles} close={() => close()} onSaved={refresh} />, {
       title: `${t().accessTitle}: ${app.name}`,
       icon: "ti ti-mail-share",
+    });
+  const openLogAccess = (app: AdminMailApp) =>
+    void prompts.dialog<void>((close) => <LogAccessDialog app={app} apps={data().apps.items} close={() => close()} onSaved={refresh} />, {
+      title: `${t().logAccessTitle}: ${app.name}`,
+      icon: "ti ti-list-search",
     });
 
   const makeDefault = async (profile: AdminMailProfile) => {
@@ -715,6 +795,7 @@ export default function OutgoingMail(props: Props) {
   const appColumns = (): DataTableColumn<AdminMailApp>[] => [
     { id: "app", header: t().app },
     { id: "access", header: t().access, class: "hidden md:table-cell" },
+    { id: "log", header: t().logAccess, class: "hidden lg:table-cell" },
     { id: "actions", header: <span class="sr-only">{t().actions}</span>, headerClass: "w-px", cellClass: "text-right whitespace-nowrap" },
   ];
   const apps = () => [...data().apps.items].sort((a, b) => Number(b.declared) - Number(a.declared) || a.name.localeCompare(b.name));
@@ -881,6 +962,12 @@ export default function OutgoingMail(props: Props) {
                           : t().notRequested}
                   </p>
                   <p class="mt-0.5 text-xs text-secondary md:hidden">{accessLabel(row, data().profiles, t())}</p>
+                  {/* Below lg the send log column is hidden; only apps that read more than their own mail mention it here. */}
+                  <Show when={row.appId !== CORE_APP_ID && row.logApps.length}>
+                    <p class="mt-0.5 text-xs text-secondary lg:hidden">
+                      {t().logAccess}: {logLabel(row, data().apps.items, t())}
+                    </p>
+                  </Show>
                 </div>
               );
             if (col.id === "access")
@@ -889,12 +976,42 @@ export default function OutgoingMail(props: Props) {
                   <p class={`text-sm ${row.declared ? "text-secondary" : "text-dimmed"}`}>{accessLabel(row, data().profiles, t())}</p>
                 </div>
               );
+            if (col.id === "log")
+              return (
+                <Show when={row.appId !== CORE_APP_ID}>
+                  <div class="min-w-40">
+                    <p class={`text-sm ${row.readDeclared ? "text-secondary" : "text-dimmed"}`}>{logLabel(row, data().apps.items, t())}</p>
+                    <p class="mt-0.5 text-xs text-dimmed">{row.readDeclared ? t().logRequested : t().logNotRequested}</p>
+                  </div>
+                </Show>
+              );
             if (col.id === "actions")
               return (
                 <Show when={row.appId !== CORE_APP_ID}>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => openAccess(row)} disabled={busy()}>
-                    {t().changeAccess}
-                  </Button>
+                  <div class="flex justify-end gap-1">
+                    {/* On a phone the text button would push the menu out of view; the menu offers both. */}
+                    <span class="hidden md:inline-flex">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => openAccess(row)} disabled={busy()}>
+                        {t().changeAccess}
+                      </Button>
+                    </span>
+                    <Dropdown.Root
+                      align="end"
+                      width="16rem"
+                      items={[
+                        {
+                          items: [
+                            { icon: "ti ti-mail-share", label: t().changeSenderAccess, action: () => openAccess(row) },
+                            { icon: "ti ti-list-search", label: t().changeLogAccess, action: () => openLogAccess(row) },
+                          ],
+                        },
+                      ]}
+                    >
+                      <Dropdown.Trigger iconOnly label={t().appActions({ name: row.name })} size="sm" disabled={busy()}>
+                        <i class="ti ti-dots" aria-hidden="true" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </div>
                 </Show>
               );
             return "";

@@ -186,6 +186,51 @@ databaseSuite()("outgoing mail migration", () => {
       >`SELECT imap_port, imap_uid_validity::text AS validity, imap_last_uid::text AS uid FROM outgoing_mail.profiles`,
     ).toEqual([{ imap_port: 993, validity: "4294967295", uid: "4294967295" }]);
   });
+  test("log grants and immutable search indexes are additive and repeatable", async () => {
+    await migrate(db);
+    await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, created_by)
+      VALUES ('reader', 'source', 'admin')`;
+    await Promise.all([migrate(db), migrate(db)]);
+    expect(await db<Record<string, unknown>[]>`SELECT app_id, source_app_id, created_by FROM outgoing_mail.app_log_access`).toEqual([
+      { app_id: "reader", source_app_id: "source", created_by: "admin" },
+    ]);
+    // Concurrent replicas build each search index once, and the result is usable.
+    expect(
+      await db<Record<string, unknown>[]>`SELECT c.relname AS name, i.indisvalid AS valid FROM pg_catalog.pg_index i
+        JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname IN ('outgoing_mail_messages_search', 'outgoing_mail_messages_recipients') ORDER BY c.relname`,
+    ).toEqual([
+      { name: "outgoing_mail_messages_recipients", valid: true },
+      { name: "outgoing_mail_messages_search", valid: true },
+    ]);
+    expect(
+      await db<Record<string, unknown>[]>`SELECT proname, provolatile, proparallel FROM pg_catalog.pg_proc
+      WHERE pronamespace = 'outgoing_mail'::regnamespace AND proname IN ('search_text', 'lower_addresses') ORDER BY proname`,
+    ).toEqual([
+      { proname: "lower_addresses", provolatile: "i", proparallel: "s" },
+      { proname: "search_text", provolatile: "i", proparallel: "s" },
+    ]);
+    await db.begin(async (tx) => {
+      await tx`SET LOCAL search_path = pg_catalog`.simple();
+      expect(
+        await tx<
+          Record<string, unknown>[]
+        >`SELECT outgoing_mail.search_text('SUBJECT', ARRAY['USER@Example.org', 'SECOND@example.org']) AS search,
+        outgoing_mail.lower_addresses(ARRAY['USER@Example.org', 'SECOND@example.org']) AS addresses`,
+      ).toEqual([{ search: "subject\nuser@example.org\nsecond@example.org", addresses: ["user@example.org", "second@example.org"] }]);
+      expect(await tx<Record<string, unknown>[]>`SELECT outgoing_mail.lower_addresses(ARRAY[]::text[]) AS addresses`).toEqual([
+        { addresses: [] },
+      ]);
+    });
+    for (const [reader, source] of [
+      ["reader", "reader"],
+      ["reader", "core"],
+      ["reader", "source"],
+    ])
+      await expect(
+        (async () => await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES (${reader}, ${source})`)(),
+      ).rejects.toThrow();
+  });
   test("uses port 587 when it was not stored", async () => {
     await seed("smtp_host", "smtp.example.org");
     await seed("from", "noreply@example.org");

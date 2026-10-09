@@ -294,6 +294,8 @@ databaseSuite()("outgoing mail store and delivery", () => {
       name: "offline",
       registered: false,
       declared: false,
+      readDeclared: false,
+      logApps: [],
       mode: "selected",
       profiles: [b],
     });

@@ -3,8 +3,11 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { describeRoute, validator } from "hono-openapi";
 import { z } from "zod";
 import {
+  AdminMailAppSchema,
   AdminMailRecordSchema,
   MailAppAccessSchema,
+  MailLogAccessSchema,
+  MailLogAppIdSchema,
   MailProfileInputSchema,
   MailProfileKeySchema,
   MailRetentionSchema,
@@ -235,6 +238,21 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
       await outgoingMailTest.send(c.req.param("key")!, c.req.valid("json").recipient, context(c));
       return c.json({ ok: true as const });
     })
+    .put(
+      "/apps/:appId/log-access",
+      describeRoute({
+        summary: "Set application mail log access",
+        tags: ["Outgoing mail"],
+        ...requiresAdmin,
+        responses: {
+          200: jsonResponse(AdminMailAppSchema, "Updated application access"),
+          400: jsonResponse(z.object({ code: z.literal("bad_input"), message: z.string() }), "Invalid log access"),
+        },
+      }),
+      validate("param", z.object({ appId: MailLogAppIdSchema }), "bad_input"),
+      validate("json", MailLogAccessSchema, "bad_input"),
+      async (c) => c.json(await outgoingMailStore.setAppLogAccess(c.req.valid("param").appId, c.req.valid("json"), context(c))),
+    )
     .get("/apps", async (c) => c.json(await outgoingMailStore.apps()))
     .put("/apps/:appId", validate("json", MailAppAccessSchema), async (c) =>
       c.json(await outgoingMailStore.setAppAccess(c.req.param("appId")!, c.req.valid("json"), context(c))),

@@ -10,6 +10,25 @@ updated: 2026-10-09
 
 # Deprecations and migrations
 
+## Applications can search their sent mail and read related apps' mail
+
+This change is additive; existing calls behave as before. `mail.list` gains
+the filters `q` (a case-insensitive substring of a recipient or the subject),
+`recipient` (one exact address), `until`, and `apps`, and every `MailRecord`
+now carries `appId`. Without `apps`, an application still reads only its own
+mail. An application that declares the new platform permission `mail:read`
+can read the mail of the applications an administrator chooses, through
+`mail.readableApps()` and `filter.apps`, without their message text.
+Applications that only declare `mail:read` can also call `mail.list`.
+
+Operators decide in **Administration → Outgoing mail → Apps** or with
+`cld admin outgoing-mail apps set-log-access`; nothing is shared until then.
+On upgrade, Core adds a grant table and two search indexes to the send log.
+The indexes are built without blocking new mail, but the first start takes
+longer on a large send log. See
+[Read other apps' mail](/en/docs/platform/outgoing-mail#read-other-apps-mail) and
+[Let an app read other apps' mail](/en/docs/operations/outgoing-mail#let-an-app-read-other-apps-mail).
+
 ## Assistant notices when an offer fits
 
 At the start of a followed turn, Cloud now checks the message and the latest
