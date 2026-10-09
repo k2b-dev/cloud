@@ -22,7 +22,7 @@ Base grants support users, groups, service accounts, and all authenticated accou
 | **Admin** | Write plus change schema and configuration, manage access, and create, edit, or publish Grids Apps. |
 | **None** | Explicitly deny Base access. |
 
-A Base always keeps at least one manager: an **Admin** grant for a person, a group, all authenticated accounts, or a standalone or agent service account. API keys bound to the Base do not count. Grids refuses to lower or remove the last manager, and refuses a **None** grant for the same person, group, or account as that manager. To hand a Base over, grant the new manager **Admin** first. If a Base has lost its manager anyway, for example because the account was deleted, a Cloud administrator grants a new one in the administration area.
+A Base always keeps at least one manager: an **Admin** grant for a person, a group, all authenticated accounts, or a standalone or agent service account. API keys bound to the Base do not count. Grids refuses to lower or remove the last manager, and refuses a **None** grant for the same person, group, or account as that manager. An **Admin** grant does not count while the same person, group, or account also has **None**. When only one manager counts, the access settings lock that grant. To hand a Base over, grant the new manager **Admin** first. If a Base has lost its manager anyway, for example because the account was deleted, a Cloud administrator grants a new one in the administration area.
 
 Grids counts a group's **Admin** grant without checking its members. For a member, their own grant, or **None** for another of their groups, still decides first. So when you hand a Base over, grant **Admin** to the person directly.
 

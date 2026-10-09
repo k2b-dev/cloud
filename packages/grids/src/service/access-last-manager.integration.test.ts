@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect } from "bun:test";
 import type { PermissionLevel, Principal } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { type PrecedenceScenario, precedenceScenarios } from "../access-precedence.test-fixture";
 import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { type BaseAdminAuthorization, grantAccess, listAccessForBaseTree, listBaseAccess, revokeAccess, updateAccessLevel } from "./access";
@@ -202,6 +203,43 @@ describe("Grids base keeps a manager", () => {
     await grant(baseId, { type: "service_account", serviceAccountId: agent }, "admin");
     expect(await updateAccessLevel(own, "read", qdt.id, as(qdt.id))).toEqual({ ok: true, data: undefined });
   });
+});
+
+/** Create the scenario's people and groups for one base and grant in order; returns each grant's access ID. */
+const buildScenario = async (baseId: string, scenario: PrecedenceScenario): Promise<Record<string, string>> => {
+  const principals = new Map<string, Principal>();
+  const accessIds: Record<string, string> = {};
+  for (const item of scenario.grants) {
+    const ref = `${item.principal.type}:${item.principal.name}`;
+    let principal = principals.get(ref);
+    if (!principal) {
+      principal =
+        item.principal.type === "user"
+          ? { type: "user", userId: (await insertUser(item.principal.name)).id }
+          : { type: "group", groupId: await insertGroup(`${item.principal.name} ${testShortId()}`) };
+      principals.set(ref, principal);
+    }
+    accessIds[item.key] = await grant(baseId, principal, item.permission);
+  }
+  return accessIds;
+};
+
+describe("Grids base access editor and service agree", () => {
+  for (const scenario of precedenceScenarios) {
+    postgresTest(`the service refuses exactly the rows the editor locks: ${scenario.name}`, async () => {
+      const refused: Record<string, boolean[]> = {};
+      for (const { key } of scenario.grants) {
+        // Every change starts from the same grants, so one accepted change cannot unlock the next.
+        const lowered = await updateAccessLevel((await buildScenario(await insertBase(), scenario))[key]!, "read", null);
+        const revoked = await revokeAccess((await buildScenario(await insertBase(), scenario))[key]!, null);
+        for (const result of [lowered, revoked]) if (!result.ok) expectLastManager(result);
+        refused[key] = [!lowered.ok, !revoked.ok];
+      }
+      expect(refused).toEqual(
+        Object.fromEntries(scenario.grants.map(({ key }) => [key, scenario.locked.includes(key) ? [true, true] : [false, false]])),
+      );
+    });
+  }
 });
 
 describe("Grids access names", () => {

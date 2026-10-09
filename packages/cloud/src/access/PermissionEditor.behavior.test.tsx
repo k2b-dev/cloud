@@ -314,6 +314,54 @@ describe("PermissionEditor last manager", () => {
       dom.cleanup();
     }
   });
+
+  test("counts managers only among the entries the resource's precedence leaves in effect", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["click"]);
+    const lym = { type: "user", userId: "user-lym" } as const;
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[
+            grant("qdt", { type: "user", userId: "user-qdt" }, "admin", "Quentin Dorn"),
+            grant("lym", lym, "admin", "Lya Meyer"),
+            grant("lym-deny", lym, "none", "Lya Meyer (denied)"),
+            grant("ana", { type: "user", userId: "user-ana" }, "read", "Ana Roth"),
+          ]}
+          // A deny overrides every grant of the same principal, as the resource's service decides.
+          effectiveEntries={(entries) => {
+            const denied = new Set(entries.filter((entry) => entry.permission === "none").map((entry) => JSON.stringify(entry.principal)));
+            return entries.filter((entry) => !denied.has(JSON.stringify(entry.principal)));
+          }}
+          grantAccess={async () => {
+            throw new Error("Not used by this test.");
+          }}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    const removeButton = (name: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${name}"]`)!;
+    const rowOf = (name: string) => removeButton(name).closest<HTMLElement>(".group\\/access-row")!;
+    try {
+      // Lya's Manage grant is shadowed, so Quentin is the only manager the service still counts.
+      expect(removeButton("Quentin Dorn").disabled).toBe(true);
+      expect(removeButton("Lya Meyer").disabled).toBe(false);
+      expect(removeButton("Lya Meyer (denied)").disabled).toBe(false);
+
+      // The function sees the editor's current entries, so a new manager unlocks the row.
+      Array.from(rowOf("Ana Roth").querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        .find((item) => item.textContent?.startsWith("Manage"))!
+        .click();
+      await waitFor(() => !removeButton("Quentin Dorn").disabled, "the unlocked manager row");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 });
 
 const directoryUser = (index: number) => ({

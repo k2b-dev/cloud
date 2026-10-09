@@ -9,6 +9,7 @@ import {
 import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { unshadowedGrants } from "../access-precedence";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { gridsLive, publishMetadataChange } from "./live";
@@ -139,31 +140,6 @@ type ManagerGuardEntry = {
 };
 
 /**
- * The principal a 'none' grant shadows. The guard counts a group's grant regardless of its members,
- * so a group deny shadows only that group's own grants, never another group that shares members.
- */
-const denyScope = (principal: Principal): string | null => {
-  switch (principal.type) {
-    case "user":
-      return `user:${principal.userId}`;
-    case "service_account":
-      return `service_account:${principal.serviceAccountId}`;
-    case "group":
-      return `group:${principal.groupId}`;
-    case "authenticated":
-      return "authenticated";
-    case "public":
-      return null;
-  }
-};
-
-/** Drop the grants a deny for the same principal shadows, so only grants that still apply count as managers. */
-const unshadowedEntries = (entries: ManagerGuardEntry[]): ManagerGuardEntry[] => {
-  const denied = new Set(entries.filter((entry) => entry.permission === "none").map((entry) => denyScope(entry.principal)));
-  return entries.filter((entry) => !denied.has(denyScope(entry.principal)));
-};
-
-/**
  * Refuse a base grant change that leaves the base without a manager. Call it after
  * lockBaseAuthorization, which serializes every grant change of the base.
  */
@@ -187,7 +163,7 @@ const ensureBaseManagerRemains = async (
     permission: row.permission,
     serviceAccountKind: row.service_account_kind,
   }));
-  return ensureManagerRemains({ before: unshadowedEntries(before), after: unshadowedEntries(change(before)), locale });
+  return ensureManagerRemains({ before: unshadowedGrants(before), after: unshadowedGrants(change(before)), locale });
 };
 
 const resourceIdFromBinding = (binding: AccessBinding): string => (binding.resourceType === "base" ? binding.baseId : binding.customAppId);

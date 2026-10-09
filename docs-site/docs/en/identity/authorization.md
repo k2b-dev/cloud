@@ -417,7 +417,9 @@ the old one.
 
 If your application's precedence lets one entry shadow another, such as a
 `none` that overrides `admin` in the same tier, drop the shadowed entries from
-both lists before the check, and check a new `none` grant as well. Changes
+both lists before the check, and check a new `none` grant as well. Share that
+function with the permission editor, as
+[Show the last manager](#show-the-last-manager) describes. Changes
 outside the grants are not checked: deleting an account, a group, or a service
 account, and changing group membership. Some built-in applications still use
 their own older check; see
@@ -472,13 +474,40 @@ keeps its size, so granting a second manager unlocks it without moving
 anything. The editor counts only the entries it shows; the service stays the
 authority, and its `LAST_MANAGER` message reaches the person as an error.
 
-Pass the editor every entry that can count as a manager. Agents and standalone
-service accounts manage a resource like people do, so they keep their row and
-their kind label. Hide only entries that never count: an editor next to
+If your service drops shadowed entries before the check, pass the same function
+as `effectiveEntries`. The editor calls it with its current entries and counts
+managers only among the entries it returns; when exactly one remains, it locks
+that row. Without it, a person and a manager whose `admin` a same-principal
+`none` overrides look like two managers: the editor offers to lower the person,
+and the service refuses.
+
+```tsx
+<PermissionEditor
+  initialEntries={entries}
+  effectiveEntries={unshadowedGrants}
+  grantAccess={grantAccess}
+  updateAccess={updateAccess}
+  revokeAccess={revokeAccess}
+/>
+```
+
+The lock matches the service's refusal when only a `none` shadows other
+entries, as in Grids. The editor never offers `none`, so a change to another
+row cannot hide the remaining manager, and lowering or removing that manager
+brings no other one into effect. Under other rules, for example when the latest
+of two `admin` grants wins, the editor can lock a row whose change the service
+accepts.
+
+Pass the editor every entry that can count as a manager, and, with
+`effectiveEntries`, every entry that can shadow one, such as a `none`. Agents
+and standalone service accounts manage a resource like people do, so they keep
+their row and their kind label. Hide only entries that do neither: an editor
+next to
 [`ResourceApiKeys`](/en/docs/identity/resource-api-keys#add-the-api-key-ui)
 hides the resource-bound entries that the key list manages. An editor that hid
 an agent with “Manage” would lock the person who manages next to it, although
-the service accepts their change.
+the service accepts their change. One that hid a shadowing `none` would count
+the manager it hides and offer a change the service refuses.
 
 Rows for all signed-in users and for the public always show the editor's
 localized label, whatever `displayName` the entry carries.

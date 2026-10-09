@@ -2,6 +2,7 @@ import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts/shared";
 import { Button, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
+import { unshadowedGrants } from "@/access-precedence";
 import { apiClient } from "@/api/client";
 import { resolveGridsMessages } from "../../messages";
 import { errorMessage } from "../utils/api-helpers";
@@ -102,6 +103,7 @@ export function ScopedPermissionEditor(props: Props) {
           canEdit={props.canEdit && manageable()}
           allowPublic={props.scope.type === "customApp"}
           allowedLevels={props.scope.type === "customApp" ? [{ level: "read", label: t().open, icon: "ti ti-eye" }] : props.allowedLevels}
+          effectiveEntries={unshadowedGrants}
           grantAccess={async (principal, permission, display) => {
             const created = await grantAccess(props.scope, principal, permission, t().grantAccessFailed);
             const refreshed = await reload();
