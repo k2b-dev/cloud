@@ -1089,6 +1089,100 @@
   line-height: 1;
 }
 
+/* Unread marks: each has a fixed width and at most the 1rem height of the
+   label line, so no state changes the row height. The unread slot is always
+   reserved at the end, with the bell and then "@" before it, so new activity
+   or a mention never moves another mark. A count and a dot share that slot;
+   the dot sits where a one-digit count would. */
+.k2b-ui .k2b-app-workspace__sidebar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-status-muted,
+.k2b-ui .k2b-app-workspace__sidebar-status-mention {
+  display: inline-grid;
+  width: 0.875rem;
+  height: 1rem;
+  place-items: center;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-status-mention {
+  color: var(--k2b-action);
+  font-weight: 700;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-status-unread {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-status-count {
+  box-sizing: border-box;
+  min-width: 1rem;
+  height: 1rem;
+  padding-inline: 0.25rem;
+  border-radius: 999px;
+  color: var(--k2b-text);
+  background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-status-count[data-mention="true"] {
+  color: #ffffff;
+  background: var(--k2b-action-solid);
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-inline: 0.25rem;
+  border-radius: 999px;
+  background: var(--k2b-text-muted);
+}
+
+/* Unread is weight and count, never color alone: the label gets stronger
+   than the regular label of its variant. Only the row's own label changes,
+   not the rows in a preview inside it. */
+.k2b-ui .k2b-app-workspace__sidebar-item {
+  --k2b-sidebar-item-unread-weight: 600;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-item[data-variant="object"] {
+  --k2b-sidebar-item-unread-weight: 700;
+}
+
+.k2b-ui
+  :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-item-main):has(
+    > .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status[data-unread="count"]
+  )
+  > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label)
+  .k2b-app-workspace__sidebar-item-label-text {
+  font-weight: var(--k2b-sidebar-item-unread-weight);
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-app-workspace__sidebar-status-count {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-status-dot {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+}
+
 .k2b-ui .k2b-app-workspace__main {
   @apply relative flex min-h-0 min-w-0 flex-1 flex-col;
   z-index: 1;
