@@ -52,8 +52,8 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 😮‍💨	0		face exhaling	blow|blowing|exhale|exhaling|exhausted|face|gasp|groan|relief|sigh|smiley|smoke|whisper|whistle	Gesicht, das ausatmet	ausatmen|erleichtert|erschöpft|gesicht|husten|puh|pusten|schnaufen|seufz|seufzen|smiley	face_exhaling
 🤥	0		lying face	face|liar|lie|lying|pinocchio	lügendes Gesicht	gesicht|lüge|nase|pinocchio|schwindel	lying_face
 🫨	0		shaking face	crazy|daze|earthquake|face|omg|panic|shaking|shock|surprise|vibrate|whoa|wow	zitterndes Doppelgesicht	doppelgesicht|erdbeben|gesicht|omg|panik|schock|smiley|verrückt|vibrieren|wow|zittern|überrascht	shaking_face
-🙂‍↔️	0		head shaking horizontally	head|horizontally|no|shake|shaking	Kopfschütteln	nein|schütteln	
-🙂‍↕️	0		head shaking vertically	head|nod|shaking|vertically|yes	Kopfnicken	ja|nicken	
+🙂‍↔️	0		head shaking horizontally	head|horizontally|no|shake|shaking	Kopfschütteln	nein|schütteln
+🙂‍↕️	0		head shaking vertically	head|nod|shaking|vertically|yes	Kopfnicken	ja|nicken
 😌	0		relieved face	calm|face|peace|relief|relieved|zen	erleichtertes Gesicht	augen|entspannt|erleichtert|geschlossen|gesicht|smiley|zen|zufrieden	relieved
 😔	0		pensive face	awful|bored|dejected|died|disappointed|face|losing|lost|pensive|sad|sucks	nachdenkliches Gesicht	enttäuscht|gesicht|nachdenklich|schrecklich|smiley|traurig|verlieren|verloren	pensive
 😪	0		sleepy face	crying|face|good|night|sad|sleep|sleeping|sleepy|tired	schläfriges Gesicht	gesicht|gute|müde|nacht|schläfrig|smiley|traurig	sleepy
@@ -412,42 +412,42 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 🚶	1	🚶🏻	person walking	amble|gait|hike|man|pace|pedestrian|person|stride|stroll|walk|walking	Fußgänger(in)	fußgänger|fußgängerin|gehen|gehend|person|schlendern|schlurfen|wandern	walking
 🚶‍♂️	1	🚶🏻‍♂️	man walking	amble|gait|hike|man|pace|pedestrian|stride|stroll|walk|walking	Fußgänger	gehen|mann|spaziergang	walking_man
 🚶‍♀️	1	🚶🏻‍♀️	woman walking	amble|gait|hike|man|pace|pedestrian|stride|stroll|walk|walking|woman	Fußgängerin	frau|gehen|schlendern|spazieren|spaziergang	walking_woman
-🚶‍➡️	1	🚶🏻‍➡️	person walking: facing right	amble|facing|gait|hike|man|pace|pedestrian|person|right|stride|stroll|walk|walking	Fußgänger(in): nach rechts	fußgänger|fußgänger(in)|fußgängerin|gehen|gehend|nach|person|rechts|schlendern|schlurfen|wandern	
-🚶‍♀️‍➡️	1	🚶🏻‍♀️‍➡️	woman walking: facing right	amble|facing|gait|hike|man|pace|pedestrian|right|stride|stroll|walk|walking|woman	Fußgängerin: nach rechts	frau|fußgängerin|gehen|nach|rechts|schlendern|spazieren|spaziergang	
-🚶‍♂️‍➡️	1	🚶🏻‍♂️‍➡️	man walking: facing right	amble|facing|gait|hike|man|pace|pedestrian|right|stride|stroll|walk|walking	Fußgänger: nach rechts	fußgänger|gehen|mann|nach|rechts|spaziergang	
+🚶‍➡️	1	🚶🏻‍➡️	person walking: facing right	amble|facing|gait|hike|man|pace|pedestrian|person|right|stride|stroll|walk|walking	Fußgänger(in): nach rechts	fußgänger|fußgänger(in)|fußgängerin|gehen|gehend|nach|person|rechts|schlendern|schlurfen|wandern
+🚶‍♀️‍➡️	1	🚶🏻‍♀️‍➡️	woman walking: facing right	amble|facing|gait|hike|man|pace|pedestrian|right|stride|stroll|walk|walking|woman	Fußgängerin: nach rechts	frau|fußgängerin|gehen|nach|rechts|schlendern|spazieren|spaziergang
+🚶‍♂️‍➡️	1	🚶🏻‍♂️‍➡️	man walking: facing right	amble|facing|gait|hike|man|pace|pedestrian|right|stride|stroll|walk|walking	Fußgänger: nach rechts	fußgänger|gehen|mann|nach|rechts|spaziergang
 🧍	1	🧍🏻	person standing	person|stand|standing	stehende Person	mensch|person|stand|stehen	standing_person
 🧍‍♂️	1	🧍🏻‍♂️	man standing	man|stand|standing	stehender Mann	mann|stehen	standing_man
 🧍‍♀️	1	🧍🏻‍♀️	woman standing	stand|standing|woman	stehende Frau	frau|stehen	standing_woman
 🧎	1	🧎🏻	person kneeling	kneel|kneeling|knees|person	kniende Person	fersensitz|knien|kniend|meditation|meditieren|mensch|person|seiza|zazen	kneeling_person
 🧎‍♂️	1	🧎🏻‍♂️	man kneeling	kneel|kneeling|knees|man	kniender Mann	kniend|mann	kneeling_man
 🧎‍♀️	1	🧎🏻‍♀️	woman kneeling	kneel|kneeling|knees|woman	kniende Frau	frau|kniend	kneeling_woman
-🧎‍➡️	1	🧎🏻‍➡️	person kneeling: facing right	facing|kneel|kneeling|knees|person|right	kniende Person: nach rechts	fersensitz|knien|kniend|kniende person|meditation|meditieren|mensch|nach|person|rechts|seiza|zazen	
-🧎‍♀️‍➡️	1	🧎🏻‍♀️‍➡️	woman kneeling: facing right	facing|kneel|kneeling|knees|right|woman	kniende Frau: nach rechts	frau|kniend|kniende frau|nach|rechts	
-🧎‍♂️‍➡️	1	🧎🏻‍♂️‍➡️	man kneeling: facing right	facing|kneel|kneeling|knees|man|right	kniender Mann: nach rechts	kniend|kniender mann|mann|nach|rechts	
+🧎‍➡️	1	🧎🏻‍➡️	person kneeling: facing right	facing|kneel|kneeling|knees|person|right	kniende Person: nach rechts	fersensitz|knien|kniend|kniende person|meditation|meditieren|mensch|nach|person|rechts|seiza|zazen
+🧎‍♀️‍➡️	1	🧎🏻‍♀️‍➡️	woman kneeling: facing right	facing|kneel|kneeling|knees|right|woman	kniende Frau: nach rechts	frau|kniend|kniende frau|nach|rechts
+🧎‍♂️‍➡️	1	🧎🏻‍♂️‍➡️	man kneeling: facing right	facing|kneel|kneeling|knees|man|right	kniender Mann: nach rechts	kniend|kniender mann|mann|nach|rechts
 🧑‍🦯	1	🧑🏻‍🦯	person with white cane	accessibility|blind|cane|person|probing|white	Person mit Langstock	barrierefreiheit|blind|person mit blindenstock	person_with_probing_cane
-🧑‍🦯‍➡️	1	🧑🏻‍🦯‍➡️	person with white cane: facing right	accessibility|blind|cane|facing|person|probing|right|white	Person mit Langstock: nach rechts	barrierefreiheit|blind|nach|person mit blindenstock|person mit langstock|rechts	
+🧑‍🦯‍➡️	1	🧑🏻‍🦯‍➡️	person with white cane: facing right	accessibility|blind|cane|facing|person|probing|right|white	Person mit Langstock: nach rechts	barrierefreiheit|blind|nach|person mit blindenstock|person mit langstock|rechts
 👨‍🦯	1	👨🏻‍🦯	man with white cane	accessibility|blind|cane|man|probing|white	Mann mit Langstock	barrierefreiheit|behinderung|blind|mann|mann mit blindenstock|mann mit gehstock|mensch|person|sehbehindert	man_with_probing_cane
-👨‍🦯‍➡️	1	👨🏻‍🦯‍➡️	man with white cane: facing right	accessibility|blind|cane|facing|man|probing|right|white	Mann mit Langstock: nach rechts	barrierefreiheit|behinderung|blind|mann|mann mit blindenstock|mann mit gehstock|mann mit langstock|mensch|nach|person|rechts|sehbehindert	
+👨‍🦯‍➡️	1	👨🏻‍🦯‍➡️	man with white cane: facing right	accessibility|blind|cane|facing|man|probing|right|white	Mann mit Langstock: nach rechts	barrierefreiheit|behinderung|blind|mann|mann mit blindenstock|mann mit gehstock|mann mit langstock|mensch|nach|person|rechts|sehbehindert
 👩‍🦯	1	👩🏻‍🦯	woman with white cane	accessibility|blind|cane|probing|white|woman	Frau mit Langstock	barrierefreiheit|behinderung|blind|frau|frau mit blindenstock|frau mit gehstock|mensch|person	woman_with_probing_cane
-👩‍🦯‍➡️	1	👩🏻‍🦯‍➡️	woman with white cane: facing right	accessibility|blind|cane|facing|probing|right|white|woman	Frau mit Langstock: nach rechts	barrierefreiheit|behinderung|blind|frau|frau mit blindenstock|frau mit gehstock|frau mit langstock|mensch|nach|person|rechts	
+👩‍🦯‍➡️	1	👩🏻‍🦯‍➡️	woman with white cane: facing right	accessibility|blind|cane|facing|probing|right|white|woman	Frau mit Langstock: nach rechts	barrierefreiheit|behinderung|blind|frau|frau mit blindenstock|frau mit gehstock|frau mit langstock|mensch|nach|person|rechts
 🧑‍🦼	1	🧑🏻‍🦼	person in motorized wheelchair	accessibility|motorized|person|wheelchair	Person in elektrischem Rollstuhl	barrierefreiheit|rollstuhl	person_in_motorized_wheelchair
-🧑‍🦼‍➡️	1	🧑🏻‍🦼‍➡️	person in motorized wheelchair: facing right	accessibility|facing|motorized|person|right|wheelchair	Person in elektrischem Rollstuhl: nach rechts	barrierefreiheit|nach|person in elektrischem rollstuhl|rechts|rollstuhl	
+🧑‍🦼‍➡️	1	🧑🏻‍🦼‍➡️	person in motorized wheelchair: facing right	accessibility|facing|motorized|person|right|wheelchair	Person in elektrischem Rollstuhl: nach rechts	barrierefreiheit|nach|person in elektrischem rollstuhl|rechts|rollstuhl
 👨‍🦼	1	👨🏻‍🦼	man in motorized wheelchair	accessibility|man|motorized|wheelchair	Mann in elektrischem Rollstuhl	barrierefreiheit|behinderung|mann|mann in rollstuhl|mensch|person|rollstuhl	man_in_motorized_wheelchair
-👨‍🦼‍➡️	1	👨🏻‍🦼‍➡️	man in motorized wheelchair: facing right	accessibility|facing|man|motorized|right|wheelchair	Mann in elektrischem Rollstuhl: nach rechts	barrierefreiheit|behinderung|mann|mann in elektrischem rollstuhl|mann in rollstuhl|mensch|nach|person|rechts|rollstuhl	
+👨‍🦼‍➡️	1	👨🏻‍🦼‍➡️	man in motorized wheelchair: facing right	accessibility|facing|man|motorized|right|wheelchair	Mann in elektrischem Rollstuhl: nach rechts	barrierefreiheit|behinderung|mann|mann in elektrischem rollstuhl|mann in rollstuhl|mensch|nach|person|rechts|rollstuhl
 👩‍🦼	1	👩🏻‍🦼	woman in motorized wheelchair	accessibility|motorized|wheelchair|woman	Frau in elektrischem Rollstuhl	barrierefreiheit|behinderung|frau|frau in rollstuhl|mensch|person|rollstuhl	woman_in_motorized_wheelchair
-👩‍🦼‍➡️	1	👩🏻‍🦼‍➡️	woman in motorized wheelchair: facing right	accessibility|facing|motorized|right|wheelchair|woman	Frau in elektrischem Rollstuhl: nach rechts	barrierefreiheit|behinderung|frau|frau in elektrischem rollstuhl|frau in rollstuhl|mensch|nach|person|rechts|rollstuhl	
+👩‍🦼‍➡️	1	👩🏻‍🦼‍➡️	woman in motorized wheelchair: facing right	accessibility|facing|motorized|right|wheelchair|woman	Frau in elektrischem Rollstuhl: nach rechts	barrierefreiheit|behinderung|frau|frau in elektrischem rollstuhl|frau in rollstuhl|mensch|nach|person|rechts|rollstuhl
 🧑‍🦽	1	🧑🏻‍🦽	person in manual wheelchair	accessibility|manual|person|wheelchair	Person in manuellem Rollstuhl	barrierefreiheit|rollstuhl	person_in_manual_wheelchair
-🧑‍🦽‍➡️	1	🧑🏻‍🦽‍➡️	person in manual wheelchair: facing right	accessibility|facing|manual|person|right|wheelchair	Person in manuellem Rollstuhl: nach rechts	barrierefreiheit|nach|person in manuellem rollstuhl|rechts|rollstuhl	
+🧑‍🦽‍➡️	1	🧑🏻‍🦽‍➡️	person in manual wheelchair: facing right	accessibility|facing|manual|person|right|wheelchair	Person in manuellem Rollstuhl: nach rechts	barrierefreiheit|nach|person in manuellem rollstuhl|rechts|rollstuhl
 👨‍🦽	1	👨🏻‍🦽	man in manual wheelchair	accessibility|man|manual|wheelchair	Mann in manuellem Rollstuhl	barrierefreiheit|behinderung|mann|mann in rollstuhl|mensch|person|rollstuhl	man_in_manual_wheelchair
-👨‍🦽‍➡️	1	👨🏻‍🦽‍➡️	man in manual wheelchair: facing right	accessibility|facing|man|manual|right|wheelchair	Mann in manuellem Rollstuhl: nach rechts	barrierefreiheit|behinderung|mann|mann in manuellem rollstuhl|mann in rollstuhl|mensch|nach|person|rechts|rollstuhl	
+👨‍🦽‍➡️	1	👨🏻‍🦽‍➡️	man in manual wheelchair: facing right	accessibility|facing|man|manual|right|wheelchair	Mann in manuellem Rollstuhl: nach rechts	barrierefreiheit|behinderung|mann|mann in manuellem rollstuhl|mann in rollstuhl|mensch|nach|person|rechts|rollstuhl
 👩‍🦽	1	👩🏻‍🦽	woman in manual wheelchair	accessibility|manual|wheelchair|woman	Frau in manuellem Rollstuhl	barrierefreiheit|behinderung|frau|frau in rollstuhl|mensch|person|rollstuhl	woman_in_manual_wheelchair
-👩‍🦽‍➡️	1	👩🏻‍🦽‍➡️	woman in manual wheelchair: facing right	accessibility|facing|manual|right|wheelchair|woman	Frau in manuellem Rollstuhl: nach rechts	barrierefreiheit|behinderung|frau|frau in manuellem rollstuhl|frau in rollstuhl|mensch|nach|person|rechts|rollstuhl	
+👩‍🦽‍➡️	1	👩🏻‍🦽‍➡️	woman in manual wheelchair: facing right	accessibility|facing|manual|right|wheelchair|woman	Frau in manuellem Rollstuhl: nach rechts	barrierefreiheit|behinderung|frau|frau in manuellem rollstuhl|frau in rollstuhl|mensch|nach|person|rechts|rollstuhl
 🏃	1	🏃🏻	person running	fast|hurry|marathon|move|person|quick|race|racing|run|rush|speed	laufende Person	eilig|joggen|laufen|läufer|läuferin|marathon|person|rennen|schnell|sport	runner|running
 🏃‍♂️	1	🏃🏻‍♂️	man running	fast|hurry|man|marathon|move|quick|race|racing|run|rush|speed	laufender Mann	joggen|jogger|laufen|marathon	running_man
 🏃‍♀️	1	🏃🏻‍♀️	woman running	fast|hurry|marathon|move|quick|race|racing|run|rush|speed|woman	laufende Frau	athlet|athletin|frau|joggen|joggerin|laufen|läufer|läuferin|marathon|rennen|renner|rennerin|rennt|schell	running_woman
-🏃‍➡️	1	🏃🏻‍➡️	person running: facing right	facing|fast|hurry|marathon|move|person|quick|race|racing|right|run|rush|speed	laufende Person: nach rechts	eilig|joggen|laufen|laufende person|läufer|läuferin|marathon|nach|person|rechts|rennen|schnell|sport	
-🏃‍♀️‍➡️	1	🏃🏻‍♀️‍➡️	woman running: facing right	facing|fast|hurry|marathon|move|quick|race|racing|right|run|rush|speed|woman	laufende Frau: nach rechts	athlet|athletin|frau|joggen|joggerin|laufen|laufende frau|läufer|läuferin|marathon|nach|rechts|rennen|renner|rennerin|rennt|schell	
-🏃‍♂️‍➡️	1	🏃🏻‍♂️‍➡️	man running: facing right	facing|fast|hurry|man|marathon|move|quick|race|racing|right|run|rush|speed	laufender Mann: nach rechts	joggen|jogger|laufen|laufender mann|marathon|nach|rechts	
+🏃‍➡️	1	🏃🏻‍➡️	person running: facing right	facing|fast|hurry|marathon|move|person|quick|race|racing|right|run|rush|speed	laufende Person: nach rechts	eilig|joggen|laufen|laufende person|läufer|läuferin|marathon|nach|person|rechts|rennen|schnell|sport
+🏃‍♀️‍➡️	1	🏃🏻‍♀️‍➡️	woman running: facing right	facing|fast|hurry|marathon|move|quick|race|racing|right|run|rush|speed|woman	laufende Frau: nach rechts	athlet|athletin|frau|joggen|joggerin|laufen|laufende frau|läufer|läuferin|marathon|nach|rechts|rennen|renner|rennerin|rennt|schell
+🏃‍♂️‍➡️	1	🏃🏻‍♂️‍➡️	man running: facing right	facing|fast|hurry|man|marathon|move|quick|race|racing|right|run|rush|speed	laufender Mann: nach rechts	joggen|jogger|laufen|laufender mann|marathon|nach|rechts
 💃	1	💃🏻	woman dancing	dance|dancer|dancing|elegant|festive|flair|flamenco|groove|let’s|salsa|tango|woman	tanzende Frau	elegant|festlich|flair|flamenco|frau|salsa|schwung|tango|tanz|tanzen|tänzerin	dancer|woman_dancing
 🕺	1	🕺🏻	man dancing	dance|dancer|dancing|elegant|festive|flair|flamenco|groove|let’s|man|salsa|tango	tanzender Mann	elegant|festlich|flair|flamenco|mann|salsa|schwung|tango|tanz|tanzen|tänzer	man_dancing
 🕴️	1	🕴🏻	person in suit levitating	business|levitating|person|suit	schwebender Mann im Anzug	anzug|geschäftlich|mann	business_suit_levitating
@@ -550,10 +550,10 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 👥	1		busts in silhouette	bff|bust|busts|everyone|friend|friends|people|silhouette	Silhouette mehrerer Büsten	büsten|personen	busts_in_silhouette
 🫂	1		people hugging	comfort|embrace|farewell|friendship|goodbye|hello|hug|hugging|love|people|thanks	sich umarmende Personen	abschied|danke|drücken|drücker|freundschaft|hallo|liebe|tschüss|umarmung	people_hugging
 👪	1		family	child	Familie	junge|kind|mutter|vater	family
-🧑‍🧑‍🧒	1		family: adult, adult, child	adult|child|family	Familie: 2 Erwachsene, 1 Kind	erwachsene|erwachsener|familie|kind	
-🧑‍🧑‍🧒‍🧒	1		family: adult, adult, child, child	adult|child|family	Familie: 2 Erwachsene, 2 Kinder	erwachsene|erwachsener|familie|kind	
-🧑‍🧒	1		family: adult, child	adult|child|family	Familie: 1 Erwachsene(r), 1 Kind	erwachsene|erwachsener|familie|kind	
-🧑‍🧒‍🧒	1		family: adult, child, child	adult|child|family	Familie: 1 Erwachsene(r), 2 Kinder	erwachsene|erwachsener|familie|kind	
+🧑‍🧑‍🧒	1		family: adult, adult, child	adult|child|family	Familie: 2 Erwachsene, 1 Kind	erwachsene|erwachsener|familie|kind
+🧑‍🧑‍🧒‍🧒	1		family: adult, adult, child, child	adult|child|family	Familie: 2 Erwachsene, 2 Kinder	erwachsene|erwachsener|familie|kind
+🧑‍🧒	1		family: adult, child	adult|child|family	Familie: 1 Erwachsene(r), 1 Kind	erwachsene|erwachsener|familie|kind
+🧑‍🧒‍🧒	1		family: adult, child, child	adult|child|family	Familie: 1 Erwachsene(r), 2 Kinder	erwachsene|erwachsener|familie|kind
 👣	1		footprints	barefoot|clothing|footprint|omw|print|walk	Fußabdrücke	abdruck|auf dem weg|fuß|fußabdruck	footprints
 🐵	3		monkey face	animal|banana|face|monkey	Affengesicht	affe|banane|dschungel|gesicht|tier|zoo	monkey_face
 🐒	3		monkey	animal|banana	Affe	tier	monkey
@@ -642,7 +642,7 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 🪽	3		wing	angelic|ascend|aviation|bird|fly|flying|heavenly|mythology|soar	Flügel	engel|engelsflügel|federn|fliegen|flug|himmlisch|mythologie|vogel	wing
 🐦‍⬛	3		black bird	animal|beak|bird|black|caw|corvid|crow|ornithology|raven|rook	schwarzer Vogel	amsel|krächzen|krähe|rabe|schnabel|schwarz|tier|vogel	black_bird
 🪿	3		goose	animal|bird|duck|flock|fowl|gaggle|gander|geese|honk|ornithology|silly	Gans	blöd|dumm|dumme gans|ganter|geflügel|gänserich|schnattern|tier|vogel	goose
-🐦‍🔥	3		phoenix	ascend|ascension|emerge|fantasy|firebird|glory|immortal|rebirth|reincarnation|reinvent|renewal|revival|revive|rise|transform	Phönix	asche|fabelwesen|fantasy|feuer|feuervogel|reinkarnation|tier|vogel|wiedergeburt	
+🐦‍🔥	3		phoenix	ascend|ascension|emerge|fantasy|firebird|glory|immortal|rebirth|reincarnation|reinvent|renewal|revival|revive|rise|transform	Phönix	asche|fabelwesen|fantasy|feuer|feuervogel|reinkarnation|tier|vogel|wiedergeburt
 🐸	3		frog	animal|face	Frosch	froschgesicht|gesicht|grün|quak|tier	frog
 🐊	3		crocodile	animal|zoo	Krokodil	reptil|schnappi|tier	crocodile
 🐢	3		turtle	animal|terrapin|tortoise	Schildkröte	tier	turtle
@@ -718,7 +718,7 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 🍉	4		watermelon	fruit	Wassermelone	frucht|melone|obst|wasser	watermelon
 🍊	4		tangerine	c|citrus|fruit|nectarine|orange|vitamin	Mandarine	apfelsine|frucht|obst|orange|vitamin	mandarin|orange|tangerine
 🍋	4		lemon	citrus|fruit|sour	Zitrone	frucht|obst|sauer|zitrusfrucht	lemon
-🍋‍🟩	4		lime	acidity|citrus|cocktail|fruit|garnish|key|margarita|mojito|refreshing|salsa|sour|tangy|tequila|tropical|zest	Limette	cocktail|essen|frucht|obst|saft|sauer|tequila|tropisch|zitrusfrucht	
+🍋‍🟩	4		lime	acidity|citrus|cocktail|fruit|garnish|key|margarita|mojito|refreshing|salsa|sour|tangy|tequila|tropical|zest	Limette	cocktail|essen|frucht|obst|saft|sauer|tequila|tropisch|zitrusfrucht
 🍌	4		banana	fruit|potassium	Banane	frucht|obst|schale	banana
 🍍	4		pineapple	colada|fruit|pina|tropical	Ananas	frucht|obst	pineapple
 🥭	4		mango	food|fruit|tropical	Mango	essen|frucht|früchte|obst|shaker|tropisch	mango
@@ -750,7 +750,7 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 🌰	4		chestnut	almond|plant	Kastanie	marone	chestnut
 🫚	4		ginger root	beer|ginger|health|herb|natural|root|spice	Ingwer	gesund|gewürz|ginger ale|ingwerbier|scharf|wurzel|würzig	ginger_root
 🫛	4		pea pod	beans|beanstalk|edamame|legume|pea|pod|soybean|vegetable|veggie	Erbsenschote	bohne|edamame|erbse|erbsen|essen|gemüse|hülsenfrucht|hülsenfrüchte|schote	pea_pod
-🍄‍🟫	4		brown mushroom	food|fungi|fungus|mushroom|nature|pizza|portobello|shiitake|shroom|spore|sprout|toppings|truffle|vegetable|vegetarian|veggie	brauner Pilz	braun|essen|fungus|gemüse|lebensmittel|natur|pflanze|pilz|wald	
+🍄‍🟫	4		brown mushroom	food|fungi|fungus|mushroom|nature|pizza|portobello|shiitake|shroom|spore|sprout|toppings|truffle|vegetable|vegetarian|veggie	brauner Pilz	braun|essen|fungus|gemüse|lebensmittel|natur|pflanze|pilz|wald
 🍞	4		bread	carbs|food|grain|loaf|restaurant|toast|wheat	Brot	brotlaib|essen|kohlenhydrate|laib brot|toast|weizen|weißbrot	bread
 🥐	4		croissant	bread|breakfast|crescent|food|french|roll	Croissant	corissant|französisch|frühstück|frühstückshörnchen	croissant
 🥖	4		baguette bread	baguette|bread|food|french	Baguette	brot|französisch|frühstück	baguette_bread
@@ -1354,7 +1354,7 @@ export default `😀	0		grinning face	cheerful|cheery|face|grin|grinning|happy|l
 ⚖️	7		balance scale	balance|justice|libra|scale|scales|tool|weight|zodiac	Waage	gerechtigkeit|gewicht|werkzeug|wiegen	balance_scale
 🦯	7		white cane	accessibility|blind|cane|probing|white	Blindenstock	barrierefreiheit|behinderung|blind|gehstock	probing_cane
 🔗	7		link	links	Linksymbol	kettenglieder|verknüpfen|verknüpfung|verknüpfungssymbol|zwei ringe	link
-⛓️‍💥	7		broken chain	break|breaking|broken|chain|cuffs|freedom	gebrochene Kette	brechen|freiheit|gebrochen|handschellen|kette|zerbrechen	
+⛓️‍💥	7		broken chain	break|breaking|broken|chain|cuffs|freedom	gebrochene Kette	brechen|freiheit|gebrochen|handschellen|kette|zerbrechen
 ⛓️	7		chains	chain	Ketten	eisen|kette	chains
 🪝	7		hook	catch|crook|curve|ensnare|point|selling	Haken	angelhaken|aufhaken|aufhängen|einhaken|hängen|metallhaken	hook
 🧰	7		toolbox	box|chest|mechanic|red|tool	Werkzeugkasten	box|handkasten|kasten|kiste|mechaniker|rote kiste|werkzeug|werkzeugkiste|werkzeugkoffer	toolbox

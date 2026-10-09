@@ -85,7 +85,7 @@ const lines = english
     const translated = german.get(entry.hexcode);
     if (!translated) throw new Error(`No German name for ${entry.label}`);
     const codes = shortcodes[entry.hexcode];
-    return [
+    const fields = [
       field(qualified(entry)),
       String(entry.group),
       lightVariant(entry),
@@ -94,7 +94,9 @@ const lines = english
       field(translated.label),
       keywords(translated.label, translated.tags),
       (Array.isArray(codes) ? codes : codes ? [codes] : []).map(field).join("|"),
-    ].join("\t");
+    ];
+    // Empty last fields would end the line in tabs; parsing reads missing fields as empty.
+    return fields.join("\t").replace(/\t+$/, "");
   });
 
 const output = `// Generated from emojibase-data ${version} (MIT, https://emojibase.dev). Do not edit here.

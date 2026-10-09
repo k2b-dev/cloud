@@ -24,7 +24,7 @@ const [draft, setDraft] = createSignal("");
 const [open, setOpen] = createSignal();
 const [recent, setRecent] = createSignal([]);
 const [tone, setTone] = createSignal(0);
-window.state = { picked: [], completed: [], recent, tone };
+window.state = { picked: [], completed: [], sent: [], recent, tone };
 
 render(
   () =>
@@ -39,7 +39,10 @@ render(
               return draft();
             },
             onValueChange: setDraft,
-            onSubmit: () => undefined,
+            onSubmit: ({ text }) => {
+              window.state.sent.push(text);
+            },
+            commands: [{ name: "example", description: "An example command" }],
             get emoji() {
               return {
                 onOpen: setOpen,
@@ -85,7 +88,8 @@ const build = await Bun.build({
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the EmojiPicker fixture for the browser.");
 const script = await build.outputs[0]!.text();
 
-declare const state: { picked: string[]; completed: string[]; recent: () => string[]; tone: () => number };
+declare const state: { picked: string[]; completed: string[]; sent: string[]; recent: () => string[]; tone: () => number };
+declare const keyboard: { show: (top: number, height: number) => void };
 
 let browser: Browser;
 beforeAll(async () => {
@@ -102,7 +106,7 @@ afterEach(async () => {
 }, 30_000);
 
 const open = async (
-  options: { width?: number; locale?: "en" | "de"; inline?: boolean } = {},
+  options: { width?: number; locale?: "en" | "de"; inline?: boolean; keyboard?: boolean } = {},
   contextOptions: BrowserContextOptions = {},
 ): Promise<Page> => {
   context = await browser.newContext({ viewport: { width: options.width ?? 720, height: 720 }, ...contextOptions });
@@ -122,6 +126,15 @@ html, body { margin: 0; height: 100%; }
     await Promise.all(["400 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)));
   });
   await page.addScriptTag({ content: `window.fixtureOptions = ${JSON.stringify(options)};` });
+  // A phone's keyboard shrinks only the visual viewport; this one stands in for it, as no desktop engine has one.
+  if (options.keyboard) {
+    await page.addScriptTag({
+      content: `const viewport = new EventTarget();
+Object.assign(viewport, { offsetLeft: 0, offsetTop: 0, width: innerWidth, height: innerHeight, scale: 1 });
+Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+window.keyboard = { show(top, height) { Object.assign(viewport, { offsetTop: top, height }); viewport.dispatchEvent(new Event("resize")); } };`,
+    });
+  }
   await page.addScriptTag({ content: script });
   return page;
 };
@@ -133,6 +146,11 @@ const activeEmoji = (page: Page) =>
     const id = document.activeElement?.getAttribute("aria-activedescendant");
     return id ? document.getElementById(id)?.textContent : null;
   });
+const box = (page: Page, selector: string) =>
+  page.evaluate((selector) => {
+    const rect = document.querySelector(selector)!.getBoundingClientRect();
+    return [rect.left, rect.top, rect.width, rect.height].map(Math.round);
+  }, selector);
 /** The boxes of the picker's parts, which must never move. */
 const parts = (page: Page) =>
   page.evaluate(() =>
@@ -162,6 +180,11 @@ describe(`EmojiPicker in ${browserName}`, () => {
     // "Daumen" finds 👍 first, and Enter picks it into the composer, which keeps the focus.
     await page.keyboard.type("Daumen");
     expect(await activeEmoji(page)).toBe("👍");
+    // WebKit's Enter that confirms an input method's text arrives after the composition with keyCode 229; it picks nothing.
+    await search(page).evaluate((input) =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true, cancelable: true })),
+    );
+    expect(await field(page).inputValue()).toBe("Great ");
     await page.keyboard.press("Enter");
     expect(await field(page).inputValue()).toBe("Great 👍");
     expect(await page.locator(".k2b-emoji-picker-popover").evaluate((popover) => popover.matches(":popover-open"))).toBe(false);
@@ -245,6 +268,30 @@ describe(`EmojiPicker in ${browserName}`, () => {
     await button.click();
     await page.waitForTimeout(50);
     expect(await popover.evaluate((element) => element.matches(":popover-open"))).toBe(false);
+
+    // A key press on the button closes it as well, although no click outside dismissed it first.
+    await button.focus();
+    await page.keyboard.press("Enter");
+    expect(await popover.evaluate((element) => element.matches(":popover-open"))).toBe(true);
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(50);
+    expect(await popover.evaluate((element) => element.matches(":popover-open"))).toBe(false);
+    expect(await button.evaluate((element) => element === document.activeElement)).toBe(true);
+  }, 30_000);
+
+  test("stays in the part of the page a phone's keyboard leaves visible", async () => {
+    const page = await open({ keyboard: true });
+    await page.getByRole("button", { name: "Insert emoji" }).click();
+    await page.locator(".k2b-emoji-picker__option").first().waitFor();
+    // The keyboard covers the lower half, and the page scrolled the visible part down by 200 px.
+    await page.evaluate(() => keyboard.show(200, 360));
+    await page.waitForTimeout(50);
+    for (const selector of [".k2b-emoji-picker-popover", ".k2b-emoji-picker__header", ".k2b-emoji-picker__preview"]) {
+      const [, top, , height] = await box(page, selector);
+      expect(top!).toBeGreaterThanOrEqual(200);
+      expect(top! + height!).toBeLessThanOrEqual(560);
+    }
   }, 30_000);
 
   test("completes :shortcodes in the composer and turns a closed :shortcode: into its emoji", async () => {
@@ -264,6 +311,52 @@ describe(`EmojiPicker in ${browserName}`, () => {
     await page.keyboard.type(" at 10:30: https://example.org");
     expect(await field(page).inputValue()).toBe("Nice 👍 🎉 at 10:30: https://example.org");
     expect(await page.evaluate(() => state.completed)).toEqual(["👍", "🎉"]);
+  }, 30_000);
+
+  test("sends emoticons as they are and picks a suggestion only with a plain Enter or Tab", async () => {
+    const page = await open({ locale: "de" });
+    await field(page).click();
+    for (const text of ["lol :DD", "Haha :-D", "na gut :-P", "oh :-O"]) {
+      await page.keyboard.type(text);
+      await page.keyboard.press("Enter");
+    }
+    expect(await page.evaluate(() => state.sent)).toEqual(["lol :DD", "Haha :-D", "na gut :-P", "oh :-O"]);
+    expect(await page.evaluate(() => state.completed)).toEqual([]);
+
+    const list = page.getByRole("listbox", { name: "Emoji-Vorschläge" });
+    await page.keyboard.type(":thu");
+    await list.waitFor();
+    await page.keyboard.press("Shift+Enter");
+    expect(await field(page).inputValue()).toBe(":thu\n");
+    await page.keyboard.type(":thu");
+    await list.waitFor();
+    await page.keyboard.press("Shift+Tab");
+    expect(await field(page).inputValue()).toBe(":thu\n:thu");
+    expect(await field(page).evaluate((textarea) => textarea === document.activeElement)).toBe(false);
+    expect(await page.evaluate(() => state.completed)).toEqual([]);
+  }, 30_000);
+
+  test("opens emoji and command suggestions without moving the composer", async () => {
+    const page = await open();
+    const shell = await box(page, ".k2b-chat-composer-shell");
+    const composer = await box(page, ".k2b-chat-composer");
+    await field(page).click();
+    for (const [text, name] of [
+      [":th", "Emoji suggestions"],
+      ["/ex", "Commands"],
+    ] as const) {
+      await page.keyboard.type(text);
+      const list = page.getByRole("listbox", { name });
+      await list.waitFor();
+      expect(await box(page, ".k2b-chat-composer-shell")).toEqual(shell);
+      expect(await box(page, ".k2b-chat-composer")).toEqual(composer);
+      // The list sits 0.5rem above the composer.
+      const listBox = (await list.boundingBox())!;
+      expect(Math.round(listBox.y + listBox.height)).toBe(composer[1]! - 8);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Control+A");
+      await page.keyboard.press("Backspace");
+    }
   }, 30_000);
 
   test("fits a phone with cells for a finger", async () => {

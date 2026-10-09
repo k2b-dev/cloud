@@ -21,7 +21,7 @@ import {
   emojiName,
   emojiShortcodeQuery,
   loadEmojiIndex,
-  searchEmoji,
+  suggestEmoji,
 } from "../inputs/emoji/emoji-index";
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleCodeBlock, toggleInlineMarker, toggleQuote } from "../inputs/markdown/actions";
@@ -251,7 +251,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const emojiMatches = createMemo(() => {
     const token = emojiQuery();
     const index = emojiIndex();
-    return token && index ? searchEmoji(index, token.query, emojiSuggestionLimit) : [];
+    return token && index ? suggestEmoji(index, token.query, emojiSuggestionLimit) : [];
   });
   const emojiOpen = () => emojiMatches().length > 0;
   const commandQuery = createMemo(() => (dismissed() || composing() ? null : chatCommandQuery(props.value, caret(), selectionEnd())));
@@ -618,13 +618,32 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (!token || !entry) return;
     insertEmoji(token.start, token.end, emojiInTone(entry, props.emoji?.skinTone ?? 0));
   };
-  /** A typed closing colon turns a known `:shortcode:` into its emoji. */
+  /**
+   * A typed colon loads the emoji data, and the closing colon of a known `:shortcode:` turns it into its emoji. A
+   * shortcode closed before the data arrived turns when it arrives, as long as nothing changed in the meantime.
+   */
   const completeShortcode = () => {
+    const textarea = textareaRef;
+    if (!props.emoji || !textarea) return;
+    const { value, selectionStart: caret } = textarea;
+    const completed = completedEmojiShortcode(value, caret);
+    const convert = (index: EmojiIndex) => {
+      const entry = completed && index.byShortcode.get(completed.shortcode.toLowerCase());
+      if (completed && entry) insertEmoji(completed.start, completed.end, emojiInTone(entry, props.emoji?.skinTone ?? 0));
+    };
     const index = emojiIndex();
-    if (!props.emoji || !index || !textareaRef) return;
-    const completed = completedEmojiShortcode(textareaRef.value, textareaRef.selectionStart);
-    const entry = completed && index.byShortcode.get(completed.shortcode.toLowerCase());
-    if (completed && entry) insertEmoji(completed.start, completed.end, emojiInTone(entry, props.emoji.skinTone ?? 0));
+    if (index) {
+      convert(index);
+      return;
+    }
+    loadEmojiIndex().then(
+      (loaded) => {
+        setEmojiIndex(loaded);
+        const untouched = textarea.value === value && textarea.selectionStart === caret && textarea.selectionEnd === caret;
+        if (untouched && textarea.matches(":focus")) convert(loaded);
+      },
+      () => undefined,
+    );
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -641,7 +660,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         setSelectedCommandIndex((index) => nextChatCommandIndex(index, emojiMatches().length, event.key === "ArrowUp" ? -1 : 1));
         return;
       }
-      if (event.key === "Tab" || (event.key === "Enter" && !event.ctrlKey && !event.metaKey)) {
+      // Only a plain Enter or Tab picks: Shift+Enter still breaks the line, Shift+Tab still moves the focus back.
+      const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+      if (plain && (event.key === "Enter" || event.key === "Tab")) {
         event.preventDefault();
         pickEmojiSuggestion(selectedCommandIndex());
         return;
@@ -1083,7 +1104,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   return (
     <div class="k2b-chat-composer-shell">
       <Show when={suggestionsOpen() || hasAccessory()}>
-        <div class="k2b-chat-composer-slot">
+        {/* Suggestions alone float above the composer; a row of the shell's grid would add its gap and move the composer. */}
+        <div class="k2b-chat-composer-slot" data-overlay={hasAccessory() ? undefined : "true"}>
           <div style={{ visibility: suggestionsOpen() ? "hidden" : undefined }} inert={suggestionsOpen()}>
             {accessory()}
           </div>

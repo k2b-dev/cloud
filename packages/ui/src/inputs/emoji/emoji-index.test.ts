@@ -8,12 +8,15 @@ import {
   emojiShortcodeQuery,
   findEmoji,
   loadEmojiIndex,
+  parseEmojiData,
   RECENT_EMOJI_LIMIT,
   rememberEmoji,
   searchEmoji,
+  suggestEmoji,
 } from "./emoji-index";
 
 const index = await loadEmojiIndex();
+const source = (await import("./emoji-data")).default;
 const top = (query: string, count = 3) =>
   searchEmoji(index, query, count)
     .map((entry) => entry.emoji)
@@ -28,6 +31,13 @@ describe("emoji data", () => {
     const error = await new Response(generator.stderr).text();
     expect(await generator.exited, error).toBe(0);
   }, 30_000);
+
+  test("ends no line in whitespace, and a line without its last fields still parses", () => {
+    expect(/[ \t]$/m.test(source)).toBe(false);
+    const parsed = parseEmojiData("🙂‍↔️\t0\t\thead shaking horizontally\thead|shake\tKopfschütteln\tnein");
+    expect(parsed.entries[0]?.shortcodes).toEqual([]);
+    expect(parsed.entries[0]?.search.keywords).toContain("nein");
+  });
 
   test("holds every group in Unicode order, in the form keyboards send", () => {
     expect(index.entries.length).toBeGreaterThan(1800);
@@ -73,6 +83,27 @@ describe("searchEmoji", () => {
   });
 });
 
+describe("suggestEmoji", () => {
+  const suggest = (query: string) => suggestEmoji(index, query, 8).map((entry) => entry.emoji);
+
+  test("completes the start of shortcodes, names and keywords", () => {
+    expect(suggest("thu")[0]).toBe("👍");
+    expect(suggest("tad")[0]).toBe("🎉");
+    expect(suggest("dau")[0]).toBe("👍");
+    expect(suggest("kaff")).toEqual(["☕"]);
+    expect(suggest("+1")).toEqual(["👍"]);
+    expect(suggest("-1")).toEqual(["👎"]);
+  });
+
+  test("finds nothing for emoticons, so Enter still sends them", () => {
+    // The picker's search finds letters inside names: "dd" in "middle finger".
+    expect(top("DD", 1)).toBe("🖕");
+    for (const emoticon of ["DD", "DDD", "Dd", "-D", "-DD", "-P", "-p", "-O", "-3", "PP", "pP", "xD", "XD", "d_"]) {
+      expect(suggest(emoticon)).toEqual([]);
+    }
+  });
+});
+
 describe("skin tones", () => {
   test("apply to emoji that have them and leave the others", () => {
     const thumbs = index.byShortcode.get("thumbsup")!;
@@ -108,6 +139,9 @@ describe("shortcodes in text", () => {
     expect(at("at 10:30")).toBeNull();
     expect(at("see https://example")).toBeNull();
     expect(at("`code :thu")).toBeNull();
+    expect(at("~~~\nlog :thu")).toBeNull();
+    expect(at("````\n```\nlog :thu")).toBeNull();
+    expect(at("x :-)")).toBeNull();
     expect(at("Great :thumbsup ")).toBeNull();
     expect(emojiShortcodeQuery("Great :thu", 8, 10)).toBeNull();
   });
@@ -115,7 +149,12 @@ describe("shortcodes in text", () => {
   test("find a completed shortcode before the caret", () => {
     expect(completedEmojiShortcode("Great :thumbsup:", 16)).toEqual({ start: 6, end: 16, shortcode: "thumbsup" });
     expect(completedEmojiShortcode("12:30:", 6)).toBeNull();
-    expect(completedEmojiShortcode("`x :tada:", 9)).toBeNull();
+    const end = (text: string) => completedEmojiShortcode(text, text.length);
+    expect(end("`x :tada:")).toBeNull();
+    // Fenced code of tildes or of more than three backticks stays code.
+    expect(end("~~~\nlog :tada:")).toBeNull();
+    expect(end("````\nlog :tada:")).toBeNull();
+    expect(end("~~~\nlog\n~~~\nok :tada:")?.shortcode).toBe("tada");
   });
 });
 

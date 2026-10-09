@@ -43,10 +43,12 @@ const [tone, setTone] = createSignal<EmojiSkinTone>(preferences.skinTone);
 
 - The picker is open while `anchor` is set. It opens above the anchor where
   there is room and below it otherwise, aligned with the anchor's end, and
-  stays inside the viewport.
+  stays inside the visible part of the viewport. When a phone's keyboard
+  covers part of the page, the picker moves into the rest, and its grid gets
+  shorter where the rest is lower than the picker.
 - It closes after a pick, on Escape in an empty search field, on a click
-  outside, and on a second press of its anchor. Each time `onClose` asks the
-  application to clear `anchor`.
+  outside, and on a second press of its anchor, with a pointer or a key. Each
+  time `onClose` asks the application to clear `anchor`.
 - Focus moves into the search field when it opens, except on touch-only
   devices, where the keyboard would cover the emoji. When it closes, focus
   returns to where it was, unless `onPick` moved it on purpose, as the
@@ -107,16 +109,17 @@ server the picker renders its frame with the loading state.
 The emoji names come from [Emojibase](https://emojibase.dev) (MIT), up to
 Emoji 15.1, the newest version that current Apple, Android, Windows 11, and
 Noto fonts all draw. The data is about 80 kB compressed and loads with the
-first picker or `:shortcode` completion, as a chunk of its own: a page that
-never opens either does not grow by it. Until it has loaded, the grid shows a
+first picker or the first colon typed in a composer with `emoji`, as a chunk
+of its own: a page that never uses either does not grow by it. Until it has loaded, the grid shows a
 spinner in its place; if it cannot load, the picker says so and offers
 "Retry".
 
 ## Shortcodes in the composer
 
 `Chat.Composer` completes `:shortcodes` from the same data whenever it has an
-`emoji` prop. See [Formatting, emoji, and
-microphone](/en/ui/ai/chat#formatting-emoji-and-microphone).
+`emoji` prop. Unlike the search, it matches only the start of a shortcode,
+name, or keyword, so emoticons such as `:DD` stay text. See [Formatting,
+emoji, and microphone](/en/ui/ai/chat#formatting-emoji-and-microphone).
 
 ## Example
 

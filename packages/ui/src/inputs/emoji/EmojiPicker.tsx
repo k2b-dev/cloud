@@ -263,7 +263,8 @@ function EmojiPickerPanel(props: EmojiPickerProps): JSX.Element {
   };
 
   const onSearchKeyDown = (event: KeyboardEvent) => {
-    if (event.isComposing) return;
+    // WebKit ends the composition before the keydown of the Enter that confirms it; that keydown keeps keyCode 229.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
       // Left and right edit a search until up or down enters the grid.
       if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && query() && !gridEntered()) return;
@@ -589,15 +590,24 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
       props.onClose();
       return;
     }
+    // The visible part of the page: a phone's keyboard shrinks only the visual viewport.
+    const viewport = window.visualViewport;
+    const view = {
+      top: (viewport?.offsetTop ?? 0) + MARGIN,
+      bottom: (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) - MARGIN,
+      left: (viewport?.offsetLeft ?? 0) + MARGIN,
+      right: (viewport ? viewport.offsetLeft + viewport.width : window.innerWidth) - MARGIN,
+    };
+    surface.style.setProperty("--k2b-emoji-popover-height", `${Math.round(view.bottom - view.top)}px`);
     const box = anchor.getBoundingClientRect();
     const size = surface.getBoundingClientRect();
     const above = box.top - GAP - size.height;
     const below = box.bottom + GAP;
-    const top = above >= MARGIN || below + size.height > window.innerHeight - MARGIN ? above : below;
+    const top = above >= view.top || below + size.height > view.bottom ? above : below;
     // Aligned with the anchor's end, like a menu at the end of a composer.
     const left = box.right - size.width;
-    surface.style.left = `${Math.round(Math.max(MARGIN, Math.min(left, window.innerWidth - size.width - MARGIN)))}px`;
-    surface.style.top = `${Math.round(Math.max(MARGIN, Math.min(top, window.innerHeight - size.height - MARGIN)))}px`;
+    surface.style.left = `${Math.round(Math.max(view.left, Math.min(left, view.right - size.width)))}px`;
+    surface.style.top = `${Math.round(Math.max(view.top, Math.min(top, view.bottom - size.height)))}px`;
   };
 
   const restoreFocus = () => {
@@ -616,6 +626,15 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
   const pressed = (event: PointerEvent) => {
     const anchor = shown();
     pressedAnchor = anchor && event.target instanceof Node && anchor.contains(event.target) ? anchor : undefined;
+  };
+
+  /** A key press on the anchor dismisses nothing on its way, unlike a pointer: its click closes the open picker. */
+  const clicked = (event: MouseEvent) => {
+    const anchor = shown();
+    if (!anchor || !(event.target instanceof Node) || !anchor.contains(event.target)) return;
+    pressedAnchor = anchor;
+    hide();
+    props.onClose();
   };
 
   createEffect(() => {
@@ -651,7 +670,10 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
   onMount(() => {
     window.addEventListener("resize", place);
     window.addEventListener("scroll", scrolled, true);
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
     document.addEventListener("pointerdown", pressed, true);
+    document.addEventListener("click", clicked, true);
     // The picker renders into the open surface after it is shown; its size places it.
     const observer = typeof ResizeObserver === "function" && surface ? new ResizeObserver(place) : undefined;
     if (surface) observer?.observe(surface);
@@ -659,7 +681,10 @@ function EmojiPickerPopover(props: EmojiPickerPopoverProps): JSX.Element {
       observer?.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", scrolled, true);
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
       document.removeEventListener("pointerdown", pressed, true);
+      document.removeEventListener("click", clicked, true);
       if (surface?.matches(":popover-open")) hide();
     });
   });

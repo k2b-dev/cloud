@@ -3,6 +3,8 @@
  * loads on first use, so a page that never opens either does not download it.
  */
 
+import { isInCodeZone } from "../markdown/code-zone";
+
 /** `0` is the default yellow; `1` (light) to `5` (dark) are the Fitzpatrick modifiers. */
 export type EmojiSkinTone = 0 | 1 | 2 | 3 | 4 | 5;
 
@@ -121,8 +123,11 @@ export const emojiInTone = (entry: EmojiEntry, tone: EmojiSkinTone): string =>
 /** The name in the render language: German for `de` locales, English otherwise. */
 export const emojiName = (entry: EmojiEntry, locale: string): string => (/^de\b/i.test(locale) ? entry.name.de : entry.name.en);
 
-/** Lower is better; `undefined` does not match. A shortcode's prefix beats a name's, so `:tad` finds 🎉 first. */
-const rank = (entry: EmojiEntry, query: string): number | undefined => {
+/**
+ * Lower is better; `undefined` does not match. A shortcode's prefix beats a name's, so `:tad` finds 🎉 first. `infix`
+ * also matches letters inside a name, as the picker's search does.
+ */
+const rank = (entry: EmojiEntry, query: string, infix: boolean): number | undefined => {
   const { names, keywords, shortcodes, words } = entry.search;
   if (shortcodes.includes(query)) return 0;
   if (names.includes(query)) return 1;
@@ -131,24 +136,40 @@ const rank = (entry: EmojiEntry, query: string): number | undefined => {
   if (names.some((name) => name.includes(` ${query}`))) return 4;
   if (keywords.includes(query)) return 5;
   if (keywords.some((keyword) => keyword.startsWith(query))) return 6;
-  if (names.some((name) => name.includes(query))) return 7;
+  if (infix && names.some((name) => name.includes(query))) return 7;
   // Several words match when each starts a word of the entry: "hand up" finds "raising hand".
   const terms = query.split(" ");
   if (terms.length > 1 && terms.every((term) => words.some((word) => word.startsWith(term)))) return 8;
   return undefined;
 };
 
-/** Matches in English and German names, keywords and shortcodes, best first and otherwise in Unicode order. */
-export const searchEmoji = (index: EmojiIndex, query: string, limit = Number.POSITIVE_INFINITY): EmojiEntry[] => {
-  const normalized = normalizeEmojiQuery(query.replace(/^:+|:+$/g, ""));
-  if (!normalized) return [];
-  const ranked: { entry: EmojiEntry; rank: number; position: number }[] = [];
+const ranked = (index: EmojiIndex, query: string, infix: boolean, limit: number): EmojiEntry[] => {
+  if (!query) return [];
+  const matches: { entry: EmojiEntry; rank: number; position: number }[] = [];
   index.entries.forEach((entry, position) => {
-    const value = rank(entry, normalized);
-    if (value !== undefined) ranked.push({ entry, rank: value, position });
+    const value = rank(entry, query, infix);
+    if (value !== undefined) matches.push({ entry, rank: value, position });
   });
-  ranked.sort((left, right) => left.rank - right.rank || left.position - right.position);
-  return ranked.slice(0, limit).map((match) => match.entry);
+  matches.sort((left, right) => left.rank - right.rank || left.position - right.position);
+  return matches.slice(0, limit).map((match) => match.entry);
+};
+
+/** Matches in English and German names, keywords and shortcodes, best first and otherwise in Unicode order. */
+export const searchEmoji = (index: EmojiIndex, query: string, limit = Number.POSITIVE_INFINITY): EmojiEntry[] =>
+  ranked(index, normalizeEmojiQuery(query.replace(/^:+|:+$/g, "")), true, limit);
+
+/**
+ * The suggestions for a `:shortcode` being typed. Only the start of a shortcode, name, word or keyword counts, and a
+ * leading sign must start a shortcode, as in `:+1` and `:-1`: emoticons such as `:DD`, `:-D` or `:-P` find nothing,
+ * so Enter still sends them.
+ */
+export const suggestEmoji = (index: EmojiIndex, query: string, limit: number): EmojiEntry[] => {
+  if (/^[+-]/.test(query)) {
+    const code = query.toLowerCase();
+    return index.entries.filter((entry) => entry.shortcodes.some((shortcode) => shortcode.startsWith(code))).slice(0, limit);
+  }
+  const normalized = normalizeEmojiQuery(query);
+  return normalized.length < 2 ? [] : ranked(index, normalized, false, limit);
 };
 
 /** As many recent emoji as the picker shows: three rows. */
@@ -162,22 +183,19 @@ export type EmojiShortcodeQuery = { start: number; end: number; query: string };
 
 /**
  * The `:shortcode` being typed at the caret: a colon at the start or after a space or "(", then at least two letters,
- * digits, "_", "+" or "-". Inline code, URLs ("https://") and times ("10:30") are no queries.
+ * digits, "_", "+" or "-". Code, URLs ("https://") and times ("10:30") are no queries.
  */
 export const emojiShortcodeQuery = (text: string, caret: number, selectionEnd = caret): EmojiShortcodeQuery | null => {
-  if (caret !== selectionEnd) return null;
-  const before = text.slice(0, caret);
-  if ((before.match(/`/g)?.length ?? 0) % 2) return null;
-  const match = /(?:^|[\s(]):([\p{L}\p{N}_+-]{2,})$/u.exec(before);
+  if (caret !== selectionEnd || isInCodeZone(text, caret)) return null;
+  const match = /(?:^|[\s(]):([\p{L}\p{N}_+-]{2,})$/u.exec(text.slice(0, caret));
   if (!match) return null;
   return { start: caret - match[1]!.length - 1, end: caret, query: match[1]! };
 };
 
 /** A complete `:shortcode:` just typed at the caret, such as `:thumbsup:`, with its range. */
 export const completedEmojiShortcode = (text: string, caret: number): { start: number; end: number; shortcode: string } | null => {
-  const before = text.slice(0, caret);
-  if ((before.match(/`/g)?.length ?? 0) % 2) return null;
-  const match = /(?:^|[\s(]):([\p{L}\p{N}_+-]+):$/u.exec(before);
+  if (isInCodeZone(text, caret)) return null;
+  const match = /(?:^|[\s(]):([\p{L}\p{N}_+-]+):$/u.exec(text.slice(0, caret));
   if (!match) return null;
   return { start: caret - match[1]!.length - 2, end: caret, shortcode: match[1]! };
 };

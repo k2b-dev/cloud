@@ -8809,6 +8809,8 @@
 
 .k2b-ui .k2b-chat-composer-shell { position: relative; display: grid; gap: 0.5rem; min-width: 0; }
 .k2b-ui .k2b-chat-composer-slot { position: relative; min-width: 0; }
+/* Out of the grid, so no gap opens: the suggestions keep their place above the composer, which does not move. */
+.k2b-ui .k2b-chat-composer-slot[data-overlay] { position: absolute; right: 0; bottom: calc(100% + 0.5rem); left: 0; }
 .k2b-ui .k2b-chat-composer-accessory { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; }
 .k2b-ui .k2b-chat-composer__highlight { position: absolute; inset: 0; overflow: hidden; pointer-events: none; white-space: pre-wrap; overflow-wrap: break-word; }
 .k2b-ui .k2b-chat-composer__mention { color: var(--k2b-ai-accent); background: var(--k2b-ai-surface); border-radius: 0.2rem; }
@@ -9702,7 +9704,8 @@
   z-index: 1000;
   inset: unset;
   max-width: calc(100vw - 1rem);
-  max-height: calc(100dvh - 1rem);
+  /* The height of the visible viewport, set while open, so a phone's keyboard covers no part of the picker. */
+  max-height: var(--k2b-emoji-popover-height, calc(100dvh - 1rem));
   margin: 0;
   overflow: hidden;
   padding: 0;
@@ -9722,7 +9725,7 @@
 }
 
 .k2b-ui .k2b-emoji-picker-popover .k2b-emoji-picker {
-  max-height: calc(100dvh - 1rem - 2px);
+  max-height: calc(var(--k2b-emoji-popover-height, calc(100dvh - 1rem)) - 2px);
 }
 
 .k2b-ui .k2b-chat-composer__commands .k2b-chat-composer__emoji-glyph {
