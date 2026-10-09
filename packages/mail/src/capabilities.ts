@@ -3339,7 +3339,6 @@ const actionDefinitions = {
     destructive: true,
     openWorld: false,
     idempotency: "required",
-
     review: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");

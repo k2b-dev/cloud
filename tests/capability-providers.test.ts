@@ -140,6 +140,7 @@ describe("Capability v2 provider conformance", () => {
       "grids.workflow.record-action",
       "mail.conversation.comment.create",
       "mail.conversation.comment.delete",
+      "mail.conversation.keep.release",
       "mail.conversation.mark",
       "mail.conversation.move",
       "mail.delivery.cancel",
