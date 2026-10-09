@@ -17,7 +17,7 @@ export const workspaceRoot = join(import.meta.dir, "..");
 type RootPackage = { workspaces?: { packages?: string[] } };
 
 /** Packages that live under `packages/` but are libraries or tools, not deployable applications. */
-const nonApplicationPackages = new Set(["cloud", "ui", "cloud-cli"]);
+const nonApplicationPackages = new Set(["cloud", "ui", "ssr", "cloud-cli"]);
 
 export const workspacePackages = (root = workspaceRoot): string[] => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as RootPackage;

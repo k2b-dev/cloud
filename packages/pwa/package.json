@@ -18,7 +18,7 @@
     "solid-js": "catalog:"
   },
   "devDependencies": {
-    "@k2b/ssr": "catalog:",
+    "@k2b/ssr": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   },

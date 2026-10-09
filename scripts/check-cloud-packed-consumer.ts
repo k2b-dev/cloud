@@ -10,6 +10,7 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), "cloud-packed-consumer-"));
 const consumer = join(temporaryRoot, "consumer");
 const cloudRoot = join(root, "packages/cloud");
 const uiRoot = join(root, "packages/ui");
+const ssrRoot = join(root, "packages/ssr");
 const cloudManifest = await Bun.file(join(cloudRoot, "package.json")).json();
 const cleanEnv = {
   PATH: process.env.PATH,
@@ -44,6 +45,7 @@ try {
   await mkdir(join(consumer, "src"), { recursive: true });
   const cloudArchive = join(temporaryRoot, "cloud.tgz");
   const uiArchive = join(temporaryRoot, "ui.tgz");
+  const ssrArchive = join(temporaryRoot, "ssr.tgz");
   // The caller builds UI first. Never silently rebuild a shared local dist tree.
   if (!(await Bun.file(join(uiRoot, "dist/.build-complete")).exists())) {
     throw new Error("Build @k2b/ui before running this check: bun run --cwd packages/ui build");
@@ -52,6 +54,7 @@ try {
   for (const [name, packageRoot, archive] of [
     ["Cloud", cloudRoot, cloudArchive],
     ["UI", uiRoot, uiArchive],
+    ["SSR", ssrRoot, ssrArchive],
   ] as const) {
     await run(`Pack current ${name}`, [process.execPath, "pm", "pack", "--ignore-scripts", "--quiet", "--filename", archive], packageRoot);
   }
@@ -68,9 +71,10 @@ try {
         dependencies: {
           "@k2b/cloud": cloudArchive,
           "@k2b/ui": uiArchive,
+          "@k2b/ssr": ssrArchive,
           ...cloudManifest.peerDependencies,
         },
-        overrides: { "@k2b/ui": uiArchive },
+        overrides: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive },
         devDependencies: {
           "@types/bun": cloudManifest.devDependencies["@types/bun"],
           typescript: cloudManifest.devDependencies.typescript,
@@ -150,7 +154,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     [process.execPath, "install", "--ignore-scripts", "--registry=https://registry.npmjs.org"],
     consumer,
   );
-  for (const name of ["cloud", "ui"]) {
+  for (const name of ["cloud", "ui", "ssr"]) {
     const installed = await realpath(join(consumer, "node_modules/@k2b", name));
     if (!installed.startsWith(`${await realpath(temporaryRoot)}${sep}`)) {
       throw new Error(`${name} resolved outside the isolated consumer: ${installed}`);

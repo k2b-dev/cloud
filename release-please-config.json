@@ -27,6 +27,10 @@
     "packages/ui": {
       "component": "npm-ui",
       "package-name": "@k2b/ui"
+    },
+    "packages/ssr": {
+      "component": "npm-ssr",
+      "package-name": "@k2b/ssr"
     }
   },
   "last-release-sha": "f38cd47486eacf64524be6d4c36524967f0916fd",

@@ -199,7 +199,7 @@ the boundary changed by the task:
 | `packages/<app>/src` or `packages/core/src` | Restart the owning application |
 | `packages/gateway/src` | Restart `gateway` and `gateway-ops` |
 | `packages/cloud/src`, `packages/cloud/scripts`, or root `styles.css` | Restart all running Cloud services |
-| `packages/ui/src` | Rebuild only the consumers needed for the task |
+| `packages/ui/src` or `packages/ssr/src` | Rebuild only the consumers needed for the task |
 | Dependencies, package manifests, or Dockerfiles | Rebuild affected applications |
 
 `dev:restart` recreates containers with their existing image so current mounts
@@ -292,9 +292,10 @@ contain workspace catalog references; their peer dependencies remain explicit
 compatibility ranges.
 
 `bun install` applies the three-day release-age gate when it resolves a new npm
-version. The first-party `@k2b/fibel`, `@k2b/nessi`, `@k2b/ssr`, `@k2b/stdlib`,
+version. The first-party `@k2b/fibel`, `@k2b/nessi`, `@k2b/stdlib`,
 `@k2b/sync`, and its pinned NATS client packages are the exceptions so a coordinated Cloud update
-can use a new release immediately. Dependency lifecycle scripts are denied by
+can use a new release immediately. `@k2b/ssr` and `@k2b/ui` are workspace
+packages and never come from npm here. Dependency lifecycle scripts are denied by
 default. Add no trusted package without verifying why its install script is
 required.
 

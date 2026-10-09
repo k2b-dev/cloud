@@ -15,7 +15,7 @@
     "test": "bun test --path-ignore-patterns '**/*.behavior.test.*'"
   },
   "dependencies": {
-    "@k2b/ssr": "catalog:",
+    "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",

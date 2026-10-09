@@ -11,6 +11,7 @@ RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/pwa-auth --filt
 
 COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src
+COPY packages/ssr/src packages/ssr/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY packages/ui/test packages/ui/test

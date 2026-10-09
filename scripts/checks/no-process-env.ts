@@ -13,7 +13,9 @@ const allowed: RegExp[] = [
   /^packages\/[^/]+\/scripts\//,
   /^packages\/[^/]+\/test\//,
   /^packages\/[^/]+\/bench\//,
+  // Standalone libraries without the Cloud config registry.
   /^packages\/ui\//,
+  /^packages\/ssr\//,
   // Operator verification tools that run against a live installation, not application runtime.
   /^packages\/oauth\/src\/verification\//,
   /^packages\/pulse\/src\/service\/high-cardinality-load\.ts$/,

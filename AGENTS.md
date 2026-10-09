@@ -45,6 +45,8 @@ Use these words consistently:
   `packages/*`;
 - **`@k2b/ui`** means the standalone SolidJS component library in
   `packages/ui`;
+- **`@k2b/ssr`** means the standalone SolidJS islands SSR framework in
+  `packages/ssr`;
 - **documentation** means the canonical Fibel sources under `docs-site`;
 - **deployment** means placement, networking, configuration, and runtime
   infrastructure.
@@ -208,13 +210,16 @@ Before calling a change complete, decide which of these apply:
   operational visibility;
 - `packages/ui` — standalone `@k2b/ui` package with no Cloud or
   application-domain dependencies;
+- `packages/ssr` — standalone `@k2b/ssr` framework with no Cloud
+  dependencies; its `AGENTS.md` covers framework internals;
 - other `packages/*` — independently owned built-in applications;
 - `docs-site/docs/en` — canonical developer and operations documentation;
 - `docs-site/src/ui/context` and `docs-site/src/ui/demo-sections` — canonical
   UI guidance and representative live states;
 - `docs-site/agent-skills/cloud-dev` — portable Cloud development workflow and
   stable cross-cutting invariants;
-- `skills/cloud-cli` — operating an installed Cloud through `cld`.
+- `skills/cloud-cli` — operating an installed Cloud through `cld`;
+- `skills/ssr` — building applications with `@k2b/ssr`;
 - `.github/workflows` — `ci.yml` (PR gate), `nightly.yml`, `main.yml`
   (sha images and release-please), `release.yml`, `build-images.yml`;
 - `scripts/checks` — repository rules;

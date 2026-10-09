@@ -1,0 +1,77 @@
+{
+  "name": "@k2b/ssr",
+  "version": "0.15.0",
+  "description": "Minimal SSR framework for SolidJS and Bun",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./bun": "./src/adapter/bun.ts",
+    "./elysia": "./src/adapter/elysia.ts",
+    "./hono": "./src/adapter/hono.ts",
+    "./nav": "./src/nav.ts"
+  },
+  "scripts": {
+    "test": "bun test test/unit && bun test --conditions=browser --preload ./test/browser/setup.ts test/browser",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.0",
+    "elysia": "^1.0.0",
+    "hono": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "elysia": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
+    "@types/babel__core": "7.20.5",
+    "babel-preset-solid": "1.9.15",
+    "seroval": "1.6.7"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "20.14.5",
+    "@types/bun": "1.4.2",
+    "elysia": "1.4.29",
+    "file-type": "21.3.4",
+    "happy-dom": "20.14.5",
+    "hono": "4.13.9",
+    "solid-js": "1.9.15",
+    "typescript": "7.0.2"
+  },
+  "license": "MIT",
+  "author": "Valentin Kolb",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k2b-dev/cloud.git",
+    "directory": "packages/ssr"
+  },
+  "homepage": "https://github.com/k2b-dev/cloud/tree/main/packages/ssr",
+  "bugs": "https://github.com/k2b-dev/cloud/issues",
+  "keywords": [
+    "solid",
+    "solidjs",
+    "ssr",
+    "bun",
+    "server-side-rendering",
+    "islands",
+    "elysia",
+    "hono"
+  ],
+  "files": [
+    "src/**/*.ts",
+    "src/**/*.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

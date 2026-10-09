@@ -27,6 +27,9 @@ on:
       npm_ui_released:
         required: true
         type: boolean
+      npm_ssr_released:
+        required: true
+        type: boolean
 
 permissions:
   contents: read
@@ -193,6 +196,7 @@ jobs:
             --arg registry "ghcr.io/${OWNER,,}" \
             --arg cloud "$(jq -r .version ../packages/cloud/package.json)" \
             --arg ui "$(jq -r .version ../packages/ui/package.json)" \
+            --arg ssr "$(jq -r .version ../packages/ssr/package.json)" \
             --slurpfile images release-images.json \
             --rawfile checksums checksums.txt \
             '{
@@ -202,7 +206,7 @@ jobs:
               registry: $registry,
               images: $images[0],
               cli: ($checksums | split("\n") | map(select(length > 0) | split("  ") | {asset: .[1], sha256: .[0]})),
-              npm: {"@k2b/cloud": $cloud, "@k2b/ui": $ui}
+              npm: {"@k2b/cloud": $cloud, "@k2b/ui": $ui, "@k2b/ssr": $ssr}
             }' > release.json
           jq . release.json
       - name: Upload assets to the GitHub release
@@ -343,11 +347,15 @@ jobs:
       - if: always()
         run: docker rm --force app-core app-faq gateway postgres nats valkey || true
 
-  # @k2b/cloud pins an exact @k2b/ui version, so it publishes only after npm-ui
-  # finished (or was not part of this release) and that version is installable.
+  # @k2b/cloud pins exact @k2b/ui and @k2b/ssr versions, so it publishes only
+  # after npm-ui and npm-ssr finished (or were not part of this release) and
+  # both pinned versions are installable.
   npm-cloud:
-    needs: npm-ui
-    if: ${{ !cancelled() && inputs.npm_cloud_released && (needs.npm-ui.result == 'success' || needs.npm-ui.result == 'skipped') }}
+    needs: [npm-ui, npm-ssr]
+    if: >-
+      ${{ !cancelled() && inputs.npm_cloud_released &&
+      (needs.npm-ui.result == 'success' || needs.npm-ui.result == 'skipped') &&
+      (needs.npm-ssr.result == 'success' || needs.npm-ssr.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
@@ -378,39 +386,45 @@ jobs:
           git fetch --quiet origin "refs/tags/npm-cloud-v$version:refs/tags/npm-cloud-v$version"
           [[ "$(git rev-list -n1 "npm-cloud-v$version")" == "$SHA" ]] || { echo "npm-cloud-v$version is not at $SHA." >&2; exit 1; }
           echo "NPM_TAG=$([[ "$version" == *-* ]] && echo next || echo latest)" >> "$GITHUB_ENV"
-      - name: Wait until the pinned @k2b/ui is installable from npm
+      - name: Wait until the pinned @k2b/ui and @k2b/ssr are installable from npm
         env:
           UI_RELEASED: ${{ inputs.npm_ui_released }}
+          SSR_RELEASED: ${{ inputs.npm_ssr_released }}
         run: |
           set -euo pipefail
           cloud=$(jq -r .version packages/cloud/package.json)
-          ui=$(jq -r '.dependencies["@k2b/ui"]' packages/cloud/package.json)
-          [[ "$ui" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "@k2b/cloud must pin an exact @k2b/ui version, found '$ui'." >&2; exit 1; }
           # A new version reaches npm's full metadata, the install metadata, and the tarball download at different times.
           installable() {
-            local tarball
-            tarball=$(npm view "@k2b/ui@$ui" dist.tarball --prefer-online 2>/dev/null || true)
-            [[ "$(npm view "@k2b/ui@$ui" version --prefer-online 2>/dev/null || true)" == "$ui" && -n "$tarball" ]] &&
-              curl -fsS --max-time 60 -H 'Accept: application/vnd.npm.install-v1+json' https://registry.npmjs.org/@k2b%2fui | jq -e --arg v "$ui" '.versions[$v]' >/dev/null &&
+            local name=$1 version=$2 tarball
+            tarball=$(npm view "$name@$version" dist.tarball --prefer-online 2>/dev/null || true)
+            [[ "$(npm view "$name@$version" version --prefer-online 2>/dev/null || true)" == "$version" && -n "$tarball" ]] &&
+              curl -fsS --max-time 60 -H 'Accept: application/vnd.npm.install-v1+json' "https://registry.npmjs.org/${name/\//%2f}" | jq -e --arg v "$version" '.versions[$v]' >/dev/null &&
               curl -fsS --max-time 120 -o /dev/null "$tarball"
           }
-          # @k2b/ui published by this run may take minutes to become installable; an older pin must be installable already.
-          budget=$([[ "$UI_RELEASED" == "true" ]] && echo 1200 || echo 60)
-          deadline=$((SECONDS + budget))
-          delay=10
-          until installable; do
-            remaining=$((deadline - SECONDS))
-            if ((remaining <= 0)); then
-              echo "@k2b/ui@$ui, pinned by @k2b/cloud@$cloud, is not installable from npm after ${SECONDS}s. Publish @k2b/ui@$ui first, then run the release again." >&2
-              exit 1
-            fi
-            # The last pause ends at the deadline, so the final check uses the whole budget.
-            pause=$((delay < remaining ? delay : remaining))
-            echo "@k2b/ui@$ui is not installable yet; checking again in ${pause}s."
-            sleep "$pause"
-            delay=$((delay * 2 > 120 ? 120 : delay * 2))
+          # Both budgets count from the same start, so the waits together stay within the job timeout.
+          start=$SECONDS
+          for name in @k2b/ui @k2b/ssr; do
+            version=$(jq -r --arg name "$name" '.dependencies[$name]' packages/cloud/package.json)
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "@k2b/cloud must pin an exact $name version, found '$version'." >&2; exit 1; }
+            released=$([[ "$name" == "@k2b/ui" ]] && echo "$UI_RELEASED" || echo "$SSR_RELEASED")
+            # A version published by this run may take minutes to become installable; an older pin must be installable already.
+            budget=$([[ "$released" == "true" ]] && echo 1200 || echo 60)
+            deadline=$((start + budget))
+            delay=10
+            until installable "$name" "$version"; do
+              remaining=$((deadline - SECONDS))
+              if ((remaining <= 0)); then
+                echo "$name@$version, pinned by @k2b/cloud@$cloud, is not installable from npm after ${SECONDS}s. Publish $name@$version first, then run the release again." >&2
+                exit 1
+              fi
+              # The last pause ends at the deadline, so the final check uses the whole budget.
+              pause=$((delay < remaining ? delay : remaining))
+              echo "$name@$version is not installable yet; checking again in ${pause}s."
+              sleep "$pause"
+              delay=$((delay * 2 > 120 ? 120 : delay * 2))
+            done
+            echo "$name@$version is installable from npm."
           done
-          echo "@k2b/ui@$ui is installable from npm."
       - name: Publish unless this version is already on npm (a finished release may run again)
         working-directory: packages/cloud
         run: |
@@ -458,5 +472,41 @@ jobs:
           version=$(jq -r .version package.json)
           if [[ "$(npm view "@k2b/ui@$version" version 2>/dev/null || true)" == "$version" ]]; then
             echo "@k2b/ui@$version is already published."; exit 0
+          fi
+          npm publish --provenance --access public --tag "$NPM_TAG"
+
+  # @k2b/ssr ships its TypeScript source, so it publishes without a build.
+  npm-ssr:
+    if: inputs.npm_ssr_released
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@11.5.1
+      - name: Verify package version matches the npm-ssr tag
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version packages/ssr/package.json)
+          git fetch --quiet origin "refs/tags/npm-ssr-v$version:refs/tags/npm-ssr-v$version"
+          [[ "$(git rev-list -n1 "npm-ssr-v$version")" == "$SHA" ]] || { echo "npm-ssr-v$version is not at $SHA." >&2; exit 1; }
+          echo "NPM_TAG=$([[ "$version" == *-* ]] && echo next || echo latest)" >> "$GITHUB_ENV"
+      - name: Publish unless this version is already on npm (a finished release may run again)
+        working-directory: packages/ssr
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version package.json)
+          if [[ "$(npm view "@k2b/ssr@$version" version 2>/dev/null || true)" == "$version" ]]; then
+            echo "@k2b/ssr@$version is already published."; exit 0
           fi
           npm publish --provenance --access public --tag "$NPM_TAG"

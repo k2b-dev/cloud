@@ -16,7 +16,7 @@
   "dependencies": {
     "@k2b/cloud": "workspace:*",
     "@k2b/filegate": "7.0.0",
-    "@k2b/ssr": "catalog:",
+    "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",

@@ -98,7 +98,11 @@ const checkAppsBoundaries = (workspaceRoot: string, appNames: string[]): Finding
 
 const checkUiPackageBoundaries = (workspaceRoot: string): Finding[] => {
   const findings: Finding[] = [];
-  const roots = [join(workspaceRoot, "packages", "ui", "src"), join(workspaceRoot, "fixtures", "ui-ssr", "src")];
+  const roots = [
+    join(workspaceRoot, "packages", "ui", "src"),
+    join(workspaceRoot, "packages", "ssr", "src"),
+    join(workspaceRoot, "fixtures", "ui-ssr", "src"),
+  ];
 
   for (const root of roots) {
     for (const file of listFiles(root, sourceFilePattern)) {
@@ -113,7 +117,7 @@ const checkUiPackageBoundaries = (workspaceRoot: string): Finding[] => {
           findings.push({
             file,
             line: lineFromIndex(source, index),
-            message: `@k2b/ui and its standalone fixture must not depend on Cloud packages (${specifier}).`,
+            message: `@k2b/ui, @k2b/ssr, and the standalone UI fixture must not depend on Cloud packages (${specifier}).`,
           });
         }
       }

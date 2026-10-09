@@ -32,6 +32,7 @@
       "packages/proxy-auth",
       "packages/quotes",
       "packages/spaces",
+      "packages/ssr",
       "packages/tools",
       "packages/ui",
       "packages/venue",
@@ -40,7 +41,6 @@
     ],
     "catalog": {
       "@firecrawl/anydoc": "0.2.4",
-      "@k2b/ssr": "0.15.0",
       "@k2b/stdlib": "0.28.0",
       "@k2b/sync": "7.0.0",
       "@nats-io/jetstream": "3.4.0",
