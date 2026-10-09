@@ -345,6 +345,22 @@ export type AppWorkspaceSidebarItemActionsProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
 };
+/**
+ * Unread state for the trailing `meta` slot. Every mark keeps a fixed width,
+ * so the row keeps its height and the label its start in every state.
+ */
+export type AppWorkspaceSidebarItemStatusProps = {
+  /**
+   * A positive number shows a count (above 99 as "99+") and sets the label in
+   * a stronger weight; `true` shows a quiet dot for new activity that should
+   * not draw attention, such as in a muted conversation.
+   */
+  unread?: number | boolean;
+  /** Marks unread items that mention the person with "@". */
+  mention?: boolean;
+  /** Shows a muted bell. */
+  muted?: boolean;
+};
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
   ariaLabel: string;
@@ -805,6 +821,46 @@ const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsPro
     {props.children}
   </div>
 );
+const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
+  const messages = useUiMessages();
+  const count = () => (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
+  const dot = () => props.unread === true;
+  // The marks are decorative; the row's accessible name gets one phrase instead.
+  const description = () =>
+    [
+      count() ? messages().sidebarUnread({ count: count() }) : dot() ? messages().sidebarNewActivity : "",
+      props.mention ? messages().sidebarMentioned : "",
+      props.muted ? messages().sidebarMuted : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+  return (
+    <Show when={description()}>
+      <span class="k2b-app-workspace__sidebar-status" data-unread={count() ? "count" : dot() ? "dot" : undefined}>
+        <Show when={props.muted}>
+          <span class="k2b-app-workspace__sidebar-status-muted" aria-hidden="true">
+            <i class="ti ti-bell-off" />
+          </span>
+        </Show>
+        <Show when={props.mention}>
+          <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
+            @
+          </span>
+        </Show>
+        <Show when={count() || dot()}>
+          <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
+            <Show when={count()} fallback={<span class="k2b-app-workspace__sidebar-status-dot" />}>
+              <span class="k2b-app-workspace__sidebar-status-count" data-mention={props.mention ? "true" : undefined}>
+                {count() > 99 ? "99+" : count()}
+              </span>
+            </Show>
+          </span>
+        </Show>
+        <span class="k2b-sr-only">, {description()}</span>
+      </span>
+    </Show>
+  );
+};
 
 type AppWorkspaceSidebarRowProps = {
   children: JSX.Element;
@@ -1506,6 +1562,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   SidebarItemMeta: (props: AppWorkspaceSidebarItemMetaProps) => JSX.Element;
   SidebarItemAction: (props: AppWorkspaceSidebarItemActionProps) => JSX.Element;
   SidebarItemActions: (props: AppWorkspaceSidebarItemActionsProps) => JSX.Element;
+  SidebarItemStatus: (props: AppWorkspaceSidebarItemStatusProps) => JSX.Element;
   NavTree: AppWorkspaceNavTreeComponent;
   SidebarIconGrid: (props: AppWorkspaceSidebarIconGridProps) => JSX.Element;
   SidebarIconAction: (props: AppWorkspaceSidebarIconActionProps) => JSX.Element;
@@ -1570,6 +1627,7 @@ AppWorkspace.SidebarItemLabel = AppWorkspaceSidebarItemLabel;
 AppWorkspace.SidebarItemMeta = AppWorkspaceSidebarItemMeta;
 AppWorkspace.SidebarItemAction = AppWorkspaceSidebarItemAction;
 AppWorkspace.SidebarItemActions = AppWorkspaceSidebarItemActions;
+AppWorkspace.SidebarItemStatus = AppWorkspaceSidebarItemStatus;
 AppWorkspace.NavTree = AppWorkspaceNavTree;
 AppWorkspace.SidebarIconGrid = AppWorkspaceSidebarIconGrid;
 AppWorkspace.SidebarIconAction = AppWorkspaceSidebarIconAction;

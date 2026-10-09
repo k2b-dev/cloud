@@ -110,6 +110,26 @@ const WorkspaceDemo = () => {
                 <AppWorkspace.SidebarItemAction icon="ti ti-settings" label="Issue settings" visibility="hover" />
               </AppWorkspace.SidebarItem>
             </AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection title="Discussions">
+              <AppWorkspace.SidebarItem href="#discussion-restock" icon="ti ti-hash">
+                <AppWorkspace.SidebarItemLabel>Restock</AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemMeta>
+                  <AppWorkspace.SidebarItemStatus unread={3} mention />
+                </AppWorkspace.SidebarItemMeta>
+              </AppWorkspace.SidebarItem>
+              <AppWorkspace.SidebarItem href="#discussion-returns" icon="ti ti-hash">
+                <AppWorkspace.SidebarItemLabel>Returns</AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemMeta>
+                  <AppWorkspace.SidebarItemStatus unread={12} />
+                </AppWorkspace.SidebarItemMeta>
+              </AppWorkspace.SidebarItem>
+              <AppWorkspace.SidebarItem href="#discussion-deliveries" icon="ti ti-hash">
+                <AppWorkspace.SidebarItemLabel>Deliveries</AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemMeta>
+                  <AppWorkspace.SidebarItemStatus unread muted />
+                </AppWorkspace.SidebarItemMeta>
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarSection>
             <AppWorkspace.SidebarSection
               title="Views"
               actions={

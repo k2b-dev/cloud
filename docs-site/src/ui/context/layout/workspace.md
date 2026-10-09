@@ -134,7 +134,8 @@ The sidebar compound members cover these jobs:
 - `SidebarDesktop`, `SidebarBody`, `SidebarSection`, and `SidebarFooter`
   compose the persistent navigation;
 - `SidebarItem`, `SidebarItemIcon`, `SidebarItemLabel`, `SidebarItemMeta`,
-  `SidebarItemAction`, and `SidebarItemActions` compose a navigation row;
+  `SidebarItemStatus`, `SidebarItemAction`, and `SidebarItemActions` compose a
+  navigation row;
 - `NavTree` and `NavTree.Item` compose nested folder, mailbox, category, or tag
   navigation with automatic indentation and keyboard interaction;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
@@ -223,6 +224,41 @@ state visible with the default `"always"` value.
     </AppWorkspace.SidebarItemActions>
   }
 />
+```
+
+### Unread counts, dots, and mentions
+
+Put `SidebarItemStatus` in `meta` or `SidebarItemMeta` to show what is new in
+a conversation, inbox, or feed:
+
+- `unread` as a positive number shows a count, above 99 as "99+", and sets
+  the label in a stronger weight;
+- `unread={true}` shows a quiet dot for new activity that should not draw
+  attention, such as in a muted conversation or a channel that notifies only
+  on mentions; the label keeps its regular weight;
+- `mention` adds "@" and accents the count;
+- `muted` adds a muted bell.
+
+Each mark has a fixed width and fits the label line, so the row keeps its
+height in every state, and a count and a dot share one slot: counts and dots
+stay aligned across rows. Unread rows differ in weight and count, never in
+color alone. The marks are hidden from assistive technology; the row's
+accessible name gets one phrase instead, such as "Design, 3 unread, mentions
+you", in the inherited locale. Without unread items, a mention, or muting, the
+component renders nothing. The application decides which state applies, for
+example whether a muted conversation shows a count or only a dot.
+
+```tsx
+<AppWorkspace.SidebarItem href="/app/chat/c/design" icon="ti ti-hash">
+  <AppWorkspace.SidebarItemLabel>Design</AppWorkspace.SidebarItemLabel>
+  <AppWorkspace.SidebarItemMeta>
+    <AppWorkspace.SidebarItemStatus unread={3} mention />
+  </AppWorkspace.SidebarItemMeta>
+</AppWorkspace.SidebarItem>
+
+<AppWorkspace.SidebarItem href="/app/chat/c/releases" icon="ti ti-hash" meta={<AppWorkspace.SidebarItemStatus unread muted />}>
+  Releases
+</AppWorkspace.SidebarItem>
 ```
 
 ### Nested navigation
@@ -390,6 +426,10 @@ type AppWorkspaceSidebarItemActionProps = {
 
 type AppWorkspaceSidebarItemActionsProps = {
   children: JSX.Element; visibility?: AppWorkspaceSidebarAccessoryVisibility;
+};
+
+type AppWorkspaceSidebarItemStatusProps = {
+  unread?: number | boolean; mention?: boolean; muted?: boolean;
 };
 
 ```
