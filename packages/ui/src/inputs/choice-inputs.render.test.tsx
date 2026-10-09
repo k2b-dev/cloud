@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Checkbox } = await import("./Checkbox");
 const { CheckboxCard } = await import("./CheckboxCard");
+const { ChoiceChips } = await import("./ChoiceChips");
 const { ColorInput, PinInput, Slider } = await import("./ChoiceInputs");
 const { Combobox } = await import("./Combobox");
 const { MultiSelectInput } = await import("./MultiSelectInput");
@@ -980,5 +981,40 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(hiddenEditor).not.toMatch(/display:\s*none/);
     expect(hiddenEditor).toMatch(/position:\s*absolute/);
     expect(hiddenEditor).toMatch(/opacity:\s*0/);
+  });
+});
+
+describe("ChoiceChips", () => {
+  const options = [
+    { value: "blank", label: "Blank" },
+    { value: "weekly", label: "Weekly report", icon: "ti ti-template" },
+  ];
+
+  test("renders a labeled radio group whose selected chip holds the tab stop", () => {
+    const html = renderToString(() =>
+      createComponent(ChoiceChips, { label: "Template", description: "Fills the form", value: "weekly", options }),
+    );
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toMatch(/aria-labelledby="[^"]+-label"/);
+    expect(html).toMatch(/aria-describedby="[^"]+-description"/);
+    expect(html).toContain("k2b-choice-chips");
+    expect(html).toContain('<i class="ti ti-template" aria-hidden="true">');
+    expect(html).toMatch(/aria-checked="true"[^>]*tabindex="0"[^>]*>.*Weekly report/s);
+    expect(html.match(/tabindex="0"/g)).toHaveLength(1);
+  });
+
+  test("without a selection the first chip stays reachable by keyboard", () => {
+    const html = renderToString(() => createComponent(ChoiceChips, { "aria-label": "Due", value: null, options }));
+    expect(html).toContain('aria-label="Due"');
+    expect(html).not.toContain('aria-checked="true"');
+    expect(html.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(html.indexOf('tabindex="0"')).toBeLessThan(html.indexOf("Weekly report"));
+  });
+
+  test("chips keep one height and get touch-sized targets on coarse pointers", () => {
+    expect(cssRule(".k2b-ui .k2b-choice-chips .k2b-choice-groups > button")).toContain("white-space: nowrap");
+    expect(indexCss).toMatch(
+      /@media \(pointer: coarse\) \{\s*\.k2b-ui \.k2b-choice-chips \.k2b-choice-groups > button \{\s*min-height: 2\.75rem;/,
+    );
   });
 });

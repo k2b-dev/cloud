@@ -65,6 +65,7 @@ const portableSections = [
       page("number", "NumberInput", "ti ti-number", "Bounded and formatted numeric input with steppers and clear state."),
       page("boolean", "Boolean inputs", "ti ti-toggle-right", "Switch, checkbox, and descriptive checkbox-card controls."),
       page("select", "Selection controls", "ti ti-list-check", "Single, multi, and compact controlled selection."),
+      page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
       page(
         "autocomplete-select",
         "AutocompleteSelect",

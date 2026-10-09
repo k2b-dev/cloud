@@ -6,6 +6,7 @@ import {
   type AutocompleteSelectSearchResult,
   Checkbox,
   CheckboxCard,
+  ChoiceChips,
   ColorInput,
   Combobox,
   type Completion,
@@ -1205,6 +1206,57 @@ const BooleanDemo = () => {
   );
 };
 
+const ChoiceChipsDemo = () => {
+  const [due, setDue] = createSignal<string | null>("2026-10-14");
+  const [template, setTemplate] = createSignal<string | null>("blank");
+  return (
+    <DemoCard
+      id="choice-chips"
+      chip={{ kind: "component", name: "ChoiceChips", from: "@k2b/ui" }}
+      description="A labeled radio group of quick choices. The row scrolls sideways instead of wrapping, so its height never changes; null selects no chip, and touch screens get 44 px targets."
+      code={`<ChoiceChips
+  label="Due"
+  description="Proposed from the template · Wed or Thu · 17:00"
+  value={due}
+  onValueChange={setDue}
+  options={[
+    { value: "2026-10-14", label: "Wed 10/14" },
+    { value: "2026-10-15", label: "Thu 10/15" },
+    { value: "2026-10-21", label: "Wed 10/21" },
+    { value: "other", label: "Other date…", icon: "ti ti-calendar" },
+  ]}
+/>`}
+    >
+      <div class="flex flex-col gap-4">
+        <ChoiceChips
+          label="Template"
+          value={template}
+          onValueChange={setTemplate}
+          options={[
+            { value: "blank", label: "Blank" },
+            { value: "weekly", label: "Weekly report", icon: "ti ti-template" },
+            { value: "release", label: "Release check", icon: "ti ti-template" },
+            { value: "invoices", label: "Check invoices", icon: "ti ti-template" },
+          ]}
+        />
+        <ChoiceChips
+          label="Due"
+          description="Proposed from the template · Wed or Thu · 17:00"
+          value={due}
+          onValueChange={setDue}
+          options={[
+            { value: "2026-10-14", label: "Wed 10/14" },
+            { value: "2026-10-15", label: "Thu 10/15" },
+            { value: "2026-10-21", label: "Wed 10/21" },
+            { value: "other", label: "Other date…", icon: "ti ti-calendar" },
+            { value: "none", label: "No date" },
+          ]}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
 const demos: DemoSection = {
   "qr-scanner": () => <QrScannerDemo />,
   text: () => (
@@ -1237,6 +1289,11 @@ const demos: DemoSection = {
       <SelectDemo />
       <GroupedSelectDemo />
       <SelectViewsDemo />
+    </DemoGrid>
+  ),
+  "choice-chips": () => (
+    <DemoGrid columns="one">
+      <ChoiceChipsDemo />
     </DemoGrid>
   ),
   "autocomplete-select": () => (

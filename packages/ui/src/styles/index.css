@@ -5232,7 +5232,7 @@
   cursor: pointer;
 }
 
-.k2b-ui .k2b-choice-groups > button:hover {
+.k2b-ui .k2b-choice-groups > button:hover:not(:disabled) {
   color: var(--k2b-text);
   background: var(--k2b-hover);
 }
@@ -5245,6 +5245,31 @@
 .k2b-ui .k2b-choice-groups > button:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+.k2b-ui .k2b-choice-groups > button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-groups > button > i {
+  margin-inline-end: 0.3125rem;
+  font-size: 0.875rem;
+  vertical-align: -0.125rem;
+}
+
+/* The form-sized row: readable chips with the control height of other fields. */
+.k2b-ui .k2b-choice-chips .k2b-choice-groups > button {
+  min-height: 2rem;
+  padding: 0.3125rem 0.875rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-choice-chips .k2b-choice-groups > button {
+    min-height: 2.75rem;
+  }
 }
 
 .k2b-ui .k2b-choice-view-toggle {
