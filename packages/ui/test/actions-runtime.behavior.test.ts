@@ -437,6 +437,76 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("lays a FilterChip row section out as segments that keep one choice and follow the arrow keys", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { FilterChip } = await import("../src/actions/FilterChip");
+    const changes: string[][] = [];
+
+    const dispose = render(() => {
+      const [value, setValue] = createSignal<readonly string[]>(["scope:all", "sort:asc"]);
+      return createComponent(FilterChip, {
+        label: "View",
+        icon: "ti ti-filter",
+        get value() {
+          return value();
+        },
+        defaultValue: ["scope:all", "sort:asc"],
+        onValueChange: (nextValue) => {
+          changes.push(nextValue);
+          setValue(nextValue);
+        },
+        options: [
+          {
+            label: "Scope",
+            options: [
+              { value: "scope:all", label: "All" },
+              { value: "scope:mine", label: "Mine" },
+            ],
+          },
+          {
+            label: "Sort",
+            layout: "row",
+            options: [
+              { value: "sort:asc", label: "Ascending" },
+              { value: "sort:desc", label: "Descending" },
+            ],
+          },
+        ],
+      });
+    }, dom.root);
+
+    dom.root.querySelector<HTMLElement>(".k2b-filter-chip")?.click();
+    await flush();
+
+    const segments = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-dropdown__row > [role='menuitemradio']"));
+    expect(segments.map((segment) => segment.textContent)).toEqual(["Ascending", "Descending"]);
+    expect(dom.root.querySelector(".k2b-dropdown__row")?.closest("[role='group']")?.getAttribute("aria-label")).toBe("Sort");
+
+    // The selected segment stays selected; another one replaces it.
+    segments[0]?.click();
+    expect(changes).toEqual([]);
+    segments[1]?.click();
+    expect(changes).toEqual([["scope:all", "sort:desc"]]);
+    expect(segments[1]?.getAttribute("aria-checked")).toBe("true");
+
+    const menu = dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    const menuKeyDown = (menu as unknown as { $$keydown?: (event: KeyboardEvent) => void })?.$$keydown;
+    segments[1]?.focus();
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+    expect(dom.document.activeElement).toBe(segments[0] ?? null);
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowLeft" }));
+    expect(dom.document.activeElement).toBe(segments[1] ?? null);
+    // Up leaves the row for the item above it, as in any menu.
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(dom.document.activeElement).toBe(segments[0] ?? null);
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(dom.document.activeElement?.textContent).toBe("Mine");
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("exposes SelectChip selection as a radio menu without rebuilding its rows", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();

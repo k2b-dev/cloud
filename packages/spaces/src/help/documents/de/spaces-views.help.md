@@ -37,6 +37,15 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 - **Spalten umsortieren:** Personen mit Schreibzugriff ziehen einen Spaltenkopf mit Maus oder Stift an eine neue Stelle oder verschieben die Spalte über das Menü **⋯** im Kopf nach links oder rechts. Auf einem Touchscreen scrollt eine Wischbewegung über den Kopf das Board; nutze dort das Menü **⋯**. Die Reihenfolge ändert sich für alle im Space und umfasst die automatischen Spalten; die Liste unter **Status** in den Einstellungen zeigt dieselbe Reihenfolge.
 :::
 
+## Farben im Kalender {icon="palette"}
+
+:::reference
+- **Farbe nach Tag:** Standardmäßig tragen Termine und Aufgaben die Farbe ihres ersten Tags. Ein Eintrag ohne Tag trägt die Farbe seines Status, und ein Eintrag, dessen Status keine Farbe hat, bleibt ruhig grau. Weitere Tags erscheinen als kleine Punkte hinter dem Titel, wenn Platz ist.
+- **Termine und Aufgaben:** Ein Termin ist ein getöntes Band. Eine Aufgabe mit Fälligkeitsdatum ist ein Kästchen in ihrer Farbe vor dem Titel, ohne Band. Dringende und hohe Priorität zeigen eine kleine rote Fahne, egal was die Farben zeigen.
+- **Wählen, was die Farbe zeigt:** Öffne **Umfang** und wähle unter **Farbe nach** **Tag**, **Status**, **Priorität** oder **Person**. **Status** nutzt die Statusfarben, **Priorität** die Prioritätsfarben und **Person** die Avatarfarbe der ersten zuständigen Person, weitere zuständige Personen als Punkte; Einträge ohne diesen Wert bleiben grau.
+- **In der Adresse gespeichert:** Die Wahl steht wie die Filter in der URL, daher zeigen ein Neuladen oder ein geteilter Link dieselben Farben. Sie ändert nur, wie der Kalender für dich aussieht, nie die Einträge, und ein geöffneter Eintrag bleibt offen. **Zurücksetzen** in **Umfang** setzt die Filter zurück und behält die Farbe.
+:::
+
 ## Beispiele für die globale Suche {icon="search"}
 
 **Aufgaben finden**

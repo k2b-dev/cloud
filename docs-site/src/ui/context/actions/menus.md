@@ -70,6 +70,15 @@ Both components accept `DropdownItem[]`. An item is one of:
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
 - a section with optional `sectionLabel` and nested actions or choices.
 
+A section with `layout: "row"` sets a few short radio choices side by side as
+one segmented row, such as a sort direction or a color mode. Give it a
+`sectionLabel`: the label names the choice above the row and for screen
+readers, and an unlabeled row stays an unnamed group. It uses the
+`SegmentedControl` look: an inset track with the selected choice raised, labels
+only, so icons and check marks are left out. Keep it to labels that fit the
+menu's width; longer choices belong in an ordinary section. Up and Down move
+through the row like through any items, and Left and Right cycle within it.
+
 Set `variant: "danger"` only on destructive items.
 
 Menus deliberately do not accept arbitrary interactive content. Use a dialog
@@ -148,7 +157,7 @@ type DropdownChoice = DropdownActionBase & {
 };
 
 type DropdownSection = {
-  sectionLabel?: string; items: readonly (DropdownAction | DropdownChoice)[];
+  sectionLabel?: string; layout?: "row"; items: readonly (DropdownAction | DropdownChoice)[];
 };
 
 type DropdownItem = DropdownAction | DropdownChoice | DropdownSection;

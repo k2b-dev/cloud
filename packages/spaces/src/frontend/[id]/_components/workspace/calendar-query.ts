@@ -2,9 +2,9 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate, listenPopState, navigate } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { prompts, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useSpaceMessages } from "../../messages";
-import { parseCalendarRoute } from "../calendar/filter";
+import { CALENDAR_COLOR_PARAM, parseCalendarColorBy, parseCalendarRoute } from "../calendar/filter";
 import { loadSpacesViewSnapshot, SpacesViewUnavailableError } from "./view-query";
 import {
   reconcileSpacesDetailRoute,
@@ -26,12 +26,21 @@ type PendingNavigation = {
 
 const pathWithQuery = (url: URL) => `${url.pathname}${url.search}`;
 const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"), url.searchParams.get("occurrence")]);
+/**
+ * The calendar data an href needs, in one form for equal data: the selected item and the color choice change no
+ * calendar data, this query only loads the calendar view, and the order of the parameters means nothing. The page's
+ * base URL names the view only when it overrides the saved one, while the calendar's own links always name it.
+ */
 const calendarViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
   url.searchParams.delete("occurrence");
+  url.searchParams.delete(CALENDAR_COLOR_PARAM);
+  url.searchParams.set("view", "calendar");
+  url.searchParams.sort();
   return pathWithQuery(url);
 };
+const colorByOf = (href: string) => parseCalendarColorBy(new URL(href, "http://spaces.local"));
 
 export const useSpacesCalendarQuery = (params: {
   spaceId: string;
@@ -47,6 +56,8 @@ export const useSpacesCalendarQuery = (params: {
   const [source, setSource] = createSignal(initialSource);
   const [preview, setPreview] = createSignal<CalendarSnapshot>(params.initialSnapshot);
   const [pending, setPending] = createSignal<PendingNavigation | null>(null);
+  // The committed color choice: it changes with the URL alone and never waits for, or reloads, calendar data.
+  const [colorBy, setColorBy] = createSignal(params.initialSnapshot.filter.colorBy);
   let committedSource = initialSource;
   let committedHref = params.initialSource;
   let nextNavigationId = 0;
@@ -79,10 +90,11 @@ export const useSpacesCalendarQuery = (params: {
       }),
   });
 
-  const current = () => {
+  const current = createMemo((): CalendarSnapshot => {
     const loaded = view.data();
-    return loaded?.source === source() ? loaded.snapshot : preview();
-  };
+    const snapshot = loaded?.source === source() ? loaded.snapshot : preview();
+    return { ...snapshot, filter: { ...snapshot.filter, colorBy: colorBy() } };
+  });
 
   const restoreCommitted = (request: PendingNavigation, error: Error) => {
     if (pending()?.id !== request.id) return;
@@ -124,6 +136,7 @@ export const useSpacesCalendarQuery = (params: {
       }
       committedSource = request.source;
       committedHref = pathWithQuery(target);
+      setColorBy(colorByOf(committedHref));
       setPreview(loaded.snapshot);
       setPending(null);
       if (request.history !== "popstate") {
@@ -154,6 +167,7 @@ export const useSpacesCalendarQuery = (params: {
         setSource(committedSource);
       }
       committedHref = href;
+      setColorBy(colorByOf(href));
       if (history === "replace") navigate(href, { replace: true, scroll: "preserve", viewTransition: false });
       reconcileSpacesDetailRoute(href);
       return;
@@ -164,7 +178,8 @@ export const useSpacesCalendarQuery = (params: {
       id: ++nextNavigationId,
       href,
       source: nextSource,
-      history,
+      // A replacing change, such as a filter, during a pending push still adds that push's entry, so Back returns.
+      history: history === "replace" && pending()?.history === "push" ? "push" : history,
       started: false,
       selection: selectionKey(new URL(window.location.href)),
     });

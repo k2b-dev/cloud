@@ -90,7 +90,7 @@ describe("Spaces unavailable-view reloads", () => {
               kind: "calendar",
               view: "month",
               date: "2026-08-01T00:00:00.000Z",
-              filter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [] },
+              filter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [], colorBy: "tag" },
               items: [],
               weather: {},
             },

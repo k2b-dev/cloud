@@ -4630,6 +4630,45 @@
   text-transform: uppercase;
 }
 
+/* A few short radio choices side by side: the SegmentedControl's inset track inside a menu.
+   Labels only; the selected segment is raised, so no check mark has to fit. */
+.k2b-ui .k2b-dropdown__row {
+  display: flex;
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
+}
+
+.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item {
+  width: auto;
+  min-width: 0;
+  /* Sized by their labels, so a longer word never breaks to fit an equal share. */
+  flex: 1 1 auto;
+  justify-content: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item > i {
+  display: none;
+}
+
+.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"] {
+  color: var(--k2b-text);
+  background: var(--k2b-surface);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+
+/* The raised segment keeps its surface under the pointer, so focus shows as the shared ring. */
+.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
 /* Opt-in touch menus leave the compact default and shared ContextMenu rows unchanged. */
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
   min-width: min(18rem, 100vw - 2rem);
@@ -4765,8 +4804,10 @@
 
 /* A filter menu keeps its former 13rem as the floor and grows with its
    longest option like every other menu. */
+/* A filter menu combines several labelled sections; it shows them all before it scrolls. */
 .k2b-ui .k2b-dropdown__menu.k2b-filter-chip__menu {
   min-width: min(13rem, 100vw - 2rem);
+  max-height: min(32rem, 80dvh);
 }
 
 .k2b-ui .k2b-filter-chip__checkbox {

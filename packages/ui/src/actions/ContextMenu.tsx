@@ -2,7 +2,7 @@ import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount,
 import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
-import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
+import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition, focusRowSegment } from "./Dropdown";
 
 export type ContextMenuProps = {
   items: readonly DropdownItem[];
@@ -137,6 +137,8 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       focusItem(current + (event.key === "ArrowDown" ? 1 : -1));
+    } else if (focusRowSegment(items, event.key)) {
+      event.preventDefault();
     } else if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       focusItem(event.key === "Home" ? 0 : -1);

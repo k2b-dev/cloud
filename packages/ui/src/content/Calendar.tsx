@@ -25,7 +25,16 @@ export type CalendarEvent = {
   dataSpaceItemId?: string;
   meta?: string;
   description?: string;
-  display?: "event" | "background";
+  /**
+   * `marker` draws a point in time, such as a deadline, as a colored marker
+   * beside its title instead of a filled band.
+   */
+  display?: "event" | "background" | "marker";
+  /**
+   * Short text the accessible name adds after the title and time, for state the event shows only visually, such as
+   * a priority flag in custom `renderEvent` content.
+   */
+  accessibleDetail?: string;
   location?: string;
   calendarName?: string;
   attendees?: CalendarAttendee[];
@@ -344,14 +353,16 @@ const EventChip = (props: {
   const showDescription = () =>
     Boolean(props.event.description?.trim() && props.fill && !props.event.allDay && !props.compact && durationHours() >= 1.5);
   const timeLabel = () => `${formatTime(props.event.startDate, dateConfig())} - ${formatTime(props.event.endDate, dateConfig())}`;
-  const ariaLabel = () =>
-    props.event.allDay
+  const ariaLabel = () => {
+    const label = props.event.allDay
       ? props.event.title
       : messages().calendarEventTime({
           title: props.event.title,
           start: formatTime(props.event.startDate, dateConfig()),
           end: formatTime(props.event.endDate, dateConfig()),
         });
+    return props.event.accessibleDetail ? `${label}, ${props.event.accessibleDetail}` : label;
+  };
   const renderedEvent = () =>
     props.owner.renderEvent?.(props.event, {
       compact: props.compact ?? false,
@@ -364,7 +375,12 @@ const EventChip = (props: {
     });
   const defaultContent = (
     <>
-      <span class="k2b-calendar-event__title">{props.event.title}</span>
+      <span class="k2b-calendar-event__title">
+        <Show when={props.event.display === "marker"}>
+          <span class="k2b-calendar-event__marker" aria-hidden="true" />
+        </Show>
+        {props.event.title}
+      </span>
       <Show when={showTime()}>
         <span class="k2b-calendar-event__meta">{timeLabel()}</span>
       </Show>
@@ -1189,7 +1205,9 @@ const TimeGridView = (props: {
     requestAnimationFrame(() => {
       if (!scrollContainer || !defaultHourMarker) return;
       const targetTop = defaultHourMarker.getBoundingClientRect().top - scrollContainer.getBoundingClientRect().top;
-      scrollContainer.scrollTo({ top: Math.max(0, scrollContainer.scrollTop + targetTop), behavior: "smooth" });
+      // Reduced motion jumps to the business hours instead of gliding there, like every transition of the library.
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      scrollContainer.scrollTo({ top: Math.max(0, scrollContainer.scrollTop + targetTop), behavior });
     });
   });
   return (

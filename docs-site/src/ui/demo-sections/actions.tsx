@@ -442,6 +442,25 @@ const ToolbarDemo = () => (
 export const FilterDemo = () => {
   const [clearValue, setClearValue] = createSignal<string[]>(["open", "ui"]);
   const [resetValue, setResetValue] = createSignal<string[]>(["done"]);
+  const [viewValue, setViewValue] = createSignal<string[]>(["open", "sort:newest"]);
+  const viewSections = [
+    {
+      label: "State",
+      options: [
+        { value: "open", label: "Open" },
+        { value: "done", label: "Done" },
+      ],
+    },
+    {
+      label: "Sort",
+      layout: "row" as const,
+      options: [
+        { value: "sort:newest", label: "Newest" },
+        { value: "sort:oldest", label: "Oldest" },
+        { value: "sort:title", label: "Title" },
+      ],
+    },
+  ];
   const sections = [
     {
       label: "State",
@@ -463,7 +482,7 @@ export const FilterDemo = () => {
     <DemoCard
       id="filters"
       chip={{ kind: "component", name: "FilterChip", from: "@k2b/ui" }}
-      description="Clear mode shows the selected count; a non-empty baseline hides the count and offers Reset when the selection differs."
+      description="Clear mode shows the selected count; a non-empty baseline hides the count and offers Reset when the selection differs. A row section sets a short single choice side by side."
       code={`<FilterChip
   label="Clear mode"
   icon="ti ti-filter"
@@ -482,6 +501,26 @@ export const FilterDemo = () => {
   onValueChange={setResetValue}
   defaultValue={["open"]}
   options={sections}
+/>
+
+<FilterChip
+  label="View"
+  icon="ti ti-adjustments-horizontal"
+  value={viewValue()}
+  onValueChange={setViewValue}
+  defaultValue={["open", "sort:newest"]}
+  options={[
+    { label: "State", options: [{ value: "open", label: "Open" }, { value: "done", label: "Done" }] },
+    {
+      label: "Sort",
+      layout: "row",
+      options: [
+        { value: "sort:newest", label: "Newest" },
+        { value: "sort:oldest", label: "Oldest" },
+        { value: "sort:title", label: "Title" },
+      ],
+    },
+  ]}
 />`}
     >
       <div class="ui-demo-row">
@@ -502,6 +541,14 @@ export const FilterDemo = () => {
           onValueChange={setResetValue}
           defaultValue={["open"]}
           options={sections}
+        />
+        <FilterChip
+          label="View"
+          icon="ti ti-adjustments-horizontal"
+          value={viewValue()}
+          onValueChange={setViewValue}
+          defaultValue={["open", "sort:newest"]}
+          options={viewSections}
         />
       </div>
     </DemoCard>

@@ -37,6 +37,15 @@ Views let the same work appear in the shape that fits the current job. The view 
 - **Reorder columns:** People with write access drag a column header to a new position with a mouse or pen, or use the **⋯** menu in the header to move it left or right. On a touch screen, swiping over a header scrolls the board; use the **⋯** menu there. The order changes for everyone in the Space and includes the automatic columns; the settings list under **Statuses** shows the same order.
 :::
 
+## Calendar colors {icon="palette"}
+
+:::reference
+- **Color by tag:** By default, an event and a task both take the color of their first tag. An item without a tag takes the color of its status, and an item whose status has no color stays a calm gray. Further tags show as small dots after the title where there is room.
+- **Events and tasks:** An event is a tinted band. A task with a due date is a checkbox in its color in front of the title, without a band. Urgent and high priority add a small red flag, whatever the colors show.
+- **Choose what the color shows:** Open **Scope** and choose **Tag**, **Status**, **Priority**, or **Person** under **Color by**. **Status** uses the status colors, **Priority** the priority colors, and **Person** the avatar color of the first assignee, with further assignees as dots; items without that value stay gray.
+- **Kept in the link:** The choice lives in the URL like the filters, so a reload or a shared link shows the same colors. It changes only how the calendar looks for you, never the items, and an open item stays open. **Reset** in **Scope** resets the filters and keeps the color.
+:::
+
 ## Global search examples {icon="search"}
 
 **Find task work**
