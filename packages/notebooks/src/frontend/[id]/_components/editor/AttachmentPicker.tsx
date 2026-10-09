@@ -97,7 +97,8 @@ const AttachmentPicker = (props: Props) => {
         subtitle={t().attachmentDropSubtitle}
         hint={t().attachmentLimit}
         busy={upload.loading()}
-        // A click chooses from this device or from a Cloud app; either way the files take the upload path below.
+        // A click chooses from this device or from a Cloud app; either way the files take the upload path below. No
+        // `maxBytes`: a notebook has no attachment count and its size limit is per file, so there is no total to pass.
         choose={() => chooseFiles({ multiple: true })}
         onDrop={handleFiles}
       />

@@ -48,8 +48,11 @@ the surface, its title shows `dropLabel`.
 chooser that offers other sources too. It is called inside the click, so it
 may still open the device's dialog, and resolves the chosen files, or `[]`
 when the user cancels; they reach `onDrop` like dropped files, with
-`multiple` applied. In Cloud applications, pass `chooseFiles` from
-`@k2b/cloud/browser/files`.
+`multiple` applied. A rejection shows its message as the field's error until
+the next choice or drop. With `choose`, the zone renders no hidden file input,
+so the zone is the only file control: a dialog's first focus or a key press
+cannot open the device's dialog past `choose`. In Cloud applications, pass
+`chooseFiles` from `@k2b/cloud/browser/files`.
 
 The component does not retain selected files. Store them or start the upload in `onDrop`.
 

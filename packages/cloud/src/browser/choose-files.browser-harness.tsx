@@ -5,7 +5,7 @@ import { chooseFiles } from "./files";
  * One "Attach" button that calls the real `chooseFiles` for a browser test, which answers the catalog, the
  * provider's Queries, and its read streams. `?single` chooses one file, `?accept=` and `?max=` pass through.
  * Each call gets a fresh signal that `window.abortChoosing()` aborts. Each result lands in `window.chosen` as plain
- * facts. `?dropzone` opens, like Notebooks and Assistant Projects, a dialog whose `FileDropzone` chooses with
+ * facts. `?dropzone` opens, like Notebooks, a dialog whose `FileDropzone` chooses with
  * `chooseFiles`; what it hands over lands in `window.chosen` the same way.
  */
 const params = new URLSearchParams(location.search);

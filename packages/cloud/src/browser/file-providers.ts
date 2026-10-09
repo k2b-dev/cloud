@@ -88,15 +88,14 @@ export const fileProviderSources = (apps: readonly CapabilityCatalogApp[], local
     .sort((a, b) => a.name.localeCompare(b.name, locale));
 
 /**
- * Reads every catalog page; the catalog is the only discovery, there is no provider route. A caller the catalog
- * refuses, such as a visitor of a public page, has no providers, so choosing files stays with the device.
+ * Reads every catalog page; the catalog is the only discovery, there is no provider route. A refusal keeps its status
+ * (401 or 403), so the page's file choosing can tell a visitor without providers from a failed load.
  */
 export const loadFileProviders = async (caller: FileProviderCaller, signal?: AbortSignal): Promise<FileProviderSource[]> => {
   const apps: CapabilityCatalogApp[] = [];
   let cursor: string | undefined;
   do {
     const result = await listCapabilityCatalog({ ...options(caller), limit: 25, cursor, signal });
-    if (!result.ok && (result.error.status === 401 || result.error.status === 403)) return [];
     if (!result.ok) throw failure(result.error);
     apps.push(...result.data.apps);
     const next = result.data.page.hasMore ? result.data.page.nextCursor : undefined;

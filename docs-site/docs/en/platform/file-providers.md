@@ -5,7 +5,7 @@ section: Platform services
 order: 558
 description: Let people add files from any Cloud application with one chooser, and implement the file-provider contract so your application can offer its files.
 tags: [capabilities, files, contracts, streams, upload]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Offer and choose files across applications
@@ -52,7 +52,8 @@ chats and Projects attach files this way.
   `<input type="file">` would. That dialog needs the user activation of the
   click, so do not `await` anything before calling it. A visitor whom the
   capability catalog refuses, such as someone on a public page, has no
-  providers either.
+  providers either. That answer is not kept: the next call asks the catalog
+  again, so a session renewed in the meantime finds its providers.
 - **With providers:** it opens one chooser. **This device** comes first, then
   every provider. Inside a provider, people browse folders page by page,
   filter by name, and choose files. See the

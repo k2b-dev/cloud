@@ -131,7 +131,9 @@ export default function TaskAttachmentsSection(props: {
 
   /**
    * From this device or from a Cloud app, then the same path as dropped files. Files from an app are read into the
-   * browser first, so together they stay within what the remaining attachments may hold.
+   * browser first, so together they stay within what the remaining attachments may hold. The budget counts an image
+   * before it is downscaled, so with few attachments left an app image above it is refused, which a device pick
+   * would still shrink; bounded memory is worth that rare case.
    */
   const chooseAndUploadMedia = async () => {
     try {

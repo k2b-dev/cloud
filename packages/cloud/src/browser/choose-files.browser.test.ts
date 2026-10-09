@@ -598,7 +598,7 @@ describe("choosing files in a browser", () => {
   }, 30_000);
 });
 
-describe("choosing through a dropzone inside a dialog, as Notebooks and Assistant Projects do", () => {
+describe("choosing through a dropzone inside a dialog, as Notebooks does", () => {
   const dropzone = (page: Page) => page.locator("dialog[open] .k2b-dropzone");
   const openDropzone = async (page: Page) => {
     await page.locator("#attach").click();
@@ -632,13 +632,19 @@ describe("choosing through a dropzone inside a dialog, as Notebooks and Assistan
     }
   }, 60_000);
 
-  test("Escape closes only the chooser; without providers the dropzone opens the device's dialog directly", async () => {
+  test("the keyboard reaches the chooser through the dropzone, Escape closes only the chooser, and without providers the dropzone opens the device's dialog directly", async () => {
     catalogApps = [drive];
     const withProviders = await open(desktop, "?dropzone");
     try {
       const { page } = withProviders;
       await openDropzone(page);
-      await dropzone(page).click();
+      // The zone is the dialog's only file control: no native input takes the first focus or a key press past the chooser.
+      await page.waitForFunction(() => document.activeElement?.closest("dialog[open]"));
+      expect(await page.locator('dialog[open] input[type="file"]').count()).toBe(0);
+      const zoneFocused = () => page.evaluate(() => Boolean(document.activeElement?.classList.contains("k2b-dropzone")));
+      for (let presses = 0; presses < 3 && !(await zoneFocused()); presses++) await page.keyboard.press("Tab");
+      expect(await zoneFocused()).toBe(true);
+      await page.keyboard.press("Space");
       await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
       await page.keyboard.press("Escape");
       await dropzone(page).waitFor();

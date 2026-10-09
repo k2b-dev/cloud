@@ -1,7 +1,7 @@
 import { expect, mock, spyOn, test } from "bun:test";
 import type { ChooseFilesOptions } from "@k2b/cloud/browser/files";
 import { isServer, render } from "solid-js/web";
-import { createDomTestHarness } from "../../../ui/test/dom";
+import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
 
@@ -32,6 +32,15 @@ class DataUrlReader {
   }
 }
 
+/** A drop of files from outside the page, as an engine dispatches it. */
+const dropEvent = (dom: DomTestHarness, files: File[]) => {
+  const event = new dom.window.Event("drop", { bubbles: true, cancelable: true }) as unknown as DragEvent;
+  Object.defineProperty(event, "dataTransfer", {
+    value: { types: ["Files"], files, items: files.map((file) => ({ kind: "file", type: file.type })), dropEffect: "none" },
+  });
+  return event;
+};
+
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     if (condition()) return;
@@ -40,7 +49,7 @@ const waitFor = async (condition: () => boolean, label: string) => {
   throw new Error(`Timed out waiting for ${label}`);
 };
 
-domTest("Add images chooses through the shared chooser and uploads what was chosen as Project files", async () => {
+domTest("Add images and Add files open the shared chooser at once, and drops on the Project context upload too", async () => {
   const dom = createDomTestHarness();
   const fileReader = globalThis.FileReader;
   Object.assign(globalThis, { FileReader: DataUrlReader });
@@ -87,16 +96,32 @@ domTest("Add images chooses through the shared chooser and uploads what was chos
     dom.root,
   );
   try {
+    // Cancelling the chooser uploads nothing and leaves no dialog behind.
+    nextChoice = [];
     dom.root.querySelector<HTMLButtonElement>('[aria-label="Add images"]')!.click();
-    await waitFor(() => Boolean(dom.document.querySelector(".k2b-dropzone")), "the add dialog");
-
-    // The dialog's dropzone still takes drops; a click chooses from this device or from a Cloud app.
-    nextChoice = [new File(["png"], "stage.png", { type: "image/png" })];
-    dom.document.querySelector<HTMLButtonElement>(".k2b-dropzone")!.click();
-    await waitFor(() => uploads.length === 1, "the upload");
+    await Bun.sleep(10);
     expect(choices).toEqual([{ multiple: true, accept: "image/*" }]);
+    expect(uploads).toEqual([]);
+    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+
+    // The + button chooses from this device or from a Cloud app at once, without a dialog in between.
+    nextChoice = [new File(["png"], "stage.png", { type: "image/png" })];
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Add images"]')!.click();
+    await waitFor(() => uploads.length === 1, "the upload");
     expect(uploads[0]?.path).toBe("/api/ai/projects/Proj01/files");
     expect(uploads[0]?.body).toMatchObject({ path: "stage.png", mediaType: "image/png", content: "cG5n", encoding: "base64" });
+
+    nextChoice = [new File(["%PDF"], "rules.pdf", { type: "application/pdf" })];
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Add files"]')!.click();
+    await waitFor(() => uploads.length === 2, "the second upload");
+    expect(choices.at(-1)).toEqual({ multiple: true, accept: undefined });
+    expect(uploads[1]?.body).toMatchObject({ path: "rules.pdf", mediaType: "application/pdf" });
+
+    // Files dropped on the Project context take the same upload path.
+    const panel = dom.root.querySelector<HTMLElement>('aside[aria-label="Project context"]')!;
+    panel.dispatchEvent(dropEvent(dom, [new File(["a,b"], "budget.csv", { type: "text/csv" })]));
+    await waitFor(() => uploads.length === 3, "the dropped upload");
+    expect(uploads[2]?.body).toMatchObject({ path: "budget.csv", mediaType: "text/csv" });
   } finally {
     dispose();
     fetchSpy.mockRestore();

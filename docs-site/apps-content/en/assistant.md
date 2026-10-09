@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Assistant
@@ -289,7 +289,8 @@ palette, `/new`, and the keyboard shortcut behave the same. A new chat is named
 
 Project members with write access can manage knowledge, files and Cloud
 references. **Add files** and **Add images** take files from this device or,
-when Cloud apps offer files, copies from one of them, such as Files. Project administrators manage instructions, the default model and
+when Cloud apps offer files, copies from one of them, such as Files; files
+dropped on the Project context are added too. Project administrators manage instructions, the default model and
 access. Reference search can be narrowed to one Cloud application.
 
 Project chats present that shared context together with chat sources and files,

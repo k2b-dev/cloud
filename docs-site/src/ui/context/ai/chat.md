@@ -231,7 +231,8 @@ Initial messages render on the server. Editing, commands, scrolling, file select
 Raw files selected, dropped, or pasted are handed to
 `fileSelection.onSelect`. With `fileSelection.choose`, **Attach files** calls it
 inside the menu activation instead of opening the device's file dialog, and
-hands its files to `onSelect`; a rejection reaches `onError`. Cloud
+hands its files to `onSelect`, only the first one when `multiple` is `false`;
+a rejection reaches `onError`. Cloud
 applications pass `chooseFiles` from `@k2b/cloud/browser/files`. The package never uploads, persists, streams,
 authorizes, retries, or executes tools.
 

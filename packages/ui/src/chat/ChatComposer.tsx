@@ -55,6 +55,7 @@ export type ChatFileSelection = {
   /**
    * Chooses files for "Attach files" instead of the device's file dialog, for example to offer other sources as well.
    * Called within the menu activation, so it may still open the device's dialog; resolve `[]` when the user cancels.
+   * `multiple: false` keeps the first chosen file, and a rejection reaches `onError`.
    */
   choose?: () => Promise<readonly File[]>;
   onError?: (error: unknown) => void;
@@ -358,10 +359,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
 
   const chooseFiles = () => {
-    const choose = props.fileSelection?.choose;
-    if (!choose) return fileInputRef?.click();
-    choose().then(
-      (files) => void runFiles(files),
+    const selection = props.fileSelection;
+    if (!selection?.choose) return fileInputRef?.click();
+    selection.choose().then(
+      // A single-file composer keeps the first chosen file, as its file dialog and drops do.
+      (files) => void runFiles(selection.multiple === false ? files.slice(0, 1) : files),
       (error: unknown) => (props.fileSelection?.onError ?? props.onError)?.(error),
     );
   };

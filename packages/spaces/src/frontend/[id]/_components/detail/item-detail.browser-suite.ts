@@ -137,8 +137,6 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const writes: Array<{ method: string; path: string; body: unknown }> = [];
-/** Catalog reads, so a test can wait until the page knows which apps offer files. */
-let catalogRequests = 0;
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
 let stored: SpaceItem = task;
 let browser: Browser;
@@ -182,10 +180,7 @@ beforeAll(async () => {
         });
       }
       // No Cloud app offers files here, so Add image or video opens the device's file dialog directly.
-      if (url.pathname === "/api/capabilities/v1/catalog") {
-        catalogRequests++;
-        return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
-      }
+      if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
@@ -542,15 +537,20 @@ describe("Spaces item detail in a browser", () => {
     ],
   ] as const)
     test(`${locale}: a video in a format Spaces cannot play says so instead of failing as an image`, async () => {
-      const before = catalogRequests;
       const page = await open(desktop, { locale });
       try {
         writes.length = 0;
-        // The page learns while idle that no app offers files; a click before that opens the source chooser instead.
-        for (let attempt = 0; catalogRequests === before && attempt < 200; attempt++) await Bun.sleep(20);
-        const chooser = page.waitForEvent("filechooser");
+        const picked = page.waitForEvent("filechooser");
         await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
-        await (await chooser).setFiles({ name: "clip.mkv", mimeType: "video/x-matroska", buffer: Buffer.from("A Matroska video") });
+        // The page learns while idle that no app offers files, and then the click opens the device's dialog. A click
+        // before that opens the source chooser, whose first source, This device, opens the same dialog.
+        const thisDevice = page.locator('dialog[open] [role="gridcell"]').first();
+        const chooserOpened = thisDevice.waitFor().then(
+          () => true,
+          () => false,
+        );
+        if (await Promise.race([picked.then(() => false), chooserOpened])) await thisDevice.click();
+        await (await picked).setFiles({ name: "clip.mkv", mimeType: "video/x-matroska", buffer: Buffer.from("A Matroska video") });
         await page.locator(".k2b-toast", { hasText: message }).waitFor();
         expect(writes.filter((write) => write.path.endsWith("/attachments"))).toEqual([]);
       } finally {

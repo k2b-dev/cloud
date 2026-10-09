@@ -117,10 +117,10 @@ describe("file provider discovery", () => {
     await expect(failure).rejects.toMatchObject({ code: "APP_UNAVAILABLE", status: 503 });
   });
 
-  test("a caller the catalog refuses, such as a visitor of a public page, has no providers", async () => {
+  test("a catalog refusal keeps its status, so choosing can tell a visitor without providers from a failed load", async () => {
     for (const status of [401, 403]) {
-      const sources = await loadFileProviders({ locale: "en", fetch: async () => json({ code: "UNAUTHORIZED", message: "No" }, status) });
-      expect(sources).toEqual([]);
+      const refusal = loadFileProviders({ locale: "en", fetch: async () => json({ code: "UNAUTHORIZED", message: "No" }, status) });
+      await expect(refusal).rejects.toMatchObject({ status });
     }
   });
 
