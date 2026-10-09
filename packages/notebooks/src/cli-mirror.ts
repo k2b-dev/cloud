@@ -14,7 +14,7 @@
 import { mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { noteContentHash } from "./lib/note-edit";
+import { type NoteEditOperation, noteContentHash } from "./lib/note-edit";
 import { buildNotePaths } from "./lib/note-path";
 
 export const MANIFEST_FILE = ".cld-notebook.json";
@@ -137,6 +137,32 @@ const FRONT_MATTER = /^---\n((?:[A-Za-z]+: .*\n){1,10})---\n/;
 export const stripFrontMatter = (text: string): string => {
   const match = FRONT_MATTER.exec(text);
   return match && /^id: /m.test(match[1]!) ? text.slice(match[0].length) : text;
+};
+
+/** Number of lines the mirror front matter takes at the top of a file; 0 without one. */
+export const frontMatterLineCount = (text: string): number =>
+  text.slice(0, text.length - stripFrontMatter(text).length).split("\n").length - 1;
+
+/**
+ * A line edit numbered by the lines of a mirror file, renumbered for the note below `frontMatterLines` lines of front
+ * matter. Null when it would change the front matter; inserting after its closing `---` inserts before the first note
+ * line. Other edits pass unchanged.
+ */
+export const fileLinesToNoteLines = (operation: NoteEditOperation, frontMatterLines: number): NoteEditOperation | null => {
+  switch (operation.kind) {
+    case "replace-lines":
+    case "delete-lines":
+      return operation.startLine > frontMatterLines
+        ? { ...operation, startLine: operation.startLine - frontMatterLines, endLine: operation.endLine - frontMatterLines }
+        : null;
+    case "insert-after-line":
+      if (operation.line === frontMatterLines) return { kind: "insert-before-line", line: 1, content: operation.content };
+      return operation.line > frontMatterLines ? { ...operation, line: operation.line - frontMatterLines } : null;
+    case "insert-before-line":
+      return operation.line > frontMatterLines ? { ...operation, line: operation.line - frontMatterLines } : null;
+    default:
+      return operation;
+  }
 };
 
 const safeFileName = (filename: string): string =>

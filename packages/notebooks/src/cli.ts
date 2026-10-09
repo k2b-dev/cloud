@@ -21,9 +21,11 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import {
   assertMirrorServer,
   fetchOutline,
+  fileLinesToNoteLines,
   findManifestFolder,
   findManifestNote,
   findMirror,
+  frontMatterLineCount,
   localFileState,
   MANIFEST_FILE,
   type Manifest,
@@ -106,6 +108,12 @@ type NoteTarget = {
 type Mirror = { root: string; relPath: string; manifest: Manifest };
 
 const NOTE_ID = /^[A-Za-z0-9]{6}$/;
+/** Help suffix of every line flag of `edit`. */
+const LINES_OF = {
+  en: " (mirror file: file lines; note ID or path: lines of `cat --numbered`)",
+  de: " (Spiegeldatei: Dateizeilen; Notiz-ID oder Pfad: Zeilen von `cat --numbered`)",
+};
+const LINE_EDITS = new Set<NoteEditOperation["kind"]>(["replace-lines", "delete-lines", "insert-before-line", "insert-after-line"]);
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const api = (notebookId: string, suffix = "") => `/api/notebooks/${encodeURIComponent(notebookId)}${suffix}`;
@@ -769,7 +777,12 @@ function notebooksCommands(locale?: string) {
         }),
         args: noteArg,
         flags: {
-          numbered: flag.boolean({ description: t({ en: "Prefix 1-based line numbers", de: "1-basierte Zeilennummern voranstellen" }) }),
+          numbered: flag.boolean({
+            description: t({
+              en: "Prefix 1-based note line numbers, as `edit` takes them for a note ID or <notebook>:<path>",
+              de: "1-basierte Notizzeilennummern voranstellen, wie `edit` sie für eine Notiz-ID oder <notizbuch>:<pfad> erwartet",
+            }),
+          }),
           blocks: flag.boolean({
             description: t({
               en: "Print the named block summary instead of the content",
@@ -1083,8 +1096,8 @@ function notebooksCommands(locale?: string) {
           de: "Eine präzise Bearbeitung anwenden: Zeilen, benannte Blöcke, anhängen oder voranstellen",
         }),
         description: t({
-          en: "Line numbers are 1-based and inclusive. Through a mirror file, the pulled content hash is the default precondition and local unsaved changes are refused.",
-          de: "Zeilennummern sind 1-basiert und inklusiv. Über eine Spiegeldatei ist der gepullte Inhalts-Hash die Standard-Vorbedingung; ungesicherte lokale Änderungen werden abgelehnt.",
+          en: "Line numbers are 1-based and inclusive. For a mirror file they count the lines of the file as an editor or `grep -n` shows them; its front matter cannot be edited. For a note ID or <notebook>:<path> they count the note lines that `cat --numbered` prints. Through a mirror file, the pulled content hash is the default precondition and local unsaved changes are refused.",
+          de: "Zeilennummern sind 1-basiert und inklusiv. Bei einer Spiegeldatei zählen sie die Zeilen der Datei, wie ein Editor oder `grep -n` sie zeigt; ihr Front Matter lässt sich nicht bearbeiten. Bei einer Notiz-ID oder <notizbuch>:<pfad> zählen sie die Notizzeilen, die `cat --numbered` ausgibt. Über eine Spiegeldatei ist der gepullte Inhalts-Hash die Standard-Vorbedingung; ungesicherte lokale Änderungen werden abgelehnt.",
         }),
         args: noteArg,
         flags: {
@@ -1092,22 +1105,22 @@ function notebooksCommands(locale?: string) {
           replaceLines: flag.string({
             name: "replace-lines",
             valueLabel: "start:end",
-            description: t({ en: "Replace a line range", de: "Einen Zeilenbereich ersetzen" }),
+            description: t({ en: `Replace a line range${LINES_OF.en}`, de: `Einen Zeilenbereich ersetzen${LINES_OF.de}` }),
           }),
           deleteLines: flag.string({
             name: "delete-lines",
             valueLabel: "start:end",
-            description: t({ en: "Delete a line range", de: "Einen Zeilenbereich löschen" }),
+            description: t({ en: `Delete a line range${LINES_OF.en}`, de: `Einen Zeilenbereich löschen${LINES_OF.de}` }),
           }),
           insertBeforeLine: flag.string({
             name: "insert-before-line",
             valueLabel: "line",
-            description: t({ en: "Insert before a line", de: "Vor einer Zeile einfügen" }),
+            description: t({ en: `Insert before a line${LINES_OF.en}`, de: `Vor einer Zeile einfügen${LINES_OF.de}` }),
           }),
           insertAfterLine: flag.string({
             name: "insert-after-line",
             valueLabel: "line",
-            description: t({ en: "Insert after a line", de: "Nach einer Zeile einfügen" }),
+            description: t({ en: `Insert after a line${LINES_OF.en}`, de: `Nach einer Zeile einfügen${LINES_OF.de}` }),
           }),
           replaceBlock: flag.string({
             name: "replace-block",
@@ -1157,20 +1170,54 @@ function notebooksCommands(locale?: string) {
         },
         examples: [
           "cld notebooks edit kolb-docs:betrieb/backup --append --content '- [ ] Restore testen'",
-          "cld notebooks edit ~/docs-mirror/betrieb/backup.md --replace-lines 3:4 --from fix.md",
+          "cld notebooks edit ~/docs-mirror/betrieb/backup.md --replace-lines 8:9 --from fix.md",
+          "cld notebooks edit ns98Kq --delete-lines 3:4",
         ],
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
           let operation = await buildEditOperation(flags);
           if (target.mirror) {
             const { entry, root } = target.mirror;
-            if ((await localFileState(root, entry)).state === "modified")
+            const local = await localFileState(root, entry);
+            const lineEdit = LINE_EDITS.has(operation.kind);
+            // File line numbers name note lines only while the file still holds the note content it was pulled with.
+            const unmappable = t({
+              en: ` Line numbers count the lines of the pulled file, so they cannot be mapped to the note now. Or address the note by ID and take the line numbers from \`cld notebooks cat ${entry.id} --numbered\`.`,
+              de: ` Zeilennummern zählen die Zeilen der gepullten Datei und lassen sich jetzt nicht auf die Notiz abbilden. Oder sprich die Notiz über ihre ID an und nimm die Zeilennummern aus \`cld notebooks cat ${entry.id} --numbered\`.`,
+            });
+            if (local.state === "modified")
               throw new Error(
                 t({
                   en: `${entry.path} has local changes. Write the file back first, or pull --force to discard them.`,
                   de: `${entry.path} hat lokale Änderungen. Schreibe die Datei zuerst zurück oder verwirf sie mit pull --force.`,
-                }),
+                }) + (lineEdit ? unmappable : ""),
               );
+            if (lineEdit) {
+              if (local.state === "missing")
+                throw new Error(
+                  t({
+                    en: `${entry.path} is missing. Pull first (\`cld notebooks pull ${root}\`).`,
+                    de: `${entry.path} fehlt. Führe zuerst \`cld notebooks pull ${root}\` aus.`,
+                  }) + unmappable,
+                );
+              if (flags.ifContentHash !== undefined && flags.ifContentHash !== entry.contentHash)
+                throw new Error(
+                  t({
+                    en: `--if-content-hash differs from the content ${entry.path} was pulled with. Pull first (\`cld notebooks pull ${root}\`).`,
+                    de: `--if-content-hash weicht vom Inhalt ab, mit dem ${entry.path} gepullt wurde. Führe zuerst \`cld notebooks pull ${root}\` aus.`,
+                  }) + unmappable,
+                );
+              const frontMatterLines = frontMatterLineCount(local.text ?? "");
+              const mapped = fileLinesToNoteLines(operation, frontMatterLines);
+              if (!mapped)
+                throw new Error(
+                  t({
+                    en: `Lines 1-${frontMatterLines} of ${entry.path} are its front matter, which edit cannot change. The note starts at line ${frontMatterLines + 1}.`,
+                    de: `Die Zeilen 1-${frontMatterLines} von ${entry.path} sind ihr Front Matter, das edit nicht ändern kann. Die Notiz beginnt in Zeile ${frontMatterLines + 1}.`,
+                  }),
+                );
+              operation = mapped;
+            }
           }
           if ("content" in operation)
             operation = {

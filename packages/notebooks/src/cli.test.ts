@@ -1,10 +1,12 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags } from "@k2b/cloud/cli";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 import notebooksCli from "./cli";
+import { renderMirrorFile, writeManifest } from "./cli-mirror";
+import { noteContentHash } from "./lib/note-edit";
 
 /** The notebooks module as a package plugin in a private config home; cld loads it like any installed module. */
 const cliHome = await mkdtemp(join(tmpdir(), "cld-notebooks-cli-"));
@@ -164,6 +166,87 @@ test("rejects malformed edit line selectors instead of truncating them", async (
     expect(result.stderr).toContain("Invalid");
   }
   expect(writes).toEqual([]);
+});
+
+/** A pulled mirror of `noteFixture` as `handbook.md`, whose 5 front matter lines put note line 1 at file line 6. */
+const pulledMirror = async (server: string) => {
+  const root = await mkdtemp(join(tmpdir(), "cld-notebooks-mirror-"));
+  const file = join(root, "handbook.md");
+  const text = renderMirrorFile(noteFixture, noteFixture.contentMd, "handbook.md", new Map(), new Map());
+  await writeFile(file, text);
+  await writeManifest(root, {
+    version: 1,
+    server,
+    notebook: { id: notebookFixture.id, name: notebookFixture.name },
+    notes: [
+      {
+        id: noteFixture.id,
+        path: "handbook.md",
+        contentHash: noteContentHash(noteFixture.contentMd),
+        fileHash: noteContentHash(text),
+        updatedAt: noteFixture.updatedAt,
+      },
+    ],
+  });
+  return { root, file, text };
+};
+
+test("line edits through a mirror file use the line numbers of the file", async () => {
+  const { server, writes } = editingServer();
+  const { root, file, text } = await pulledMirror(server);
+  try {
+    const edit = (...args: string[]) => runCli(server, ["--json", "notebooks", "edit", file, ...args, "--dry-run"]);
+    const edited = async (...args: string[]) => {
+      const result = await edit(...args);
+      expect(result.stderr).toBe("");
+      return (JSON.parse(result.stdout) as { content: string }).content;
+    };
+    // File lines 8:9 are the `:::toc` block, note lines 3:4.
+    expect(await edited("--replace-lines", "8:9", "--content", "Body")).toBe("# Handbook\n\nBody");
+    expect(await edited("--delete-lines", "6:7")).toBe(":::toc\n:::\n");
+    expect(await edited("--insert-before-line", "8", "--content", "Intro")).toBe("# Handbook\n\nIntro\n:::toc\n:::\n");
+    expect(await edited("--insert-after-line", "5", "--content", "Top")).toBe("Top\n# Handbook\n\n:::toc\n:::\n");
+
+    const frontMatter = await edit("--replace-lines", "5:6", "--content", "# Other");
+    expect(frontMatter.exitCode).toBe(1);
+    expect(frontMatter.stderr).toContain("Lines 1-5 of handbook.md are its front matter");
+    expect(frontMatter.stderr).toContain("starts at line 6");
+
+    const otherHash = await edit("--replace-lines", "8:9", "--content", "Body", "--if-content-hash", noteContentHash("other"));
+    expect(otherHash.exitCode).toBe(1);
+    expect(otherHash.stderr).toContain("cld notebooks cat note01 --numbered");
+
+    await writeFile(file, `${text}local line\n`);
+    const modified = await edit("--replace-lines", "8:9", "--content", "Body");
+    expect(modified.exitCode).toBe(1);
+    expect(modified.stderr).toContain("handbook.md has local changes");
+    expect(modified.stderr).toContain("cld notebooks cat note01 --numbered");
+
+    await rm(file);
+    const missing = await edit("--replace-lines", "8:9", "--content", "Body");
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain("handbook.md is missing");
+    expect(writes).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("line edits through a note ID use the note lines", async () => {
+  const { server } = editingServer();
+  const result = await runCli(server, [
+    "--json",
+    "notebooks",
+    "edit",
+    "note01",
+    "--replace-lines",
+    "3:4",
+    "--content",
+    "Body",
+    "--dry-run",
+  ]);
+  expect(result.stderr).toBe("");
+  expect((JSON.parse(result.stdout) as { content: string }).content).toBe("# Handbook\n\nBody");
 });
 
 test("dry-run honors the same updatedAt precondition as saved edits", async () => {
