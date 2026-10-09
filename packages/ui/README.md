@@ -109,5 +109,6 @@ on Cloud services, routes, or application state.
 
 AGPL-3.0-or-later. See [LICENSE](./LICENSE).
 
-Bundled IBM Plex fonts use the SIL Open Font License; Tabler Icons use the
-MIT license. Their complete notices ship in `dist/licenses`.
+Bundled IBM Plex fonts use the SIL Open Font License; Tabler Icons and the
+emoji names and keywords from Emojibase use the MIT license. Their complete
+notices ship in `dist/licenses`.

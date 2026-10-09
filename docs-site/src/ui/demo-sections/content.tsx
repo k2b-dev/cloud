@@ -12,6 +12,7 @@ import {
   DocRows,
   DocSection,
   dialogCore,
+  EmojiPicker,
   FileBrowserPanel,
   type FileSource,
   FileView,
@@ -767,6 +768,7 @@ const MessageRowsDemo = () => {
     }, 900);
   };
   const receive = () => append({ author: "nora", text: "See you at eleven." });
+  const [reactionTarget, setReactionTarget] = createSignal<{ anchor: HTMLElement; id: string }>();
   const react = (entry: ChatEntry, emoji: string, by: string) => {
     const reactions = (entry.reactions ?? []).map((reaction) => ({ emoji: reaction.emoji, by: [...reaction.by] }));
     const reaction = reactions.find((candidate) => candidate.emoji === emoji);
@@ -826,7 +828,7 @@ const MessageRowsDemo = () => {
         linkPreview={message.preview && <LinkCard {...message.preview} />}
         reactions={message.author === "me" ? (message.reactions ?? []) : message.reactions}
         onToggleReaction={(emoji) => toggleReaction(message, emoji)}
-        onAddReaction={(anchor) => openEmojiPicker(anchor, message)}
+        onAddReaction={(anchor) => setReactionTarget({ anchor, message })}
         thread={message.thread && { ...message.thread, onOpen: () => openThread(message) }}
         progress={message.writing ? { status: "Writing", onStop: () => stop(message) } : undefined}
         actions={[{ id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => reply(message) }]}
@@ -931,7 +933,7 @@ const MessageRowsDemo = () => {
                   }
                   reactions={chatReactions(entry.author === "me" ? (entry.reactions ?? []) : entry.reactions)}
                   onToggleReaction={(emoji) => react(entry, emoji, "me")}
-                  onAddReaction={() => react(entry, "🎉", "me")}
+                  onAddReaction={(anchor) => setReactionTarget({ anchor, id: entry.id })}
                   thread={
                     entry.thread && {
                       count: entry.thread.count,
@@ -955,6 +957,14 @@ const MessageRowsDemo = () => {
               )
             }
           </VirtualFeed>
+          <EmojiPicker.Popover
+            anchor={reactionTarget()?.anchor}
+            onPick={(emoji) => {
+              const entry = entries.find((candidate) => candidate.id === reactionTarget()?.id);
+              if (entry) react(entry, emoji, "me");
+            }}
+            onClose={() => setReactionTarget(undefined)}
+          />
         </div>
       </div>
     </DemoCard>

@@ -417,6 +417,24 @@ test("the emoji button inserts at the caret", async () => {
   composer.done();
 });
 
+test("a :shortcode: closed before the emoji data arrived turns into its emoji when the data arrives", async () => {
+  const picked: string[] = [];
+  const composer = await mount("", { emoji: { onOpen: () => undefined, onPick: (emoji) => void picked.push(emoji) } });
+  composer.textarea.focus();
+  // Typed at once, as on a slow connection: no test before this one loaded the data, and nothing waits for it here.
+  for (const character of "ok :x:") {
+    const caret = composer.textarea.selectionStart;
+    composer.textarea.setRangeText(character, caret, caret, "end");
+    composer.textarea.dispatchEvent(Object.assign(new Event("input", { bubbles: true }), { inputType: "insertText", data: character }));
+  }
+  const { loadEmojiIndex } = await import("../src/inputs/emoji/emoji-index");
+  await loadEmojiIndex();
+  await composer.settle();
+  expect(composer.value()).toBe("ok ❌");
+  expect(picked).toEqual(["❌"]);
+  composer.done();
+});
+
 test("the attach button opens the file choice directly, and the add menu once there are other actions", async () => {
   const chosen: string[] = [];
   const composer = await mount("", {
