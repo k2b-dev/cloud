@@ -198,6 +198,12 @@
 .notebook-book-content :is(th, td) {
   padding: 0.5rem var(--md-table-bleed, 0.5rem);
   text-align: left;
+  /* The book wraps prose `anywhere`; inside a table that would shrink a
+     column to one character (see .md-table-cell). */
+  overflow-wrap: break-word;
+}
+.notebook-book-content :is(th, td) a.notebook-book-tag {
+  overflow-wrap: break-word;
 }
 .notebook-book-content :is(th, td):has(> .md-table-cell) {
   padding: 0;

@@ -170,3 +170,38 @@ test("a wide Book table scrolls in itself on a phone, bleed included, and the pa
     await page.close();
   }
 });
+
+test("a short first column keeps its words whole next to a long second column", async () => {
+  const long =
+    "Ein eigener Arbeitsbereich in der Cloud, etwa Rechnungen oder Zahlungen. Alle Apps arbeiten mit denselben Daten und öffnen sich nur mit der passenden Berechtigung.";
+  const glossary = [
+    "| Begriff | Bedeutung |",
+    "| --- | --- |",
+    ...["App", "Mein Bereich", "Personal", "Rechnungen", "Zahlungen", "Verwaltung"].map((term) => `| **${term}** | ${long} |`),
+  ].join("\n");
+  for (const width of [1280, 390]) {
+    const page = await open(glossary, width);
+    try {
+      // A word split across lines has more than one client rect.
+      const broken = await page.evaluate(() => {
+        const split: string[] = [];
+        for (const cell of document.querySelectorAll(".notebook-book-content :is(th, td):first-child")) {
+          const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const text = node.textContent ?? "";
+            for (const match of text.matchAll(/\S+/g)) {
+              const range = document.createRange();
+              range.setStart(node, match.index);
+              range.setEnd(node, match.index + match[0].length);
+              if (range.getClientRects().length > 1) split.push(match[0]);
+            }
+          }
+        }
+        return split;
+      });
+      expect({ width, broken }).toEqual({ width, broken: [] });
+    } finally {
+      await page.close();
+    }
+  }
+});
