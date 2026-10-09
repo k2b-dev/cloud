@@ -21,6 +21,9 @@ const item = (id: string, times: Partial<CalendarItem>): CalendarItem => ({
   recurrence: null,
   recurringEventId: null,
   recurrenceId: null,
+  columnId: "col_1",
+  assignees: [],
+  activeBlockerCount: 0,
   ...times,
 });
 

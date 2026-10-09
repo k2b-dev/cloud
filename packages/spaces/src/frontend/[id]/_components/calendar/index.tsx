@@ -45,7 +45,8 @@ import {
 } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import SpacesTimeline from "./SpacesTimeline";
-import type { CalendarProps, CalendarView } from "./types";
+import { timelineWindow } from "./timeline";
+import type { CalendarProps, CalendarTimeline, CalendarView } from "./types";
 
 const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
 const eventEnd = (item: CalendarItem) => item.endsAt ?? item.deadline ?? eventStart(item);
@@ -570,12 +571,16 @@ export default function Calendar(props: CalendarProps) {
   let timelineController: TimelineController | undefined;
   /** A new anchor day opens a new strip; the same one keeps the strip and where the reader is. */
   const timelineAnchor = createMemo(() => (props.view === "timeline" ? props.timeline?.anchor : undefined));
-  const timelineHref = (item: CalendarItem) =>
+  /**
+   * An item's link names the strip on screen. While another day or filter loads, the strip stays, and so must the
+   * address its links share with the page, or opening an item would load the whole page instead of its detail.
+   */
+  const timelineHref = (timeline: CalendarTimeline, item: CalendarItem) =>
     buildCalendarHref(
       props.baseUrl,
       "timeline",
-      props.date,
-      props.filter,
+      new Date(timeline.anchor),
+      { ...timeline.filter, colorBy: props.filter.colorBy },
       item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id,
       item.recurrenceId ?? undefined,
       props.dateConfig,
@@ -586,7 +591,8 @@ export default function Calendar(props: CalendarProps) {
     const target = parseCalendarRoute(new URL(href, "http://spaces.local"), props.dateConfig);
     if (timeline && timelineController && target.view === "timeline" && target.date === timeline.anchor) {
       if (timeline.anchor === calendar.today(props.dateConfig).toISOString()) timelineController.scrollToNow();
-      else timelineController.scrollToTime(timeline.from);
+      // Back to where the strip opened, not to the first of the weeks loaded since.
+      else timelineController.scrollToTime(timelineWindow(new Date(timeline.anchor), props.dateConfig).from);
       // A day the reader asked for before still loads; this link replaces it with the strip they see.
       if (!props.navigationPending) return;
     }
@@ -720,10 +726,12 @@ export default function Calendar(props: CalendarProps) {
                 spaceId={props.spaceId}
                 range={timeline()}
                 items={timeline().items}
+                columns={props.columns}
+                colorBy={props.filter.colorBy}
                 busy={timeline().busy || Boolean(props.navigationPending)}
                 canWrite={props.canWrite}
                 dateConfig={props.dateConfig}
-                hrefFor={timelineHref}
+                hrefFor={(item) => timelineHref(timeline(), item)}
                 onLoadEarlier={() => timeline().onLoadEarlier()}
                 onLoadLater={() => timeline().onLoadLater()}
                 controller={(controller) => {

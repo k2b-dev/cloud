@@ -48,7 +48,10 @@ export const useSpacesCalendarQuery = (params: {
   initialSource: string;
   initialSnapshot: CalendarSnapshot;
   dateConfig?: Parameters<typeof parseCalendarRoute>[1];
-  /** The range the timeline already shows for a source, so a refresh or a new filter covers all of it. */
+  /**
+   * The range the timeline already shows for a source, so a refresh or a new filter covers all of it. Called once as
+   * each snapshot starts to load.
+   */
   timelineRange?: (source: string) => TimelineRange | undefined;
 }) => {
   const locale = useLocale();

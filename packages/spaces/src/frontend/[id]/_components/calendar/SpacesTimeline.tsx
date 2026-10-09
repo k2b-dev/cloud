@@ -1,38 +1,30 @@
 import type { DateContext } from "@k2b/stdlib";
 import { dates } from "@k2b/stdlib";
-import { Timeline, type TimelineColor, type TimelineController, type TimelineItem, toast } from "@k2b/ui";
+import { Timeline, type TimelineController, type TimelineItem, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import type { CalendarItem } from "@/contracts";
+import type { CalendarItem, SpaceColumn } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
+import type { CalendarColorBy } from "./filter";
 import type { TimelineRange } from "./timeline";
 
-/** The calendar's color for an event without a tag. */
-const EVENT_COLOR = "#0ea5e9";
-
-const isHexColor = (value: string | undefined): value is `#${string}` => value?.startsWith("#") ?? false;
+const isHexColor = (value: string): value is `#${string}` => value.startsWith("#");
 
 /**
- * One calendar item on the timeline. Events are bands over their time. A task's deadline always carries a time, so it
- * is a marker at that time; only a task whose due day was set as a whole day sits in the all-day row.
+ * One calendar item on the timeline, colored by the rule of every calendar view. Events are bands over their time. A
+ * task's deadline always carries a time, so it is a marker at that time; only a task whose due day was set as a whole
+ * day sits in the all-day row. `detail` says what the other views show as a flag, and why a task has no checkbox.
  */
-export const toTimelineItem = (
+const toTimelineItem = (
   item: CalendarItem,
-  options: { href: string; checked?: boolean; dateConfig?: DateContext },
+  options: { href: string; color: string; detail?: string; checked?: boolean; dateConfig?: DateContext },
 ): TimelineItem | null => {
-  const base = { id: item.id, label: item.title, href: options.href };
+  const base = { id: item.id, label: item.title, href: options.href, color: isHexColor(options.color) ? options.color : undefined };
   if (item.startsAt && item.endsAt) {
-    const tagColor = item.tags?.[0]?.color;
-    return {
-      ...base,
-      start: item.startsAt,
-      end: item.endsAt,
-      allDay: item.allDay,
-      color: isHexColor(tagColor) ? tagColor : EVENT_COLOR,
-      detail: item.location ?? undefined,
-    };
+    return { ...base, start: item.startsAt, end: item.endsAt, allDay: item.allDay, detail: item.location ?? undefined };
   }
   const deadline = item.deadline;
   if (!deadline) return null;
@@ -41,17 +33,17 @@ export const toTimelineItem = (
     kind: "marker",
     start: item.allDay ? dates.formatDateKey(deadline, options.dateConfig) : deadline,
     allDay: item.allDay || undefined,
-    color: (item.priority === "urgent" || item.priority === "high" ? "red" : "amber") satisfies TimelineColor,
+    detail: options.detail,
     checked: options.checked,
   };
 };
-
-const isTask = (item: CalendarItem) => !(item.startsAt && item.endsAt);
 
 type Props = {
   spaceId: string;
   range: TimelineRange;
   items: CalendarItem[];
+  columns: SpaceColumn[];
+  colorBy: CalendarColorBy;
   busy: boolean;
   canWrite: boolean;
   dateConfig?: DateContext;
@@ -76,9 +68,20 @@ export default function SpacesTimeline(props: Props) {
     });
   const items = () =>
     props.items.flatMap((item) => {
+      const task = isCalendarTask(item);
+      // A blocked task cannot be completed, so it gets no checkbox, as in the list.
+      const blocked = task && item.activeBlockerCount > 0;
+      const detail = [
+        task && isCalendarFlagged(item) ? `${t.priority}: ${item.priority === "urgent" ? t.urgent : t.high}` : null,
+        blocked ? t.blockedByCount({ count: item.activeBlockerCount }) : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
       const entry = toTimelineItem(item, {
         href: props.hrefFor(item),
-        checked: props.canWrite && isTask(item) ? (checking()[item.id] ?? false) : undefined,
+        color: calendarItemColors(item, props.colorBy, props.columns).color,
+        detail: detail || undefined,
+        checked: props.canWrite && task && !blocked ? (checking()[item.id] ?? false) : undefined,
         dateConfig: props.dateConfig,
       });
       return entry ? [entry] : [];

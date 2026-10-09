@@ -37,6 +37,8 @@ export type CalendarProps = {
 export type CalendarTimeline = TimelineRange & {
   /** The day the timeline opened on; another anchor opens a new strip. */
   anchor: string;
+  /** The filter the strip's items were loaded with, which a pending filter change has not replaced yet. */
+  filter: CalendarFilter;
   items: CalendarItem[];
   busy: boolean;
   onLoadEarlier: () => Promise<void>;

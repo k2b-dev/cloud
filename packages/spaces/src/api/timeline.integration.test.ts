@@ -9,7 +9,13 @@ import spacesApi from ".";
 const suite = databaseSuite();
 setDefaultTimeout(60_000);
 
-type Snapshot = { kind: string; view: string; range: { from: string; to: string }; items: { id: string }[]; weather: object };
+type Snapshot = {
+  kind: string;
+  view: string;
+  range: { from: string; to: string };
+  items: { id: string; activeBlockerCount: number }[];
+  weather: object;
+};
 
 suite("Spaces timeline view", () => {
   test("opens a window around its day and loads only the range it asks for, within the reader's access", async () => {
@@ -32,19 +38,24 @@ suite("Spaces timeline view", () => {
         title: string,
         times: { startsAt?: string; endsAt?: string; deadline?: string; completed?: boolean },
       ) => {
-        const [row] = await sql<{ short_id: string }[]>`
+        const [row] = await sql<{ id: string; short_id: string }[]>`
           INSERT INTO spaces.items (short_id, space_id, column_id, title, starts_at, ends_at, deadline, completed_at)
           VALUES (${newShortId()}, ${target.id}::uuid, ${target.columnId}::uuid, ${title}, ${times.startsAt ?? null}::timestamptz,
             ${times.endsAt ?? null}::timestamptz, ${times.deadline ?? null}::timestamptz,
             ${times.completed ? new Date().toISOString() : null}::timestamptz)
-          RETURNING short_id`;
+          RETURNING id, short_id`;
+        ids.set(row!.short_id, row!.id);
         return row!.short_id;
       };
+      const ids = new Map<string, string>();
       const planning = await item(team, "Planning", { startsAt: "2030-03-13T10:00:00Z", endsAt: "2030-03-13T11:30:00Z" });
       const invoice = await item(team, "Check invoice", { deadline: "2030-03-14T15:00:00Z" });
       await item(team, "Done already", { deadline: "2030-03-14T16:00:00Z", completed: true });
       const nextWeek = await item(team, "Retro", { deadline: "2030-03-25T12:00:00Z" });
       await item(other, "Elsewhere", { startsAt: "2030-03-13T10:00:00Z", endsAt: "2030-03-13T11:00:00Z" });
+      // An open task blocks the invoice, so the calendar tells the timeline it cannot be completed yet.
+      const receipts = await item(team, "Collect receipts", {});
+      await sql`INSERT INTO spaces.item_dependencies (item_id, blocker_item_id) VALUES (${ids.get(invoice)}::uuid, ${ids.get(receipts)}::uuid)`;
 
       const reader = async (name: string, spaceId?: string) => {
         const id = crypto.randomUUID();
@@ -72,7 +83,10 @@ suite("Spaces timeline view", () => {
       expect(first).toMatchObject({ kind: "calendar", view: "timeline", weather: {} });
       expect(Date.parse(first.range.from)).toBeLessThan(Date.parse("2030-03-13T00:00:00Z"));
       expect(Date.parse(first.range.from)).toBeGreaterThan(Date.parse("2030-03-11T00:00:00Z"));
-      expect(first.items.map((entry) => entry.id)).toEqual([planning, invoice]);
+      expect(first.items.map((entry) => [entry.id, entry.activeBlockerCount])).toEqual([
+        [planning, 0],
+        [invoice, 1],
+      ]);
 
       const block = { from: first.range.to, to: new Date(Date.parse(first.range.to) + 7 * 86_400_000).toISOString() };
       const later = await member(`href=${href("timeline")}&from=${block.from}&to=${block.to}`);

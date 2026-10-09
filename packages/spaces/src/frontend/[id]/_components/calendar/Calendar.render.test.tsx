@@ -82,6 +82,7 @@ describe("Spaces calendar toolbar", () => {
       tags: [],
       columnId: "Col001",
       assignees: [],
+      activeBlockerCount: 0,
     };
     const html = renderToString(() =>
       createComponent(Calendar, {
@@ -129,6 +130,7 @@ const base = (patch: Partial<CalendarItem>): CalendarItem => ({
   tags: [],
   columnId: "Col001",
   assignees: [],
+  activeBlockerCount: 0,
   ...patch,
 });
 const items: CalendarItem[] = [
@@ -261,7 +263,7 @@ describe("Spaces calendar colors", () => {
     expect(renderView("month", "en")).not.toContain("ccolor=");
   });
 
-  test("shows the timeline with events as bands and due tasks as markers at their time", () => {
+  test("shows the timeline with events as bands and due tasks as markers at their time, in the calendar's colors", () => {
     const base = {
       spaceId: "Space1",
       spaceName: "Planning",
@@ -273,44 +275,56 @@ describe("Spaces calendar colors", () => {
       recurrence: null,
       recurringEventId: null,
       recurrenceId: null,
+      columnId: "Col001",
+      assignees: [],
+      activeBlockerCount: 0,
     } satisfies Partial<CalendarItem>;
-    const items: CalendarItem[] = [
-      {
-        ...base,
-        id: "Event1",
-        title: "Release planning",
-        location: "Room Schlei",
-        startsAt: "2026-10-08T14:00:00.000Z",
-        endsAt: "2026-10-08T15:30:00.000Z",
-        deadline: null,
-        tags: [{ id: "Tag1", spaceId: "Space1", name: "Release", color: "#8b5cf6" }],
-      },
-      {
-        ...base,
-        id: "Task1",
-        title: "Check invoice",
-        location: null,
-        startsAt: null,
-        endsAt: null,
-        deadline: "2026-10-08T15:00:00.000Z",
-        priority: "high",
-      },
-    ];
-    const render = (canWrite: boolean) =>
+    const event: CalendarItem = {
+      ...base,
+      id: "Event1",
+      title: "Release planning",
+      location: "Room Schlei",
+      startsAt: "2026-10-08T14:00:00.000Z",
+      endsAt: "2026-10-08T15:30:00.000Z",
+      deadline: null,
+      tags: [{ id: "Tag1", spaceId: "Space1", name: "Release", color: "#8b5cf6" }],
+    };
+    const task: CalendarItem = {
+      ...base,
+      id: "Task1",
+      title: "Check invoice",
+      location: null,
+      startsAt: null,
+      endsAt: null,
+      deadline: "2026-10-08T15:00:00.000Z",
+      priority: "high",
+    };
+    const blocked: CalendarItem = {
+      ...task,
+      id: "Task2",
+      title: "Send the offer",
+      deadline: "2026-10-08T17:00:00.000Z",
+      priority: null,
+      activeBlockerCount: 2,
+    };
+    const items = [event, task, blocked];
+    const render = (canWrite: boolean, colorBy: CalendarColorBy = "tag") =>
       renderToString(() =>
         createComponent(Calendar, {
           spaceId: "Space1",
           items,
-          columns: [],
+          columns: [{ id: "Col001", spaceId: "Space1", name: "To do", color: "#f59e0b", rank: "1", isDone: false }],
           tags: [],
-          filter: defaultCalendarFilter,
+          filter: { ...defaultCalendarFilter, colorBy },
           view: "timeline",
-          date: new Date("2026-10-08T00:00:00.000Z"),
+          date: new Date("2026-10-09T00:00:00.000Z"),
           baseUrl: "/app/spaces/Space1?view=calendar&cv=timeline",
           dateConfig: { locale: "en", timeZone: "UTC", weekStartsOn: 1 },
           canWrite,
+          // The strip on screen still shows October 8 with all types, while October 9 and events only load.
           timeline: {
             anchor: "2026-10-08T00:00:00.000Z",
+            filter: defaultCalendarFilter,
             from: "2026-10-07T20:00:00.000Z",
             to: "2026-10-16T00:00:00.000Z",
             items,
@@ -326,15 +340,22 @@ describe("Spaces calendar colors", () => {
     expect(html).toContain('aria-label="Timeline"');
     expect(html).toContain("Release planning, 14:00 to 15:30, Room Schlei, Thursday, October 8");
     expect(html).toMatch(/data-kind="band"[^>]*data-span="m"[^>]*--k2b-timeline-accent:#8b5cf6/);
-    expect(html).toContain("Check invoice, 15:00, Thursday, October 8, open");
-    expect(html).toMatch(/data-kind="marker"[^>]*data-color="red"/);
-    expect(html).toContain('class="k2b-timeline__check"');
+    // A task without a tag takes its status color; its priority shows as text instead of a red flag.
+    expect(html).toContain("Check invoice, 15:00, Priority: High, Thursday, October 8, open");
+    expect(html).toMatch(/data-kind="marker"[^>]*--k2b-timeline-accent:#f59e0b/);
+    // A blocked task cannot be completed, so it has no checkbox and says why.
+    expect(html).toContain('Send the offer, 17:00, Blocked by 2, Thursday, October 8"');
+    expect(html.match(/class="k2b-timeline__check"/g)).toHaveLength(1);
+    // Item links keep the strip's own day and filter, so they open the detail in place while another strip loads.
     expect(html).toContain("cv=timeline&amp;cd=2026-10-08&amp;item=Task1");
+    expect(html).not.toContain("cd=2026-10-09&amp;item=");
     expect(html).not.toContain("k2b-calendar-month");
 
+    expect(render(true, "priority")).toMatch(/data-kind="marker"[^>]*--k2b-timeline-accent:#f97316/);
+
     const readOnly = render(false);
-    expect(readOnly).toContain("Check invoice, 15:00, Thursday, October 8");
-    expect(readOnly).not.toContain("Check invoice, 15:00, Thursday, October 8, open");
+    expect(readOnly).toContain("Check invoice, 15:00, Priority: High, Thursday, October 8");
+    expect(readOnly).not.toContain("Check invoice, 15:00, Priority: High, Thursday, October 8, open");
     expect(readOnly).not.toContain('class="k2b-timeline__check"');
   });
 });

@@ -24,7 +24,7 @@ type CalendarState = {
 };
 
 /** The days the timeline holds: the first window of its snapshot plus every week loaded since. */
-type TimelineState = TimelineRange & { source: string; anchor: string; items: CalendarItem[] };
+type TimelineState = TimelineRange & { source: string; anchor: string; filter: CalendarFilter; items: CalendarItem[] };
 
 type Props = {
   spaceId: string;
@@ -43,9 +43,13 @@ export default function SpacesCalendarRoute(props: Props) {
   const retryToast = createRetryToasts();
   const [selectedItemId, setSelectedItemId] = createSignal(props.selectedItemId);
   const timelineOf = (source: string, snapshot: CalendarState): TimelineState | null =>
-    snapshot.view === "timeline" ? { source, anchor: snapshot.date, ...snapshot.range, items: snapshot.items } : null;
+    snapshot.view === "timeline"
+      ? { source, anchor: snapshot.date, filter: snapshot.filter, ...snapshot.range, items: snapshot.items }
+      : null;
   const [timeline, setTimeline] = createSignal(timelineOf(calendarViewSource(props.baseUrl), props.initialState));
   const [loadingBlocks, setLoadingBlocks] = createSignal(0);
+  /** Counts the snapshots that started to load: a week loaded meanwhile may predate a change they bring. */
+  let snapshotsStarted = 0;
   const navigation = useSpacesCalendarQuery({
     spaceId: props.spaceId,
     initialSource: props.baseUrl,
@@ -53,6 +57,7 @@ export default function SpacesCalendarRoute(props: Props) {
     dateConfig: props.dateConfig,
     // A refresh or another filter covers every day the strip already shows, so nothing it shows goes missing.
     timelineRange: (source) => {
+      snapshotsStarted += 1;
       const current = timeline();
       if (!current) return undefined;
       const route = parseCalendarRoute(new URL(source, "http://spaces.local"), props.dateConfig);
@@ -61,14 +66,11 @@ export default function SpacesCalendarRoute(props: Props) {
   });
   const state = navigation.current;
 
-  /** Counts snapshots taken over, so a week that loaded while a fresher snapshot came in does not overwrite it. */
-  let generation = 0;
   // A refresh of the same days merges into the strip; another filter or anchor day replaces it.
   createEffect(
     on(
       navigation.loaded,
       (loaded) => {
-        generation += 1;
         const incoming = loaded ? timelineOf(loaded.source, loaded.snapshot) : null;
         const current = untrack(timeline);
         setTimeline(
@@ -81,30 +83,50 @@ export default function SpacesCalendarRoute(props: Props) {
     ),
   );
 
+  /** Weeks that wait for the snapshot that is loading: it decides the days it covers, and the weeks add to them. */
+  let waiting: Array<() => void> = [];
+  createEffect(() => {
+    if (navigation.pending()) return;
+    const resume = waiting;
+    waiting = [];
+    for (const next of resume) next();
+  });
+  const settled = () => (untrack(navigation.pending) ? new Promise<void>((resume) => waiting.push(resume)) : Promise.resolve());
+
   const loads = new Set<AbortController>();
   onCleanup(() => {
     for (const load of loads) load.abort();
   });
+  /**
+   * Loads the week before or after the strip. A snapshot that started meanwhile, such as a refresh after a change or
+   * another filter, may bring something the week predates; such a week never joins the strip. It loads again once that
+   * snapshot is in, against the strip it brings, so the reader still gets the week they asked for.
+   */
   const loadBlock = async (edge: "earlier" | "later"): Promise<void> => {
-    const current = timeline();
-    const block = current && timelineBlock(current, edge, props.dateConfig);
-    if (!current || !block) return;
-    const started = generation;
+    const anchor = timeline()?.anchor;
     const load = new AbortController();
     loads.add(load);
     setLoadingBlocks((count) => count + 1);
     try {
-      const snapshot = await loadSpacesViewSnapshot(current.source, load.signal, locale(), block);
-      const latest = timeline();
-      // A new filter, anchor day, or refresh in the meantime decides the days on its own.
-      if (snapshot.kind !== "calendar" || !latest || latest.source !== current.source || latest.anchor !== current.anchor) return;
-      if (edge === "earlier" ? latest.from !== block.to : latest.to !== block.from) return;
-      // The snapshot that came in meanwhile is fresher than this week's items at the edge; load the week again.
-      if (generation !== started) return loadBlock(edge);
-      const merged = mergeTimelineItems(latest, { ...block, items: snapshot.items });
-      // Weeks at both ends load at once; together they must stay within the range a refresh may ask for.
-      if (Date.parse(merged.to) - Date.parse(merged.from) > TIMELINE_MAX_DAYS * DAY_MS) return;
-      setTimeline({ ...latest, ...merged });
+      for (;;) {
+        await settled();
+        const current = timeline();
+        // Another anchor day opens a new strip, which asks for its own weeks.
+        if (load.signal.aborted || !current || current.anchor !== anchor) return;
+        const block = timelineBlock(current, edge, props.dateConfig);
+        if (!block) return;
+        const started = snapshotsStarted;
+        const snapshot = await loadSpacesViewSnapshot(current.source, load.signal, locale(), block);
+        const latest = timeline();
+        if (snapshot.kind !== "calendar" || !latest || latest.anchor !== anchor) return;
+        const moved = edge === "earlier" ? latest.from !== block.to : latest.to !== block.from;
+        if (snapshotsStarted !== started || latest.source !== current.source || moved) continue;
+        const merged = mergeTimelineItems(latest, { ...block, items: snapshot.items });
+        // Weeks at both ends load at once; together they must stay within the range a refresh may ask for.
+        if (Date.parse(merged.to) - Date.parse(merged.from) > TIMELINE_MAX_DAYS * DAY_MS) return;
+        setTimeline({ ...latest, ...merged });
+        return;
+      }
     } catch {
       if (!load.signal.aborted) retryToast(t.timelineLoadFailed, t.retry, () => loadBlock(edge));
     } finally {
