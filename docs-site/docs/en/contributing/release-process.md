@@ -60,15 +60,20 @@ release-please runs on every push to `main`:
    version such as `0.8.0-rc.1` publishes under the `next` dist-tag; a stable
    version publishes under `latest`. `@k2b/cloud` pins exact `@k2b/ui` and
    `@k2b/ssr` versions, so it publishes only after both are installable from
-   npm. When the same release publishes one of them, the workflow waits up to
-   20 minutes for it; otherwise the pinned version must already be on npm, or
-   `@k2b/cloud` stays unpublished and the release fails.
+   npm. When the same release publishes either of them, the workflow waits up
+   to 20 minutes in total; otherwise the pinned version must already be on
+   npm, or `@k2b/cloud` stays unpublished and the release fails.
+
+Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
+with the workflow file `main.yml`. `release.yml` runs the publish, but it is a
+reusable workflow, and npm checks the workflow that calls it.
 
 release-please updates exact pins between workspace packages but leaves peer
-ranges alone. `@k2b/ui` declares `@k2b/ssr` as a peer range, so a release PR
-that moves `@k2b/ssr` outside it fails the `dependencies` check. Widen the
-range in a normal pull request on `main` first; the release PR then picks it
-up.
+ranges alone. `@k2b/ui` pins `@k2b/ssr` as a development dependency, so every
+`@k2b/ssr` release also cuts a `@k2b/ui` patch release. `@k2b/ui` also
+declares `@k2b/ssr` as a peer range, so a release PR that moves `@k2b/ssr`
+outside it fails the `dependencies` check. Widen the range in a normal pull
+request on `main` first; the release PR then picks it up.
 
 `release.json` lists every image with its tag and digest. Deployments pin the
 `vX.Y.Z` tag or the digest from that file; see

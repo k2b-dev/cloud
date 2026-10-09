@@ -21,7 +21,8 @@ History up to v0.15.0 is in the former
   approval.
 - `@k2b/ui` declares `@k2b/ssr` as a peer range. When a release moves
   `@k2b/ssr` outside that range, the `dependencies` check fails; widen the
-  range on `main` first.
+  range on `main` first. `@k2b/ui` also pins `@k2b/ssr` as a development
+  dependency, so every `@k2b/ssr` release cuts a `@k2b/ui` patch release.
 
 ## Verify
 
