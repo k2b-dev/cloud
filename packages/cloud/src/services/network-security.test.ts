@@ -10,6 +10,8 @@ describe("public network target resolution", () => {
     expect(isUnsafeNetworkAddress("::1")).toBe(true);
     expect(isUnsafeNetworkAddress("::ffff:127.0.0.1")).toBe(true);
     expect(isUnsafeNetworkAddress("fc00::1")).toBe(true);
+    expect(isUnsafeNetworkAddress("2001:db8::1")).toBe(true);
+    expect(isUnsafeNetworkAddress("3fff:fff::1")).toBe(true);
     expect(isUnsafeNetworkAddress("1.1.1.1")).toBe(false);
     expect(isUnsafeNetworkAddress("2606:4700:4700::1111")).toBe(false);
   });

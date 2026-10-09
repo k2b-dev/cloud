@@ -9,21 +9,29 @@ const table = `${schema}.stock_reports`;
 
 type StockReport = { id: string; attempts: number; item_id: string; delta: number };
 
-const reports = (publish: (row: StockReport) => Promise<unknown>) =>
+const reports = (publish: (row: StockReport) => Promise<unknown>, claimMs?: number) =>
   createPgOutbox<StockReport>({
     table,
     name: "outbox-contract",
     orderBy: "item_id",
     sequence: "seq",
     reconcileIntervalMs: 60_000,
+    claimMs,
     publish,
   });
 
 const pending = () =>
-  sql<{ item_id: string; delta: number; attempts: number; last_error: string | null; retry_in: number }[]>`
-    SELECT item_id, delta, attempts, last_error, EXTRACT(EPOCH FROM next_attempt_at - now())::int AS retry_in
-    FROM ${sql.unsafe(table)} ORDER BY seq
+  sql<{ item_id: string; delta: number; attempts: number; last_error: string | null }[]>`
+    SELECT item_id, delta, attempts, last_error FROM ${sql.unsafe(table)} ORDER BY seq
   `;
+
+const gate = () => {
+  let open = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { open, opened };
+};
 
 const report = (db: typeof sql, itemId: string, delta: number) =>
   db`INSERT INTO ${sql.unsafe(table)} (item_id, delta) VALUES (${itemId}::uuid, ${delta})`;
@@ -47,6 +55,8 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       )
     `);
     await sql.unsafe(`CREATE INDEX ON ${table} (item_id) WHERE claimed_until IS NOT NULL OR attempts > 0`);
+    await sql.unsafe(`CREATE TABLE ${schema}.items (id UUID PRIMARY KEY, quantity INT NOT NULL)`);
+    await sql.unsafe(`INSERT INTO ${schema}.items VALUES ('${itemA}', 0)`);
   });
 
   afterAll(async () => {
@@ -87,14 +97,20 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       published.push(row.delta);
     });
 
+    const [before] = await sql<{ at: Date }[]>`SELECT clock_timestamp() AS at`;
     await outbox.reconcile();
     expect(published).toEqual([7]);
     const [failed, held] = await pending();
     expect(failed).toMatchObject({ delta: 5, attempts: 1, last_error: "ERP answered 503" });
-    expect(failed?.retry_in).toBeGreaterThan(0);
     expect(held).toMatchObject({ delta: 6, attempts: 0 });
+    const [retry] = await sql<{ backed_off: boolean }[]>`
+      SELECT next_attempt_at >= ${before?.at}::timestamptz + interval '2 seconds' AS backed_off
+      FROM ${sql.unsafe(table)} WHERE attempts = 1
+    `;
+    expect(retry?.backed_off).toBe(true);
 
-    // Nothing of the key is due before its retry.
+    // Nothing of the key is due before its retry, however long this test takes to get here.
+    await sql`UPDATE ${sql.unsafe(table)} SET next_attempt_at = now() + interval '1 hour' WHERE attempts = 1`;
     await outbox.reconcile();
     expect(published).toEqual([7]);
 
@@ -102,6 +118,98 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     await sql`UPDATE ${sql.unsafe(table)} SET next_attempt_at = now()`;
     await outbox.reconcile();
     expect(published).toEqual([7, 5, 6]);
+    expect(await pending()).toEqual([]);
+  });
+
+  test("rows of one key follow commit order when their writers lock the same row first, and only then", async () => {
+    const published: number[] = [];
+    const outbox = reports(async (row) => {
+      published.push(row.delta);
+    });
+    // Writer 1 inserts first but commits last; the dispatcher runs in between.
+    const interleave = async (lockItem: boolean) => {
+      const inserted = gate();
+      const commit = gate();
+      const changeItem = async (db: typeof sql, delta: number) => {
+        if (lockItem) await db`UPDATE ${sql.unsafe(schema)}.items SET quantity = quantity + ${delta} WHERE id = ${itemA}::uuid`;
+      };
+      const first = sql.begin(async (tx) => {
+        await changeItem(tx, 1);
+        await report(tx, itemA, 1);
+        inserted.open();
+        await commit.opened;
+      });
+      await inserted.opened;
+      const second = sql.begin(async (tx) => {
+        await changeItem(tx, 2);
+        await report(tx, itemA, 2);
+      });
+      if (!lockItem) await second;
+      await outbox.reconcile();
+      commit.open();
+      await Promise.all([first, second]);
+      await outbox.reconcile();
+      return published.splice(0);
+    };
+
+    // The lock makes the second writer wait, so its row gets the later sequence.
+    expect(await interleave(true)).toEqual([1, 2]);
+    // Without it, the dispatcher publishes the committed later row before the earlier one exists for it.
+    expect(await interleave(false)).toEqual([2, 1]);
+    expect(await pending()).toEqual([]);
+  });
+
+  test("a batch that outlives its claim starts no further publish and leaves the rest of its key to the next claim", async () => {
+    await sql.begin(async (tx) => {
+      await report(tx, itemA, 1);
+      await report(tx, itemA, 2);
+      await report(tx, itemB, 3);
+      await report(tx, itemB, 4);
+    });
+    const log: string[] = [];
+    const firstStarted = gate();
+    const firstFinishes = gate();
+    let firstStarts = 2;
+    // Replica 1 publishes the first row of each key past its claim: item A arrives, item B fails.
+    const first = reports(async (row) => {
+      log.push(`1:${row.delta}`);
+      if (--firstStarts === 0) firstStarted.open();
+      await firstFinishes.opened;
+      if (row.item_id === itemB) throw new Error("ERP timed out");
+    }, 200);
+    const secondStarted = gate();
+    const secondFinishes = gate();
+    let secondStarts = 2;
+    const second = reports(async (row) => {
+      log.push(`2:${row.delta}`);
+      if (row.delta === 1 || row.delta === 3) {
+        if (--secondStarts === 0) secondStarted.open();
+        await secondFinishes.opened;
+      }
+    });
+
+    const firstPass = first.reconcile();
+    let secondPass = Promise.resolve(0);
+    try {
+      await firstStarted.opened;
+      while ((await sql`SELECT FROM ${sql.unsafe(table)} WHERE claimed_until > now()`).length > 0) await Bun.sleep(20);
+      secondPass = second.reconcile();
+      await secondStarted.opened;
+      firstFinishes.open();
+      await firstPass;
+
+      // Replica 1 published nothing more, and its failure did not release what replica 2 claimed.
+      expect(log.filter((entry) => entry.startsWith("1:")).sort()).toEqual(["1:1", "1:3"]);
+      const claimed = await sql<{ delta: number }[]>`SELECT delta FROM ${sql.unsafe(table)} WHERE claimed_until > now() ORDER BY seq`;
+      expect(claimed.map((row) => row.delta)).toEqual([2, 4]);
+    } finally {
+      firstFinishes.open();
+      secondFinishes.open();
+      await Promise.all([firstPass, secondPass]);
+    }
+    const byReplica2 = log.filter((entry) => entry.startsWith("2:")).map((entry) => Number(entry.slice(2)));
+    expect(byReplica2.filter((delta) => delta <= 2)).toEqual([1, 2]);
+    expect(byReplica2.filter((delta) => delta >= 3)).toEqual([3, 4]);
     expect(await pending()).toEqual([]);
   });
 

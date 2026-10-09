@@ -264,8 +264,9 @@ WHERE claimed_until IS NOT NULL OR attempts > 0;
   them at their defaults.
 - An ordering column, here `item_id`, holds the key whose rows are published
   in order. Use the resource whose effects must not overtake each other.
-- A sequence column, here `seq`, orders the rows. An identity column keeps
-  insertion order.
+- A sequence column, here `seq`, orders the rows. An identity column numbers
+  them in insertion order, which is commit order when the writers of a key
+  lock the same row before they insert.
 - The other columns are the effect's data. The dispatcher passes the whole
   row to `publish`.
 - Claims stay proportional to the batch, not to the backlog, with an index on
@@ -279,15 +280,19 @@ its schema. `createPgOutbox()` throws `Invalid outbox table` or `Invalid outbox
 ### Write the row in the transaction
 
 ```ts
-await sql.begin(async (tx) => {
-  await tx`UPDATE inventory.items SET quantity = quantity + ${delta} WHERE id = ${itemId}::uuid`;
+const reported = await sql.begin(async (tx) => {
+  const [item] = await tx`UPDATE inventory.items SET quantity = quantity + ${delta} WHERE id = ${itemId}::uuid RETURNING id`;
+  if (!item) return false;
   await tx`INSERT INTO inventory.stock_reports (item_id, delta) VALUES (${itemId}::uuid, ${delta})`;
+  return true;
 });
-void stockReports.notify();
+if (reported) void stockReports.notify();
 ```
 
-`notify()` after the commit publishes now. Without it, the row waits for the
-next pass, which runs every `reconcileIntervalMs`.
+The `UPDATE` comes first. It locks the item, so the reports of one item get
+their `seq` in commit order, and an unknown item reports nothing. `notify()`
+after the commit publishes now. Without it, the row waits for the next pass,
+which runs every `reconcileIntervalMs`.
 
 ### Define the dispatcher
 
@@ -327,7 +332,7 @@ export const stockReports = createPgOutbox<StockReport>({
 | `sequence` | Column that orders the rows |
 | `reconcileIntervalMs` | How often a started dispatcher looks for due rows |
 | `where` | Optional fixed column values, such as `{ kind: "erp" }`, so several dispatchers share one table |
-| `claimMs` | How long a claimed row belongs to one replica; default 30 seconds |
+| `claimMs` | How long a claimed batch belongs to one replica; default 30 seconds |
 | `batchSize` | Rows claimed at a time; default 100 |
 
 Start the dispatcher with the application and stop it before the application
@@ -348,18 +353,29 @@ export default await app.start({
 `stop()` ends the timer and waits for the pass in flight. `notify()` runs a
 pass and logs a failure as `Outbox reconcile failed`; `reconcile()` runs the
 same pass, returns the number of rows it handled, and throws. A call while a
-pass runs joins it, and the pass continues until no row is due.
+pass runs joins it, and the pass continues until no row is due. The
+dispatcher's `claim()` and `dispatch()` are internal and can change without
+notice.
 
 ### Know the guarantees
 
-- **At least once.** A crash after `publish` and before the delete, or a
-  `publish` that outlives `claimMs`, publishes the row again. Make `publish`
-  idempotent: pass the row's `id` as the idempotency key to the receiver, and
-  bound it with a deadline well below `claimMs`.
-- **In order per key.** Rows of one key are published in `sequence` order, and
-  different keys in parallel. A row waits while an earlier row of its key is
-  claimed or waits for its retry, so a failing row holds back its key and no
-  other.
+- **At least once.** Published rows are deleted when their batch ends. A crash
+  before that publishes them again, and so does a batch that outlives
+  `claimMs`: it starts no further `publish`, and the next claim, on any
+  replica, takes the rows that are still in the table. Make `publish`
+  idempotent: pass the row's `id` as the idempotency key to the receiver. Keep
+  a batch within `claimMs`: bound `publish` with a deadline, and lower
+  `batchSize` for a slow receiver.
+- **In order per key.** The dispatcher publishes the committed rows of one key
+  in `sequence` order, and different keys in parallel. A row waits while an
+  earlier row of its key is claimed or waits for its retry, so a failing row
+  holds back its key and no other. A repeated row can arrive after a later row
+  of its key; its idempotency key lets the receiver drop it.
+- **Commit order needs a shared lock.** When the writers of a key lock the
+  same row before they insert, as the `UPDATE` above does, `sequence` order is
+  commit order. Without that lock, a transaction that commits late can carry
+  the lower `seq`, and its row follows the rows of its key that were published
+  before the commit.
 - **Retries without end.** A failed row keeps its place and is tried again
   after 2, 4, 8, and up to 256 seconds. Its `attempts` and `last_error`, the
   first 1,000 characters of the error message, stay in the row, and the

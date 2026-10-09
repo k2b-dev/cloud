@@ -12,10 +12,11 @@ import { logger } from "./logging";
  * It works in batches: claims of one outbox (table and `where`) take turns, a
  * claim takes rows in `sequence` order with several rows per ordering key, and
  * the dispatcher publishes keys concurrently and the rows of one key in order,
- * then completes the batch in one statement. A row that never failed is due at
- * once. Claims stay proportional to the batch with an index on the `where`
- * columns and `sequence`, and one on the `where` columns and `orderBy` limited
- * to `claimed_until IS NOT NULL OR attempts > 0`.
+ * then completes the batch in one statement. A batch starts no publish after
+ * its claim has ended, because the next claim takes its rows. A row that never
+ * failed is due at once. Claims stay proportional to the batch with an index on
+ * the `where` columns and `sequence`, and one on the `where` columns and
+ * `orderBy` limited to `claimed_until IS NOT NULL OR attempts > 0`.
  *
  * Required columns: `id uuid`, `attempts int`, `next_attempt_at timestamptz`,
  * `claimed_until timestamptz`, `last_error text`, and the `orderBy` and
@@ -52,7 +53,9 @@ export type PgOutboxConfig<Row extends OutboxRow> = {
 };
 
 export type PgOutbox<Row extends OutboxRow> = {
+  /** @internal Test seam; applications use `reconcile`, `notify`, `start`, and `stop`. */
   claim(limit?: number): Promise<Row[]>;
+  /** @internal Test seam; it publishes one row outside the order of its key. */
   dispatch(row: Row, publish?: (row: Row) => Promise<unknown>): Promise<void>;
   /** Drain every claimable row; concurrent calls join the active pass. */
   reconcile(): Promise<number>;
@@ -78,7 +81,10 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const filters = Object.entries(config.where ?? {}).map(([column, value]) => ({ column: identifier(column, "filter column"), value }));
   const matches = (alias: "current" | "busy") =>
     filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${column} = ${value}`, sql``);
-  const claimLock = `${config.table}:${JSON.stringify(config.where ?? {})}`;
+  // Sorted, so the order of the `where` entries cannot give one outbox two locks. Descending keeps the
+  // lock that live outboxes (`kind`, `app_id`) always took, so replicas of two releases share it.
+  const where = Object.entries(config.where ?? {}).sort(([left], [right]) => (left < right ? 1 : -1));
+  const claimLock = `${config.table}:${JSON.stringify(Object.fromEntries(where))}`;
 
   /**
    * Claims rows in sequence order, several per key, and never a row of a key
@@ -151,19 +157,26 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     }
   };
 
-  /** Publishes a claimed batch: keys concurrently, the rows of one key in order. A failed row releases the rest of its key. */
-  const dispatchBatch = async (rows: Row[]) => {
+  /**
+   * Publishes a claimed batch: keys concurrently, the rows of one key in order. A failed row releases the rest of its key.
+   * A run starts no publish once the claim has ended (`claimEnds`, monotonic): another replica may own the rest by then.
+   */
+  const dispatchBatch = async (rows: Row[], claimEnds: number) => {
     const delivered: string[] = [];
     const runs = Map.groupBy(rows, (row) => row[runKey]);
     const results = await Promise.allSettled(
       [...runs.values()].map(async (run) => {
         for (const [index, row] of run.entries()) {
+          if (performance.now() >= claimEnds) return;
           try {
             await config.publish(row);
           } catch (error) {
             await retryLater(row, error);
             const rest = run.slice(index + 1).map((later) => later.id);
-            if (rest.length > 0) await sql`UPDATE ${table} SET claimed_until = NULL WHERE id = ANY(${sql.array(rest, "uuid")})`;
+            // Past the claim, the rest is free already, and releasing it could end another replica's claim.
+            if (rest.length > 0 && performance.now() < claimEnds) {
+              await sql`UPDATE ${table} SET claimed_until = NULL WHERE id = ANY(${sql.array(rest, "uuid")})`;
+            }
             return;
           }
           delivered.push(row.id);
@@ -185,8 +198,10 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       let rows: Row[];
       do {
         reconcileRequested = false;
+        // Taken before the claim, so it ends no later than the `claimed_until` the claim sets.
+        const claimEnds = performance.now() + claimMs;
         rows = await claim();
-        await dispatchBatch(rows);
+        await dispatchBatch(rows, claimEnds);
         processed += rows.length;
       } while (reconcileRequested || rows.length > 0);
       return processed;

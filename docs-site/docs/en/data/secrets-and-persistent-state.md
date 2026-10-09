@@ -215,8 +215,10 @@ headers: content-type, retry-after, etag and last-modified.
   means.
 - A redirect resolves with its status and an empty body. `Location` is not
   returned, so the caller cannot follow it either.
-- A compressed response, a body above `maxBytes`, and a network or TLS failure
-  throw `HTTP_FAILED`. Cancellation throws as well. Errors never contain the
+- A compressed response, a body above `maxBytes`, and a connection or TLS
+  failure throw `HTTP_FAILED`, and so does a cancellation after the name
+  lookup. A failed lookup and an earlier cancellation throw other errors, so
+  treat every thrown error as a failed request. Errors never contain the
   request's headers or credentials.
 
 A timeout does not prove that an external mutation failed. Do not

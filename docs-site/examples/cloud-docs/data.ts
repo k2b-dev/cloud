@@ -268,11 +268,15 @@ export const stockReports = createPgOutbox<StockReport>({
   },
 });
 
-// The report commits with the stock change, so a crash after the commit cannot lose it.
-export const reportStockChange = async (itemId: string, delta: number): Promise<void> => {
-  await sql.begin(async (tx) => {
-    await tx`UPDATE inventory.items SET quantity = quantity + ${delta} WHERE id = ${itemId}::uuid`;
+// The report commits with the stock change, so a crash after the commit cannot lose it. The UPDATE locks
+// the item first: reports of one item get their seq in commit order, and an unknown item reports nothing.
+export const reportStockChange = async (itemId: string, delta: number): Promise<boolean> => {
+  const reported = await sql.begin(async (tx) => {
+    const [item] = await tx`UPDATE inventory.items SET quantity = quantity + ${delta} WHERE id = ${itemId}::uuid RETURNING id`;
+    if (!item) return false;
     await tx`INSERT INTO inventory.stock_reports (item_id, delta) VALUES (${itemId}::uuid, ${delta})`;
+    return true;
   });
-  void stockReports.notify();
+  if (reported) void stockReports.notify();
+  return reported;
 };

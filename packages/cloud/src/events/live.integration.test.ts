@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { connectTestNats, suiteFor, testInfra, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
+import { createPgOutbox } from "../services/outbox";
 import { defineLive, liveOutbox, liveTopicConfig, startLiveOutbox } from "./live";
 
 const APP = "eventstest";
@@ -194,6 +195,49 @@ suiteFor("database", "nats")("live outbox", () => {
     expect(record.count()).toBe(1_000);
     record.expectInOrder();
     expect(await pendingCount()).toBe(0);
+  });
+
+  test("the order of where entries does not change the claim turn, which stays the turn of earlier releases", async () => {
+    await enqueueMany(1, 1, "turn");
+    const reordered = createPgOutbox<{ id: string; attempts: number; ordering_key: string }>({
+      table: "events.outbox",
+      name: `events:live:${APP}`,
+      where: { app_id: APP, kind: "live" },
+      orderBy: "ordering_key",
+      sequence: "seq",
+      reconcileIntervalMs: 60_000,
+      publish: async () => {},
+    });
+    // The turn a live dispatcher has always taken; replicas of two releases must share it during a rollout.
+    const turn = `events.outbox:${JSON.stringify({ kind: "live", app_id: APP })}`;
+    let taken = () => {};
+    const turnTaken = new Promise<void>((resolve) => {
+      taken = resolve;
+    });
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${turn}, 0))`;
+      taken();
+      await released;
+    });
+    await turnTaken;
+    let claimed = false;
+    const claim = reordered.claim().finally(() => {
+      claimed = true;
+    });
+    try {
+      await Bun.sleep(200);
+      expect(claimed).toBe(false);
+    } finally {
+      // A failure must not keep the turn, or every later claim of this file waits for it.
+      release();
+      await holder;
+    }
+    expect(await claim).toHaveLength(1);
+    await sql`DELETE FROM events.outbox`;
   });
 
   test("a writer that started earlier but committed later keeps its place in the order of its key", async () => {
