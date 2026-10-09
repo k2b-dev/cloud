@@ -17,6 +17,7 @@ import {
   VideoPlayer,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { isServer } from "solid-js/web";
 import { apiClient } from "@/api/client";
 import {
   attachmentMediaType,
@@ -242,7 +243,12 @@ export default function TaskAttachmentsSection(props: {
                         </button>
                       }
                     >
-                      {/* The first frame shows what the video is; the browser reads only its start. */}
+                      {/*
+                        The first frame shows what the video is; the browser reads only its start. The island replaces
+                        its server HTML when it mounts, so only the browser's tile names the video: a server tile would
+                        start a load that is cut off and repeated, and in WebKit on Linux (GStreamer) stopping a video
+                        while it loads can freeze the page.
+                      */}
                       <button
                         type="button"
                         class="absolute inset-0 size-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--k2b-focus-ring)]"
@@ -251,7 +257,7 @@ export default function TaskAttachmentsSection(props: {
                         onClick={() => openVideo(attachment)}
                       >
                         <video
-                          src={`${contentUrl(attachment)}#t=0.001`}
+                          src={isServer ? undefined : `${contentUrl(attachment)}#t=0.001`}
                           class="pointer-events-none size-full object-contain"
                           preload="metadata"
                           muted

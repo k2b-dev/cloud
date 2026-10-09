@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Islands and hydration
@@ -93,6 +93,24 @@ Do not hydrate the entire page to avoid designing the boundary. Large islands
 increase bundle size and make server and browser ownership unclear.
 
 Do not nest an island import inside another island or client component.
+
+## Load media only in the browser
+
+An island shows its server HTML until it mounts. Then it renders its own DOM
+in that place, so the server elements are discarded. A server-rendered
+`<video>` or `<audio>` with a `src` starts loading, is cut off when the island
+mounts, and loads again. In WebKit on Linux, which plays media through
+GStreamer, stopping a media element while it loads can freeze the page for
+good.
+
+Give media its source only in the browser. The server keeps the element and
+its size, so nothing moves when the island mounts:
+
+```tsx
+import { isServer } from "solid-js/web";
+
+<video src={isServer ? undefined : `${url}#t=0.001`} preload="metadata" muted playsinline />;
+```
 
 See [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations)
 for typed calls and writes from an island.
