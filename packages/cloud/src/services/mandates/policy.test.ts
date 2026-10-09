@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isMandatePolicyNarrowing, mandatePolicyAllows, parseMandatePolicy } from "./policy";
+import { isMandatePolicyNarrowing, mandatePolicyAllows, mandatePolicyCanPermitCapability, parseMandatePolicy } from "./policy";
 
 describe("mandate policy", () => {
   test("normalizes bounded allowlists and rejects unknown fields", () => {
@@ -181,5 +181,48 @@ describe("one grant model for scheduled HTTP and database access", () => {
         { appId: "assistant", operation: "runtime.http", actionApproval: "approved", input: {} },
       ),
     ).toBe(false);
+  });
+});
+
+describe("capability discovery under a mandate", () => {
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["spaces", "mail"],
+    operations: ["capability.query:space.read", "capability.query:space.list", "capability.action.run:space.edit"],
+    actions: "preapproved",
+    grants: [
+      { appId: "spaces", capabilityId: "space.read", kind: "query", fixedInput: { id: "fixed" } },
+      { appId: "mail", capabilityId: "space.list", kind: "query", fixedInput: {} },
+      { appId: "spaces", capabilityId: "space.edit", kind: "action", fixedInput: { id: "fixed" } },
+    ],
+  });
+  const query = { appId: "spaces", capabilityId: "space.read", kind: "query" as const };
+  const action = { appId: "spaces", capabilityId: "space.edit", kind: "action" as const, approval: "rememberable" as const };
+
+  test("ignores fixed input for discovery but preserves exact grant pairs and kinds", () => {
+    expect(mandatePolicyCanPermitCapability(policy, query)).toBe(true);
+    expect(mandatePolicyCanPermitCapability(policy, { ...query, capabilityId: "space.list" })).toBe(false);
+    expect(mandatePolicyCanPermitCapability(policy, { ...query, appId: "mail" })).toBe(false);
+    expect(mandatePolicyCanPermitCapability(policy, { ...query, kind: "action" })).toBe(false);
+    expect(mandatePolicyCanPermitCapability({ ...policy, grants: [] }, query)).toBe(false);
+    expect(mandatePolicyCanPermitCapability({ ...policy, grants: [{ kind: "http", fixedInput: {} }] }, query)).toBe(false);
+  });
+
+  test("enforces app and operation ceilings even with matching grants", () => {
+    expect(mandatePolicyCanPermitCapability({ ...policy, apps: ["mail"] }, query)).toBe(false);
+    expect(mandatePolicyCanPermitCapability({ ...policy, operations: [] }, query)).toBe(false);
+    expect(mandatePolicyCanPermitCapability({ ...policy, grants: undefined }, query)).toBe(true);
+    expect(
+      mandatePolicyCanPermitCapability(parseMandatePolicy({ version: 1, apps: "*", operations: "*", actions: "require_approval" }), query),
+    ).toBe(true);
+  });
+
+  test("respects action denial and capability approval without requiring call inputs", () => {
+    expect(mandatePolicyCanPermitCapability(policy, action)).toBe(true);
+    expect(mandatePolicyCanPermitCapability({ ...policy, actions: "require_approval" }, action)).toBe(true);
+    expect(mandatePolicyCanPermitCapability({ ...policy, actions: "deny" }, action)).toBe(false);
+    expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: "always" })).toBe(false);
+    expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: undefined })).toBe(false);
+    expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: "none" })).toBe(true);
   });
 });

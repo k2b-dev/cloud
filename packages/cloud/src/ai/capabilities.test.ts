@@ -8,6 +8,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { type CapabilityActionReview, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
+import { parseMandatePolicy } from "../services/mandates/policy";
 import { aiChatAccessSubject } from "./assistant-models";
 import {
   aiCapabilityInputSchema,
@@ -1363,4 +1364,119 @@ test("unconfigured audio cannot be discovered or loaded, including previously lo
     unavailable: [{ name: "transcribe_audio" }],
   });
   expect(loaded).toEqual(["transcribe_audio"]);
+});
+
+describe("background mandate tool scope", () => {
+  const grantedIds = ["space.search", "space.list", "task.list", "task.focus"];
+  const spaces = capabilityApp("spaces");
+  const query = spaces.manifest.queries[0]!;
+  const registry = [
+    { ...spaces, manifest: { ...spaces.manifest, queries: [...grantedIds, "space.read"].map((localId) => ({ ...query, localId })) } },
+    capabilityApp("mail"),
+  ];
+  const policy = parseMandatePolicy({
+    version: 1,
+    apps: ["spaces"],
+    operations: grantedIds.map((id) => `capability.query:${id}`),
+    actions: "deny",
+    grants: grantedIds.map((capabilityId) => ({ appId: "spaces", capabilityId, kind: "query", fixedInput: {} })),
+  });
+  const context = {
+    signal: AbortSignal.timeout(1_000),
+    requestApproval: async () => false,
+    requestClientTool: async () => {
+      throw new Error("Unexpected client tool");
+    },
+  };
+
+  test("discovers only S8 grants and never makes excluded persisted tools callable", async () => {
+    const store = createRunToolStore(["spaces.space.read", "spaces.space.list", "mail.list"]);
+    const resolver = createAiToolResolver({
+      conversationId: "background",
+      actor,
+      staticTools: [],
+      mandatePolicy: policy,
+      store,
+      listRegistry: async () => registry,
+      execute: async () => ({ data: [] }),
+    });
+    const tools = await resolver();
+    expect(tools.map((tool) => tool.def.name)).toContain("spaces__query__space_dot_list");
+    expect(tools.map((tool) => tool.def.name)).not.toContain("spaces__query__space_dot_read");
+    expect(tools.map((tool) => tool.def.name)).not.toContain("mail__query__list");
+    const search = tools.find((tool) => tool.def.name === "search_tools")!;
+    expect(await search.execute({ query: "items", appId: "spaces" }, context)).toMatchObject({
+      tools: [...grantedIds].sort().map((id) => expect.objectContaining({ name: `spaces.${id}` })),
+    });
+    const apps = tools.find((tool) => tool.def.name === "list_apps")!;
+    expect(await apps.execute({}, context)).toEqual({ apps: { spaces: expect.any(String) } });
+    const load = tools.find((tool) => tool.def.name === "load_tools")!;
+    expect(
+      await load.execute({ names: ["spaces.space.read", "spaces__query__space_dot_read", "mail.list", "spaces.task.focus"] }, context),
+    ).toMatchObject({
+      loaded: [{ name: "spaces.task.focus", call: "spaces__query__task_dot_focus" }],
+      unavailable: [
+        { name: "spaces.space.read", reason: "not_allowed" },
+        { name: "spaces__query__space_dot_read", reason: "not_allowed" },
+        { name: "mail.list", reason: "not_allowed" },
+      ],
+    });
+    expect((await resolver()).map((tool) => tool.def.name)).not.toContain("spaces__query__space_dot_read");
+  });
+
+  test("the resource reader cannot invoke an excluded canonical reader", async () => {
+    const execute = mock(async () => ({ data: [] }));
+    const tools = await createAiToolResolver({
+      conversationId: "background",
+      actor,
+      staticTools: [],
+      mandatePolicy: policy,
+      store: createRunToolStore(["read_cloud_resource"]),
+      listRegistry: async () => [
+        {
+          ...registry[0]!,
+          manifest: {
+            ...registry[0]!.manifest,
+            types: [{ localId: "space", title: "Space", description: "One space.", reader: "space.read" }],
+          },
+        },
+      ],
+      execute,
+    })();
+    const read = tools.find((tool) => tool.def.name === "read_cloud_resource");
+    if (!read) throw new Error("Expected resource reader");
+    await expect(read.execute({ type: "spaces.space", id: "space-1" }, context)).rejects.toThrow("spaces.space.read is unavailable");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  test("intersects mandate scope with allowedTools", async () => {
+    const tools = await createAiToolResolver({
+      conversationId: "background",
+      actor,
+      staticTools: [],
+      mandatePolicy: policy,
+      allowedTools: ["spaces.space.read"],
+      store: createRunToolStore(["spaces.space.read"]),
+      listRegistry: async () => registry,
+      execute: async () => ({ data: [] }),
+    })();
+    expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
+  });
+
+  test("fails closed when the background mandate policy is unavailable", async () => {
+    const tools = await createAiToolResolver({
+      conversationId: "background",
+      actor,
+      staticTools: [],
+      mandatePolicy: null,
+      store: createRunToolStore(["spaces.space.list"]),
+      listRegistry: async () => registry,
+      execute: async () => ({ data: [] }),
+    })();
+    expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
+    expect(await tools.find((tool) => tool.def.name === "load_tools")!.execute({ names: ["spaces.space.list"] }, context)).toMatchObject({
+      loaded: [],
+      unavailable: [{ name: "spaces.space.list", reason: "not_allowed" }],
+    });
+  });
 });

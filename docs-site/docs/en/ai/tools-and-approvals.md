@@ -204,13 +204,20 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | --- | --- |
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
-  | `not_allowed` | The conversation's fixed tool scope excludes it |
+  | `not_allowed` | The conversation's fixed tool scope or task grants exclude it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
   The model looks up an unknown name once with `search_tools` and does not
   search for or retry the other three in the same turn;
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
+
+Background runs use the task's mandate policy and grants for `search_tools`,
+`load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
+unavailable even if the interactive chat loaded them earlier. Fixed inputs are
+checked per call; a rejected call returns a tool error the model can recover
+from. Broken authority or required interaction still makes the task need
+attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,

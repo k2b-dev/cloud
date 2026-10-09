@@ -88,7 +88,14 @@ export class AiChatTaskIdempotencyConflictError extends Error {
 }
 
 class AiChatTaskCreateRace extends Error {}
-class AiChatTaskAuthorityError extends Error {}
+export class AiChatTaskAuthorityError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 const log = logger("ai:chat-tasks");
 
 type OccurrenceRow = {
@@ -499,7 +506,10 @@ export const aiChatTasks = {
     });
     if (!result.ok)
       throw new AiChatTaskAuthorityError(
-        `Background task cannot call ${input.appId}.${input.capabilityId}: ${result.error.message}. Check the task grants and fixed inputs in the normal chat; this run cannot expand them.`,
+        result.error.code === "MANDATE_POLICY_DENIED"
+          ? `This task's grants do not allow ${input.appId}.${input.capabilityId} with these inputs; continue with the granted tools or explain what is missing.`
+          : `Background task cannot call ${input.appId}.${input.capabilityId}: ${result.error.message}. Check the task grants and fixed inputs in the normal chat; this run cannot expand them.`,
+        result.error.code,
       );
   },
   list: async (input: {

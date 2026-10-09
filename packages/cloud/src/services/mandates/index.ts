@@ -687,7 +687,7 @@ export const validateMandateIssueAuthority = async (
       capabilityApproval: input.capabilityApproval,
     })
   ) {
-    return denyMandateIssue(err.forbidden("Mandate policy does not allow this operation"));
+    return denyMandateIssue({ ...err.forbidden("Mandate policy does not allow this operation"), code: "MANDATE_POLICY_DENIED" });
   }
   const mandate = mapMandate(row);
   return ok({
