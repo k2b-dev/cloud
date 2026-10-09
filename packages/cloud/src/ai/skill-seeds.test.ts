@@ -22,7 +22,7 @@ describe("Cloud AI Skill seeds", () => {
     expect(seedOnce).toHaveBeenCalledTimes(11);
     const inputs = seedOnce.mock.calls.map(([input]) => input);
     const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 62 });
+    expect(codeMode).toMatchObject({ key: "assistant:code-mode", version: 63 });
     // The platform prompt requires calculate for derived numbers; the catalog must not suggest answering directly.
     expect(codeMode?.description).toContain("For plain arithmetic or date offsets, use calculate.");
     expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
