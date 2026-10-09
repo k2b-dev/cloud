@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { dates } from "@k2b/stdlib";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -25,7 +24,7 @@ const workspaceDir = resolve(import.meta.dir, "../workspace");
 const { plugin } = createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [workspaceDir] });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: CalendarFixture } = await import("./calendar-colors.browser-fixture");
+const { default: CalendarFixture } = await import("./calendar.browser-fixture");
 
 const ui = resolve(import.meta.dir, "../../../../../../ui/dist");
 const styleEntries = [
@@ -117,11 +116,6 @@ type Scenario = { locale: "en" | "de"; view: "week" | "month"; colorBy?: string;
 const query = (scenario: Scenario) =>
   scenario.search ?? `?view=calendar&cv=${scenario.view}&cd=2026-10-12${scenario.colorBy ? `&ccolor=${scenario.colorBy}` : ""}`;
 /** The route as the workspace page renders it for a URL, with the island's base URL from the page's own builder. */
-/** The days a month or week snapshot loaded, as the server reports them. */
-const rangeOf = (view: "month" | "week", date: string) => {
-  const range = dates.getDateRange(view, new Date(date), { timeZone: "UTC", weekStartsOn: 1 });
-  return { from: range.from.toISOString(), to: range.to.toISOString() };
-};
 const serverBody = (url: URL) => {
   const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
   const dateConfig = { locale, timeZone: "UTC", weekStartsOn: 1 } as const;
@@ -143,7 +137,7 @@ const serverBody = (url: URL) => {
       }),
       columns,
       tags,
-      initialState: { view, date: route.date, filter: route.filter, range: rangeOf(view, route.date), items, weather: {}, tray: null },
+      initialState: { view, date: route.date, filter: route.filter, items, weather: {}, tray: null },
       selectedItemId: url.searchParams.get("item") ?? "",
       dateConfig,
       canWrite: true,
@@ -430,6 +424,32 @@ describe(`Spaces calendar colors in ${browserName}`, () => {
       await chooseColor(page, "Umfang", "Person");
       await page.waitForURL(/ccolor=person/);
       expect(await layout(page)).toEqual(before);
+      expect(viewRequests).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("an old link to the removed timeline opens the month view of its day, with links to the four views", async () => {
+    const page = await open(desktop, { locale: "en", view: "month", search: "?view=calendar&cv=timeline&cd=2026-10-12" });
+    try {
+      const views = await page
+        .locator(".k2b-calendar-header [role='radio']")
+        .evaluateAll((links) =>
+          links.map((link) => [
+            link.textContent?.trim(),
+            link.getAttribute("aria-checked"),
+            new URL((link as HTMLAnchorElement).href).searchParams.get("cv"),
+          ]),
+        );
+      expect(views).toEqual([
+        ["Day", "false", "day"],
+        ["Week", "false", "week"],
+        ["Month", "true", "month"],
+        ["Year", "false", "year"],
+      ]);
+      expect(await page.locator('[data-space-item-id="Item03"]').count()).toBe(1);
+      expect(await page.locator("[role='alert']").count()).toBe(0);
       expect(viewRequests).toEqual([]);
     } finally {
       await page.context().close();

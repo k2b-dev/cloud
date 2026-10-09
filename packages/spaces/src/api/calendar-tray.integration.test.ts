@@ -13,14 +13,13 @@ type TrayList = { items: { id: string; title: string }[]; total: number };
 type Snapshot = {
   kind: string;
   view: string;
-  range: { from: string; to: string };
   items: { id: string; activeBlockerCount: number }[];
   weather: object;
   tray: { overdue: TrayList; undated: TrayList } | null;
 };
 
-suite("Spaces timeline view", () => {
-  test("opens a window around its day and loads only the range it asks for, within the reader's access", async () => {
+suite("Spaces calendar day view", () => {
+  test("carries each item's blocker count within the reader's access, and opens an old timeline link as the month", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const spaceIds: string[] = [];
     const userIds: string[] = [];
@@ -53,9 +52,9 @@ suite("Spaces timeline view", () => {
       const planning = await item(team, "Planning", { startsAt: "2030-03-13T10:00:00Z", endsAt: "2030-03-13T11:30:00Z" });
       const invoice = await item(team, "Check invoice", { deadline: "2030-03-14T15:00:00Z" });
       await item(team, "Done already", { deadline: "2030-03-14T16:00:00Z", completed: true });
-      const nextWeek = await item(team, "Retro", { deadline: "2030-03-25T12:00:00Z" });
+      await item(team, "Retro", { deadline: "2030-03-25T12:00:00Z" });
       await item(other, "Elsewhere", { startsAt: "2030-03-13T10:00:00Z", endsAt: "2030-03-13T11:00:00Z" });
-      // An open task blocks the invoice, so the calendar tells the timeline it cannot be completed yet.
+      // An open task blocks the invoice, so the calendar says it cannot be completed yet.
       const receipts = await item(team, "Collect receipts", {});
       await sql`INSERT INTO spaces.item_dependencies (item_id, blocker_item_id) VALUES (${ids.get(invoice)}::uuid, ${ids.get(receipts)}::uuid)`;
 
@@ -77,31 +76,22 @@ suite("Spaces timeline view", () => {
       };
       const member = await reader("Member", team.id);
       const outsider = await reader("Outsider");
-      const href = (cv: string) => encodeURIComponent(`/app/spaces/${team.short_id}?view=calendar&cv=${cv}&cd=2030-03-13`);
+      const href = (cv: string, cd = "2030-03-14") => encodeURIComponent(`/app/spaces/${team.short_id}?view=calendar&cv=${cv}&cd=${cd}`);
+      const items = async (response: Response) => {
+        expect(response.status).toBe(200);
+        return ((await response.json()) as Snapshot).items.map((entry) => [entry.id, entry.activeBlockerCount]);
+      };
 
-      const opened = await member(`href=${href("timeline")}`);
-      expect(opened.status).toBe(200);
-      const first = (await opened.json()) as Snapshot;
-      expect(first).toMatchObject({ kind: "calendar", view: "timeline", weather: {} });
-      expect(Date.parse(first.range.from)).toBeLessThan(Date.parse("2030-03-13T00:00:00Z"));
-      expect(Date.parse(first.range.from)).toBeGreaterThan(Date.parse("2030-03-11T00:00:00Z"));
-      expect(first.items.map((entry) => [entry.id, entry.activeBlockerCount])).toEqual([
-        [planning, 0],
-        [invoice, 1],
-      ]);
+      expect(await items(await member(`href=${href("day")}`))).toEqual([[invoice, 1]]);
+      expect(await items(await member(`href=${href("day", "2030-03-13")}`))).toEqual([[planning, 0]]);
+      expect((await outsider(`href=${href("day")}`)).status).toBe(403);
 
-      const block = { from: first.range.to, to: new Date(Date.parse(first.range.to) + 7 * 86_400_000).toISOString() };
-      const later = await member(`href=${href("timeline")}&from=${block.from}&to=${block.to}`);
-      expect(later.status).toBe(200);
-      const loaded = (await later.json()) as Snapshot;
-      expect(loaded.range).toEqual(block);
-      expect(loaded.items.map((entry) => entry.id)).toEqual([nextWeek]);
-
-      const year = new Date(Date.parse(block.from) + 367 * 86_400_000).toISOString();
-      expect((await member(`href=${href("timeline")}&from=${block.from}&to=${year}`)).status).toBe(400);
-      expect((await member(`href=${href("timeline")}&from=${block.from}`)).status).toBe(400);
-      expect((await member(`href=${href("week")}&from=${block.from}&to=${block.to}`)).status).toBe(400);
-      expect((await outsider(`href=${href("timeline")}&from=${block.from}&to=${block.to}`)).status).toBe(403);
+      // The timeline view is gone: an old link, with the range the timeline used to send, opens the month of its day.
+      const old = await member(`href=${href("timeline")}&from=2030-03-20T00:00:00.000Z&to=2030-03-27T00:00:00.000Z&includeTray=false`);
+      expect(old.status).toBe(200);
+      const month = (await old.json()) as Snapshot;
+      expect(month).toMatchObject({ kind: "calendar", view: "month", tray: null });
+      expect(month.items.map((entry) => entry.id)).toContain(planning);
     } finally {
       for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
       for (const id of userIds) {
@@ -175,32 +165,29 @@ suite("Spaces timeline view", () => {
       if (!loaded) throw new Error("Missing fixture user");
       const token = await serviceAccountCredentials.createUserApiToken({ user: loaded, name: "Member key" });
       if (!token.ok) throw new Error(token.error.message);
-      const view = async (query: string, extra = "") => {
+      const view = async (query: string) => {
         const href = encodeURIComponent(`/app/spaces/${team.short_id}?view=calendar&${query}`);
-        const response = await spacesApi.request(`/workspace/view?href=${href}${extra}`, {
+        const response = await spacesApi.request(`/workspace/view?href=${href}`, {
           headers: { authorization: `Bearer ${token.data.token}` },
         });
         expect(response.status).toBe(200);
         return ((await response.json()) as Snapshot).tray;
       };
 
-      const tray = await view("cv=timeline");
+      const tray = await view("cv=day");
       expect(tray?.overdue.items.map((entry) => entry.id)).toEqual(overdue.slice(0, 5));
       expect(tray?.overdue.total).toBe(6);
       expect(tray?.undated).toEqual({ items: [expect.objectContaining({ id: urgent }), expect.objectContaining({ id: mine })], total: 2 });
 
       // The tray follows the calendar's filter: no tasks while it shows events, none of the reader's for unassigned ones.
-      expect(await view("cv=timeline&ctype=event")).toBeNull();
-      const unassigned = await view("cv=timeline&cassigned=unassigned");
+      expect(await view("cv=day&ctype=event")).toBeNull();
+      const unassigned = await view("cv=day&cassigned=unassigned");
       expect(unassigned?.overdue.total).toBe(6);
       expect(unassigned?.undated).toEqual({ items: [], total: 0 });
-      expect((await view("cv=timeline&cpriority=urgent"))?.overdue.total).toBe(0);
-      // Only the timeline has a tray.
+      expect((await view("cv=day&cpriority=urgent"))?.overdue.total).toBe(0);
+      // Only the day view has a tray.
       expect(await view("cv=week")).toBeNull();
-      // A refresh of the days the strip shows renews the tray; a week loaded while the reader scrolls goes without it.
-      const range = `&from=${encodeURIComponent(daysAgo(10))}&to=${encodeURIComponent(daysAgo(3))}`;
-      expect((await view("cv=timeline", range))?.overdue.total).toBe(6);
-      expect(await view("cv=timeline", `${range}&includeTray=false`)).toBeNull();
+      expect(await view("cv=month")).toBeNull();
     } finally {
       for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
       for (const id of userIds) {

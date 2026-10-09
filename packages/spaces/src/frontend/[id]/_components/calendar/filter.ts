@@ -44,8 +44,9 @@ export const parseCalendarColorBy = (url: URL): CalendarColorBy =>
   CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(url.searchParams.get(PARAMS.colorBy));
 
 const values = (url: URL, key: string) => url.searchParams.get(key)?.split(",").filter(Boolean) ?? [];
+/** An unknown view, such as the removed `timeline` of an old link, falls back to the month view. */
 const isCalendarView = (value: string | null): value is CalendarView =>
-  value === "day" || value === "week" || value === "month" || value === "year" || value === "timeline";
+  value === "day" || value === "week" || value === "month" || value === "year";
 
 /** Parses only known values; malformed or stale URL filters degrade to safe defaults. */
 export const parseCalendarFilter = (url: URL): CalendarFilter => ({

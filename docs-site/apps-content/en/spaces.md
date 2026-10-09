@@ -141,6 +141,12 @@ editor and unfinished comment in place. If you select another item while a
 calendar date change is loading, the completed date change keeps your newer
 selection.
 
+The calendar offers day, week, month, and year views. Below the day view, a
+row shows up to five overdue open tasks of the Space and up to five open tasks
+without a deadline assigned to you, each with **Show all** for the list view
+with the same query. Spaces no longer has a timeline view; an old link with
+`cv=timeline` opens the month view of its day.
+
 An item's **Links & resources** list holds Cloud resource references and external URLs
 (at most 20 URLs per item). A GitHub issue or pull request link renders as
 `repo#number` with its title and open, closed, or merged state; other links

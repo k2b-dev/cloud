@@ -334,42 +334,36 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       expect(calls).not.toContain("weather.get");
     });
 
-    test("opens the timeline on the evening before its day and loads a range it already shows", async () => {
-      const request = {
-        user: { id: USER_ID, roles: ["user" as const] },
+    test("opens an old link to the removed timeline as the month of its day, without a tray", async () => {
+      const snapshot = await loadSpacesViewSnapshot({
+        user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
         href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&cv=timeline&cd=2026-10-08`,
         dateConfig: { timeZone: "Europe/Berlin", locale: "de" },
-      };
-      const first = await loadSpacesViewSnapshot(request);
-      const range = { from: "2026-09-30T18:00:00.000Z", to: "2026-10-15T22:00:00.000Z" };
-      const wider = await loadSpacesViewSnapshot({ ...request, timelineRange: range });
+      });
 
-      const window = { from: "2026-10-07T18:00:00.000Z", to: "2026-10-15T22:00:00.000Z" };
-      expect(listedCalendarRanges).toEqual([window, range]);
-      expect(first).toMatchObject({ kind: "calendar", view: "timeline", range: window, weather: {} });
-      expect(wider).toMatchObject({ kind: "calendar", view: "timeline", range });
-      expect(calls).not.toContain("weather.get");
+      expect(snapshot).toMatchObject({ kind: "calendar", view: "month", date: "2026-10-07T22:00:00.000Z", tray: null });
+      expect(listedCalendarRanges).toEqual([{ from: "2026-09-27T22:00:00.000Z", to: "2026-11-01T22:59:59.999Z" }]);
+      expect(listedFilters).toEqual([]);
     });
 
-    test("loads the tray with the strip, and not for a week the strip adds while the reader scrolls", async () => {
+    test("loads the tray with the day view and with no other view", async () => {
       const request = {
         user: { id: USER_ID, roles: ["user" as const] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
-        href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&cv=timeline&cd=2026-10-08`,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&cv=day&cd=2026-10-08`,
         dateConfig: { timeZone: "Europe/Berlin", locale: "de" },
       };
-      const strip = await loadSpacesViewSnapshot(request);
+      const day = await loadSpacesViewSnapshot(request);
       expect(listedFilters.map((filter) => filter.deadlineFilter)).toEqual(["overdue", "none"]);
-      expect(strip).toMatchObject({ kind: "calendar", tray: { overdue: { total: 1 }, undated: { total: 1 } } });
+      expect(day).toMatchObject({ kind: "calendar", view: "day", tray: { overdue: { total: 1 }, undated: { total: 1 } } });
 
       listedFilters = [];
-      const week = { from: "2026-10-15T22:00:00.000Z", to: "2026-10-22T22:00:00.000Z" };
-      const block = await loadSpacesViewSnapshot({ ...request, timelineRange: week, includeTray: false });
+      const week = await loadSpacesViewSnapshot({ ...request, href: request.href.replace("cv=day", "cv=week") });
       expect(listedFilters).toEqual([]);
-      expect(block).toMatchObject({ kind: "calendar", range: week, tray: null });
+      expect(week).toMatchObject({ kind: "calendar", view: "week", tray: null });
     });
 
     test("loads one generated occurrence with an occurrence-scoped comment target", async () => {
