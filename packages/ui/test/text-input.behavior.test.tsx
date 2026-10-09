@@ -33,3 +33,30 @@ test("Enter submits a single-line TextInput without submitting a surrounding for
   dispose();
   dom.cleanup();
 });
+
+test("TextInput keeps phone keyboards from capitalizing or correcting user names, addresses, and passwords", async () => {
+  const dom = createDomTestHarness();
+  const dispose = render(
+    () => (
+      <>
+        <TextInput label="User" value="" autocomplete="username" />
+        <TextInput label="Email" value="" type="email" />
+        <TextInput label="Password" value="" password />
+        <TextInput label="Override" value="" autocomplete="email" autocapitalize="words" />
+        <TextInput label="Title" value="" />
+      </>
+    ),
+    dom.root,
+  );
+  const [user, email, password, override, title] = [...dom.root.querySelectorAll("input")];
+  for (const input of [user, email, password]) {
+    expect(input!.getAttribute("autocapitalize")).toBe("none");
+    expect(input!.getAttribute("autocorrect")).toBe("off");
+    expect(input!.getAttribute("spellcheck")).toBe("false");
+  }
+  expect(override!.getAttribute("autocapitalize")).toBe("words");
+  expect(title!.hasAttribute("autocapitalize")).toBeFalse();
+  expect(title!.hasAttribute("spellcheck")).toBeFalse();
+  dispose();
+  dom.cleanup();
+});

@@ -69,6 +69,13 @@ prevent the zoom; that takes pinch zoom away from people who need it. Give a
 field that an application builds itself at least 16 px of text on coarse
 pointers for the same reason.
 
+A single-line field for a user name, an address, or a password is typed
+exactly. When `password` is set, `type` is `email` or `url`, or
+`autocomplete` names `username`, `email`, or `url`, the input defaults to
+`autocapitalize="none"`, `autocorrect="off"`, and `spellcheck={false}`, so
+phone and tablet keyboards do not capitalize the first letter or replace the
+word. An explicit prop wins over the default.
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.

@@ -74,6 +74,9 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const icon = () => local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : local.markdown ? "ti ti-markdown" : "ti ti-cursor-text");
   // A custom icon stays while typing (a search field keeps its magnifier); only the default icon switches to the pencil.
   const activeIcon = () => local.activeIcon ?? local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : "ti ti-pencil");
+  // Names, addresses and passwords are typed exactly: phone keyboards must not capitalize or "correct" them.
+  const verbatim = () =>
+    local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
   const clear = () => {
@@ -116,6 +119,9 @@ export function TextInput(props: TextInputProps): JSX.Element {
               when={multiline()}
               fallback={
                 <input
+                  autocapitalize={verbatim() ? "none" : undefined}
+                  autocorrect={verbatim() ? "off" : undefined}
+                  spellcheck={verbatim() ? false : undefined}
                   {...rest}
                   id={meta.controlId}
                   class="k2b-input"
