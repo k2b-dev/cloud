@@ -196,21 +196,27 @@ Its date rule decides which dates the new item dialog proposes:
 | --- | --- |
 | Weekdays, such as Wednesday or Thursday | The next three matching days |
 | In X days (0 to 365) | Today plus X days |
-| None | No date; a task starts without a deadline |
+| None | No date; a task starts without a deadline, an event today at its time |
 
 Proposals are local calendar dates in the person's time zone, so week, month,
-and daylight-saving changes never move a proposed day; today counts only while
-the template's time still lies ahead. When someone presses **+**, a Space with
-templates of that kind shows a **Template** chip row (a searchable list with
-more than six), and choosing one fills the form and shows the proposals as
-date chips with the first selected, next to **Other date…** and, for tasks,
-**No date**. Everything stays editable before saving, and Spaces asks before a
-template replaces typed input. The chip rows scroll sideways on phones, so the
-dialog never jumps.
+and daylight-saving changes never move a proposed day. A weekday rule offers
+today only while the template's time still lies ahead; an offset always counts
+from today. When someone presses **+**, a Space with templates of that kind
+shows a **Template** chip row (a searchable list with more than six), and
+choosing one fills the form and shows the proposals as date chips with the
+first selected, next to **Other date…** and, for tasks, **No date**.
+Placeholders follow whichever date the item gets, from a chip or a picker,
+until someone edits the text; filled-in text stops at the item limits of 200
+and 5,000 characters. Everything stays editable before saving, and Spaces asks
+before a template replaces typed input. The chip rows stay on one line and
+scroll sideways on phones; hovering, focusing, or switching chips moves
+nothing.
 
 Space admins create, change, and delete templates in the Space settings under
 **Templates**; people with write access use them, and read access lists them.
-Created items keep no link to their template. The REST API offers
+Created items keep no link to their template. A default assignee who loses
+access to the Space drops out of the template everywhere it is read until the
+access returns. The REST API offers
 `GET /api/spaces/:id/templates`, `POST`, `PATCH`, and `DELETE` on
 `/api/spaces/:id/templates[/:templateId]`, and
 `GET /api/spaces/:id/templates/:templateId/draft?date=&noDate=&timeZone=`, which
@@ -252,7 +258,9 @@ cld spaces done "Product":"Fix mobile dialog"
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
 list templates with their rule and next proposals in the local time zone.
 `cld spaces add "Product" --template "Weekly report" [--date YYYY-MM-DD |
---no-date]` creates an item from a template; other `add` flags override it.
+--no-date]` creates an item from a template; other `add` flags override it. A
+given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
+needs `--ends-at`.
 
 Titles are matched exactly. When a space name or title matches several
 resources, the command fails with every candidate as `path (id)` and changes
@@ -287,7 +295,9 @@ Space lists may shorten descriptions to fit a full page; when
 rule and next proposed dates in the given `timeZone`, or in the application
 timezone without one. `task.create` and `event.create` take `templateId`,
 `date`, and `timeZone`: the template fills every field left out, its checklist
-included, and `date` picks the day, by default the first proposal. For "use the
+included, and `date` picks the day, by default the first proposal. An explicit
+`deadline` or `startsAt` picks the day instead, for the placeholders and the
+summary too. For "use the
 weekly report template for next Wednesday" an agent lists the templates, picks
 the matching proposal, and creates the item. `template.create`,
 `template.update`, and `template.delete` need Space admin access.
