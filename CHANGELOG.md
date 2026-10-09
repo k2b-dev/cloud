@@ -3,6 +3,54 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.35.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.34.0...cloud-v0.35.0) (2026-10-09)
+
+
+### Features
+
+* **access:** let the permission editor count managers as the service does ([#775](https://github.com/k2b-dev/cloud/issues/775)) ([f82f707](https://github.com/k2b-dev/cloud/commit/f82f7077c7d3d4681aa4ee2b3641dcd59b459b09))
+* **ai:** notice when an offer fits and tell the Assistant, so weaker models make it too ([#780](https://github.com/k2b-dev/cloud/issues/780)) ([ec3d0e3](https://github.com/k2b-dev/cloud/commit/ec3d0e379607af21c306e26015c96087465e2c9f))
+* **ai:** show the Studio check calmly in the chat ([#766](https://github.com/k2b-dev/cloud/issues/766)) ([f3c6342](https://github.com/k2b-dev/cloud/commit/f3c63426d16e2ffe512f4b08b4ac9463ca53e03f))
+* **ai:** update nessi to 0.17 for clean failed turns and provider-stopped answers ([#741](https://github.com/k2b-dev/cloud/issues/741)) ([2ba86f9](https://github.com/k2b-dev/cloud/commit/2ba86f9533b43a330fe15a4f2821fb44f885f5fb))
+* **assistant:** catch misaligned layouts and check the whole page before a Studio app is shown ([#758](https://github.com/k2b-dev/cloud/issues/758)) ([1598f02](https://github.com/k2b-dev/cloud/commit/1598f02a789cc401e3d74409226d573155e8aeaa))
+* attach files from Cloud apps in Spaces, Grids, Notebooks and Assistant ([#749](https://github.com/k2b-dev/cloud/issues/749)) ([435d7ae](https://github.com/k2b-dev/cloud/commit/435d7aedea05cf4ab42d7911e2b2fc57c2f84815))
+* **chat:** add the chat app behind an unreleased Compose profile ([#750](https://github.com/k2b-dev/cloud/issues/750)) ([5e71315](https://github.com/k2b-dev/cloud/commit/5e71315799a0dd0fa2fa4498177d626737f24132))
+* **cloud:** bound Liquid render time and output size separately ([#759](https://github.com/k2b-dev/cloud/issues/759)) ([ce861a7](https://github.com/k2b-dev/cloud/commit/ce861a7bb8377035320b11061cd8f178c119fa30))
+* **cloud:** keep bearer tokens in URLs out of logs and gateway telemetry ([#747](https://github.com/k2b-dev/cloud/issues/747)) ([817b341](https://github.com/k2b-dev/cloud/commit/817b34198c489a83f27fe338dfbd66842d73f50f))
+* **cloud:** remove location data from photos embedded in notes and comments ([#757](https://github.com/k2b-dev/cloud/issues/757)) ([deb0f00](https://github.com/k2b-dev/cloud/commit/deb0f00cfd5b35afd3258c02d483b2749896ceae))
+* **cloud:** show a calm error state instead of a frozen app view ([#740](https://github.com/k2b-dev/cloud/issues/740)) ([1fd7220](https://github.com/k2b-dev/cloud/commit/1fd7220f21382424ded073a5e843a02949a25930))
+* **layout:** show app badges in the rail and app grid ([#769](https://github.com/k2b-dev/cloud/issues/769)) ([9f9587b](https://github.com/k2b-dev/cloud/commit/9f9587b9ff5de6207ba5c485d48fbea45875face))
+* **notifications:** add do not disturb and quiet hours for every app ([#779](https://github.com/k2b-dev/cloud/issues/779)) ([ddce3b0](https://github.com/k2b-dev/cloud/commit/ddce3b07c7067cf8306a4436cf417bf8c94b5b9b))
+* **notifications:** allow message previews in push payloads ([#762](https://github.com/k2b-dev/cloud/issues/762)) ([8f086b7](https://github.com/k2b-dev/cloud/commit/8f086b7b984683034d9baafcc76cc57d097ae023))
+* **notifications:** group browser notifications and show an app badge ([#752](https://github.com/k2b-dev/cloud/issues/752)) ([9c4d77e](https://github.com/k2b-dev/cloud/commit/9c4d77ee0900d53eaf0fc15053c036cb8a895c09))
+* **oauth:** approve a device or app on a calm, centered page ([#755](https://github.com/k2b-dev/cloud/issues/755)) ([baff695](https://github.com/k2b-dev/cloud/commit/baff695581dcc4a1217d7096f177cdccdaf83cbb))
+* save attachments into Files from Mail and other apps ([#765](https://github.com/k2b-dev/cloud/issues/765)) ([a6d9ae9](https://github.com/k2b-dev/cloud/commit/a6d9ae939a94886750904160ab904524b1e79d45))
+* **spaces:** add a timeline calendar view ([#763](https://github.com/k2b-dev/cloud/issues/763)) ([fae29fa](https://github.com/k2b-dev/cloud/commit/fae29fa06de80b69059ab04f794ff7eedde59a76))
+* **spaces:** add task and event templates ([#764](https://github.com/k2b-dev/cloud/issues/764)) ([8c98ecd](https://github.com/k2b-dev/cloud/commit/8c98ecd44e17bf517554caad1c74eb9051d2b076))
+* **spaces:** color calendar items by their tags and choose what the color shows ([#754](https://github.com/k2b-dev/cloud/issues/754)) ([c396691](https://github.com/k2b-dev/cloud/commit/c3966915d0fdaaef59182a7d75d99f8035dcf5aa))
+* **spaces:** say which tasks are overdue in task lists ([#774](https://github.com/k2b-dev/cloud/issues/774)) ([9dcfb7e](https://github.com/k2b-dev/cloud/commit/9dcfb7e2040d1206ea634ffe4e0287811a8362b3))
+* **spaces:** show overdue and undated tasks under the timeline ([#773](https://github.com/k2b-dev/cloud/issues/773)) ([d7168ea](https://github.com/k2b-dev/cloud/commit/d7168ea01de889b2f21bb3cade436c1ac69f799e))
+* **ui:** add a resource card that keeps its height in every state ([#746](https://github.com/k2b-dev/cloud/issues/746)) ([01c1a95](https://github.com/k2b-dev/cloud/commit/01c1a95d60fff513fa574bec9f1384584ce0c974))
+* **ui:** add a SignatureInput that draws with finger, pen or mouse or types the name ([#782](https://github.com/k2b-dev/cloud/issues/782)) ([b85ebd8](https://github.com/k2b-dev/cloud/commit/b85ebd8bef26699613b8e3c56d209944b17f7efc)), closes [#708](https://github.com/k2b-dev/cloud/issues/708)
+* **ui:** add a Timeline that shows time as a continuous filmstrip ([#751](https://github.com/k2b-dev/cloud/issues/751)) ([fe0980d](https://github.com/k2b-dev/cloud/commit/fe0980d684e6b0a7596737aa8abd18e9cd3658da))
+* **ui:** add an emoji picker with search, recents and skin tones ([#778](https://github.com/k2b-dev/cloud/issues/778)) ([1e291a9](https://github.com/k2b-dev/cloud/commit/1e291a9b5e3f4dc69b25a50bdef30ddef97f89c0))
+* **ui:** grow the chat composer from one line with formatting on demand ([#770](https://github.com/k2b-dev/cloud/issues/770)) ([d5e7ff2](https://github.com/k2b-dev/cloud/commit/d5e7ff2c5f4b222ec20a59ac3756728f165274ba))
+* **ui:** show counts, dots and mention marks in sidebar items ([#756](https://github.com/k2b-dev/cloud/issues/756)) ([16122af](https://github.com/k2b-dev/cloud/commit/16122afd3883741c79911ef6753758160443742d))
+
+
+### Bug Fixes
+
+* **ai:** keep Assistant turns working when an older CLI offers retired client tools ([#760](https://github.com/k2b-dev/cloud/issues/760)) ([f9598e7](https://github.com/k2b-dev/cloud/commit/f9598e74585ef1c358bb5fb64fe426ef7283f6f9))
+* **ai:** keep scheduled runs inside their grants instead of failing on a tool they may not use ([#776](https://github.com/k2b-dev/cloud/issues/776)) ([5b1f50e](https://github.com/k2b-dev/cloud/commit/5b1f50eae763bc74165dbb06812632530e1fcc28))
+* **ai:** offer audio transcription only when it can run and say why when it cannot ([#748](https://github.com/k2b-dev/cloud/issues/748)) ([f63fc3f](https://github.com/k2b-dev/cloud/commit/f63fc3fcb10cd45b546437ac89a41e7f0effcba1))
+* **ai:** stop learning from archived chats ([#743](https://github.com/k2b-dev/cloud/issues/743)) ([28e8ba1](https://github.com/k2b-dev/cloud/commit/28e8ba134d1a8795c9fab2a0e1cf32cca43f543b))
+* **assistant:** keep CLI replies readable and chat titles as given ([#761](https://github.com/k2b-dev/cloud/issues/761)) ([c20e88c](https://github.com/k2b-dev/cloud/commit/c20e88c9e4ffe0dc9de60a3e45301a518913c58e))
+* **gateway:** keep proxied requests on the app's own origin ([#777](https://github.com/k2b-dev/cloud/issues/777)) ([01ab1b4](https://github.com/k2b-dev/cloud/commit/01ab1b463db5f86e31e0571ddc5033b9e7e083e0))
+* **mail:** stop stale statistics from slowing incoming automation backfills ([#742](https://github.com/k2b-dev/cloud/issues/742)) ([9c8e839](https://github.com/k2b-dev/cloud/commit/9c8e8392517eee1664aa142f002cd70539ca0ceb))
+* **spaces:** load video tiles only in the browser so WebKit pages cannot freeze ([#781](https://github.com/k2b-dev/cloud/issues/781)) ([53d6b41](https://github.com/k2b-dev/cloud/commit/53d6b412f2bc5c86cd57d81461a39ab6597cc92f))
+* **ui:** keep PdfPreview loading until the PDF has loaded and explain a missing viewer ([#767](https://github.com/k2b-dev/cloud/issues/767)) ([938dbb1](https://github.com/k2b-dev/cloud/commit/938dbb14c1979e6349feeb3c0fe1f67f56979fd8))
+* **ui:** make a renewed VideoPlayer address continue where it stopped in WebKit ([#768](https://github.com/k2b-dev/cloud/issues/768)) ([be7b95c](https://github.com/k2b-dev/cloud/commit/be7b95ce52dd64600700207af4f37d706e5b2a37))
+
 ## [0.34.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.33.0...cloud-v0.34.0) (2026-10-08)
 
 
