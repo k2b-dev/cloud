@@ -345,8 +345,10 @@ describe("Spaces item detail panel", () => {
 
     expect(html).toContain(">Attachments</h3>");
     expect(html).toContain('aria-label="Play reel.mp4"');
-    expect(html).toContain('src="/api/spaces/Space1/items/');
-    expect(html).toContain("/attachments/Reel01/content#t=0.001");
+    // The island replaces this HTML when it mounts, so the server tile names no video: it would start a load that is
+    // cut off and repeated. The browser's tile loads the first frame.
+    expect(html).toMatch(/aria-label="Play reel\.mp4"[^>]*><video(?![^>]*\ssrc=)[^>]*preload="metadata"/);
+    expect(html).not.toContain("/attachments/Reel01/content");
   });
 
   test("shows existing task images read-only without picker or delete controls", () => {

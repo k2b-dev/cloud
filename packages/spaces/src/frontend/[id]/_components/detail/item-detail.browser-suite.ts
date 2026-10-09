@@ -263,9 +263,10 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     hasTouch: view.touch,
     reducedMotion: "reduce",
   });
-  // WebKit's page process can stall for many seconds on a loaded host (contributing/testing.md). Opening the page has
-  // one budget that ends well before the shortest test timeout, so a stall in any step fails here, with time left to
-  // say what the page got and whether its main thread still answers.
+  // WebKit's page process can stop answering: for good when a media element is stopped while it loads, or for many
+  // seconds on a saturated host (contributing/testing.md). Opening the page has one budget that ends well before the
+  // shortest test timeout, so a stall in any step fails here, with time left to say what the page got and whether its
+  // main thread still answers.
   const budget = 15_000;
   const started = performance.now();
   const cpuAtStart = hostCpu();
@@ -585,7 +586,8 @@ describe("Spaces item detail in a browser", () => {
         const label = locale === "de" ? "Reel for approval.webm abspielen" : "Play Reel for approval.webm";
         const tile = page.getByRole("button", { name: label });
         await tile.scrollIntoViewIfNeeded();
-        await page.waitForFunction(() => (document.querySelector(".k2b-detail-panel video") as HTMLVideoElement | null)?.readyState! >= 1);
+        // The tile shows a decoded frame, not only the video's size and length.
+        await page.waitForFunction(() => (document.querySelector(".k2b-detail-panel video") as HTMLVideoElement | null)?.readyState! >= 2);
         // The tile keeps its square, whatever the video's shape.
         const square = (await tile.boundingBox())!;
         expect([Math.round(square.width), Math.round(square.height)]).toEqual([80, 80]);
@@ -613,6 +615,12 @@ describe("Spaces item detail in a browser", () => {
         const download = page.locator(".spaces-video-dialog .k2b-panel-dialog__actions a");
         expect(await download.getAttribute("href")).toBe("/api/spaces/Space1/items/Item01/attachments/Reel01/content?download=true");
         expect(rangeRequests.some((range) => range !== null)).toBe(true);
+        // The reel plays: play() resolves once it does. Muted, it needs no user gesture in either engine.
+        await page.$eval(".spaces-video-dialog video", (element) => {
+          const video = element as HTMLVideoElement;
+          video.muted = true;
+          return video.play();
+        });
         await page.keyboard.press("Escape");
         await page.waitForSelector(".spaces-video-dialog", { state: "detached" });
       } finally {

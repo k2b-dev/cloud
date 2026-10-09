@@ -67,6 +67,11 @@ domTest("Add image or video chooses through the shared chooser and uploads like 
     dom.root,
   );
   try {
+    // In the browser the tile names its video and reads only its start, so the first frame shows.
+    expect(dom.root.querySelector('[aria-label="Play tour.mp4"] video')?.getAttribute("src")).toBe(
+      "/api/spaces/Space1/items/Item01/attachments/Att001/content#t=0.001",
+    );
+
     const add = () =>
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add image or video"))!;
 
