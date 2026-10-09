@@ -287,6 +287,15 @@ inside it, so they never move anything. On a phone or tablet, the first tap
 on a message focuses its row and shows them without pressing the action under
 the finger. Keep the list short, about two to four actions.
 
+### Gestures
+
+For a phone, wrap a row in [`GestureMenu`](/en/ui/actions/gestures): swipe
+right to reply, double-tap to react, and a long press that opens the
+message's whole menu as a bottom sheet, each the shortcut of an entry in that
+menu. The row marks its code blocks, link preview, and card with
+`data-gesture-ignore`, so gestures never start there and a code block keeps
+scrolling sideways.
+
 ### Touch screens
 
 On a device with a coarse pointer, the quote, the thread bar, the reaction

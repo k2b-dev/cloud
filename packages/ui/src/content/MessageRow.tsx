@@ -382,7 +382,7 @@ const renderMessage = (text: string, locale: string, messages: UiMessages, edite
     const language = token.lang?.match(/^\S{1,24}/)?.[0];
     const block = renderCode(token).replace(/^<pre>/, '<pre tabindex="0">');
     return (
-      '<div class="k2b-message-row__code"><div class="k2b-message-row__code-bar">' +
+      '<div class="k2b-message-row__code" data-gesture-ignore><div class="k2b-message-row__code-bar">' +
       `<span class="k2b-message-row__code-label">${escapeHtml(language ?? messages.code)}</span>` +
       '<button type="button" class="k2b-message-row__copy">' +
       `<span class="k2b-message-row__copy-idle"><i class="ti ti-copy" aria-hidden="true"></i>${escapeHtml(messages.copy)}</span>` +
@@ -723,10 +723,14 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
           </div>
         </Show>
         <Show when={content() && props.linkPreview}>
-          <div class="k2b-message-row__slot">{props.linkPreview}</div>
+          <div class="k2b-message-row__slot" data-gesture-ignore>
+            {props.linkPreview}
+          </div>
         </Show>
         <Show when={content() && props.card}>
-          <div class="k2b-message-row__slot">{props.card}</div>
+          <div class="k2b-message-row__slot" data-gesture-ignore>
+            {props.card}
+          </div>
         </Show>
         <Show when={props.thread}>
           {(thread) => (

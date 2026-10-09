@@ -194,7 +194,7 @@ Interactive menus close synchronously; `@k2b/ui` does not inherit a host's
 generic `[popover]` exit transition. Animate decorative surfaces such as
 tooltips separately instead of delaying an action menu's dismissal.
 
-`ContextMenu` opens from the pointer context-menu event, the Context Menu key, or Shift+F10. Pair it with a visible `Dropdown` when the same actions must remain discoverable without knowing the shortcut.
+`ContextMenu` opens from the pointer context-menu event, the Context Menu key, or Shift+F10. Pair it with a visible `Dropdown` when the same actions must remain discoverable without knowing the shortcut. For touch, [`GestureMenu`](../actions/gestures) adds swipe, double-tap, and long-press shortcuts to the same item model and opens the menu as a bottom sheet.
 
 Labels must describe the action without relying on their icons. External links open in a new tab with the appropriate relationship attributes.
 

@@ -507,8 +507,10 @@ describe("MessageRow rich content", () => {
   test("places the caller's link preview and card below the attachments", () => {
     const html = row({ attachments: [pdf], linkPreview: "Preview", card: "Card" });
 
-    expect(html.indexOf("k2b-message-row__files")).toBeLessThan(html.indexOf('<div class="k2b-message-row__slot">Preview</div>'));
-    expect(html.indexOf("Preview")).toBeLessThan(html.indexOf('<div class="k2b-message-row__slot">Card</div>'));
+    expect(html.indexOf("k2b-message-row__files")).toBeLessThan(
+      html.indexOf('<div class="k2b-message-row__slot" data-gesture-ignore>Preview</div>'),
+    );
+    expect(html.indexOf("Preview")).toBeLessThan(html.indexOf('<div class="k2b-message-row__slot" data-gesture-ignore>Card</div>'));
   });
 });
 

@@ -6,8 +6,11 @@ import {
   Disclosure,
   Dropdown,
   FilterChip,
+  GestureMenu,
+  type GestureMenuItem,
   IconButton,
   IconButtonLink,
+  MessageRow,
   openSpotlightSearch,
   Paper,
   RemoveButton,
@@ -18,7 +21,7 @@ import {
   Tabs,
   Toolbar,
 } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -267,6 +270,52 @@ const MenusDemo = () => (
     </div>
   </DemoCard>
 );
+
+const gestureMessages = [
+  { id: "nora", author: "Nora Weber", text: "Can you check the draft before noon?", time: "10:42" },
+  { id: "tobias", author: "Tobias Brandt", text: "Sure, I will look at it right after the call.", time: "10:44" },
+];
+
+const GesturesDemo = () => {
+  const [last, setLast] = createSignal("Nothing yet");
+  const items = (message: (typeof gestureMessages)[number]): GestureMenuItem[] => [
+    { label: "Reply", icon: "ti ti-arrow-back-up", action: () => setLast(`Reply to ${message.author}`), gesture: "swipe-right" },
+    {
+      label: "React with 👍",
+      icon: "ti ti-thumb-up",
+      action: () => setLast(`👍 on the message from ${message.author}`),
+      gesture: "double-tap",
+    },
+    { label: "Copy text", icon: "ti ti-copy", action: () => setLast(`Copied the message from ${message.author}`) },
+  ];
+  return (
+    <DemoCard
+      id="gestures"
+      chip={{ kind: "component", name: "GestureMenu", from: "@k2b/ui" }}
+      description="On a phone, swipe a message right to reply, double-tap it to react, or press and hold it for the whole menu as a bottom sheet. With a mouse, double-click reacts and right-click opens the menu; Shift+F10 opens it from the keyboard."
+      code={`const items: GestureMenuItem[] = [
+  { label: "Reply", icon: "ti ti-arrow-back-up", action: reply, gesture: "swipe-right" },
+  { label: "React with 👍", icon: "ti ti-thumb-up", action: react, gesture: "double-tap" },
+  { label: "Copy text", icon: "ti ti-copy", action: copy },
+];
+
+<GestureMenu label="Message from Nora Weber, 10:42" items={items}>
+  <MessageRow author={{ name: "Nora Weber" }} text="Can you check the draft before noon?" time="10:42" />
+</GestureMenu>`}
+    >
+      <div>
+        <For each={gestureMessages}>
+          {(message) => (
+            <GestureMenu label={`Message from ${message.author}, ${message.time}`} items={items(message)}>
+              <MessageRow author={{ name: message.author }} text={message.text} time={message.time} />
+            </GestureMenu>
+          )}
+        </For>
+        <p aria-live="polite">Last action: {last()}</p>
+      </div>
+    </DemoCard>
+  );
+};
 
 const SegmentedDemo = () => {
   const [value, setValue] = createSignal("week");
@@ -660,6 +709,11 @@ const demos: DemoSection = {
   menus: () => (
     <DemoGrid columns="one">
       <MenusDemo />
+    </DemoGrid>
+  ),
+  gestures: () => (
+    <DemoGrid columns="one">
+      <GesturesDemo />
     </DemoGrid>
   ),
   "segmented-control": () => (
