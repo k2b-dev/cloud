@@ -103,6 +103,8 @@ const sample: CalendarItem[] = [
   task("Task04", "Angebot Stadtwerke senden", 12, "17:00", { priority: "urgent" }),
   event("Retr01", "Retro Release 4.2", 20, "14:00", "15:00", { tags: tag(0) }),
 ];
+/** The reader the page renders for. */
+const READER = "99999999-9999-4999-8999-999999999999";
 const trayTask = (id: string, title: string, deadline: string | null = null): SpaceItem => ({
   id,
   spaceId: "Space1",
@@ -164,7 +166,7 @@ const anchorOf = (date: string) => dates.parseCalendarDate(date, dateConfig);
 const opening = timelineWindow(anchorOf(TODAY), dateConfig);
 
 type Case = { html: string; items: CalendarItem[]; tray: TimelineTray };
-type ViewRequest = { href: string; from: string | null; to: string | null };
+type ViewRequest = { href: string; from: string | null; to: string | null; includeTray: string | null };
 
 const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: TimelineTray; date: string }) => {
   setSystemTime(NOW);
@@ -190,6 +192,7 @@ const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: T
         selectedItemId: "",
         dateConfig,
         canWrite: options.canWrite,
+        currentUserId: READER,
       }),
     );
   } finally {
@@ -227,6 +230,7 @@ beforeAll(async () => {
           href: url.searchParams.get("href") ?? "",
           from: url.searchParams.get("from"),
           to: url.searchParams.get("to"),
+          includeTray: url.searchParams.get("includeTray"),
         };
         viewRequests.push(viewRequest);
         const route = parseCalendarRoute(new URL(viewRequest.href, "http://spaces.local"), dateConfig);
@@ -240,14 +244,14 @@ beforeAll(async () => {
           range,
           items: itemsIn(data?.items ?? [], range, route.filter),
           weather: {},
-          tray: trayFor(data?.tray ?? emptyTray(), route.filter),
+          tray: viewRequest.includeTray === "false" ? null : trayFor(data?.tray ?? emptyTray(), route.filter),
         };
         await hold(viewRequest);
         return Response.json(body);
       }
       const completion = /^\/api\/spaces\/Space1\/items\/(\w+)\/completed$/.exec(url.pathname);
       if (completion && request.method === "POST" && data) {
-        const body = (await request.json()) as { completed: boolean };
+        const body = (await request.json()) as { completed: boolean; claimId?: string };
         completions.push({ itemId: completion[1], ...body });
         if (body.completed) {
           data.items = data.items.filter((item) => item.id !== completion[1]);
@@ -359,6 +363,14 @@ const invalidate = (page: Page) =>
     ),
   );
 
+/** Where keyboard focus is: the strip, the accessible name of a control in the tray, or "" elsewhere. */
+const focusedIn = (page: Page) =>
+  page.evaluate(() => {
+    const focused = document.activeElement;
+    if (focused?.closest("[data-spaces-timeline-tray]")) return focused.getAttribute("aria-label") ?? focused.textContent?.trim() ?? "tray";
+    return focused?.closest(".k2b-timeline") ? "strip" : "";
+  });
+
 describe(`Spaces timeline in ${browserName}`, () => {
   test("hydrates without moving anything the server drew", async () => {
     for (const view of [desktop, tablet, phone]) {
@@ -398,10 +410,12 @@ describe(`Spaces timeline in ${browserName}`, () => {
     viewRequests.splice(0);
     // The strip opens at its start, so the week before loads at once.
     const page = await open(desktop);
+    // The week keeps the tray the strip has, so it loads without one.
     expect(viewRequests.filter((request) => request.from !== null)[0]).toEqual({
       href: sourceOf(TODAY),
       from: "2026-09-30T18:00:00.000Z",
       to: opening.from,
+      includeTray: "false",
     });
     expect(await box(page, "Run001")).toEqual(before);
     await page.locator(".k2b-timeline__viewport").evaluate((element) => element.scrollTo({ left: 0, behavior: "instant" }));
@@ -623,19 +637,89 @@ describe(`Spaces timeline in ${browserName}`, () => {
     }
   }, 90_000);
 
-  test("reaches the overdue tasks with the keyboard before the strip", async () => {
+  test("reaches the strip and then the tray with the keyboard, in the order they show", async () => {
     const page = await open(desktop);
     await page.getByRole("button", { name: "Status" }).focus();
-    let reached = "";
-    for (let presses = 0; presses < 10 && !reached; presses++) {
+    const stops: string[] = [];
+    for (let presses = 0; presses < 10 && !stops.some((stop) => stop !== "strip"); presses++) {
       await page.keyboard.press("Tab");
-      reached = await page.evaluate(() => {
-        const focused = document.activeElement;
-        if (focused?.closest("[data-spaces-timeline-tray]")) return focused.getAttribute("aria-label") ?? "tray";
-        return focused?.closest(".k2b-timeline") ? "strip" : "";
-      });
+      const stop = await focusedIn(page);
+      if (stop) stops.push(stop);
     }
-    expect(reached).toBe("Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen");
+    // The strip is one stop, so the next one is the first task of the tray below it.
+    expect(stops).toEqual(["strip", "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen"]);
+    await page.context().close();
+  }, 60_000);
+
+  test("keeps keyboard focus in the tray when a task checked off there leaves it", async () => {
+    const page = await open(desktop);
+    await page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" }).focus();
+    await page.keyboard.press("Space");
+    await page.locator('[data-spaces-tray-item="Late01"]').waitFor({ state: "detached" });
+    // Focus moves to the box of the task that took its place, so the reader can go on checking tasks off.
+    await page.waitForFunction(
+      () => document.activeElement?.closest("[data-spaces-tray-item]")?.getAttribute("data-spaces-tray-item") === "Late02",
+    );
+    expect(await focusedIn(page)).toBe("Als erledigt markieren: Feedback zu Wireframes");
+    await page.context().close();
+  }, 60_000);
+
+  test("keeps a box checked while its change is in flight, whatever the reader presses meanwhile", async () => {
+    const page = await open(desktop);
+    const refresh = gate();
+    hold = (request) => (request.from !== null && request.includeTray === null ? refresh.wait : Promise.resolve());
+    try {
+      completions.splice(0);
+      const box = page.getByRole("checkbox", { name: "Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen" });
+      await box.focus();
+      await page.keyboard.press("Space");
+      await requested((request) => request.from !== null && request.includeTray === null);
+      // The task is done but the tray waits for the refresh; another Space neither unchecks the box nor sends again.
+      await page.keyboard.press("Space");
+      expect(await box.isChecked()).toBe(true);
+      expect(await focusedIn(page)).toBe("Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen");
+      expect(completions).toEqual([{ itemId: "Late01", completed: true }]);
+      refresh.open();
+      await page.locator('[data-spaces-tray-item="Late01"]').waitFor({ state: "detached" });
+    } finally {
+      hold = async () => {};
+      refresh.open();
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("keeps keyboard focus on a task of the tray while a refresh brings the same tasks again", async () => {
+    const page = await open(desktop);
+    const link = page.getByRole("link", { name: /Feedback zu Wireframes/ });
+    await link.focus();
+    // A mark on the element shows whether the refresh kept it or drew a new one.
+    await link.evaluate((element) => element.setAttribute("data-kept", ""));
+    viewRequests.splice(0);
+    await invalidate(page);
+    await requested((request) => request.from !== null && request.includeTray === null);
+    await idle(page);
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-kept") ?? false)).toBe(true);
+    await page.context().close();
+  }, 60_000);
+
+  test("checks off a task the reader claimed with that claim", async () => {
+    const tray = sampleTray();
+    tray.undated.items[0] = {
+      ...tray.undated.items[0]!,
+      claim: {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        actor: { kind: "user", id: READER },
+        displayName: "Lena",
+        avatarHash: null,
+        claimedAt: "2026-10-08T08:00:00.000Z",
+      },
+    };
+    const page = await open(desktop, { tray });
+    completions.splice(0);
+    await page.locator('[data-spaces-tray-item="Open01"] .k2b-check').click();
+    await page.locator('[data-spaces-tray-item="Open01"]').waitFor({ state: "detached" });
+    expect(completions).toEqual([{ itemId: "Open01", completed: true, claimId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }]);
     await page.context().close();
   }, 60_000);
 
@@ -653,7 +737,7 @@ describe(`Spaces timeline in ${browserName}`, () => {
     await page.getByRole("link", { name: /Feedback zu Wireframes/ }).click();
     expect(await opened).toContain("item=Late02");
     // The reader has three undated tasks and sees two, so the tray links to the list with all of them.
-    expect(await page.getByRole("link", { name: "Alle 3 deiner Aufgaben ohne Datum anzeigen" }).getAttribute("href")).toBe(
+    expect(await page.getByRole("link", { name: "Alle anzeigen: 3 deiner Aufgaben ohne Datum" }).getAttribute("href")).toBe(
       "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority",
     );
     await page.context().close();

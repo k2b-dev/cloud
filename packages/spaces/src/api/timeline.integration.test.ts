@@ -175,9 +175,9 @@ suite("Spaces timeline view", () => {
       if (!loaded) throw new Error("Missing fixture user");
       const token = await serviceAccountCredentials.createUserApiToken({ user: loaded, name: "Member key" });
       if (!token.ok) throw new Error(token.error.message);
-      const view = async (query: string) => {
+      const view = async (query: string, extra = "") => {
         const href = encodeURIComponent(`/app/spaces/${team.short_id}?view=calendar&${query}`);
-        const response = await spacesApi.request(`/workspace/view?href=${href}`, {
+        const response = await spacesApi.request(`/workspace/view?href=${href}${extra}`, {
           headers: { authorization: `Bearer ${token.data.token}` },
         });
         expect(response.status).toBe(200);
@@ -197,6 +197,10 @@ suite("Spaces timeline view", () => {
       expect((await view("cv=timeline&cpriority=urgent"))?.overdue.total).toBe(0);
       // Only the timeline has a tray.
       expect(await view("cv=week")).toBeNull();
+      // A refresh of the days the strip shows renews the tray; a week loaded while the reader scrolls goes without it.
+      const range = `&from=${encodeURIComponent(daysAgo(10))}&to=${encodeURIComponent(daysAgo(3))}`;
+      expect((await view("cv=timeline", range))?.overdue.total).toBe(6);
+      expect(await view("cv=timeline", `${range}&includeTray=false`)).toBeNull();
     } finally {
       for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
       for (const id of userIds) {

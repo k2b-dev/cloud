@@ -47,6 +47,7 @@ type Props = {
   selectedItemId: string;
   dateConfig?: DateContext;
   canWrite: boolean;
+  currentUserId: string;
 };
 
 export default function SpacesCalendarRoute(props: Props) {
@@ -128,7 +129,8 @@ export default function SpacesCalendarRoute(props: Props) {
         const block = timelineBlock(current, edge, props.dateConfig);
         if (!block) return;
         const started = snapshotsStarted;
-        const snapshot = await loadSpacesViewSnapshot(current.source, load.signal, locale(), block);
+        // The tray stays with the snapshot of the strip, so a week loads without it.
+        const snapshot = await loadSpacesViewSnapshot(current.source, load.signal, locale(), { ...block, includeTray: "false" });
         const latest = timeline();
         if (snapshot.kind !== "calendar" || !latest || latest.anchor !== anchor) return;
         const moved = edge === "earlier" ? latest.from !== block.to : latest.to !== block.from;
@@ -187,6 +189,7 @@ export default function SpacesCalendarRoute(props: Props) {
         weather={state().weather}
         dateConfig={props.dateConfig}
         canWrite={props.canWrite}
+        currentUserId={props.currentUserId}
         onNavigateHref={navigation.navigateHref}
         onRouteChange={navigation.open}
         navigationPending={navigation.pending()}

@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { CalendarItem } from "@/contracts";
 import { defaultCalendarFilter } from "./filter";
-import { mergeTimelineItems, TIMELINE_MAX_DAYS, timelineBlock, timelineTrayFilters, timelineWindow } from "./timeline";
+import {
+  mergeTimelineItems,
+  TIMELINE_MAX_DAYS,
+  timelineBlock,
+  timelineTrayFiltered,
+  timelineTrayFilters,
+  timelineWindow,
+} from "./timeline";
 
 const berlin = { timeZone: "Europe/Berlin", locale: "de" };
 
@@ -97,5 +104,19 @@ describe("Spaces timeline tray queries", () => {
   test("rule out what the filter excludes", () => {
     expect(timelineTrayFilters({ ...defaultCalendarFilter, type: "event" })).toBeNull();
     expect(timelineTrayFilters({ ...defaultCalendarFilter, assignedTo: "unassigned" })?.undated).toBeNull();
+  });
+
+  test("count as filtered where the filter leaves out tasks the tray would show", () => {
+    expect(timelineTrayFiltered(defaultCalendarFilter)).toBe(false);
+    expect(timelineTrayFiltered({ ...defaultCalendarFilter, type: "task", colorBy: "person" })).toBe(false);
+    for (const narrowed of [
+      { assignedTo: "me" as const },
+      { assignedTo: "unassigned" as const },
+      { priorities: ["high" as const] },
+      { columnIds: ["Col001"] },
+      { tagIds: ["Tag001"] },
+    ]) {
+      expect(timelineTrayFiltered({ ...defaultCalendarFilter, ...narrowed })).toBe(true);
+    }
   });
 });

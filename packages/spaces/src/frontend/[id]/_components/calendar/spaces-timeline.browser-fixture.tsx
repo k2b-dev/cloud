@@ -17,6 +17,7 @@ export default function TimelineFixture(props: Props) {
         selectedItemId={props.selectedItemId}
         dateConfig={props.dateConfig}
         canWrite={props.canWrite}
+        currentUserId={props.currentUserId}
       />
     </LocaleProvider>
   );

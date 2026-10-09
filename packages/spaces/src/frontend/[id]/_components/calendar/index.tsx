@@ -45,7 +45,7 @@ import {
 } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import SpacesTimeline from "./SpacesTimeline";
-import { timelineTrayFilters, timelineTrayListHref, timelineWindow } from "./timeline";
+import { timelineTrayFiltered, timelineTrayFilters, timelineTrayListHref, timelineWindow } from "./timeline";
 import type { CalendarProps, CalendarTimeline, CalendarView } from "./types";
 
 const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
@@ -731,9 +731,11 @@ export default function Calendar(props: CalendarProps) {
                 colorBy={props.filter.colorBy}
                 busy={timeline().busy || Boolean(props.navigationPending)}
                 canWrite={props.canWrite}
+                currentUserId={props.currentUserId}
                 dateConfig={props.dateConfig}
                 hrefFor={(item) => timelineHref(timeline(), item)}
                 tray={timeline().tray}
+                trayFiltered={timelineTrayFiltered(timeline().filter)}
                 trayItemHref={(item) =>
                   buildCalendarHref(
                     props.baseUrl,

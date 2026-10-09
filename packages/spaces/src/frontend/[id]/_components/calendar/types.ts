@@ -27,6 +27,8 @@ export type CalendarProps = {
   baseUrl: string;
   dateConfig?: DateContext;
   canWrite: boolean;
+  /** The reader, whose own claim on a task goes with checking it off in the timeline's tray. */
+  currentUserId?: string;
   onNavigateHref?: (href: string) => void;
   onRouteChange?: (href: string, options?: { replace?: boolean }) => void | Promise<void>;
   onPrefetch?: (href: string) => void;

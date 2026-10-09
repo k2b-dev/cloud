@@ -147,6 +147,7 @@ const serverBody = (url: URL) => {
       selectedItemId: url.searchParams.get("item") ?? "",
       dateConfig,
       canWrite: true,
+      currentUserId: "99999999-9999-4999-8999-999999999999",
     }),
   );
 };

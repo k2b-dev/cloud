@@ -110,6 +110,10 @@ export const timelineTrayFilters = (filter: CalendarFilter): Record<TimelineTray
   };
 };
 
+/** Whether the calendar's filter narrows the tray, so that an empty tray does not claim that nothing waits at all. */
+export const timelineTrayFiltered = (filter: CalendarFilter): boolean =>
+  filter.assignedTo !== "all" || filter.priorities.length > 0 || filter.columnIds.length > 0 || filter.tagIds.length > 0;
+
 /** The list view of a Space with one query of the tray, where the reader finds every task it holds. */
 export const timelineTrayListHref = (spacePath: string, query: FilterState): string => {
   const params = new URLSearchParams({ view: "list" });

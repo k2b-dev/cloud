@@ -41,6 +41,8 @@ type WorkspaceRequest = {
   dateConfig?: DateContext;
   /** A range the timeline loads instead of its first window, such as the days it already shows. */
   timelineRange?: TimelineRange;
+  /** False for a week the timeline adds while the reader scrolls: it keeps the tray it has, so the server skips it. */
+  includeTray?: boolean;
 };
 
 type RouteState = {
@@ -366,6 +368,7 @@ const loadCalendarState = async (params: {
   dateConfig?: DateContext;
   cookieHeader?: string;
   timelineRange?: TimelineRange;
+  includeTray?: boolean;
 }): Promise<{
   calendarView: CalendarView;
   calendarDate: Date;
@@ -402,7 +405,7 @@ const loadCalendarState = async (params: {
     }),
     // The timeline shows no day badges, so it does not pay for the forecast.
     calendarView === "timeline" ? Promise.resolve({}) : loadCalendarWeather({ cookieHeader: params.cookieHeader, from, to }),
-    calendarView === "timeline"
+    calendarView === "timeline" && params.includeTray !== false
       ? loadTimelineTray({ spaceId: params.spaceId, filter: params.calendarFilter, userId: params.user.id, dateConfig: params.dateConfig })
       : Promise.resolve(null),
   ]);
@@ -784,6 +787,7 @@ export const loadSpacesViewSnapshot = async (
       dateConfig: params.dateConfig,
       cookieHeader: params.cookieHeader,
       timelineRange: params.timelineRange,
+      includeTray: params.includeTray,
     }),
     route.currentView === "kanban"
       ? loadWormholes({

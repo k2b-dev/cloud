@@ -137,6 +137,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 selectedItemId={selectedCalendarEventId}
                 dateConfig={props.dateConfig}
                 canWrite={state.canWrite}
+                currentUserId={state.currentUserId}
               />
             )}
           </AppWorkspace.Main>

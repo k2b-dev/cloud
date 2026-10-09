@@ -7,6 +7,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceItem } from "@/contracts";
+import { spaceMessages } from "../../messages";
 import { CALENDAR_NEUTRAL_COLOR, CALENDAR_PRIORITY_COLORS, calendarPersonColor } from "./colors";
 import { type CalendarColorBy, defaultCalendarFilter } from "./filter";
 import type { CalendarView } from "./types";
@@ -434,13 +435,13 @@ describe("Spaces timeline tray", () => {
     );
   };
 
-  test("reads overdue tasks and the reader's undated tasks before the days of the strip", () => {
+  test("reads overdue tasks and the reader's undated tasks after the strip, where they show", () => {
     const html = render({ tray: { overdue: { items: overdue, total: 7 }, undated: { items: undated, total: 2 } } });
     const tray = html.indexOf('aria-label="Overdue tasks and your tasks without a date"');
     expect(tray).toBeGreaterThan(-1);
-    // First in the document, so overdue tasks come before every day of the strip; the stylesheet puts the row last.
-    expect(tray).toBeLessThan(html.indexOf('aria-label="Timeline"'));
-    expect(html).toMatch(/<section[^>]*class="[^"]*order-last/);
+    // The document follows the screen, so Tab and a screen reader reach the row below the strip after it.
+    expect(tray).toBeGreaterThan(html.indexOf('aria-label="Timeline"'));
+    expect(html).not.toContain("order-last");
     expect(html.indexOf(">Overdue</h3>")).toBeLessThan(html.indexOf(">Yours, no date</h3>"));
     expect(html.indexOf("Countersign the contract")).toBeLessThan(html.indexOf("Clean up the customer list"));
     // Items open their detail on the strip shown.
@@ -478,6 +479,38 @@ describe("Spaces timeline tray", () => {
     expect(german).toContain(">Überfällig</h3>");
     expect(german).toContain('aria-label="Überfällige Aufgaben und deine Aufgaben ohne Datum"');
     expect(render({ locale: "de", tray: empty })).toContain("Nichts überfällig und keine Aufgaben ohne Datum für dich");
+  });
+
+  test("says that the filter leaves nothing, rather than that nothing waits, when the calendar is filtered", () => {
+    const empty = { overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } };
+    for (const filter of [
+      { ...defaultCalendarFilter, assignedTo: "unassigned" as const },
+      { ...defaultCalendarFilter, priorities: ["urgent" as const] },
+      { ...defaultCalendarFilter, tagIds: ["Tag001"] },
+    ]) {
+      const html = render({ filter, tray: empty });
+      expect(html).toContain("Nothing overdue or undated under this filter");
+      expect(html).not.toContain("no tasks of yours without a date");
+    }
+    // Showing tasks only, or another color, leaves the tray as it is.
+    expect(render({ filter: { ...defaultCalendarFilter, type: "task", colorBy: "priority" }, tray: empty })).toContain(
+      "Nothing overdue, and no tasks of yours without a date",
+    );
+    expect(render({ locale: "de", filter: { ...defaultCalendarFilter, assignedTo: "me" }, tray: empty })).toContain(
+      "Mit diesem Filter nichts überfällig und nichts ohne Datum",
+    );
+  });
+
+  test("names each Show all link starting with the words it shows, in every language", () => {
+    const html = render({ locale: "de", tray: { overdue: { items: overdue, total: 7 }, undated: { items: undated, total: 3 } } });
+    expect(html).toContain('aria-label="Alle anzeigen: 7 überfällige Aufgaben"');
+    expect(html).toContain('aria-label="Alle anzeigen: 3 deiner Aufgaben ohne Datum"');
+    // Voice control finds a link by what it shows only where its name contains those words.
+    for (const locale of ["en", "de"]) {
+      const { t } = spaceMessages.resolve([locale]);
+      expect(t.timelineTrayAllOverdue({ count: 7 }).startsWith(t.timelineTrayShowAll)).toBe(true);
+      expect(t.timelineTrayAllUndated({ count: 3 }).startsWith(t.timelineTrayShowAll)).toBe(true);
+    }
   });
 
   test("shows no tray while the calendar shows only events", () => {

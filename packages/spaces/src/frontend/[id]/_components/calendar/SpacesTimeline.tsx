@@ -5,6 +5,7 @@ import { createSignal, Show } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItem } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
+import { ownClaimId } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import type { TimelineTray as Tray } from "../workspace/workspace-types";
@@ -48,11 +49,15 @@ type Props = {
   colorBy: CalendarColorBy;
   busy: boolean;
   canWrite: boolean;
+  /** The reader, whose own claim on a task in the tray goes with checking it off. */
+  currentUserId?: string;
   dateConfig?: DateContext;
   /** The detail link of an item, kept in the timeline's URL. */
   hrefFor: (item: CalendarItem) => string;
   /** Overdue and undated tasks, shown in a fixed row below the strip. */
   tray: Tray | null;
+  /** Whether the calendar's filter narrows the tray. */
+  trayFiltered: boolean;
   trayItemHref: (item: SpaceItem) => string;
   trayListHref: (section: TimelineTraySection) => string | undefined;
   onLoadEarlier: () => Promise<void>;
@@ -93,11 +98,12 @@ export default function SpacesTimeline(props: Props) {
       return entry ? [entry] : [];
     });
   const refresh = (): Promise<void> => invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, () => refresh()));
-  const toggle = async (itemId: string, completed: boolean) => {
+  /** A task the reader claimed completes with that claim; one claimed by someone else is refused with the reason. */
+  const toggle = async (itemId: string, completed: boolean, claimId?: string) => {
     if (itemId in checking()) return;
     setChecking((current) => ({ ...current, [itemId]: completed }));
     try {
-      await setItemCompleted({ spaceId: props.spaceId, itemId, completed }, t.updateFailed);
+      await setItemCompleted({ spaceId: props.spaceId, itemId, completed, claimId }, t.updateFailed);
     } catch (error) {
       settle(itemId);
       toast.error(error instanceof Error ? error.message : t.updateFailed);
@@ -111,21 +117,6 @@ export default function SpacesTimeline(props: Props) {
 
   return (
     <div class="flex h-full min-h-0 flex-col">
-      <Show when={props.tray}>
-        {(tray) => (
-          // First in the document, last on screen: overdue tasks come before the days of the strip when read aloud.
-          <TimelineTray
-            class="order-last"
-            tray={tray()}
-            canCheck={props.canWrite}
-            checking={checking()}
-            onToggle={(itemId, completed) => void toggle(itemId, completed)}
-            itemHref={props.trayItemHref}
-            listHref={props.trayListHref}
-            dateConfig={props.dateConfig}
-          />
-        )}
-      </Show>
       <div class="min-h-0 flex-1">
         <Timeline
           items={items()}
@@ -141,6 +132,22 @@ export default function SpacesTimeline(props: Props) {
           controller={props.controller}
         />
       </div>
+      <Show when={props.tray}>
+        {(tray) => (
+          <TimelineTray
+            tray={tray()}
+            filtered={props.trayFiltered}
+            canCheck={props.canWrite}
+            checking={checking()}
+            onToggle={(item, completed) =>
+              void toggle(item.id, completed, props.currentUserId ? ownClaimId(item.claim, props.currentUserId) : undefined)
+            }
+            itemHref={props.trayItemHref}
+            listHref={props.trayListHref}
+            dateConfig={props.dateConfig}
+          />
+        )}
+      </Show>
     </div>
   );
 }
