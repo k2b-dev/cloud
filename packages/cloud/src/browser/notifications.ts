@@ -1,6 +1,6 @@
 import { notifications as nativeNotifications } from "@k2b/stdlib/browser";
 import { apiClient } from "../clients/core";
-import type { BrowserPushSubscription } from "../contracts";
+import type { BrowserPushSubscription, NotificationQuietState } from "../contracts";
 import { notificationGroupTag } from "../contracts/notification-group";
 import { withNotificationTimeout } from "./notification-timeout";
 
@@ -120,6 +120,16 @@ const currentState = async (registration?: ServiceWorkerRegistration): Promise<B
 
 export const browserNotificationClient = {
   state: currentState,
+
+  /**
+   * Whether do not disturb or quiet hours hold back the signed-in person's browser notifications right now, for
+   * every app. For display only; Cloud applies quiet time when it delivers. Reload it once `until` has passed.
+   */
+  quietState: async (): Promise<NotificationQuietState> => {
+    const response = await apiClient.me.notifications.quiet.$get();
+    if (!response.ok) throw await responseError(response, "Failed to load the notification quiet state.");
+    return (await response.json()).state;
+  },
 
   /** Close this application's group on this device without opting into notifications. */
   closeGroup: async (appId: string, group: string): Promise<void> => {

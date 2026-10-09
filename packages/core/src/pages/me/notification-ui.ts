@@ -58,6 +58,8 @@ export const notificationErrorText = (errorCode: string | null, errorMessage: st
     disabled_by_user: resolved.t.deliveryDisabledByUser,
     no_preferred_channel: resolved.t.deliveryPreferenceMissing,
     provider_error: resolved.t.deliveryProviderFailed,
+    do_not_disturb: resolved.t.deliveryHeldDoNotDisturb,
+    quiet_hours: resolved.t.deliveryHeldQuietHours,
   };
   return (
     (errorCode ? messages[errorCode] : undefined) ?? (resolved.locale === "en" ? errorMessage : null) ?? resolved.t.deliveryFailedGeneric

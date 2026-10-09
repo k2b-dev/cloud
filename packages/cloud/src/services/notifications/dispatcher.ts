@@ -2,6 +2,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { decryptSecret } from "../secrets";
 import { getNotificationChannel } from "./channels";
+import { quietStateForEvent } from "./quiet";
 
 const MAX_DELIVERY_ATTEMPTS = 5;
 const BASE_RETRY_MS = 2_000;
@@ -19,11 +20,36 @@ type DeliveryRow = {
 };
 
 export type DeliveryAttemptResult =
-  | { status: "skipped" | "delivered" | "failed" }
+  | { status: "skipped" | "delivered" | "suppressed" | "failed" }
   | { status: "pending"; retryAfterMs: number }
   | { status: "retry"; retryAfterMs: number; error: string };
 
 const retryDelay = (attempt: number): number => Math.min(BASE_RETRY_MS * 2 ** Math.max(0, attempt - 1), MAX_RETRY_MS);
+
+/**
+ * Do not disturb and quiet hours hold back recommended browser notifications when they would go out. The
+ * notification is dropped, not postponed, so nothing arrives in a burst when the quiet time ends, and it is not
+ * rerouted: the event's waiting fallbacks end with it. Required deliveries are part of a protocol and still go.
+ */
+const holdBackForQuietTime = async (delivery: DeliveryRow): Promise<boolean> => {
+  if (delivery.channel !== "browser" || delivery.required) return false;
+  const quiet = await quietStateForEvent(delivery.event_id);
+  if (!quiet?.active) return false;
+  const code = quiet.reason === "doNotDisturb" ? "do_not_disturb" : "quiet_hours";
+  const message = quiet.reason === "doNotDisturb" ? "Held back by do not disturb." : "Held back during quiet hours.";
+  await sql`
+    UPDATE notifications.deliveries
+    SET status = 'suppressed', attempt_count = attempt_count - 1, next_attempt_at = NULL,
+        error_code = ${code}, error_message = ${message}, payload_encrypted = NULL, updated_at = now()
+    WHERE id = ${delivery.id}::uuid AND status = 'sending'
+  `;
+  await sql`
+    UPDATE notifications.deliveries
+    SET status = 'suppressed', error_code = ${code}, error_message = ${message}, payload_encrypted = NULL, updated_at = now()
+    WHERE event_id = ${delivery.event_id}::uuid AND required = false AND status = 'deferred'
+  `;
+  return true;
+};
 
 const activateNextFallback = async (eventId: string): Promise<string[]> => {
   const delivered = await sql<{ exists: boolean }[]>`
@@ -85,6 +111,7 @@ export const processNotificationDelivery = async (
   if (!delivery) return { status: "skipped" };
 
   try {
+    if (await holdBackForQuietTime(delivery)) return { status: "suppressed" };
     const driver = getNotificationChannel(delivery.channel);
     if (!driver)
       throw Object.assign(new Error(`Notification channel "${delivery.channel}" is unavailable`), { code: "channel_unavailable" });

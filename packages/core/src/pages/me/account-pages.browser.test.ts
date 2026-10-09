@@ -172,6 +172,11 @@ beforeEach(() => {
       ],
     }),
     spyOn(services.notifications.user.history, "list").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 25, totalPages: 0 }),
+    spyOn(services.notifications.user.quiet, "get").mockResolvedValue({
+      doNotDisturbUntil: null,
+      quietHours: { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5], start: "22:00", end: "07:00" }] },
+      state: { active: false, reason: null, until: null, nextStart: null },
+    }),
     spyOn(services.appApproval, "config").mockResolvedValue({
       issuer: origin,
       appOrigin: "https://auth.example.test",

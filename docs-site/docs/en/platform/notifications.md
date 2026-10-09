@@ -4,8 +4,8 @@ navTitle: Notifications
 section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
-tags: [notifications, email, browser]
-updated: 2026-10-08
+tags: [notifications, email, browser, do not disturb, quiet hours]
+updated: 2026-10-09
 ---
 
 # Notifications
@@ -347,6 +347,55 @@ change the badge automatically.
 Browser delivery requires a secure context, service-worker and Push API support.
 On iPhone and iPad, Cloud must run as an installed Home Screen application.
 
+### Do not disturb and quiet hours
+
+Each person can hold back browser notifications from every application under
+**My account → Notifications**:
+
+- **Do not disturb** pauses them until an instant the person chooses.
+- **Quiet hours** repeat every week: up to seven periods, each with weekdays
+  and a `HH:MM` start and end in one IANA time zone the person chooses.
+
+A period belongs to the day it starts on. When the end is at or before the
+start, the period runs into the next day, so `19:00`–`07:00` on Friday keeps
+Saturday morning quiet. An equal start and end mean 24 hours, so
+`00:00`–`00:00` is the whole day. Cloud converts the wall-clock times for each
+date in the chosen time zone. A period keeps its local times across
+daylight-saving changes, and a start inside a skipped hour moves forward with
+the clock.
+
+The delivery worker checks quiet time when a recommended browser delivery
+would go out, including retries and fallbacks. During quiet time Cloud drops
+the push instead of postponing it, so nothing arrives in a burst when quiet
+time ends. The delivery becomes `suppressed` with `do_not_disturb` or
+`quiet_hours`, and its waiting fallbacks end with the same code instead of
+taking over: a person in quiet hours gets no email in place of the push.
+Applications need no code for this. Quiet time does not change what they
+store, so activity lists and unread counts keep updating.
+
+Quiet time leaves the other channels alone. Email that is the first recommended
+choice, deployment channels, and required deliveries of every channel, which
+belong to a protocol such as sign-in, still go out.
+
+Read the signed-in person's current state for display, for example a moon icon
+in a sidebar header:
+
+```ts
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
+
+const quiet = await browserNotificationClient.quietState();
+// { active: true, reason: "doNotDisturb", until: "2026-10-10T06:00:00.000Z", nextStart: null }
+```
+
+`reason` is `doNotDisturb` while that pause lasts and `quietHours` otherwise.
+`until` is the end of the whole quiet time, including quiet hours that continue
+when a pause ends. `nextStart` is the start of the next quiet hours while
+inactive. Either is `null` when nothing changes within the next week. Load the
+state again once that instant has passed. `quietState()` rejects when the
+request fails. Server code reads the same state with
+`notifications.user.quiet.get(userId)` from `@k2b/cloud/services`. Delivery
+applies quiet time on its own; do not filter sends by this state.
+
 ### Email delivery
 
 Core delivers email through the default [outgoing mail profile](/en/docs/operations/outgoing-mail). Configure and test that sender before enabling email notifications.
@@ -575,7 +624,7 @@ recipient read it.
 | `pending` | The delivery is ready for a worker or a scheduled retry |
 | `sending` | A worker owns the current attempt |
 | `delivered` | The channel provider accepted the delivery |
-| `suppressed` | Cloud intentionally did not attempt this destination |
+| `suppressed` | Cloud intentionally did not attempt this destination, for example during the recipient's quiet time |
 | `failed` | Delivery ended without another retry |
 
 For recommended channels, Cloud queues the first selected choice. A successful
@@ -602,6 +651,8 @@ platform codes include:
 | `lease_recovered` | Cloud recovered an interrupted delivery attempt |
 | `endpoint_gone` | A browser endpoint no longer exists |
 | `provider_rejected` | A browser provider rejected a non-retryable request |
+| `do_not_disturb` | The recipient paused browser notifications; the event is not delivered later |
+| `quiet_hours` | The recipient's quiet hours held back the browser notification |
 | `provider_error` | A provider failed without a more specific public code |
 
 Custom channel drivers may add codes. Branch on status first. Use error codes
