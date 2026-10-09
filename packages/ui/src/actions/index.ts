@@ -19,6 +19,8 @@ export type {
 export { Dropdown, DropdownItem, dropdownPosition } from "./Dropdown";
 export type { FilterChipOption, FilterChipProps, FilterChipSection } from "./FilterChip";
 export { FilterChip } from "./FilterChip";
+export type { GestureKind, GestureMenuAction, GestureMenuItem, GestureMenuProps, GestureMenuSection } from "./GestureMenu";
+export { GestureMenu } from "./GestureMenu";
 export type { RemoveButtonProps } from "./RemoveButton";
 export { RemoveButton } from "./RemoveButton";
 export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";

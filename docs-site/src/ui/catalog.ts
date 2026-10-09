@@ -114,6 +114,7 @@ const portableSections = [
       page("buttons", "Buttons", "ti ti-hand-click", "Semantic button and icon-button variants with loading behavior."),
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
+      page("gestures", "GestureMenu", "ti ti-hand-finger", "Swipe, double-tap, and long-press shortcuts into an element's menu."),
       page("filters", "Filters", "ti ti-filter", "Section-aware single and multi-select filtering."),
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),
@@ -352,7 +353,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 132;
+export const portableUiComponentCount = 133;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

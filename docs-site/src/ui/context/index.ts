@@ -1,6 +1,7 @@
 import actionButtons from "./actions/buttons.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
+import actionGestures from "./actions/gestures.md" with { type: "text" };
 import actionMenus from "./actions/menus.md" with { type: "text" };
 import actionSegmentedControl from "./actions/segmented-control.md" with { type: "text" };
 import actionSpotlight from "./actions/spotlight.md" with { type: "text" };
@@ -114,6 +115,7 @@ const catalogContextSources = {
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
+  "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
   "actions/segmented-control": { file: "actions/segmented-control.md", content: actionSegmentedControl },
   "actions/tabs": { file: "actions/tabs.md", content: actionTabs },
