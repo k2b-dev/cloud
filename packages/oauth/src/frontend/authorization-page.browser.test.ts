@@ -51,7 +51,9 @@ const open = async (
   viewport: keyof typeof viewports,
   theme: "light" | "dark" = "light",
 ): Promise<Page> => {
-  const html = (await renderAuthorizationState(state, locale, theme)).replace(/<script[\s\S]*?<\/script>/g, "");
+  const html = new HTMLRewriter()
+    .on("script", { element: (script) => void script.remove() })
+    .transform(await renderAuthorizationState(state, locale, theme));
   const page = await browser.newPage({ ...viewports[viewport], deviceScaleFactor: 1 });
   await page.route(`${origin}/**`, (route) => {
     const { pathname } = new URL(route.request().url());

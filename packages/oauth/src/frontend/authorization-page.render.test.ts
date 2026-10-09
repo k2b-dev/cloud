@@ -1,14 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState, sample } from "./authorization-page.test-fixture";
 
-/** The visible text of the page body, with tags removed and whitespace collapsed. */
-const text = (html: string) =>
-  /<body[^>]*>([\s\S]*)<\/body>/
-    .exec(html)![1]!
-    .replace(/<script[\s\S]*?<\/script>/g, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ");
+/**
+ * The visible text of the page body, without scripts, with tags as spaces and whitespace collapsed.
+ * One handler, because an element keeps only the last end-tag handler registered for it.
+ */
+const text = (html: string) => {
+  let inBody = false;
+  let inScript = false;
+  let visible = "";
+  new HTMLRewriter()
+    .on("*", {
+      element(element) {
+        visible += " ";
+        if (!element.canHaveContent) return;
+        if (element.tagName === "body") inBody = true;
+        if (element.tagName === "script") inScript = true;
+        element.onEndTag((end) => {
+          visible += " ";
+          if (end.name === "body") inBody = false;
+          if (end.name === "script") inScript = false;
+        });
+      },
+    })
+    .onDocument({
+      text(chunk) {
+        if (inBody && !inScript) visible += chunk.text;
+      },
+    })
+    .transform(html);
+  return visible.replace(/&amp;/g, "&").replace(/\s+/g, " ");
+};
 
 const count = (html: string, pattern: RegExp) => html.match(pattern)?.length ?? 0;
 
