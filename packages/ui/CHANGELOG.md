@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.20.0...npm-ui-v0.20.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **ui:** show bare dialogs on iPad instead of only blurring the page ([#799](https://github.com/k2b-dev/cloud/issues/799)) ([285b00f](https://github.com/k2b-dev/cloud/commit/285b00ff6b655443e468bf6e167a82ad5ffd2fec))
+
 ## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.19.0...npm-ui-v0.20.0) (2026-10-09)
 
 

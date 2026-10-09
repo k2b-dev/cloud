@@ -3,6 +3,18 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.37.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.36.0...cloud-v0.37.0) (2026-10-09)
+
+
+### Features
+
+* **spaces:** remove the timeline view ([#798](https://github.com/k2b-dev/cloud/issues/798)) ([ca4f890](https://github.com/k2b-dev/cloud/commit/ca4f89045130cca74bc75107b153b534fb0b3c20))
+
+
+### Bug Fixes
+
+* **ui:** show bare dialogs on iPad instead of only blurring the page ([#799](https://github.com/k2b-dev/cloud/issues/799)) ([285b00f](https://github.com/k2b-dev/cloud/commit/285b00ff6b655443e468bf6e167a82ad5ffd2fec))
+
 ## [0.36.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.35.0...cloud-v0.36.0) (2026-10-09)
 
 
