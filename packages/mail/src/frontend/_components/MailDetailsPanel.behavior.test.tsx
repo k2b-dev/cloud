@@ -16,7 +16,7 @@ test.skipIf(isServer)("assign and reminder Commands name an untitled conversatio
         conversationId: "Conv01",
         active: true,
         canWrite: true,
-        canAssign: true,
+        mailboxWide: true,
         initialState: { conversationId: "Conv01", assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 },
         initialLocalTags: [],
         initialConversationLocalTags: { conversationId: "Conv01", conversationRevision: 1, tags: [] },

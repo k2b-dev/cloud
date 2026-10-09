@@ -17,7 +17,8 @@ export default ssr<AuthContext>(async (c) => {
   const result = await mailboxes.listMailboxes(context, 200);
   const internalWritableMailboxes = result.ok
     ? result.data
-        .filter((mailbox) => mailbox.permission === "write" || mailbox.permission === "admin")
+        // New mail needs mailbox-wide write access; a writer of assigned conversations only replies in them.
+        .filter((mailbox) => mailbox.accessScope === "mailbox" && (mailbox.permission === "write" || mailbox.permission === "admin"))
         .map((mailbox) => ({
           id: mailbox.id,
           name: mailbox.name,

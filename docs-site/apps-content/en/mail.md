@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-06
+updated: 2026-10-09
 ---
 
 # Mail
@@ -134,6 +134,46 @@ history. Reconnecting the email provider does not restore Cloud-only data.
 See [Deployment requirements](/en/docs/operations/deployment-requirements)
 for the backup boundary.
 
+## Assign conversations and limit access to them
+
+A conversation can have up to 20 assignees. People with mailbox-wide Write or
+Admin access assign them; each newly added person gets one notification per
+request. **Assigned to me** lists the conversations a person is one of the
+assignees of, and **Unassigned** the ones without an assignee who can still
+work on them. The API takes `assigneeUserIds` with the modes `add`, `remove`,
+and `replace` on `POST /api/mail/mailboxes/{mailboxId}/conversations/assign`,
+and replaces the whole set with `assigneeUserIds` on the collaboration
+`PATCH`. Lists, search, focus items, and the workflow data type
+`mailConversation` report `assigneeUserIds`; collaboration reports
+`assignees`. The workflow action `assignConversation` keeps its single `user`:
+it replaces the assignees with that person, and `null` removes them all.
+Merging two conversations keeps the assignees of both, and splitting one gives
+the new conversation the same assignees.
+
+Next to View, Edit, and Manage, a mailbox grant for a person or group can cover
+only the conversations assigned to the person: **View assigned only** (`read`)
+or **Edit assigned only** (`write`). The access API takes it as
+`"scope": "assigned"` on `POST` and `PATCH /api/mail/mailboxes/{mailboxId}/access`
+and returns it on each such entry; `cld mail access grant|set --scope assigned`
+and `cld mail admin mailbox access` do the same. Such people:
+
+- see no mail until a conversation is assigned to them, then that
+  conversation with all its messages, including later replies;
+- see only the folders that hold one of their conversations, and counts,
+  search, the overview, live updates, Assistant actions, and `cld` cover only
+  their conversations;
+- with `write`, reply, forward, change mail state, move, comment, tag, and mark
+  done in their conversations, but never compose new mail, assign anyone,
+  manage tags, folders, or settings, or merge and split conversations.
+
+Every other conversation, message, draft, and attachment answers 404 to them,
+as if it did not exist. When an assignment ends, access ends at once: lists,
+open views, search, attachment downloads in progress, reminders, and queued or
+scheduled actions they started for the conversation stop. A person with
+mailbox-wide access keeps it; an additional assigned-only grant changes
+nothing. Older Mail images ignore assigned-only grants and treat these people
+as having no access.
+
 ## Manage automation access
 
 An incoming automation that uses Spaces actions needs its creator's authorized
@@ -233,27 +273,9 @@ cld mail tag add <conversation-id> --tag Priority
 cld mail rm <conversation-id> --yes
 ```
 
-A conversation can have up to 20 assignees. `assign --to maria,me` adds users;
-`--to maria --replace` replaces the set, `--remove maria` removes a user,
-and `--to none` clears it. `conversation update --assignee` replaces the set
-and accepts repeated flags or comma-separated users.
-
-`conversation users` lists eligible active users: those with mailbox-wide
-write/admin access or assigned-only read/write grants, directly or through
-groups. Platform administrator status alone does not confer eligibility.
-Changing assignees requires mailbox-wide write/admin access. Each newly added
-user receives one notification per request; self-assignment and removal send
-none. A limit or eligibility failure leaves the entire assignment batch unchanged.
-
-API and capability consumers use `assigneeUserIds` arrays and assignment modes
-`add`, `remove`, and `replace`. Assignment capabilities need no revision;
-the collaboration PATCH still requires `expectedRevision`. Collaboration returns ordered `assignees`;
-batch results resolve the users named in the request. Workflow action
-`assignConversation` keeps its single `user` configuration: a user replaces
-the set with that user, and `null` clears it. “Mine” includes conversations
-assigned to the current user; “Unassigned” includes conversations with no
-eligible assignee. Operators can run an older Mail image after this update;
-it shows the earliest assignee from each set.
+`assign --to maria,me` adds people to the conversations and keeps the others;
+`--replace` replaces them, `--remove maria` removes one, and `--to none`
+removes everyone. `cld mail conversation users` lists who can be assigned.
 
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:

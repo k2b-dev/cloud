@@ -29,7 +29,8 @@ type MailConversationRowActions = {
   toggleSelection: (item: MailListItem, range: boolean) => void;
   itemAction: (item: MailListItem, actionId: MailActionId) => void | Promise<void>;
   manageTags: (item: MailListItem) => void | Promise<void>;
-  merge: (item: MailListItem) => void | Promise<void>;
+  /** Absent for a person who sees only assigned conversations. */
+  merge?: (item: MailListItem) => void | Promise<void>;
 };
 
 /** The list's quick look card; rows anchor it and report mouse rests and leaves for its request. */
@@ -306,11 +307,15 @@ export default function MailConversationRow(props: {
                 icon: getMailAction(actionId).icon,
                 action: () => props.actions.itemAction(props.item, actionId),
               })),
-              {
-                label: t().mergeWithConversation,
-                icon: "ti ti-git-merge",
-                action: () => props.actions.merge(props.item),
-              },
+              ...(props.actions.merge
+                ? [
+                    {
+                      label: t().mergeWithConversation,
+                      icon: "ti ti-git-merge",
+                      action: () => props.actions.merge?.(props.item),
+                    },
+                  ]
+                : []),
             ]}
           >
             <Dropdown.Trigger

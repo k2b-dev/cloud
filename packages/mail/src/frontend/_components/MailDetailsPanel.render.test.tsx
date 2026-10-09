@@ -188,7 +188,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof MailDetailsPanel>[0]> 
       conversationId,
       active: false,
       canWrite: true,
-      canAssign: true,
+      mailboxWide: true,
       initialState: collaboration,
       initialLocalTags: [tag],
       initialConversationLocalTags: conversationTags,

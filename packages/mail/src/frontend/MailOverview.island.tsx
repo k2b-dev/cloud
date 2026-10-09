@@ -220,6 +220,8 @@ function MailOverviewView(props: {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;
     return permission === "write" || permission === "admin";
   };
+  /** False where the person sees only the conversations assigned to them. */
+  const mailboxWide = (mailboxId: string) => props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.accessScope !== "assigned";
   const focusScope = () => {
     const hidden = hiddenMailboxItems().length;
     return hidden > 0 ? messages().allMailboxesExceptHidden({ count: hidden }) : messages().allMailboxes;
@@ -759,7 +761,7 @@ function MailOverviewView(props: {
                       conversationId={selected().conversationId}
                       active={detailOpen()}
                       canWrite={canWriteMailbox(selected().mailboxId)}
-                      canAssign={canWriteMailbox(selected().mailboxId)}
+                      mailboxWide={mailboxWide(selected().mailboxId)}
                       initialState={detail().collaborationState!}
                       initialLocalTags={detail().localTags}
                       initialConversationLocalTags={detail().conversationLocalTags!}

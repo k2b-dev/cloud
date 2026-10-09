@@ -29,6 +29,7 @@ if (!isServer) {
           viewCounts={{ needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0 }}
           canWrite={canWrite()}
           canAdmin={false}
+          assignedOnly={false}
           managementOpening={null}
           settingsOpening={false}
           detailsOpening={false}
@@ -90,6 +91,7 @@ if (!isServer) {
           viewCounts={{ needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0 }}
           canWrite={true}
           canAdmin={true}
+          assignedOnly={false}
           managementOpening={null}
           settingsOpening={false}
           detailsOpening={false}

@@ -71,8 +71,11 @@ export default function MailDetailsPanel(props: {
   conversationId: string;
   active: boolean;
   canWrite: boolean;
-  /** Whether the person may change assignees and create tags: both need mailbox-wide write access. */
-  canAssign: boolean;
+  /**
+   * False for a person who sees only the conversations assigned to them: they cannot change assignees
+   * or create tags, and the related mail and contact context, which look beyond the conversation, stay hidden.
+   */
+  mailboxWide: boolean;
   initialState: ConversationCollaboration;
   initialLocalTags: LocalTag[];
   initialConversationLocalTags: ConversationLocalTags;
@@ -98,6 +101,7 @@ export default function MailDetailsPanel(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const canAssign = () => props.canWrite && props.mailboxWide;
   const retryToast = createRetryToasts();
   const [state, setState] = createSignal(props.initialState);
   const [availableTags, setAvailableTags] = createSignal(props.initialLocalTags);
@@ -239,7 +243,7 @@ export default function MailDetailsPanel(props: {
     if (!props.active) return;
     const conversationId = props.conversationId;
     const copy = mailCommandMessages.resolve([locale()]).t;
-    if (props.canAssign && !props.detailErrors.assignableUsers)
+    if (canAssign() && !props.detailErrors.assignableUsers)
       onCleanup(
         registerContextAwareCommand({
           scope: "selection",
@@ -269,7 +273,7 @@ export default function MailDetailsPanel(props: {
               },
             });
             const userId = selected?.value;
-            if (!userId || !props.active || props.conversationId !== conversationId || !props.canAssign) return;
+            if (!userId || !props.active || props.conversationId !== conversationId || !canAssign()) return;
             const current = state().assignees.map((user) => user.id);
             updateCollaboration({
               assigneeUserIds: current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
@@ -682,7 +686,7 @@ export default function MailDetailsPanel(props: {
               tone="neutral"
               actions={
                 <Tooltip.Anchor content={t().createTag}>
-                  <IconButton type="button" label={t().createTag} size="xs" disabled={!props.canAssign} onClick={() => void createTag()}>
+                  <IconButton type="button" label={t().createTag} size="xs" disabled={!canAssign()} onClick={() => void createTag()}>
                     <i class="ti ti-tag-plus" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -730,7 +734,7 @@ export default function MailDetailsPanel(props: {
                   }
                   placeholder={t().unassigned}
                   clearable
-                  disabled={!props.canAssign || Boolean(props.detailErrors.assignableUsers)}
+                  disabled={!canAssign() || Boolean(props.detailErrors.assignableUsers)}
                 />
                 <DateTimePicker
                   label={t().snoozeUntil}
@@ -788,20 +792,22 @@ export default function MailDetailsPanel(props: {
               </section>
             </Show>
 
-            <MailConversationContext
-              subject={props.subject}
-              mailboxId={props.mailboxId}
-              conversationId={props.conversationId}
-              requestUrl={props.requestUrl}
-              active={props.active}
-            />
+            <Show when={props.mailboxWide}>
+              <MailConversationContext
+                subject={props.subject}
+                mailboxId={props.mailboxId}
+                conversationId={props.conversationId}
+                requestUrl={props.requestUrl}
+                active={props.active}
+              />
 
-            <MailRelatedConversations
-              mailboxId={props.mailboxId}
-              conversationId={props.conversationId}
-              active={props.active}
-              dateConfig={props.dateConfig}
-            />
+              <MailRelatedConversations
+                mailboxId={props.mailboxId}
+                conversationId={props.conversationId}
+                active={props.active}
+                dateConfig={props.dateConfig}
+              />
+            </Show>
 
             <Show when={attachments().length > 0}>
               <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>

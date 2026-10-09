@@ -36,6 +36,7 @@ const renderOverview = (
               syncEnabled: true,
               searchBackend: "auto",
               automaticReplyManagementPermission: "admin",
+              accessScope: "mailbox",
               composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
               createdAt: "2026-08-19T10:00:00.000Z",
               updatedAt: "2026-08-19T10:00:00.000Z",

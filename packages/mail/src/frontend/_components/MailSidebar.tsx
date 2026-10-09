@@ -76,6 +76,11 @@ export default function MailSidebar(props: {
   viewCounts: ConversationViewCounts;
   canWrite: boolean;
   canAdmin: boolean;
+  /**
+   * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
+   * settings, or Unassigned view, which all need mailbox-wide access.
+   */
+  assignedOnly: boolean;
   managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
   settingsOpening: boolean;
   /** The mailbox details are loading; the details button keeps its place and shows progress. */
@@ -106,7 +111,7 @@ export default function MailSidebar(props: {
         },
       }),
     );
-    if (!props.canWrite) return;
+    if (!props.canWrite || props.assignedOnly) return;
     const mailboxId = props.mailboxId;
     onCleanup(
       registerContextAwareCommand({
@@ -127,7 +132,8 @@ export default function MailSidebar(props: {
   ]);
   const assignmentViewItems = createMemo<MailViewItem[]>(() => [
     { id: "mine", label: messages().assignedToMe, icon: "ti ti-user-check" },
-    { id: "unassigned", label: messages().unassigned, icon: "ti ti-user-question" },
+    // Everything such a person sees is assigned to them.
+    ...(props.assignedOnly ? [] : [{ id: "unassigned" as const, label: messages().unassigned, icon: "ti ti-user-question" }]),
   ]);
   const secondaryViewItems = createMemo<MailViewItem[]>(() => [
     { id: "recently_active", label: messages().recentActivity, icon: "ti ti-activity" },
@@ -521,15 +527,19 @@ export default function MailSidebar(props: {
     items: () => [
       // Like the desktop sidebar, the details sit beside Compose; readers, who cannot compose, get them as their own row,
       // named like the button that takes Compose's place on desktop.
-      props.canWrite
-        ? {
-            id: "compose",
-            label: messages().compose,
-            icon: "ti ti-pencil",
-            href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
-            inlineActions: [details(messages().mailboxDetails)],
-          }
-        : details(messages().aboutMailbox),
+      ...(props.assignedOnly
+        ? []
+        : [
+            props.canWrite
+              ? {
+                  id: "compose",
+                  label: messages().compose,
+                  icon: "ti ti-pencil",
+                  href: `/app/mail/compose?mailbox=${props.mailboxId}&autostart=1`,
+                  inlineActions: [details(messages().mailboxDetails)],
+                }
+              : details(messages().aboutMailbox),
+          ]),
       { id: "mailboxes", label: messages().allMailboxes, icon: "ti ti-switch-horizontal", href: "/app/mail" },
       { id: "follow-up", label: messages().followUp, children: views(followUpViewItems()) },
       { id: "assignment", label: messages().assignment, children: views(assignmentViewItems()) },
@@ -602,24 +612,28 @@ export default function MailSidebar(props: {
             },
           ]
         : []),
-      {
-        id: "tools",
-        label: messages().mailboxTools,
-        icon: "ti ti-tool",
-        disabled: props.managementOpening !== null || sync.loading(),
-        children: mailboxToolSections().map((group, index) => ({
-          id: `tools:${index}`,
-          label: group.sectionLabel ?? messages().mailboxTools,
-          children: group.items.map((item) => ({
-            id: `tool:${item.id}`,
-            action: `tool:${item.id}`,
-            label: item.label,
-            icon: item.icon,
-            disabled: item.disabled,
-          })),
-        })),
-      },
-      { id: "settings", label: messages().settings, icon: "ti ti-settings", action: "settings", disabled: props.settingsOpening },
+      ...(props.assignedOnly
+        ? []
+        : [
+            {
+              id: "tools",
+              label: messages().mailboxTools,
+              icon: "ti ti-tool",
+              disabled: props.managementOpening !== null || sync.loading(),
+              children: mailboxToolSections().map((group, index) => ({
+                id: `tools:${index}`,
+                label: group.sectionLabel ?? messages().mailboxTools,
+                children: group.items.map((item) => ({
+                  id: `tool:${item.id}`,
+                  action: `tool:${item.id}`,
+                  label: item.label,
+                  icon: item.icon,
+                  disabled: item.disabled,
+                })),
+              })),
+            },
+            { id: "settings", label: messages().settings, icon: "ti ti-settings", action: "settings", disabled: props.settingsOpening },
+          ]),
     ],
     onNavigate: props.onNavigate,
     onAction: (action) => {
@@ -642,7 +656,13 @@ export default function MailSidebar(props: {
           <div class="mail-sidebar-actions mx-2 mt-2 flex items-center gap-2">
             {/* SSR knows the permission, so this slot never changes shape after hydration. While the details load, only
                 the icon changes: the button keeps its size and focus. */}
-            {props.canWrite ? (
+            {props.assignedOnly ? (
+              // Nothing here needs the whole mailbox: the slot says why the lists are short instead.
+              <p class="mail-assigned-only flex min-h-8 min-w-0 flex-1 items-center gap-2 px-2 text-xs text-dimmed">
+                <i class="ti ti-user-check shrink-0" aria-hidden="true" />
+                <span class="min-w-0 truncate">{messages().assignedOnly}</span>
+              </p>
+            ) : props.canWrite ? (
               <>
                 <ButtonLink
                   size="sm"
@@ -704,14 +724,16 @@ export default function MailSidebar(props: {
             <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-switch-horizontal" navigation="document">
               {messages().allMailboxes}
             </AppWorkspace.SidebarItem>
-            {mailboxTools()}
-            <AppWorkspace.SidebarItem
-              icon={props.settingsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
-              disabled={props.settingsOpening}
-              onClick={props.onOpenSettings}
-            >
-              {messages().settings}
-            </AppWorkspace.SidebarItem>
+            <Show when={!props.assignedOnly}>
+              {mailboxTools()}
+              <AppWorkspace.SidebarItem
+                icon={props.settingsOpening ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
+                disabled={props.settingsOpening}
+                onClick={props.onOpenSettings}
+              >
+                {messages().settings}
+              </AppWorkspace.SidebarItem>
+            </Show>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
