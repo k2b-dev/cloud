@@ -4,6 +4,7 @@ export const venueMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      malformedImage: "This image could not be read. Export it again or choose another file.",
       appName: "Venues",
       start: "Start",
       notFound: "Not found",
@@ -567,6 +568,7 @@ export const venueMessages = i18n.define({
       linkRequiredFields: "Enter a label and an address for this link.",
     },
     de: {
+      malformedImage: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
       appName: "Standorte",
       start: "Start",
       notFound: "Nicht gefunden",

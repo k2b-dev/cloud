@@ -87,7 +87,10 @@ export const fileProviderSources = (apps: readonly CapabilityCatalogApp[], local
     })
     .sort((a, b) => a.name.localeCompare(b.name, locale));
 
-/** Reads every catalog page; the catalog is the only discovery, there is no provider route. */
+/**
+ * Reads every catalog page; the catalog is the only discovery, there is no provider route. A refusal keeps its status
+ * (401 or 403), so the page's file choosing can tell a visitor without providers from a failed load.
+ */
 export const loadFileProviders = async (caller: FileProviderCaller, signal?: AbortSignal): Promise<FileProviderSource[]> => {
   const apps: CapabilityCatalogApp[] = [];
   let cursor: string | undefined;

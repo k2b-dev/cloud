@@ -10,6 +10,7 @@ import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
+import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infra";
 import { importRows } from "../../examples/accounting/import-rows";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
@@ -110,6 +111,45 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         { id: string }[]
       >`INSERT INTO auth.access(user_id,permission) VALUES(${who.user!.id}::uuid,${permission}::auth.permission_level) RETURNING id`;
       await sql`INSERT INTO assistant.artifact_access VALUES((SELECT id FROM assistant.artifacts WHERE short_id=${id}),${grant!.id}::uuid)`;
+    }
+  });
+
+  test("shared App image files are sanitized and malformed uploads return 422", async () => {
+    const resource = await artifacts.create({ kind: "app", title: "Photo privacy", source }, owner);
+    const api = new Hono<AuthContext>()
+      .use("*", async (c, next) => {
+        c.set("actor", owner.actor);
+        c.set("accessSubject", owner.accessSubject);
+        await next();
+      })
+      .route("/", createArtifactServiceRoutes());
+    try {
+      const jpeg = await tinyJpeg();
+      const input = withCameraMetadata(jpeg, 1);
+      const request = { area: "files", operation: "write", key: "photo.jpg", mediaType: "application/octet-stream" };
+      await artifacts.storage(resource.id, request, owner, false, input);
+      const stored = await artifacts.storage(resource.id, { area: "files", operation: "read", key: "photo.jpg" }, owner);
+      expect("item" in stored && stored.item?.data).toEqual(jpeg);
+      const path = `/${resource.id}/storage/file?key=api-photo.jpg`;
+      const response = await api.request(path, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream" },
+        body: new Uint8Array(input),
+      });
+      expect(response.status).toBe(200);
+      const content = await api.request(path);
+      expect(new Uint8Array(await content.arrayBuffer())).toEqual(jpeg);
+      expect(
+        (
+          await api.request(path, {
+            method: "PUT",
+            headers: { "content-type": "application/octet-stream" },
+            body: new Uint8Array(input.subarray(0, 30)),
+          })
+        ).status,
+      ).toBe(422);
+    } finally {
+      await artifacts.remove(resource.id, owner);
     }
   });
 
@@ -1515,9 +1555,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           downloads: [],
           aria: "",
           screenshots: [
-            { view: "desktop-start", theme: "light", path: "/files/start.png" },
-            { view: "desktop", theme: "light", path: "/files/desktop.png" },
-            { view: "mobile", theme: "dark", path: "/files/mobile.png" },
+            { view: "desktop-start", theme: "light", path: "/files/start.png", cropped: false },
+            { view: "desktop", theme: "light", path: "/files/desktop.png", cropped: false },
+            { view: "mobile", theme: "dark", path: "/files/mobile.png", cropped: false },
           ],
         };
         await appChecks.record(report, { id: real.id }, conversationId, owner);
@@ -2462,9 +2502,9 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         calls: [],
         downloads: [],
         screenshots: [
-          { view: "desktop-start", theme: "light", path: "/files/start.png" },
-          { view: "desktop", theme: "light", path: "/files/desktop.png" },
-          { view: "mobile", theme: "dark", path: "/files/mobile.png" },
+          { view: "desktop-start", theme: "light", path: "/files/start.png", cropped: false },
+          { view: "desktop", theme: "light", path: "/files/desktop.png", cropped: false },
+          { view: "mobile", theme: "dark", path: "/files/mobile.png", cropped: false },
         ],
         aria: "",
       };

@@ -111,7 +111,6 @@ export const studioFiles = {
     const target = await studioFiles.destination(destination, expectedVersion, identity);
     const file = await studioFiles.readReference(source, identity);
     signal.throwIfAborted();
-    let version: string;
     try {
       if (target.scope === "app") {
         const result = await artifacts.storage(
@@ -123,7 +122,6 @@ export const studioFiles = {
           { version: numericVersion(expectedVersion) },
         );
         if (!result.version) throw new ArtifactError("CONFLICT");
-        version = String(result.version);
       } else if (target.scope === "project") {
         const result = await aiProjects.writeFile(target.id, identity.accessSubject, {
           path: destination.path,
@@ -132,9 +130,8 @@ export const studioFiles = {
           expectedVersion,
         });
         if (!result) throw new ArtifactError("ACCESS_DENIED");
-        version = aiFileContentVersion({ ...result, bytes: file.bytes });
       } else {
-        const result = await writeAiConversationFile({
+        await writeAiConversationFile({
           conversationId: target.id,
           ownerUserId: user(identity).id,
           path: destination.path,
@@ -142,16 +139,13 @@ export const studioFiles = {
           bytes: file.bytes,
           expectedVersion,
         });
-        version = aiFileContentVersion({ ...result, bytes: file.bytes, id: `${target.id}:${result.path}:${result.version}` });
       }
     } catch (error) {
       if (error instanceof AiFileVersionConflict) throw new ArtifactError("CONFLICT");
       throw error;
     }
-    return {
-      reference: { scope: target.scope, id: target.id, path: destination.path, version },
-      size: file.bytes.byteLength,
-      mediaType: file.mediaType,
-    };
+    const stored = await studioFiles.read({ ...destination, id: target.id }, identity);
+    if (!stored) throw new ArtifactError("CONFLICT");
+    return { reference: stored.reference, size: stored.bytes.byteLength, mediaType: stored.mediaType };
   },
 };

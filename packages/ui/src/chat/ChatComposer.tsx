@@ -52,6 +52,12 @@ export type ChatCommand = {
 
 export type ChatFileSelection = {
   onSelect: (files: readonly File[]) => void | Promise<void>;
+  /**
+   * Chooses files for "Attach files" instead of the device's file dialog, for example to offer other sources as well.
+   * Called within the menu activation, so it may still open the device's dialog; resolve `[]` when the user cancels.
+   * `multiple: false` keeps the first chosen file, and a rejection reaches `onError`.
+   */
+  choose?: () => Promise<readonly File[]>;
   onError?: (error: unknown) => void;
   accept?: string;
   multiple?: boolean;
@@ -271,7 +277,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         icon: addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-paperclip",
         label: props.fileSelection.label ?? messages().attachFiles,
         disabled: !canSelectFiles(),
-        action: () => fileInputRef?.click(),
+        action: () => chooseFiles(),
       });
     }
     for (const action of props.menuActions ?? []) {
@@ -351,6 +357,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <strong title={attachment.name}>{attachment.name}</strong>
     </span>
   );
+
+  const chooseFiles = () => {
+    const selection = props.fileSelection;
+    if (!selection?.choose) return fileInputRef?.click();
+    selection.choose().then(
+      // A single-file composer keeps the first chosen file, as its file dialog and drops do.
+      (files) => void runFiles(selection.multiple === false ? files.slice(0, 1) : files),
+      (error: unknown) => (props.fileSelection?.onError ?? props.onError)?.(error),
+    );
+  };
 
   const runFiles = async (files: FileList | readonly File[]) => {
     if (!canSelectFiles()) return;

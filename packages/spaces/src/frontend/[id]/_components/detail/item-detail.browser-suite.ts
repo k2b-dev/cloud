@@ -179,6 +179,8 @@ beforeAll(async () => {
           headers: { ...headers, "content-range": `bytes ${start}-${end}/${file.bytes.length}` },
         });
       }
+      // No Cloud app offers files here, so Add image or video opens the device's file dialog directly.
+      if (url.pathname === "/api/capabilities/v1/catalog") return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } });
       if (url.pathname.startsWith("/api/")) {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
@@ -538,9 +540,17 @@ describe("Spaces item detail in a browser", () => {
       const page = await open(desktop, { locale });
       try {
         writes.length = 0;
-        const chooser = page.waitForEvent("filechooser");
+        const picked = page.waitForEvent("filechooser");
         await page.getByText(locale === "de" ? "Bild oder Video hinzufügen" : "Add image or video").click();
-        await (await chooser).setFiles({ name: "clip.mkv", mimeType: "video/x-matroska", buffer: Buffer.from("A Matroska video") });
+        // The page learns while idle that no app offers files, and then the click opens the device's dialog. A click
+        // before that opens the source chooser, whose first source, This device, opens the same dialog.
+        const thisDevice = page.locator('dialog[open] [role="gridcell"]').first();
+        const chooserOpened = thisDevice.waitFor().then(
+          () => true,
+          () => false,
+        );
+        if (await Promise.race([picked.then(() => false), chooserOpened])) await thisDevice.click();
+        await (await picked).setFiles({ name: "clip.mkv", mimeType: "video/x-matroska", buffer: Buffer.from("A Matroska video") });
         await page.locator(".k2b-toast", { hasText: message }).waitFor();
         expect(writes.filter((write) => write.path.endsWith("/attachments"))).toEqual([]);
       } finally {

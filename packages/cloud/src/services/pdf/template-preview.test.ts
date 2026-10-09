@@ -98,6 +98,25 @@ describe("template PDF preview renderer", () => {
     expect(result).toMatchObject({ ok: false, error: { phase: "template", status: 400 } });
   });
 
+  test("reports a Liquid timeout code before calling Gotenberg", async () => {
+    let called = false;
+    const result = await renderTemplatePdfPreview(
+      {
+        htmlTemplate: "{% for a in rows %}{% for b in rows %}{% for c in rows %}{% endfor %}{% endfor %}{% endfor %}",
+        data: { rows: Array.from({ length: 1_000 }, (_, i) => i) },
+      },
+      {
+        config: baseConfig,
+        fetch: async () => {
+          called = true;
+          return pdfResponse();
+        },
+      },
+    );
+    expect(called).toBe(false);
+    expect(result).toMatchObject({ ok: false, error: { phase: "template", code: "render_timeout" } });
+  });
+
   test("reports Gotenberg failures as PDF errors", async () => {
     const result = await renderTemplatePdfPreview(
       { htmlTemplate: "<p>OK</p>", data: {} },

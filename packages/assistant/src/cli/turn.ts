@@ -11,7 +11,7 @@ import {
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
-import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
+import { type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 
 export type ConversationDetail = {
   conversation: AiConversation;
@@ -49,14 +49,19 @@ export const validateLocalAttachments = async (paths: readonly string[]): Promis
 export const resolveConversation = async (
   ctx: CloudCliContext,
   input: { conversationId?: string; title?: string; projectId?: string },
-): Promise<AiConversation> =>
-  input.conversationId
-    ? readConversationDetail(ctx, input.conversationId).then((detail) => detail.conversation)
-    : readApi<AiConversation>(
-        ctx,
-        "/conversations",
-        jsonRequest("POST", { ...(input.title ? { title: input.title } : {}), ...(input.projectId ? { projectId: input.projectId } : {}) }),
-      );
+): Promise<AiConversation> => {
+  if (input.conversationId) return (await readConversationDetail(ctx, input.conversationId)).conversation;
+  const title = input.title ? input.title.trim() : undefined;
+  if (title !== undefined && (title.length === 0 || title.length > 120)) {
+    throw new Error("Chat titles must have 1 to 120 characters.");
+  }
+  const conversation = await readApi<AiConversation>(
+    ctx,
+    "/conversations",
+    jsonRequest("POST", { ...(input.projectId ? { projectId: input.projectId } : {}) }),
+  );
+  return title ? readApi<AiConversation>(ctx, conversationPath(conversation.id), jsonRequest("PATCH", { title })) : conversation;
+};
 
 export const uploadAttachment = async (
   ctx: CloudCliContext,
@@ -127,6 +132,7 @@ export const submitAssistantTurn = async (input: {
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
+  output?: AssistantTurnOutput;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
     ? await input.ctx.fetch(`${AI_API}${conversationPath(input.conversationId, "/stream")}`, {
@@ -157,6 +163,7 @@ export const submitAssistantTurn = async (input: {
       onCapabilityApproval: input.onCapabilityApproval,
       signal: input.signal,
       onToolBlock: input.onToolBlock,
+      output: input.output,
     }),
   };
 };

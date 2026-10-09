@@ -3,7 +3,9 @@ import { defaultCalendarFilter, parseCalendarFilter, parseCalendarRoute, writeCa
 
 describe("calendar URL filters", () => {
   test("uses defaults for absent or malformed values", () => {
-    expect(parseCalendarFilter(new URL("https://cloud.test/app/spaces/1?ctype=nope&cpriority=urgent,nope"))).toEqual(defaultCalendarFilter);
+    expect(parseCalendarFilter(new URL("https://cloud.test/app/spaces/1?ctype=nope&cpriority=urgent,nope&ccolor=rainbow"))).toEqual(
+      defaultCalendarFilter,
+    );
   });
 
   test("round-trips supported filters without unrelated query changes", () => {
@@ -14,6 +16,7 @@ describe("calendar URL filters", () => {
       priorities: ["urgent", "high"] as Array<"urgent" | "high">,
       columnIds: ["todo"],
       tagIds: ["ops"],
+      colorBy: "person" as const,
     };
 
     writeCalendarFilter(url, filter);
@@ -21,10 +24,11 @@ describe("calendar URL filters", () => {
     expect(parseCalendarFilter(url)).toEqual(filter);
     expect(url.searchParams.get("view")).toBe("calendar");
     expect(url.searchParams.get("item")).toBe("abc");
+    expect(url.searchParams.get("ccolor")).toBe("person");
   });
 
   test("removes default values from generated URLs", () => {
-    const url = new URL("https://cloud.test/app/spaces/1?ctype=event&cassigned=me&cpriority=high&ccolumns=todo&ctags=ops");
+    const url = new URL("https://cloud.test/app/spaces/1?ctype=event&cassigned=me&cpriority=high&ccolumns=todo&ctags=ops&ccolor=status");
     writeCalendarFilter(url, defaultCalendarFilter);
     expect(url.search).toBe("");
   });

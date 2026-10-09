@@ -76,6 +76,7 @@ export {
 } from "./enrich";
 export { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 export { aiConversationFileManifest } from "./file-context";
+export { isAiImage } from "./file-media-type";
 export { AiFileLocation, AiFileReference } from "./file-reference-contracts";
 export {
   AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,

@@ -2,11 +2,15 @@ import { showFileDialog } from "@k2b/stdlib/browser";
 import { dialogCore, panelDialogWorkspaceOptions } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { type ChooseFilesOptions, FileChooser, type FileProviderList } from "./FileChooser";
-import type { FileProviderCaller, FileProviderSource } from "./file-providers";
+import { type FileProviderCaller, FileProviderError, type FileProviderSource } from "./file-providers";
+
+/** The catalog refuses the caller, such as a visitor of a public page or a session that has just expired. */
+const refused = (error: unknown) => error instanceof FileProviderError && (error.status === 401 || error.status === 403);
 
 /**
  * One page's file choosing: the provider list is loaded once and kept; a failed load is tried again on the next
- * request. `caller` carries the locale and, in tests, the transport.
+ * request. A caller the catalog refuses has no providers for now, so choosing stays with the device, and the next
+ * request asks again, because a renewed session may see them. `caller` carries the locale and, in tests, the transport.
  */
 export const createFileChoosing = (
   loadProviders: () => Promise<FileProviderSource[]>,
@@ -22,11 +26,14 @@ export const createFileChoosing = (
       },
       (error: unknown) => {
         request = undefined;
-        throw error;
+        if (!refused(error)) throw error;
+        known = [];
+        return [];
       },
     );
     return request;
   };
+  const prefetch = () => void providers().catch(() => undefined);
 
   const chooseFiles = (options: ChooseFilesOptions = {}): Promise<File[]> => {
     const { signal } = options;
@@ -36,6 +43,8 @@ export const createFileChoosing = (
       const picked = options.multiple
         ? showFileDialog({ accept: options.accept, multiple: true })
         : showFileDialog({ accept: options.accept }).then((file) => [file]);
+      // Only a refusal leaves no request behind; asking again now lets the next choice find a renewed session's apps.
+      if (!request) prefetch();
       // The page cannot close a native dialog; an abort resolves `[]` at once and a later pick is dropped.
       return new Promise((resolve) => {
         const abort = () => resolve([]);
@@ -65,6 +74,6 @@ export const createFileChoosing = (
 
   return {
     chooseFiles,
-    prefetch: () => void providers().catch(() => undefined),
+    prefetch,
   };
 };

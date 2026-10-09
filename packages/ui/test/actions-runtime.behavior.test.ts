@@ -130,6 +130,49 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("runs a link row's action on a plain click and leaves modified clicks to the link", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { Dropdown } = await import("../src/actions/Dropdown");
+    const opened: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Dropdown.Root, {
+          items: [
+            { label: "Weekly review", href: "/events/review", action: () => opened.push("review") },
+            { label: "Docs", href: "/docs" },
+          ],
+          get children() {
+            return createComponent(Dropdown.Trigger, { label: "More", children: "+2" });
+          },
+        }),
+      dom.root,
+    );
+    const click = (link: HTMLAnchorElement, modifiers: { ctrlKey?: boolean } = {}) => {
+      const event = new dom.window.MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers }) as unknown as MouseEvent;
+      link.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const menu = () => dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")!;
+
+    trigger.click();
+    await flush();
+    const review = dom.root.querySelector<HTMLAnchorElement>('a[href="/events/review"]')!;
+    expect(click(review)).toBe(true);
+    expect(opened).toEqual(["review"]);
+    expect(menu()?.matches(":popover-open")).toBe(false);
+
+    trigger.click();
+    await flush();
+    expect(click(review, { ctrlKey: true })).toBe(false);
+    expect(click(dom.root.querySelector<HTMLAnchorElement>('a[href="/docs"]')!)).toBe(false);
+    expect(opened).toEqual(["review"]);
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("keeps split button primary and menu actions independent", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();
@@ -389,6 +432,76 @@ describe("@k2b/ui action runtime behavior", () => {
     expect(changes).toEqual([["urgent"], ["urgent"], []]);
     expect(dom.document.activeElement).toBe(originalCheckbox);
     expect(originalCheckbox?.getAttribute("aria-checked")).toBe("false");
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("lays a FilterChip row section out as segments that keep one choice and follow the arrow keys", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { FilterChip } = await import("../src/actions/FilterChip");
+    const changes: string[][] = [];
+
+    const dispose = render(() => {
+      const [value, setValue] = createSignal<readonly string[]>(["scope:all", "sort:asc"]);
+      return createComponent(FilterChip, {
+        label: "View",
+        icon: "ti ti-filter",
+        get value() {
+          return value();
+        },
+        defaultValue: ["scope:all", "sort:asc"],
+        onValueChange: (nextValue) => {
+          changes.push(nextValue);
+          setValue(nextValue);
+        },
+        options: [
+          {
+            label: "Scope",
+            options: [
+              { value: "scope:all", label: "All" },
+              { value: "scope:mine", label: "Mine" },
+            ],
+          },
+          {
+            label: "Sort",
+            layout: "row",
+            options: [
+              { value: "sort:asc", label: "Ascending" },
+              { value: "sort:desc", label: "Descending" },
+            ],
+          },
+        ],
+      });
+    }, dom.root);
+
+    dom.root.querySelector<HTMLElement>(".k2b-filter-chip")?.click();
+    await flush();
+
+    const segments = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-dropdown__row > [role='menuitemradio']"));
+    expect(segments.map((segment) => segment.textContent)).toEqual(["Ascending", "Descending"]);
+    expect(dom.root.querySelector(".k2b-dropdown__row")?.closest("[role='group']")?.getAttribute("aria-label")).toBe("Sort");
+
+    // The selected segment stays selected; another one replaces it.
+    segments[0]?.click();
+    expect(changes).toEqual([]);
+    segments[1]?.click();
+    expect(changes).toEqual([["scope:all", "sort:desc"]]);
+    expect(segments[1]?.getAttribute("aria-checked")).toBe("true");
+
+    const menu = dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    const menuKeyDown = (menu as unknown as { $$keydown?: (event: KeyboardEvent) => void })?.$$keydown;
+    segments[1]?.focus();
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+    expect(dom.document.activeElement).toBe(segments[0] ?? null);
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowLeft" }));
+    expect(dom.document.activeElement).toBe(segments[1] ?? null);
+    // Up leaves the row for the item above it, as in any menu.
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(dom.document.activeElement).toBe(segments[0] ?? null);
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    expect(dom.document.activeElement?.textContent).toBe("Mine");
 
     dispose();
     dom.cleanup();

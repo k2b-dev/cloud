@@ -117,6 +117,13 @@ describe("file provider discovery", () => {
     await expect(failure).rejects.toMatchObject({ code: "APP_UNAVAILABLE", status: 503 });
   });
 
+  test("a catalog refusal keeps its status, so choosing can tell a visitor without providers from a failed load", async () => {
+    for (const status of [401, 403]) {
+      const refusal = loadFileProviders({ locale: "en", fetch: async () => json({ code: "UNAUTHORIZED", message: "No" }, status) });
+      await expect(refusal).rejects.toMatchObject({ status });
+    }
+  });
+
   test("only Tabler icon classes from other apps reach the page", () => {
     expect(providerIcon("ti ti-home", "ti ti-file")).toBe("ti ti-home");
     expect(providerIcon("fixed inset-0 z-50", "ti ti-file")).toBe("ti ti-file");

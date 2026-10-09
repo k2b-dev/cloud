@@ -497,6 +497,50 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule(".k2b-ui .k2b-dropdown__menu.k2b-filter-chip__menu")).toContain("min-width: min(13rem, 100vw - 2rem)");
   });
 
+  test("renders a row section as one segmented row of radio choices", () => {
+    const html = renderToString(() =>
+      createComponent(FilterChip, {
+        label: "View",
+        icon: "ti ti-filter",
+        value: ["sort:asc"],
+        defaultValue: ["sort:asc"],
+        onValueChange: () => {},
+        options: [
+          {
+            label: "Sort",
+            layout: "row",
+            options: [
+              { value: "sort:asc", label: "Ascending", icon: "ti ti-arrow-up" },
+              { value: "sort:desc", label: "Descending", icon: "ti ti-arrow-down" },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toMatch(
+      /role="group" aria-label="Sort"><div class="k2b-dropdown__label">Sort<\/div>(?:<!--[^>]*-->)*<div class="k2b-dropdown__row">/,
+    );
+    expect(html.match(/<div class="k2b-dropdown__row">(.*?)<\/div><\/div>/s)?.[1]?.match(/role="menuitemradio"/g)).toHaveLength(2);
+    expect(rule(".k2b-ui .k2b-dropdown__row")).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
+    expect(rule(".k2b-ui .k2b-dropdown__row > .k2b-dropdown__item > i")).toContain("display: none");
+    expect(rule('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]')).toContain("background: var(--k2b-surface)");
+
+    // A row of choices is no set of actions: without a label its group stays unnamed instead of "Actions".
+    const unlabeled = renderToString(() =>
+      createComponent(FilterChip, {
+        label: "View",
+        icon: "ti ti-filter",
+        value: ["sort:asc"],
+        defaultValue: ["sort:asc"],
+        onValueChange: () => {},
+        options: [{ layout: "row", options: [{ value: "sort:asc", label: "Ascending" }] }],
+      }),
+    );
+    expect(unlabeled).toMatch(/role="group"(?:(?!aria-label)[^>])*>(?:<!--[^>]*-->)*<div class="k2b-dropdown__row">/);
+    expect(unlabeled).not.toContain('aria-label="Actions"');
+  });
+
   test("treats an empty filter default as clear mode and keeps the selected count", () => {
     const html = renderToString(() =>
       createComponent(FilterChip, {

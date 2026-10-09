@@ -306,7 +306,11 @@ profile contract as text models.
 `vision` fails validation. Audio profiles cannot serve as the default chat,
 background, or workflow model and do not appear in chat model selection.
 An empty audio selection disables default audio resolution; Cloud never falls
-back to a text model or another provider.
+back to a text model or another provider. The default `transcribe_audio` tool
+is offered only when the selected audio profile resolves locally, including
+credentials and the application's allowed data boundary, and the user has
+Assistant access to it. The composer microphone uses the same check.
+Availability checking does not call the provider.
 
 Supported containers depend on the endpoint. Cloud recognizes WAV, MP3/MPEG
 audio, FLAC, OGG, M4A/MP4, and WebM, checks their container signatures, and

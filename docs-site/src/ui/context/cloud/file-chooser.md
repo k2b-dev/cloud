@@ -15,6 +15,11 @@ Do not add a second "From Cloud" button next to it, and do not use it to pick
 a reference to a resource; use the
 [resource picker](/en/ui/cloud/resource-picker) for that.
 
+A `FileDropzone` or `ChatComposer` takes it as its `choose` function, so its
+click or **Attach files** opens the chooser and drops keep their path. When a
+dialog holds the dropzone, the chooser opens over it and returns to it, with
+focus on the dropzone, when it closes.
+
 ## Import
 
 ```ts

@@ -179,6 +179,39 @@ export const reconcileResolvedTurnActions = (
   });
 };
 
+/** Decode complete provider names; hashes and ambiguous separators have no exact inverse. */
+const canonicalToolName = (name: string, presentation?: AiToolPresentation): string => {
+  if (name.length === 64 && /__[0-9a-f]{12}$/.test(name)) return name;
+  const decode = (value: string): string | undefined => {
+    const tokens = /[a-zA-Z0-9-]|__|_dot_|_u([0-9a-f]+)_/gy;
+    let decoded = "",
+      offset = 0;
+    while (offset < value.length) {
+      const token = tokens.exec(value);
+      if (!token) return undefined;
+      if (token[0] === "__") decoded += "_";
+      else if (token[0] === "_dot_") decoded += ".";
+      else if (token[1]) {
+        const codePoint = Number.parseInt(token[1], 16);
+        if (codePoint > 0x10ffff || codePoint.toString(16) !== token[1]) return undefined;
+        const character = String.fromCodePoint(codePoint);
+        if (/^[a-zA-Z0-9_.-]$/.test(character)) return undefined;
+        decoded += character;
+      } else decoded += token[0];
+      offset = tokens.lastIndex;
+    }
+    return decoded || undefined;
+  };
+  const candidates: string[] = [];
+  for (const match of name.matchAll(/(?=__(query|action)__)/g)) {
+    const appId = decode(name.slice(0, match.index));
+    const localId = decode(name.slice(match.index + match[1]!.length + 4));
+    if (appId && localId && (!presentation || (presentation.appId === appId && presentation.capabilityKind === match[1])))
+      candidates.push(`${appId}.${localId}`);
+  }
+  return candidates.length === 1 ? candidates[0]! : name;
+};
+
 /**
  * Convert persisted loop messages into the block model. Shared by the executor
  * (baseline rebuild on claim) and the client (rendering finished turns), so a
@@ -211,7 +244,7 @@ export const buildBlocksFromMessages = (
             id: toolBlockId(block.id),
             kind: "tool",
             callId: block.id,
-            name: block.name,
+            name: canonicalToolName(block.name, meta?.toolPresentations?.[block.id]),
             args: block.args,
             status: "running",
             presentation: meta?.toolPresentations?.[block.id],

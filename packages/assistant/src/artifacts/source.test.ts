@@ -21,3 +21,14 @@ test("missing helpers and invalid intermediate code produce diagnostics", async 
   expect(errors.join(" ")).not.toBe("Bundle failed");
   expect(await sourceDiagnostics({ entry: "main.ts", files: [{ path: "main.ts", content: "export default () => 42" }] })).toEqual([]);
 });
+
+test("an invalid steps.json is reported while the app is written", async () => {
+  const files = [
+    { path: "index.html", content: "<main><h1>Tasks</h1></main>" },
+    { path: "steps.json", content: JSON.stringify([{ action: "click", target: { role: "button", name: "Add", exact: true } }]) },
+  ];
+  const diagnostics = await sourceDiagnostics({ entry: "index.html", files });
+  expect(diagnostics).toContainEqual(expect.stringMatching(/^error steps\.json: Invalid steps\.json: step 1 \(click\): target must be/));
+  files[1] = { path: "steps.json", content: JSON.stringify([{ action: "click", target: { role: "button", name: "Add" } }]) };
+  expect(await sourceDiagnostics({ entry: "index.html", files })).toEqual([]);
+});

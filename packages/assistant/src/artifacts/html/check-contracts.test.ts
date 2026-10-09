@@ -12,7 +12,9 @@ import {
   matchTarget,
   modelCheckReport,
   readCheckSteps,
+  stepsProblem,
 } from "./check-contracts";
+import { shownProblems } from "./check-layout";
 
 test("target matching prefers exact, then case-insensitive, then substring", () => {
   expect(matchTarget(["Add item", "Add"], "Add")).toBe(1);
@@ -148,4 +150,90 @@ test("check-unavailable diagnostics warn even with a console prefix", () => {
   expect(diagnosticSeverity(`Load failed: ${CHECK_UNAVAILABLE}`)).toBe("warning");
   expect(diagnosticSeverity("Error: unexpected failure")).toBe("error");
   expect(diagnosticSeverity("ResizeObserver loop completed with undelivered notifications.")).toBe("warning");
+});
+
+test("steps.json problems name the step, the field and the valid forms", () => {
+  const problem = (steps: unknown) => stepsProblem([{ path: "steps.json", content: JSON.stringify(steps) }]);
+  expect(problem([{ action: "click", target: { role: "button", name: "Save" } }])).toBeNull();
+  expect(stepsProblem([{ path: "index.html", content: "<main></main>" }])).toBeNull();
+  // The two invalid files of the first Studio evaluation run.
+  expect(problem([{ action: "click", target: { role: "button", name: "Save", exact: true } }])).toStartWith(
+    'Invalid steps.json: step 1 (click): target must be exactly one of {role, name?}, {label} or {text}, not "exact". Steps are',
+  );
+  expect(problem([{ action: "fill", target: { label: "Hours", role: "spinbutton" }, value: "2" }])).toStartWith(
+    "Invalid steps.json: step 1 (fill): target must be exactly one of {role, name?}, {label} or {text}.",
+  );
+  expect(problem([{ action: "tap", target: { text: "Save" } }])).toContain(
+    "step 1 (tap): action must be click, check, uncheck, fill, select, press, upload or reload",
+  );
+  expect(problem([{ action: "fill", target: { label: "Amount" }, value: 12 }])).toContain('step 1 (fill): "value" must be a string');
+  expect(problem([{ action: "reload" }, { action: "press" }])).toContain('step 2 (press): "value" is missing');
+  expect(problem({ steps: [] })).toContain("the file must be a JSON array of steps");
+  expect(problem(Array(21).fill({ action: "reload" }))).toContain("more than 20 steps");
+  expect(stepsProblem([{ path: "steps.json", content: "[{" }])).toStartWith("steps.json is not valid JSON (");
+  // An empty file means no steps, as code_check has always read it.
+  expect(stepsProblem([{ path: "steps.json", content: "" }])).toBeNull();
+  expect(readCheckSteps([{ path: "steps.json", content: "" }])).toEqual([]);
+});
+test("modelCheckReport asks view_image a review question about every screenshot and PDF", () => {
+  const pdf = (view: "desktop" | "mobile", ordinal: number, name: string) => ({
+    name,
+    type: "application/pdf",
+    size: 10,
+    path: `/files/h/${view}-${ordinal}-${name}`,
+    view,
+  });
+  const report = modelCheckReport({
+    passed: true,
+    hash: "a".repeat(64),
+    height: 10,
+    issues: [],
+    calls: [],
+    downloads: [
+      pdf("desktop", 1, "Quote.pdf"),
+      { name: "rows.csv", type: "text/csv", size: 10, path: "/files/h/desktop-2-rows.csv", view: "desktop" },
+      // Exported again after an edit: another document under the same name.
+      pdf("desktop", 3, "Quote.pdf"),
+      pdf("mobile", 4, "Quote.pdf"),
+      pdf("mobile", 5, "Quote.pdf"),
+      pdf("mobile", 6, "Phone.pdf"),
+    ],
+    screenshots: [{ view: "desktop", theme: "light", path: "/files/h/desktop-light.png", cropped: false }],
+    aria: "",
+  });
+  expect(report.review.paths).toEqual([
+    "/files/h/desktop-light.png",
+    "/files/h/desktop-1-Quote.pdf",
+    "/files/h/desktop-3-Quote.pdf",
+    "/files/h/mobile-6-Phone.pdf",
+  ]);
+  for (const words of ["different heights", "cut off", "error message", "No visible defects"])
+    expect(report.review.prompt).toContain(words);
+});
+test("shown text: code errors in the app's messages fail, quoted errors and broken values warn, prose passes", () => {
+  const shown = (page: string, messages = "") => shownProblems({ page, messages });
+  for (const message of [
+    "Cannot read properties of null (reading 'elements')",
+    "null is not an object (evaluating 'event.currentTarget.elements')",
+    'can\'t access property "elements", event.currentTarget is null',
+    "rows.map is not a function",
+  ])
+    expect(shown(`Expenses\n${message}`, message)).toEqual([expect.objectContaining({ severity: "error", kind: "shown-error" })]);
+  // A log table that quotes an error, and an input error the app words with the engine message, warn.
+  const quoted = "Sync TypeError: Cannot read properties of undefined (reading 'id')";
+  expect(shown(`Failed jobs\n${quoted}`)).toEqual([
+    expect.objectContaining({ severity: "warning", kind: "shown-error", message: expect.stringContaining(quoted) }),
+  ]);
+  for (const message of ["TypeError: Failed to fetch", "SyntaxError: Unexpected token } in JSON at position 5"])
+    expect(shown(`Import\n${message}`, message)).toEqual([expect.objectContaining({ severity: "warning", kind: "shown-error" })]);
+  // The app's own message is reported before a quoted log line.
+  expect(shown(`${quoted}\nSyntaxError: Unexpected end of JSON input`, "SyntaxError: Unexpected end of JSON input")).toEqual([
+    expect.objectContaining({ severity: "warning", message: expect.stringContaining("Unexpected end of JSON input") }),
+  ]);
+  // A hidden alert keeps its text, but the page does not show it.
+  expect(shown("Expenses", "Cannot read properties of null (reading 'x')")).toEqual([]);
+  for (const value of ["Total: NaN €", "Customer: undefined", "[object Object]", "Due Invalid Date"])
+    expect(shown(value)).toEqual([expect.objectContaining({ severity: "warning", kind: "shown-value" })]);
+  for (const prose of ["This is not a function of the price", "Category is not defined yet", "Nancy and Nandu", "Undefined behaviour"])
+    expect(shown(prose)).toEqual([]);
 });

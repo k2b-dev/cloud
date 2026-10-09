@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
+import { tinyPng } from "../../../scripts/fixtures/image-metadata";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 
@@ -364,7 +365,7 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
     test("attachments become relative files in the mirror and round-trip on write", async () => {
       const mirror = join(home, "docs-mirror");
       const image = join(home, "diagram.png");
-      await writeFile(image, new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+      await writeFile(image, tinyPng());
       const attached = await cldJson<{ attachment: { id: string }; markdown: string }>(["notebooks", "attach", "Kolb Antik Doku:", image]);
       expect(attached.markdown).toBe(`![diagram.png](attach://${attached.attachment.id})`);
 

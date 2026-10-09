@@ -14,6 +14,7 @@
  */
 
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { fileIcons } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateUniqueShortId } from "../lib/short-id";
@@ -74,13 +75,14 @@ export const upload = async (params: {
   userId: string | null;
 }): Promise<Attachment> => {
   const kind = detectKind(params.filename, params.mimeType);
+  const content = kind === "image" ? stripImageMetadata(params.content) : params.content;
   const shortId = await generateUniqueShortId("attachment");
   const [row] = await sql<DbRow[]>`
     INSERT INTO notebooks.attachments
       (short_id, notebook_id, filename, mime_type, size_bytes, kind, content, created_by)
     VALUES
       (${shortId}, ${params.notebookId}, ${params.filename}, ${params.mimeType},
-       ${params.content.byteLength}, ${kind}, ${params.content}, ${params.userId}::uuid)
+       ${content.byteLength}, ${kind}, ${content}, ${params.userId}::uuid)
     RETURNING id, short_id, notebook_id, filename, mime_type, size_bytes, kind, created_by, created_at
   `;
   return mapRow(row!);

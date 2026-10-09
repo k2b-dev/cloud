@@ -1,4 +1,4 @@
-import { createSignal, type JSX, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, type JSX, onCleanup, onMount } from "solid-js";
 import { createHoverPreview, HoverPreview } from "../feedback/HoverPreview";
 import { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
 
@@ -9,6 +9,8 @@ export function SidebarItemPreview(props: {
   trigger?: "action" | "row";
   align?: "center" | "end";
   viewportSize?: ScrollAreaProps["viewportSize"];
+  /** The row's metadata; a row trigger, named by `label`, keeps it as its description. */
+  describedBy?: string;
   onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -40,6 +42,11 @@ export function SidebarItemPreview(props: {
     }
     preview.anchor(true, () => main ?? button)(row ?? button);
     onCleanup(() => main?.removeEventListener("click", toggle));
+  });
+  createEffect(() => {
+    const id = props.describedBy;
+    if (id) main?.setAttribute("aria-describedby", id);
+    else main?.removeAttribute("aria-describedby");
   });
   return (
     <>

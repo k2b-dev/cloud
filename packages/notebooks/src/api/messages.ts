@@ -4,6 +4,7 @@ export const notebookApiMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      malformedImage: "This image could not be read. Export it again or choose another file.",
       recentNotes: "Recent notes",
       noNotes: "No notes yet",
       noNotesDescription: "Create a notebook to get started",
@@ -75,6 +76,7 @@ export const notebookApiMessages = i18n.define({
         `A note titled "${title}" already exists here: ${candidates}. Write to that path or ID instead.`,
     },
     de: {
+      malformedImage: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
       recentNotes: "Letzte Notizen",
       noNotes: "Noch keine Notizen",
       noNotesDescription: "Erstelle ein Notizbuch, um zu beginnen",

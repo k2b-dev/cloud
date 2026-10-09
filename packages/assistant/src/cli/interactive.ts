@@ -12,7 +12,7 @@ import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capa
 import { closeCliCodeHost } from "./code-host";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
 import { jsonRequest, readApi } from "./shared";
-import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
+import { type AssistantTurnOutput, type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
 import { selectNumberedChoice, terminalInfo, terminalSafeText } from "./terminal";
 import { editTextWithExternalEditor } from "./text-editor";
 import {
@@ -234,6 +234,7 @@ const resolveAttention = async (input: {
   allowBash: boolean;
   bashCwd: string;
   setStreaming: (streaming: boolean) => void;
+  output: AssistantTurnOutput;
 }): Promise<AssistantTurnStreamResult | null> => {
   let result = { status: "needs_attention" as const, turnId: input.turnId };
   while (result.status === "needs_attention") {
@@ -307,6 +308,7 @@ const resolveAttention = async (input: {
       ctx: input.ctx,
       conversationId: input.conversationId,
       turnId: input.turnId,
+      output: input.output,
       signal: input.signal,
       onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
       onToolBlock: (block) => {
@@ -381,6 +383,7 @@ export const runInteractiveAssistant = async (
       if (!preparedAttachments.has(path)) preparedAttachments.set(path, await uploadAttachment(ctx, conversation.id, path));
     }
     const attachmentContent = attachments.map((path) => preparedAttachments.get(path)!);
+    const output = createAssistantTurnOutput();
     const abort = new AbortController();
     activeAbort = abort;
     try {
@@ -396,6 +399,7 @@ export const runInteractiveAssistant = async (
           ...(options.allowBash ? { clientToolIds: ["local_bash"] } : {}),
         },
         watch: true,
+        output,
         signal: abort.signal,
         onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         onToolBlock: (block) => {
@@ -422,6 +426,7 @@ export const runInteractiveAssistant = async (
           reader,
           conversationId: conversation.id,
           turnId: result.turnId,
+          output,
           signal: abort.signal,
           allowBash: options.allowBash === true,
           bashCwd,
@@ -463,6 +468,7 @@ export const runInteractiveAssistant = async (
     const turnId = detail.activeTurn?.turnId;
     if (!turnId) return 0;
 
+    const output = createAssistantTurnOutput();
     const abort = new AbortController();
     activeAbort = abort;
     try {
@@ -471,6 +477,7 @@ export const runInteractiveAssistant = async (
         ctx,
         conversationId: detail.conversation.id,
         turnId,
+        output,
         signal: abort.signal,
         onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
         onToolBlock: (block) => {
@@ -485,6 +492,7 @@ export const runInteractiveAssistant = async (
           reader,
           conversationId: detail.conversation.id,
           turnId,
+          output,
           signal: abort.signal,
           allowBash: options.allowBash === true,
           bashCwd,

@@ -102,3 +102,179 @@ test("a file dropzone inside a page target wins and says what happens while file
     dom.cleanup();
   }
 });
+
+test("a file dropzone with `choose` asks it on click instead of the device dialog, and still takes drops", async () => {
+  const dom = createDomTestHarness();
+  const { FileDropzone } = await import("../src/inputs/FileInputs");
+  const received: string[][] = [];
+  let answer: File[] = [];
+  let asked = 0;
+  const dispose = render(
+    () => (
+      <FileDropzone
+        label="Attachment"
+        multiple={false}
+        choose={async () => {
+          asked++;
+          return answer;
+        }}
+        onDrop={(files) => void received.push(files.map((file) => file.name))}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await settle();
+    const zone = dom.root.querySelector<HTMLButtonElement>(".k2b-dropzone")!;
+    // The zone is the only control, so neither a dialog's first focus nor a key press reaches the device's dialog.
+    expect(dom.root.querySelector('input[type="file"]')).toBeNull();
+
+    // A cancelled choice adds nothing.
+    zone.click();
+    await settle();
+    expect([asked, received.length]).toEqual([1, 0]);
+
+    // A single-file zone keeps the first chosen file, like a drop.
+    answer = [new File(["a"], "minutes.pdf"), new File(["b"], "agenda.pdf")];
+    zone.click();
+    await settle();
+    expect(received).toEqual([["minutes.pdf"]]);
+
+    zone.dispatchEvent(dragEvent(dom, "drop", [{ name: "photo.png", type: "image/png" }]));
+    await settle();
+    expect(received).toEqual([["minutes.pdf"], ["photo.png"]]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("a file dropzone whose `choose` fails says why, and the next choice clears it", async () => {
+  const dom = createDomTestHarness();
+  const { FileDropzone } = await import("../src/inputs/FileInputs");
+  const received: string[][] = [];
+  let failure: Error | undefined = new Error("Files is not available right now.");
+  const dispose = render(
+    () => (
+      <FileDropzone
+        label="Attachment"
+        choose={async () => {
+          if (failure) throw failure;
+          return [new File(["a"], "minutes.pdf")];
+        }}
+        onDrop={(files) => void received.push(files.map((file) => file.name))}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await settle();
+    const zone = dom.root.querySelector<HTMLButtonElement>(".k2b-dropzone")!;
+    zone.click();
+    await settle();
+    expect(dom.root.textContent).toContain("Files is not available right now.");
+    expect(zone.dataset.invalid).toBe("true");
+    expect(zone.getAttribute("aria-invalid")).toBe("true");
+    expect(dom.document.getElementById(zone.getAttribute("aria-describedby")!)?.textContent).toBe("Files is not available right now.");
+    expect(received).toEqual([]);
+
+    failure = undefined;
+    zone.click();
+    await settle();
+    expect(dom.root.textContent).not.toContain("Files is not available right now.");
+    expect(zone.dataset.invalid).toBeUndefined();
+    expect(zone.getAttribute("aria-invalid")).toBeNull();
+    expect(received).toEqual([["minutes.pdf"]]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("a chat composer with `choose` asks it for Attach files and hands the result to onSelect", async () => {
+  const dom = createDomTestHarness();
+  const { ChatComposer } = await import("../src/chat/ChatComposer");
+  const selected: string[][] = [];
+  let answer: File[] = [];
+  let asked = 0;
+  const dispose = render(
+    () => (
+      <ChatComposer
+        value=""
+        onValueChange={() => {}}
+        onSubmit={() => {}}
+        fileSelection={{
+          choose: async () => {
+            asked++;
+            return answer;
+          },
+          onSelect: (files) => void selected.push(files.map((file) => file.name)),
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await settle();
+    const trigger = dom.root.querySelector<HTMLButtonElement>('[aria-label="Add to chat"]')!;
+    const attach = () => {
+      trigger.click();
+      const menu = dom.document.getElementById(trigger.getAttribute("aria-controls")!)!;
+      Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes("Attach files"))!
+        .click();
+    };
+    let deviceDialogs = 0;
+    dom.root.querySelector<HTMLInputElement>('input[type="file"]')?.addEventListener("click", () => deviceDialogs++);
+
+    attach();
+    await settle();
+    expect([asked, selected.length]).toEqual([1, 0]);
+
+    answer = [new File(["a"], "report.pdf"), new File(["b"], "chart.png")];
+    attach();
+    await settle();
+    await settle();
+    expect(selected).toEqual([["report.pdf", "chart.png"]]);
+    expect(deviceDialogs).toBe(0);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("a single-file chat composer keeps the first file `choose` hands it", async () => {
+  const dom = createDomTestHarness();
+  const { ChatComposer } = await import("../src/chat/ChatComposer");
+  const selected: string[][] = [];
+  const dispose = render(
+    () => (
+      <ChatComposer
+        value=""
+        onValueChange={() => {}}
+        onSubmit={() => {}}
+        fileSelection={{
+          multiple: false,
+          choose: async () => [new File(["a"], "report.pdf"), new File(["b"], "chart.png")],
+          onSelect: (files) => void selected.push(files.map((file) => file.name)),
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await settle();
+    const trigger = dom.root.querySelector<HTMLButtonElement>('[aria-label="Add to chat"]')!;
+    trigger.click();
+    const menu = dom.document.getElementById(trigger.getAttribute("aria-controls")!)!;
+    Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes("Attach files"))!
+      .click();
+    await settle();
+    await settle();
+    expect(selected).toEqual([["report.pdf"]]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

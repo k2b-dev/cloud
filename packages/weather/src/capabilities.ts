@@ -27,10 +27,10 @@ const unavailable = <T>(t: WeatherMessages): CapabilityInvocationResult<T> =>
     status: 500,
   });
 
-const citySearchUnavailable = <T>(t: WeatherMessages): CapabilityInvocationResult<T> =>
+const citySearchUnavailable = <T>(t: WeatherMessages, code?: string): CapabilityInvocationResult<T> =>
   fail({
-    code: "WEATHER_CITY_SEARCH_UNAVAILABLE",
-    message: t.capabilityCitySearchUnavailable,
+    code: code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED" ? code : "WEATHER_CITY_SEARCH_UNAVAILABLE",
+    message: code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED" ? t.capabilityCitySearchNotConfigured : t.capabilityCitySearchUnavailable,
     status: 500,
   });
 
@@ -387,7 +387,7 @@ const runCitySearch = async (input: z.infer<typeof CitySearchInputSchema>, conte
       signal: context.signal,
       filter: { query: input.query, country: "DE" },
     });
-    if (!result.ok) return citySearchUnavailable(t);
+    if (!result.ok) return citySearchUnavailable(t, result.error.code);
     const data = CitySearchDataSchema.safeParse(result.data.items.slice(0, input.limit));
     return data.success ? ok({ data: data.data }) : citySearchUnavailable(t);
   } catch {
@@ -542,7 +542,7 @@ export const weatherCapabilities = defineCapabilities({
     "city.search": {
       title: "Search German cities",
       description:
-        "Specialized geocoding path: find German city candidates and coordinates. To save one, copy the chosen name, optional state, lat, and lon into Save weather location; city results are not weather.location refs.",
+        'Specialized geocoding path: find German city candidates and coordinates. To save one, copy the chosen name, optional state, lat, and lon into Save weather location; city results are not weather.location refs. If city search is unavailable, use forecast.current or forecast.get with source.kind = "coordinates" and known coordinates.',
       input: CitySearchInputSchema,
       data: CitySearchDataSchema,
       openWorld: true,

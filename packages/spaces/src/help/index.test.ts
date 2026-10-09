@@ -19,6 +19,8 @@ describe("spacesHelp", () => {
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Related tasks:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Attachments:**");
     expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A task cannot be completed");
+    expect(spacesHelp.getMarkdown("spaces-views")).toContain("**Color by tag:**");
+    expect(spacesHelp.getMarkdown("spaces-views", "de")).toContain("**Farbe nach Tag:**");
   });
 
   test("translates every article to German with matching icon and order", () => {

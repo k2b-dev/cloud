@@ -1,6 +1,7 @@
 import { notifications as nativeNotifications } from "@k2b/stdlib/browser";
 import { apiClient } from "../clients/core";
 import type { BrowserPushSubscription } from "../contracts";
+import { notificationGroupTag } from "../contracts/notification-group";
 import { withNotificationTimeout } from "./notification-timeout";
 
 const SERVICE_WORKER_PATH = "/service-worker.js";
@@ -119,6 +120,31 @@ const currentState = async (registration?: ServiceWorkerRegistration): Promise<B
 
 export const browserNotificationClient = {
   state: currentState,
+
+  /** Close this application's group on this device without opting into notifications. */
+  closeGroup: async (appId: string, group: string): Promise<void> => {
+    const tag = notificationGroupTag(appId, group);
+    if (!tag || typeof navigator === "undefined" || !navigator.serviceWorker?.getRegistration) return;
+    try {
+      const registration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_SCOPE);
+      if (!registration?.getNotifications || new URL(registration.scope).pathname !== SERVICE_WORKER_SCOPE) return;
+      const notifications = await registration.getNotifications({ tag });
+      for (const notification of notifications) notification.close();
+    } catch {
+      // Existing registrations and native notifications may become unavailable.
+    }
+  },
+
+  /** Set or clear this device's app badge where the browser supports it. */
+  setBadge: async (count: number): Promise<void> => {
+    if (typeof navigator === "undefined" || !Number.isSafeInteger(count) || count < 0) return;
+    try {
+      if (count === 0) await navigator.clearAppBadge?.();
+      else await navigator.setAppBadge?.(count);
+    } catch {
+      // Badging is optional and can be refused by the browser.
+    }
+  },
 
   /** Register the worker and rebind an existing subscription to the signed-in user. Never prompts. */
   refreshExisting: async (): Promise<BrowserNotificationState> => {

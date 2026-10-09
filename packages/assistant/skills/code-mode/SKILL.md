@@ -18,7 +18,8 @@ There are two kinds of code:
 - **HTML apps** are interfaces: `index.html` plus optional `style.css` and
   `app.js`, shown with `code_open` or `code_present`. Read
   [HTML apps](references/apps.md) before writing one. Write `steps.json`, run
-  `code_check`, inspect every screenshot with `view_image`, fix and check again
+  `code_check`, fix its errors and layout warnings, look at every screenshot
+  and PDF with `view_image` and the report's review prompt, fix and check again
   before `code_open`, `code_present` or `code_publish`. The check uses throwaway
   data; scripts still use real data.
 
@@ -118,11 +119,12 @@ source does not verify behavior. If `work.status` is `running`, wait with
 `code_inspect({runId,waitMs:30000})`; do not restart the job. Errors and
 `outputTruncated` are not successful complete results.
 
-Apps do not run in `code_run`, and there is no automatic rendered test yet.
+Apps do not run in `code_run`; `code_check` renders them on desktop and phone.
 Put calculations into a script first and check them there. Read the diagnostics
-of `code_write` and the errors and warnings of `code_present`, which reject CDN
-imports, inline handlers, `alert`, `localStorage`, native `fetch` and missing
-files. When you deliver an app, say what the person should look at.
+of `code_write`, which also validate `steps.json`, and the errors and warnings of
+`code_check` and `code_present`, which reject CDN imports, inline handlers,
+`alert`, `localStorage`, native `fetch` and missing files. When you deliver an
+app, say what the person should look at.
 
 For a CSV, call `await cloud.download("result.csv", await cloud.sheet.toCsv(rows))` inside code;
 for a spreadsheet, `await cloud.download("result.ods", await cloud.sheet.toOds(sheets))`.

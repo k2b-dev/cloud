@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { output, ZodType } from "zod";
+import { isNotificationGroup, notificationGroupTag } from "../../contracts/notification-group";
 import type {
   BoundNotificationDefinition,
   EmailNotificationPresentation,
@@ -15,6 +16,7 @@ import { encryptSecret } from "../secrets";
 import { ensureNotificationDefinition } from "./catalog";
 import { getNotificationChannel, type NotificationDestination, type ResolvedNotificationRecipient } from "./channels";
 import { processNotificationDelivery } from "./dispatcher";
+import { normalizeNotificationPreview } from "./preview";
 import { enqueueNotificationDeliveries, enqueueNotificationDelivery } from "./runtime";
 
 export type TypedNotificationDeliveryStatus = "deferred" | "pending" | "sending" | "delivered" | "suppressed" | "failed";
@@ -69,14 +71,38 @@ const preparationFailure = (input: { channel: string; required: boolean; routePr
   errorMessage: "Notification delivery could not be prepared.",
 });
 
-const validatePresentation = (presentation: NotificationPresentation): NotificationPresentation => {
+const validatePresentation = (presentation: NotificationPresentation, appId: string): NotificationPresentation => {
   const title = presentation.title.trim();
   const body = presentation.body?.trim();
+  if (presentation.preview !== undefined && typeof presentation.preview !== "string") {
+    throw new Error("Notification preview must be a string");
+  }
+  const preview = presentation.preview === undefined ? undefined : normalizeNotificationPreview(presentation.preview);
   if (!title) throw new Error("Notification title is required");
   if (title.length > 200) throw new Error("Notification title must not exceed 200 characters");
   if (body && body.length > 4_000) throw new Error("Notification body must not exceed 4000 characters");
   const targetHref = presentation.targetHref ? validateNotificationTargetHref(presentation.targetHref) : undefined;
-  return { title, ...(body ? { body } : {}), ...(targetHref ? { targetHref } : {}) };
+  if (presentation.group !== undefined && !isNotificationGroup(presentation.group)) {
+    throw new Error(
+      "Notification group must contain 1 to 128 characters using only letters, digits, dots, underscores, colons, or hyphens",
+    );
+  }
+  if (presentation.group !== undefined && notificationGroupTag(appId, presentation.group) === null) {
+    throw new Error(
+      "Notification group requires an app ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens",
+    );
+  }
+  if (presentation.badge !== undefined && (!Number.isSafeInteger(presentation.badge) || presentation.badge < 0)) {
+    throw new Error("Notification badge must be a non-negative safe integer");
+  }
+  return {
+    title,
+    ...(body ? { body } : {}),
+    ...(preview ? { preview } : {}),
+    ...(targetHref ? { targetHref } : {}),
+    ...(presentation.group !== undefined ? { group: presentation.group } : {}),
+    ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
+  };
 };
 
 const resolveRecipient = async (
@@ -172,6 +198,8 @@ const prepareChannel = async (input: {
 
   try {
     const emailPresentation = input.channel === "email" ? await input.emailPresentation?.() : undefined;
+    const { preview: _preview, ...otherPresentation } = input.presentation;
+    const presentation = input.channel === "browser" ? input.presentation : otherPresentation;
     return await Promise.all(
       destinations.map(async (destination) => ({
         channel: input.channel,
@@ -179,7 +207,7 @@ const prepareChannel = async (input: {
         destinationKey: destination.key,
         destinationLabel: destination.label,
         payloadEncrypted: await encryptSecret(
-          driver.createPayload({ presentation: input.presentation, email: emailPresentation, destination, event: input.event }),
+          driver.createPayload({ presentation, email: emailPresentation, destination, event: input.event }),
         ),
         required: input.required,
         routePriority: input.routePriority,
@@ -241,7 +269,7 @@ export const sendTypedNotification = async <
 
   const data: output<S> = definition.data.parse(input.data);
   const renderContext = { locale: normalizeLocale(input.locale) };
-  const presentation = validatePresentation(await definition.render(data, renderContext));
+  const presentation = validatePresentation(await definition.render(data, renderContext), definition.appId);
   const resolved = await resolveRecipient(input.recipient);
   const candidateEventId = crypto.randomUUID();
   await ensureNotificationDefinition(definition);

@@ -1,11 +1,17 @@
 import { beforeAll, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { z } from "zod";
+import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
+import recordsApi from "../api/records";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import * as fields from "./fields";
 import { cleanup, getProtectedContent, listForRecordField, protect, releaseProtection, remove, replace, upload } from "./files";
+import * as forms from "./forms";
 import * as records from "./record-write";
 
 beforeAll(async () => {
@@ -52,6 +58,107 @@ describe("durable file asset lifecycle Postgres integration", () => {
     if (!result.ok) {
       expect(result.error.code).toBe("BAD_INPUT");
       expect(result.error.message).toBe("Protection for a document artifact cannot be released.");
+    }
+  });
+
+  postgresTest("uploads and replacements strip metadata at service/API boundaries, including Form title images", async () => {
+    const fixture = await createFixture();
+    const [account] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${`Grid photo ${testShortId()}`}, 'agent') RETURNING id
+    `;
+    try {
+      const jpeg = await tinyJpeg();
+      const input = withCameraMetadata(jpeg, 1);
+      const added = await upload({
+        ...fixture,
+        filename: "IMG_0001.jpg",
+        mimeType: "application/octet-stream",
+        bytes: input,
+        userId: null,
+        origin: "direct",
+      });
+      if (!added.ok) throw added.error;
+      const replaced = await replace({
+        ...fixture,
+        fileId: added.data.id,
+        filename: "replacement.jpg",
+        mimeType: "application/octet-stream",
+        bytes: input,
+        userId: null,
+        origin: "direct",
+      });
+      if (!replaced.ok) throw replaced.error;
+      const hash = createHash("sha256").update(jpeg).digest("hex");
+      expect(replaced.data).toMatchObject({ sizeBytes: jpeg.length, sha256: hash });
+      const [stored] = await sql<{ bytes: Uint8Array; sha256: string; size_bytes: number | string }[]>`
+        SELECT bytes, sha256, size_bytes FROM grids.files WHERE id = ${replaced.data.id}::uuid
+      `;
+      expect(stored).toMatchObject({ bytes: jpeg, sha256: hash });
+      expect(Number(stored?.size_bytes)).toBe(jpeg.length);
+      const [access] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (service_account_id, permission) VALUES (${account!.id}::uuid, 'write') RETURNING id
+      `;
+      await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${fixture.baseId}::uuid, ${access!.id}::uuid)`;
+      const token = await serviceAccountCredentials.createApiToken({
+        serviceAccountId: account!.id,
+        name: "photos",
+        scopes: ["read", "write"],
+      });
+      if (!token.ok) throw token.error;
+      const [ids] = await sql<{ table_id: string; record_id: string; field_id: string }[]>`
+        SELECT t.short_id AS table_id, r.short_id AS record_id, f.short_id AS field_id
+        FROM grids.tables t JOIN grids.records r ON r.table_id=t.id JOIN grids.fields f ON f.table_id=t.id
+        WHERE r.id=${fixture.recordId}::uuid AND f.id=${fixture.fieldId}::uuid
+      `;
+      const path = `/${ids!.table_id}/${ids!.record_id}/files/${ids!.field_id}`;
+      const post = (bytes: Uint8Array, fileId?: string, locale = "en") => {
+        const form = new FormData();
+        form.set("file", new File([new Uint8Array(bytes)], "IMG_0001.jpg", { type: "application/octet-stream" }));
+        return recordsApi.request(fileId ? `${path}/${fileId}` : path, {
+          method: fileId ? "PUT" : "POST",
+          headers: { authorization: `Bearer ${token.data.token}`, "accept-language": locale },
+          body: form,
+        });
+      };
+      const response = await post(input);
+      expect(response.status).toBe(200);
+      const file = z.object({ id: z.string(), sizeBytes: z.number(), sha256: z.string() }).parse(await response.json());
+      expect(file).toMatchObject({ sizeBytes: jpeg.length, sha256: hash });
+      const downloaded = await recordsApi.request(`${path}/${file.id}/content`, {
+        headers: { authorization: `Bearer ${token.data.token}` },
+      });
+      expect(downloaded.status).toBe(200);
+      expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(jpeg);
+      for (const fileId of [undefined, file.id]) {
+        const malformed = await post(input.subarray(0, 30), fileId, "de");
+        expect(malformed.status).toBe(422);
+        expect(await malformed.json()).toMatchObject({
+          code: "MALFORMED_IMAGE",
+          message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+        });
+      }
+      const binary = await upload({
+        ...fixture,
+        filename: "scan.bin",
+        mimeType: "application/octet-stream",
+        bytes: input,
+        userId: null,
+        origin: "direct",
+      });
+      if (!binary.ok) throw binary.error;
+      const [original] = await sql<{ bytes: Uint8Array }[]>`SELECT bytes FROM grids.files WHERE id=${binary.data.id}::uuid`;
+      expect(original?.bytes).toEqual(input);
+      const titleImage = `data:image/jpeg;base64,${Buffer.from(input).toString("base64")}`;
+      const form = await forms.create({ tableId: fixture.tableId, name: "Photo form", config: { fields: [], titleImage } }, null);
+      if (!form.ok) throw form.error;
+      const sanitizedTitle = `data:image/jpeg;base64,${Buffer.from(jpeg).toString("base64")}`;
+      expect(form.data.config.titleImage).toBe(sanitizedTitle);
+      const updated = await forms.update(form.data.id, { config: { fields: [], titleImage } }, null);
+      if (!updated.ok) throw updated.error;
+      expect(updated.data.config.titleImage).toBe(sanitizedTitle);
+    } finally {
+      await destroyFixture(fixture.baseId);
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${account!.id}::uuid`;
     }
   });
 

@@ -22,9 +22,14 @@ const MAX_INLINE_WORK_BYTES = 8 * 1024 * 1024;
 const MAX_BATCH_RENDER_CELLS = 2_000;
 const MAX_BATCH_INLINE_WORK_BYTES = 32 * 1024 * 1024;
 const MAX_BATCH_OUTPUT_BYTES = 32 * 1024 * 1024;
+// A batch renders without yielding to the event loop, so its cells share one small
+// time budget; each cell keeps the shared single-render default.
+const MAX_BATCH_RENDER_MS = 2_000;
+const MAX_CELL_RENDER_MS = 1_000;
 
 export type HtmlTemplateRenderBudget = {
   remainingCells: number;
+  remainingRenderMs: number;
   remainingInlineWorkBytes: number;
   remainingOutputBytes: number;
   exhausted: boolean;
@@ -33,6 +38,7 @@ export type HtmlTemplateRenderBudget = {
 
 export const createHtmlTemplateRenderBudget = (): HtmlTemplateRenderBudget => ({
   remainingCells: MAX_BATCH_RENDER_CELLS,
+  remainingRenderMs: MAX_BATCH_RENDER_MS,
   remainingInlineWorkBytes: MAX_BATCH_INLINE_WORK_BYTES,
   remainingOutputBytes: MAX_BATCH_OUTPUT_BYTES,
   exhausted: false,
@@ -64,8 +70,23 @@ export const renderHtmlTemplateValue = async (
 ): Promise<Result<string>> => {
   const t = documentServiceText(locale);
   if (!config.template) return ok("");
+  if (budget && (budget.exhausted || budget.remainingRenderMs <= 0)) {
+    budget.exhausted = true;
+    return fail(err.badInput(t.htmlBatchBudgetExceeded));
+  }
   try {
-    const rendered = await renderLiquidText(config.template, context, HTML_TEMPLATE_RENDER_MAX_BYTES, locale);
+    const start = performance.now();
+    const rendered = await renderLiquidText(
+      config.template,
+      context,
+      HTML_TEMPLATE_RENDER_MAX_BYTES,
+      locale,
+      budget ? Math.min(MAX_CELL_RENDER_MS, budget.remainingRenderMs) : undefined,
+    );
+    if (budget) {
+      budget.remainingRenderMs -= performance.now() - start;
+      if (budget.remainingRenderMs <= 0) budget.exhausted = true;
+    }
     if (!rendered.ok) return rendered;
     const elementCount = rendered.data.match(/<[a-z][^>]*>/gi)?.length ?? 0;
     if (elementCount > MAX_HTML_ELEMENTS) return fail(err.badInput(t.htmlElementLimit({ limit: MAX_HTML_ELEMENTS })));

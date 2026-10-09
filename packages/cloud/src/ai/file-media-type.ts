@@ -38,3 +38,7 @@ export const guessAiMediaType = (path: string): string => {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
   return MEDIA_TYPES[ext] ?? "application/octet-stream";
 };
+
+/** Image classification includes filenames when clients send a generic media type. */
+export const isAiImage = (path: string, mediaType: string): boolean =>
+  mediaType.startsWith("image/") || guessAiMediaType(path).startsWith("image/");

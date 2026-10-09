@@ -25,6 +25,11 @@ Each section chooses its selection behavior:
 
 - the default is single-select within that section;
 - `multiple: true` allows several values from that section;
+- `layout: "row"` sets a few short single-select options side by side as one
+  segmented row under its `label`, which names the choice (see
+  [menus](/en/ui/actions/menus#items-and-sections)); selecting the chosen
+  option again keeps it, and a row value in `defaultValue` keeps a choice
+  through Reset too;
 - selections from other sections stay intact;
 - option values must be unique across all sections.
 
@@ -54,6 +59,7 @@ type FilterChipSection = {
   label?: string;
   options: readonly FilterChipOption[];
   multiple?: boolean;
+  layout?: "row";
 };
 
 type FilterChipOption = {
@@ -64,13 +70,17 @@ type FilterChipOption = {
 };
 ```
 
-Use section labels when the dropdown combines different filter dimensions. Icons suit single-select status choices. Colors can identify tags or categories.
+Use section labels when the dropdown combines different filter dimensions. Icons suit single-select status choices. Colors can identify tags or categories. A row section suits a short display choice that belongs with the filters, such as what a color shows, without a control of its own in the toolbar.
+
+The menu shows up to 32rem (and at most 80 % of the viewport height) before it scrolls, so several labelled sections stay visible at once.
 
 ## Clear and reset
 
 Without `defaultValue`, an active filter shows its selected count and offers **Clear**. An empty `defaultValue={[]}` has the same clear/count behavior.
 
 With a non-empty `defaultValue`, the trigger hides the count and offers **Reset** whenever the current values differ from the baseline. At the baseline, no reset action is shown.
+
+Reset emits `defaultValue` as it is, and Clear emits an empty selection. A row section with no value in `defaultValue` ends up with no choice either way, so give every row its baseline value there. For a display choice that Reset should leave alone, such as what a color shows, put the current choice into `defaultValue`: Reset then appears only for changed filters and keeps the choice.
 
 ## Accessibility
 

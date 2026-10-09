@@ -28,6 +28,7 @@ export type {
   AppWorkspaceSidebarItemLabelProps,
   AppWorkspaceSidebarItemMetaProps,
   AppWorkspaceSidebarItemProps,
+  AppWorkspaceSidebarItemStatusProps,
   AppWorkspaceSidebarItemTone,
   AppWorkspaceSidebarProps,
   AppWorkspaceSidebarSectionProps,

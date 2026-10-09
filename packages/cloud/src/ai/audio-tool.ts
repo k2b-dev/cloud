@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { aiChatAccessSubject } from "./assistant-models";
+import { aiChatAccessSubject, resolveAssistantAudioModel } from "./assistant-models";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { aiFileStore, normalizeAiFilePath } from "./files-store";
-import { aiModelAccess } from "./model-access";
 import { defineAiTool } from "./tools";
-import { type AiResolvedAudioModel, resolveAiAudioModel, runAiTranscription } from "./transcription";
+import { type AiResolvedAudioModel, runAiTranscription } from "./transcription";
 
 export const CloudAiTranscribeAudioInputSchema = z.object({
   path: z.string().trim().min(1).describe("Absolute path of the stored audio file. Project files are below /project."),
@@ -53,13 +52,7 @@ export const createCloudAiTranscribeAudioTool = (options: { resolveModel?: () =>
       signal: ctx.signal,
       allowedDataBoundaries: ctx.allowedDataBoundaries,
       attribution: { conversationId: ctx.conversationId, turnId: ctx.turnId },
-      resolveModel:
-        options.resolveModel ??
-        (async () => {
-          const resolved = await resolveAiAudioModel({ allowedDataBoundaries: ctx.allowedDataBoundaries });
-          await aiModelAccess.assertAllowed(resolved.profile.id, aiChatAccessSubject(ctx.actor));
-          return resolved;
-        }),
+      resolveModel: options.resolveModel ?? (() => resolveAssistantAudioModel(aiChatAccessSubject(ctx.actor), ctx.allowedDataBoundaries)),
     });
     ctx.signal.throwIfAborted();
     const producerCallKey = `${ctx.turnId}:${ctx.callId}`;

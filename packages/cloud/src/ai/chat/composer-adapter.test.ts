@@ -6,6 +6,7 @@ import {
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
+  aiComposerChooseMaxBytes,
   aiComposerDraft,
   aiComposerFileAccept,
   aiComposerSendInput,
@@ -223,5 +224,13 @@ describe("Cloud chat composer adapter", () => {
     });
     expect(result.attachments).toEqual([]);
     expect(result.errors[0]).toContain("40 MB total limit");
+  });
+
+  test("bounds what chooseFiles reads from Cloud apps by the draft's free slots, 50 MiB each", () => {
+    const mib = 1024 * 1024;
+    expect(aiComposerChooseMaxBytes(0)).toBe(16 * 50 * mib);
+    expect(aiComposerChooseMaxBytes(15)).toBe(50 * mib);
+    expect(aiComposerChooseMaxBytes(16)).toBe(0);
+    expect(aiComposerChooseMaxBytes(17)).toBe(0);
   });
 });

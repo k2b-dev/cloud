@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, mergeProps, onCleanup, onMount, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { Tooltip } from "../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
@@ -31,6 +31,12 @@ export type FileDropzoneProps = FieldProps & {
   hint?: JSX.Element;
   /** One sentence that says what dropping does, shown while files are over the zone. Defaults to "Drop to upload". */
   dropLabel?: string;
+  /**
+   * Chooses files when the zone is clicked, instead of the device's file dialog, for example to offer other sources as
+   * well. Called within the click, so it may still open the device's dialog; resolve `[]` when the user cancels. A
+   * rejection shows its message as the field's error.
+   */
+  choose?: () => Promise<readonly File[]>;
   onDrop: (files: File[]) => void | Promise<void>;
 };
 
@@ -38,12 +44,21 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
   const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const disabled = () => Boolean(props.disabled || props.busy);
-  const error = () => resolveMaybeAccessor(props.error);
+  const [chooseError, setChooseError] = createSignal<string>();
+  const error = () => resolveMaybeAccessor(props.error) ?? chooseError();
   let input: HTMLInputElement | undefined;
   const [button, setButton] = createSignal<HTMLButtonElement>();
   const emit = (files: File[]) => {
     if (disabled() || files.length === 0) return;
+    setChooseError();
     void props.onDrop(props.multiple === false ? files.slice(0, 1) : files);
+  };
+  const choose = (chooseFiles: () => Promise<readonly File[]>) => {
+    setChooseError();
+    chooseFiles().then(
+      (files) => emit([...files]),
+      (cause: unknown) => setChooseError(cause instanceof Error && cause.message ? cause.message : messages().failedLoadFiles),
+    );
   };
   // Drops take the same path as every other file drop target: files only, the most specific target wins, and files
   // that do not fit `accept` are left out with a message.
@@ -103,8 +118,11 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
         class="k2b-dropzone"
         data-invalid={error() ? "true" : undefined}
         disabled={disabled()}
-        {...fieldControlAria(meta, props)}
-        onClick={() => input?.click()}
+        {...fieldControlAria(meta, mergeProps(props, { error }))}
+        onClick={() => {
+          if (props.choose) choose(props.choose);
+          else input?.click();
+        }}
       >
         <span class="k2b-dropzone__icon" aria-hidden="true">
           <i class={props.busy ? "ti ti-loader-2 k2b-spin" : (props.icon ?? "ti ti-cloud-upload")} />
@@ -126,26 +144,30 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
           </Show>
         </span>
       </button>
-      <input
-        ref={input}
-        class="k2b-sr-only"
-        type="file"
-        aria-label={
-          props["aria-label"] ??
-          (typeof props.label === "string" ? props.label : props.multiple === false ? messages().chooseFile : messages().chooseFiles)
-        }
-        accept={props.accept}
-        multiple={props.multiple ?? true}
-        disabled={disabled()}
-        tabIndex={-1}
-        onChange={(event) => {
-          const files = Array.from(event.currentTarget.files ?? []);
-          // Reset before emitting so re-picking the same file still fires change,
-          // even when onDrop throws.
-          event.currentTarget.value = "";
-          emit(files);
-        }}
-      />
+      {/* With `choose`, the zone is the only control: a native input would take a dialog's first focus and open the
+          device's dialog past the chooser. */}
+      <Show when={!props.choose}>
+        <input
+          ref={input}
+          class="k2b-sr-only"
+          type="file"
+          aria-label={
+            props["aria-label"] ??
+            (typeof props.label === "string" ? props.label : props.multiple === false ? messages().chooseFile : messages().chooseFiles)
+          }
+          accept={props.accept}
+          multiple={props.multiple ?? true}
+          disabled={disabled()}
+          tabIndex={-1}
+          onChange={(event) => {
+            const files = Array.from(event.currentTarget.files ?? []);
+            // Reset before emitting so re-picking the same file still fires change,
+            // even when onDrop throws.
+            event.currentTarget.value = "";
+            emit(files);
+          }}
+        />
+      </Show>
     </Field>
   );
 }

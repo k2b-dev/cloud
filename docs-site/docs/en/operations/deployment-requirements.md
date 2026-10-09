@@ -329,7 +329,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but the setting must still be configured. Forecast access is a separate dependency. |
+| City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 environment keys. Files (`filesv2`) uses
@@ -409,6 +409,41 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+### Update browser notifications for grouping and badges
+
+Deploy the updated platform package and Core together to enable
+[grouped browser notifications and app badges](/en/docs/platform/notifications#browser-delivery).
+No database migration or configuration change is required.
+
+The browser checks for the new worker when a Cloud page is next loaded or
+reloaded, and at the latest during a push or notification click once 24 hours
+have passed since the last check. Its existing `skipWaiting()` and
+`clients.claim()` lifecycle activates the new worker without waiting for tabs
+to close. Already-shown notifications are unaffected. Older workers
+ignore the optional group and badge fields until they update; existing
+ungrouped notifications keep their behavior. Already-queued browser deliveries
+without these fields remain valid.
+
+Reload a Cloud page first, then verify that two notifications with the same group
+replace each other on one registered device. Check badges in a browser that
+supports the Badging API; lack of badge support must not prevent notification
+display.
+
+### Update browser notifications for previews
+
+Deploy the updated platform package and Core together to enable optional
+[browser notification previews](/en/docs/platform/notifications#browser-delivery).
+No database migration or configuration change is required. Existing applications
+send no preview, so their notifications keep the same behavior.
+
+Older service workers ignore `preview` and show only the title until they update,
+with the same page-load, push, and click timing described above. Reload a Cloud
+page, then send a notification with a harmless test preview to a registered
+device and verify that its text appears below the title. Send another without a
+preview and verify that it shows only the title. Confirm that notification
+history contains neither preview. Review the application's preview controls
+before enabling sensitive content on lock screens or paired devices.
 
 ## Coordinate an existing installation's identity upgrade
 

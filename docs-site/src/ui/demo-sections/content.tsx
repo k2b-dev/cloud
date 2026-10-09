@@ -42,6 +42,10 @@ import {
   TemplatePreview,
   TemplateSampleData,
   TextInput,
+  Timeline,
+  type TimelineColor,
+  type TimelineController,
+  type TimelineItem,
   Toolbar,
   toast,
   useLocale,
@@ -50,7 +54,7 @@ import {
   type VirtualFeedController,
   ZoomPanViewport,
 } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
 import { ChartDemo } from "./charts";
@@ -394,6 +398,183 @@ const VirtualFeedDemo = () => {
               </div>
             )}
           </VirtualFeed>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+// A week of a product team around today, in UTC so the server and the browser agree. Every week repeats the same
+// days: a busy today, a train ride, an empty day, a dense day with more overlaps than lanes, and a quiet one.
+const timelineDay = (offset: number) => {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + offset);
+};
+const timelineAt = (offset: number, clock: string) => {
+  const [hours = 0, minutes = 0] = clock.split(":").map(Number);
+  return new Date(timelineDay(offset) + (hours * 60 + minutes) * 60_000).toISOString();
+};
+const timelineDate = (offset: number) => new Date(timelineDay(offset)).toISOString().slice(0, 10);
+const timelineWeek = (week: number): TimelineItem[] => {
+  const day = (offset: number) => week * 7 + offset;
+  const band = (
+    id: string,
+    label: string,
+    offset: number,
+    start: string,
+    end: string,
+    color: TimelineColor,
+    detail?: string,
+  ): TimelineItem => ({
+    id: `${id}-${week}`,
+    label,
+    start: timelineAt(day(offset), start),
+    end: timelineAt(day(offset), end),
+    color,
+    ...(detail ? { detail } : {}),
+  });
+  const task = (id: string, label: string, offset: number, due: string, color: TimelineColor = "amber"): TimelineItem => ({
+    id: `${id}-${week}`,
+    label,
+    start: timelineAt(day(offset), due),
+    kind: "marker",
+    checked: false,
+    color,
+    detail: "Task",
+  });
+  const items: TimelineItem[] = [
+    band("bowling", "Team bowling night", -1, "18:30", "21:00", "emerald", "Strike Kiel"),
+    {
+      id: `vacation-${week}`,
+      label: "Lena on vacation",
+      start: timelineDate(day(-1)),
+      end: timelineDate(day(2)),
+      allDay: true,
+      color: "emerald",
+    },
+    {
+      id: `onboarding-${week}`,
+      label: "Onboarding workshop",
+      start: timelineDate(day(0)),
+      end: timelineDate(day(2)),
+      allDay: true,
+      color: "emerald",
+    },
+    band("standup", "Daily stand-up", 0, "08:30", "09:00", "emerald"),
+    band("workshop", "Customer workshop", 0, "09:30", "11:00", "cyan", "Room Förde"),
+    band("offer", "Offer review", 0, "10:30", "11:30", "cyan"),
+    band("review", "Design review", 0, "13:00", "13:45", "emerald"),
+    task("slides", "Release planning slides", 0, "15:30", "red"),
+    band("planning", "Release planning", 0, "16:00", "17:30", "violet", "Room Schlei"),
+    task("invoice", "Check invoice", 0, "17:00"),
+    band("dinner", "Dinner with the customer", 0, "19:00", "21:30", "cyan"),
+    {
+      id: `maintenance-${week}`,
+      label: "Server maintenance",
+      start: timelineAt(day(1), "01:00"),
+      end: timelineAt(day(1), "02:00"),
+      color: "zinc",
+    },
+    band("train", "Train to Hamburg", 1, "07:12", "09:05", "amber"),
+    band("call", "Call with the print shop", 1, "11:00", "11:30", "cyan"),
+    band("weekly", "Weekly review", 1, "14:00", "15:00", "emerald"),
+    task("expenses", "Submit travel expenses", 1, "17:00"),
+    { id: `fair-${week}`, label: "Trade fair", start: timelineDate(day(4)), end: timelineDate(day(7)), allDay: true, color: "amber" },
+    band("standup4", "Daily stand-up", 4, "08:30", "09:00", "emerald"),
+    band("sprint", "Sprint planning", 4, "09:00", "11:00", "emerald"),
+    band("interview", "Interview", 4, "09:30", "10:30", "emerald"),
+    band("printer", "Print shop call", 4, "10:00", "10:45", "cyan"),
+    band("harbour", "Harbour office", 4, "10:15", "12:00", "cyan"),
+    band("booth", "Booth sync", 4, "13:00", "14:00", "amber"),
+    band("q4", "Q4 offer round", 4, "13:30", "14:30", "cyan"),
+    task("notes", "Approve release notes", 4, "14:45", "red"),
+    band("gonogo", "Go/no-go", 4, "15:00", "16:00", "violet"),
+    band("oneonone", "1:1 with Lena", 4, "16:00", "16:30", "emerald"),
+    task("plan", "Send the booth plan", 4, "17:00"),
+    band("setup", "Trade fair setup", 4, "18:30", "20:30", "amber"),
+    band("standup5", "Daily stand-up", 5, "08:30", "09:00", "emerald"),
+  ];
+  // Only the first week shows the evening before it.
+  return week === 0 ? items : items.filter((item) => !item.id.startsWith("bowling"));
+};
+
+const TimelineDemo = (props: { id: string; narrow?: boolean }) => {
+  const [range, setRange] = createSignal({ from: timelineAt(-1, "18:00"), to: new Date(timelineDay(7)).toISOString() });
+  const [weeks, setWeeks] = createSignal({ first: 0, last: 0 });
+  const [items, setItems] = createSignal<TimelineItem[]>(timelineWeek(0));
+  const [busy, setBusy] = createSignal(false);
+  let timeline: TimelineController | undefined;
+  // Loads a week at either end after a short delay, like a request.
+  const load = (edge: "earlier" | "later") =>
+    new Promise<void>((done) => {
+      setBusy(true);
+      setTimeout(() => {
+        const week = edge === "earlier" ? weeks().first - 1 : weeks().last + 1;
+        batch(() => {
+          setItems((current) => (edge === "earlier" ? [...timelineWeek(week), ...current] : [...current, ...timelineWeek(week)]));
+          setWeeks((current) => (edge === "earlier" ? { ...current, first: week } : { ...current, last: week }));
+          setRange((current) =>
+            edge === "earlier"
+              ? { ...current, from: new Date(timelineDay(week * 7 - 1)).toISOString() }
+              : { ...current, to: new Date(timelineDay(week * 7 + 7)).toISOString() },
+          );
+          setBusy(false);
+        });
+        done();
+      }, 400);
+    });
+  return (
+    <DemoCard
+      id={props.id}
+      chip={{ kind: "component", name: "Timeline", from: "@k2b/ui" }}
+      description={
+        props.narrow
+          ? "The same timeline in a narrow container: time runs down, every day starts with a sticky heading and its all-day row."
+          : "A week around today in UTC, with folded nights and an empty day, a dense day with a +n entry, tasks to check, and weeks loading at both ends. Scroll, or tab in and use the arrow keys, Page Up and Page Down, and T."
+      }
+      code={`<Timeline
+  items={items()}
+  from={range().from}
+  to={range().to}
+  timeZone="UTC"
+  label="Product team"
+  busy={busy()}
+  onActivate={(item) => toast(item.label)}
+  onToggle={(item, checked) => setItems((all) => all.map((other) => (other.id === item.id ? { ...other, checked } : other)))}
+  onLoadEarlier={() => load("earlier")}
+  onLoadLater={() => load("later")}
+  controller={(controller) => (timeline = controller)}
+/>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem" }}>
+        <Show when={!props.narrow}>
+          <Toolbar label="Timeline actions">
+            <Button size="sm" variant="subtle" onClick={() => timeline?.scrollToNow()}>
+              Now
+            </Button>
+          </Toolbar>
+        </Show>
+        <div
+          style={{
+            display: "flex",
+            "flex-direction": "column",
+            height: props.narrow ? "36rem" : "34rem",
+            width: props.narrow ? "min(100%, 24rem)" : "100%",
+          }}
+        >
+          <Timeline
+            items={items()}
+            from={range().from}
+            to={range().to}
+            timeZone="UTC"
+            label="Product team"
+            busy={busy()}
+            onActivate={(item) => void toast(item.label)}
+            onToggle={(item, checked) => setItems((all) => all.map((other) => (other.id === item.id ? { ...other, checked } : other)))}
+            onLoadEarlier={() => load("earlier")}
+            onLoadLater={() => load("later")}
+            controller={(controller) => (timeline = controller)}
+          />
         </div>
       </div>
     </DemoCard>
@@ -1333,6 +1514,12 @@ const demos: DemoSection = {
   logs: () => (
     <DemoGrid columns="one">
       <LogsDemo />
+    </DemoGrid>
+  ),
+  timeline: () => (
+    <DemoGrid columns="one">
+      <TimelineDemo id="timeline" />
+      <TimelineDemo id="timeline-narrow" narrow />
     </DemoGrid>
   ),
   "virtual-feed": () => (

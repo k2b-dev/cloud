@@ -6,6 +6,8 @@ import type { SpacesViewSnapshot } from "../src/frontend/[id]/_components/worksp
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const BASE = `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-08-01`;
+/** What a month href loads: its calendar data, in one parameter order for equal data. */
+const monthRequest = (date: string) => `/app/spaces/${SPACE_ID}?cd=${date}&cv=month&view=calendar`;
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -21,7 +23,7 @@ const snapshot = (date: string): Extract<SpacesViewSnapshot, { kind: "calendar" 
   kind: "calendar",
   view: "month",
   date: `${date}T00:00:00.000Z`,
-  filter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [] },
+  filter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [], colorBy: "tag" },
   items: [],
   weather: {},
 });
@@ -73,7 +75,7 @@ describe("Spaces enhanced calendar navigation", () => {
     expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(BASE);
     navigation.navigateHref(october);
     await flush();
-    expect(requests.map((request) => request.href)).toEqual([september, october]);
+    expect(requests.map((request) => request.href)).toEqual([monthRequest("2026-09-01"), monthRequest("2026-10-01")]);
     expect(requests[0]!.signal.aborted).toBe(true);
     requests[0]!.result.resolve(snapshot("2026-09-01"));
     await flush();
@@ -91,7 +93,7 @@ describe("Spaces enhanced calendar navigation", () => {
     expect(abandonedRequest.signal.aborted).toBe(true);
     expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(october);
     const restoredRequest = requests.at(-1)!;
-    expect(restoredRequest.href).toBe(october);
+    expect(restoredRequest.href).toBe(monthRequest("2026-10-01"));
     restoredRequest.result.resolve(snapshot("2026-10-01"));
     await flush();
 
@@ -210,6 +212,153 @@ describe("Spaces enhanced calendar navigation", () => {
     expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(`${january}&item=AfterBack&occurrence=Occurrence`);
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("changes the color choice in the URL without loading or blanking calendar data", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", BASE);
+    const requests: Array<{ href: string; result: ReturnType<typeof deferred<Extract<SpacesViewSnapshot, { kind: "calendar" }>>> }> = [];
+    mock.module("../src/frontend/[id]/_components/workspace/view-query", () => ({
+      SpacesViewUnavailableError: class extends Error {},
+      loadSpacesViewSnapshot: (href: string) => {
+        const result = deferred<Extract<SpacesViewSnapshot, { kind: "calendar" }>>();
+        requests.push({ href, result });
+        return result.promise;
+      },
+    }));
+    const { useSpacesCalendarQuery } = await import("../src/frontend/[id]/_components/workspace/calendar-query");
+    const loaded = { ...snapshot("2026-08-01"), items: [{ id: "Event1" }] } as unknown as Extract<SpacesViewSnapshot, { kind: "calendar" }>;
+
+    let navigation!: ReturnType<typeof useSpacesCalendarQuery>;
+    const dispose = render(() => {
+      navigation = useSpacesCalendarQuery({ spaceId: SPACE_ID, initialSource: BASE, initialSnapshot: loaded });
+      return dom.document.createTextNode("");
+    }, dom.root);
+
+    const byPerson = `${BASE}&ccolor=person`;
+    navigation.open(byPerson, { replace: true });
+    await flush();
+    expect(requests).toHaveLength(0);
+    expect(navigation.current().filter.colorBy).toBe("person");
+    expect(navigation.current().items).toHaveLength(1);
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(byPerson);
+
+    // A data navigation keeps the choice: the loaded snapshot never carries it, the committed URL does.
+    const september = `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01&ccolor=person`;
+    navigation.navigateHref(september);
+    await flush();
+    expect(requests.map((request) => request.href)).toEqual([monthRequest("2026-09-01")]);
+    expect(navigation.current().filter.colorBy).toBe("person");
+    requests[0]!.result.resolve(snapshot("2026-09-01"));
+    await flush();
+    expect(navigation.current().filter.colorBy).toBe("person");
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(september);
+
+    // Back to the same data with another choice follows the history entry.
+    dom.window.history.pushState(null, "", `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01&ccolor=status`);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    expect(requests).toHaveLength(1);
+    expect(navigation.current().filter.colorBy).toBe("status");
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("a replacing change during a pending range navigation still adds the range to history", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", BASE);
+    const requests: Array<{ href: string; result: ReturnType<typeof deferred<Extract<SpacesViewSnapshot, { kind: "calendar" }>>> }> = [];
+    mock.module("../src/frontend/[id]/_components/workspace/view-query", () => ({
+      SpacesViewUnavailableError: class extends Error {},
+      loadSpacesViewSnapshot: (href: string) => {
+        const result = deferred<Extract<SpacesViewSnapshot, { kind: "calendar" }>>();
+        requests.push({ href, result });
+        return result.promise;
+      },
+    }));
+    const { useSpacesCalendarQuery } = await import("../src/frontend/[id]/_components/workspace/calendar-query");
+
+    let navigation!: ReturnType<typeof useSpacesCalendarQuery>;
+    const dispose = render(() => {
+      navigation = useSpacesCalendarQuery({ spaceId: SPACE_ID, initialSource: BASE, initialSnapshot: snapshot("2026-08-01") });
+      return dom.document.createTextNode("");
+    }, dom.root);
+
+    // Next month, then a color or filter choice before September has loaded: both replace the URL they would change.
+    const entries = dom.window.history.length;
+    navigation.navigateHref(`/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01`);
+    await flush();
+    const byPerson = `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01&ccolor=person`;
+    navigation.open(byPerson, { replace: true });
+    await flush();
+    requests.at(-1)!.result.resolve(snapshot("2026-09-01"));
+    await flush();
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(byPerson);
+    // September is a new entry, so Back still returns to August.
+    expect(dom.window.history.length).toBe(entries + 1);
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("treats equivalent calendar hrefs as one source, so the first color change after a page load loads nothing", async () => {
+    const dom = createDomTestHarness();
+    const requests: string[] = [];
+    mock.module("../src/frontend/[id]/_components/workspace/view-query", () => ({
+      SpacesViewUnavailableError: class extends Error {},
+      loadSpacesViewSnapshot: (href: string) => {
+        requests.push(href);
+        return new Promise(() => {});
+      },
+    }));
+    const { useSpacesCalendarQuery } = await import("../src/frontend/[id]/_components/workspace/calendar-query");
+    const { buildSpacesItemLinkBaseUrl } = await import("../src/frontend/[id]/_components/workspace/workspace-types");
+    const { defaultFilter } = await import("../src/frontend/[id]/_components/filter/types");
+    const { defaultCalendarFilter } = await import("../src/frontend/[id]/_components/calendar/filter");
+    const loaded = { ...snapshot("2026-08-01"), items: [{ id: "Event1" }] } as unknown as Extract<SpacesViewSnapshot, { kind: "calendar" }>;
+    // The page's base URL comes from the workspace builder: the view only when it overrides the saved one, then the filters.
+    const pageBase = (calendarFilter: typeof defaultCalendarFilter, hasViewOverride: boolean) =>
+      buildSpacesItemLinkBaseUrl({
+        baseSpaceUrl: `/app/spaces/${SPACE_ID}`,
+        currentView: "calendar",
+        filter: defaultFilter,
+        hasViewOverride,
+        calendarView: "month",
+        calendarDate: "2026-08-01T00:00:00.000Z",
+        calendarFilter,
+        dateConfig: { timeZone: "UTC" },
+      });
+    // The calendar's own links always name the view and write the filters after it.
+    const cases = [
+      { base: pageBase(defaultCalendarFilter, false), next: `/app/spaces/${SPACE_ID}?cv=month&cd=2026-08-01&view=calendar&ccolor=person` },
+      {
+        base: pageBase({ ...defaultCalendarFilter, type: "task" }, true),
+        next: `/app/spaces/${SPACE_ID}?cv=month&cd=2026-08-01&view=calendar&ctype=task&ccolor=person`,
+      },
+    ];
+    expect(cases.map(({ base }) => base)).toEqual([
+      `/app/spaces/${SPACE_ID}?cv=month&cd=2026-08-01`,
+      `/app/spaces/${SPACE_ID}?cv=month&cd=2026-08-01&ctype=task&view=calendar`,
+    ]);
+
+    for (const { base, next } of cases) {
+      dom.window.history.replaceState(null, "", base);
+      let navigation!: ReturnType<typeof useSpacesCalendarQuery>;
+      const dispose = render(() => {
+        navigation = useSpacesCalendarQuery({ spaceId: SPACE_ID, initialSource: base, initialSnapshot: loaded });
+        return dom.document.createTextNode("");
+      }, dom.root);
+      navigation.open(next, { replace: true });
+      await flush();
+      expect(requests).toEqual([]);
+      expect(navigation.pending()).toBe(false);
+      expect(navigation.current().items).toHaveLength(1);
+      expect(navigation.current().filter.colorBy).toBe("person");
+      expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(next);
+      dispose();
+    }
     dom.cleanup();
   });
 });

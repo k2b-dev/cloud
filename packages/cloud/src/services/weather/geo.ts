@@ -36,7 +36,11 @@ const mapPlace = (place: GeoPlace): WeatherCity => ({
 const getGeoBaseUrl = async (): Promise<Result<string>> => {
   const geoUrl = (await settings.get<string>("weather.geo_url")).trim();
   if (!geoUrl) {
-    return fail(err.internal("Geo API URL is not configured. Set weather.geo_url."));
+    return fail({
+      code: "WEATHER_CITY_SEARCH_NOT_CONFIGURED",
+      message: "Geo API URL is not configured. Set weather.geo_url.",
+      status: 500,
+    });
   }
   return ok(geoUrl.replace(/\/$/, ""));
 };
@@ -69,7 +73,7 @@ const list = async (config: {
   }
 
   const baseUrlResult = await getGeoBaseUrl();
-  if (!baseUrlResult.ok) return unavailable();
+  if (!baseUrlResult.ok) return baseUrlResult;
   const geoUrl = baseUrlResult.data;
   const result = await geoService.place.list({
     baseUrl: geoUrl,
