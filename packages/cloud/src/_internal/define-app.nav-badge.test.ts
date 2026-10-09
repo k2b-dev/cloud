@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { visibleNavigationApps } from "../ssr/app-navigation";
 import { type AppOptions, defineApp } from "./define-app";
-import { inventory, person, publishedEntry } from "./define-app.fixture";
+import { inventory, person, publishedEntry } from "./define-app.test-fixture";
 import { validateAppRegistryEntry } from "./registry-validation";
 import { buildRuntimeFromRegistry } from "./runtime-context";
 
@@ -35,6 +35,12 @@ describe("defineApp({ nav: { badge } })", () => {
       "/api/inventory/ badge",
     ]) {
       expect(() => defineApp({ ...inventory, nav: { ...nav, badge } })).toThrow(`App "inventory" declares nav.badge "${badge}"`);
+    }
+    // Owning "/" still never allows a path the browser sends as "//host/...", which a URL resolver reads as another host.
+    for (const badge of ["/api/..//evil.example/badge", "/app/inventory/%2e%2e/%2E%2E//evil.example/badge"]) {
+      expect(() => defineApp({ ...inventory, routes: [...inventory.routes, "/"], nav: { ...nav, badge } })).toThrow(
+        `App "inventory" declares nav.badge "${badge}"`,
+      );
     }
     expect(defineApp({ ...inventory, nav: { ...nav, badge: "/api/inventory" } }).meta.nav?.badge).toBe("/api/inventory");
     expect(defineApp({ ...inventory, nav: { ...nav, badge: "/app/inventory/badge?view=all" } }).meta.nav?.badge).toBe(

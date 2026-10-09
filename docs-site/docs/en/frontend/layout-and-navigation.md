@@ -235,24 +235,30 @@ router.get("/api/inventory/badge", async (c) => {
 ```
 
 - **Route:** `badge` is a same-origin path below one of the application's
-  `routes`. `defineApp()` throws at startup for any other value. The browser
-  calls it with the person's session, so the route policy and the
-  application's permission checks apply as for every request.
+  `routes`, also after resolving `.` and `..` segments. `defineApp()` throws
+  at startup for any other value, and the registry rejects such an entry.
+  The browser calls it with the person's session, so the route policy and
+  the application's permission checks apply as for every request.
 - **Count:** a positive safe integer shows the count, above 99 as `99+`. `0`,
-  any status other than `200`, a body without a valid `count`, and a failed
-  request show no badge. Keep the route cheap: count, do not list.
+  any status other than `200`, a body without a valid `count`, a failed
+  request, and a request still running after a minute show no badge. Keep the
+  route cheap: count, do not list.
 - **When it is read:** the server render never calls the route and never
   shows a count. After the page loads, the shell reads every badge route of
   the person's navigation once, then at most once per minute while the tab is
   visible, and again when a hidden tab becomes visible after a minute or more.
-  Hidden tabs send nothing. A newer read cancels one still in flight.
+  Hidden tabs send nothing. Each route has at most one request in flight per
+  tab, and each count appears as soon as its own answer arrives, so a slow
+  application delays only its own badge.
 - **Layout:** the count sits over the corner of the icon, so appearing,
   growing, or clearing moves nothing. Screen readers hear it with the app's
   name, for example "Chat, 3 new".
 - **Fresh after a change:** after the person changed what the badge counts,
   for example by reading a conversation, call `refreshAppBadges()` from
   `@k2b/cloud/browser/app-badges` so the app bar agrees with the page at once.
-  It does nothing in a hidden tab or outside the Cloud layout.
+  Calls while a read is still running share one more read after it, so
+  frequent calls never stack up requests. It does nothing in a hidden tab or
+  outside the Cloud layout.
 
 An application without `badge` renders exactly as before. A badge is a hint to
 open the application, not authorization or a live view; the application's own

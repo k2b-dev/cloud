@@ -12,7 +12,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
-const { person } = await import("../_internal/define-app.fixture");
+const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");

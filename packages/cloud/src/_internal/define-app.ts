@@ -86,6 +86,7 @@ import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry } from "./registry";
+import { canonicalRoute, isOwnNavBadge } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
@@ -339,11 +340,6 @@ export type AppDefinition<S extends AppSettingsMap = {}, N extends NotificationD
 // ── Implementation ──────────────────────────────────────────────────────────
 
 const isPwaPath = (route: string): boolean => route === "/pwa" || route.startsWith("/pwa/");
-/** A route as the gateway reads it: trimmed and without empty segments, so `//pwa/x/` is `/pwa/x`. */
-const canonicalRoute = (route: string): string => {
-  const trimmed = route.trim();
-  return trimmed.startsWith("/") ? `/${trimmed.split("/").filter(Boolean).join("/")}` : trimmed;
-};
 
 /**
  * `/pwa` belongs to the mobile app shell, `/pwa/_auth` to Core, and `/pwa/<id>`
@@ -367,16 +363,9 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
 /** The badge route is read by the browser through the gateway, so it must be one of this app's own paths. */
 const validateAppNavBadge = (opts: Pick<AppOptions, "id" | "routes" | "nav">): void => {
   const badge = opts.nav?.badge;
-  if (badge === undefined) return;
-  // Ownership is checked on the path the browser actually requests, after dot segments.
-  const path = new URL(badge, "https://cloud.invalid").pathname;
-  const owned =
-    /^\/(?![\/\\])[^\\\s]*$/.test(badge) &&
-    opts.routes.some((route) => {
-      const prefix = canonicalRoute(route);
-      return prefix === "/" || path === prefix || path.startsWith(`${prefix}/`);
-    });
-  if (!owned) throw new Error(`App "${opts.id}" declares nav.badge "${badge}"; it must be a same-origin path below one of its routes`);
+  if (badge !== undefined && !isOwnNavBadge(badge, opts.routes)) {
+    throw new Error(`App "${opts.id}" declares nav.badge "${badge}"; it must be a same-origin path below one of its routes`);
+  }
 };
 
 export const defineApp = <

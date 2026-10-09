@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { refreshAppBadges } from "../browser/app-badges";
+import { APP_BADGE_INTERVAL_MS } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
 
 const apps: RailApp[] = [
@@ -30,10 +31,21 @@ const settings = { revision: 0, visibility: {}, shortcuts: [] };
 
 let dom: DomTestHarness;
 let visibility: DocumentVisibilityState;
-let responses: Record<string, () => Response>;
+let responses: Record<string, (signal?: AbortSignal) => Response | Promise<Response>>;
 let fetchSpy: ReturnType<typeof spyOn<typeof globalThis, "fetch">>;
 const requested = () => fetchSpy.mock.calls.map(([url]) => String(url));
 const settle = () => Bun.sleep(10);
+// Bun.sleep never resolves under fake timers; a fetch answered from memory settles within a few microtasks.
+const flush = async () => {
+  for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+};
+/** An app that never answers until the request is aborted. */
+const hang = (signal?: AbortSignal) =>
+  new Promise<Response>((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+const hide = (hidden: boolean) => {
+  visibility = hidden ? "hidden" : "visible";
+  dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+};
 const railLink = (label: string) => dom.root.querySelector<HTMLAnchorElement>(`a[href="/app/${label.toLowerCase()}"]`)!;
 const badgeText = (link: Element) => link.querySelector(".cloud-app-badge")?.textContent ?? null;
 
@@ -47,10 +59,10 @@ beforeEach(() => {
   };
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
-      async (input: string | URL | Request) => {
+      async (input: string | URL | Request, init?: RequestInit) => {
         const respond = responses[String(input)];
         if (!respond) throw new Error(`Unexpected request ${String(input)}`);
-        return respond();
+        return respond(init?.signal ?? undefined);
       },
       { preconnect: globalThis.fetch.preconnect },
     ),
@@ -58,6 +70,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  jest.useRealTimers();
   fetchSpy.mockRestore();
   setSystemTime();
   dom.cleanup();
@@ -118,20 +131,19 @@ test("a hidden tab sends nothing and reads again only when it is visible and the
   try {
     await settle();
     fetchSpy.mockClear();
-    visibility = "hidden";
-    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+    hide(true);
     refreshAppBadges();
     await settle();
     expect(requested()).toEqual([]);
 
-    visibility = "visible";
     setSystemTime(start + 59_000);
-    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+    hide(false);
     await settle();
     expect(requested()).toEqual([]);
 
     setSystemTime(start + 60_000);
-    dom.window.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+    hide(true);
+    hide(false);
     await settle();
     expect(requested().sort()).toEqual(["/api/chat/badge", "/api/notes/badge"]);
   } finally {
@@ -139,32 +151,71 @@ test("a hidden tab sends nothing and reads again only when it is visible and the
   }
 });
 
-test("a newer read cancels an older one, so a late answer never overwrites a newer count", async () => {
+test("a refresh in a hidden tab keeps the scheduled read for when the tab is visible again", async () => {
+  jest.useFakeTimers();
   const dispose = await mountRail();
   try {
+    await flush();
+    fetchSpy.mockClear();
+    jest.advanceTimersByTime(10_000);
+    hide(true);
+    refreshAppBadges();
+    jest.advanceTimersByTime(10_000);
+    hide(false);
+    await flush();
+    expect(requested()).toEqual([]);
+
+    jest.advanceTimersByTime(APP_BADGE_INTERVAL_MS - 20_000);
+    await flush();
+    expect(requested().sort()).toEqual(["/api/chat/badge", "/api/notes/badge"]);
+  } finally {
+    dispose();
+  }
+});
+
+test("refreshes while a read runs share one more read after it, so a late answer never overwrites a newer count", async () => {
+  const dispose = await mountRail();
+  const chatReads = () => requested().filter((url) => url === "/api/chat/badge");
+  try {
     await settle();
+    fetchSpy.mockClear();
     let release: (() => void) | undefined;
-    responses["/api/chat/badge"] = () => Response.json({ count: 5 });
-    fetchSpy.mockImplementationOnce(
-      Object.assign(
-        async (input: string | URL | Request, init?: RequestInit) => {
-          await new Promise<void>((resolve) => {
-            release = resolve;
-          });
-          init?.signal?.throwIfAborted();
-          return responses[String(input)]!();
-        },
-        { preconnect: globalThis.fetch.preconnect },
-      ),
-    );
+    responses["/api/chat/badge"] = () =>
+      new Promise((resolve) => {
+        release = () => resolve(Response.json({ count: 5 }));
+      });
     refreshAppBadges();
     responses["/api/chat/badge"] = () => Response.json({ count: 9 });
     refreshAppBadges();
+    refreshAppBadges();
     await settle();
-    expect(badgeText(railLink("Chat"))).toBe("9");
+    expect(chatReads()).toHaveLength(1);
+    expect(badgeText(railLink("Chat"))).toBe("3");
+
     release?.();
     await settle();
+    expect(chatReads()).toHaveLength(2);
     expect(badgeText(railLink("Chat"))).toBe("9");
+  } finally {
+    dispose();
+  }
+});
+
+test("a slow app delays only its own badge, and its read gives up after the interval", async () => {
+  jest.useFakeTimers();
+  responses["/api/chat/badge"] = hang;
+  responses["/api/notes/badge"] = () => Response.json({ count: 2 });
+  const dispose = await mountRail();
+  try {
+    await flush();
+    expect(badgeText(railLink("Notes"))).toBe("2");
+
+    responses["/api/chat/badge"] = () => Response.json({ count: 4 });
+    jest.advanceTimersByTime(APP_BADGE_INTERVAL_MS);
+    await flush();
+    // The scheduled read waits for the stuck one, which the deadline ends.
+    expect(requested().filter((url) => url === "/api/chat/badge")).toHaveLength(2);
+    expect(badgeText(railLink("Chat"))).toBe("4");
   } finally {
     dispose();
   }
@@ -180,8 +231,16 @@ test("after the rail unmounts, nothing reads badges any more", async () => {
   expect(requested()).toEqual([]);
 });
 
-test("the app grid shows the same count on the icon and tells screen readers", async () => {
+test("the app grid shows the same count on the icon and on a pinned app, and tells screen readers", async () => {
   const disposeRail = await mountRail();
+  const railData = dom.window.document.createElement("script");
+  railData.id = "cloud-rail-data";
+  railData.type = "application/json";
+  railData.textContent = JSON.stringify({
+    apps,
+    settings: { ...settings, shortcuts: [{ id: "pinned-chat", kind: "app", appId: "chat" }] },
+  });
+  dom.window.document.body.append(railData);
   const { AppLaunchpadPanel } = await import("./AppLaunchpadPanel");
   const grid = dom.window.document.createElement("div");
   dom.window.document.body.append(grid);
@@ -191,10 +250,13 @@ test("the app grid shows the same count on the icon and tells screen readers", a
   );
   try {
     await settle();
-    const chat = grid.querySelector('a[href="/app/chat"]')!;
+    const chat = grid.querySelector('.launchpad-apps-grid a[href="/app/chat"]')!;
     expect(chat.querySelector(".app-icon > .cloud-app-badge")?.textContent).toBe("3");
     expect(chat.textContent).toBe("3Chat, 3 new");
-    const mail = grid.querySelector('a[href="/app/mail"]')!;
+    const pinned = grid.querySelector('section a[href="/app/chat"]')!;
+    expect(pinned.querySelector(".cloud-app-badge")?.textContent).toBe("3");
+    expect(pinned.textContent).toBe("3Chat, 3 new");
+    const mail = grid.querySelector('.launchpad-apps-grid a[href="/app/mail"]')!;
     expect(mail.querySelector(".cloud-app-badge")).toBeNull();
     expect(mail.textContent).toBe("Mail");
   } finally {

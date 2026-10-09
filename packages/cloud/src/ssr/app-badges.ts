@@ -2,9 +2,10 @@ import { createSignal } from "solid-js";
 import { APP_BADGES_REFRESH_EVENT } from "../browser/app-badges";
 
 /**
- * Shortest time between two scheduled reads in one tab. Badges are a hint to
- * open an app, not a live view, so one read per minute keeps them current
- * while someone works elsewhere without a steady stream of requests per tab.
+ * Shortest time between two scheduled reads in one tab, and the longest one
+ * read may take. Badges are a hint to open an app, not a live view, so one
+ * read per minute keeps them current while someone works elsewhere without a
+ * steady stream of requests per tab.
  */
 export const APP_BADGE_INTERVAL_MS = 60_000;
 
@@ -35,31 +36,45 @@ const readBadge = async (endpoint: string, signal: AbortSignal): Promise<number>
 let watching = false;
 
 /**
- * Reads the badge endpoints after hydration, when a hidden tab becomes visible
- * again after the interval, every interval while visible, and on
- * `refreshAppBadges()`. A hidden tab sends nothing. At most one read per
- * endpoint is in flight; a newer read cancels it. Returns a disposer.
+ * Reads the badge endpoints after hydration, every interval while the tab is
+ * visible, when a hidden tab becomes visible again after the interval, and on
+ * `refreshAppBadges()`. A hidden tab sends nothing and keeps its schedule.
+ * Each endpoint has at most one read in flight, and its count shows as soon as
+ * that read settles, so a slow app delays only its own badge. A refresh while
+ * a read runs queues one more read after it instead of another request, and a
+ * read still running after the interval gives up. Returns a disposer.
  */
 export const watchAppBadges = (endpoints: readonly string[]): (() => void) => {
   const unique = [...new Set(endpoints)];
   if (typeof window === "undefined" || unique.length === 0 || watching) return () => {};
   watching = true;
-  let controller: AbortController | undefined;
+  const stopped = new AbortController();
+  // Endpoints with a read in flight, mapped to whether one more read waits for it.
+  const running = new Map<string, boolean>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last = Number.NEGATIVE_INFINITY;
 
+  const read = (endpoint: string) => {
+    if (running.has(endpoint)) {
+      running.set(endpoint, true);
+      return;
+    }
+    running.set(endpoint, false);
+    void readBadge(endpoint, AbortSignal.any([stopped.signal, AbortSignal.timeout(APP_BADGE_INTERVAL_MS)])).then((count) => {
+      if (stopped.signal.aborted) return;
+      setCounts((previous) => new Map(previous).set(endpoint, count));
+      const queued = running.get(endpoint);
+      running.delete(endpoint);
+      if (queued && document.visibilityState !== "hidden") read(endpoint);
+    });
+  };
   const refresh = () => {
-    clearTimeout(timer);
-    timer = undefined;
+    // Leave the pending read in place, so the tab still reads on time once it is visible again.
     if (document.visibilityState === "hidden") return;
+    clearTimeout(timer);
     last = Date.now();
     timer = setTimeout(refresh, APP_BADGE_INTERVAL_MS);
-    controller?.abort();
-    const current = new AbortController();
-    controller = current;
-    void Promise.all(unique.map(async (endpoint) => [endpoint, await readBadge(endpoint, current.signal)] as const)).then((entries) => {
-      if (!current.signal.aborted) setCounts(new Map(entries));
-    });
+    for (const endpoint of unique) read(endpoint);
   };
   const resume = () => {
     if (document.visibilityState !== "hidden" && Date.now() - last >= APP_BADGE_INTERVAL_MS) refresh();
@@ -71,7 +86,7 @@ export const watchAppBadges = (endpoints: readonly string[]): (() => void) => {
   return () => {
     watching = false;
     clearTimeout(timer);
-    controller?.abort();
+    stopped.abort();
     document.removeEventListener("visibilitychange", resume);
     window.removeEventListener(APP_BADGES_REFRESH_EVENT, refresh);
   };

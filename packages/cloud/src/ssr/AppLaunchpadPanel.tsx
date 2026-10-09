@@ -122,18 +122,27 @@ export const AppLaunchpadPanel = (
         <section class="mb-5" aria-label={t().shortcuts}>
           <div class="flex flex-wrap justify-center gap-3">
             <For each={shortcuts()}>
-              {(shortcut) => (
-                <a
-                  onClick={follow}
-                  href={shortcut.href}
-                  class="group flex w-16 min-w-0 flex-col items-center gap-1 rounded-lg p-1 text-center focus-ui"
-                >
-                  <span class="grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
-                    <i class={shortcut.iconClass} aria-hidden="true" />
-                  </span>
-                  <span class="max-w-full truncate text-[11px] font-medium text-primary dark:text-white">{shortcut.label}</span>
-                </a>
-              )}
+              {(shortcut) => {
+                const badge = useAppBadgeDescription(() => shortcut.badge);
+                return (
+                  <a
+                    onClick={follow}
+                    href={shortcut.href}
+                    class="group flex w-16 min-w-0 flex-col items-center gap-1 rounded-lg p-1 text-center focus-ui"
+                  >
+                    <span class="relative grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
+                      <i class={shortcut.iconClass} aria-hidden="true" />
+                      <AppBadge endpoint={shortcut.badge} />
+                    </span>
+                    <span class="max-w-full truncate text-[11px] font-medium text-primary dark:text-white">
+                      {shortcut.label}
+                      <Show when={badge()}>
+                        <span class="sr-only">, {badge()}</span>
+                      </Show>
+                    </span>
+                  </a>
+                );
+              }}
             </For>
           </div>
         </section>

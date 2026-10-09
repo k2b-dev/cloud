@@ -49,6 +49,8 @@ export type DashboardAppSummary = {
   icon: string;
   href: string;
   description: string;
+  /** The app's `nav.badge` route, so the app grid opened here shows the same counts as the shell's. */
+  badge?: string;
 };
 
 export type DashboardLegalLink = {

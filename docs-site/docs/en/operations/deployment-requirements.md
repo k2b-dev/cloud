@@ -459,7 +459,9 @@ images show the same rail without counts. Older releases ignore the field in
 the registry. Once an application declares a badge, every open, visible tab of
 a signed-in person sends one `GET` to that route after the page loads, at most
 one per minute after that, and one more whenever a page asks for a fresh count
-after a change. Hidden tabs send nothing. Count these requests when sizing the
+after a change. Each tab keeps at most one such request per route in flight
+and gives up on one after a minute; requests asked for meanwhile share one
+read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
 ## Coordinate an existing installation's identity upgrade

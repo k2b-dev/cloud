@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { visiblePwaParts } from "../ssr/app-navigation";
 import { type AppOptions, defineApp } from "./define-app";
-import { inventory, person, publishedEntry } from "./define-app.fixture";
+import { inventory, person, publishedEntry } from "./define-app.test-fixture";
 import { validateAppRegistryEntry } from "./registry-validation";
 import { buildRuntimeFromRegistry } from "./runtime-context";
 
