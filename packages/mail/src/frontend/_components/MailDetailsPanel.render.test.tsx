@@ -44,12 +44,14 @@ const tag: LocalTag = {
 
 const collaboration: ConversationCollaboration = {
   conversationId,
-  assignee: {
-    id: "user-1",
-    uid: "valentin",
-    displayName: "Valentin Kolb",
-    avatarHash: null,
-  },
+  assignees: [
+    {
+      id: "user-1",
+      uid: "valentin",
+      displayName: "Valentin Kolb",
+      avatarHash: null,
+    },
+  ],
   workStatus: "needs_action",
   snoozedUntil: null,
   revision: 4,
@@ -186,12 +188,13 @@ const renderPanel = (overrides: Partial<Parameters<typeof MailDetailsPanel>[0]> 
       conversationId,
       active: false,
       canWrite: true,
+      canAssign: true,
       initialState: collaboration,
       initialLocalTags: [tag],
       initialConversationLocalTags: conversationTags,
       initialComments: [comment],
       initialCommentsCursor: null,
-      assignableUsers: [{ ...collaboration.assignee!, permission: "admin", description: "Mailbox admin" }],
+      assignableUsers: [{ ...collaboration.assignees[0]!, permission: "admin", scope: "mailbox", description: "Mailbox admin" }],
       presence: [presence],
       activity: [activity],
       initialReminder: null,

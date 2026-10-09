@@ -17,9 +17,9 @@ import {
   IconButton,
   MarkdownView,
   MultiSelectInput,
+  openSpotlightSearch,
   Placeholder,
   prompts,
-  Select,
   StatusBadge,
   TextInput,
   Tooltip,
@@ -71,6 +71,8 @@ export default function MailDetailsPanel(props: {
   conversationId: string;
   active: boolean;
   canWrite: boolean;
+  /** Whether the person may change assignees and create tags: both need mailbox-wide write access. */
+  canAssign: boolean;
   initialState: ConversationCollaboration;
   initialLocalTags: LocalTag[];
   initialConversationLocalTags: ConversationLocalTags;
@@ -237,7 +239,7 @@ export default function MailDetailsPanel(props: {
     if (!props.active) return;
     const conversationId = props.conversationId;
     const copy = mailCommandMessages.resolve([locale()]).t;
-    if (props.canWrite && !props.detailErrors.assignableUsers)
+    if (props.canAssign && !props.detailErrors.assignableUsers)
       onCleanup(
         registerContextAwareCommand({
           scope: "selection",
@@ -246,19 +248,32 @@ export default function MailDetailsPanel(props: {
           description: copy.assignDescription({ subject: props.subject || t().noSubject }),
           icon: "ti ti-user-check",
           action: async () => {
-            const selected = await prompts.form({
-              title: t().assignee,
-              fields: {
-                userId: {
-                  type: "select",
-                  label: t().assignee,
-                  default: state().assignee?.id ?? "",
-                  options: props.assignableUsers.map((user) => ({ id: user.id, label: user.displayName })),
-                },
+            // Choosing a person toggles them: an assignee is removed, anyone else is added.
+            const assigned = new Set(state().assignees.map((user) => user.id));
+            const selected = await openSpotlightSearch<string>({
+              title: t().assignees,
+              icon: "ti ti-user-check",
+              placeholder: t().searchPeople,
+              minQueryLength: 0,
+              noResultsText: t().noAssignablePeople,
+              resolve: async ({ query }) => {
+                const needle = query.trim().toLocaleLowerCase();
+                return props.assignableUsers
+                  .filter((user) => !needle || `${user.displayName} ${user.uid}`.toLocaleLowerCase().includes(needle))
+                  .map((user) => ({
+                    label: assigned.has(user.id) ? t().removeAssignee({ name: user.displayName }) : user.displayName,
+                    desc: user.description,
+                    icon: assigned.has(user.id) ? "ti ti-user-minus" : "ti ti-user-plus",
+                    value: user.id,
+                  }));
               },
             });
-            if (selected && props.active && props.conversationId === conversationId && props.canWrite)
-              updateCollaboration({ assigneeUserId: selected.userId || null });
+            const userId = selected?.value;
+            if (!userId || !props.active || props.conversationId !== conversationId || !props.canAssign) return;
+            const current = state().assignees.map((user) => user.id);
+            updateCollaboration({
+              assigneeUserIds: current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
+            });
           },
         }),
       );
@@ -667,7 +682,7 @@ export default function MailDetailsPanel(props: {
               tone="neutral"
               actions={
                 <Tooltip.Anchor content={t().createTag}>
-                  <IconButton type="button" label={t().createTag} size="xs" disabled={!props.canWrite} onClick={() => void createTag()}>
+                  <IconButton type="button" label={t().createTag} size="xs" disabled={!props.canAssign} onClick={() => void createTag()}>
                     <i class="ti ti-tag-plus" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -696,18 +711,26 @@ export default function MailDetailsPanel(props: {
                   clearable
                   disabled={!props.canWrite}
                 />
-                <Select
-                  label={t().assignee}
-                  value={() => state().assignee?.id ?? null}
-                  selectedLabel={() => state().assignee?.displayName}
-                  onValueChange={(userId) => updateCollaboration({ assigneeUserId: userId || null })}
+                <MultiSelectInput
+                  label={t().assignees}
+                  value={() => state().assignees.map((user) => user.id)}
+                  onValueChange={(userIds) => updateCollaboration({ assigneeUserIds: userIds })}
                   options={props.assignableUsers.map((user) => ({
                     id: user.id,
                     label: user.displayName,
                     description: user.description,
+                    icon: "ti ti-user",
                   }))}
+                  selectedOptions={() =>
+                    state().assignees.map((user) => ({
+                      id: user.id,
+                      label: user.displayName,
+                      icon: "ti ti-user",
+                    }))
+                  }
+                  placeholder={t().unassigned}
                   clearable
-                  disabled={!props.canWrite || Boolean(props.detailErrors.assignableUsers)}
+                  disabled={!props.canAssign || Boolean(props.detailErrors.assignableUsers)}
                 />
                 <DateTimePicker
                   label={t().snoozeUntil}

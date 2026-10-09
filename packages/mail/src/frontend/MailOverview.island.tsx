@@ -759,6 +759,7 @@ function MailOverviewView(props: {
                       conversationId={selected().conversationId}
                       active={detailOpen()}
                       canWrite={canWriteMailbox(selected().mailboxId)}
+                      canAssign={canWriteMailbox(selected().mailboxId)}
                       initialState={detail().collaborationState!}
                       initialLocalTags={detail().localTags}
                       initialConversationLocalTags={detail().conversationLocalTags!}

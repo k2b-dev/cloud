@@ -62,7 +62,7 @@ const renderOverview = (
                 participantSummary: "Ada",
                 latestMessageAt: "2026-08-19T10:00:00.000Z",
                 workStatus: "needs_action",
-                assigneeUserId: "00000000-0000-4000-8000-000000000001",
+                assigneeUserIds: ["00000000-0000-4000-8000-000000000001"],
                 unread: true,
                 flagged: true,
                 hasAttachments: true,

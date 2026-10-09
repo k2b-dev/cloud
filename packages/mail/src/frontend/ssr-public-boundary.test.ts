@@ -69,7 +69,7 @@ describe("Mail SSR public boundary", () => {
             participantSummary: "Ada",
             latestMessageAt: "2026-08-19T10:00:00.000Z",
             workStatus: "needs_action" as const,
-            assigneeUserId: null,
+            assigneeUserIds: [],
             revision: 1,
             sourceFolderId: ids.folder,
             unread: true,

@@ -177,7 +177,7 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     participantSummary: "Ada",
     latestMessageAt: "2026-08-19T10:00:00.000Z",
     workStatus: "needs_action" as const,
-    assigneeUserId: null,
+    assigneeUserIds: [],
     unread: false,
     flagged: false,
     hasAttachments: false,

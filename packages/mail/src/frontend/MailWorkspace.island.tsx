@@ -746,7 +746,7 @@ function MailWorkspaceView(props: {
 
   const applyCollaborationState = (next: ConversationCollaboration) => {
     const patch: MailListOptimisticPatch = {
-      assigneeUserId: next.assignee?.id ?? null,
+      assigneeUserIds: next.assignees.map((assignee) => assignee.id),
       workStatus: next.workStatus,
       snoozedUntil: next.snoozedUntil,
       revision: next.revision,
@@ -1482,14 +1482,15 @@ function MailWorkspaceView(props: {
         conversationIds,
         {
           chooseAssignee: () => chooseMailAssignee({ mailboxId, currentUserId: props.currentUserId }),
-          assign: async (ids, assigneeUserId) => {
+          assign: async (ids, assigneeUserIds, mode) => {
             const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
               param: { mailboxId },
-              json: { conversationIds: ids, assigneeUserId },
+              json: { conversationIds: ids, assigneeUserIds, mode },
             });
             if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
             return response.json();
           },
+          assigneesOf: (conversationId) => data.listItems.find((item) => item.conversationId === conversationId)?.assigneeUserIds ?? null,
           clearSelection: () => {
             setConversationSelection(emptyMailConversationSelection());
             setSelectionMode(false);
@@ -1777,6 +1778,7 @@ function MailWorkspaceView(props: {
               conversationId={data.selectedConversationId!}
               active={detailsOpen()}
               canWrite={canWrite()}
+              canAssign={canWrite()}
               initialState={data.collaborationState!}
               initialLocalTags={data.localTags}
               initialConversationLocalTags={data.conversationLocalTags!}

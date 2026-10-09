@@ -21,6 +21,24 @@ describe("mail activity presentation", () => {
     );
   });
 
+  test("describes assignee changes, also from activity recorded with a single assignee", () => {
+    expect(mailActivityLabel(event({ before: { assigneeUserIds: [] }, after: { assigneeUserIds: ["a", "b"] } }))).toBe(
+      "assigned the conversation",
+    );
+    expect(mailActivityLabel(event({ before: { assigneeUserIds: ["a", "b"] }, after: { assigneeUserIds: ["a"] } }))).toBe(
+      "removed an assignee",
+    );
+    expect(mailActivityLabel(event({ before: { assigneeUserIds: ["a"] }, after: { assigneeUserIds: [] } }), "de")).toBe(
+      "hat alle Zuweisungen entfernt",
+    );
+    expect(mailActivityLabel(event({ before: { assigneeUserId: null }, after: { assigneeUserId: "a" } }))).toBe(
+      "assigned the conversation",
+    );
+    expect(mailActivityLabel(event({ before: { assigneeUserIds: ["a"] }, after: { assigneeUserIds: ["a"] } }))).toBe(
+      "updated the conversation",
+    );
+  });
+
   test("localizes stable activity actions for regional German locales", () => {
     const tagged = event();
     tagged.action = "conversation.local_tag_added";

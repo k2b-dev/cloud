@@ -26,7 +26,7 @@ describe("Mail detail update queue", () => {
   test("overlays optimistic collaboration and tag choices without changing revisions", () => {
     const collaboration = {
       conversationId,
-      assignee: null,
+      assignees: [{ id: "00000000-0000-4000-8000-000000000004", uid: "bo", displayName: "Bo", avatarHash: null }],
       workStatus: "needs_action" as const,
       snoozedUntil: null,
       revision: 3,
@@ -37,22 +37,26 @@ describe("Mail detail update queue", () => {
       displayName: "Ada",
       avatarHash: null,
       permission: "write" as const,
+      scope: "assigned" as const,
       description: "Ada",
     };
     expect(
       applyMailCollaborationPatch(
         collaboration,
-        { assigneeUserId: assignee.id, completion: "done", snoozedUntil: "2026-07-23T08:00:00Z" },
+        // Bo stays, known from the current state; Ada comes from the assignable users.
+        {
+          assigneeUserIds: ["00000000-0000-4000-8000-000000000004", assignee.id],
+          completion: "done",
+          snoozedUntil: "2026-07-23T08:00:00Z",
+        },
         [assignee],
       ),
     ).toEqual({
       ...collaboration,
-      assignee: {
-        id: assignee.id,
-        uid: assignee.uid,
-        displayName: assignee.displayName,
-        avatarHash: assignee.avatarHash,
-      },
+      assignees: [
+        ...collaboration.assignees,
+        { id: assignee.id, uid: assignee.uid, displayName: assignee.displayName, avatarHash: assignee.avatarHash },
+      ],
       workStatus: "done",
       snoozedUntil: null,
     });

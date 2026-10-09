@@ -10,7 +10,7 @@ const statusIcon = (item: MailListItem): string | null => {
   if (item.workStatus === "needs_action") return "ti ti-message-reply";
   if (item.workStatus === "waiting") return "ti ti-hourglass";
   if (item.workStatus === "done") return "ti ti-checkbox";
-  if (item.assigneeUserId) return "ti ti-user-check";
+  if (item.assigneeUserIds.length > 0) return "ti ti-user-check";
   return null;
 };
 
@@ -62,7 +62,7 @@ export default function MailConversationRow(props: {
     if (item.workStatus === "needs_action") return t().needsAction;
     if (item.workStatus === "waiting") return t().waitingForReply;
     if (item.workStatus === "done") return t().done;
-    if (item.assigneeUserId) return t().assigned;
+    if (item.assigneeUserIds.length > 0) return t().assigned;
     return null;
   };
   const correspondentLabels = (item: MailListItem): string[] =>
