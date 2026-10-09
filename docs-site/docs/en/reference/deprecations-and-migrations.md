@@ -5,10 +5,25 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Deprecations and migrations
+
+## Assistant notices when an offer fits
+
+At the start of a followed turn, Cloud now checks the message and the latest
+messages of the chat for three offer cases: a second format correction in a
+row, a tone correction of a mail draft, and a reference to earlier work such
+as "like last week". When one fits, the turn gets one short instruction to
+offer a Skill or to remember the preference once at the end, so models that
+skip the general Suggestions rules still make the offer. The tone case no
+longer requires a Skill to have shaped the result. A question such as "What
+can you do for me?" adds a bounded summary of the user's recent chats and of
+the Cloud items used in them. Suggestion limits, organization instructions,
+and a user's request for no suggestions still take precedence. No setting
+changes; scheduled task runs are unaffected. See
+[Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
 
 ## A failing island shows a notice instead of freezing
 

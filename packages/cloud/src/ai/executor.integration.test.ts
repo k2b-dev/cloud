@@ -604,7 +604,7 @@ suite("AI executor integration", () => {
     try {
       const runConfig: AiChatTurnRunConfig = {
         kind: "chat",
-        input: "Weekly report",
+        input: "Weekly report, like last time",
         actor: { kind: "user", user: actorUser(userId) },
         toolSource: { kind: "default" },
       };
@@ -612,14 +612,14 @@ suite("AI executor integration", () => {
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
         runConfig,
-        userMessage: userMessage("Weekly report"),
+        userMessage: userMessage("Weekly report, like last time"),
       });
       await runTurn("interactive", turn.id);
 
       const task = (await aiChatTasks.create({
         userId,
         chatId: conversation.shortId,
-        prompt: "Weekly report",
+        prompt: "Weekly report, like last time",
         schedule: { kind: "cron", cron: "0 9 * * 1" },
         timezone: "UTC",
       }))!;
@@ -648,6 +648,9 @@ suite("AI executor integration", () => {
       expect(interactive).toContain("offer to save the approach as a personal Skill");
       expect(interactive).toContain("load skill-creator and draft from this conversation");
       expect(background).not.toContain("save the approach as a personal Skill");
+      // The server notices the reference to earlier work and tells only the followed turn to offer once.
+      expect(interactive).toContain("Offer once at the end: The user refers to earlier work");
+      expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
       expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
@@ -655,17 +658,64 @@ suite("AI executor integration", () => {
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
         runConfig,
-        userMessage: userMessage("Weekly report"),
+        userMessage: userMessage("Weekly report, like last time"),
       });
       await runTurn("without-creator", withoutCreator.id);
       const withoutCreatorPrompt = prompts.get("without-creator") ?? "";
       expect(withoutCreatorPrompt).toContain("# Skills");
       expect(withoutCreatorPrompt).toContain(skill.name);
       expect(withoutCreatorPrompt).not.toContain("save the approach as a personal Skill");
+      expect(withoutCreatorPrompt).not.toContain("Offer once at the end");
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await aiSkills.delete(skill.id, owner);
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+  test("answers a capability question with a summary of the user's recent chats", async () => {
+    const userId = await insertUser();
+    const earlier = await aiConversations.createConversation({ ownerUserId: userId, title: "Weekly sales report" });
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    let prompt = "";
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "What can you do for me?",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("What can you do for me?"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "recent-work-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      nextCompletion = textCompletion("Done");
+      onCompletionRequest = (body) => {
+        prompt = JSON.stringify(body);
+      };
+      await createExecutor("recent-work-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      expect(prompt).toContain("# Recent work");
+      // The current chat is not part of the summary.
+      expect(prompt).toContain('Chats: 1; latest: \\"Weekly sales report\\"');
+      expect(prompt).toContain("Cloud items used in chats: none yet");
+    } finally {
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id IN (${conversation.id}::uuid, ${earlier.id}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });

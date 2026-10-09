@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Files, Projects, Skills, and personalization
@@ -296,12 +296,14 @@ that applies:
    the approach as a personal Skill.
 2. The user corrected a result that their own Skill shaped: it offers to add
    the correction to that Skill.
-3. The user corrected the tone of a result that a built-in or shared Skill
-   shaped: it offers to remember the correction as a preference. Because
+3. The user corrected the tone of a result, such as a mail that is too
+   formal, without stating a lasting rule: it offers to remember the
+   correction as a preference. This does not depend on a Skill. Because
    memory saves only text the user wrote in that turn, a plain yes cannot be
-   saved, so the model suggests a one-line rule the user can send back.
-   Built-in and shared Skills change for everyone, so they change only when
-   the user asks for that.
+   saved, so the model suggests a one-line rule the user can send back. A
+   correction with "always" or "from now on" is saved directly under the
+   memory rules. Built-in and shared Skills change for everyone, so they
+   change only when the user asks for that.
 4. The user says the request recurs ("again", "every week", "like last
    time", "always"), pastes a long reusable instruction, or a personalization
    workflow default covers it: it offers a Skill or a scheduled task.
@@ -322,6 +324,31 @@ question or waiting for approval, after a reply that already ended with an
 offer, or once the user declined or asked for no suggestions. Asking for a
 shorter draft is a correction, not a request for silence. Scheduled task runs
 do not get these rules.
+
+Cloud does not leave these cases to the model alone. At the start of a new
+followed turn, the server checks the user's message and the latest messages of
+the chat with fixed word lists in English and German. When one case fits, it
+adds one short turn instruction that starts with "Offer once at the end":
+
+- the user corrects the format of the previous result for the second time in
+  a row, such as "as a table" and then "deadlines as DD.MM., overdue in bold":
+  a Skill offer;
+- the user corrects the tone of a mail draft in the previous reply, such as
+  "too stiff, write casually": an offer to remember the preference;
+- the user refers to earlier work, such as "like last week" or "as usual":
+  a Skill offer if the model finds and reuses that work.
+
+The server adds no instruction when the previous reply ended with a question
+or an offer, after the user said no to one in the chat, when the user's
+message, the chat, the user's memories, or the organization or Project
+instructions ask for no suggestions, or when the offer needs `skill-creator`
+or the memory tool and the turn does not have it. A message with attached files
+starts new work and does not count as a correction, and a Skill the user
+selected for the turn suppresses Skill offers. The instruction itself tells the
+model to skip the offer while it asks a question, waits for approval, or could
+not finish. Turns that continue after an approval and scheduled task runs get
+no instruction. The checks read at most one page of the current chat and only
+when the message alone could start a case.
 
 After a yes to a Skill offer, the model loads `skill-creator` and drafts from
 the conversation. Its template first picks the lightest place: memory for a
@@ -518,13 +545,16 @@ Cloud composes the system prompt in this order:
    first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
 2. Organization instructions;
-3. Optional turn-specific instructions such as retry style;
+3. Optional turn-specific instructions such as retry style or one offer
+   hint;
 4. The bounded readable Skill catalog;
 5. Project instructions;
 6. The Project context manifest as untrusted data;
 7. The bounded conversation file manifest as untrusted data;
-8. Relevant personal facts, preferences, and workflow defaults;
-9. The Cloud resource-link output rule.
+8. The Recent work summary as untrusted data, only when the user asks what
+   the Assistant can do;
+9. Relevant personal facts, preferences, and workflow defaults;
+10. The Cloud resource-link output rule.
 
 See [AI resources and access](/en/docs/ai/resources-and-access) for authorized
 domain context and [Tools and approvals](/en/docs/ai/tools-and-approvals) for
@@ -557,9 +587,14 @@ there either. The preview in **Assistant settings > System prompt** and
   answer. A request to shorten a draft does not count as that. It never
   searches data only to justify an offer. Organization, Project, and user
   instructions about suggestions take precedence. Asked what it can do, the
-  model first looks, where its tools allow it, at what the user already works
-  with, such as Spaces, recent chats, or files, leads with that, and leaves out
-  apps without data for them.
+  model leads with what the user already works with and leaves out apps
+  without data for them, such as mail without a mailbox. When the server
+  recognizes this question ("What can you do for me?", "Was kannst du für
+  mich tun?"), it adds a **Recent work** section: the number of the user's
+  other active chats with up to five recent titles, and up to eight distinct
+  Cloud items, such as Spaces or notes, that tools used in those chats. The
+  titles are untrusted data. Without that section the model first looks,
+  where its tools allow it, at the user's Spaces, recent chats, or files.
 
 Scheduled task runs keep the global rules and give their result without these
 sections. If the platform template fails to render, the minimal fallback prompt
