@@ -187,6 +187,13 @@
 .k2b-ui .k2b-dialog__viewport.is-search {
   max-width: var(--k2b-dialog-available-width);
   max-height: var(--k2b-dialog-available-height);
+}
+
+/* A bare frame takes its content's height, so its viewport must not be a
+ * percentage of it: that height is circular, and Safari on iPadOS resolves it
+ * to 0, which left only the backdrop. The frame's column layout fills a frame
+ * of fixed height (`full`); the search frame always has one. */
+.k2b-ui .k2b-dialog__viewport.is-search {
   height: 100%;
 }
 
