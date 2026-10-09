@@ -213,7 +213,7 @@ language-dependent automatic retries.
 
 ### Conversation titles
 
-A title given at creation, such as the localized web "New chat" placeholder,
+A title given at creation, such as the localized "New chat" of the web chat,
 stays a default title. The first message's text replaces it, and enrichment may
 rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
 the user's (`titleSource: "user"`). Neither the first message nor enrichment
