@@ -668,7 +668,9 @@ describe("capability tool presentation", () => {
     disclosureState.set("work:ai-turn:turn-1:0", true);
     const expanded = renderSegment(blocks, { disclosureState });
     expect(expanded.indexOf("Before tool")).toBeLessThan(expanded.indexOf("Useful card"));
-    expect(expanded).toContain("Delivered results");
+    // Steps show directly one level below the work line, never inside a second summary.
+    for (const step of ["Unknown tool", "Card", "Deliver file"]) expect(expanded).toContain(step);
+    expect(expanded).not.toContain("ti-stack-2");
   });
 
   test("does not leave empty places in the chat layout", () => {
@@ -778,10 +780,10 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("Review the validated arguments");
     expect(html).not.toContain("Contacts · Approval required");
     expect(html).toContain("ti-address-book");
-    expect(html).toContain("--app-accent:#0f766e");
-    expect(html).toContain("app-accent-scope");
-    expect(html).toContain("border-[var(--k2b-border)]");
-    expect(html).toContain("bg-[var(--k2b-surface)]");
+    // A calm tinted card: the warning tone alone sets it apart, without a border or an accent badge.
+    expect(html).toContain('<section class="ai-approval"');
+    expect(html).not.toContain("border-[var(--k2b-border)]");
+    expect(html).toContain(">Runs only after you approve it</p>");
     expect(html).toContain("data-ai-approval-footer");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("k2b-split-button");
@@ -824,12 +826,12 @@ describe("capability tool presentation", () => {
     expect(customHtml).toContain("Spaces · Read only");
     expect(customHtml).toContain("The draft includes an external recipient.");
     expect(customHtml.indexOf("The draft includes an external recipient.")).toBeLessThan(customHtml.indexOf("data-ai-approval-footer"));
-    expect(customHtml).toContain('<dt class="font-semibold text-primary">Subject</dt>');
+    expect(customHtml).toContain("<dt>Subject</dt>");
     // Review details and the decision are grouped by spacing: no divider lines and no footer band.
     expect(customHtml).not.toMatch(/border-[ty]\b/);
     expect(customHtml).not.toContain("--k2b-surface-subtle");
-    expect(customHtml).toContain('<dd class="min-w-0 whitespace-pre-wrap break-words">Release follow-up</dd>');
-    expect(customHtml).toContain('<dt class="font-semibold text-primary">Recipients</dt>');
+    expect(customHtml).toContain('<dd class="whitespace-pre-wrap">Release follow-up</dd>');
+    expect(customHtml).toContain("<dt>Recipients</dt>");
     expect(customHtml).toContain('<time datetime="2026-08-20">');
     expect(customHtml).toContain('<time datetime="2026-08-20T09:00:00+02:00">');
     expect(customHtml).toContain('aria-label="Proposed body"');
@@ -880,7 +882,7 @@ describe("capability tool presentation", () => {
     const approval = render(german("awaiting_approval"), "de");
     expect(approval).toContain(">E-Mail · Mail-Entwurf erstellen</h3>");
     expect(approval).toContain('aria-label="Freigabe erforderlich: Mail-Entwurf erstellen"');
-    expect(approval).toContain(">Aktion</p>");
+    expect(approval).toContain(">Wird erst nach deiner Freigabe ausgeführt</p>");
     expect(approval).toContain(">Ablehnen</span>");
     expect(approval).toContain('<span class="k2b-button__label">Mail-Entwurf erstellen</span>');
     expect(approval).toContain("Weitere Optionen für Mail-Entwurf erstellen");
@@ -898,7 +900,7 @@ describe("capability tool presentation", () => {
     };
     const reviewedHtml = render(reviewed, "de");
     expect(reviewedHtml).toContain("Entwurf im Postfach Vertrieb speichern.");
-    expect(reviewedHtml).toContain('<dt class="font-semibold text-primary">Betreff</dt>');
+    expect(reviewedHtml).toContain("<dt>Betreff</dt>");
     expect(reviewedHtml).toContain(">In E-Mail bearbeiten</span></a>");
     expect(reviewedHtml).toContain('aria-label="Links zu Mail-Entwurf erstellen"');
 
@@ -928,7 +930,7 @@ describe("capability tool presentation", () => {
     // English readers keep the English chrome around whatever title the server presented.
     const english = render(block("awaiting_approval"), "en");
     expect(english).toContain(">Contacts · List contacts</h3>");
-    expect(english).toContain(">Action</p>");
+    expect(english).toContain(">Runs only after you approve it</p>");
     expect(english).toContain(">Reject</span>");
     expect(english).not.toContain("Ablehnen");
   });

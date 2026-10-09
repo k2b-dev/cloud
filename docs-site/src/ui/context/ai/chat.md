@@ -36,6 +36,11 @@ three-dot indicator. Applications should not add another spinner or visible
 generating label.
 Activity bodies are inset beneath their row by default. Set `bodyInset={false}`
 when the body is a peer list that should align with the activity row itself.
+An expandable row opens on a press anywhere in it, also while its label or
+trailing text re-renders, such as a ticking clock: presses land on the row, and
+only links, buttons, and other controls inside it stay their own targets. With
+a controlled `open`, the body renders as soon as the row opens, before the host
+passes its new state back.
 
 ## Import
 
@@ -64,7 +69,7 @@ stay on one horizontally scrollable row, and the controlled text field grows
 up to approximately fifteen visible lines. The conversation variant grows
 differently; see [Conversations between people](#conversations-between-people).
 
-`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
+`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. A reader who opens or closes an expandable row in the timeline keeps that row where it was: the timeline does not follow the end for that change, and it keeps following new content only if the end is still in view afterwards. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
 
 Use `scrollToAnchorRef` to receive a function that scrolls to a rendered `anchorId` and pauses following. It returns `false` if the anchor is not rendered yet; load the relevant history first. This also works behind an open dialog where browser focus is blocked. Following resumes when the reader returns to the bottom.
 

@@ -379,7 +379,9 @@ responses before rendering, so resolved approval controls do not reappear and
 plain browser tools are not executed again merely because the page reloaded.
 A call the user approved keeps `approved: true` on its tool block, and its
 stored result records the decision, as a rejection does, so history can show
-the decision after a reload.
+the decision after a reload. A call whose approval still waited when its turn
+ended carries `approved: false` in history, so it shows as not run instead of
+disappearing.
 
 Do not maintain a second client-side chat state machine.
 
@@ -628,8 +630,11 @@ its run time limit records, so the limit never looks like a user stop. History
 then shows the turn as stopped or interrupted, and a call that never ran as not
 run. A call the user approved that never returned keeps its decision as
 `toolOutcomes` on the message that holds the call, so history still shows its
-receipt. Live `message_saved` events carry usage after each model response,
-before its tools finish, without rendering a second copy of the active response.
+receipt; a call whose approval nobody answered records `expired` there. A
+custom approval, which code requests while its call runs, counts for that call,
+and one approved request outweighs a later one that expired. Live
+`message_saved` events carry usage after each model response, before its tools
+finish, without rendering a second copy of the active response.
 
 ### Failed turns
 

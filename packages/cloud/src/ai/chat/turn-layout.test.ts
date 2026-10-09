@@ -172,6 +172,10 @@ describe("turn layout", () => {
     expect(states({ status: "running", result: undefined }, "stopped")).toEqual([["tool-run", "not_run"]]);
     // Without a decision, the same call is an ordinary step.
     expect(layoutAiTurn([tool("run", "code_run")], { phase: "completed" }).actions).toEqual([]);
+    // An approval the turn left waiting is not run: after a stop, a time limit, or an expired wait.
+    const expired = tool("run", "code_run", { approved: false, status: "running", result: undefined });
+    for (const phase of ["stopped", "failed"] as const)
+      expect(layoutAiTurn([expired], { phase }).actions.map((action) => [action.id, action.state])).toEqual([["tool-run", "not_run"]]);
   });
 
   test("an approved call or a Cloud action that returns a table keeps its receipt and shows its table", () => {

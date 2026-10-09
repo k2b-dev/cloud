@@ -183,7 +183,14 @@ function ToolResultDisclosure(props: {
   );
 }
 
-export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
+/** A decision the server accepted, for the call it answered. */
+export type AiApprovalDecision = { callId: string; approved: boolean };
+
+/**
+ * The pending approval: a calm tinted card that says what will happen, with its fields and the decision. `onDecided`
+ * hears an accepted decision with the call it answered, so the turn can show its receipt in the card's place right away.
+ */
+export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onDecided?: (decision: AiApprovalDecision) => void }) {
   const actions = useAiChatActions();
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
@@ -192,15 +199,22 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
   const actionDisabled = () => actions.actionDisabled?.() ?? false;
   const [submitted, setSubmitted] = createSignal(false);
   const [detailsOpen, setDetailsOpen] = createSignal(false);
+  // The call this card answered: a later approval for the same block may already have arrived when the server accepts.
+  let decision: AiApprovalDecision | null = null;
   const approval = mutation.create<void, { approved: boolean; remember?: "always" }>({
     mutation: async (input) => {
       if (!actions.onApproval) throw new Error("Approval is unavailable.");
       await actions.onApproval(request(), input);
     },
-    onSuccess: () => setSubmitted(true),
+    onSuccess: () => {
+      setSubmitted(true);
+      if (decision) props.onDecided?.(decision);
+    },
   });
   const submit = (input: { approved: boolean; remember?: "always" }) => {
-    if (!actionDisabled() && !approval.loading()) void approval.mutate(input);
+    if (actionDisabled() || approval.loading()) return;
+    decision = { callId: props.block.callId, approved: input.approved };
+    void approval.mutate(input);
   };
   const title = () => props.block.presentation?.title ?? displayToolName(props.block.name, locale());
   const ownerName = () => props.block.presentation?.appName ?? t().assistant;
@@ -239,199 +253,166 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
       download: t().download,
     })[rel];
   const detailData = () => (isStructuredDataValue(props.block.args) ? props.block.args : undefined);
-  const appAccent = () => props.block.presentation?.appAccent;
   const detailsId = `approval-details-${props.block.callId}`;
   return (
-    <div class="w-full">
-      <section
-        class={`w-full overflow-hidden rounded-xl border border-[var(--k2b-border)] bg-[var(--k2b-surface)] text-sm text-primary ${appAccent() ? "app-accent-scope" : ""}`}
-        style={{ "--app-accent": appAccent() }}
-        aria-label={t().approvalRequired({ title: title() })}
-      >
-        <div class="p-4">
-          <div class="flex min-w-0 items-center gap-3">
-            <span
-              class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-base leading-none"
-              style={{
-                color: appAccent() ? "var(--ui-app-accent-text)" : "var(--k2b-ai-accent)",
-                background: appAccent()
-                  ? "color-mix(in srgb, var(--app-accent) 10%, var(--k2b-surface))"
-                  : "color-mix(in srgb, var(--k2b-ai-accent) 10%, var(--k2b-surface))",
-              }}
-              aria-hidden="true"
-            >
-              <i class={`${aiToolIcon(props.block.name, props.block.presentation?.appIcon)} leading-none`} />
-            </span>
-            <div class="min-w-0">
-              <h3 class="truncate text-sm font-semibold leading-5 text-primary">
-                {ownerName()} · {title()}
-              </h3>
-              <p class="text-xs text-dimmed">{t().action}</p>
-            </div>
-          </div>
-          <Show when={reviewLines().length > 0}>
-            <div class="mt-4 flex flex-col gap-1 text-xs leading-5 text-secondary">
-              <For each={reviewLines()}>
-                {(line) => (
-                  <p class="whitespace-pre-wrap">
-                    <Show when={line.label}>{(label) => <strong class="font-semibold text-primary">{label()}: </strong>}</Show>
-                    {line.value}
-                  </p>
-                )}
-              </For>
-            </div>
-          </Show>
-          <Show when={props.block.approval?.review}>
-            <div class="mt-4 flex flex-col gap-4 text-xs leading-5 text-secondary">
-              <p class="whitespace-pre-wrap">{description()}</p>
-              <Show when={inlineReviewDetails().length > 0}>
-                <dl class="grid gap-x-5 gap-y-1.5 sm:grid-cols-[max-content_minmax(0,1fr)]">
-                  <For each={inlineReviewDetails()}>
-                    {(detail) => (
-                      <>
-                        <dt class="font-semibold text-primary">{detail.label}</dt>
-                        <dd class="min-w-0 whitespace-pre-wrap break-words">
-                          <ReviewDetailValue detail={detail} />
-                        </dd>
-                      </>
-                    )}
-                  </For>
-                </dl>
-              </Show>
-              <For each={blockReviewDetails()}>
-                {(detail) => (
-                  <section class="min-w-0" aria-label={detail.label}>
-                    <h4 class="mb-1.5 font-semibold text-primary">{detail.label}</h4>
-                    <Show
-                      when={detail.format === "markdown"}
-                      fallback={
-                        <pre
-                          class="max-h-72 overflow-auto whitespace-pre-wrap break-words pr-2 font-sans text-xs leading-5 text-secondary"
-                          role="region"
-                          tabIndex={0}
-                          aria-label={t().contentOf({ label: detail.label })}
-                        >
-                          <ReviewDetailValue detail={detail} />
-                        </pre>
-                      }
-                    >
-                      <div
-                        class="-mx-2 max-h-72 overflow-auto px-2 text-xs text-secondary"
-                        role="region"
-                        tabIndex={0}
-                        aria-label={detail.label}
-                      >
-                        <MarkdownView class="cloud-ai-approval-detail" markdown={detail.value} headingScale="compact" allowImages={false} />
-                      </div>
-                    </Show>
-                  </section>
-                )}
-              </For>
-            </div>
-          </Show>
+    <section class="ai-approval" aria-label={t().approvalRequired({ title: title() })}>
+      <div class="ai-approval__head">
+        <i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />
+        <div class="min-w-0">
+          <h3 class="ai-approval__title">
+            {ownerName()} · {title()}
+          </h3>
+          <p class="ai-approval__sub">{t().approvalRunsAfter}</p>
         </div>
-        {/* The decision continues the card below its content: spacing, not a line or a band, sets it apart. */}
-        <footer class="flex min-h-12 flex-wrap items-center gap-2 px-4 pb-3" data-ai-approval-footer>
-          {/* Present from the start, so screen readers announce progress after the decision buttons leave. */}
-          <span class="k2b-sr-only" role="status" aria-live="polite">
-            {approval.loading() ? t().submitting : submitted() ? t().submitted : ""}
-          </span>
-          <Show when={reviewLinks().length > 0}>
-            <nav class="flex flex-wrap gap-1" aria-label={t().linksFor({ title: title() })}>
-              <For each={reviewLinks()}>
-                {(link) => (
-                  <ButtonLink href={link.href} target="_blank" rel="noopener noreferrer" size="xs" variant="ghost">
-                    {link.title ?? reviewLinkTitle(link.rel)}
-                  </ButtonLink>
-                )}
-              </For>
-            </nav>
-          </Show>
-          <Show when={approval.error()}>
-            <p class="text-xs text-red-700 dark:text-red-300" role="alert">
-              {t().approvalFailed}
-            </p>
-          </Show>
-          <div class="ml-auto shrink-0">
-            <Show
-              when={pending()}
-              fallback={
-                <span class="text-xs font-medium text-secondary">
-                  {title()} · {props.block.status === "rejected" ? t().rejected : t().approved}
-                </span>
-              }
-            >
-              <Show when={actions.onApproval} fallback={<span class="text-xs font-medium text-secondary">{t().approvalUnavailable}</span>}>
-                <Show
-                  when={!actionDisabled()}
-                  fallback={
-                    <span class="inline-flex items-center gap-1 text-xs font-medium text-secondary">
-                      <i class="ti ti-player-stop" aria-hidden="true" />
-                      {t().stoppingResponse}
-                    </span>
-                  }
-                >
-                  <Show
-                    when={!approval.loading() && !submitted()}
-                    fallback={
-                      <span class="inline-flex items-center gap-1 text-xs font-medium text-secondary">
-                        <i class={`ti ${submitted() ? "ti-check" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
-                        {submitted() ? t().submitted : t().submitting}
-                      </span>
-                    }
+      </div>
+      <Show when={reviewLines().length > 0}>
+        <div class="ai-approval__text">
+          <For each={reviewLines()}>
+            {(line) => (
+              <p class="whitespace-pre-wrap">
+                <Show when={line.label}>{(label) => <strong class="ai-approval__label">{label()}: </strong>}</Show>
+                {line.value}
+              </p>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={props.block.approval?.review}>
+        <p class="ai-approval__text whitespace-pre-wrap">{description()}</p>
+        <Show when={inlineReviewDetails().length > 0}>
+          <dl class="ai-approval__fields">
+            <For each={inlineReviewDetails()}>
+              {(detail) => (
+                <>
+                  <dt>{detail.label}</dt>
+                  <dd class="whitespace-pre-wrap">
+                    <ReviewDetailValue detail={detail} />
+                  </dd>
+                </>
+              )}
+            </For>
+          </dl>
+        </Show>
+        <For each={blockReviewDetails()}>
+          {(detail) => (
+            <section class="ai-approval__text min-w-0" aria-label={detail.label}>
+              <h4 class="ai-approval__label mb-1">{detail.label}</h4>
+              <Show
+                when={detail.format === "markdown"}
+                fallback={
+                  <pre
+                    class="ai-approval__preview whitespace-pre-wrap break-words font-sans"
+                    role="region"
+                    tabIndex={0}
+                    aria-label={t().contentOf({ label: detail.label })}
                   >
-                    <div class="flex flex-wrap justify-end gap-1">
-                      <Button size="xs" variant="ghost" onClick={() => submit({ approved: false })}>
-                        {t().reject}
-                      </Button>
-                      <SplitButton
-                        size="xs"
-                        variant="ai"
-                        onClick={() => submit({ approved: true })}
-                        menuLabel={t().moreOptions({ title: title() })}
-                        menuPosition="bottom-right"
-                        items={[
-                          {
-                            label: detailsOpen() ? t().hideDetails : t().details,
-                            icon: detailsOpen() ? "ti ti-eye-off" : "ti ti-eye",
-                            action: () => setDetailsOpen((open) => !open),
-                          },
-                          ...(props.block.approval?.allowAlways
-                            ? [
-                                {
-                                  label: t().alwaysApprove,
-                                  icon: "ti ti-shield-check",
-                                  action: () => submit({ approved: true, remember: "always" }),
-                                },
-                              ]
-                            : []),
-                        ]}
-                      >
-                        {title()}
-                      </SplitButton>
-                    </div>
-                  </Show>
-                </Show>
+                    <ReviewDetailValue detail={detail} />
+                  </pre>
+                }
+              >
+                <div class="ai-approval__preview" role="region" tabIndex={0} aria-label={detail.label}>
+                  <MarkdownView class="cloud-ai-approval-detail" markdown={detail.value} headingScale="compact" allowImages={false} />
+                </div>
               </Show>
-            </Show>
-          </div>
-        </footer>
-      </section>
+            </section>
+          )}
+        </For>
+      </Show>
       <Show when={detailsOpen()}>
-        <div id={detailsId} class="mt-2 w-full" role="region" aria-label={t().detailsFor({ title: title() })}>
-          <Show
-            when={detailData()}
-            fallback={
-              <pre class="max-h-40 overflow-auto rounded-md bg-white/55 p-2 text-[11px] text-primary dark:bg-black/20">
-                {jsonPreview(props.block.args)}
-              </pre>
-            }
-          >
+        <div id={detailsId} class="w-full min-w-0" role="region" aria-label={t().detailsFor({ title: title() })}>
+          <Show when={detailData()} fallback={<pre class="ai-approval__preview text-[11px]">{jsonPreview(props.block.args)}</pre>}>
             {(data) => <StructuredDataPreview data={data()} class="w-full" />}
           </Show>
         </div>
       </Show>
-    </div>
+      {/* The decision continues the card below its content: spacing, not a line or a band, sets it apart. */}
+      <footer class="ai-approval__foot" data-ai-approval-footer>
+        {/* Present from the start, so screen readers announce progress after the decision buttons leave. */}
+        <span class="k2b-sr-only" role="status" aria-live="polite">
+          {approval.loading() ? t().submitting : submitted() ? t().submitted : ""}
+        </span>
+        <Show when={reviewLinks().length > 0}>
+          <nav class="flex flex-wrap gap-1" aria-label={t().linksFor({ title: title() })}>
+            <For each={reviewLinks()}>
+              {(link) => (
+                <ButtonLink href={link.href} target="_blank" rel="noopener noreferrer" size="xs" variant="ghost">
+                  {link.title ?? reviewLinkTitle(link.rel)}
+                </ButtonLink>
+              )}
+            </For>
+          </nav>
+        </Show>
+        <Show when={approval.error()}>
+          <p class="text-xs text-red-700 dark:text-red-300" role="alert">
+            {t().approvalFailed}
+          </p>
+        </Show>
+        <div class="ai-approval__actions">
+          <Show
+            when={pending()}
+            fallback={
+              <span class="ai-approval__state">
+                {title()} · {props.block.status === "rejected" ? t().rejected : t().approved}
+              </span>
+            }
+          >
+            <Show when={actions.onApproval} fallback={<span class="ai-approval__state">{t().approvalUnavailable}</span>}>
+              <Show
+                when={!actionDisabled()}
+                fallback={
+                  <span class="ai-approval__state">
+                    <i class="ti ti-player-stop" aria-hidden="true" />
+                    {t().stoppingResponse}
+                  </span>
+                }
+              >
+                <Show
+                  when={!submitted()}
+                  fallback={
+                    <span class="ai-approval__state">
+                      <i class="ti ti-check" aria-hidden="true" />
+                      {t().submitted}
+                    </span>
+                  }
+                >
+                  {/* The buttons stay while the decision is sent, so the card does not change its height before it
+                      becomes its receipt. */}
+                  <Button size="sm" variant="ghost" disabled={approval.loading()} onClick={() => submit({ approved: false })}>
+                    {t().reject}
+                  </Button>
+                  <SplitButton
+                    size="sm"
+                    variant="ai"
+                    loading={approval.loading()}
+                    onClick={() => submit({ approved: true })}
+                    menuLabel={t().moreOptions({ title: title() })}
+                    menuPosition="bottom-right"
+                    items={[
+                      {
+                        label: detailsOpen() ? t().hideDetails : t().details,
+                        icon: detailsOpen() ? "ti ti-eye-off" : "ti ti-eye",
+                        action: () => setDetailsOpen((open) => !open),
+                      },
+                      ...(props.block.approval?.allowAlways
+                        ? [
+                            {
+                              label: t().alwaysApprove,
+                              icon: "ti ti-shield-check",
+                              action: () => submit({ approved: true, remember: "always" }),
+                            },
+                          ]
+                        : []),
+                    ]}
+                  >
+                    {title()}
+                  </SplitButton>
+                </Show>
+              </Show>
+            </Show>
+          </Show>
+        </div>
+      </footer>
+    </section>
   );
 }
 
@@ -849,6 +830,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
         .join(" · ")}
       icon={icon()}
       busy={props.busy && props.block.status === "running"}
+      bodyInset={false}
       renderBody={() => (
         <div class="flex min-w-0 flex-col gap-2">
           <div

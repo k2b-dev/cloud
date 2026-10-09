@@ -17,7 +17,14 @@ import {
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
-import { ApprovalBlockView, CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
+import {
+  type AiApprovalDecision,
+  ApprovalBlockView,
+  CompactionBlockView,
+  CompactToolRow,
+  SurveyToolView,
+  TextEditorToolView,
+} from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
@@ -25,9 +32,9 @@ import { aiToolIcon, capabilityErrorDescription, displayToolName, isCardToolName
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
-import { type AiWorkEntry, countWorkSteps, groupWorkBlocks, summarizeToolGroup } from "./tool-groups";
+import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
-import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
+import type { AiTurnAction, AiTurnActionState, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -88,10 +95,12 @@ export const formatWorkClock = (ms: number): string => {
 
 const basename = (value: string) => value.slice(value.lastIndexOf("/") + 1) || value;
 
+/** What a call acts on: the file name of its path, or its name, title, or query as given. */
 const toolTarget = (block: ToolBlock): string => {
   const args = isRecord(block.args) ? block.args : {};
-  const value = [args.path, args.name, args.title, args.query].find((entry) => typeof entry === "string" && entry.trim());
-  return typeof value === "string" ? basename(value.trim()) : "";
+  if (typeof args.path === "string" && args.path.trim()) return basename(args.path.trim());
+  const value = [args.name, args.title, args.query].find((entry) => typeof entry === "string" && entry.trim());
+  return typeof value === "string" ? value.trim() : "";
 };
 
 /** A step that runs longer than this shows its duration, so a long step does not look like a stalled one. */
@@ -234,6 +243,7 @@ function ThoughtRow(props: { block: Extract<AiTurnBlock, { kind: "thinking" }>; 
         blockId={props.block.id}
         label={firstLine()}
         icon="ti ti-bulb"
+        bodyInset={false}
         renderBody={() => <p class="ai-turn-steps__thought">{props.block.text.trim()}</p>}
       />
     </Show>
@@ -254,25 +264,26 @@ function WorkEntryRow(props: { entry: AiWorkEntry; busy: boolean }) {
   );
 }
 
-function WorkGroup(props: { id: string; entries: AiWorkEntry[]; active: boolean }) {
+/** Housekeeping folded into one row at step level. It opens in place: its steps follow at the same indent. */
+function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: boolean }) {
   const locale = useLocale();
-  const tools = () => props.entries.filter((entry): entry is ToolBlock => entry.kind === "tool");
   const last = () => props.entries.at(-1)!;
   return (
-    <Show when={props.entries.length > 1} fallback={<WorkEntryRow entry={last()} busy={props.active} />}>
-      <AiToolActivity
-        blockId={`group:${props.id}`}
-        label={tools().length ? summarizeToolGroup(tools(), locale()) : aiChatMessages(locale()).reasoning}
-        description={countWorkSteps(props.entries, locale())}
-        icon="ti ti-stack-2"
-        busy={props.active && last().kind === "tool" && (last() as ToolBlock).status === "running"}
-        renderBody={() => (
+    <AiToolActivity
+      blockId={`group:${props.id}`}
+      label={aiChatMessages(locale()).groupLoad}
+      description={countWorkSteps(props.entries, locale())}
+      icon="ti ti-stack-2"
+      bodyInset={false}
+      busy={props.active && last().kind === "tool" && (last() as ToolBlock).status === "running"}
+      renderBody={() => (
+        <div class="ai-turn-steps">
           <For each={props.entries}>
             {(entry, index) => <WorkEntryRow entry={entry} busy={props.active && index() === props.entries.length - 1} />}
           </For>
-        )}
-      />
-    </Show>
+        </div>
+      )}
+    />
   );
 }
 
@@ -288,34 +299,46 @@ function WorkText(props: { text: string }) {
   );
 }
 
-/** Expanded work: intermediate texts as quiet paragraphs, the steps between them as groups. One indent, one size. */
+const workItemKey = (item: AiWorkItem): string =>
+  item.kind === "text" ? `text:${item.block.id}` : item.kind === "step" ? `step:${item.entry.id}` : `group:${item.id}`;
+
+/**
+ * Expanded work, one indent below the work line and one size: intermediate texts as quiet paragraphs, the steps between
+ * them directly, and housekeeping folded at step level. A row shown while this list is open never folds away under the
+ * reader, also when reasoning or arguments that would fold it arrive later; the next time it opens, it folds like in
+ * history.
+ */
 function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
-  const groups = createMemo(() => groupWorkBlocks(props.blocks));
-  const keyed = createMemo(
-    () => new Map(groups().map((group) => [group.kind === "text" ? `text:${group.block.id}` : `steps:${group.id}`, group])),
-  );
-  const keys = createMemo(() => [...keyed().keys()]);
+  const shown = new Set<string>();
+  const items = createMemo(() => {
+    const work = groupWorkBlocks(props.blocks, shown);
+    for (const item of work) if (item.kind === "step") shown.add(item.entry.id);
+    return new Map(work.map((item) => [workItemKey(item), item]));
+  });
+  const keys = createMemo(() => [...items().keys()]);
   return (
     <div class="ai-turn-steps">
       <For each={keys()}>
         {(key, index) => {
-          const group = () => keyed().get(key);
+          const item = () => items().get(key);
           const text = () => {
-            const value = group();
+            const value = item();
             return value?.kind === "text" ? value.block.text : undefined;
           };
-          const steps = () => {
-            const value = group();
-            return value?.kind === "steps" ? value : undefined;
+          const step = () => {
+            const value = item();
+            return value?.kind === "step" ? value.entry : undefined;
           };
+          const group = () => {
+            const value = item();
+            return value?.kind === "housekeeping" ? value : undefined;
+          };
+          const active = () => props.active && index() === keys().length - 1;
           return (
             <Switch>
-              <Match when={text() !== undefined}>
-                <WorkText text={text()!} />
-              </Match>
-              <Match when={steps()}>
-                {(value) => <WorkGroup id={value().id} entries={value().entries} active={props.active && index() === keys().length - 1} />}
-              </Match>
+              <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
+              <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
+              <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
             </Switch>
           );
         }}
@@ -428,31 +451,47 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
   );
 }
 
-function AiReceipt(props: { action: AiTurnAction; stopped: boolean }) {
+type ReceiptState = Exclude<AiTurnActionState, "open" | "interaction">;
+
+/**
+ * One line for an action in place 4, the same element while it runs and once it is done, rejected, failed, or not run.
+ * It names the action in the reader's language with what it acted on, such as "Rejected: Run code · report.ts", or the
+ * application's own summary of what it did.
+ */
+function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
-  const block = () => props.action.block;
-  const title = () => block().presentation?.title ?? displayToolName(block().name, locale());
-  const links = () => (props.action.state === "done" ? resultLinks(block()) : []);
+  const block = () => props.block;
+  const subject = () => {
+    const title = block().presentation?.title ?? displayToolName(block().name, locale());
+    const target = toolTarget(block());
+    return target ? `${title} · ${target}` : title;
+  };
+  const links = () => (props.state === "done" ? resultLinks(block()) : []);
   const label = () => {
-    const state = props.action.state;
+    const state = props.state;
+    if (state === "running") return t().receiptRunning({ title: subject() });
     if (state === "done") {
       const summary = resultSummary(block());
       if (summary) return summary;
       // A tool that is not a Cloud action has no effect of its own to report; the receipt records the decision.
-      return block().presentation?.kind === "capability" ? t().receiptDone({ title: title() }) : t().receiptApproved({ title: title() });
+      return block().presentation?.kind === "capability"
+        ? t().receiptDone({ title: subject() })
+        : t().receiptApproved({ title: subject() });
     }
-    if (state === "rejected") return t().receiptRejected({ title: title() });
-    if (state === "failed") return t().receiptFailed({ title: title() });
-    return t().receiptNotRun({ title: title(), stopped: props.stopped });
+    if (state === "rejected") return t().receiptRejected({ title: subject() });
+    if (state === "failed") return t().receiptFailed({ title: subject() });
+    return t().receiptNotRun({ title: subject(), stopped: props.stopped });
   };
+  const declined = () => props.state === "rejected" || props.state === "not_run";
   return (
     <Chat.Activity
       class="ai-turn-receipt"
-      icon={aiToolIcon(block().name, block().presentation?.appIcon)}
-      accent={block().presentation?.appAccent}
+      icon={declined() ? "ti ti-circle-off" : aiToolIcon(block().name, block().presentation?.appIcon)}
+      accent={declined() ? undefined : block().presentation?.appAccent}
       label={label()}
-      description={props.action.state === "failed" ? capabilityErrorDescription(block().result) : undefined}
+      busy={props.state === "running"}
+      description={props.state === "failed" ? capabilityErrorDescription(block().result) : undefined}
       trailing={links().length > 0 ? <ResultLinks links={links()} /> : undefined}
     />
   );
@@ -463,8 +502,26 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
   let row!: HTMLDivElement;
   // Set while focus is in this place, including after the focused control disappeared with the decided card.
   let focusedHere = false;
+  // The decision the server accepted for a card here; its receipt replaces the card before the turn reports it. It
+  // belongs to the call it answered: code that asks again shows the next request on the same block as a new card.
+  const [decided, setDecided] = createSignal<AiApprovalDecision | null>(null);
   const action = () => props.action();
   const state = () => action()?.state;
+  const decision = () => {
+    const current = action();
+    const value = decided();
+    return current && value?.callId === current.block.callId ? value.approved : null;
+  };
+  const card = () => {
+    const current = action();
+    return current?.state === "open" && current.block.status === "awaiting_approval" && decision() === null ? current.block : undefined;
+  };
+  const receipt = (): ReceiptState | undefined => {
+    const current = action();
+    if (!current || card()) return undefined;
+    if (current.state === "open" && current.block.status === "awaiting_approval") return decision() ? "running" : "rejected";
+    return current.state === "open" || current.state === "interaction" ? undefined : current.state;
+  };
   // Screen readers hear a waiting approval once, as one short line instead of the whole card, without moving focus.
   createEffect(
     on(state, (next, previous) => {
@@ -477,13 +534,17 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
       );
     }),
   );
-  // A card the user decided becomes its receipt in place. Focus stays on that place without scrolling.
+  // A card the user decided becomes its receipt in place, once, as the direct result of the decision. Focus stays on
+  // that place without scrolling.
   createEffect(
-    on(state, (next, previous) => {
-      if (previous !== "open" || next === "open" || !focusedHere || typeof document === "undefined") return;
-      const focused = document.activeElement;
-      if (!focused || focused === document.body || row.contains(focused)) row.focus({ preventScroll: true });
-    }),
+    on(
+      () => card() !== undefined,
+      (open, wasOpen) => {
+        if (!wasOpen || open || !focusedHere || typeof document === "undefined") return;
+        const focused = document.activeElement;
+        if (!focused || focused === document.body || row.contains(focused)) row.focus({ preventScroll: true });
+      },
+    ),
   );
   return (
     <div
@@ -500,11 +561,12 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
     >
       <Show when={action()}>
         {(current) => (
-          <Switch fallback={<AiReceipt action={current()} stopped={props.phase === "stopped"} />}>
-            <Match when={current().state === "open" && current().block.status === "awaiting_approval"}>
-              <ApprovalBlockView turnId={props.turnId} block={current().block} />
+          <Switch>
+            <Match when={card()}>{(block) => <ApprovalBlockView turnId={props.turnId} block={block()} onDecided={setDecided} />}</Match>
+            <Match when={receipt()}>
+              {(receiptState) => <AiReceipt block={current().block} state={receiptState()} stopped={props.phase === "stopped"} />}
             </Match>
-            <Match when={current().state === "open" || current().state === "interaction"}>
+            <Match when={true}>
               <Switch
                 fallback={
                   <Chat.Activity
@@ -521,14 +583,6 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
                   <TextEditorToolView turnId={props.turnId} block={current().block} active={isLive(props.phase)} />
                 </Match>
               </Switch>
-            </Match>
-            <Match when={current().state === "running"}>
-              <Chat.Activity
-                label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
-                icon={aiToolIcon(current().block.name, current().block.presentation?.appIcon)}
-                accent={current().block.presentation?.appAccent}
-                busy
-              />
             </Match>
           </Switch>
         )}

@@ -1458,7 +1458,7 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test("a turn that ends without its own loop end records how it ended and which approved calls never ran", async () => {
+  test("a turn that ends without its own loop end records how it ended and which approved or waiting calls never ran", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];
     const startTurn = async (leaseOwner: string, content: Extract<Message, { role: "assistant" }>["content"]) => {
@@ -1487,7 +1487,11 @@ suite("AI conversation store integration", () => {
       (await aiConversations.listTurnMessages({ conversationId: turn.conversationId, loopId: turn.turnId })).findLast(
         (entry) => entry.message.role === "assistant",
       );
-    const approval = (turn: { conversationId: string; turnId: string }, callId: string, kind: "approval" | "custom_approval") =>
+    const approval = (
+      turn: { conversationId: string; turnId: string },
+      callId: string,
+      kind: "approval" | "custom_approval" | "client_tool",
+    ) =>
       aiConversations.savePendingTurnAction({
         turnId: turn.turnId,
         conversationId: turn.conversationId,
@@ -1502,14 +1506,22 @@ suite("AI conversation store integration", () => {
       });
 
     try {
-      // Approved, then stopped before the call returned; a second approved call did return.
+      // Approved, then stopped before the call returned; a second approved call did return. A third call still waited
+      // for its approval, a fourth asked again after its first request was approved, and a browser tool waited too.
       const { turn: stopped, session: stoppedSession } = await startTurn("worker-stop", [
         { type: "tool_call", id: "run-1", name: "code_run", args: {} },
         { type: "tool_call", id: "send-1", name: "mail__action__send", args: {} },
+        { type: "tool_call", id: "bash-1", name: "local_bash", args: {} },
+        { type: "tool_call", id: "run-5", name: "code_run", args: {} },
+        { type: "tool_call", id: "secret-1", name: "code_secret", args: {} },
       ]);
       await approval(stopped, "run-1-approval-1", "custom_approval");
       await approval(stopped, "send-1", "approval");
-      for (const callId of ["run-1-approval-1", "send-1"])
+      await approval(stopped, "bash-1", "approval");
+      await approval(stopped, "run-5-approval-0", "custom_approval");
+      await approval(stopped, "run-5-approval-1", "custom_approval");
+      await approval(stopped, "secret-1", "client_tool");
+      for (const callId of ["run-1-approval-1", "send-1", "run-5-approval-0"])
         await aiConversations.resolvePendingTurnAction({
           conversationId: stopped.conversationId,
           turnId: stopped.turnId,
@@ -1526,7 +1538,7 @@ suite("AI conversation store integration", () => {
       expect(await aiConversations.completeTurn({ ...stopped, leaseOwner: "worker-stop", status: "aborted" })).toBe("completed");
       const stoppedMessage = await lastAssistant(stopped);
       expect(stoppedMessage?.loopDoneReason).toBe("aborted");
-      expect(stoppedMessage?.meta?.toolOutcomes).toEqual({ "run-1": "approved" });
+      expect(stoppedMessage?.meta?.toolOutcomes).toEqual({ "run-1": "approved", "bash-1": "expired", "run-5": "approved" });
       // A stop is the person's own choice; only failures record a reason.
       expect(stoppedMessage?.meta?.turnError).toBeUndefined();
       const history = buildBlocksFromMessages(
@@ -1535,6 +1547,8 @@ suite("AI conversation store integration", () => {
         ),
       );
       expect(history.find((block) => block.id === "tool-run-1")).toMatchObject({ status: "running", approved: true });
+      expect(history.find((block) => block.id === "tool-bash-1")).toMatchObject({ status: "running", approved: false });
+      expect(history.find((block) => block.id === "tool-secret-1")).not.toHaveProperty("approved");
 
       // A loop cut off by its run time limit recorded `aborted`; the failed turn must not read as a user stop.
       const { turn: timedOut } = await startTurn("worker-timeout", [{ type: "tool_call", id: "run-2", name: "code_run", args: {} }]);
@@ -1562,7 +1576,10 @@ suite("AI conversation store integration", () => {
       await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${cancelled.turnId}`;
       const sweep = await aiConversations.sweepTurns({ maxAttempts: 50 });
       expect(sweep.aborted.map((turn) => turn.turnId)).toEqual(expect.arrayContaining([expired.turnId, cancelled.turnId]));
-      expect(await lastAssistant(expired)).toMatchObject({ loopDoneReason: "error", meta: { turnError: { code: "wait_expired" } } });
+      expect(await lastAssistant(expired)).toMatchObject({
+        loopDoneReason: "error",
+        meta: { turnError: { code: "wait_expired" }, toolOutcomes: { "run-3": "expired" } },
+      });
       expect((await lastAssistant(cancelled))?.loopDoneReason).toBe("aborted");
       expect((await lastAssistant(cancelled))?.meta?.turnError).toBeUndefined();
     } finally {

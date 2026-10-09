@@ -86,7 +86,7 @@ test("code approvals present the capability in the reader's language", async () 
   );
   expect(html).toContain("Mail · Entwurf erstellen");
   expect(html).toContain("ti-mail");
-  expect(html).toContain("Aktion");
+  expect(html).toContain("Wird erst nach deiner Freigabe ausgeführt");
   expect(html).toContain("Ablehnen");
   expect(html).toContain("Immer freigeben");
   expect(html).toContain('aria-label="Freigabe erforderlich: Entwurf erstellen"');

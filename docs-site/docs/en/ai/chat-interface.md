@@ -225,10 +225,23 @@ order:
    it reads "Worked 3 min" with the step count, and "Worked 1 min · stopped"
    after a stop. A failed turn reads "Worked 4 min" too and says why in a
    notice at its end; a failed turn from an earlier release, which recorded no
-   reason, reads "Worked 4 min · interrupted". Expanding it shows intermediate texts as quiet paragraphs and the
-   steps between them as groups, with reasoning inside its group. Every step
-   stays there, including results and actions, so input and output remain
-   reachable. Failed steps say "failed" in muted text; a rejected approval says
+   reason, reads "Worked 4 min · interrupted". Expanding it shows, one level below the line, intermediate texts as quiet
+   paragraphs and the steps between them directly, each with its input and
+   output on demand in place. Only housekeeping, loading tools, skills, and
+   knowledge and reading a loaded skill's files, folds into one row such as
+   "Loaded tools and guidance · 4 steps" at step level, with the reasoning
+   between those steps; it opens in place without a second indent. A run of
+   housekeeping that would hold all but one of the work's steps shows its
+   steps directly, so the line never opens to a summary of itself. A row a
+   reader sees while the line is open never folds away under them, also when
+   reasoning after it or a call's arguments arrive later and would make it
+   housekeeping; the next time the line opens, it folds like in history. The
+   line opens on a click, Enter, or Space in every state, live or finished,
+   also while its clock ticks, and stays open while new steps stream in. Opening
+   or closing it never scrolls the conversation; afterwards the conversation
+   follows new steps only while its end is still in view.
+   Every step stays there, including results and actions, so input and output
+   remain reachable. Failed steps say "failed" in muted text; a rejected approval says
    "rejected". An app check (`code_check`) reads "Checking the app" while it
    runs, and its row names the outcome in words with its own icon: "passed",
    "3 findings", or "not passed", with warnings counted separately, such as
@@ -255,16 +268,33 @@ order:
    message: the turn's last text, even if a tool call followed it. A stopped or
    failed turn has no final message; its texts stay in the work line.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
-   receipts for capability actions and for every approval the user decided:
+   receipts for capability actions and for every approval the user decided.
+   A pending approval is a calm card with a warning tint and no border: its
+   title says what will happen, such as "Mail · Send email", with "Runs only
+   after you approve it" below, then the review text and fields, and Reject
+   next to the action itself. The title wraps instead of being cut off. On
+   phones the fields stack under their labels and the two buttons share the
+   width; a long action name ends in an ellipsis on its button rather than
+   pushing the card wider, while the title above shows it in full. When code
+   asks for approval again, each new request is a new card in the same place.
+   A receipt is one line that names the call in the reader's language with what
+   it acted on, the file name of its path or its name or title as given, never
+   its raw tool name:
    "Email to Jana Berger sent" from the action's summary with its links,
-   "Approved: Run code" for an approved tool that is not a Cloud action,
-   "Rejected: Send email", "Failed: Send email", or "Not run: Send email ·
-   stopped" when the turn ended before the call ran. A decided card turns into
-   its receipt in place. If the decision was made in that card, focus stays on
-   its place without scrolling. An approved call carries `approved: true` on its
+   "Approved: Run code · report.ts" for an approved tool that is not a Cloud
+   action, "Running: Send email" while it runs, "Rejected: Send email",
+   "Failed: Send email", or "Not run: Send email · stopped" when the turn ended
+   before the call ran. An approval still waiting when the turn ends reads the
+   same, also for a tool that is not a Cloud action, such as "Not run: Run code
+   · report.ts · stopped", or "Not run: Run code · report.ts" after a time
+   limit or an expired wait. Once the server accepts a decision, the card turns
+   into its receipt in place, before the turn reports the call; later updates
+   change only the receipt's words. If the decision was made in that card,
+   focus stays on its place without scrolling. An approved call carries `approved: true` on its
    tool block, live and in history, so its receipt survives a reload, also when
-   the turn ended before the call returned. Links without a title read "Open",
-   "Edit", or "Download" in the reader's language.
+   the turn ended before the call returned. A call whose approval still waited
+   when the turn ended carries `approved: false` in history. Links without a
+   title read "Open", "Edit", or "Download" in the reader's language.
 
 A turn without tool calls or compaction, such as a plain answer, a steering
 marker, or an answer with only reasoning, has no work line. Its texts form the
@@ -427,7 +457,7 @@ Markdown link to the file becomes an ordinary link, opening a presented file
 reports `File not found`, and an image attachment shows its icon instead of the
 thumbnail.
 
-The work line and groups never open by themselves. Explicit disclosure choices
+The work line and housekeeping groups never open by themselves. Explicit disclosure choices
 survive streaming updates, the end of the turn, and a reload in the same browser
 tab when session storage is available.
 

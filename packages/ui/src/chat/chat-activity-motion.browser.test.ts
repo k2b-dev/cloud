@@ -67,3 +67,28 @@ test("a busy activity keeps its icon and label visible in forced colours", async
   expect(parts).toHaveLength(2);
   for (const part of parts) expect(part.fill).not.toBe("rgba(0, 0, 0, 0)");
 });
+
+test("a press on a row's text opens it, also when the text is replaced between press and release", async () => {
+  const row = renderToString(() =>
+    createComponent(Chat.Activity, {
+      label: "Running code",
+      trailing: "0:41 · 9 steps",
+      children: "Steps",
+    }),
+  );
+  const page = await browser.newPage();
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:16px">${row}</body></html>`,
+    );
+    const trailing = (await page.locator(".k2b-chat-activity__trailing").boundingBox())!;
+    await page.mouse.move(trailing.x + trailing.width / 2, trailing.y + trailing.height / 2);
+    await page.mouse.down();
+    // A live row re-renders its clock every second: the node under the pointer is replaced while it is pressed.
+    await page.$eval(".k2b-chat-activity__trailing", (node) => node.replaceWith(node.cloneNode(true)));
+    await page.mouse.up();
+    expect(await page.$eval("details", (node) => (node as HTMLDetailsElement).open)).toBe(true);
+  } finally {
+    await page.close();
+  }
+});

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
-import { countWorkSteps, groupWorkBlocks, isFailedTool, summarizeToolGroup } from "./tool-groups";
+import { countWorkSteps, groupWorkBlocks, isFailedTool } from "./tool-groups";
 
 const tool = (id: string, name = "read_file"): Extract<AiTurnBlock, { kind: "tool" }> => ({
   id,
@@ -10,42 +10,85 @@ const tool = (id: string, name = "read_file"): Extract<AiTurnBlock, { kind: "too
   status: "completed",
 });
 
-test("intermediate texts separate step groups and reasoning stays inside its group", () => {
-  const groups = groupWorkBlocks([
-    { id: "r0", kind: "thinking", text: "First" },
-    tool("1"),
-    { id: "r1", kind: "thinking", text: "Then" },
-    tool("2"),
-    { id: "m", kind: "text", text: "Checking" },
-    tool("3"),
-    { id: "c", kind: "compaction", status: "completed" },
-  ]);
-  expect(groups.map((group) => (group.kind === "steps" ? group.entries.map((entry) => entry.id) : group.block.id))).toEqual([
-    ["r0", "1", "r1", "2"],
-    "m",
-    ["3", "c"],
-  ]);
-  // Groups are keyed by their first tool: reasoning ids differ between a live turn and its history.
-  expect(groups.flatMap((group) => (group.kind === "steps" ? [group.id] : []))).toEqual(["1", "3"]);
+const rows = (blocks: AiTurnBlock[], shown?: ReadonlySet<string>) =>
+  groupWorkBlocks(blocks, shown).map((item) =>
+    item.kind === "housekeeping" ? item.entries.map((entry) => entry.id) : item.kind === "text" ? `text ${item.block.id}` : item.entry.id,
+  );
+
+test("steps show directly at one level; intermediate texts stay in order", () => {
+  expect(
+    rows([
+      { id: "r0", kind: "thinking", text: "First" },
+      tool("1"),
+      tool("2", "code_run"),
+      { id: "m", kind: "text", text: "Checking" },
+      tool("3", "write_file"),
+      { id: "c", kind: "compaction", status: "completed" },
+    ]),
+  ).toEqual(["r0", "1", "2", "text m", "3", "c"]);
 });
 
-test("summary deduplicates categories; failures and rejections are counted apart", () => {
+test("housekeeping folds into one group with the reasoning between its steps, keyed by its first tool", () => {
+  const work = groupWorkBlocks([
+    { id: "r0", kind: "thinking", text: "Which skill?" },
+    tool("skill", "load_skill"),
+    { id: "r1", kind: "thinking", text: "Read its reference" },
+    { ...tool("ref"), args: { path: "/skills/report/reference.md" } },
+    tool("tools", "load_tools"),
+    { id: "r2", kind: "thinking", text: "Now the data" },
+    tool("data", "read_file"),
+    tool("run", "code_run"),
+  ]);
+  expect(work.map((item) => (item.kind === "housekeeping" ? [item.id, item.entries.map((entry) => entry.id)] : item.kind))).toEqual([
+    "step",
+    ["skill", ["skill", "r1", "ref", "tools"]],
+    "step",
+    "step",
+    "step",
+  ]);
+  // A project file is work, not housekeeping.
+  expect(rows([tool("a", "load_skill"), tool("b", "load_tools"), { ...tool("c"), args: { path: "/project/a.csv" } }, tool("d")])).toEqual([
+    ["a", "b"],
+    "c",
+    "d",
+  ]);
+});
+
+test("a group that would hold all but one step shows its steps directly, and steps a reader saw stay unfolded", () => {
+  const loading = [tool("a", "load_skill"), tool("b", "search_tools"), tool("c", "load_tools"), tool("d", "read_help")];
+  expect(rows(loading)).toEqual(["a", "b", "c", "d"]);
+  expect(rows([...loading, tool("e", "code_run")])).toEqual(["a", "b", "c", "d", "e"]);
+  const more = [...loading, tool("e", "code_run"), tool("f", "code_run")];
+  expect(rows(more)).toEqual([["a", "b", "c", "d"], "e", "f"]);
+  expect(rows(more, new Set(["a", "b", "c", "d"]))).toEqual(["a", "b", "c", "d", "e", "f"]);
+  // A single housekeeping step is not worth a group.
+  expect(rows([tool("a", "load_skill"), tool("e", "code_run"), tool("f", "code_run")])).toEqual(["a", "e", "f"]);
+});
+
+test("a row already shown never joins a group, also when reasoning or arguments that would fold it arrive later", () => {
+  const work = [tool("x", "code_run"), tool("y", "code_run"), tool("a", "load_skill"), tool("b", "load_tools")];
+  const thought: AiTurnBlock = { id: "t", kind: "thinking", text: "Which reference?" };
+  expect(rows([...work, thought])).toEqual(["x", "y", ["a", "b"], "t"]);
+  // Housekeeping after the reasoning would pull it into the group; once shown, it stays and the group ends before it.
+  const next = [...work, thought, tool("c", "load_skill")];
+  expect(rows(next)).toEqual(["x", "y", ["a", "b", "t", "c"]]);
+  expect(rows(next, new Set(["x", "y", "t"]))).toEqual(["x", "y", ["a", "b"], "t", "c"]);
+  // A file read shown before its arguments arrived stays, though its path turns out to be a loaded skill's file.
+  const skillFile = { ...tool("r"), args: { path: "/skills/report/SKILL.md" } };
+  expect(rows([...work, skillFile])).toEqual(["x", "y", ["a", "b", "r"]]);
+  expect(rows([...work, skillFile], new Set(["x", "y", "r"]))).toEqual(["x", "y", ["a", "b"], "r"]);
+});
+
+test("failures and rejections are counted apart", () => {
   const tools = [
     tool("1"),
     tool("2"),
     { ...tool("3", "code_run"), isError: true },
     { ...tool("4", "local_bash"), status: "rejected" as const },
   ];
-  expect(summarizeToolGroup(tools, "en")).toBe("Read files, Worked with code, Used tools");
   expect(countWorkSteps(tools, "en")).toBe("4 steps · 1 failed · 1 rejected");
   expect(countWorkSteps(tools, "de")).toBe("4 Schritte · 1 fehlgeschlagen · 1 abgelehnt");
   expect(isFailedTool(tools[3]!)).toBe(false);
-});
-
-test("PDF conversions and delivered results have their own localized summary", () => {
-  const tools = [tool("write", "write_file"), tool("markdown", "markdown_to_pdf"), tool("html", "html_to_pdf"), tool("p", "present")];
-  expect(summarizeToolGroup(tools, "en")).toBe("Wrote files, Created PDFs, Delivered results");
-  expect(summarizeToolGroup(tools, "de")).toBe("Dateien geschrieben, PDFs erstellt, Ergebnisse bereitgestellt");
 });
 
 test("a completed code tool reporting a runtime error counts as failed work", () => {

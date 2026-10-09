@@ -79,9 +79,9 @@ const actionState = (block: ToolBlock, phase: AiTurnPhase): AiTurnActionState | 
   if (block.status === "rejected") return "rejected";
   if (isSurveyToolName(block.name) || isTextEditorToolName(block.name)) return isFailedTool(block) ? null : "interaction";
   if (block.name === "code_secret") return block.status === "awaiting_client" ? "interaction" : null;
-  // Effects in Cloud and decided approvals stay visible as receipts, whether or not the model mentions them.
+  // Effects in Cloud and approvals, decided or expired, stay visible as receipts, whether or not the model mentions them.
   const capabilityAction = block.presentation?.kind === "capability" && block.presentation.capabilityKind === "action";
-  if (!capabilityAction && !block.approved) return null;
+  if (!capabilityAction && block.approved === undefined) return null;
   if (block.status === "running" || block.status === "awaiting_client") return live(phase) ? "running" : "not_run";
   return isFailedTool(block) ? "failed" : "done";
 };

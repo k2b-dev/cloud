@@ -467,3 +467,404 @@ for (const view of [
         await context.close();
       }
     }, 30_000);
+
+const storedMessage = (
+  seq: number,
+  loopId: string,
+  message: AiStoredMessage["message"],
+  patch: Partial<AiStoredMessage> = {},
+): AiStoredMessage => ({
+  id: `m${seq}`,
+  shortId: `m${seq}`,
+  conversationId: "chat",
+  seq,
+  kind: "message",
+  message,
+  loopId,
+  modelProfileId: null,
+  providerModel: null,
+  usage: null,
+  stopReason: null,
+  loopAggregate: null,
+  loopDoneReason: null,
+  compactedAt: null,
+  meta: null,
+  createdAt: "2026-10-07T09:56:00.000Z",
+  ...patch,
+});
+
+/** A box relative to the viewport, so anything that scrolls the conversation counts as movement. */
+const viewportBox = (page: Page, selector: string) =>
+  page.evaluate((query) => {
+    const node = document.querySelector(query);
+    if (!node) return null;
+    const box = node.getBoundingClientRect();
+    return [box.left, box.top, box.width, box.height].map(Math.round);
+  }, selector);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`the live work line opens on a press across a clock tick, Enter, and Space, and stays put and open (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        const de = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        let seq = 1;
+        await emit(page, { ...base, seq: seq++, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        // Earlier turns fill the conversation, so it scrolls and follows its end.
+        for (let index = 0; index < 5; index++) {
+          const user = storedMessage(100 + index * 2, `old-${index}`, {
+            role: "user",
+            content: [{ type: "text", text: `Question ${index}` }],
+          });
+          const answer = storedMessage(101 + index * 2, `old-${index}`, {
+            role: "assistant",
+            content: [{ type: "text", text: "A longer earlier answer that takes a few lines in the conversation. ".repeat(6) }],
+          });
+          await emit(page, { ...base, seq: seq++, type: "message_saved", message: user });
+          await emit(page, { ...base, seq: seq++, type: "message_saved", message: answer });
+        }
+        const request = storedMessage(200, "turn", { role: "user", content: [{ type: "text", text: "Build the report" }] });
+        await emit(page, { ...base, seq: seq++, type: "message_saved", message: request });
+        await emit(page, {
+          ...base,
+          seq: seq++,
+          type: "block_delta",
+          blockId: "text-1",
+          blockKind: "text",
+          delta: "I load the skill first.",
+        });
+        const step = (index: number, status: "running" | "completed") => ({
+          id: `tool-${index}`,
+          kind: "tool" as const,
+          callId: `call-${index}`,
+          name: index < 3 ? "load_skill" : index % 2 ? "read_file" : "code_run",
+          args: { path: `/data/part-${index}.csv` },
+          status,
+          ...(status === "completed" ? { result: "ok" } : {}),
+        });
+        for (let index = 1; index <= 8; index++)
+          await emit(page, { ...base, seq: seq++, type: "block_set", block: step(index, "completed") });
+        await emit(page, {
+          ...base,
+          seq: seq++,
+          type: "block_delta",
+          blockId: "text-2",
+          blockKind: "text",
+          delta: "The data is clean. Now I compute.",
+        });
+        await emit(page, { ...base, seq: seq++, type: "block_set", block: step(9, "running") });
+
+        const summary = ".ai-turn-work > summary";
+        const isOpen = () =>
+          page.$eval(".ai-turn-work", (node) => (node as HTMLDetailsElement).open && node.querySelector(".ai-turn-steps") !== null);
+        const before = await viewportBox(page, summary);
+        // A press on the ticking clock that spans a tick still opens the line.
+        // The clock re-renders every second, so its box is read in one go inside the page.
+        const meta = await page.evaluate(() => {
+          const box = document.querySelector(".ai-turn-work .ai-turn-work__meta")!.getBoundingClientRect();
+          return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+        });
+        await page.mouse.move(meta.x, meta.y);
+        await page.mouse.down();
+        await page.waitForTimeout(1100);
+        await page.mouse.up();
+        await frames(page);
+        await frames(page);
+        expect(await isOpen()).toBe(true);
+        expect(await viewportBox(page, summary)).toEqual(before);
+        // One indent below the work line: no second summary, and steps sit at the same left edge as the texts.
+        expect(await page.locator(".ai-turn-steps .ai-turn-steps").count()).toBe(0);
+
+        // New steps, a new status, and a waiting approval stream in: the line stays open and where it was.
+        await emit(page, { ...base, seq: seq++, type: "block_set", block: step(9, "completed") });
+        await emit(page, { ...base, seq: seq++, type: "block_delta", blockId: "think-1", blockKind: "thinking", delta: "Checking totals" });
+        await emit(page, {
+          ...base,
+          seq: seq++,
+          type: "block_delta",
+          blockId: "text-3",
+          blockKind: "text",
+          delta: "Totals match. I send the report.",
+        });
+        await emit(page, {
+          ...base,
+          seq: seq++,
+          type: "block_set",
+          block: {
+            ...step(10, "running"),
+            name: "code_run",
+            status: "awaiting_approval",
+            approval: { message: "Run", allowAlways: false },
+          },
+        });
+        await frames(page);
+        expect(await isOpen()).toBe(true);
+        expect(await viewportBox(page, summary)).toEqual(before);
+        expect(await page.locator(".ai-turn-work > summary").innerText()).toContain(
+          de ? "Wartet auf deine Freigabe" : "Waiting for your approval",
+        );
+
+        // The keyboard toggles it in every state.
+        await page.locator(summary).focus();
+        for (const key of ["Enter", "Enter", " ", " "]) {
+          const open = await isOpen();
+          await page.keyboard.press(key);
+          await frames(page);
+          expect(await isOpen()).toBe(!open);
+          expect(await viewportBox(page, summary)).toEqual(before);
+        }
+        expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 800, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+] as const)
+  for (const theme of ["light", "dark"] as const)
+    test(`a pending approval is a calm card that becomes its receipt in place, also when the turn ends (${view.name}, ${theme})`, async () => {
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      try {
+        const page = await context.newPage();
+        await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
+        const de = theme === "dark";
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        const presentation = {
+          kind: "capability" as const,
+          appId: "mail",
+          appName: "Mail",
+          appIcon: "ti ti-mail",
+          title: de ? "E-Mail senden" : "Send email",
+          capabilityKind: "action" as const,
+        };
+        const args = { draftId: "draft-118" };
+        const send = { id: "tool-send", kind: "tool" as const, callId: "send", name: "mail__action__send", args, presentation };
+        const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/offer.pdf" } };
+        const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Send the offer to Jana Berger" }] });
+        await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+        await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+        await emit(page, { ...base, seq: 3, type: "block_set", block: { ...read, status: "completed", result: "pdf" } });
+        await emit(page, {
+          ...base,
+          seq: 4,
+          type: "block_delta",
+          blockId: "text-1",
+          blockKind: "text",
+          delta: "The offer is ready. I need your approval to send it.",
+        });
+        await emit(page, {
+          ...base,
+          seq: 5,
+          type: "block_set",
+          block: {
+            ...send,
+            status: "awaiting_approval",
+            approval: {
+              allowAlways: false,
+              review: {
+                message: "Send the offer to Jana Berger.",
+                details: [
+                  { label: de ? "An" : "To", value: "Jana Berger <jana.berger@example.com>" },
+                  { label: de ? "Betreff" : "Subject", value: "Your offer for the website relaunch" },
+                  {
+                    label: de ? "Text" : "Body",
+                    value: "Dear Ms Berger,\n\nthank you for the good conversation on Monday.",
+                    display: "block",
+                  },
+                ],
+              },
+            },
+          },
+        });
+        const card = ".ai-turn__action .ai-approval";
+        const cardBox = (await viewportBox(page, card))!;
+        const workBox = await viewportBox(page, ".ai-turn-work");
+        const textBox = await viewportBox(page, ".ai-turn__text");
+        expect(await page.locator(card).innerText()).toContain(
+          de ? "Wird erst nach deiner Freigabe ausgeführt" : "Runs only after you approve it",
+        );
+        // No heavy border: the tint alone sets the card apart.
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
+        const [term, value] = await page.$$eval(`${card} dl > *`, (nodes) =>
+          nodes.slice(0, 2).map((node) => {
+            const box = node.getBoundingClientRect();
+            return [Math.round(box.left), Math.round(box.top)];
+          }),
+        );
+        const reject = (await page.getByRole("button", { name: de ? "Ablehnen" : "Reject", exact: true }).boundingBox())!;
+        const approve = page.locator(`${card} .k2b-split-button`);
+        const approveBox = (await approve.boundingBox())!;
+        if (view.touch) {
+          // Phones stack each field under its label, and the decision buttons share the width.
+          expect(value![0]).toBe(term![0]);
+          expect(value![1]).toBeGreaterThan(term![1]!);
+          const actions = (await page.locator(`${card} .ai-approval__actions`).boundingBox())!;
+          expect(reject.y).toBe(approveBox.y);
+          expect(reject.width).toBeGreaterThan(actions.width * 0.35);
+          expect(approveBox.width).toBeGreaterThan(actions.width * 0.35);
+          expect(reject.width + approveBox.width).toBeGreaterThan(actions.width - 12);
+        } else {
+          expect(value![0]).toBeGreaterThan(term![0]!);
+          expect(value![1]).toBe(term![1]);
+        }
+        expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+
+        // Approving turns the card into a one-line receipt at its place, with focus on it; nothing above moves.
+        await page.locator(`${card} .k2b-split-button__primary`).click();
+        await frames(page);
+        expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
+          { callId: "send", approved: true },
+        ]);
+        expect(await page.locator(card).count()).toBe(0);
+        const receipt = ".ai-turn__action .ai-turn-receipt";
+        const receiptBox = (await viewportBox(page, receipt))!;
+        expect(receiptBox[1]).toBe(cardBox[1]);
+        expect(receiptBox[3]).toBeLessThanOrEqual(32);
+        expect(await viewportBox(page, ".ai-turn-work")).toEqual(workBox);
+        expect(await viewportBox(page, ".ai-turn__text")).toEqual(textBox);
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("ai-turn__action"))).toBe(true);
+        expect(await page.locator(receipt).innerText()).toBe(de ? "Wird ausgeführt: E-Mail senden" : "Running: Send email");
+
+        // The turn reports the decision and the outcome: only the receipt's words change.
+        const sent = de ? "E-Mail an Jana Berger gesendet" : "Email to Jana Berger sent";
+        await emit(page, { ...base, seq: 6, type: "block_set", block: { ...send, status: "running", approved: true } });
+        await emit(page, {
+          ...base,
+          seq: 7,
+          type: "block_set",
+          block: { ...send, status: "completed", approved: true, result: { summary: sent } },
+        });
+        expect(await page.locator(receipt).innerText()).toBe(sent);
+        expect(await viewportBox(page, receipt)).toEqual(receiptBox);
+        await emit(page, {
+          ...base,
+          seq: 8,
+          type: "block_delta",
+          blockId: "text-2",
+          blockKind: "text",
+          delta: "Done. Jana Berger has the offer.",
+        });
+        const settled = {
+          work: await viewportBox(page, ".ai-turn-work"),
+          receipt: await viewportBox(page, receipt),
+          text: await viewportBox(page, ".ai-turn__text"),
+        };
+
+        // The turn ends: its history puts every place where the live turn had it.
+        await emit(page, {
+          ...base,
+          seq: 9,
+          type: "turn_finished",
+          status: "completed",
+          error: null,
+          messages: [
+            request,
+            storedMessage(
+              11,
+              "turn",
+              {
+                role: "assistant",
+                content: [
+                  { type: "text", text: "The offer is ready. I need your approval to send it." },
+                  { type: "tool_call", id: "read", name: "read_file", args: read.args },
+                  { type: "tool_call", id: "send", name: "mail__action__send", args },
+                ],
+              },
+              { meta: { toolPresentations: { send: presentation } } },
+            ),
+            storedMessage(12, "turn", { role: "tool_result", callId: "read", name: "read_file", result: "pdf", isError: false }),
+            storedMessage(
+              13,
+              "turn",
+              { role: "tool_result", callId: "send", name: "mail__action__send", result: { summary: sent }, isError: false },
+              { meta: { toolOutcomes: { send: "approved" } } },
+            ),
+            storedMessage(
+              14,
+              "turn",
+              { role: "assistant", content: [{ type: "text", text: "Done. Jana Berger has the offer." }] },
+              { loopDoneReason: "stop", createdAt: "2026-10-07T10:00:00.000Z" },
+            ),
+          ],
+        });
+        await frames(page);
+        expect(await page.locator(receipt).innerText()).toBe(sent);
+        expect(await viewportBox(page, ".ai-turn-work")).toEqual(settled.work);
+        expect(await viewportBox(page, ".ai-turn__text")).toEqual(settled.text);
+        expect(await viewportBox(page, receipt)).toEqual(settled.receipt);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+for (const width of [390, 320])
+  test(`a long action title shortens the approve button on a phone instead of pushing it out of the card (${width} px)`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      const title = "Lokale Anwendungseinstellungen aktualisieren";
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
+      await emit(page, {
+        ...base,
+        seq: 2,
+        type: "block_set",
+        block: {
+          id: "tool-settings",
+          kind: "tool",
+          callId: "settings",
+          name: "settings__action__update",
+          args: {},
+          status: "awaiting_approval",
+          presentation: {
+            kind: "capability",
+            appId: "settings",
+            appName: "Einstellungen",
+            appIcon: "ti ti-settings",
+            title,
+            capabilityKind: "action",
+          },
+          approval: { allowAlways: false, message: "Einstellungen: " + title },
+        },
+      });
+      const card = ".ai-turn__action .ai-approval";
+      const boxes = await page.evaluate((query) => {
+        const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
+        const label = document.querySelector<HTMLElement>(`${query} .k2b-split-button__primary .k2b-button__label`)!;
+        return {
+          card: box("").right,
+          menu: box(".k2b-split-button__menu-trigger").right,
+          reject: box(".ai-approval__actions > .k2b-button").left,
+          truncated: label.scrollWidth > label.clientWidth,
+          document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      }, card);
+      expect(boxes.menu).toBeLessThanOrEqual(boxes.card);
+      expect(boxes.reject).toBeGreaterThanOrEqual(0);
+      expect(boxes.truncated).toBe(true);
+      expect(boxes.document).toBeLessThanOrEqual(0);
+      expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
+      // The title reads in full above, and the button keeps it as its name.
+      expect(await page.locator(`${card} .ai-approval__title`).innerText()).toContain(title);
+      expect(await page.getByRole("button", { name: title, exact: true }).count()).toBe(1);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);

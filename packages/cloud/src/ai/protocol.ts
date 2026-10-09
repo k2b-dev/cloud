@@ -45,7 +45,10 @@ export type AiTurnBlock =
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: { message?: string; review?: CapabilityActionReview; allowAlways: boolean };
-      /** The user approved this call in the chat; the decided approval stays visible as a receipt. */
+      /**
+       * `true` once the user approved this call in the chat; `false` when its turn ended while the approval still
+       * waited. Either way the approval stays visible as a receipt.
+       */
       approved?: boolean;
       /** Present for frontend tools. */
       frontendMode?: AiFrontendToolMode;
@@ -224,7 +227,7 @@ export const buildBlocksFromMessages = (
     meta?: {
       steerId?: string;
       toolPresentations?: Record<string, AiToolPresentation>;
-      toolOutcomes?: Record<string, "rejected" | "approved">;
+      toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
     } | null;
   }[],
 ): AiTurnBlock[] => {
@@ -239,6 +242,7 @@ export const buildBlocksFromMessages = (
         } else if (block.type === "thinking") {
           blocks.push({ id: messageBlockId(seq, index), kind: "thinking", text: block.thinking });
         } else if (block.type === "tool_call") {
+          const outcome = meta?.toolOutcomes?.[block.id];
           toolIndex.set(block.id, blocks.length);
           blocks.push({
             id: toolBlockId(block.id),
@@ -248,8 +252,9 @@ export const buildBlocksFromMessages = (
             args: block.args,
             status: "running",
             presentation: meta?.toolPresentations?.[block.id],
-            // A turn that ended before an approved call returned records the approval on the call's message.
-            ...(meta?.toolOutcomes?.[block.id] === "approved" ? { approved: true } : {}),
+            // A turn that ended before an approved call returned records the approval on the call's message, and an
+            // approval it left waiting as expired.
+            ...(outcome === "approved" || outcome === "expired" ? { approved: outcome === "approved" } : {}),
           });
         }
       });
