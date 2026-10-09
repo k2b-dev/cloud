@@ -1893,13 +1893,25 @@ const everydayCommands = (t: Translate) => {
       run: async ({ ctx, args, flags }) => {
         const ids = requireConversationIds(args.conversations, t);
         const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
-        const keeps: ConversationKeep[] = [];
-        for (const conversationId of ids)
-          keeps.push(
-            await readApi<ConversationKeep>(ctx, `/mailboxes/${mailbox.id}/conversations/${conversationId}/keep`, { method: "PUT" }),
-          );
-        if (!printStructured(ctx, keeps))
-          ctx.print(t({ en: `Kept ${keeps.length} conversation(s).`, de: `${keeps.length} Unterhaltung(en) werden aufbewahrt.` }));
+        // Like the other batch commands, one failing conversation does not stop the others.
+        const results: Array<({ status: "ok" } & ConversationKeep) | { conversationId: string; status: "error"; error: string }> = [];
+        for (const conversationId of ids) {
+          try {
+            const keep = await readApi<ConversationKeep>(ctx, `/mailboxes/${mailbox.id}/conversations/${conversationId}/keep`, {
+              method: "PUT",
+            });
+            results.push({ status: "ok", ...keep, conversationId });
+          } catch (error) {
+            results.push({ conversationId, status: "error", error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        const failed = results.filter((result) => result.status === "error");
+        if (!printStructured(ctx, { results })) {
+          const count = results.length - failed.length;
+          ctx.print(t({ en: `Kept ${count} conversation(s).`, de: `${count} Unterhaltung(en) werden aufbewahrt.` }));
+          for (const item of failed) if (item.status === "error") ctx.error(`${item.conversationId}: ${item.error}`);
+        }
+        return failed.length > 0 ? 1 : undefined;
       },
     }),
     command("unkeep", {

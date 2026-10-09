@@ -14,6 +14,7 @@ import { imapSmtpConnector } from "./connectors";
 import { checkCommandKeepProtection } from "./conversation-keep-rules";
 import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
 import { createMailbox } from "./mailboxes";
+import { getMessage } from "./messages";
 import { createProviderConnection } from "./provider-connections";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, recordProviderReachable } from "./provider-operation-lock";
 
@@ -315,8 +316,11 @@ suite("mail command runtime provider safety", () => {
     return { id: message!.id, rfcMessageId };
   };
 
-  /** A provider whose message exists until it is deleted; each queued failure rejects one state lookup first. */
-  const deletingProvider = (rfcMessageId: string, failures: Error[] = []) => {
+  /**
+   * A provider whose message exists until it is deleted; each queued failure rejects one state lookup first.
+   * `whileDeleting` runs while the server deletes the message, after the command marked its effect.
+   */
+  const deletingProvider = (rfcMessageId: string, failures: Error[] = [], whileDeleting?: () => Promise<void>) => {
     let deleted = false;
     const state = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => {
       const failure = failures.shift();
@@ -324,6 +328,7 @@ suite("mail command runtime provider safety", () => {
       return { exists: !deleted, flags: [], keywords: [], messageId: rfcMessageId, modseq: "1" };
     });
     const remove = spyOn(imapSmtpConnector, "delete").mockImplementation(async () => {
+      await whileDeleting?.();
       deleted = true;
     });
     return {
@@ -484,6 +489,32 @@ suite("mail command runtime provider safety", () => {
       expect(provider.remove).not.toHaveBeenCalled();
     } finally {
       provider.restore();
+    }
+  });
+
+  test("a delete the server finishes after someone kept the conversation leaves Cloud's copy in its folder", async () => {
+    const message = await inboxMessage("keep-during-delete", 424283);
+    const conversationId = await threadMessage(message.id);
+    const scope = { context: adminContext, mailboxId, conversationId };
+    const commandId = await deleteCommand(message.id, "keep-during-delete");
+    const provider = deletingProvider(message.rfcMessageId, [], async () => {
+      expect((await keepConversation(scope)).ok).toBeTrue();
+    });
+    try {
+      expect(await executeMutationCommand(commandId)).toBe("confirmed");
+      expect(provider.remove).toHaveBeenCalledTimes(1);
+      expect(
+        await sql<
+          { folder_id: string }[]
+        >`SELECT folder_id FROM mail.message_placements WHERE message_id = ${message.id}::uuid AND deleted_at IS NULL`,
+      ).toEqual([{ folder_id: inboxFolderId }]);
+      expect(await getMessage({ context: adminContext, mailboxId, messageId: message.id })).toMatchObject({
+        ok: true,
+        data: { deletedOnServer: true, remoteAvailable: false },
+      });
+    } finally {
+      provider.restore();
+      await releaseConversationKeep(scope);
     }
   });
 
@@ -740,6 +771,37 @@ suite("mail command runtime provider safety", () => {
       expect(provider.steps()[4]).not.toBe(provider.steps()[0]);
     } finally {
       await provider.restore();
+    }
+  }, 15_000);
+
+  test("a Trash move the server made before the keep still reconciles, and Cloud's copy waits in the destination", async () => {
+    const message = await inboxMessage("keep-ambiguous-trash", 424284);
+    const conversationId = await threadMessage(message.id);
+    const scope = { context: adminContext, mailboxId, conversationId };
+    await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id) VALUES (${mailboxId}::uuid, 'trash', ${archiveFolderId}::uuid)`;
+    const provider = await movingProvider(message.rfcMessageId, {
+      afterMove: Object.assign(new Error("Connection not available"), { code: "NoConnection" }),
+    });
+    try {
+      const commandId = await moveCommand(message.id, "keep-ambiguous-trash");
+      expect(await executeMutationCommand(commandId)).toBe("ambiguous");
+      expect((await keepConversation(scope)).ok).toBeTrue();
+      provider.recover();
+      // Reconciling only reads the server, so the keep does not turn a finished move into a failure.
+      expect(await executeMutationCommand(commandId)).toBe("reconciled");
+      // The destination copy has no known UID until the folder sync finds it; Cloud's copy shows there meanwhile.
+      expect(
+        await sql<{ folder_id: string; stale: boolean }[]>`
+          SELECT placement.folder_id, ref.stale_at IS NOT NULL AS stale
+          FROM mail.message_placements placement
+          JOIN mail.remote_message_refs ref ON ref.id = placement.remote_message_ref_id
+          WHERE placement.message_id = ${message.id}::uuid AND placement.deleted_at IS NULL
+        `,
+      ).toEqual([{ folder_id: archiveFolderId, stale: true }]);
+    } finally {
+      await provider.restore();
+      await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${mailboxId}::uuid AND role = 'trash'`;
+      await releaseConversationKeep(scope);
     }
   }, 15_000);
 

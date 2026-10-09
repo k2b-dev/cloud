@@ -14,7 +14,7 @@ describe("conversation keep protections", () => {
   test("preserves stable conflicts in localized errors and workflow failures", () => {
     const german = {
       CONVERSATION_KEPT:
-        "Diese Unterhaltung wird aufbewahrt und kann nicht gelöscht oder in den Papierkorb oder Spam verschoben werden. Verschieben und Archivieren sind weiterhin möglich.",
+        "Diese Unterhaltung wird aufbewahrt und kann nicht gelöscht oder in den Papierkorb, den Spam-Ordner oder die Entwürfe verschoben werden. Verschieben und Archivieren sind weiterhin möglich.",
       FOLDER_HAS_KEPT_CONVERSATIONS:
         "Dieser Ordner enthält aufbewahrte Unterhaltungen und kann nicht gelöscht werden. Verschiebe sie zuerst in einen anderen Ordner.",
       KEPT_COPY_ONLY:

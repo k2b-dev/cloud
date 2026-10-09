@@ -6,7 +6,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
-import { createMaintenanceCommand } from "./commands";
+import { createActorCommand, createMaintenanceCommand } from "./commands";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import { keepConversation, releaseConversationKeep } from "./conversation-keeps";
@@ -334,6 +334,7 @@ suite("mail sync of changes made in other clients", () => {
       UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read', 'write_flags']::text[]
       WHERE folder_id = ${mailbox.folderId("archive")}::uuid
     `;
+    // Marking only Cloud's copy read changes it in Cloud and leaves the server alone.
     expect(
       await createConversationTriageCommands({
         ...scope,
@@ -344,11 +345,12 @@ suite("mail sync of changes made in other clients", () => {
           idempotencyKey: `kept-triage-${suffix}`,
         },
       }),
-    ).toMatchObject({ ok: false, error: { code: "KEPT_COPY_ONLY", status: 409 } });
+    ).toMatchObject({ ok: true, data: { commands: [] } });
+    expect(await mailbox.placements(id("kept-copy"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
     const newUid = mailbox.remote.put("inbox", id("kept-copy"));
     await mailbox.sync("inbox");
     expect(await mailbox.placements(id("kept-copy"))).toEqual([
-      { role: "archive", deleted: true, flags: [] },
+      { role: "archive", deleted: true, flags: ["\\Seen"] },
       { role: "inbox", deleted: false, flags: [] },
     ]);
     expect(await getMessage({ context: ownerContext, mailboxId: mailbox.mailboxId, messageId: content.id })).toMatchObject({
@@ -362,6 +364,83 @@ suite("mail sync of changes made in other clients", () => {
     expect(await sql<{ plain_text: string }[]>`SELECT plain_text FROM mail.message_contents WHERE id = ${content.id}::uuid`).toEqual([
       { plain_text: "Stored evidence" },
     ]);
+  });
+
+  test("archive and mark read change Cloud's kept copy in Cloud next to the server's messages, and never move it to Drafts", async () => {
+    const mailbox = await connect("keep-triage", true);
+    const goneUid = mailbox.remote.put("inbox", id("kept-gone"));
+    mailbox.remote.put("inbox", id("kept-live"));
+    await mailbox.sync("inbox");
+    const rows = await sql<{ id: string; message_id: string; conversation_id: string }[]>`
+      SELECT message.id, message.message_id, link.conversation_id
+      FROM mail.message_contents message JOIN mail.conversation_messages link ON link.message_id = message.id
+      WHERE message.mailbox_id = ${mailbox.mailboxId}::uuid
+    `;
+    const gone = rows.find((row) => row.message_id === id("kept-gone"));
+    const live = rows.find((row) => row.message_id === id("kept-live"));
+    if (!gone || !live) throw new Error("Synced triage fixture missing");
+    // A reply that joined the kept conversation; no hydration worker runs here.
+    await sql`UPDATE mail.conversation_messages SET conversation_id = ${gone.conversation_id}::uuid WHERE message_id = ${live.id}::uuid`;
+    await sql`UPDATE mail.message_contents SET hydration_status = 'complete' WHERE mailbox_id = ${mailbox.mailboxId}::uuid`;
+    await sql`
+      UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read', 'write_flags', 'insert', 'move']::text[]
+      WHERE folder_id IN (${mailbox.folderId("inbox")}::uuid, ${mailbox.folderId("archive")}::uuid, ${mailbox.folderId("drafts")}::uuid)
+    `;
+    const scope = { context: ownerContext, mailboxId: mailbox.mailboxId, conversationId: gone.conversation_id };
+    expect((await keepConversation(scope)).ok).toBeTrue();
+    mailbox.remote.remove("inbox", goneUid);
+    await mailbox.sync("inbox");
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "inbox", deleted: false, flags: [] }]);
+    expect(await getMessage({ context: ownerContext, mailboxId: mailbox.mailboxId, messageId: gone.id })).toMatchObject({
+      ok: true,
+      data: { deletedOnServer: true, remoteAvailable: false },
+    });
+    // A command for one message names the reason instead of a missing placement.
+    expect(
+      await createActorCommand({
+        context: ownerContext,
+        mailboxId: mailbox.mailboxId,
+        enqueue: false,
+        input: { kind: "delete", messageId: gone.id, folderId: mailbox.folderId("inbox"), idempotencyKey: `kept-direct-${suffix}` },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "KEPT_COPY_ONLY", status: 409 } });
+    const triage = (input: Parameters<typeof createConversationTriageCommands>[0]["input"]) =>
+      createConversationTriageCommands({ ...scope, input });
+    const read = await triage({
+      kind: "change_state",
+      sourceFolderId: mailbox.folderId("inbox"),
+      change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+      idempotencyKey: `kept-read-${suffix}`,
+    });
+    expect(read.ok && read.data.commands.map((command) => command.kind)).toEqual(["change_message_state"]);
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "inbox", deleted: false, flags: ["\\Seen"] }]);
+    // Drafts would import the message as a draft, and discarding a draft deletes it on the server.
+    expect(
+      await triage({
+        kind: "move_to_folder",
+        sourceFolderId: mailbox.folderId("inbox"),
+        destinationFolderId: mailbox.folderId("drafts"),
+        idempotencyKey: `kept-drafts-${suffix}`,
+      }),
+    ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
+    const archived = await triage({
+      kind: "move_to_role",
+      role: "archive",
+      sourceFolderId: mailbox.folderId("inbox"),
+      idempotencyKey: `kept-archive-${suffix}`,
+    });
+    expect(archived.ok && archived.data.commands.map((command) => command.kind)).toEqual(["move"]);
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
+    // Only Cloud's copy is in Archive: moving it back queues nothing for the server.
+    expect(
+      await triage({
+        kind: "move_to_role",
+        role: "inbox",
+        sourceFolderId: mailbox.folderId("archive"),
+        idempotencyKey: `kept-back-${suffix}`,
+      }),
+    ).toMatchObject({ ok: true, data: { commands: [] } });
+    expect(await mailbox.placements(id("kept-gone"))).toEqual([{ role: "inbox", deleted: false, flags: ["\\Seen"] }]);
   });
 
   test("UIDVALIDITY reset and folder rebuild preserve a kept copy", async () => {

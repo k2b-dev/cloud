@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { Readable } from "node:stream";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
@@ -10,7 +11,10 @@ import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlace
 import { getConversationKeep, keepConversation, releaseConversationKeep } from "./conversation-keeps";
 import { mergeConversations, reassignConversationMessage, splitConversation } from "./conversations";
 import { createMailbox } from "./mailboxes";
-import { getConversationViewCounts, getMessage, listConversations } from "./messages";
+import { createBlobReadable } from "./message-blobs";
+import { hydrateMessageFromSource } from "./message-hydration";
+import { openMessageSource } from "./message-inspector";
+import { getConversationViewCounts, getMessage, listConversations, openAttachment } from "./messages";
 import { searchMessages } from "./search";
 import * as syncRuntime from "./sync-runtime";
 
@@ -44,6 +48,7 @@ suite("Mail conversation keeps", () => {
   let mailboxId = "";
   let folderId = "";
   let nextUid = 1;
+  const blobIds: string[] = [];
   beforeAll(async () => {
     await migrate();
     await migrate();
@@ -77,6 +82,8 @@ suite("Mail conversation keeps", () => {
   afterAll(async () => {
     const grants = await sql<{ access_id: string }[]>`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid`;
     await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
+    if (blobIds.length)
+      await sql`DELETE FROM mail.message_part_blobs WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${blobIds}::jsonb))`;
     for (const grant of grants) await sql`DELETE FROM auth.access WHERE id = ${grant.access_id}::uuid`;
     for (const user of users) {
       await sql`DELETE FROM audit.events WHERE request_id = ${contextFor(user).requestId}`;
@@ -157,6 +164,98 @@ suite("Mail conversation keeps", () => {
     } finally {
       enqueue.mockRestore();
     }
+    await releaseConversationKeep(scope(id));
+  });
+
+  test("keeping gives a message whose loading failed its tries back, but not one over the size limit", async () => {
+    const id = await conversation();
+    const failed = await message(id);
+    const tooLarge = await message(id);
+    for (const [item, code] of [
+      [failed, "NoConnection"],
+      [tooLarge, "MESSAGE_TOO_LARGE"],
+    ] as const)
+      await sql`UPDATE mail.message_contents SET hydration_status = 'failed', hydration_attempt = 5, hydration_error_code = ${code}, plain_text = NULL
+        WHERE id = ${item.id}::uuid`;
+    const enqueue = spyOn(syncRuntime, "enqueueMessageHydration").mockResolvedValue(undefined);
+    try {
+      expect((await keepConversation(scope(id))).ok).toBeTrue();
+      expect(enqueue.mock.calls.map((call) => call[0])).toEqual([failed.id]);
+    } finally {
+      enqueue.mockRestore();
+    }
+    const states = await sql`SELECT id, hydration_status, hydration_attempt, hydration_error_code FROM mail.message_contents
+      WHERE id IN (${failed.id}::uuid, ${tooLarge.id}::uuid)`;
+    expect(states).toContainEqual({ id: failed.id, hydration_status: "envelope", hydration_attempt: 0, hydration_error_code: null });
+    expect(states).toContainEqual({
+      id: tooLarge.id,
+      hydration_status: "failed",
+      hydration_attempt: 5,
+      hydration_error_code: "MESSAGE_TOO_LARGE",
+    });
+    await releaseConversationKeep(scope(id));
+  });
+
+  test("a kept message's original source and attachment stay downloadable after the server deleted it", async () => {
+    const id = await conversation();
+    const item = await message(id);
+    const [content] = await sql<{ message_id: string }[]>`SELECT message_id FROM mail.message_contents WHERE id = ${item.id}::uuid`;
+    const attachment = `Signed order ${suffix}`;
+    const source = Buffer.from(
+      [
+        `Message-ID: ${content!.message_id}`,
+        "Date: Fri, 09 Oct 2026 10:00:00 +0000",
+        "From: Customer <customer@example.test>",
+        "To: Team <team@example.test>",
+        "Subject: Evidence",
+        "MIME-Version: 1.0",
+        'Content-Type: multipart/mixed; boundary="keep-boundary"',
+        "",
+        "--keep-boundary",
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        "The customer was informed.",
+        "--keep-boundary",
+        'Content-Type: text/plain; name="order.txt"',
+        'Content-Disposition: attachment; filename="order.txt"',
+        "",
+        attachment,
+        "--keep-boundary--",
+        "",
+      ].join("\r\n"),
+    );
+    await sql`UPDATE mail.message_contents SET hydration_status = 'envelope', plain_text = NULL WHERE id = ${item.id}::uuid`;
+    expect((await hydrateMessageFromSource({ messageId: item.id, source: Readable.from([source]) })).status).toBe("hydrated");
+    blobIds.push(
+      ...(
+        await sql<{ id: string }[]>`
+          SELECT source_blob_id AS id FROM mail.message_contents WHERE id = ${item.id}::uuid AND source_blob_id IS NOT NULL
+          UNION SELECT blob_id FROM mail.message_parts WHERE message_id = ${item.id}::uuid AND blob_id IS NOT NULL
+          UNION SELECT blob_id FROM mail.attachments WHERE message_id = ${item.id}::uuid`
+      ).map((row) => row.id),
+    );
+    expect((await keepConversation(scope(id))).ok).toBeTrue();
+    await sql.begin(async (db) => {
+      await db`UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${item.refId}::uuid`;
+      await db`UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${item.refId}::uuid`;
+      await keepLastKeptPlacements(db, [item.refId]);
+    });
+    const read = async (blobId: string) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of createBlobReadable(blobId)) chunks.push(Buffer.from(chunk));
+      return Buffer.concat(chunks);
+    };
+    const exported = await openMessageSource({ context: reader, mailboxId, messageId: item.id });
+    if (!exported.ok) throw new Error(exported.error.message);
+    expect((await read(exported.data.blobId)).equals(source)).toBeTrue();
+    const [stored] = await sql<{ id: string }[]>`SELECT id FROM mail.attachments WHERE message_id = ${item.id}::uuid`;
+    const opened = await openAttachment({ context: reader, mailboxId, messageId: item.id, attachmentId: stored!.id });
+    if (!opened.ok) throw new Error(opened.error.message);
+    expect((await read(opened.data.blobId)).toString("utf8")).toBe(attachment);
+    expect(await getMessage({ context: reader, mailboxId, messageId: item.id })).toMatchObject({
+      ok: true,
+      data: { deletedOnServer: true, plainText: expect.stringContaining("The customer was informed.") },
+    });
     await releaseConversationKeep(scope(id));
   });
 
@@ -278,5 +377,29 @@ suite("Mail conversation keeps", () => {
     });
     if (!moved.ok) throw new Error(moved.error.message);
     expect(await getConversationKeep(scope(destination))).toEqual({ ok: true, data: { ...kept.data, conversationId: destination } });
+    // Each conversation the keep reached names who moved the kept messages there, and from where. The split's
+    // conversation was merged later, so its activity moved along into the merge target.
+    const carried = async (conversationId: string) =>
+      sql<{ actor_id: string; carried_from: string }[]>`SELECT actor_id, metadata->>'carriedFrom' AS carried_from
+        FROM mail.activity_events
+        WHERE conversation_id = ${conversationId}::uuid AND action = 'conversation.kept' AND metadata ? 'carriedFrom'
+        ORDER BY id`;
+    expect(await carried(target)).toEqual([
+      { actor_id: users[1]!.id, carried_from: source },
+      { actor_id: users[1]!.id, carried_from: split.data.created.id },
+    ]);
+    expect(await carried(destination)).toEqual([{ actor_id: users[1]!.id, carried_from: source }]);
+    for (const [conversationId, carriedFrom] of [
+      [split.data.created.id, source],
+      [target, split.data.created.id],
+      [destination, source],
+    ] as const) {
+      expect(
+        await sql<
+          { actor_user_id: string; carried_from: string }[]
+        >`SELECT actor_user_id, metadata->>'carriedFrom' AS carried_from FROM audit.events
+          WHERE target_id = ${conversationId} AND action = 'mail.conversation.keep'`,
+      ).toEqual([{ actor_user_id: users[1]!.id, carried_from: carriedFrom }]);
+    }
   });
 });

@@ -1,6 +1,5 @@
 import { fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { isTrashOrJunkFolder } from "./follow-up-scope";
 
 /**
  * The rules that keep a kept conversation's mail: SQL conditions, the refusal of deleting commands, and the
@@ -20,7 +19,8 @@ export const isKeptMessage = (id: SqlFragment): SqlFragment => sql`EXISTS (
   WHERE keep_link.message_id = ${id}
 )`;
 export const keepErrors = {
-  CONVERSATION_KEPT: "This conversation is kept, so it can't be deleted or moved to Trash or Junk. You can still move or archive it.",
+  CONVERSATION_KEPT:
+    "This conversation is kept, so it can't be deleted or moved to Trash, Junk, or Drafts. You can still move or archive it.",
   FOLDER_HAS_KEPT_CONVERSATIONS: "This folder contains kept conversations, so it can't be deleted. Move them to another folder first.",
   KEPT_COPY_ONLY: "Only Cloud's kept copy of these messages is left, so they can't be changed on the mail server.",
 } as const;
@@ -30,10 +30,28 @@ export const keepError = (code: keyof typeof keepErrors) => ({ code, message: St
 export const containsDeletedFlag = (flags: unknown): boolean =>
   Array.isArray(flags) && flags.some((flag) => typeof flag === "string" && flag.trim().replace(/^\\/, "").toLowerCase() === "deleted");
 
-/** Restore one last placement after the server disappears; run after hiding in the same transaction. */
-export const keepLastKeptPlacements = async (db: SqlClient, remoteRefIds: readonly string[]): Promise<void> => {
+/**
+ * A folder a kept message must not be moved to, by the provider's role or the one configured in Mail: Trash and Junk
+ * lose mail on their own, and Mail imports whatever lands in Drafts as a draft, which discarding deletes on the server.
+ */
+export const isKeepProtectedDestination = (folderId: SqlFragment): SqlFragment => sql`EXISTS (
+  SELECT 1
+  FROM mail.folders destination
+  JOIN mail.remote_resources destination_resource ON destination_resource.id = destination.remote_resource_id
+  LEFT JOIN mail.folder_role_overrides destination_role
+    ON destination_role.mailbox_id = destination_resource.mailbox_id AND destination_role.folder_id = destination.id
+  WHERE destination.id = ${folderId}
+    AND (destination.role IN ('trash', 'junk', 'drafts') OR destination_role.role IN ('trash', 'junk', 'drafts'))
+)`;
+
+/**
+ * Restore one last placement after the server disappears; run after hiding in the same transaction. With `folderId`,
+ * the restored copy shows in that folder, such as the destination of a move whose new copy no sync has seen yet.
+ */
+export const keepLastKeptPlacements = async (db: SqlClient, remoteRefIds: readonly string[], folderId?: string): Promise<void> => {
   if (!remoteRefIds.length) return;
-  await db`UPDATE mail.message_placements placement SET deleted_at = NULL
+  await db`UPDATE mail.message_placements placement
+    SET deleted_at = NULL, folder_id = COALESCE(${folderId ?? null}::uuid, placement.folder_id)
     FROM (
       SELECT DISTINCT ON (candidate.message_id) candidate.remote_message_ref_id
       FROM mail.message_placements candidate
@@ -56,9 +74,9 @@ export const retireKeptCopyPlacements = async (db: SqlClient, messageId: string,
 };
 
 /**
- * Refuses a command that would delete a kept conversation's message: a delete, a move to Trash or Junk, a `\Deleted`
- * flag, or deleting a folder that holds such a message. Command creation runs it under the mailbox lock that keeping
- * a conversation also takes; the runtime runs it again right before the provider effect.
+ * Refuses a command that would delete a kept conversation's message: a delete, a move to Trash, Junk, or Drafts, a
+ * `\Deleted` flag, or deleting a folder that holds such a message. Command creation runs it under the mailbox lock
+ * that keeping a conversation also takes; the runtime runs it again right before a fresh provider effect.
  */
 export const checkCommandKeepProtection = async (
   db: SqlClient,
@@ -78,7 +96,7 @@ export const checkCommandKeepProtection = async (
   if (kind === "move") {
     const destinationId = typeof target.destinationFolderId === "string" ? target.destinationFolderId : null;
     const [destination] = await db<{ removes: boolean }[]>`
-      SELECT ${isTrashOrJunkFolder(sql`${destinationId}::uuid`)} AS removes
+      SELECT ${isKeepProtectedDestination(sql`${destinationId}::uuid`)} AS removes
     `;
     if (!destination?.removes) return ok();
   }

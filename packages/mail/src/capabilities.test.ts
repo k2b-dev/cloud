@@ -428,7 +428,7 @@ describe("mail capabilities", () => {
     expect(release.destructive).toBeTrue();
     expect("approval" in release).toBeFalse();
   });
-  test("kept conversations cannot be reviewed for a Trash move", async () => {
+  test("kept conversations cannot be reviewed for a Trash or Drafts move, by either folder role", async () => {
     spyOn(messages, "listConversationMessages").mockResolvedValue({
       ok: true,
       data: { items: [{ id: internalMessageId, subject: "Evidence" }], nextCursor: null },
@@ -448,6 +448,22 @@ describe("mail capabilities", () => {
         context,
       ),
     ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
+    // The provider's Trash mapped as Archive in Mail still empties itself; Drafts imports and discards drafts.
+    for (const roles of [
+      { role: "archive", providerRole: "trash", configuredRole: "archive" },
+      { role: "drafts", providerRole: "custom", configuredRole: "drafts" },
+    ]) {
+      spyOn(messages, "listFolders").mockResolvedValue({
+        ok: true,
+        data: [{ id: internalFolderId, parentId: null, name: "Destination", ...roles }],
+      } as never);
+      expect(
+        await mailCapabilities.actions["conversation.move"].review(
+          { mailboxId, target: { conversationId, sourceFolderId: folderId }, destination: { kind: "folder", folderId } },
+          context,
+        ),
+      ).toMatchObject({ ok: false, error: { code: "CONVERSATION_KEPT", status: 409 } });
+    }
   });
 
   test("compiles into a registrable v1 manifest", () => {

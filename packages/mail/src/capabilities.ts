@@ -2942,7 +2942,8 @@ const actionDefinitions = {
         conversationId: conversation.data.conversationInternalId,
       });
       if (!keep.ok) return keep;
-      let destinationRole: string | null = input.destination.kind === "role" ? input.destination.role : null;
+      // Both the provider's role and the one configured in Mail count, as when Mail creates the move.
+      let destinationRoles: string[] = input.destination.kind === "role" ? [input.destination.role] : [];
       let destination = input.destination.kind === "role" ? input.destination.role : input.destination.folderId;
       if (input.destination.kind === "folder") {
         const scope = await resolveMailboxScope(input.mailboxId);
@@ -2951,10 +2952,12 @@ const actionDefinitions = {
         if (!folderId.ok) return folderId;
         const folders = await messages.listFolders(requestContext(context), scope.data.id);
         if (!folders.ok) return folders;
-        destinationRole = folders.data.find((folder) => folder.id === folderId.data)?.role ?? null;
+        const folder = folders.data.find((candidate) => candidate.id === folderId.data);
+        destinationRoles = folder ? [folder.role, folder.providerRole] : [];
         destination = truncateText(mailFolderPaths(folders.data).get(folderId.data) ?? input.destination.folderId, 200).text;
       }
-      if (keep.data && (destinationRole === "trash" || destinationRole === "junk")) return fail(keepError("CONVERSATION_KEPT"));
+      if (keep.data && destinationRoles.some((role) => ["trash", "junk", "drafts"].includes(role)))
+        return fail(keepError("CONVERSATION_KEPT"));
       return ok({
         message: t.moveConversationReview({ subject: conversation.data.subject, destination }),
         details: [

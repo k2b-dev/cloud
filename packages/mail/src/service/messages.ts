@@ -705,7 +705,8 @@ const messageSummarySelect = sql`
   placement.folder_id,
   EXISTS (
     SELECT 1 FROM mail.message_placements available
-    WHERE available.message_id = mc.id AND available.deleted_at IS NULL
+    JOIN mail.remote_message_refs available_ref ON available_ref.id = available.remote_message_ref_id
+    WHERE available.message_id = mc.id AND available.deleted_at IS NULL AND available_ref.stale_at IS NULL
   ) AS remote_available
 `;
 

@@ -47,12 +47,36 @@ describe("Mail keep CLI", () => {
         keptBy: { kind: "system", id: null, displayName: "System", avatarHash: null },
       });
     });
-    await mail.run(run.ctx);
+    expect(await mail.run(run.ctx)).toBeUndefined();
     expect(run.calls).toEqual([
       "PUT /api/mail/mailboxes/Mail01/conversations/Convo1/keep",
       "PUT /api/mail/mailboxes/Mail01/conversations/Convo2/keep",
     ]);
-    expect(run.output[0]).toHaveLength(2);
+    expect(run.output[0]).toMatchObject({
+      results: [
+        { conversationId: "Convo1", status: "ok", keptBy: { displayName: "System" } },
+        { conversationId: "Convo2", status: "ok" },
+      ],
+    });
+  });
+  test("a conversation that can't be kept does not stop the others, and the batch exits with status 1", async () => {
+    const run = fixture(["keep", "Convo1", "Convo2"], { mailbox: mailbox.id }, async (path) =>
+      path.includes("Convo1")
+        ? Response.json({ code: "NOT_FOUND", message: "Conversation not found" }, { status: 404 })
+        : Response.json({
+            conversationId: "Convo2",
+            keptAt: "2026-10-09T10:00:00Z",
+            keptBy: { kind: "system", id: null, displayName: "System", avatarHash: null },
+          }),
+    );
+    expect(await mail.run(run.ctx)).toBe(1);
+    expect(run.calls).toHaveLength(2);
+    expect(run.output[0]).toMatchObject({
+      results: [
+        { conversationId: "Convo1", status: "error", error: expect.stringContaining("Conversation not found") },
+        { conversationId: "Convo2", status: "ok" },
+      ],
+    });
   });
   test("release refuses without confirmation and names both consequences in English and German", async () => {
     for (const locale of ["en", "de"]) {

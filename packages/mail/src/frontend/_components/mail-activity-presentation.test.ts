@@ -54,6 +54,12 @@ describe("mail activity presentation", () => {
     expect(mailActivityIcon(released)).toBe("ti-lock-open");
     expect(mailActivityLabel(kept)).toBe("started keeping the conversation");
     expect(mailActivityLabel(released, "de")).toBe("hat die Aufbewahrung aufgehoben");
+    const carried = { ...kept, metadata: { carriedFrom: "conversation-1" } };
+    expect(mailActivityLabel(carried)).toBe("moved kept messages here, so this conversation is kept too");
+    expect(mailActivityLabel(carried, "de")).toBe(
+      "hat aufbewahrte Nachrichten hierher verschoben, daher wird auch diese Unterhaltung aufbewahrt",
+    );
+    expect(mailActivityIcon(carried)).toBe("ti-lock");
   });
 
   test("keeps technical activity and human draft churn out of the inline timeline", () => {

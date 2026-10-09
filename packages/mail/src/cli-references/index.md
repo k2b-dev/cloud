@@ -132,9 +132,9 @@ cld --json mail keep <conversation-id> <second-conversation-id>
 cld --json mail unkeep <conversation-id> --yes
 ```
 
-- `keep` protects whole conversations, including replies that join them later. It needs write access, takes up to 50 IDs, and returns who kept each conversation and since when. Keeping an already kept conversation changes nothing.
-- While a conversation is kept, `rm`, moving it to Junk, deleting a folder that holds it, and the same actions from automations, workflows, and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
-- When the mail server or another client deletes a kept message, Cloud keeps its own copy in the folder where it was last. `cat --json` shows it with `deletedOnServer: true`; actions that need the mail server fail with `KEPT_COPY_ONLY`.
+- `keep` protects whole conversations, including replies that join them later. It needs write access, takes up to 50 IDs, and returns `{ "results": [...] }` with who kept each conversation and since when (`status: "ok"`) or the error (`status: "error"`). Keeping an already kept conversation changes nothing. A batch continues when one conversation fails and then exits with status 1.
+- While a conversation is kept, `rm`, moving it to Junk or Drafts, deleting a folder that holds it, and the same actions from automations, workflows, and agents fail with status 409 and code `CONVERSATION_KEPT` (`FOLDER_HAS_KEPT_CONVERSATIONS` for a folder). `archive`, `mv` to other folders, `read`, and `flag` still work.
+- When the mail server or another client deletes a kept message, Cloud keeps its own copy in the folder where it was last. `cat --json` shows it with `deletedOnServer: true` and `remoteAvailable: false`. `archive`, `mv`, `read`, and `flag` change that copy in Cloud only; `message flags|move|copy|delete` for it fail with `KEPT_COPY_ONLY`.
 - `unkeep` needs Manage access and `--yes`, because the conversation can be deleted again and messages of which only Cloud's copy is left disappear from the mailbox. It returns `{ "conversationId", "released" }`.
 
 ## Answer mail

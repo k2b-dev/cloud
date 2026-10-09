@@ -22,7 +22,7 @@ import { sha256Json } from "./canonical";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { renderComposeDraft } from "./compose-templates";
-import { checkCommandKeepProtection } from "./conversation-keep-rules";
+import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
@@ -229,8 +229,20 @@ const resolveActorCommandInput = async (
       ORDER BY placement.updated_at DESC, remote_ref.id
       LIMIT 1
     `;
-    if (rows.length === 0) return fail(err.notFound("Message placement"));
-    return ok(rows[0]!.id);
+    if (rows.length > 0) return ok(rows[0]!.id);
+    // Cloud still shows a kept message the server deleted, but no command can reach the server for it.
+    const [keptCopy] = await db`
+      SELECT 1
+      FROM mail.message_placements placement
+      JOIN mail.remote_message_refs remote_ref ON remote_ref.id = placement.remote_message_ref_id
+      WHERE placement.message_id = ${messageId}::uuid
+        AND placement.folder_id = ${folderId}::uuid
+        AND placement.deleted_at IS NULL
+        AND remote_ref.stale_at IS NOT NULL
+        AND ${isKeptMessage(sql`placement.message_id`)}
+      LIMIT 1
+    `;
+    return fail(keptCopy ? keepError("KEPT_COPY_ONLY") : err.notFound("Message placement"));
   };
   if (input.kind === "move" || input.kind === "copy") {
     const { sourceFolderId, destinationFolderId } = input;

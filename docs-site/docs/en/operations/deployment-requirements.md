@@ -429,6 +429,13 @@ Keep changes what people see and what Cloud refuses: the copies stay visible,
 and Cloud does not delete them. Like all Mail data, they stay in the database
 and its backups; Mail has no automatic cleanup for message data.
 
+Mail storage has no size cap, with or without Keep: only one message is
+limited, to 128 MB. Watch the database's disk use and plan growth with the
+mail volume. The stored sources and attachments are in
+`mail.message_part_chunks`, so
+`SELECT pg_size_pretty(pg_total_relation_size('mail.message_part_chunks'))`
+shows the largest share.
+
 ### Update browser notifications for grouping and badges
 
 Deploy the updated platform package and Core together to enable

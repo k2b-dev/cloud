@@ -11,7 +11,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
-import { checkCommandKeepProtection, retireKeptCopyPlacements } from "./conversation-keep-rules";
+import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
 import { isMailReceivedSinceSend, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
@@ -432,6 +432,7 @@ const updateMutationProjection = async (params: {
         WHERE remote_message_ref_id = ${params.source.remote_message_ref_id}::uuid
       `;
     }
+    let destinationProjected = false;
     if ((params.command.kind === "copy" || params.command.kind === "move") && params.destination) {
       if (params.destinationUidValidity && params.destinationUid) {
         const [remoteRef] = await tx<{ id: string }[]>`
@@ -473,6 +474,7 @@ const updateMutationProjection = async (params: {
               updated_at = now()
           `;
           await retireKeptCopyPlacements(tx, params.source.message_content_id, remoteRef.id);
+          destinationProjected = true;
         }
       }
     }
@@ -487,6 +489,13 @@ const updateMutationProjection = async (params: {
         SET deleted_at = now(), updated_at = now()
         WHERE remote_message_ref_id = ${params.source.remote_message_ref_id}::uuid
       `;
+      // A message kept after this command passed its check keeps one visible placement: where a delete removed it,
+      // or in the destination of a move whose new copy the folder sync has not seen yet.
+      await keepLastKeptPlacements(
+        tx,
+        [params.source.remote_message_ref_id],
+        params.command.kind === "move" && !destinationProjected ? params.destination?.folder_id : undefined,
+      );
     }
     return true;
   });
@@ -1291,7 +1300,7 @@ const reconcileMutation = async (command: DbCommandExecution): Promise<void> => 
     );
     return;
   }
-  await assertCommandKeepProtection(command);
+  // Reconciliation only reads the provider, so a keep added after the effect started cannot hide what it did.
   const runtime = await loadPinnedRuntime(await loadPinnedBinding(command));
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const source = await loadReconciliationSource(command, target);
@@ -1715,7 +1724,7 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
     );
     return RAN;
   }
-  await assertCommandKeepProtection(command);
+  if (!reconcilesEarlierEffect(claimed)) await assertCommandKeepProtection(command);
   const operation = await prepareFolderOperation(command);
   const { lock, retryAfterMs } = await acquireCommandLease(command, operation.binding.remote_resource_id);
   if (!lock) {

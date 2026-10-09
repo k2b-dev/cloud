@@ -5,6 +5,7 @@ import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { insertActivity } from "./collaboration";
+import { isKeptConversation } from "./conversation-keep-rules";
 import { mailLive } from "./live";
 import { enqueueMessageHydration } from "./sync-runtime";
 
@@ -65,13 +66,14 @@ export const getConversationKeep = async (params: KeepParams): Promise<Result<Co
   const allowed = await requireConversation(params, "read", sql);
   return allowed.ok ? ok(await loadKeep(sql, params.conversationId)) : allowed;
 };
-const recordKeep = async (db: SqlClient, params: KeepParams, release: boolean): Promise<void> => {
+const recordKeep = async (db: SqlClient, params: KeepParams, release: boolean, carriedFrom?: string): Promise<void> => {
   await insertActivity({
     db,
     ...params,
     action: release ? "conversation.keep_released" : "conversation.kept",
     targetType: "conversation",
     targetId: params.conversationId,
+    ...(carriedFrom ? { metadata: { carriedFrom } } : {}),
   });
   await audit.record(
     {
@@ -80,11 +82,30 @@ const recordKeep = async (db: SqlClient, params: KeepParams, release: boolean): 
       actor: auditActorFromRequest(params.context),
       target: { type: "conversation", id: params.conversationId },
       requestId: params.context.requestId,
-      metadata: { mailboxId: params.mailboxId },
+      metadata: { mailboxId: params.mailboxId, ...(carriedFrom ? { carriedFrom } : {}) },
     },
     db,
   );
 };
+
+/** Whether moving messages from one conversation into another makes the other kept; ask before moving them. */
+export const keepCarriesOver = async (db: SqlClient, sourceConversationId: string, targetConversationId: string): Promise<boolean> => {
+  const [row] = await db<{ carries: boolean }[]>`
+    SELECT ${isKeptConversation(sql`${sourceConversationId}::uuid`)} AND NOT ${isKeptConversation(sql`${targetConversationId}::uuid`)} AS carries
+  `;
+  return row?.carries === true;
+};
+/**
+ * A merge, split, or reassignment carried a keep into another conversation, which the `mail.conversation_messages`
+ * trigger already stored with the original keeper and time. The activity and audit name who moved the messages.
+ */
+export const recordCarriedKeep = (db: SqlClient, params: KeepParams & { sourceConversationId: string }): Promise<void> =>
+  recordKeep(
+    db,
+    { context: params.context, mailboxId: params.mailboxId, conversationId: params.conversationId },
+    false,
+    params.sourceConversationId,
+  );
 export const keepConversation = async (params: KeepParams): Promise<Result<ConversationKeep>> => {
   const result = await sql.begin(async (db) => {
     const allowed = await requireConversation(params, "write", db, true);
@@ -97,10 +118,23 @@ export const keepConversation = async (params: KeepParams): Promise<Result<Conve
     if (inserted.length) await recordKeep(db, params, false);
     const keep = await loadKeep(db, params.conversationId);
     if (!keep) throw new Error("Conversation keep insert returned no row");
-    const messages = await db<{ id: string }[]>`SELECT message.id FROM mail.message_contents message
-      JOIN mail.conversation_messages link ON link.message_id = message.id
-      WHERE link.conversation_id = ${params.conversationId}::uuid AND message.hydration_status <> 'complete'
-      ORDER BY message.internal_date DESC, message.id DESC LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES}`;
+    // A message whose loading already failed gets its tries back while the server still has it, so an earlier
+    // outage does not leave it without a copy. A message over the size limit stays failed: no try can load it.
+    const messages = await db<{ id: string }[]>`
+      WITH pending AS (
+        SELECT message.id, message.internal_date FROM mail.message_contents message
+        JOIN mail.conversation_messages link ON link.message_id = message.id
+        WHERE link.conversation_id = ${params.conversationId}::uuid AND message.hydration_status <> 'complete'
+          AND message.hydration_error_code IS DISTINCT FROM 'MESSAGE_TOO_LARGE'
+        ORDER BY message.internal_date DESC, message.id DESC LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES}
+      ), retried AS (
+        UPDATE mail.message_contents message
+        SET hydration_status = CASE WHEN message.plain_text IS NOT NULL OR message.sanitized_html IS NOT NULL THEN 'body' ELSE 'envelope' END,
+          hydration_attempt = 0, hydration_error_code = NULL
+        FROM pending WHERE message.id = pending.id AND message.hydration_status = 'failed'
+          AND EXISTS (SELECT 1 FROM mail.remote_message_refs live WHERE live.message_id = message.id AND live.stale_at IS NULL)
+      )
+      SELECT id FROM pending ORDER BY internal_date DESC, id DESC`;
     return ok({ keep, messageIds: messages.map((message) => message.id) });
   });
   if (!result.ok) return result;

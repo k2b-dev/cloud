@@ -92,7 +92,7 @@ export default function MailConversationReader(props: {
   unread: boolean;
   flagged: boolean;
   inJunk: boolean;
-  /** The conversation is kept: Cloud refuses to delete it or move it to Trash or Junk. */
+  /** The conversation is kept: Cloud refuses to delete it or move it to Trash, Junk, or Drafts. */
   keep: ConversationKeep | null;
   reference: string | null;
   subject: string;
