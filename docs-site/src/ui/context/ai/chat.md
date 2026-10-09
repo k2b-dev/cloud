@@ -402,8 +402,8 @@ Set `variant="conversation"` for messages between people, for example under a
 [message rows](/en/ui/content/message-rows). Without it, the composer keeps
 the assistant prompt's behavior.
 
-The conversation composer is one row without a card: an attach button, a
-quiet pill-shaped field, and a round Send button. The field is muted at rest
+The conversation composer is one row without a card: an attach button with a
+plain plus, a quiet pill-shaped field, and a round Send button. The field is muted at rest
 and shows the surface with a ring while it has focus; only its paint changes.
 Formatting, emoji, and the microphone sit inside the field at its end. Send is
 dimmed until there is something to send. With `fileSelection` alone, the
@@ -443,19 +443,18 @@ breaks the line on Enter and sends on Ctrl/⌘+Enter.
 These work in both variants. In the conversation variant they sit inside the
 field; in the default variant, in the footer.
 
-- **`formatting`** adds "Aa". It opens one row of fixed height with Bold,
-  Italic, Strikethrough, Code, Code block, Bullet list, Quote, and Link: above
-  the field in the conversation variant, above the footer in the default
-  variant. The composer grows upward by that row, like a new line of text, so
-  the field and every control stay where they are and a feed that follows the
-  newest message keeps it in view. All eight buttons show at once, also on a
-  phone: on a coarse pointer they share the row's width, 2.75rem each where it
-  fits, and the row never scrolls. The buttons write Markdown into the field
-  and keep the selection.
-  Every button except Link removes its formatting on a second press; inside a
-  fenced block, Code block removes that block's fences, and a selection that
-  already holds a fence gets a longer one. Ctrl/⌘+B, I, and E, and
-  Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
+- **`formatting`** adds "Aa". It opens one short row of fixed height with
+  Bold, Italic, and Bullet list, which is all a chat message needs; other
+  Markdown, such as code, quotes, or links, is typed and still renders. In the
+  conversation variant the row sits above the field and starts at the field's
+  left edge, not at the attach button; in the default variant it sits above
+  the footer. The composer grows upward by that row, like a new line of text,
+  so the field and every control stay where they are and a feed that follows
+  the newest message keeps it in view. On a coarse pointer each button is
+  2.75rem. The buttons write Markdown into the field, keep the selection, and
+  remove their formatting on a second press. Ctrl/⌘+B, Ctrl/⌘+I, and
+  Ctrl/⌘+Shift+8 do the same while `formatting` is set; other shortcuts keep
+  their browser meaning.
 - **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
   and an `insert` function that puts the chosen text at the caret; open
   [`EmojiPicker.Popover`](/en/ui/input/emoji-picker) there. Touch-only

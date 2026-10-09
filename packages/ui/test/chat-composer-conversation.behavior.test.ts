@@ -369,12 +369,7 @@ test("Aa shows the formatting buttons, which format the selection like their sho
   expect(Array.from(group.querySelectorAll("button")).map((button) => button.getAttribute("aria-label"))).toEqual([
     "Bold (Ctrl/Cmd+B)",
     "Italic (Ctrl/Cmd+I)",
-    "Strikethrough (Ctrl/Cmd+Shift+X)",
-    "Inline code (Ctrl/Cmd+E)",
-    "Code block",
     "Bullet list (Ctrl/Cmd+Shift+8)",
-    "Quote",
-    "Link",
   ]);
 
   composer.textarea.setSelectionRange(10, 14);
@@ -386,11 +381,35 @@ test("Aa shows the formatting buttons, which format the selection like their sho
   expect(composer.value()).toBe("*make* this **bold**");
 
   composer.textarea.setSelectionRange(0, 0);
-  composer.button("Quote")!.click();
-  expect(composer.value()).toBe("> *make* this **bold**");
+  composer.button("Bullet list (Ctrl/Cmd+Shift+8)")!.click();
+  expect(composer.value()).toBe("- *make* this **bold**");
+
+  // Only the row's formats have shortcuts; other Markdown is typed, and other keys keep their browser meaning.
+  composer.textarea.setSelectionRange(2, 8);
+  expect(composer.press({ key: "e", ctrlKey: true })).toBe(false);
+  expect(composer.press({ key: "X", code: "KeyX", ctrlKey: true, shiftKey: true })).toBe(false);
+  expect(composer.value()).toBe("- *make* this **bold**");
 
   toggle.click();
   expect(composer.dom.root.querySelector(".k2b-chat-composer__format")).toBeNull();
+  composer.done();
+});
+
+test("the default composer's Aa opens the same three buttons above its footer", async () => {
+  const composer = await mount("plain", { variant: "default", formatting: true });
+  composer.button("Formatting")!.click();
+  const group = composer.dom.root.querySelector(".k2b-chat-composer__format")!;
+  expect(group.nextElementSibling?.tagName).toBe("FOOTER");
+  expect(Array.from(group.querySelectorAll("button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+    "Bold (Ctrl/Cmd+B)",
+    "Italic (Ctrl/Cmd+I)",
+    "Bullet list (Ctrl/Cmd+Shift+8)",
+  ]);
+  composer.textarea.setSelectionRange(0, 5);
+  expect(composer.press({ key: "b", ctrlKey: true })).toBe(true);
+  expect(composer.value()).toBe("**plain**");
+  expect(composer.press({ key: "e", ctrlKey: true })).toBe(false);
+  expect(composer.value()).toBe("**plain**");
   composer.done();
 });
 
@@ -447,6 +466,8 @@ test("the attach button opens the file choice directly, and the add menu once th
     },
   });
   expect(composer.button("Add to chat")).toBeNull();
+  // Either way the button shows a plain plus; its name says what it does.
+  expect(composer.button("Attach files")!.querySelector("i")?.className).toBe("ti ti-plus");
   composer.button("Attach files")!.click();
   await composer.settle();
   expect(chosen).toEqual(["files"]);
@@ -458,6 +479,7 @@ test("the attach button opens the file choice directly, and the add menu once th
     menuActions: [{ id: "poll", label: "Poll", onSelect: () => void ran.push("poll") }],
   });
   expect(withActions.button("Attach files")).toBeNull();
+  expect(withActions.button("Add to chat")!.querySelector("i")?.className).toBe("ti ti-plus");
   withActions.button("Add to chat")!.click();
   await withActions.settle();
   const items = Array.from(withActions.dom.document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.trim());

@@ -61,7 +61,9 @@ render(
               // A server round trip, as an application that waits for its request.
               if (options.submitDelay) return new Promise((done) => setTimeout(done, options.submitDelay));
             },
-            fileSelection: { onSelect: () => {} },
+            // "files" attaches directly, "menu" turns attach into the add menu, "none" leaves it out.
+            fileSelection: options.attach === "none" ? undefined : { onSelect: () => {} },
+            menuActions: options.attach === "menu" ? [{ id: "poll", label: "Poll", onSelect: () => {} }] : undefined,
             formatting: true,
             emoji: { onOpen: ({ insert }) => insert("🙂") },
             get microphone() {
@@ -106,7 +108,7 @@ afterAll(async () => {
 const height = 800;
 
 const open = async (
-  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number } = {},
+  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number; attach?: "files" | "menu" | "none" } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const width = options.width ?? 720;
@@ -202,12 +204,13 @@ const layout = (page: Page) =>
     };
   });
 
-/** Every formatting button: its box, and whether a tap on its middle reaches it. */
+/** Every formatting button: its box, and whether a tap on its middle reaches it; and where the field starts. */
 const formatButtons = (page: Page) =>
   page.evaluate(() => {
     const group = document.querySelector<HTMLElement>(".k2b-chat-composer__format")!;
     const buttons = [...group.querySelectorAll("button")];
     return {
+      fieldLeft: document.querySelector(".k2b-chat-composer__field")!.getBoundingClientRect().left,
       scrolls: group.scrollWidth > group.clientWidth,
       buttons: buttons.map((button) => {
         const rect = button.getBoundingClientRect();
@@ -302,8 +305,10 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       // The newest message stays right above the composer in every frame.
       expect(Math.max(...run.gaps) - Math.min(...run.gaps)).toBeLessThanOrEqual(1);
       const format = await formatButtons(page);
-      expect(format.buttons).toHaveLength(8);
+      expect(format.buttons).toHaveLength(3);
       expect(format.scrolls).toBe(false);
+      // The row starts where the field starts, not at the attach button.
+      expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
       for (const button of format.buttons) expect(button.reached).toBe(true);
 
       await page.evaluate(() => fixture.setHint("Everyone in this chat can open the reference, as far as their own access reaches."));
@@ -321,7 +326,7 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("a phone shows the v5 row with 44 px controls, every formatting button at once, and Enter breaks the line", async () => {
+  test("a phone shows the v5 row with 44 px controls, the formatting row from the field's edge, and Enter breaks the line", async () => {
     for (const width of [390, 360]) {
       const page = await open({ width }, { hasTouch: true, isMobile: true });
       expect(await page.evaluate(() => matchMedia("(any-pointer: coarse) and (not (any-pointer: fine))").matches)).toBe(true);
@@ -357,20 +362,23 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       await frames(page, 2);
       expect((await layout(page)).row).toEqual(before.row);
       const format = await formatButtons(page);
-      // All eight fit the row: nothing scrolls, nothing overlaps, and each takes its own taps.
+      // Bold, Italic and List start at the field's edge: nothing scrolls, nothing overlaps, and each takes its own taps.
       expect(format.scrolls).toBe(false);
-      expect(format.buttons).toHaveLength(8);
+      expect(format.buttons).toHaveLength(3);
+      expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
       for (const [index, button] of format.buttons.entries()) {
         expect(button.reached).toBe(true);
-        expect(button.height).toBe(44);
-        expect(button.width).toBeGreaterThanOrEqual(width === 390 ? 44 : 40);
-        expect(button.left).toBeGreaterThanOrEqual(index === 0 ? 0 : format.buttons[index - 1]!.right);
+        expect([button.width, button.height]).toEqual([44, 44]);
+        if (index > 0) expect(button.left).toBeGreaterThanOrEqual(format.buttons[index - 1]!.right);
         expect(button.right).toBeLessThanOrEqual(width);
       }
       await page.locator('button[aria-label="Bold (Ctrl/Cmd+B)"]').tap();
       expect(await page.locator("textarea").first().inputValue()).toBe("****");
       await page.locator('button[aria-label="Formatting"]').tap();
       await page.evaluate(() => fixture.setDraft(""));
+      await frames(page, 2);
+      // Closing the row gives its height back; the field and every control are where they were.
+      expect(await layout(page)).toEqual(before);
 
       const field = page.locator("textarea").first();
       await field.tap();
@@ -382,6 +390,31 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent)).toEqual(["Hello\n"]);
       expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
       await page.close();
+    }
+  }, 30_000);
+
+  test("the formatting row starts at the field's edge also with the add menu or without an attach control", async () => {
+    const devices: [number, BrowserContextOptions][] = [
+      [720, {}],
+      [390, { hasTouch: true, isMobile: true }],
+    ];
+    for (const attach of ["menu", "none"] as const) {
+      for (const [width, context] of devices) {
+        const page = await open({ width, attach }, context);
+        // The add menu's attach sits in the Dropdown's wrapper; "none" has no attach control at all.
+        expect(await page.locator(".k2b-chat-composer__row .k2b-dropdown .k2b-chat-composer__attach").count()).toBe(
+          attach === "menu" ? 1 : 0,
+        );
+        expect(await page.locator(".k2b-chat-composer__attach").count()).toBe(attach === "menu" ? 1 : 0);
+        const before = await layout(page);
+        await page.locator('button[aria-label="Formatting"]').click();
+        await frames(page, 2);
+        expect((await layout(page)).row).toEqual(before.row);
+        const format = await formatButtons(page);
+        expect(format.buttons).toHaveLength(3);
+        expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
+        await page.close();
+      }
     }
   }, 30_000);
 });

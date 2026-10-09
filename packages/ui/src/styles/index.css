@@ -9392,9 +9392,11 @@
 
 /* The conversation composer (prototype v5): no card, one row with attach, a quiet pill field and Send. The field
    starts with one line and grows to a third of the nearest size container. A hint line of fixed height sits above
-   it; "Aa" adds one formatting row of fixed height above the field, so the field and its controls never move. */
+   it; "Aa" adds one formatting row of fixed height above the field, so the field and its controls never move.
+   --k2b-chat-composer-control is the size of the round attach and Send buttons beside the field. */
 .k2b-ui .k2b-chat-composer[data-variant="conversation"],
 .k2b-ui .k2b-chat-composer[data-variant="conversation"]:focus-within {
+  --k2b-chat-composer-control: 2.25rem;
   gap: 0.25rem;
   padding: 0;
   border: 0;
@@ -9487,8 +9489,8 @@
 
 .k2b-ui .k2b-chat-composer__row > :is(.k2b-chat-composer__attach, .k2b-chat-composer__send, .k2b-chat-composer__stop),
 .k2b-ui .k2b-chat-composer__row .k2b-dropdown .k2b-chat-composer__attach {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: var(--k2b-chat-composer-control);
+  height: var(--k2b-chat-composer-control);
   border-radius: 999px;
 }
 
@@ -9554,12 +9556,18 @@
   color: var(--k2b-action-hover);
 }
 
-/* Every formatting button is visible at once; on a narrow phone they share the row instead of scrolling. */
 .k2b-ui .k2b-chat-composer__format {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 0.25rem;
+}
+
+/* The conversation's formatting row starts where the field starts, not at the attach button beside it. */
+.k2b-ui
+  .k2b-chat-composer[data-variant="conversation"]:has(> .k2b-chat-composer__row .k2b-chat-composer__attach)
+  > .k2b-chat-composer__format {
+  padding-inline-start: calc(var(--k2b-chat-composer-control) + 0.25rem);
 }
 
 .k2b-ui .k2b-chat-composer__microphone {
@@ -9602,10 +9610,9 @@
     padding: 0.65625rem 0.25rem 0.65625rem 1rem;
   }
 
-  .k2b-ui .k2b-chat-composer__row > :is(.k2b-chat-composer__attach, .k2b-chat-composer__send, .k2b-chat-composer__stop),
-  .k2b-ui .k2b-chat-composer__row .k2b-dropdown .k2b-chat-composer__attach {
-    width: 2.75rem;
-    height: 2.75rem;
+  .k2b-ui .k2b-chat-composer[data-variant="conversation"],
+  .k2b-ui .k2b-chat-composer[data-variant="conversation"]:focus-within {
+    --k2b-chat-composer-control: 2.75rem;
   }
 
   .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action {
@@ -9617,15 +9624,8 @@
     width: 1.75rem;
   }
 
-  .k2b-ui .k2b-chat-composer__format {
-    justify-content: space-between;
-    gap: 0;
-  }
-
   .k2b-ui .k2b-chat-composer__format .k2b-chat-composer__icon-action {
-    flex: 0 1 2.75rem;
-    width: auto;
-    min-width: 0;
+    width: 2.75rem;
     height: 2.75rem;
   }
 }
