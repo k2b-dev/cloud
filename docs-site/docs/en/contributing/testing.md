@@ -470,6 +470,16 @@ pulls such images first, with retries, because `docker run` does not retry a
 failed pull. When you add a suite like this or change its image, add the image
 to that pull step in `.github/workflows/ci.yml`.
 
+Tests that read a rendered PDF call Poppler's `pdftotext`, `pdfinfo`, and
+`pdffonts` from `PATH`; locally, install Poppler (`poppler-utils` on Debian
+and Ubuntu). CI installs nothing on the runner for them: `.github/poppler.sh
+install` pulls a Poppler image pinned by digest with the job's other images,
+starts it without network access, and links the three tools into
+`/usr/local/bin`, where each call runs in that container. Installing from the
+runner's apt mirror hung, and Homebrew failed when its API host
+`formulae.brew.sh` timed out. To move to another Poppler version, change the
+image and digest in that script.
+
 `gate` is the only required status check. It needs every other job in
 `ci.yml` and passes only when each one reports `success`, or `skipped` for a
 path-filtered job listed in its `MAY_SKIP` variable. Any other result fails it

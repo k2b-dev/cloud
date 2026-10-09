@@ -9,7 +9,8 @@ name: CI
 # without output until the job times out. Chromium's system libraries come
 # with the image's Google Chrome, so Playwright installs only the browser;
 # WebKit runs in the Playwright image, which brings its libraries; Poppler
-# comes from Homebrew bottles on ghcr.io.
+# runs from a pinned image through .github/poppler.sh, as Homebrew downloads
+# its API index from formulae.brew.sh before every install.
 
 # Pull requests run the gate on the branch; the merge queue runs it once more
 # on the exact merge result and merges only when it passed. main itself is
@@ -260,8 +261,7 @@ jobs:
           # The Files stable-reference suite starts its own Filegate from these images.
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0 debian:13-slim
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
-          HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
-          sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
+          "$GITHUB_WORKSPACE/.github/poppler.sh" install
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
       - run: bun ci
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -308,8 +308,7 @@ jobs:
         run: |
           set -euo pipefail
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine
-          HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
-          sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
+          "$GITHUB_WORKSPACE/.github/poppler.sh" install
           # Match the connection budget in compose.yml and compose.sync-test.yml.
           # Slow statements and plans as in the integration job; PostgreSQL 15
           # has no auto_explain.log_parameter_max_length.
