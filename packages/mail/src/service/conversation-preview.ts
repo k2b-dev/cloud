@@ -2,9 +2,9 @@ import { markdown } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { convert, type HtmlToTextOptions } from "html-to-text";
+import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import type { MailRequestContext } from "./auth";
-import { requireMailboxCollaborationPermission } from "./collaboration";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 
 /**
@@ -204,8 +204,10 @@ export const getConversationPreview = async (params: {
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationPreview>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed.error.code === "FORBIDDEN" ? fail(err.notFound("Conversation")) : allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const [row] = await sql<PreviewRow[]>`
     SELECT
       c.id,

@@ -3,7 +3,7 @@ import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { AddConversationLocalTags, CreateLocalTag, DeleteLocalTag, SetConversationLocalTags, UpdateLocalTag } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { conversationVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { insertActivity } from "./collaboration";
 import { mailLive } from "./live";
@@ -121,7 +121,7 @@ const mutationFailure = (error: unknown, fallback: string): Result<never> => {
 };
 
 export const listLocalTags = async (context: MailRequestContext, mailboxId: string): Promise<Result<LocalTag[]>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "read");
+  const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<LocalTagRow[]>`
     SELECT ${localTagColumns}
@@ -361,8 +361,10 @@ export const getConversationLocalTags = async (params: {
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationLocalTags>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const state = await loadConversationLocalTags(params.mailboxId, params.conversationId);
   return state ? ok(state) : fail(err.notFound("Conversation"));
 };
@@ -372,7 +374,7 @@ export const listConversationLocalTags = async (params: {
   mailboxId: string;
   conversationIds: string[];
 }): Promise<Result<Map<string, LocalTag[]>>> => {
-  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
   const conversationIds = [...new Set(params.conversationIds)].sort();
   if (conversationIds.length === 0) return ok(new Map());
@@ -381,7 +383,8 @@ export const listConversationLocalTags = async (params: {
     SELECT assignment.conversation_id, ${localTagColumns}
     FROM mail.conversation_local_tags assignment
     JOIN mail.local_tags tag ON tag.id = assignment.tag_id AND tag.mailbox_id = assignment.mailbox_id
-    WHERE assignment.mailbox_id = ${params.mailboxId}::uuid
+    WHERE ${conversationVisibleTo(allowed.data, sql`assignment.conversation_id`)}
+      AND assignment.mailbox_id = ${params.mailboxId}::uuid
       AND assignment.conversation_id IN (
         SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb)
       )

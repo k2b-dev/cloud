@@ -1019,11 +1019,11 @@ const queryDefinitions = {
       if (!scope.ok) return scope;
       const mailbox = await mailboxes.getMailbox(mailContext, scope.data.id);
       if (!mailbox.ok) return mailbox;
-      const permission = await mailboxAccess.getMailboxPermission(mailContext, scope.data.id);
-      return permission === "none"
+      const access = await mailboxAccess.requireMailboxAccess(mailContext, scope.data.id, "read");
+      return !access.ok
         ? fail(err.forbidden("Mailbox access is required"))
         : ok({
-            data: mapMailbox({ ...mailbox.data, permission }, scope.data.shortId),
+            data: mapMailbox({ ...mailbox.data, permission: access.data.permission }, scope.data.shortId),
             summary: capabilitySummary(t.readMailbox({ name: mailbox.data.name })),
             refs: [mailboxRef(scope.data.shortId, mailbox.data.name, mailbox.data.description)],
             links: [openLink(mailboxHref(scope.data.shortId))],

@@ -287,27 +287,47 @@ export const requireMailboxAccess = async (
   return access && hasPermission(access.permission, required) ? ok(access) : fail(err.forbidden("Access denied"));
 };
 
-/** Whether conversation `conversationId` (a SQL expression) is visible with `access`. */
+/** Strongest current grant per mailbox; mailbox-wide access takes precedence over assigned access. */
+export const readableMailboxGrants = (context: MailRequestContext) => sql`
+  SELECT DISTINCT ON (grants.mailbox_id) grants.mailbox_id, grants.scope,
+    max(CASE a.permission WHEN 'admin' THEN CASE WHEN grants.scope = 'assigned' THEN 2 ELSE 3 END
+      WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) AS permission_rank
+  FROM (
+    SELECT mailbox_id, access_id, 'mailbox'::text AS scope FROM mail.mailbox_access
+    UNION ALL
+    SELECT mailbox_id, access_id, 'assigned'::text AS scope FROM mail.mailbox_assigned_access
+    WHERE ${context.accessSubject.type === "user"}
+  ) grants
+  JOIN auth.access a ON a.id = grants.access_id
+  JOIN mail.mailboxes mailbox ON mailbox.id = grants.mailbox_id AND mailbox.deleted_at IS NULL
+  WHERE ${mailboxAccessPrincipalCondition(context.accessSubject)}
+  GROUP BY grants.mailbox_id, grants.scope
+  HAVING max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) >= 1
+  ORDER BY grants.mailbox_id, (grants.scope = 'mailbox') DESC
+`;
+
+/**
+ * Whether conversation `conversationId` (a SQL expression) is visible with `access`. The expression is
+ * the left side of `IN`, so it always refers to the caller's query, even as an unqualified column name.
+ */
 export const conversationVisibleTo = (access: MailboxAccess, conversationId: Bun.SQL.Query<unknown>) =>
   access.scope === "mailbox"
     ? sql`true`
-    : sql`EXISTS (
-        SELECT 1
+    : sql`(${conversationId}) IN (
+        SELECT visible_assignee.conversation_id
         FROM mail.conversation_assignees visible_assignee
-        WHERE visible_assignee.conversation_id = ${conversationId}
-          AND visible_assignee.user_id = ${access.userId}::uuid
+        WHERE visible_assignee.user_id = ${access.userId}::uuid
       )`;
 
-/** Whether message `messageId` (a SQL expression) belongs to a conversation visible with `access`. */
+/** Whether message `messageId` (a SQL expression) belongs to a conversation visible with `access`; scoped like `conversationVisibleTo`. */
 export const messageVisibleTo = (access: MailboxAccess, messageId: Bun.SQL.Query<unknown>) =>
   access.scope === "mailbox"
     ? sql`true`
-    : sql`EXISTS (
-        SELECT 1
+    : sql`(${messageId}) IN (
+        SELECT visible_link.message_id
         FROM mail.conversation_messages visible_link
         JOIN mail.conversation_assignees visible_assignee ON visible_assignee.conversation_id = visible_link.conversation_id
-        WHERE visible_link.message_id = ${messageId}
-          AND visible_assignee.user_id = ${access.userId}::uuid
+        WHERE visible_assignee.user_id = ${access.userId}::uuid
       )`;
 
 /**

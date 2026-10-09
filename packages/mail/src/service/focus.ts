@@ -2,7 +2,7 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
-import { isCurrentActorActive, mailboxAccessPrincipalCondition } from "./access";
+import { conversationVisibleTo, isCurrentActorActive, readableMailboxGrants } from "./access";
 import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
@@ -95,17 +95,11 @@ const boundMailboxId = (context: MailRequestContext): string | null => {
 };
 
 /** Mailboxes the request may read, as a subquery of `mailbox_id` rows. */
-export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string }[]>`
-  SELECT ma.mailbox_id
-  FROM mail.mailbox_access ma
-  JOIN auth.access a ON a.id = ma.access_id
-  JOIN mail.mailboxes mailbox ON mailbox.id = ma.mailbox_id AND mailbox.deleted_at IS NULL
-  WHERE ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    AND (${boundMailboxId(context)}::uuid IS NULL OR ma.mailbox_id = ${boundMailboxId(context)}::uuid)
-  GROUP BY ma.mailbox_id
-  HAVING max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) >= 1
+export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string; scope: "mailbox" | "assigned" }[]>`
+  SELECT grants.mailbox_id, grants.scope
+  FROM (${readableMailboxGrants(context)}) grants
+  WHERE (${boundMailboxId(context)}::uuid IS NULL OR grants.mailbox_id = ${boundMailboxId(context)}::uuid)
 `;
-
 /**
  * Every focus list and count covers open conversations only, so each readable conversation
  * carries whether it belongs in the follow-up views; Done ones skip that check. It also carries
@@ -118,7 +112,13 @@ const readableConversations = (context: MailRequestContext, scope: AggregatedVie
     ${staysInAggregatedViews(sql`c.id`, scope)} AS aggregated
   FROM mail.conversations c
   JOIN (${readableMailboxes(context)}) readable ON readable.mailbox_id = c.mailbox_id
-  WHERE EXISTS (
+  WHERE (readable.scope = 'mailbox' OR ${conversationVisibleTo(
+    context.accessSubject.type === "user"
+      ? { scope: "assigned", permission: "read", userId: context.accessSubject.userId }
+      : { scope: "mailbox", permission: "read" },
+    sql`c.id`,
+  )})
+    AND EXISTS (
       SELECT 1
       FROM mail.conversation_messages visible_cm
       LEFT JOIN mail.message_placements visible_mp

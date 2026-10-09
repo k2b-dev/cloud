@@ -17,6 +17,8 @@ import {
   isCurrentActorActive,
   isCurrentPlatformAdmin,
   mailboxAccessPrincipalCondition,
+  readableMailboxGrants,
+  requireMailboxAccess,
   requireMailboxLifecycleAdmin,
   requireMailboxPermission,
 } from "./access";
@@ -51,6 +53,7 @@ type DbMailbox = {
 
 type DbMailboxListItem = DbMailbox & {
   permission: PermissionLevel;
+  access_scope: Mailbox["accessScope"];
   receiving_address: string | null;
 };
 
@@ -63,6 +66,7 @@ const toIso = (value: Date | string): string => (value instanceof Date ? value :
 
 const mapMailbox = (row: DbMailbox): Mailbox => ({
   id: row.id,
+  accessScope: "mailbox",
   name: row.name,
   description: row.description,
   health: row.health,
@@ -243,14 +247,14 @@ export const createMailbox = async (context: MailRequestContext, input: CreateMa
 };
 
 export const getMailbox = async (context: MailRequestContext, mailboxId: string): Promise<Result<Mailbox>> => {
-  const allowed = await requireMailboxPermission(context, mailboxId, "read");
+  const allowed = await requireMailboxAccess(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const [row] = await sql<DbMailbox[]>`
     SELECT ${mailboxColumns}
     FROM mail.mailboxes m
     WHERE m.id = ${mailboxId}::uuid AND m.deleted_at IS NULL
   `;
-  return row ? ok(mapMailbox(row)) : fail(err.notFound("Mailbox"));
+  return row ? ok({ ...mapMailbox(row), accessScope: allowed.data.scope }) : fail(err.notFound("Mailbox"));
 };
 
 export const getDeletedMailbox = async (context: MailRequestContext, mailboxId: string): Promise<Result<DeletedMailbox>> => {
@@ -328,6 +332,7 @@ export const listMailboxes = async (
   minimumPermission: Exclude<PermissionLevel, "none"> = "read",
   page?: { afterId?: string },
 ): Promise<Result<MailboxListItem[]>> => {
+  if (!(await isCurrentActorActive(context))) return ok([]);
   const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
   if (page?.afterId && !z.uuid().safeParse(page.afterId).success) return fail(err.badInput("Invalid cursor"));
   const normalizedExactName = exactName?.trim() || null;
@@ -359,18 +364,11 @@ export const listMailboxes = async (
   if (capByCredentialScopes(context, minimumPermission) !== minimumPermission) return ok([]);
 
   const rows = await sql<DbMailboxListItem[]>`
-    WITH ranked AS (
-      SELECT
-        ma.mailbox_id,
-        max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) AS permission_rank
-      FROM mail.mailbox_access ma
-      JOIN auth.access a ON a.id = ma.access_id
-      WHERE ${mailboxAccessPrincipalCondition(context.accessSubject)}
-      GROUP BY ma.mailbox_id
-    )
+    WITH ranked AS (${readableMailboxGrants(context)})
     SELECT
       ${mailboxColumns},
       CASE ranked.permission_rank WHEN 3 THEN 'admin'::auth.permission_level WHEN 2 THEN 'write'::auth.permission_level ELSE 'read'::auth.permission_level END AS permission,
+      ranked.scope AS access_scope,
       pc.email AS receiving_address
     FROM mail.mailboxes m
     JOIN ranked ON ranked.mailbox_id = m.id AND ranked.permission_rank >= ${minimumPermissionRank}
@@ -392,6 +390,7 @@ export const listMailboxes = async (
     rows
       .map((row) => ({
         ...mapMailbox(row),
+        accessScope: row.access_scope,
         permission: capByCredentialScopes(context, row.permission),
         receivingAddress: row.receiving_address,
       }))

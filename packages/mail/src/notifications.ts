@@ -1,5 +1,6 @@
 import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
 import {
+  accounts,
   coreSettings,
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
@@ -15,7 +16,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { MAIL_CONVERSATION_BATCH_LIMIT } from "./contracts";
 import { SHORT_ID_REGEX } from "./lib/short-id";
-import { hasCurrentMailboxUserPermission } from "./service/collaborators";
+import { getMailboxAccess, requireVisibleConversation } from "./service/access";
 import type { CollaborationNotificationKind } from "./service/notification-outbox";
 import { mailNotificationTargetHref } from "./service/notification-targets";
 
@@ -210,12 +211,18 @@ const defaultSender =
     });
   };
 
-const hasCurrentReadAccess = async (delivery: DeliveryRow): Promise<boolean> =>
-  hasCurrentMailboxUserPermission({
-    mailboxId: delivery.mailbox_id,
-    userId: delivery.recipient_user_id,
-    minimumPermission: "read",
-  });
+const hasCurrentReadAccess = async (delivery: DeliveryRow): Promise<boolean> => {
+  const user = await accounts.users.get({ id: delivery.recipient_user_id });
+  if (!user) return false;
+  const access = await getMailboxAccess(
+    {
+      actor: { kind: "user", user },
+      accessSubject: { type: "user", userId: user.id },
+    },
+    delivery.mailbox_id,
+  );
+  return access !== null && (await requireVisibleConversation(access, delivery.conversation_id)).ok;
+};
 
 const loadClaimedDelivery = async (deliveryId: string, claimId: string): Promise<DeliveryRow | null> => {
   const [delivery] = await sql<DeliveryRow[]>`

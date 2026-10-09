@@ -10,7 +10,7 @@ import type {
 } from "../contracts";
 import { createConversationCommentSchema, MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { requireMailboxPermission } from "./access";
+import { messageVisibleTo, requireMailboxAccess, requireMailboxPermission, requireVisibleConversation } from "./access";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
@@ -421,8 +421,10 @@ export const getConversationCollaboration = async (params: {
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationCollaboration>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const state = await loadCollaboration(params.mailboxId, params.conversationId);
   return state ? ok(state) : fail(err.notFound("Conversation"));
 };
@@ -953,8 +955,10 @@ export const getConversationComment = async (params: {
   conversationId: string;
   commentId: string;
 }): Promise<Result<ConversationComment>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const comment = await loadComment({ db: sql, ...params, actor: actorIdentity(params.context) });
   return comment ? ok(comment) : fail(err.notFound("Comment"));
 };
@@ -1013,8 +1017,10 @@ export const listConversationComments = async (params: {
   limit?: number;
   order?: "oldest" | "newest";
 }): Promise<Result<{ items: ConversationComment[]; nextCursor: string | null }>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
   const cursor = decodeDateCursor(params.cursor);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
@@ -1356,10 +1362,17 @@ export const listActivity = async (params: {
   cursor?: string;
   limit?: number;
 }): Promise<Result<{ items: MailActivityEvent[]; nextCursor: string | null }>> => {
-  const allowed = await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
+  const allowed = params.conversationId
+    ? await requireMailboxAccess(params.context, params.mailboxId, "read")
+    : await requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  if (params.conversationId && typeof allowed.data === "object") {
+    const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+    if (!visible.ok) return visible;
+  }
   const cursor = decodeActivityCursor(params.cursor);
   if (!cursor.ok) return cursor;
+  const visibility = typeof allowed.data === "object" ? allowed.data : ({ scope: "mailbox", permission: "read" } as const);
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
   const rows = await sql<ActivityRow[]>`
     SELECT
@@ -1403,6 +1416,34 @@ export const listActivity = async (params: {
       ON actor_workflow.id = actor_workflow_version.workflow_id
     WHERE activity.mailbox_id = ${params.mailboxId}::uuid
       AND (${params.conversationId ?? null}::uuid IS NULL OR activity.conversation_id = ${params.conversationId ?? null}::uuid)
+      AND (${visibility.scope === "mailbox"} OR (
+        activity.action NOT IN ('conversation.merged', 'conversation.message_reassigned', 'conversation.split', 'conversation.created_by_split')
+        AND (activity.target_type IS DISTINCT FROM 'message' OR ${messageVisibleTo(visibility, sql`activity.target_id`)})
+        AND (activity.target_type IS DISTINCT FROM 'comment' OR EXISTS (
+          SELECT 1 FROM mail.conversation_comments comment
+          WHERE comment.id = activity.target_id AND comment.conversation_id = activity.conversation_id
+        ))
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_each_text(activity.metadata) metadata
+          WHERE metadata.key IN ('messageId', 'sourceMessageId', 'derivedFromMessageId', 'referencedMessageId', 'outboundMessageId')
+            AND metadata.value IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM mail.message_contents referenced_message
+              WHERE referenced_message.id::text = metadata.value
+                AND ${messageVisibleTo(visibility, sql`referenced_message.id`)}
+            )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(CASE
+            WHEN jsonb_typeof(activity.metadata -> 'messageIds') = 'array' THEN activity.metadata -> 'messageIds'
+            ELSE '[]'::jsonb END) referenced_id(value)
+          WHERE NOT EXISTS (
+            SELECT 1 FROM mail.message_contents referenced_message
+            WHERE referenced_message.id::text = referenced_id.value
+              AND ${messageVisibleTo(visibility, sql`referenced_message.id`)}
+          )
+        )
+      ))
       AND (${cursor.data ?? null}::bigint IS NULL OR activity.id < ${cursor.data ?? null}::bigint)
     ORDER BY activity.id DESC
     LIMIT ${limit + 1}

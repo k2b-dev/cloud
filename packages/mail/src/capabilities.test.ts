@@ -2147,6 +2147,7 @@ describe("mail capabilities", () => {
     spyOn(mailboxes, "getMailbox").mockResolvedValue({
       ok: true,
       data: {
+        accessScope: "mailbox",
         id: internalMailboxId,
         name: "Support",
         description: null,

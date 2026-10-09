@@ -58,6 +58,7 @@ import {
   type MailCommand,
   type MailCommandInput,
   mailboxGrantAccessSchema,
+  mailboxSchema,
   mailboxUpdateAccessSchema,
   mailCommandInputSchema,
   mailCommandOutcomeSchema,
@@ -791,15 +792,41 @@ const mailOperationsApi = new Hono<MailApiContext>()
     if (!allowed.ok) return respondPublic(c, allowed);
     return respondPublic(c, ok(await discoverMailConfigurations((await internalInput(c, c.req.valid("query"))).email)));
   })
-  .get("/mailboxes", v("query", mailboxListQuerySchema), async (c) => {
-    const query = c.req.valid("query");
-    return respondMailboxes(c, mailboxes.listMailboxes(requestContext(c), query.limit, query.name, query.q));
-  })
+  .get(
+    "/mailboxes",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "List readable mailboxes",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.array(mailboxSchema.extend({ permission: z.enum(["read", "write", "admin"]), receivingAddress: z.string().nullable() })),
+          "Readable mailboxes and their access scope",
+        ),
+      },
+    }),
+    v("query", mailboxListQuerySchema),
+    async (c) => {
+      const query = c.req.valid("query");
+      return respondMailboxes(c, mailboxes.listMailboxes(requestContext(c), query.limit, query.name, query.q));
+    },
+  )
   .post("/mailboxes", v("json", createMailboxInputSchema), async (c) =>
     respondMailboxes(c, mailboxes.createMailbox(requestContext(c), c.req.valid("json"))),
   )
-  .get("/mailboxes/:mailboxId", v("param", mailboxParamSchema), async (c) =>
-    respondMailboxes(c, mailboxes.getMailbox(requestContext(c), internalMailboxId(c))),
+  .get(
+    "/mailboxes/:mailboxId",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "Read a mailbox",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxSchema, "Mailbox and its access scope"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) => respondMailboxes(c, mailboxes.getMailbox(requestContext(c), internalMailboxId(c))),
   )
   .get("/mailboxes/:mailboxId/workspace-route", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
     const mailboxId = internalMailboxId(c);

@@ -519,6 +519,7 @@ export const providerConnectionSchema = z.object({
 export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 
 export const mailboxSchema = z.object({
+  accessScope: z.enum(["mailbox", "assigned"]),
   id: ResourceShortIdSchema,
   name: z.string(),
   description: z.string().nullable(),

@@ -2,6 +2,7 @@ import { lazySync } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ConversationPresenceHeartbeat, ConversationPresenceMode } from "../contracts";
+import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { currentMailboxUserIds } from "./collaborators";
@@ -96,8 +97,17 @@ export const getConversationPresence = async (params: {
   mailboxId: string;
   conversationId: string;
 }): Promise<Result<ConversationPresenceSnapshot>> => {
-  const allowed = await authorizeConversation({ ...params, permission: "read" });
+  const user = userBackedActor(params.context);
+  if (!user) return fail(err.forbidden("Conversation presence requires a user-backed actor"));
+  const allowed = await requireMailboxAccess(params.context, params.mailboxId, "read");
   if (!allowed.ok) return allowed;
+  const visible = await requireVisibleConversation(allowed.data, params.conversationId);
+  if (!visible.ok) return visible;
+  const [conversation] = await sql<{ id: string }[]>`
+    SELECT id FROM mail.conversations
+    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+  `;
+  if (!conversation) return fail(err.notFound("Conversation"));
   return ok(await snapshotState(params.mailboxId, params.conversationId));
 };
 
