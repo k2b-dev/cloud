@@ -9208,16 +9208,17 @@
   flex: 1 1 0;
   min-width: 0;
   align-items: flex-end;
+  border: 1px solid transparent;
   border-radius: 1.125rem;
   background: var(--k2b-surface-muted);
   transition:
     background-color 120ms ease,
-    box-shadow 120ms ease;
+    border-color 120ms ease;
 }
 
 .k2b-ui .k2b-chat-composer__field:focus-within {
+  border-color: var(--k2b-border-strong);
   background: var(--k2b-surface);
-  box-shadow: inset 0 0 0 1px var(--k2b-border-strong);
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
@@ -9225,8 +9226,9 @@
 }
 
 .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight) {
-  max-height: max(2.25rem, 33.333cqh);
-  padding: 0.4375rem 0.25rem 0.4375rem 0.875rem;
+  min-height: 2.125rem;
+  max-height: max(2.125rem, 33.333cqh);
+  padding: 0.40625rem 0.25rem 0.40625rem 0.875rem;
 }
 
 /* A hidden copy of the field measures the text, so the field itself never collapses to be measured. */
@@ -9253,9 +9255,11 @@
   align-items: flex-end;
 }
 
+/* The tools lie over the pill's 1px border, so they are as tall as the pill. */
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action {
   width: 2rem;
   height: 2.25rem;
+  margin-block: -1px;
   border-radius: 999px;
 }
 
@@ -9385,12 +9389,17 @@
   }
 
   .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight) {
-    max-height: max(2.75rem, 33.333cqh);
-    padding: 0.71875rem 0.25rem 0.71875rem 1rem;
+    min-height: 2.625rem;
+    max-height: max(2.625rem, 33.333cqh);
+    padding: 0.65625rem 0.25rem 0.65625rem 1rem;
   }
 
   .k2b-ui .k2b-chat-composer__row > :is(.k2b-chat-composer__attach, .k2b-chat-composer__send, .k2b-chat-composer__stop),
-  .k2b-ui .k2b-chat-composer__row .k2b-dropdown .k2b-chat-composer__attach,
+  .k2b-ui .k2b-chat-composer__row .k2b-dropdown .k2b-chat-composer__attach {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
   .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__icon-action {
     width: 2.75rem;
     height: 2.75rem;
