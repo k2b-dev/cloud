@@ -247,7 +247,7 @@ export const mandatePolicyAllows = (
   return true;
 };
 
-/** Discovery ignores fixed inputs: at least one concrete call must fit the policy. */
+/** Discovery ignores fixed inputs: at least one unattended call must fit the policy. */
 export const mandatePolicyCanPermitCapability = (
   policy: MandatePolicyV1,
   input: { appId: string; capabilityId: string; kind: "query" | "action"; approval?: "none" | "rememberable" | "always" },
@@ -255,7 +255,7 @@ export const mandatePolicyCanPermitCapability = (
   const call = {
     appId: input.appId,
     operation: `capability.${input.kind === "query" ? "query" : "action.run"}:${input.capabilityId}`,
-    actionApproval: "approved" as const,
+    actionApproval: "none" as const,
     capabilityApproval: input.approval,
   };
   if (policy.grants === undefined) return mandatePolicyAllows(policy, call);

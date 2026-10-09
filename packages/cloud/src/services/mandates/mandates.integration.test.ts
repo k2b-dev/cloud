@@ -80,7 +80,10 @@ suite("mandates", () => {
     };
     expect((await mandates.validateIssueAuthority(input)).ok).toBe(true);
     const denied = await mandates.validateIssueAuthority({ ...input, input: { noteId: "note-b" } });
-    expect(denied).toMatchObject({ ok: false, error: { code: "MANDATE_POLICY_DENIED", status: 403 } });
+    expect(denied).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN", status: 403, message: "Mandate policy does not allow this operation" },
+    });
     expect((await mandates.validateIssueAuthority({ ...input, capabilityApproval: "always", actionApproval: "approved" })).ok).toBe(false);
     const updated = await mandates.updatePolicy({
       mandateId: created.data.id,

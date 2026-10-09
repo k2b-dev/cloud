@@ -1463,6 +1463,57 @@ describe("background mandate tool scope", () => {
     expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
   });
 
+  test.each([
+    parseMandatePolicy({ version: 1, apps: [], operations: [], actions: "deny", grants: [] }),
+    parseMandatePolicy({
+      version: 1,
+      apps: ["assistant"],
+      operations: ["runtime.http"],
+      actions: "preapproved",
+      grants: [{ kind: "http", fixedInput: {} }],
+    }),
+  ])("explains when task grants allow no app operations: %j", async (mandatePolicy) => {
+    const tools = await createAiToolResolver({
+      conversationId: "background",
+      actor,
+      staticTools: [],
+      mandatePolicy,
+      store: createRunToolStore([]),
+      listRegistry: async () => registry,
+    })();
+    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
+    expect(description).toContain("This chat's tool scope or task grants allow no app operations.");
+    expect(description).not.toContain("No Cloud app publishes operations right now");
+  });
+
+  test("explains when an interactive scope offers only built-in tools", async () => {
+    const tools = await createAiToolResolver({
+      conversationId: "interactive",
+      actor,
+      staticTools: [],
+      allowedTools: ["read_file", "memory"],
+      store: createRunToolStore([]),
+      listRegistry: async () => registry,
+    })();
+    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
+    expect(description).toContain("This chat's tool scope or task grants allow no app operations.");
+    expect(description).not.toContain("No Cloud app publishes operations right now");
+  });
+
+  test("reports an outage when the granted app is not live", async () => {
+    const tools = await createAiToolResolver({
+      conversationId: "background",
+      actor,
+      staticTools: [],
+      mandatePolicy: policy,
+      store: createRunToolStore([]),
+      listRegistry: async () => [capabilityApp("mail")],
+    })();
+    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
+    expect(description).toContain("No Cloud app publishes operations right now");
+    expect(description).not.toContain("This chat's tool scope or task grants allow no app operations.");
+  });
+
   test("fails closed when the background mandate policy is unavailable", async () => {
     const tools = await createAiToolResolver({
       conversationId: "background",
@@ -1474,6 +1525,9 @@ describe("background mandate tool scope", () => {
       execute: async () => ({ data: [] }),
     })();
     expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
+    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
+    expect(description).toContain("This chat's tool scope or task grants allow no app operations.");
+    expect(description).not.toContain("No Cloud app publishes operations right now");
     expect(await tools.find((tool) => tool.def.name === "load_tools")!.execute({ names: ["spaces.space.list"] }, context)).toMatchObject({
       loaded: [],
       unavailable: [{ name: "spaces.space.list", reason: "not_allowed" }],

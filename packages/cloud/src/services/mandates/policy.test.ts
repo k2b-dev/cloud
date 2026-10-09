@@ -219,7 +219,7 @@ describe("capability discovery under a mandate", () => {
 
   test("respects action denial and capability approval without requiring call inputs", () => {
     expect(mandatePolicyCanPermitCapability(policy, action)).toBe(true);
-    expect(mandatePolicyCanPermitCapability({ ...policy, actions: "require_approval" }, action)).toBe(true);
+    expect(mandatePolicyCanPermitCapability({ ...policy, actions: "require_approval" }, action)).toBe(false);
     expect(mandatePolicyCanPermitCapability({ ...policy, actions: "deny" }, action)).toBe(false);
     expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: "always" })).toBe(false);
     expect(mandatePolicyCanPermitCapability(policy, { ...action, approval: undefined })).toBe(false);

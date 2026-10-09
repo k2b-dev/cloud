@@ -152,8 +152,8 @@ be inferred from a capability that only accepts a note ID.
 Background runs discover and load only capabilities their mandate policy and
 task grants can permit. Previously loaded tools outside that scope stay
 unavailable. Discovery ignores fixed inputs; Core checks them on every call.
-If the mandate cannot be read or its policy is invalid, no app capabilities
-are offered.
+If the mandate cannot be read, has changed, or its policy is invalid, the run
+stops before the model starts and the task needs attention.
 
 Core checks the current mandate revision, grant pair, fixed values, and live
 capability approval mode before every invocation. The target application still

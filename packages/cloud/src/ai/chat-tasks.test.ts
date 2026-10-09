@@ -16,10 +16,7 @@ const call = {
 describe("background capability authorization errors", () => {
   test("preserves a policy denial code and gives the model a recovery instruction", async () => {
     const authorize = spyOn(mandates, "validateMandateIssueAuthority").mockResolvedValue(
-      fail({
-        ...err.forbidden("Mandate policy does not allow this operation"),
-        code: "MANDATE_POLICY_DENIED",
-      }),
+      fail(err.forbidden("Mandate policy does not allow this operation")),
     );
     await expect(aiChatTasks.authorizeCapability(call)).rejects.toMatchObject({
       code: "MANDATE_POLICY_DENIED",
@@ -42,8 +39,7 @@ describe("background capability authorization errors", () => {
     err.forbidden("Mandate is not active"),
     err.forbidden("Mandate policy is invalid"),
     err.conflict("Mandate revision changed"),
-    err.forbidden("Mandate policy does not allow this operation"),
-  ])("preserves authority failure codes without classifying message text: %j", async (error) => {
+  ])("preserves other authority failures without classifying them as policy denials: %j", async (error) => {
     spyOn(mandates, "validateMandateIssueAuthority").mockResolvedValue(fail(error));
     await expect(aiChatTasks.authorizeCapability(call)).rejects.toBeInstanceOf(AiChatTaskAuthorityError);
     await expect(aiChatTasks.authorizeCapability(call)).rejects.toMatchObject({

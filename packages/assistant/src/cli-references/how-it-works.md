@@ -198,13 +198,18 @@ task may call. Background runs work like this:
 - Every app capability needs a grant, including Queries. That also covers
   opening a Project reference: grant the type's reader Query, such as
   `notebooks` `note.read`. No grants means no app capabilities at all.
+  Background runs only discover and load capabilities their grants allow.
 - Built-in tools still work without grants, including chat files, memories,
   and the Project's knowledge and files.
 - `fixedInput` values must match exactly. Omitted fields are unrestricted
   within the user's access.
 - Nothing can be approved during a run. Remembered chat approvals do not apply.
-  A call without a matching grant, or a tool that needs approval or a browser,
-  fails the run and moves the task to `needs_attention`.
+  A call rejected by the grants or fixed inputs returns a tool error the model
+  can recover from.
+- An unavailable, paused, revoked, expired, or changed mandate fails the run and
+  moves the task to `needs_attention`. So does a target app rejecting the
+  sponsor with HTTP 401 or 403, an unknown Action outcome, or a tool that needs
+  approval or a browser.
 - Only Actions with `approval: "none"` or `"rememberable"` can be granted.
   Cloud rejects any other grant with "Capability always requires interactive
   approval".

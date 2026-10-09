@@ -476,8 +476,8 @@ export const createAiToolMetaTools = (input: {
   store: ToolStateStore;
   maxLoadedTools?: number;
   unavailableLoadedNames?: readonly string[];
-  /** False when this turn offers no app operations at all. */
-  appOperationsOffered?: boolean;
+  /** Whether this turn offers app operations, offers none, or its fixed scope or task grants exclude all of them. */
+  appOperations?: "not_offered" | "not_allowed" | "offered";
   /** Why a requested name that is not in `catalog` cannot be loaded; defaults to `unknown`. */
   unavailableReason?: (name: string) => AiToolUnavailableReason;
 }): AiRuntimeTool[] => {
@@ -495,9 +495,11 @@ export const createAiToolMetaTools = (input: {
   const liveAppDirectory =
     directoryEntries.length > 0
       ? ` Live capability apps: ${directoryEntries.join(", ")}${hiddenAppCount > 0 ? `, and ${hiddenAppCount} more` : ""}.`
-      : input.appOperationsOffered === false
+      : input.appOperations === "not_offered"
         ? " App operations are not offered in this turn."
-        : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
+        : input.appOperations === "not_allowed"
+          ? " This chat's tool scope or task grants allow no app operations. Do not search for app operations in this turn; continue with the available tools or tell the user which grant is missing."
+          : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
   const unavailableLoadedNames = input.unavailableLoadedNames ?? [];
   const unavailableLoadedNotice =
     unavailableLoadedNames.length > 0
@@ -775,6 +777,11 @@ export const createAiToolResolver =
       if (!input.listRegistry) return "not_offered_in_turn";
       return liveRegistry === null || persistedLoadedNames.includes(name) ? "app_offline" : "unknown";
     };
+    // Independent of which apps are live: the fixed scope or task grants name no app operation at all.
+    const scopeExcludesAppOperations =
+      input.mandatePolicy === null ||
+      (input.mandatePolicy?.grants !== undefined && !input.mandatePolicy.grants.some((grant) => "appId" in grant)) ||
+      (allowed !== null && ![...allowed].some((name) => name.includes(".")));
     const eagerNames = new Set(builtIns.map((tool) => tool.def.name).filter((name) => !CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(name)));
     const activeBuiltIns = builtIns.filter((tool) => eagerNames.has(tool.def.name) || loadedNames.includes(tool.def.name));
     const runtimeTools = [
@@ -789,7 +796,7 @@ export const createAiToolResolver =
         store: input.store,
         maxLoadedTools: input.maxLoadedTools,
         unavailableLoadedNames,
-        appOperationsOffered: Boolean(input.listRegistry),
+        appOperations: !input.listRegistry ? "not_offered" : scopeExcludesAppOperations ? "not_allowed" : "offered",
         unavailableReason,
       }),
       ...activeBuiltIns,

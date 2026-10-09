@@ -214,10 +214,11 @@ Tool-capable personal chats keep three bounded discovery tools available:
 
 Background runs use the task's mandate policy and grants for `search_tools`,
 `load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
-unavailable even if the interactive chat loaded them earlier. Fixed inputs are
-checked per call; a rejected call returns a tool error the model can recover
-from. Broken authority or required interaction still makes the task need
-attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
+unavailable even if the interactive chat loaded them earlier. When the scope
+allows no app operations, `search_tools` says so instead of reporting an outage.
+Fixed inputs are checked per call; a rejected call returns a tool error the
+model can recover from. Broken authority or required interaction still makes
+the task need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,

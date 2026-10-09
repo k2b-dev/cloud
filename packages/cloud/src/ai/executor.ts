@@ -1004,6 +1004,19 @@ export class AiTurnExecutor {
         backgroundError = "Scheduled task mandate could not be loaded; retry or update the task.";
       }
     }
+    if (backgroundError) {
+      signal.removeEventListener("abort", onSignal);
+      await this.finalize(
+        conversationId,
+        turnId,
+        pipeline,
+        "failed",
+        { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError },
+        "chat",
+        promptLocale,
+      );
+      return;
+    }
     const authorizeBackground =
       config.background && config.mandate
         ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {

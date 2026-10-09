@@ -616,6 +616,8 @@ export const revokeMandate = (input: Parameters<typeof revokeMandateInDb>[0], op
     mutate: (db) => revokeMandateInDb(input, db),
   });
 
+export const MANDATE_POLICY_DENIED_MESSAGE = "Mandate policy does not allow this operation";
+
 export const validateMandateIssueAuthority = async (
   input: {
     mandateId: string;
@@ -687,7 +689,7 @@ export const validateMandateIssueAuthority = async (
       capabilityApproval: input.capabilityApproval,
     })
   ) {
-    return denyMandateIssue({ ...err.forbidden("Mandate policy does not allow this operation"), code: "MANDATE_POLICY_DENIED" });
+    return denyMandateIssue(err.forbidden(MANDATE_POLICY_DENIED_MESSAGE));
   }
   const mandate = mapMandate(row);
   return ok({
@@ -716,7 +718,7 @@ const metricForIssueDenial = (error: MandateIssueError): Exclude<MandateMetricNa
     case "Mandate revision changed":
       return "issue_denied_revision";
     case "Mandate policy is invalid":
-    case "Mandate policy does not allow this operation":
+    case MANDATE_POLICY_DENIED_MESSAGE:
       return "issue_denied_policy";
     default:
       return "issue_denied_invalid";

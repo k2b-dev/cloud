@@ -312,8 +312,9 @@ suite("AI executor integration", () => {
   test.each([
     { mode: "direct", revoke: false },
     { mode: "resource", revoke: false },
-    { mode: "direct", revoke: true },
-    { mode: "resource", revoke: true },
+    { mode: "direct", revoke: "during" },
+    { mode: "resource", revoke: "during" },
+    { mode: "direct", revoke: "before" },
   ] as const)("background capability authorization: %j", async ({ mode, revoke }) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({
@@ -403,6 +404,16 @@ suite("AI executor integration", () => {
       if (!delivered.delivered) throw new Error("Expected background run");
       const mandate = await mandates.get(task.mandateId);
       expect(mandate?.state).toBe("active");
+      if (revoke === "before") {
+        if (!mandate) throw new Error("Expected mandate");
+        const result = await mandates.revoke({
+          mandateId: mandate.id,
+          expectedRevision: mandate.revision,
+          authority: { kind: "interactive", userId },
+          reason: "Revoked before the run",
+        });
+        expect(result.ok).toBe(true);
+      }
       completionQueue = [
         toolCallCompletion("load-denied", "load_tools", { names: ["spaces.space.read"] }),
         mode === "direct"
@@ -413,7 +424,7 @@ suite("AI executor integration", () => {
       ];
       onCompletionRequest = async (body) => {
         requests.push(requestSchema.parse(body));
-        if (revoke && requests.length === 2) {
+        if (revoke === "during" && requests.length === 2) {
           if (!mandate) throw new Error("Expected mandate");
           const result = await mandates.revoke({
             mandateId: mandate.id,
@@ -440,11 +451,25 @@ suite("AI executor integration", () => {
         claim,
         signal: new AbortController().signal,
       });
+      if (revoke === "before") {
+        expect(requests).toHaveLength(0);
+        expect(executeSpy).not.toHaveBeenCalled();
+        const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
+        expect(turn?.status).toBe("failed");
+        expect(turn?.error).toContain("Scheduled task mandate is unavailable or changed");
+        const [stored] = await sql<{ meta: unknown }[]>`
+          SELECT meta FROM ai.task_messages WHERE loop_id = ${delivered.turnId} ORDER BY seq DESC LIMIT 1
+        `;
+        expect(stored?.meta).toMatchObject({ turnError: { code: "not_allowed" } });
+        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "failed", error: turn?.error });
+        expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("needs_attention");
+        return;
+      }
       expect(requests).toHaveLength(4);
       expect(requests[0]?.tools?.map((tool) => tool.function.name)).not.toContain("spaces__query__space_dot_read");
       const loadResult = JSON.parse(String(requests[1]?.messages.find((message) => message.role === "tool")?.content));
       expect(loadResult).toMatchObject({ loaded: [], unavailable: [{ name: "spaces.space.read", reason: "not_allowed" }] });
-      if (revoke) {
+      if (revoke === "during") {
         expect(JSON.stringify(requests[2]?.messages)).toContain("Mandate is not active");
         expect(executeSpy).not.toHaveBeenCalled();
         const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
