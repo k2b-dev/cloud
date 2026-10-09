@@ -15,6 +15,7 @@ import {
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { listVirtual as listVirtualColumns } from "./columns";
+import { list as listItemTemplates } from "./item-templates";
 import { publishSpaceChange, spacesLive } from "./live";
 import { spacesMessages } from "./messages";
 import { rank } from "./rank";
@@ -366,7 +367,10 @@ export const getDetail = async (params: { id: string }): Promise<SpaceDetail | n
     WHERE space_id = ${params.id}
     ORDER BY name
   `;
-  const virtualColumns = await listVirtualColumns({ spaceId: params.id });
+  const [virtualColumns, templates] = await Promise.all([
+    listVirtualColumns({ spaceId: params.id }),
+    listItemTemplates({ spaceId: params.id }),
+  ]);
 
   return {
     ...mapToSpace(spaceRow),
@@ -385,6 +389,7 @@ export const getDetail = async (params: { id: string }): Promise<SpaceDetail | n
       name: t.name,
       color: t.color,
     })),
+    templates,
   };
 };
 

@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, IconButton, prompts, ScrollArea } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
-import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
+import type { SpaceColumn, SpaceItemTemplate, SpaceTag, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import FilterBar from "../filter/FilterBar";
 import { boardFilter, buildFilterUrl, defaultFilter, type FilterState } from "../filter/types";
@@ -15,6 +15,7 @@ type Props = {
   baseUrl: string;
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  templates?: SpaceItemTemplate[];
   wormholes: SpaceWormhole[];
   initialBuckets: KanbanBucketInitial[];
   /** Board column keys this person folded away in this browser; read from the settings cookie for SSR. */
@@ -140,6 +141,7 @@ export default function SpacesKanbanRoute(props: Props) {
               baseUrl={current.source}
               columns={props.columns}
               tags={props.tags}
+              templates={props.templates}
               selectedItemId={props.selectedItemId}
               initialBuckets={current.buckets}
               filter={appliedFilter(view.filter())}

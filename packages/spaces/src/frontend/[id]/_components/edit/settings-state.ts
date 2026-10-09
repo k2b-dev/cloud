@@ -22,13 +22,7 @@ export const loadSpaceSettingsContext = async (params: {
 
   const detail = await spacesService.space.getDetail({ id: params.spaceId });
   if (!detail) return fail(err.notFound("Space"));
-  const [[space], columns, tags] = await Promise.all([
-    spacesPublicResources.projectSpaces([detail]),
-    spacesPublicResources.projectColumns(detail.columns),
-    spacesPublicResources.projectTags(detail.tags),
-  ]);
-  if (!space) return fail(err.notFound("Space"));
-  const publicDetail = { ...space, columns, virtualColumns: detail.virtualColumns, tags };
+  const publicDetail = await spacesPublicResources.projectSpaceDetail(detail);
 
   if (permission !== "admin") {
     return ok({

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
+import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import type { CalendarFilter } from "./filter";
 import type { TimelineRange } from "./timeline";
 
@@ -17,6 +17,8 @@ export type CalendarProps = {
   items: CalendarItem[];
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  /** Event templates offered when a slot creates an event. */
+  templates?: SpaceItemTemplate[];
   filter: CalendarFilter;
   selectedItemId?: string;
   view: CalendarView;

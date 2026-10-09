@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: SpaceEditPanel } = await import("./SpaceEditPanel.tsx");
 const { StatusesSection } = await import("./StatusesSection.tsx");
+const { TemplatesSection } = await import("./TemplatesSection.tsx");
 const { PermissionsSection } = await import("./AccessSection.tsx");
 const { spaceMessages } = await import("../../messages.ts");
 const { LocaleProvider } = await import("@k2b/ui");
@@ -48,6 +49,7 @@ const space: SpaceDetail = {
   columns,
   virtualColumns: [],
   tags: [],
+  templates: [],
 };
 
 const renderSettings = (permission: "read" | "admin", locale = "en") =>
@@ -89,6 +91,7 @@ describe("Spaces settings", () => {
     expect(html).toContain("General");
     expect(html).toContain("Tags");
     expect(html).toContain("Statuses");
+    expect(html).toContain("Templates");
     expect(html).toContain("Defaults");
     expect(html).toContain("Wormholes");
     expect(html).toContain("Access");
@@ -110,6 +113,46 @@ describe("Spaces settings", () => {
     expect(html).toContain("Stored in this browser and applied immediately.");
     expect(html).not.toContain("Sharing");
     expect(html).not.toContain("Danger zone");
+  });
+
+  test("lists task and event templates with their date rule; only admins see the tab", () => {
+    const template = {
+      id: "Tpl001",
+      spaceId,
+      kind: "task" as const,
+      name: "Weekly report",
+      title: "Weekly report {{week}}",
+      description: null,
+      priority: null,
+      tags: [],
+      assignees: [],
+      assignCreator: false,
+      checklist: [],
+      estimatedDurationMinutes: null,
+      location: null,
+      url: null,
+      allDay: false,
+      durationMinutes: null,
+      timeOfDay: null,
+      dateRule: { type: "weekdays" as const, weekdays: ["WE" as const, "TH" as const] },
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(TemplatesSection, { spaceId, templates: [template], tags: [], onDirtyChange: () => undefined });
+        },
+      }),
+    );
+    expect(html).toContain("Aufgabenvorlagen");
+    expect(html).toContain("Terminvorlagen");
+    expect(html).toContain("Weekly report");
+    expect(html).toContain("Mi oder Do · 17:00");
+    expect(html).toContain("Noch keine Terminvorlagen.");
+    expect(html).toContain('aria-label="Vorlage bearbeiten: Weekly report"');
+    expect(renderSettings("read")).not.toContain("Templates");
   });
 
   test("renders statuses as a semantic settings collection", () => {

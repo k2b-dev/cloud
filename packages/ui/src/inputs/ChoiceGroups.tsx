@@ -1,13 +1,21 @@
 import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 
-type ChoiceGroup = { value: string | null; label: string };
+type ChoiceGroup = { value: string | null; label: string; icon?: string };
 
+/**
+ * A single-choice row of chips that scrolls sideways instead of wrapping, so its height never changes. Select and
+ * MultiSelect use it for their filters; `ChoiceChips` is the public field around it.
+ */
 export function ChoiceGroups(props: {
   choices: readonly ChoiceGroup[];
   value: string | null;
   onValueChange: (value: string | null) => void;
-  ariaLabel: string;
-  controls: string;
+  ariaLabel?: string;
+  /** The field label that names the group; replaces `ariaLabel`. */
+  labelledBy?: string;
+  describedBy?: string;
+  controls?: string;
+  disabled?: boolean;
 }): JSX.Element {
   let viewport: HTMLDivElement | undefined;
   let buttons: HTMLButtonElement[] = [];
@@ -26,9 +34,12 @@ export function ChoiceGroups(props: {
     setScrollbar({ overflow: true, left, width });
   };
 
+  // With no matching choice the first chip takes the tab stop, so the group stays reachable by keyboard.
+  const tabStop = (value: string | null, index: number) =>
+    props.value === value || (index === 0 && !props.choices.some((choice) => choice.value === props.value));
   const choose = (index: number, focus = false) => {
     const choice = props.choices[index];
-    if (!choice) return;
+    if (!choice || props.disabled) return;
     props.onValueChange(choice.value);
     if (!focus) return;
     queueMicrotask(() => {
@@ -74,7 +85,16 @@ export function ChoiceGroups(props: {
 
   return (
     <div class="k2b-choice-groups-shell" onPointerEnter={syncScrollbar} onFocusIn={syncScrollbar}>
-      <div ref={viewport} class="k2b-choice-groups" role="radiogroup" aria-label={props.ariaLabel} onScroll={syncScrollbar}>
+      <div
+        ref={viewport}
+        class="k2b-choice-groups"
+        role="radiogroup"
+        aria-label={props.labelledBy ? undefined : props.ariaLabel}
+        aria-labelledby={props.labelledBy}
+        aria-describedby={props.describedBy}
+        aria-disabled={props.disabled ? "true" : undefined}
+        onScroll={syncScrollbar}
+      >
         <For each={props.choices}>
           {(group, index) => (
             <button
@@ -83,7 +103,8 @@ export function ChoiceGroups(props: {
               role="radio"
               aria-checked={props.value === group.value}
               aria-controls={props.controls}
-              tabIndex={props.value === group.value ? 0 : -1}
+              disabled={props.disabled}
+              tabIndex={tabStop(group.value, index()) ? 0 : -1}
               onClick={() => choose(index())}
               onKeyDown={(event) => {
                 if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -98,6 +119,7 @@ export function ChoiceGroups(props: {
                 }
               }}
             >
+              {group.icon && <i class={group.icon} aria-hidden="true" />}
               {group.label}
             </button>
           )}

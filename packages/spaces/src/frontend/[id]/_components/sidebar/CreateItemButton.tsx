@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, Button, dialogCore, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceTag } from "@/contracts";
+import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import { createSpaceItem } from "../shared/editItem";
@@ -14,6 +14,7 @@ type Props = {
   spaceId: string;
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  templates?: SpaceItemTemplate[];
   dateConfig?: DateContext;
   variant?: "primary" | "secondary" | "sidebar" | "chip" | "icon" | "inline";
   defaultType?: ItemType;
@@ -41,6 +42,7 @@ export function createItemController(props: Props) {
             spaceId={spaceId}
             columns={props.columns}
             tags={props.tags}
+            templates={props.templates}
             quickCreate
             defaults={{ type: options.type ?? defaultType(), columnId: props.defaultColumnId, references: options.references }}
             onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}

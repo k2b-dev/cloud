@@ -1,3 +1,4 @@
+import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, Tooltip } from "@k2b/ui";
 import { Show } from "solid-js";
@@ -10,6 +11,7 @@ import { readErrorMessage } from "./utils";
 type Props = {
   spaceId: string;
   baseUrl: string;
+  dateConfig?: DateContext;
   close: () => void;
   onWorkspaceChange: () => void;
 };
@@ -68,6 +70,7 @@ export default function SpaceSettingsDialog(props: Props) {
           <SpaceEditPanel
             space={context().space}
             baseUrl={props.baseUrl}
+            dateConfig={props.dateConfig}
             initialSettings={context().settings}
             accessEntries={context().accessEntries}
             apiKeys={context().apiKeys}

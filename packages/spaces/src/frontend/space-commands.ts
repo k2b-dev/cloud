@@ -25,6 +25,9 @@ export const createSpaceCommands = (options: { current?: () => SpaceDetail | und
     get tags() {
       return space()?.tags ?? [];
     },
+    get templates() {
+      return space()?.templates ?? [];
+    },
     dateConfig: options.dateConfig,
   });
   let pending = false;

@@ -33,6 +33,7 @@ export default function SpaceSidebar(props: Props) {
                     spaceId={props.ctx.space.id}
                     columns={props.ctx.columns}
                     tags={props.ctx.tags}
+                    templates={props.ctx.space.templates}
                     dateConfig={props.dateConfig}
                     variant="icon"
                     defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
@@ -62,6 +63,7 @@ export default function SpaceSidebar(props: Props) {
                 spaceId={props.ctx.space.id}
                 columns={props.ctx.columns}
                 tags={props.ctx.tags}
+                templates={props.ctx.space.templates}
                 dateConfig={props.dateConfig}
                 variant="icon"
                 defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
@@ -82,6 +84,7 @@ export default function SpaceSidebar(props: Props) {
               <SpaceSettingsButton
                 spaceId={props.ctx.space.id}
                 baseUrl={props.baseUrl}
+                dateConfig={props.dateConfig}
                 variant="sidebar"
                 viewTransitionName={vt("settings-desktop")}
               />
@@ -90,7 +93,7 @@ export default function SpaceSidebar(props: Props) {
           <AppWorkspace.SidebarFooter sidebarMode="collapsed">
             <AppWorkspace.SidebarIconGrid>
               <CopyICalButton icalToken={props.ctx.space.icalToken} variant="icon" />
-              <SpaceSettingsButton spaceId={props.ctx.space.id} baseUrl={props.baseUrl} variant="icon" />
+              <SpaceSettingsButton spaceId={props.ctx.space.id} baseUrl={props.baseUrl} dateConfig={props.dateConfig} variant="icon" />
             </AppWorkspace.SidebarIconGrid>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>

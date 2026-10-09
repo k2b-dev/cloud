@@ -5,7 +5,9 @@ import type {
   OverlapItem,
   SpaceColumn,
   SpaceComment,
+  SpaceDetail,
   SpaceItem,
+  SpaceItemTemplate,
   SpaceTag,
   SpaceTaskDependency,
   SpaceTaskDependent,
@@ -15,7 +17,7 @@ import type {
 } from "../contracts";
 import { SHORT_ID_REGEX } from "../lib/short-id";
 
-export type ResourceTable = "spaces" | "columns" | "items" | "checklist" | "comments" | "tags" | "wormholes";
+export type ResourceTable = "spaces" | "columns" | "items" | "checklist" | "comments" | "tags" | "wormholes" | "templates";
 export type SpaceOwnedResourceTable = "columns" | "items" | "tags";
 
 export const resolvePublicId = async (table: ResourceTable, shortId: string): Promise<string | null> => {
@@ -42,6 +44,9 @@ export const resolvePublicId = async (table: ResourceTable, shortId: string): Pr
       break;
     case "wormholes":
       rows = await sql`SELECT id FROM spaces.wormholes WHERE short_id = ${shortId}`;
+      break;
+    case "templates":
+      rows = await sql`SELECT id FROM spaces.item_templates WHERE short_id = ${shortId}`;
       break;
   }
   return rows[0]?.id ?? null;
@@ -74,6 +79,9 @@ export const resolvePublicIds = async (table: ResourceTable, values: string[]): 
       break;
     case "wormholes":
       rows = await sql`SELECT id, short_id FROM spaces.wormholes WHERE short_id = ANY(${array}::text[])`;
+      break;
+    case "templates":
+      rows = await sql`SELECT id, short_id FROM spaces.item_templates WHERE short_id = ANY(${array}::text[])`;
       break;
   }
   const byShortId = new Map(rows.map((row) => [row.short_id, row.id]));
@@ -132,6 +140,9 @@ const shortIds = async (table: ResourceTable, ids: (string | null | undefined)[]
     case "wormholes":
       rows = await sql`SELECT id, short_id FROM spaces.wormholes WHERE id = ANY(${array}::uuid[])`;
       break;
+    case "templates":
+      rows = await sql`SELECT id, short_id FROM spaces.item_templates WHERE id = ANY(${array}::uuid[])`;
+      break;
   }
   return new Map(rows.map((row) => [row.id, row.short_id]));
 };
@@ -176,6 +187,40 @@ export const projectTags = async <T extends SpaceTag>(items: T[]): Promise<T[]> 
     ),
   ]);
   return items.map((item) => ({ ...item, id: required(ids, item.id), spaceId: required(spaces, item.spaceId) }));
+};
+
+export const projectTemplates = async <T extends SpaceItemTemplate>(items: T[]): Promise<T[]> => {
+  const [ids, spaces, tags] = await Promise.all([
+    shortIds(
+      "templates",
+      items.map((item) => item.id),
+    ),
+    shortIds(
+      "spaces",
+      items.map((item) => item.spaceId),
+    ),
+    shortIds(
+      "tags",
+      items.flatMap((item) => item.tags.map((tag) => tag.id)),
+    ),
+  ]);
+  return items.map((item) => ({
+    ...item,
+    id: required(ids, item.id),
+    spaceId: required(spaces, item.spaceId),
+    tags: item.tags.map((tag) => ({ ...tag, id: required(tags, tag.id), spaceId: required(spaces, tag.spaceId) })),
+  }));
+};
+
+export const projectSpaceDetail = async (detail: SpaceDetail): Promise<SpaceDetail> => {
+  const [[space], columns, tags, templates] = await Promise.all([
+    projectSpaces([detail]),
+    projectColumns(detail.columns),
+    projectTags(detail.tags),
+    projectTemplates(detail.templates),
+  ]);
+  if (!space) throw new Error("Missing public ID for Space");
+  return { ...space, columns, virtualColumns: detail.virtualColumns, tags, templates };
 };
 
 export const projectItems = async <T extends SpaceItem>(items: T[]): Promise<T[]> => {
@@ -411,6 +456,8 @@ export const spacesPublicResources = {
   projectSpaces,
   projectColumns,
   projectTags,
+  projectTemplates,
+  projectSpaceDetail,
   projectItems,
   projectItemReferences,
   projectTaskDependencies,

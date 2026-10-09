@@ -27,6 +27,25 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "template.list": {
+          title: "Vorlagen auflisten",
+          description:
+            "Aufgaben- und Terminvorlagen eines Space mit Datumsregel und den nächsten vorgeschlagenen Tagen in timeZone auflisten. Eine Vorlagen-ID und einen Vorschlag als date an task.create oder event.create übergeben.",
+          input: {
+            spaceId: "Öffentliche ID des Space.",
+            kind: "Nur Aufgaben- oder nur Terminvorlagen.",
+            timeZone: "IANA-Zeitzone der Person, etwa Europe/Berlin; ohne Angabe die Zone der Installation.",
+          },
+        },
+        "template.read": {
+          title: "Vorlage lesen",
+          description:
+            "Alle Vorgaben einer Vorlage lesen: Titel, Beschreibung, Checkliste, Schlagwörter, Zuständige, Zeiten und Vorschläge.",
+          input: {
+            templateId: "ID der Vorlage aus template.list.",
+            timeZone: "IANA-Zeitzone der Person, etwa Europe/Berlin; ohne Angabe die Zone der Installation.",
+          },
+        },
         "task.work.read": {
           title: "Arbeitsstand lesen",
           description:
@@ -314,6 +333,65 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "template.create": {
+          title: "Vorlage anlegen",
+          description:
+            "Eine Aufgaben- oder Terminvorlage in einem Space anlegen, den der Akteur verwaltet. Namen sind je Space und Art eindeutig.",
+          input: {
+            spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
+            kind: "Ob die Vorlage Aufgaben oder Termine anlegt.",
+            name: "Name der Vorlage, je Space und Art eindeutig.",
+            title: "Vorgabetitel; darf {{date}}, {{weekday}} und {{week}} enthalten.",
+            description: "Vorgabebeschreibung (Markdown); darf dieselben Platzhalter enthalten.",
+            priority: "Vorgabepriorität.",
+            tagIds: "IDs der Vorgabe-Schlagwörter aus diesem Space.",
+            assigneeIds: "Benutzer-UUIDs der Vorgabe-Zuständigen mit Zugriff auf den Space.",
+            assignCreator: "Auch die Person zuweisen, die den Eintrag anlegt.",
+            checklist: "Checkliste einer neuen Aufgabe (nur Aufgaben).",
+            estimatedDurationMinutes: "Schätzung einer Aufgabe in Minuten (nur Aufgaben).",
+            location: "Ort eines Termins (nur Termine).",
+            url: "Link eines Termins (nur Termine).",
+            allDay: "Ob ein neuer Termin ganztägig ist (nur Termine).",
+            durationMinutes: "Dauer eines Termins in Minuten (nur Termine).",
+            timeOfDay: "Fälligkeitszeit einer Aufgabe oder Beginn eines Termins als HH:MM.",
+            dateRule: "Welche Daten ein neuer Eintrag vorschlägt.",
+            "dateRule.type": "none schlägt kein Datum vor, weekdays die nächsten passenden Wochentage, offset heute plus days Tage.",
+            "dateRule.weekdays": "Wochentage, auf die ein neuer Eintrag fallen darf; die nächsten passenden Tage werden vorgeschlagen.",
+            "dateRule.days": "Tage nach heute; 0 schlägt heute vor.",
+          },
+        },
+        "template.update": {
+          title: "Vorlage ändern",
+          description: "Ausgewählte Felder einer Vorlage ändern; bereits erstellte Einträge bleiben unverändert.",
+          input: {
+            templateId: "ID der Vorlage aus template.list.",
+            name: "Name der Vorlage, je Space und Art eindeutig.",
+            title: "Vorgabetitel; darf {{date}}, {{weekday}} und {{week}} enthalten.",
+            description: "Vorgabebeschreibung (Markdown); darf dieselben Platzhalter enthalten.",
+            priority: "Vorgabepriorität.",
+            tagIds: "IDs der Vorgabe-Schlagwörter aus diesem Space.",
+            assigneeIds: "Benutzer-UUIDs der Vorgabe-Zuständigen mit Zugriff auf den Space.",
+            assignCreator: "Auch die Person zuweisen, die den Eintrag anlegt.",
+            checklist: "Checkliste einer neuen Aufgabe (nur Aufgaben).",
+            estimatedDurationMinutes: "Schätzung einer Aufgabe in Minuten (nur Aufgaben).",
+            location: "Ort eines Termins (nur Termine).",
+            url: "Link eines Termins (nur Termine).",
+            allDay: "Ob ein neuer Termin ganztägig ist (nur Termine).",
+            durationMinutes: "Dauer eines Termins in Minuten (nur Termine).",
+            timeOfDay: "Fälligkeitszeit einer Aufgabe oder Beginn eines Termins als HH:MM.",
+            dateRule: "Welche Daten ein neuer Eintrag vorschlägt.",
+            "dateRule.type": "none schlägt kein Datum vor, weekdays die nächsten passenden Wochentage, offset heute plus days Tage.",
+            "dateRule.weekdays": "Wochentage, auf die ein neuer Eintrag fallen darf; die nächsten passenden Tage werden vorgeschlagen.",
+            "dateRule.days": "Tage nach heute; 0 schlägt heute vor.",
+          },
+        },
+        "template.delete": {
+          title: "Vorlage löschen",
+          description: "Eine Vorlage löschen. Daraus erstellte Einträge bleiben erhalten.",
+          input: {
+            templateId: "ID der Vorlage aus template.list.",
+          },
+        },
         "task.claim": {
           title: "Aufgabe übernehmen",
           description:
@@ -425,7 +503,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "event.create": {
           title: "Kalenderereignis erstellen",
-          description: "Erstellen Sie ein Kalenderereignis mit einem explizit gültigen Zeitbereich in einem beschreibbaren Space.",
+          description:
+            "Einen Termin in einem beschreibbaren Space anlegen, mit gültigem Zeitraum oder mit templateId und einem Datum aus den Vorschlägen von template.list.",
           input: {
             spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             columnId: "Zielspalte ID, zurückgegeben vom Lesebereich für den ausgewählten Space.",
@@ -447,6 +526,9 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             "references[].ref.type": "Namespace-Ressourcentyp, der von der besitzenden App deklariert wird.",
             "references[].ref.id": "Stabile App-eigene Ressourcenkennung.",
             "references[].label": "Snapshot des Space-eigenen Display-Labels",
+            templateId: "ID einer Vorlage aus template.list; sie füllt jedes weggelassene Feld.",
+            date: "Lokales Datum als YYYY-MM-DD, meist ein Vorschlag aus template.list; ohne Angabe der erste Vorschlag.",
+            timeZone: "IANA-Zeitzone der Person, etwa Europe/Berlin; ohne Angabe die Zone der Installation.",
           },
         },
         "event.invitation.commit": {
@@ -548,7 +630,8 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.create": {
           title: "Aufgabe erstellen",
-          description: "Erstellen Sie eine Aufgabe in einer explizit ausgewählten beschreibbaren Space und Spalte.",
+          description:
+            "Eine Aufgabe in einem ausgewählten beschreibbaren Space und einer Spalte anlegen. Mit templateId füllt die Vorlage jedes weggelassene Feld samt Checkliste; date wählt den Fälligkeitstag aus den Vorschlägen.",
           input: {
             spaceId: "Space ID zurückgegeben von Space Suche/Liste/Lesen oder einem spaces.space ref.",
             columnId: "Zielspalte ID, zurückgegeben vom Lesebereich für den ausgewählten Space.",
@@ -564,6 +647,10 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             "references[].ref.type": "Namespace-Ressourcentyp, der von der besitzenden App deklariert wird.",
             "references[].ref.id": "Stabile App-eigene Ressourcenkennung.",
             "references[].label": "Snapshot des Space-eigenen Display-Labels",
+            templateId: "ID einer Vorlage aus template.list; sie füllt jedes weggelassene Feld.",
+            date: "Lokales Datum als YYYY-MM-DD, meist ein Vorschlag aus template.list; ohne Angabe der erste Vorschlag.",
+            timeZone: "IANA-Zeitzone der Person, etwa Europe/Berlin; ohne Angabe die Zone der Installation.",
+            noDate: "Mit templateId: die Aufgabe ohne Fälligkeit der Vorlage anlegen.",
           },
         },
         "task.set-completed": {

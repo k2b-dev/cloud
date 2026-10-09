@@ -37,6 +37,7 @@ import actionFilters from "./filter-chip.md" with { type: "text" };
 import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
 import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
+import inputChoiceChips from "./input/choice-chips.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
@@ -92,6 +93,7 @@ const catalogContextSources = {
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
   "input/select": { file: "input/select.md", content: inputSelect },
+  "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },
   "input/combobox": { file: "input/combobox.md", content: inputCombobox },
   "input/color": { file: "input/color.md", content: inputColor },
   "input/tags": { file: "input/tags.md", content: inputTags },

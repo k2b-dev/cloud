@@ -27,6 +27,9 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
     get tags() {
       return props.ctx.tags;
     },
+    get templates() {
+      return props.ctx.space.templates;
+    },
     get dateConfig() {
       return props.dateConfig;
     },
@@ -62,6 +65,9 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
     },
     get baseUrl() {
       return props.baseUrl;
+    },
+    get dateConfig() {
+      return props.dateConfig;
     },
   });
   const calendar = createIcalCopy({

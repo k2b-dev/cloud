@@ -543,6 +543,7 @@ export default function Calendar(props: CalendarProps) {
             spaceId={spaceId}
             columns={props.columns}
             tags={props.tags}
+            templates={props.templates}
             quickCreate
             defaults={{
               type: "event",

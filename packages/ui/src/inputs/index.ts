@@ -10,6 +10,8 @@ export type { CheckboxProps } from "./Checkbox";
 export { Checkbox } from "./Checkbox";
 export type { CheckboxCardProps } from "./CheckboxCard";
 export { CheckboxCard } from "./CheckboxCard";
+export type { ChoiceChipOption, ChoiceChipsProps } from "./ChoiceChips";
+export { ChoiceChips } from "./ChoiceChips";
 export type {
   ColorInputProps,
   PinInputProps,

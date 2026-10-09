@@ -10,6 +10,14 @@ Spaces works best when each item has a clear next action. Keep item titles short
 
 When you create an item, Spaces initially selects a task or event based on the current view. You can switch the type at the top of the dialog. The compact form asks for a title and description; events also require their schedule. Choose **More options** for the complete task or event fields without losing what you entered. A task uses the status where you started creating it, or the first status when none was selected.
 
+## Start from a template {icon="template"}
+
+When a Space has templates, the new task or event dialog shows a **Template** row with **Blank** and the templates for that kind. Choosing one fills in the title, description, priority, tags, assignees, and a task's checklist or an event's location, time, and duration; a line below the description sums up what the template adds. Every field stays editable before you save, and **More options** shows all of them. When you already typed something, Spaces asks before a template replaces it. With more than six templates, the row becomes a searchable list.
+
+A template can propose dates. A rule such as "Wednesday or Thursday" shows the next matching days as chips, for example **Wed 10/14**, **Thu 10/15**, **Wed 10/21**; "in 3 days" proposes one date. The first proposal is selected. Choose another chip, **Other date…** for any date, or **No date** for a task without a deadline. For events, the schedule field below stays available for any other time. Proposals use your time zone, and with a weekday rule today only appears while the template's time has not passed yet. The placeholders `{{date}}`, `{{weekday}}`, and `{{week}}` in the title and description follow the chosen date, also from **No date** or a picker, until you edit the text.
+
+Space administrators manage templates in the Space settings under **Templates**: a name, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items already created from it. Everyone who may create items can use the templates.
+
 ## Good item structure {icon="point"}
 
 :::reference

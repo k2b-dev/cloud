@@ -13,6 +13,7 @@ import * as itemChecklist from "./item-checklist";
 import * as itemDependencies from "./item-dependencies";
 import * as itemLinks from "./item-links";
 import * as itemResourceReferences from "./item-resource-references";
+import * as itemTemplates from "./item-templates";
 import * as items from "./items";
 import { resolveLinkPreviews } from "./link-previews";
 import * as spaces from "./spaces";
@@ -135,6 +136,15 @@ export const spacesService = {
     create: tags.create,
     update: tags.update,
     remove: tags.remove,
+  },
+  template: {
+    list: itemTemplates.list,
+    get: itemTemplates.get,
+    findByName: itemTemplates.findByName,
+    create: itemTemplates.create,
+    update: itemTemplates.update,
+    remove: itemTemplates.remove,
+    draft: itemTemplates.draft,
   },
   wormhole: {
     actorForUser: wormholes.actorForUser,
@@ -293,4 +303,4 @@ export const spacesService = {
 // Re-export types needed by widgets
 export type { ItemAcrossKind, ItemAcrossResult, TaskItem } from "./items";
 export type { SpaceAdminListItem, SpaceWithPermission } from "./spaces";
-export { access, activity, calendarInvitations, columns, comments, ical, items, spaces, tags, wormholes };
+export { access, activity, calendarInvitations, columns, comments, ical, items, itemTemplates, spaces, tags, wormholes };

@@ -16,7 +16,7 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
-import { err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
+import { dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
   CalendarDestinationListDataSchema,
@@ -87,6 +87,14 @@ import {
   TaskListInputSchema,
   TaskSetCompletedInputSchema,
   TaskUpdateInputSchema,
+  TemplateCreateInputSchema,
+  TemplateDataSchema,
+  TemplateDeleteDataSchema,
+  TemplateDeleteInputSchema,
+  TemplateListDataSchema,
+  TemplateListInputSchema,
+  TemplateReadInputSchema,
+  TemplateUpdateInputSchema,
 } from "./capability-contracts";
 import { spacesCapabilityPresentation } from "./capability-presentation";
 import {
@@ -99,7 +107,22 @@ import {
 } from "./capability-work-contracts";
 import { boundedWorkPage, runEventAgenda, runTaskFocus } from "./capability-work-queries";
 import { SpaceComposeInputSchema, SpaceInvitationInputSchema } from "./commands";
-import { isPlayableVideoType, type MutationResult, type SpaceComment, type SpaceItem, type SpaceItemAttachment } from "./contracts";
+import {
+  isPlayableVideoType,
+  type MutationResult,
+  type SpaceComment,
+  type SpaceItem,
+  type SpaceItemAttachment,
+  type SpaceItemTemplate,
+  type TemplateDateRule,
+} from "./contracts";
+import {
+  describeTemplateDateRule,
+  formatTemplateDate,
+  localNow,
+  proposeTemplateDates,
+  type TemplateItemDraft,
+} from "./presentation/item-templates";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
@@ -1356,25 +1379,114 @@ const commentMutationResult = async (
   });
 };
 
+/** `at` is an explicit deadline or start; its local day then fills the placeholders and names the date. */
+type TemplateUse = { templateId?: string; date?: string; timeZone?: string; noDate?: boolean; at?: string };
+type TemplateFilled = {
+  item: TemplateItemDraft;
+  template: SpaceItemTemplate;
+  date: string | null;
+  timeZone: string;
+};
+
+/** Resolves a template and the person's zone; the template must belong to `internalSpaceId` and make items of `kind`. */
+const requireTemplate = async (templateId: string, context: CapabilityExecutionContext, required: PermissionLevel) => {
+  const internalId = await spacesPublicResources.resolvePublicId("templates", templateId);
+  const template = internalId ? await spacesService.template.get({ id: internalId }) : null;
+  if (!template) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
+  const access = await requireSpaceUuid(template.spaceId, context, required);
+  if (!access.ok) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
+  const [publicTemplate] = await spacesPublicResources.projectTemplates([template]);
+  if (!publicTemplate) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
+  return ok({ template: publicTemplate, internal: template, space: access.data.space, internalSpaceId: template.spaceId });
+};
+
+const templateTimeZone = async (timeZone: string | undefined, context: CapabilityExecutionContext): Promise<Result<string>> => {
+  if (timeZone === undefined) return ok((await capabilityDateConfig(context)).timeZone);
+  return dates.isValidTimeZone(timeZone) ? ok(timeZone) : capabilityFail(context, err.badInput("Unknown time zone"), "unknownTimeZone");
+};
+
+/** The template's draft for the input's date, or null when the input names no template. Tag IDs stay internal. */
+const fillFromTemplate = async (
+  input: TemplateUse,
+  kind: "task" | "event",
+  internalSpaceId: string,
+  context: CapabilityExecutionContext,
+): Promise<Result<TemplateFilled | null>> => {
+  if (!input.templateId) return ok(null);
+  const resolved = await requireTemplate(input.templateId, context, "write");
+  if (!resolved.ok) return resolved;
+  if (resolved.data.internalSpaceId !== internalSpaceId) return capabilityFail(context, err.notFound("Template"), "templateNotFound");
+  if (resolved.data.template.kind !== kind) return capabilityFail(context, err.badInput("Wrong template kind"), "templateWrongKind");
+  const timeZone = await templateTimeZone(input.timeZone, context);
+  if (!timeZone.ok) return timeZone;
+  const draft = await spacesService.template.draft({
+    template: resolved.data.internal,
+    date: input.date ?? (input.at ? localNow(new Date(input.at), timeZone.data).date : undefined),
+    noDate: input.noDate,
+    timeZone: timeZone.data,
+    locale: context.locale,
+  });
+  if (!draft.ok) return mutationError(draft, context);
+  return ok({ item: draft.data.item, template: resolved.data.template, date: draft.data.date, timeZone: timeZone.data });
+};
+
+/** Explicit input wins over template defaults; a given tag or assignee list replaces the template's. */
+const withoutUndefined = <T extends Record<string, unknown>>(value: T): Partial<T> =>
+  Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as Partial<T>;
+
+const createdSummary = (
+  context: CapabilityExecutionContext,
+  space: string,
+  filled: TemplateFilled | null,
+): ((item: SpaceItem) => string) => {
+  const t = spacesMessages(context.locale);
+  return (item) =>
+    filled
+      ? t.createdFromTemplate({
+          title: item.title,
+          space,
+          template: filled.template.name,
+          date: filled.date ? formatTemplateDate(filled.date, context.locale) : "",
+        })
+      : t.createdInSpace({ title: item.title, space });
+};
+
 const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "task.create", "space", input.spaceId), async () => {
     const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
-    const { spaceId, ...data } = input;
+    const { spaceId, templateId, date, timeZone, noDate, ...explicit } = input;
+    const filled = await fillFromTemplate(
+      { templateId, date, timeZone, noDate, at: explicit.deadline },
+      "task",
+      access.data.internalId,
+      context,
+    );
+    if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
-      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [data.columnId]),
-      spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
+      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),
+      spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, explicit.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
     if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
+    const draft: Partial<TemplateItemDraft> = filled.data?.item ?? {};
+    const { location: _location, url: _url, startsAt: _startsAt, endsAt: _endsAt, allDay: _allDay, ...defaults } = draft;
+    const title = explicit.title ?? defaults.title;
+    if (!title) return capabilityFail(context, err.badInput("Title required"), "templateTitleRequired");
     return itemMutationResult(
       await spacesService.item.create({
         spaceId: access.data.internalId,
-        data: { ...data, columnId, tagIds },
+        data: {
+          ...defaults,
+          ...withoutUndefined(explicit),
+          tagIds: explicit.tagIds ? tagIds : (defaults.tagIds ?? tagIds),
+          columnId,
+          title,
+        },
         createdBy: context.user?.id ?? null,
         actor: spaceActivityActor(context),
       }),
-      (item) => spacesMessages(context.locale).createdInSpace({ title: item.title, space: access.data.space.name }),
+      createdSummary(context, access.data.space.name, filled.data),
       context,
     );
   });
@@ -1425,24 +1537,218 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
   audited(actionAudit(context, "event.create", "space", input.spaceId), async () => {
     const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
-    const { spaceId, ...data } = input;
+    const { spaceId, templateId, date, timeZone, ...explicit } = input;
+    const filled = await fillFromTemplate({ templateId, date, timeZone, at: explicit.startsAt }, "event", access.data.internalId, context);
+    if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
-      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [data.columnId]),
-      spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
+      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),
+      spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, explicit.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
     if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
+    const draft: Partial<TemplateItemDraft> = filled.data?.item ?? {};
+    const { checklist: _checklist, deadline: _deadline, estimatedDurationMinutes: _estimate, ...defaults } = draft;
+    const title = explicit.title ?? defaults.title;
+    if (!title) return capabilityFail(context, err.badInput("Title required"), "templateTitleRequired");
+    // Explicit times replace the template's together, so a given range never mixes with the template's all-day flag.
+    const schedule = explicit.startsAt
+      ? { startsAt: explicit.startsAt, endsAt: explicit.endsAt, allDay: explicit.allDay ?? false }
+      : { startsAt: defaults.startsAt, endsAt: defaults.endsAt, allDay: explicit.allDay ?? defaults.allDay };
     return itemMutationResult(
       await spacesService.item.create({
         spaceId: access.data.internalId,
-        data: { ...data, columnId, tagIds },
+        data: {
+          ...defaults,
+          ...withoutUndefined(explicit),
+          tagIds: explicit.tagIds ? tagIds : (defaults.tagIds ?? tagIds),
+          ...schedule,
+          columnId,
+          title,
+        },
         createdBy: context.user?.id ?? null,
         actor: spaceActivityActor(context),
       }),
-      (item) => spacesMessages(context.locale).createdInSpace({ title: item.title, space: access.data.space.name }),
+      createdSummary(context, access.data.space.name, filled.data),
       context,
     );
   });
+
+const mapTemplateSummary = (template: SpaceItemTemplate, timeZone: string, context: CapabilityExecutionContext, now = new Date()) => ({
+  id: template.id,
+  spaceId: template.spaceId,
+  kind: template.kind,
+  name: template.name,
+  dateRule: template.dateRule,
+  timeOfDay: template.timeOfDay,
+  rule: describeTemplateDateRule(template, context.locale),
+  proposals: proposeTemplateDates(template, { now, timeZone }),
+  timeZone,
+});
+
+const mapTemplate = (template: SpaceItemTemplate, timeZone: string, context: CapabilityExecutionContext) => ({
+  ...mapTemplateSummary(template, timeZone, context),
+  title: template.title,
+  description: template.description,
+  priority: template.priority,
+  tags: template.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
+  assignees: template.assignees.map((assignee) => ({ id: assignee.id, displayName: assignee.displayName })),
+  assignCreator: template.assignCreator,
+  checklist: template.checklist,
+  estimatedDurationMinutes: template.estimatedDurationMinutes,
+  location: template.location,
+  url: template.url,
+  allDay: template.allDay,
+  durationMinutes: template.durationMinutes,
+});
+
+const templateLinks = (spaceId: string) => [{ rel: "open" as const, href: `/app/spaces/${spaceId}` }];
+
+const runTemplateList = async (input: z.infer<typeof TemplateListInputSchema>, context: CapabilityExecutionContext) => {
+  const access = await requireSpace(input.spaceId, context);
+  if (!access.ok) return access;
+  const timeZone = await templateTimeZone(input.timeZone, context);
+  if (!timeZone.ok) return timeZone;
+  const templates = await spacesPublicResources.projectTemplates(
+    await spacesService.template.list({ spaceId: access.data.internalId, kind: input.kind }),
+  );
+  const now = new Date();
+  return ok({
+    data: templates.map((template) => mapTemplateSummary(template, timeZone.data, context, now)),
+    summary: boundedCapabilitySummary(
+      spacesMessages(context.locale).listedTemplates({ count: templates.length, space: access.data.space.name }),
+    ),
+    refs: [spaceRef(access.data.space)],
+    links: templateLinks(access.data.space.id),
+  });
+};
+
+const runTemplateRead = async (input: z.infer<typeof TemplateReadInputSchema>, context: CapabilityExecutionContext) => {
+  const resolved = await requireTemplate(input.templateId, context, "read");
+  if (!resolved.ok) return resolved;
+  const timeZone = await templateTimeZone(input.timeZone, context);
+  if (!timeZone.ok) return timeZone;
+  return ok({
+    data: mapTemplate(resolved.data.template, timeZone.data, context),
+    summary: boundedCapabilitySummary(spacesMessages(context.locale).readTemplate({ name: resolved.data.template.name })),
+    refs: [spaceRef(resolved.data.space)],
+    links: templateLinks(resolved.data.space.id),
+  });
+};
+
+const templateMutationResult = async (
+  result: MutationResult<SpaceItemTemplate>,
+  summary: (template: SpaceItemTemplate) => string,
+  context: CapabilityExecutionContext,
+) => {
+  if (!result.ok) return mutationError(result, context);
+  const [template] = await spacesPublicResources.projectTemplates([result.data]);
+  if (!template) return capabilityFail(context, err.internal("Failed to project Space template"), "operationFailed");
+  const timeZone = (await capabilityDateConfig(context)).timeZone;
+  return ok({
+    data: mapTemplate(template, timeZone, context),
+    summary: boundedCapabilitySummary(summary(template)),
+    refs: [{ type: "spaces.space" as const, id: template.spaceId }],
+    links: templateLinks(template.spaceId),
+  });
+};
+
+const templateInputTags = async (internalSpaceId: string, tagIds: string[] | undefined, context: CapabilityExecutionContext) => {
+  if (!tagIds) return ok(undefined);
+  const resolved = await spacesPublicResources.resolveSpacePublicIds("tags", internalSpaceId, tagIds);
+  return resolved ? ok(resolved) : capabilityFail(context, err.badInput("Unknown Space tag"), "unknownSpaceTag");
+};
+
+const runTemplateCreate = async (input: z.infer<typeof TemplateCreateInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "template.create", "space", input.spaceId), async () => {
+    const access = await requireSpace(input.spaceId, context, "admin");
+    if (!access.ok) return access;
+    const { spaceId, ...data } = input;
+    const tagIds = await templateInputTags(access.data.internalId, data.tagIds, context);
+    if (!tagIds.ok) return tagIds;
+    return templateMutationResult(
+      await spacesService.template.create({
+        spaceId: access.data.internalId,
+        data: { ...data, tagIds: tagIds.data },
+        createdBy: context.user?.id ?? null,
+      }),
+      (template) => spacesMessages(context.locale).createdTemplate({ name: template.name, space: access.data.space.name }),
+      context,
+    );
+  });
+
+const runTemplateUpdate = async (input: z.infer<typeof TemplateUpdateInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "template.update", "space_template", input.templateId), async () => {
+    const resolved = await requireTemplate(input.templateId, context, "admin");
+    if (!resolved.ok) return resolved;
+    const { templateId, ...data } = input;
+    const tagIds = await templateInputTags(resolved.data.internalSpaceId, data.tagIds, context);
+    if (!tagIds.ok) return tagIds;
+    return templateMutationResult(
+      await spacesService.template.update({ id: resolved.data.internal.id, data: { ...data, tagIds: tagIds.data } }),
+      (template) => spacesMessages(context.locale).updatedTemplate({ name: template.name }),
+      context,
+    );
+  });
+
+const runTemplateDelete = async (input: z.infer<typeof TemplateDeleteInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "template.delete", "space_template", input.templateId), async () => {
+    const resolved = await requireTemplate(input.templateId, context, "admin");
+    if (!resolved.ok) return resolved;
+    const result = await spacesService.template.remove({ id: resolved.data.internal.id });
+    if (!result.ok) return mutationError(result, context);
+    return ok({
+      data: { templateId: input.templateId, deleted: true as const },
+      summary: boundedCapabilitySummary(spacesMessages(context.locale).deletedTemplate({ name: resolved.data.template.name })),
+      refs: [spaceRef(resolved.data.space)],
+      links: templateLinks(resolved.data.space.id),
+    });
+  });
+
+const reviewTemplate = async (
+  input: { spaceId?: string; templateId?: string; name?: string; dateRule?: TemplateDateRule; timeOfDay?: string | null },
+  context: CapabilityExecutionContext,
+  operation: "create" | "update" | "delete",
+) => {
+  const t = spacesMessages(context.locale);
+  const target = input.templateId
+    ? await requireTemplate(input.templateId, context, "admin")
+    : await requireSpace(input.spaceId ?? "", context, "admin");
+  if (!target.ok) return target;
+  const space = target.data.space;
+  const existing = "template" in target.data ? target.data.template : null;
+  const name = input.name ?? existing?.name ?? "";
+  const rule = input.dateRule && (existing ?? operation === "create") ? input.dateRule : undefined;
+  return ok({
+    message:
+      operation === "create"
+        ? t.reviewCreateTemplate({ name, space: space.name })
+        : operation === "update"
+          ? t.reviewUpdateTemplate({ name: existing?.name ?? name })
+          : t.reviewDeleteTemplate({ name }),
+    details: [
+      { label: t.template, value: name },
+      ...(existing && input.name && input.name !== existing.name ? [{ label: t.title, value: input.name }] : []),
+      ...(rule
+        ? [
+            {
+              label: t.templateDates,
+              value: describeTemplateDateRule(
+                {
+                  kind: existing?.kind ?? "task",
+                  allDay: existing?.allDay ?? false,
+                  timeOfDay: input.timeOfDay ?? existing?.timeOfDay ?? null,
+                  dateRule: rule,
+                },
+                context.locale,
+              ),
+            },
+          ]
+        : []),
+    ],
+    links: templateLinks(space.id),
+    approvalScope: spaceApprovalScope(space.id),
+  });
+};
 
 const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "event.update", "space_item", input.itemId), async () => {
@@ -1884,6 +2190,24 @@ export const spacesCapabilities = defineCapabilities({
       openWorld: false,
       run: runSpaceRead,
     },
+    "template.list": {
+      title: "List templates",
+      description:
+        "List the task and event templates of one Space with their date rule and the next proposed local dates in timeZone. Pass the person's IANA zone when known. Use a returned template ID and one of its proposals as date with task.create or event.create.",
+      input: TemplateListInputSchema,
+      data: TemplateListDataSchema,
+      openWorld: false,
+      run: runTemplateList,
+    },
+    "template.read": {
+      title: "Read template",
+      description:
+        "Read every default of one template from template.list: title, description, checklist, tags, assignees, times, and the proposed local dates in timeZone.",
+      input: TemplateReadInputSchema,
+      data: TemplateDataSchema,
+      openWorld: false,
+      run: runTemplateRead,
+    },
     "space.assignee.list": {
       title: "List assignable Space members",
       description:
@@ -2248,9 +2572,47 @@ export const spacesCapabilities = defineCapabilities({
       },
       run: runTaskDependencyRemove,
     },
+    "template.create": {
+      title: "Create template",
+      description:
+        "Create a template for new tasks or events in a Space the actor administers. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
+      input: TemplateCreateInputSchema,
+      data: TemplateDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: (input, context) => reviewTemplate(input, context, "create"),
+      run: runTemplateCreate,
+    },
+    "template.update": {
+      title: "Update template",
+      description:
+        "Change selected fields of a template returned by template.list; tag and assignee lists are replaced. Items created earlier stay unchanged. Requires Space admin access.",
+      input: TemplateUpdateInputSchema,
+      data: TemplateDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: (input, context) => reviewTemplate(input, context, "update"),
+      run: runTemplateUpdate,
+    },
+    "template.delete": {
+      title: "Delete template",
+      description: "Delete one template. Items created from it stay. Requires Space admin access.",
+      input: TemplateDeleteInputSchema,
+      data: TemplateDeleteDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      review: (input, context) => reviewTemplate(input, context, "delete"),
+      run: runTemplateDelete,
+    },
     "task.create": {
       title: "Create task",
-      description: "Create one task in an explicitly selected writable Space and column.",
+      description:
+        "Create one task in an explicitly selected writable Space and column. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
       input: TaskCreateInputSchema,
       data: TaskDataSchema,
       destructive: false,
@@ -2343,7 +2705,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "event.create": {
       title: "Create calendar event",
-      description: "Create one calendar event with an explicit valid time range in a writable Space.",
+      description:
+        "Create one calendar event in a writable Space, with an explicit valid time range or with templateId and a date from template.list proposals; the template fills every field left out.",
       input: EventCreateInputSchema,
       data: EventDataSchema,
       destructive: false,

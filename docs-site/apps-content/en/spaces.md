@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Spaces
@@ -19,6 +19,8 @@ or calendar without copying the work into separate systems.
 - Track tasks with status, priority, assignees, deadlines, simple checklists,
   tags, descriptions, and comments.
 - Plan events with start and end times, recurrence, and calendar views.
+- Start recurring kinds of work from templates that fill in the fields and
+  propose the next matching dates.
 - Switch between list, table, Kanban, and calendar views for the current job.
 - Filter and group the same items by state, activity, person, priority, tag, or
   time. The inactive filter finds open tasks without activity for 30 days; the
@@ -179,6 +181,50 @@ arrow-key navigation, **Enter** to open, **M** to assign it to yourself, and
 **D** to complete it. An open item also exposes editing, assignment, deadline,
 and completion or reopening actions in the palette.
 
+## Templates
+
+A Space keeps templates for new tasks and for new events, at most 100 of each,
+with names unique per kind. A template stores a title and a description that
+may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
+assignees or **Assign to me** for whoever creates the item, a task checklist
+and estimate, and an event's location, link, all-day flag, and duration. A due
+time for tasks or a start time for events defaults to 17:00 or 09:00.
+
+Its date rule decides which dates the new item dialog proposes:
+
+| Rule | Proposes |
+| --- | --- |
+| Weekdays, such as Wednesday or Thursday | The next three matching days |
+| In X days (0 to 365) | Today plus X days |
+| None | No date; a task starts without a deadline, an event today at its time |
+
+Proposals are local calendar dates in the person's time zone, so week, month,
+and daylight-saving changes never move a proposed day. A weekday rule offers
+today only while the template's time still lies ahead; an offset always counts
+from today. When someone presses **+**, a Space with templates of that kind
+shows a **Template** chip row (a searchable list with more than six), and
+choosing one fills the form and shows the proposals as date chips with the
+first selected, next to **Other date…** and, for tasks, **No date**.
+Placeholders follow whichever date the item gets, from a chip or a picker,
+until someone edits the text; filled-in text stops at the item limits of 200
+and 5,000 characters. Everything stays editable before saving, and Spaces asks
+before a template replaces typed input. The chip rows stay on one line and
+scroll sideways on phones; hovering, focusing, or switching chips moves
+nothing.
+
+Space admins create, change, and delete templates in the Space settings under
+**Templates**; people with write access use them, and read access lists them.
+Created items keep no link to their template. A default assignee who loses
+access to the Space drops out of the template everywhere it is read until the
+access returns. The REST API offers
+`GET /api/spaces/:id/templates`, `POST`, `PATCH`, and `DELETE` on
+`/api/spaces/:id/templates[/:templateId]`, and
+`GET /api/spaces/:id/templates/:templateId/draft?date=&noDate=&timeZone=`, which
+returns the proposals and the filled create request without saving anything.
+`POST /api/spaces/:id/items` takes `checklist` for a new task and
+`assignCreator` for the person creating the item, so a template becomes one
+atomic create. The Space detail includes `templates`.
+
 ## How Spaces fits Cloud
 
 Spaces owns its items, views, calendar behavior, comments, and recurrence.
@@ -209,6 +255,13 @@ cld spaces add "Product":"Write release notes" --deadline 2026-10-20 --assignee 
 cld spaces done "Product":"Fix mobile dialog"
 ```
 
+`cld spaces templates ls <space>` and `templates show <space>:<template>`
+list templates with their rule and next proposals in the local time zone.
+`cld spaces add "Product" --template "Weekly report" [--date YYYY-MM-DD |
+--no-date]` creates an item from a template; other `add` flags override it. A
+given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
+needs `--ends-at`.
+
 Titles are matched exactly. When a space name or title matches several
 resources, the command fails with every candidate as `path (id)` and changes
 nothing; retry with an ID. There is no default space, so every address names
@@ -237,6 +290,17 @@ and tag IDs when an action needs them; a second read is not required simply
 to confirm a Space already selected from an authorized list.
 Space lists may shorten descriptions to fit a full page; when
 `descriptionTruncated` is true, `space.read` returns the full description.
+
+`template.list` and `template.read` return a Space's templates with their
+rule and next proposed dates in the given `timeZone`, or in the application
+timezone without one. `task.create` and `event.create` take `templateId`,
+`date`, and `timeZone`: the template fills every field left out, its checklist
+included, and `date` picks the day, by default the first proposal. An explicit
+`deadline` or `startsAt` picks the day instead, for the placeholders and the
+summary too. For "use the
+weekly report template for next Wednesday" an agent lists the templates, picks
+the matching proposal, and creates the item. `template.create`,
+`template.update`, and `template.delete` need Space admin access.
 
 `task.focus` finds open tasks across accessible Spaces without looping over
 each Space. It supports assignment, deadline, priority, blocker, and inactivity

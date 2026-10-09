@@ -236,6 +236,12 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Use \`spaces.item.reference.find\` to find existing items for a source resource. Link on creation through references rather than a redundant second mutation. For an existing item use \`spaces.item.reference.add\`; use \`spaces.item.link-candidate.search\` when a writable target is unknown.
 - Use \`spaces.event.create\` for interactive creation. Never blindly retry an uncertain mutation.
 
+## Templates
+
+- When the user names a template or the Space has one for the request, find it with \`spaces.template.list\`; pass the person's IANA timeZone when known. Each template carries its date rule and the next proposed local dates.
+- Create from it with \`spaces.task.create\` or \`spaces.event.create\` and \`templateId\`. Set \`date\` to the proposal the user means ("next Wednesday" is the matching proposal) or to an explicit date; without \`date\` the first proposal applies. Give only the fields the user wants to change; the template fills the rest, including its checklist.
+- Never guess a date from a vague request; if the proposals do not settle it, ask. Managing templates (\`spaces.template.create\`, \`spaces.template.update\`, \`spaces.template.delete\`) needs Space admin access.
+
 ## Calendar mail and cross-app work
 
 Before importing, responding to or preparing emailed calendar invitations, read /skills/cloud-spaces/references/calendar-mail.md. Preparation, attaching to a draft and commit are distinct from sending.
@@ -525,11 +531,11 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     instructions: CLOUD_CONTACTS_INSTRUCTIONS,
   },
   {
-    version: 2,
+    version: 3,
     key: "spaces:cloud-spaces",
     name: "cloud-spaces",
     description:
-      "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, assignees, blockers, comments, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue.",
+      "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue.",
     instructions: CLOUD_SPACES_INSTRUCTIONS,
     references: [{ path: "references/calendar-mail.md", content: CLOUD_SPACES_CALENDAR_REFERENCE }],
   },

@@ -10,6 +10,14 @@ Spaces funktioniert am besten, wenn jeder Eintrag einen klaren nächsten Schritt
 
 Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunächst Aufgabe oder Termin aus. Du kannst den Typ oben im Dialog wechseln. Das kompakte Formular fragt nach Titel und Beschreibung, bei Terminen zusätzlich nach der Zeit. Unter **Weitere Optionen** findest du alle Felder für Aufgaben oder Termine, ohne deine Eingaben zu verlieren. Eine Aufgabe verwendet den Status, in dem du sie erstellst, oder den ersten Status, wenn keiner ausgewählt ist.
 
+## Mit einer Vorlage beginnen {icon="template"}
+
+Hat ein Space Vorlagen, zeigt der Dialog für eine neue Aufgabe oder einen neuen Termin die Zeile **Vorlage** mit **Leer** und den Vorlagen dieser Art. Eine Vorlage füllt Titel, Beschreibung, Priorität, Tags, Zuständige und bei Aufgaben die Checkliste, bei Terminen Ort, Uhrzeit und Dauer aus. Eine Zeile unter der Beschreibung fasst zusammen, was die Vorlage ergänzt. Jedes Feld bleibt vor dem Speichern änderbar, und **Weitere Optionen** zeigt alle Felder. Hast du schon etwas eingegeben, fragt Spaces, bevor eine Vorlage es ersetzt. Bei mehr als sechs Vorlagen wird die Zeile zu einer durchsuchbaren Liste.
+
+Eine Vorlage kann Daten vorschlagen. Eine Regel wie „Mittwoch oder Donnerstag“ zeigt die nächsten passenden Tage als Auswahl, zum Beispiel **Mi 14.10.**, **Do 15.10.** und **Mi 21.10.**; „in 3 Tagen“ schlägt ein Datum vor. Der erste Vorschlag ist ausgewählt. Wähle einen anderen Vorschlag, **Anderes Datum…** für ein beliebiges Datum oder **Kein Datum** für eine Aufgabe ohne Fälligkeit. Bei Terminen bleibt das Zeitfeld darunter für jede andere Zeit verfügbar. Die Vorschläge richten sich nach deiner Zeitzone, und bei einer Wochentagsregel erscheint heute nur, solange die Uhrzeit der Vorlage noch nicht vorbei ist. Die Platzhalter `{{date}}`, `{{weekday}}` und `{{week}}` in Titel und Beschreibung folgen dem gewählten Datum, auch bei **Kein Datum** oder einer Auswahl im Kalender, bis du den Text änderst.
+
+Space-Administratoren verwalten Vorlagen in den Space-Einstellungen unter **Vorlagen**: Name, Vorgaben, Datumsregel und Fälligkeits- oder Startzeit. **Mir zuweisen** weist die Person zu, die den Eintrag anlegt. Eine geänderte oder gelöschte Vorlage ändert keine Einträge, die schon daraus entstanden sind. Alle, die Einträge anlegen dürfen, können die Vorlagen verwenden.
+
 ## Einträge sinnvoll strukturieren {icon="point"}
 
 :::reference

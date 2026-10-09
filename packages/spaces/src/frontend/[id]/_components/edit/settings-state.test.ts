@@ -38,7 +38,7 @@ if (process.env.SPACES_SETTINGS_STATE_CHILD !== "1") {
         get: async () => (spaceExists ? space : null),
         getDetail: async () => {
           calls.push("space.getDetail");
-          return spaceExists ? { ...space, columns: [], tags: [] } : null;
+          return spaceExists ? { ...space, columns: [], tags: [], templates: [] } : null;
         },
         permission: { get: async () => permission },
         githubToken: {
@@ -76,6 +76,7 @@ if (process.env.SPACES_SETTINGS_STATE_CHILD !== "1") {
       projectColumns: async (items: unknown[]) => items,
       projectTags: async (items: unknown[]) => items,
       projectWormholes: async (items: unknown[]) => items,
+      projectSpaceDetail: async (detail: { id: string }) => ({ ...detail, id: "Space1" }),
     },
   }));
 

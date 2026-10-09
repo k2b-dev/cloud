@@ -121,6 +121,13 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         items.map((value) => ({ ...value, id: COLUMN_SHORT_ID, spaceId: SPACE_SHORT_ID })),
       projectTags: async (items: Array<{ id: string; spaceId: string }>) =>
         items.map((value) => ({ ...value, id: TAG_SHORT_ID, spaceId: SPACE_SHORT_ID })),
+      projectSpaceDetail: async (detail: { columns: Array<{ id: string }>; tags: Array<{ id: string }> }) => ({
+        ...detail,
+        id: SPACE_SHORT_ID,
+        columns: detail.columns.map((value) => ({ ...value, id: COLUMN_SHORT_ID, spaceId: SPACE_SHORT_ID })),
+        tags: detail.tags.map((value) => ({ ...value, id: TAG_SHORT_ID, spaceId: SPACE_SHORT_ID })),
+        templates: [],
+      }),
       projectItems: async (items: SpaceItem[]) =>
         items.map((value) => ({
           ...value,
@@ -147,7 +154,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         },
         getDetail: async () => {
           calls.push("space.getDetail");
-          return { ...space, columns: [column], virtualColumns: [], tags: [tag] };
+          return { ...space, columns: [column], virtualColumns: [], tags: [tag], templates: [] };
         },
         permission: { get: async () => permission },
       },

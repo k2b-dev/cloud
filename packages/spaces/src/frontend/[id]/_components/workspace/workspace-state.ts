@@ -108,16 +108,6 @@ const resolvePermissions = async (params: { spaceId: string; user: AuthUser }) =
 
 const nonEmpty = <T>(values: T[]) => (values.length > 0 ? values : undefined);
 
-const projectSpaceDetail = async (space: SpaceDetail): Promise<SpaceDetail> => {
-  const [[projectedSpace], columns, tags] = await Promise.all([
-    spacesPublicResources.projectSpaces([space]),
-    spacesPublicResources.projectColumns(space.columns),
-    spacesPublicResources.projectTags(space.tags),
-  ]);
-  if (!projectedSpace) throw new Error("Missing public ID for Space");
-  return { ...projectedSpace, columns, virtualColumns: space.virtualColumns, tags };
-};
-
 const projectItemResult = async (result: ItemListResult): Promise<ItemListResult> => ({
   ...result,
   items: await spacesPublicResources.projectItems(result.items),
@@ -663,7 +653,7 @@ const loadWorkspaceContext = async (
 
   const space = await spacesService.space.getDetail({ id: params.spaceId });
   if (!space) return { ok: false, error: { kind: "notFound", title: t.notFound, message: t.spaceNotFound } };
-  const publicSpace = await projectSpaceDetail(space);
+  const publicSpace = await spacesPublicResources.projectSpaceDetail(space);
   const tagIds = new Map(publicSpace.tags.map((tag, index) => [tag.id, space.tags[index]!.id]));
   const columnIdsByPublicId = new Map(publicSpace.columns.map((column, index) => [column.id, space.columns[index]!.id]));
   const columnIds = new Map(space.columns.map((column, index) => [column.id, publicSpace.columns[index]!.id]));

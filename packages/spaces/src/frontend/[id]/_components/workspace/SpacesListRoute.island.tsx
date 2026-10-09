@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import type { ItemListResult, SpaceColumn, SpaceTag } from "@/contracts";
+import type { ItemListResult, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
 import FilterBar from "../filter/FilterBar";
@@ -16,6 +16,7 @@ type Props = {
   currentView: "list" | "table";
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  templates?: SpaceItemTemplate[];
   filter: FilterState;
   initialItemsResult: ItemListResult;
   initialSelectedItemId: string;
@@ -101,6 +102,7 @@ export default function SpacesListRoute(props: Props) {
                     spaceId={props.spaceId}
                     columns={props.columns}
                     tags={props.tags}
+                    templates={props.templates}
                     dateConfig={props.dateConfig}
                     variant="chip"
                     defaultType="task"

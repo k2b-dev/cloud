@@ -10,6 +10,7 @@ import { GeneralSection } from "./GeneralSection";
 import { GitHubSection } from "./GitHubSection";
 import { StatusesSection } from "./StatusesSection";
 import { TagsSection } from "./TagsSection";
+import { TemplatesSection } from "./TemplatesSection";
 import type { SpaceEditPanelProps } from "./types";
 import { WormholesSection } from "./WormholesSection";
 
@@ -22,11 +23,13 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
   const [tagsDirty, setTagsDirty] = createSignal(false);
   const [statusesDirty, setStatusesDirty] = createSignal(false);
   const [wormholesDirty, setWormholesDirty] = createSignal(false);
+  const [templatesDirty, setTemplatesDirty] = createSignal(false);
   const activeTabDirty = () => {
     if (activeTab() === "general") return generalDirty();
     if (activeTab() === "tags") return tagsDirty();
     if (activeTab() === "statuses") return statusesDirty();
     if (activeTab() === "wormholes") return wormholesDirty();
+    if (activeTab() === "templates") return templatesDirty();
     return false;
   };
   const close = () => {
@@ -82,6 +85,19 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
                 onDirtyChange={setStatusesDirty}
               />
             </SettingsModal.Tab>
+            {isAdmin() && (
+              <SettingsModal.Tab id="templates" title={m.templates} icon="ti ti-template" description={m.settingsTemplatesDescription}>
+                <TemplatesSection
+                  spaceId={props.space.id}
+                  templates={props.space.templates}
+                  tags={props.space.tags}
+                  dateConfig={props.dateConfig}
+                  onWorkspaceChange={props.onWorkspaceChange}
+                  onSettingsChange={props.onSettingsChange}
+                  onDirtyChange={setTemplatesDirty}
+                />
+              </SettingsModal.Tab>
+            )}
           </SettingsModal.Group>
         )}
 

@@ -10,6 +10,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { audit } from "@k2b/cloud/services";
+import * as settings from "@k2b/cloud/services/settings";
 import { decodeSpacesCapabilityCursor, spacesCapabilities } from "./capabilities";
 import {
   CalendarDestinationListInputSchema,
@@ -29,8 +30,12 @@ import {
   TaskListDataSchema,
   TaskListInputSchema,
   TaskUpdateInputSchema,
+  TemplateCreateInputSchema,
+  TemplateListDataSchema,
+  TemplateListInputSchema,
+  TemplateUpdateInputSchema,
 } from "./capability-contracts";
-import type { SpaceComment, SpaceItem, SpaceTag } from "./contracts";
+import type { SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
 
@@ -51,6 +56,8 @@ const blockerId = "Itm002";
 const commentId = "Com001";
 const tagId = "Tag001";
 const attachmentId = "Att001";
+const templateUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const templateId = "Tpl001";
 const createdAt = "2026-08-02T08:00:00.000Z";
 
 test("declares remembered approval for bounded Space changes", () => {
@@ -72,6 +79,8 @@ test("declares remembered approval for bounded Space changes", () => {
     "task.checklist.update",
     "task.set-completed",
     "task.update",
+    "template.create",
+    "template.update",
   ]);
 });
 
@@ -191,6 +200,29 @@ const comment: SpaceComment = {
 };
 
 const tag: SpaceTag = { id: tagUuid, spaceId: spaceUuid, name: "Launch", color: "#22c55e" };
+
+const weeklyTemplate: SpaceItemTemplate = {
+  id: templateUuid,
+  spaceId: spaceUuid,
+  kind: "task",
+  name: "Weekly report",
+  title: "Weekly report {{week}}",
+  description: null,
+  priority: "medium",
+  tags: [tag],
+  assignees: [],
+  assignCreator: true,
+  checklist: ["Collect numbers", "Send"],
+  estimatedDurationMinutes: null,
+  location: null,
+  url: null,
+  allDay: false,
+  durationMinutes: null,
+  timeOfDay: null,
+  dateRule: { type: "weekdays", weekdays: ["WE", "TH"] },
+  createdAt,
+  updatedAt: createdAt,
+};
 
 afterEach(() => mock.restore());
 
@@ -534,6 +566,7 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
   comments: new Map([[commentUuid, commentId]]),
   tags: new Map([[tagUuid, tagId]]),
   wormholes: new Map(),
+  templates: new Map([[templateUuid, templateId]]),
 };
 
 beforeEach(() => {
@@ -582,6 +615,18 @@ beforeEach(() => {
         ...itemTag,
         id: requiredPublicId("tags", itemTag.id),
         spaceId: requiredPublicId("spaces", itemTag.spaceId),
+      })),
+    })),
+  );
+  spyOn(spacesPublicResources, "projectTemplates").mockImplementation(async (items) =>
+    items.map((item) => ({
+      ...item,
+      id: requiredPublicId("templates", item.id),
+      spaceId: requiredPublicId("spaces", item.spaceId),
+      tags: item.tags.map((templateTag) => ({
+        ...templateTag,
+        id: requiredPublicId("tags", templateTag.id),
+        spaceId: requiredPublicId("spaces", templateTag.spaceId),
       })),
     })),
   );
@@ -683,6 +728,8 @@ describe("spaces capabilities", () => {
       "task.focus",
       "task.list",
       "task.work.read",
+      "template.list",
+      "template.read",
     ]);
     expect(Object.keys(spacesCapabilities.actions).sort()).toEqual([
       "calendar-invitation.import",
@@ -709,6 +756,9 @@ describe("spaces capabilities", () => {
       "task.release",
       "task.set-completed",
       "task.update",
+      "template.create",
+      "template.delete",
+      "template.update",
     ]);
     expect(spacesCapabilities.queries["space.list"].description).toContain("Normal entry for Space-scoped work");
     expect(spacesCapabilities.queries["item.search"].description).toContain("Direct cross-Space entry");
@@ -738,6 +788,9 @@ describe("spaces capabilities", () => {
       "task.checklist.update",
       "task.set-completed",
       "task.update",
+      "template.create",
+      "template.delete",
+      "template.update",
     ]);
     expect(spacesCapabilities.actions["task.create"]).toMatchObject({
       destructive: false,
@@ -959,6 +1012,7 @@ describe("spaces capabilities", () => {
       columns: [{ id: columnUuid, spaceId: spaceUuid, name: "Todo", color: null, rank: "1024", isDone: false }],
       virtualColumns: [],
       tags: [tag],
+      templates: [],
     });
 
     const result = await spacesCapabilities.queries["space.read"].run({ id: spaceId }, userContext);
@@ -1100,6 +1154,7 @@ describe("spaces capabilities", () => {
       columns: [],
       virtualColumns: [],
       tags: [tag],
+      templates: [],
     });
 
     const tags = await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, userContext);
@@ -1133,8 +1188,8 @@ describe("spaces capabilities", () => {
     ]);
     const getItem = spyOn(spacesService.item, "get").mockResolvedValue(task);
     spyOn(spacesService.space, "get").mockResolvedValue(space);
-    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
-    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [tag] });
+    const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [tag], templates: [] });
     spyOn(spacesService.comment, "get").mockResolvedValue(comment);
     spyOn(spacesService.calendarInvitations, "getEventInvitationCommitContext").mockResolvedValue({
       ok: true,
@@ -1179,6 +1234,18 @@ describe("spaces capabilities", () => {
       ),
       await spacesCapabilities.actions["calendar-invitation.response.commit"].review!(
         { mailboxId: "mail01", messageId: "msg001", participationStatus: "accepted", draftId: "draft1" },
+        userContext,
+      ),
+    );
+    permission.mockResolvedValue("admin");
+    spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    results.push(
+      await spacesCapabilities.actions["template.create"].review!(
+        { spaceId, kind: "task", name: "Weekly", title: "", assignCreator: false, allDay: false, dateRule: { type: "none" } },
+        userContext,
+      ),
+      await spacesCapabilities.actions["template.update"].review!(
+        { templateId, dateRule: { type: "weekdays", weekdays: ["WE"] } },
         userContext,
       ),
     );
@@ -1349,6 +1416,284 @@ describe("spaces capabilities", () => {
       },
     });
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
+  });
+
+  test("lists templates with proposals in the person's zone", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    spyOn(spacesService.template, "list").mockResolvedValue([weeklyTemplate]);
+
+    const result = await spacesCapabilities.queries["template.list"].run(
+      TemplateListInputSchema.parse({ spaceId, timeZone: "Europe/Berlin" }),
+      { ...userContext, locale: "de" },
+    );
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) return;
+    expect(capabilityResultSchema(TemplateListDataSchema).safeParse(result.data).success).toBeTrue();
+    const [summary] = result.data.data;
+    expect(summary).toMatchObject({ id: templateId, name: "Weekly report", rule: "Mi oder Do · 17:00", timeZone: "Europe/Berlin" });
+    expect(summary?.proposals).toHaveLength(3);
+    for (const date of summary?.proposals ?? []) expect([3, 4]).toContain(new Date(`${date}T12:00:00Z`).getUTCDay());
+    expect(
+      (
+        await spacesCapabilities.queries["template.list"].run(
+          TemplateListInputSchema.parse({ spaceId, timeZone: "Mars/Base" }),
+          userContext,
+        )
+      ).ok,
+    ).toBeFalse();
+  });
+
+  test("creates a task from a template for a chosen date; explicit fields win", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    spyOn(spacesService.template, "draft").mockImplementation(async (params) => {
+      expect(params).toMatchObject({ date: "2026-10-14", timeZone: "Europe/Berlin" });
+      return {
+        ok: true,
+        data: {
+          proposals: ["2026-10-14"],
+          date: "2026-10-14",
+          timeZone: "Europe/Berlin",
+          item: {
+            title: "Weekly report 42",
+            priority: "medium",
+            tagIds: [tagUuid],
+            assigneeIds: [],
+            assignCreator: true,
+            checklist: ["Collect numbers", "Send"],
+            deadline: "2026-10-14T15:00:00.000Z",
+          },
+        },
+      };
+    });
+    const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const input = TaskCreateInputSchema.parse({
+      spaceId,
+      columnId,
+      templateId,
+      date: "2026-10-14",
+      timeZone: "Europe/Berlin",
+      priority: "high",
+    });
+    const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
+
+    expect(create).toHaveBeenCalledWith({
+      spaceId: spaceUuid,
+      data: {
+        title: "Weekly report 42",
+        priority: "high",
+        tagIds: [tagUuid],
+        assigneeIds: [],
+        assignCreator: true,
+        checklist: ["Collect numbers", "Send"],
+        deadline: "2026-10-14T15:00:00.000Z",
+        columnId: columnUuid,
+      },
+      createdBy: userId,
+      actor: { kind: "user", id: userId },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      data: { summary: `Created “${task.title}” in ${space.name} from template “Weekly report” for Wed 10/14.` },
+    });
+  });
+
+  test("an explicit deadline names the day the template text and the summary use", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    const draft = spyOn(spacesService.template, "draft");
+    const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: { ...task, title: "Weekly report 43" } });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const result = await spacesCapabilities.actions["task.create"].run(
+      TaskCreateInputSchema.parse({ spaceId, columnId, templateId, deadline: "2026-10-23T10:00:00Z", timeZone: "Europe/Berlin" }),
+      userContext,
+    );
+
+    expect(draft).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-10-23", timeZone: "Europe/Berlin" }));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Weekly report 43",
+          deadline: "2026-10-23T10:00:00Z",
+          checklist: ["Collect numbers", "Send"],
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: { summary: `Created “Weekly report 43” in ${space.name} from template “Weekly report” for Fri 10/23.` },
+    });
+  });
+
+  test("creates events from a template: its proposal, an explicit range, and all-day bounds", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const standup: SpaceItemTemplate = {
+      ...weeklyTemplate,
+      kind: "event",
+      name: "Standup",
+      title: "Standup {{weekday}}",
+      tags: [],
+      assignCreator: false,
+      checklist: [],
+      location: "Room 2",
+      durationMinutes: 15,
+      timeOfDay: "09:00",
+      dateRule: { type: "weekdays", weekdays: ["MO"] },
+    };
+    const getTemplate = spyOn(spacesService.template, "get").mockResolvedValue(standup);
+    const create = spyOn(spacesService.item, "create").mockImplementation(async ({ data }) => ({
+      ok: true,
+      data: { ...event, title: data.title },
+    }));
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+    const run = (input: Record<string, unknown>) =>
+      spacesCapabilities.actions["event.create"].run(
+        EventCreateInputSchema.parse({ spaceId, columnId, templateId, timeZone: "Europe/Berlin", ...input }),
+        userContext,
+      );
+
+    const proposed = await run({ date: "2026-10-19" });
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Standup Monday",
+          location: "Room 2",
+          startsAt: "2026-10-19T07:00:00.000Z",
+          endsAt: "2026-10-19T07:15:00.000Z",
+          allDay: false,
+        }),
+      }),
+    );
+    expect(create.mock.lastCall?.[0].data).not.toHaveProperty("checklist");
+    expect(proposed).toMatchObject({ ok: true, data: { summary: expect.stringContaining("for Mon 10/19.") } });
+
+    // An explicit range wins over the proposal, and its day fills the text and the summary.
+    const explicit = await run({ startsAt: "2026-10-20T13:00:00Z", endsAt: "2026-10-20T14:00:00Z" });
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Standup Tuesday",
+          startsAt: "2026-10-20T13:00:00Z",
+          endsAt: "2026-10-20T14:00:00Z",
+          allDay: false,
+        }),
+      }),
+    );
+    expect(explicit).toMatchObject({ ok: true, data: { summary: expect.stringContaining("for Tue 10/20.") } });
+
+    // An all-day template spans the person's local day.
+    getTemplate.mockResolvedValue({ ...standup, allDay: true, timeOfDay: null, durationMinutes: null });
+    await run({ date: "2026-10-19", timeZone: "America/New_York" });
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ startsAt: "2026-10-19T04:00:00.000Z", endsAt: "2026-10-20T04:00:00.000Z", allDay: true }),
+      }),
+    );
+  });
+
+  test("only Space admins change templates, never a write-scoped key", async () => {
+    spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    const create = spyOn(spacesService.template, "create").mockResolvedValue({ ok: true, data: weeklyTemplate });
+    const update = spyOn(spacesService.template, "update").mockResolvedValue({ ok: true, data: weeklyTemplate });
+    const remove = spyOn(spacesService.template, "remove").mockResolvedValue({ ok: true, data: undefined });
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+    const agentId = crypto.randomUUID();
+    const writeKey = {
+      ...serviceAccountContext,
+      actor: {
+        ...serviceAccountContext.actor,
+        serviceAccount: {
+          ...serviceAccountContext.actor.serviceAccount,
+          id: agentId,
+          kind: "agent" as const,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+        },
+        scopes: ["read", "write"],
+      },
+      accessSubject: { type: "service_account" as const, serviceAccountId: agentId },
+    };
+    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", tagIds: [tagId] });
+    const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report" });
+    const attempt = async (context: CapabilityExecutionContext) => [
+      (await spacesCapabilities.actions["template.create"].run(createInput, context)).ok,
+      (await spacesCapabilities.actions["template.update"].run(updateInput, context)).ok,
+      (await spacesCapabilities.actions["template.delete"].run({ templateId }, context)).ok,
+    ];
+
+    for (const level of ["read", "write"] as const) {
+      permission.mockResolvedValue(level);
+      expect(await attempt(userContext)).toEqual([false, false, false]);
+    }
+    permission.mockResolvedValue("admin");
+    expect(await attempt(writeKey)).toEqual([false, false, false]);
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+
+    expect(await attempt(userContext)).toEqual([true, true, true]);
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ spaceId: spaceUuid, data: expect.objectContaining({ tagIds: [tagUuid] }) }),
+    );
+    expect(update).toHaveBeenCalledWith({ id: templateUuid, data: expect.objectContaining({ name: "Status report" }) });
+    expect(remove).toHaveBeenCalledWith({ id: templateUuid });
+    const review = await spacesCapabilities.actions["template.delete"].review!({ templateId }, userContext);
+    expect(review).toMatchObject({ ok: true, data: { message: "Delete template “Weekly report”. Items created from it stay." } });
+
+    // Fields of the other kind never reach the service.
+    expect(TemplateCreateInputSchema.safeParse({ spaceId, kind: "task", name: "Bad", location: "Room 2" }).success).toBeFalse();
+    expect(TemplateCreateInputSchema.safeParse({ spaceId, kind: "event", name: "Bad", checklist: ["x"] }).success).toBeFalse();
+  });
+
+  test("refuses templates of another kind or Space and ambiguous dates", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const getTemplate = spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    const create = spyOn(spacesService.item, "create");
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+
+    const asEvent = await spacesCapabilities.actions["event.create"].run(
+      EventCreateInputSchema.parse({ spaceId, columnId, templateId }),
+      userContext,
+    );
+    expect(asEvent).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+    getTemplate.mockResolvedValue({ ...weeklyTemplate, spaceId: otherSpaceUuid });
+    const elsewhere = await spacesCapabilities.actions["task.create"].run(
+      TaskCreateInputSchema.parse({ spaceId, columnId, templateId }),
+      userContext,
+    );
+    expect(elsewhere).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(create).not.toHaveBeenCalled();
+
+    expect(TaskCreateInputSchema.safeParse({ spaceId, columnId }).success).toBeFalse();
+    expect(TaskCreateInputSchema.safeParse({ spaceId, columnId, title: "x", date: "2026-10-14" }).success).toBeFalse();
+    expect(
+      TaskCreateInputSchema.safeParse({ spaceId, columnId, templateId, date: "2026-10-14", deadline: "2026-10-14T10:00:00Z" }).success,
+    ).toBeFalse();
+    expect(EventCreateInputSchema.safeParse({ spaceId, columnId, title: "x" }).success).toBeFalse();
+    expect(
+      EventCreateInputSchema.safeParse({
+        spaceId,
+        columnId,
+        templateId,
+        date: "2026-10-14",
+        startsAt: "2026-10-14T10:00:00Z",
+        endsAt: "2026-10-14T11:00:00Z",
+      }).success,
+    ).toBeFalse();
   });
 
   test("writes the originating request id into every capability audit row", async () => {

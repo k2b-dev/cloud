@@ -21,6 +21,7 @@ import { dates, type Paginated } from "@k2b/stdlib";
 import type {
   CalendarItem,
   ItemListResult,
+  ItemTemplateDraft,
   OverlapItem,
   Space,
   SpaceAssignableUser,
@@ -30,11 +31,13 @@ import type {
   SpaceItemAttachment,
   SpaceItemLink,
   SpaceItemResourceReference,
+  SpaceItemTemplate,
   SpaceTaskChecklistEntry,
   SpaceTaskDependency,
   SpaceTaskDependent,
 } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
+import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
 import type { TaskWork } from "./work-contracts";
 
 const SHORT_ID = /^[0-9A-Za-z]{6}$/;
@@ -200,6 +203,29 @@ function spacesCommands(locale?: string) {
         }),
       );
     });
+
+  /** A template of the space by ID or case-insensitive name; a name both kinds use needs `--kind`. */
+  const resolveTemplate = (space: SpaceDetail, ref: string, kind?: "task" | "event"): SpaceItemTemplate => {
+    const matches = space.templates.filter(
+      (template) => (template.id === ref || template.name.toLowerCase() === ref.trim().toLowerCase()) && (!kind || template.kind === kind),
+    );
+    if (matches.length === 1) return matches[0]!;
+    const list = space.templates.map((template) => `${template.name} (${template.kind}, ${template.id})`).join(", ") || "-";
+    throw new Error(
+      matches.length > 1
+        ? t({
+            en: `Template "${ref}" exists for tasks and events in ${space.name}. Pass --kind task or --kind event.`,
+            de: `Die Vorlage „${ref}“ gibt es in ${space.name} für Aufgaben und Termine. Übergib --kind task oder --kind event.`,
+          })
+        : t({
+            en: `Template "${ref}" was not found in ${space.name}. Templates: ${list}`,
+            de: `Die Vorlage „${ref}“ gibt es in ${space.name} nicht. Vorlagen: ${list}`,
+          }),
+    );
+  };
+
+  const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const proposalText = (dates: string[]) => dates.map((date) => `${formatTemplateDate(date, locale)} (${date})`).join(", ") || "-";
 
   /** A user: `me`, a user ID, or a username with access to the space. */
   const resolveUserId = async (ctx: CloudCliContext, spaceId: string, ref: string): Promise<string> => {
@@ -371,6 +397,7 @@ function spacesCommands(locale?: string) {
       references: t({ en: "Link Cloud resources to an item", de: "Cloud-Ressourcen mit einem Eintrag verknüpfen" }),
       links: t({ en: "External links on an item, with GitHub previews", de: "Externe Links an einem Eintrag, mit GitHub-Vorschau" }),
       invitation: t({ en: "Prepare Mail invitations for an event", de: "Mail-Einladungen für einen Termin vorbereiten" }),
+      templates: t({ en: "Task and event templates of a space", de: "Aufgaben- und Terminvorlagen eines Space" }),
     },
     commands: [
       // ---------- Browse ----------
@@ -578,27 +605,52 @@ function spacesCommands(locale?: string) {
             }),
           }),
           ...itemFieldFlags,
+          template: flag.string({
+            description: t({
+              en: "Template name or ID; it fills every field you leave out, and the title becomes optional",
+              de: "Name oder ID einer Vorlage; sie füllt jedes weggelassene Feld, der Titel wird optional",
+            }),
+          }),
+          kind: flag.enum(["task", "event"], {
+            description: t({ en: "Template kind when a name is used for both", de: "Art der Vorlage, wenn ein Name für beide gilt" }),
+          }),
+          date: flag.string({
+            description: t({
+              en: "With --template: local YYYY-MM-DD date (default: first proposal)",
+              de: "Mit --template: lokales Datum YYYY-MM-DD (Standard: erster Vorschlag)",
+            }),
+          }),
+          noDate: flag.boolean({
+            name: "no-date",
+            description: t({ en: "With --template: a task without due date", de: "Mit --template: eine Aufgabe ohne Fälligkeit" }),
+          }),
         },
         examples: [
           'cld spaces add "Roadmap":"Publish release notes" --deadline 2026-10-20 --assignee me',
           'cld spaces add "Roadmap":"Launch review" --starts-at 2026-10-20T10:00:00Z --ends-at 2026-10-20T11:00:00Z',
           'cld spaces add "Roadmap":"Migrate the archive" --priority high --from task.md',
+          'cld spaces add "Roadmap" --template "Weekly report" --date 2026-10-14',
         ],
         async run({ ctx, args, flags }) {
           const address = parseCliAddress(args.target);
-          if (address.kind !== "path" || !address.path.trim())
+          const title = address.kind === "path" ? address.path.trim() : "";
+          if (!flags.template && (flags.kind || flags.date || flags.noDate))
+            throw new Error(
+              t({ en: "--kind, --date, and --no-date need --template.", de: "--kind, --date und --no-date brauchen --template." }),
+            );
+          if (address.kind === "local" || (!title && !flags.template))
             throw new Error(
               t({
                 en: `"${args.target}" names no new item. Use <space>:<title>.`,
                 de: `„${args.target}“ benennt keinen neuen Eintrag. Verwende <space>:<titel>.`,
               }),
             );
-          const space = await loadSpace(ctx, (await resolveSpace(ctx, `${address.container}:`)).id);
+          const container = address.kind === "path" ? address.container : address.ref;
+          const space = await loadSpace(ctx, (await resolveSpace(ctx, `${container}:`)).id);
           const columnId = flags.column ? resolveColumnId(space, flags.column) : space.columns[0]?.id;
           if (!columnId) throw new Error(t({ en: `${space.name} has no column.`, de: `${space.name} hat keine Spalte.` }));
-          const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), {
-            columnId,
-            title: address.path,
+          const explicit = {
+            title: title || undefined,
             description: await readText(flags.description, flags.from, "description"),
             startsAt: dateTime(flags.startsAt, "--starts-at"),
             endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
@@ -606,10 +658,144 @@ function spacesCommands(locale?: string) {
             deadline: dateTime(flags.deadline, "--deadline", "deadline"),
             estimatedDurationMinutes: flags.estimateMinutes,
             priority: flags.priority,
-            assigneeIds: await resolveUserIds(ctx, space.id, flags.assignee),
-            tagIds: resolveTagIds(space, flags.tag),
-          });
+            assigneeIds: flags.assignee.length ? await resolveUserIds(ctx, space.id, flags.assignee) : undefined,
+            tagIds: flags.tag.length ? resolveTagIds(space, flags.tag) : undefined,
+          };
+          if (!flags.template) {
+            const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), {
+              columnId,
+              ...explicit,
+              assigneeIds: explicit.assigneeIds ?? [],
+              tagIds: explicit.tagIds ?? [],
+            });
+            printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
+            return;
+          }
+          if ([flags.date, flags.noDate || undefined, explicit.deadline, explicit.startsAt].filter(Boolean).length > 1)
+            throw new Error(
+              t({
+                en: "Pass only one of --date, --no-date, --deadline, or --starts-at.",
+                de: "Übergib nur eines von --date, --no-date, --deadline oder --starts-at.",
+              }),
+            );
+          // Given times replace the template's as a whole, so half a range never mixes with the template's other end.
+          if (Boolean(explicit.startsAt) !== Boolean(explicit.endsAt))
+            throw new Error(
+              t({
+                en: "With --template, pass --starts-at and --ends-at together.",
+                de: "Mit --template übergib --starts-at und --ends-at zusammen.",
+              }),
+            );
+          const template = resolveTemplate(space, flags.template, flags.kind);
+          // A given deadline or start picks the day, so the template's placeholders name the day the item gets.
+          const at = explicit.deadline ?? explicit.startsAt;
+          const draft = await readApi<ItemTemplateDraft>(
+            ctx,
+            withQuery(api(`/${space.id}/templates/${encodeURIComponent(template.id)}/draft`), {
+              date: flags.date ?? (at ? localNow(new Date(at), localTimeZone()).date : undefined),
+              noDate: flags.noDate ? "true" : undefined,
+              timeZone: localTimeZone(),
+            }),
+          );
+          const given = Object.fromEntries(Object.entries(explicit).filter(([, value]) => value !== undefined));
+          const { checklist, ...defaults } = draft.item;
+          const body = {
+            ...defaults,
+            ...(template.kind === "task" ? { checklist } : {}),
+            ...given,
+            // A given range never keeps the template's all-day flag.
+            ...(explicit.startsAt ? { allDay: explicit.allDay ?? false } : {}),
+            columnId,
+          };
+          if (!body.title)
+            throw new Error(
+              t({
+                en: `Template "${template.name}" has no title. Use <space>:<title>.`,
+                de: `Die Vorlage „${template.name}“ hat keinen Titel. Verwende <space>:<titel>.`,
+              }),
+            );
+          const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), body);
           printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
+          const others = draft.proposals.filter((date) => date !== draft.date);
+          if (ctx.options.output === "text" && others.length && !flags.date && !explicit.deadline && !explicit.startsAt)
+            ctx.error(`${t({ en: "Other proposed dates", de: "Weitere vorgeschlagene Daten" })}: ${proposalText(others)}`);
+        },
+      }),
+      command("templates ls", {
+        summary: t({ en: "List the templates of a space", de: "Die Vorlagen eines Space auflisten" }),
+        args: { space: arg.required({ valueLabel: "space", description: spaceArgDescription }) },
+        flags: {
+          kind: flag.enum(["task", "event"], {
+            description: t({ en: "Only task or event templates", de: "Nur Aufgaben- oder Terminvorlagen" }),
+          }),
+        },
+        examples: ['cld spaces templates ls "Roadmap"', 'cld spaces templates ls "Roadmap" --kind event --json'],
+        async run({ ctx, args, flags }) {
+          const space = await resolveSpace(ctx, args.space);
+          const templates = await readApi<SpaceItemTemplate[]>(ctx, withQuery(api(`/${space.id}/templates`), { kind: flags.kind }));
+          const now = new Date();
+          printRows(
+            ctx,
+            templates,
+            templates.map((template) => ({
+              id: template.id,
+              name: template.name,
+              kind: template.kind,
+              rule: describeTemplateDateRule(template, locale),
+              next: proposalText(proposeTemplateDates(template, { now, timeZone: localTimeZone() })),
+            })),
+            [
+              { key: "id", label: "ID" },
+              { key: "name", label: "NAME" },
+              { key: "kind", label: t({ en: "KIND", de: "ART" }) },
+              { key: "rule", label: t({ en: "DATES", de: "DATEN" }) },
+              { key: "next", label: t({ en: "NEXT", de: "NÄCHSTE" }) },
+            ],
+          );
+        },
+      }),
+      command("templates show", {
+        summary: t({ en: "Show a template and its next proposed dates", de: "Eine Vorlage mit ihren nächsten Vorschlägen zeigen" }),
+        args: {
+          template: arg.required({
+            valueLabel: "space:template",
+            description: t({ en: "<space>:<template name or ID>", de: "<space>:<Vorlagenname oder ID>" }),
+          }),
+        },
+        flags: {
+          kind: flag.enum(["task", "event"], {
+            description: t({ en: "Template kind when a name is used for both", de: "Art der Vorlage, wenn ein Name für beide gilt" }),
+          }),
+        },
+        examples: ['cld spaces templates show "Roadmap":"Weekly report"', 'cld spaces templates show "Roadmap":"Weekly report" --json'],
+        async run({ ctx, args, flags }) {
+          const address = parseCliAddress(args.template);
+          if (address.kind !== "path" || !address.path.trim())
+            throw new Error(
+              t({
+                en: `"${args.template}" names no template. Use <space>:<template>.`,
+                de: `„${args.template}“ benennt keine Vorlage. Verwende <space>:<vorlage>.`,
+              }),
+            );
+          const space = await loadSpace(ctx, (await resolveSpace(ctx, `${address.container}:`)).id);
+          const template = resolveTemplate(space, address.path, flags.kind);
+          const proposals = proposeTemplateDates(template, { now: new Date(), timeZone: localTimeZone() });
+          if (printStructured(ctx, { ...template, proposals, timeZone: localTimeZone() })) return;
+          ctx.print(`${template.name} (${template.id}, ${template.kind})`);
+          if (template.title) ctx.print(`${t({ en: "title", de: "Titel" })}: ${template.title}`);
+          if (template.description) ctx.print(template.description);
+          ctx.print(`${t({ en: "dates", de: "Daten" })}: ${describeTemplateDateRule(template, locale)}`);
+          ctx.print(`${t({ en: "next", de: "nächste" })}: ${proposalText(proposals)}`);
+          if (template.priority) ctx.print(`${t({ en: "priority", de: "Priorität" })}: ${template.priority}`);
+          if (template.tags.length)
+            ctx.print(`${t({ en: "tags", de: "Schlagwörter" })}: ${template.tags.map((tag) => tag.name).join(", ")}`);
+          const people = [
+            ...template.assignees.map((assignee) => assignee.displayName),
+            ...(template.assignCreator ? [t({ en: "the creator", de: "wer anlegt" })] : []),
+          ];
+          if (people.length) ctx.print(`${t({ en: "assignees", de: "zugewiesen" })}: ${people.join(", ")}`);
+          if (template.checklist.length) ctx.print(`${t({ en: "checklist", de: "Checkliste" })}: ${template.checklist.join(" · ")}`);
+          if (template.location) ctx.print(`${t({ en: "location", de: "Ort" })}: ${template.location}`);
         },
       }),
       command("set", {

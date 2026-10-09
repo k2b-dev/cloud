@@ -16,6 +16,7 @@ import {
   type ItemListResult,
   type SpaceColumn,
   type SpaceItem,
+  type SpaceItemTemplate,
   type SpaceTag,
   type SpaceVirtualColumnKind,
   type SpaceWormhole,
@@ -44,6 +45,7 @@ type Props = {
   baseUrl: string;
   columns: SpaceColumn[];
   tags: SpaceTag[];
+  templates?: SpaceItemTemplate[];
   selectedItemId?: string;
   initialBuckets: KanbanBucketInitial[];
   /** The board filter from the URL, with public IDs; it narrows every column the same way. */
@@ -1436,6 +1438,7 @@ export default function KanbanBoard(props: Props) {
                             spaceId={props.spaceId}
                             columns={props.columns}
                             tags={props.tags}
+                            templates={props.templates}
                             dateConfig={props.dateConfig}
                             variant="inline"
                             defaultType="task"

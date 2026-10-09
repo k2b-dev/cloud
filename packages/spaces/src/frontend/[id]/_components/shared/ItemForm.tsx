@@ -1,20 +1,33 @@
 import {
   Button,
   CheckboxCard,
+  ChoiceChips,
   DatePicker,
   DateRangePicker,
+  type DateRangeValue,
   DateTimePicker,
   MultiSelectInput,
   NumberInput,
   PanelDialog,
+  prompts,
   SegmentedControl,
   Select,
   Switch,
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type { SpaceItemAssignee } from "@/contracts";
+import {
+  defaultTemplateDate,
+  describeTemplateDateRule,
+  draftFromTemplate,
+  formatTemplateDate,
+  localNow,
+  proposeTemplateDates,
+  templateSchedule,
+  templateText,
+} from "@/presentation/item-templates";
 import {
   emptyRecurrenceState,
   type RecurrenceEndMode,
@@ -39,6 +52,7 @@ import {
   scheduleDatePresets,
 } from "./item-form/date";
 import { priorityOptions } from "./item-form/options";
+import { BLANK_TEMPLATE, browserTimeZone, MAX_TEMPLATE_CHIPS, NO_DATE, OTHER_DATE, templateDraftSource } from "./item-form/templates";
 import type { ItemFormData, ItemFormProps, ItemType, Priority } from "./item-form/types";
 import SpaceAssigneePicker from "./SpaceAssigneePicker";
 
@@ -88,6 +102,159 @@ export default function ItemForm(props: ItemFormProps) {
   const [error, setError] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
   const [showFullEditor, setShowFullEditor] = createSignal(!props.quickCreate || isEditMode());
+  const [checklist, setChecklist] = createSignal<string[]>(props.defaults?.checklist ?? []);
+  const [assignCreator, setAssignCreator] = createSignal(props.defaults?.assignCreator ?? false);
+
+  // ---------- Templates (create only) ----------
+  const timeZone = () => props.dateConfig?.timeZone ?? browserTimeZone();
+  const kindTemplates = createMemo(() => (isEditMode() ? [] : (props.templates ?? []).filter((template) => template.kind === itemType())));
+  const [templateId, setTemplateId] = createSignal(BLANK_TEMPLATE);
+  const selectedTemplate = () => kindTemplates().find((template) => template.id === templateId());
+  const proposals = createMemo(() => {
+    const template = selectedTemplate();
+    return template ? proposeTemplateDates(template, { now: new Date(), timeZone: timeZone() }) : [];
+  });
+  /** The date chip in effect: a proposed `YYYY-MM-DD`, OTHER_DATE, NO_DATE, or null after the event picker moved. */
+  const [dateChoice, setDateChoice] = createSignal<string | null>(null);
+  /** Title and description as the template filled them; anything else counts as the person's own input. */
+  let applied = { title: title(), description: description() };
+  const ownInput = () => title().trim() !== applied.title.trim() || description().trim() !== applied.description.trim();
+
+  const applySchedule = (date: string | null) => {
+    const template = selectedTemplate();
+    if (!template) return;
+    const schedule = templateSchedule(templateDraftSource(template), date, timeZone());
+    if (template.kind === "task") {
+      setDeadline(schedule.deadline ?? "");
+      return;
+    }
+    if (!date) return;
+    setAllDay(template.allDay);
+    setStartsAt(schedule.startsAt ?? "");
+    setEndsAt(schedule.endsAt ?? "");
+  };
+
+  /** Fills the template's text for `date`; null means the event's day, or today for a task without a date. */
+  const fillText = (date: string | null) => {
+    const template = selectedTemplate();
+    if (!template) return;
+    const eventDay = template.kind === "event" && startsAt() ? datePart(startsAt(), props.dateConfig) : null;
+    const text = templateText(template, { date: date ?? eventDay ?? localNow(new Date(), timeZone()).date, locale: locale() });
+    setTitle(text.title);
+    setDescription(text.description);
+    applied = text;
+  };
+  /** Untouched placeholders follow every date change, from a chip or from a picker. */
+  const followDate = (date: string | null) => {
+    if (!ownInput()) fillText(date);
+  };
+
+  const chooseTemplate = async (id: string) => {
+    if (id === templateId()) return;
+    if (
+      ownInput() &&
+      !(await prompts.confirm(t.replaceInputQuestion, { title: t.replaceInputTitle, confirmText: t.replaceInput, icon: "ti ti-template" }))
+    )
+      return;
+    setTemplateId(id);
+    setError("");
+    const template = selectedTemplate();
+    if (!template) {
+      setTitle("");
+      setDescription("");
+      applied = { title: "", description: "" };
+      setPriority("");
+      setSelectedTags([]);
+      setAssignees([]);
+      setAssignCreator(false);
+      setChecklist([]);
+      setEstimatedDurationMinutes(null);
+      setLocation("");
+      setUrl("");
+      if (!isEvent()) setDeadline("");
+      setDateChoice(null);
+      return;
+    }
+    // An event opened from a calendar slot keeps the slot; the proposals stay one tap away.
+    const keepSlot = template.kind === "event" && Boolean(props.defaults?.startsAt);
+    const date = keepSlot
+      ? null
+      : (proposals()[0] ??
+        (template.kind === "event" && !startsAt() ? defaultTemplateDate(template, { now: new Date(), timeZone: timeZone() }) : null));
+    const draft = draftFromTemplate(templateDraftSource(template), { date, timeZone: timeZone(), locale: locale() });
+    fillText(date);
+    setPriority(draft.priority ?? "");
+    setSelectedTags(draft.tagIds);
+    setAssignees(template.assignees);
+    setAssignCreator(draft.assignCreator);
+    setChecklist(draft.checklist);
+    setEstimatedDurationMinutes(draft.estimatedDurationMinutes ?? null);
+    setLocation(draft.location ?? "");
+    setUrl(draft.url ?? "");
+    if (template.kind === "task" || date) applySchedule(date);
+    setDateChoice(keepSlot ? null : (proposals()[0] ?? (template.kind === "task" ? NO_DATE : null)));
+  };
+
+  const chooseDate = (choice: string) => {
+    setDateChoice(choice);
+    setError("");
+    if (choice === OTHER_DATE) return;
+    if (choice === NO_DATE) {
+      setDeadline("");
+      followDate(null);
+      return;
+    }
+    applySchedule(choice);
+    followDate(choice);
+  };
+  const changeDeadline = (value: string | null) => {
+    setDeadline(value ?? "");
+    setError("");
+    followDate(value ? datePart(value, props.dateConfig) : null);
+  };
+  /**
+   * The form keeps event times as instants and an all-day range as local midnights with an exclusive end, the way
+   * items store them; the picker shows and returns an all-day range as inclusive calendar dates.
+   */
+  const changeEventRange = (value: DateRangeValue) => {
+    const start = value.start && allDay() ? allDayStart(value.start, props.dateConfig) : value.start;
+    const end = value.end && allDay() ? allDayEnd(value.end, props.dateConfig) : value.end;
+    setStartsAt(start ?? "");
+    setEndsAt(end ?? "");
+    setDateChoice(null);
+    setError("");
+    if (start) followDate(datePart(start, props.dateConfig));
+  };
+
+  const templateOptions = (): { value: string; label: string; icon?: string }[] => [
+    { value: BLANK_TEMPLATE, label: t.blankTemplate },
+    ...kindTemplates().map((template) => ({ value: template.id, label: template.name, icon: "ti ti-template" })),
+  ];
+  const dateOptions = () => [
+    ...proposals().map((date) => ({ value: date, label: formatTemplateDate(date, locale()) })),
+    ...(isEvent()
+      ? []
+      : [
+          { value: OTHER_DATE, label: t.otherDate, icon: "ti ti-calendar" },
+          { value: NO_DATE, label: t.noDate },
+        ]),
+  ];
+  const templateSummary = () => {
+    const template = selectedTemplate();
+    if (!template) return [];
+    const priorityLabel = priorityOptions(locale()).find((option) => option.id === template.priority)?.label;
+    return [
+      ...(template.kind === "task" && checklist().length ? [t.checklistCount({ count: checklist().length })] : []),
+      ...template.tags.map((tag) => tag.name),
+      ...(template.priority && priorityLabel ? [priorityLabel] : []),
+      ...template.assignees.map((assignee) => assignee.displayName),
+      ...(assignCreator() ? [t.you] : []),
+      ...(template.kind === "event" && template.location ? [template.location] : []),
+      ...(template.kind === "event" && !template.allDay && template.durationMinutes
+        ? [t.minutesShort({ count: template.durationMinutes })]
+        : []),
+    ];
+  };
 
   const isEvent = () => itemType() === "event";
   const defaultTitle = () => (isEditMode() ? (isEvent() ? t.editEvent : t.editTask) : isEvent() ? t.newEvent : t.newTask);
@@ -138,19 +305,26 @@ export default function ItemForm(props: ItemFormProps) {
   const handleTypeChange = (type: ItemType) => {
     setItemType(type);
     setError("");
+    // Templates belong to one kind; the entered text stays, the template's extras go.
+    if (templateId() !== BLANK_TEMPLATE) {
+      setTemplateId(BLANK_TEMPLATE);
+      setChecklist([]);
+      setAssignCreator(false);
+      setDateChoice(null);
+    }
   };
 
   const handleAllDayChange = (enabled: boolean) => {
     if (enabled === allDay()) return;
+    // Both directions read the range as calendar days, so the exclusive all-day end never adds a day.
+    const days = dateOnlyRange(startsAt(), endsAt(), props.dateConfig);
+    const lastDay = days.end ?? days.start;
     if (enabled) {
-      const nextRange = dateOnlyRange(startsAt(), endsAt(), props.dateConfig);
-      setStartsAt(nextRange.start ?? "");
-      setEndsAt(nextRange.end ?? nextRange.start ?? "");
-    } else if (startsAt()) {
-      const start = instantFromLocalDateTime(datePart(startsAt(), props.dateConfig), "09:00", props.dateConfig);
-      const end = instantFromLocalDateTime(datePart(endsAt() || startsAt(), props.dateConfig), "10:00", props.dateConfig);
-      setStartsAt(start);
-      setEndsAt(end);
+      setStartsAt(days.start ? allDayStart(days.start, props.dateConfig) : "");
+      setEndsAt(lastDay ? allDayEnd(lastDay, props.dateConfig) : "");
+    } else if (days.start) {
+      setStartsAt(instantFromLocalDateTime(days.start, "09:00", props.dateConfig));
+      setEndsAt(instantFromLocalDateTime(days.end ?? days.start, "10:00", props.dateConfig));
     }
     setAllDay(enabled);
     setError("");
@@ -235,6 +409,8 @@ export default function ItemForm(props: ItemFormProps) {
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
       assigneeIds: isEditMode() || assignees().length > 0 ? assignees().map((assignee) => assignee.id) : undefined,
       tagIds: isEditMode() || selectedTags().length > 0 ? selectedTags() : undefined,
+      ...(!isEditMode() && !isEvent() && checklist().length ? { checklist: checklist() } : {}),
+      ...(!isEditMode() && assignCreator() ? { assignCreator: true } : {}),
     };
     // A save that runs from the dialog keeps it open until the server answers; a refusal stays here with the input.
     setSubmitting(true);
@@ -283,6 +459,30 @@ export default function ItemForm(props: ItemFormProps) {
               onValueChange={handleTypeChange}
             />
           </Show>
+          <Show when={quickCreate() && kindTemplates().length > 0}>
+            <Show
+              when={kindTemplates().length <= MAX_TEMPLATE_CHIPS}
+              fallback={
+                <Select
+                  label={t.template}
+                  placeholder={t.chooseTemplate}
+                  icon="ti ti-template"
+                  value={templateId}
+                  onValueChange={(value) => void chooseTemplate(value ?? BLANK_TEMPLATE)}
+                  options={templateOptions().map((option) => ({ id: option.value, label: option.label, icon: option.icon }))}
+                  searchable
+                />
+              }
+            >
+              <ChoiceChips
+                label={t.template}
+                value={templateId}
+                onValueChange={(value) => void chooseTemplate(value)}
+                options={templateOptions()}
+                class="spaces-template-choice"
+              />
+            </Show>
+          </Show>
           <Show
             when={quickCreate()}
             fallback={
@@ -314,7 +514,7 @@ export default function ItemForm(props: ItemFormProps) {
                         label={t.deadline}
                         description={!isEditMode() ? t.deadlineDescription : undefined}
                         value={() => deadline() || null}
-                        onValueChange={(value) => setDeadline(value ?? "")}
+                        onValueChange={changeDeadline}
                         dateConfig={props.dateConfig}
                         presets={deadlinePresets(props.dateConfig)}
                         clearable
@@ -340,11 +540,7 @@ export default function ItemForm(props: ItemFormProps) {
                       label={t.schedule}
                       description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
                       value={eventRange}
-                      onValueChange={(value) => {
-                        setStartsAt(value.start ?? "");
-                        setEndsAt(value.end ?? "");
-                        setError("");
-                      }}
+                      onValueChange={changeEventRange}
                       dateConfig={props.dateConfig}
                       datePresets={scheduleDatePresets(props.dateConfig)}
                       durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
@@ -527,6 +723,27 @@ export default function ItemForm(props: ItemFormProps) {
                     />
                   </Show>
 
+                  <Show when={!isEditMode() && !isEvent() && (templateId() !== BLANK_TEMPLATE || checklist().length > 0)}>
+                    <TextInput
+                      label={t.templateChecklist}
+                      description={t.templateChecklistDescription}
+                      value={() => checklist().join("\n")}
+                      onValueChange={(value) =>
+                        setChecklist(
+                          value
+                            .split("\n")
+                            .map((line) => line.trim())
+                            .filter(Boolean),
+                        )
+                      }
+                      multiline
+                      lines={3}
+                    />
+                  </Show>
+                  <Show when={!isEditMode() && (templateId() !== BLANK_TEMPLATE || assignCreator())}>
+                    <Switch label={t.assignMe} description={t.assignMeDescription} value={assignCreator} onValueChange={setAssignCreator} />
+                  </Show>
+
                   <div class="flex flex-col gap-3">
                     <div>
                       <p class="mb-1 block text-sm font-medium">{t.assignees}</p>
@@ -566,17 +783,40 @@ export default function ItemForm(props: ItemFormProps) {
                 lines={3}
               />
 
+              <Show when={selectedTemplate() && proposals().length > 0}>
+                <ChoiceChips
+                  label={isEvent() ? t.templateWhen : t.templateDue}
+                  description={t.templateProposal({ rule: describeTemplateDateRule(selectedTemplate()!, locale()) })}
+                  value={dateChoice}
+                  onValueChange={chooseDate}
+                  options={dateOptions()}
+                  class="spaces-template-dates"
+                />
+              </Show>
+              <Show when={!isEvent() && dateChoice() === OTHER_DATE}>
+                <DateTimePicker
+                  label={t.deadline}
+                  value={() => deadline() || null}
+                  onValueChange={changeDeadline}
+                  dateConfig={props.dateConfig}
+                  presets={deadlinePresets(props.dateConfig)}
+                  clearable
+                />
+              </Show>
+
+              <Show when={templateSummary().length > 0}>
+                <p class="spaces-template-summary text-xs text-dimmed" data-testid="template-summary">
+                  <span>{t.fromTemplate}</span> <span class="text-zinc-700 dark:text-zinc-300">{templateSummary().join(" · ")}</span>
+                </p>
+              </Show>
+
               <Show when={isEvent()}>
                 <DateRangePicker
                   withTime={!allDay()}
                   label={t.schedule}
                   description={allDay() ? t.calendarDaysDescription : t.startAndEnd}
                   value={eventRange}
-                  onValueChange={(value) => {
-                    setStartsAt(value.start ?? "");
-                    setEndsAt(value.end ?? "");
-                    setError("");
-                  }}
+                  onValueChange={changeEventRange}
                   dateConfig={props.dateConfig}
                   datePresets={scheduleDatePresets(props.dateConfig)}
                   durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}

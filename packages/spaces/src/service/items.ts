@@ -23,7 +23,7 @@ import type {
   UpdateItem,
 } from "@/contracts";
 import { INACTIVE_ITEM_DAYS } from "@/contracts";
-import { withShortId } from "../lib/short-id";
+import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
@@ -362,7 +362,16 @@ export const listAssignableUsers = async (params: {
   }));
 };
 
-const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: string[] | undefined): Promise<MutationResult<void>> => {
+/** The given users that currently have access to the Space, in their given order. */
+export const filterAssigneeIdsWithAccess = async (spaceId: string, assigneeIds: string[]): Promise<string[]> => {
+  const ids = uniqueIds(assigneeIds);
+  if (ids.length === 0) return [];
+  const users = await listUsersWithAccess({ accessIds: await listSpaceAccessIds(spaceId), userIds: ids, limit: ids.length });
+  const valid = new Set(users.map((user) => user.id));
+  return ids.filter((id) => valid.has(id));
+};
+
+export const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: string[] | undefined): Promise<MutationResult<void>> => {
   const ids = uniqueIds(assigneeIds);
   if (ids.length === 0) return { ok: true, data: undefined };
 
@@ -466,7 +475,7 @@ const validateRecurrenceInput = async (
   return { ok: true, data: undefined };
 };
 
-const validateTagIdsInSpace = async (spaceId: string, tagIds: string[] | undefined): Promise<MutationResult<void>> => {
+export const validateTagIdsInSpace = async (spaceId: string, tagIds: string[] | undefined): Promise<MutationResult<void>> => {
   if (!tagIds || tagIds.length === 0) return { ok: true, data: undefined };
   const uniqueTagIds = [...new Set(tagIds)];
   const [row] = await sql<{ count: number }[]>`
@@ -1425,10 +1434,15 @@ export const create = async (params: {
   if (data.estimatedDurationMinutes !== undefined && (data.startsAt || data.endsAt)) {
     return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
   }
+  if (data.checklist?.length && (data.startsAt || data.endsAt)) {
+    return { ok: false, error: "A checklist is only available for tasks", status: 400 };
+  }
   const tagCheck = await validateTagIdsInSpace(spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
   const assigneeCheck = await validateAssigneeIdsInSpace(spaceId, data.assigneeIds);
   if (!assigneeCheck.ok) return assigneeCheck;
+  // The creator already passed the write check, so it joins without the directory lookup.
+  const assigneeIds = data.assignCreator && createdBy ? uniqueIds([...(data.assigneeIds ?? []), createdBy]) : data.assigneeIds;
 
   // Get next rank in column
   const [maxRow] = await sql<{ max: string | null }[]>`
@@ -1439,8 +1453,9 @@ export const create = async (params: {
   const nextRank = rank.next(maxRow?.max);
   const recurrence = recurrenceValues(data.recurrence);
 
-  const row = await withShortId("item", (shortId) =>
+  const row = await withShortIdRetry(["item", "checklist"], () =>
     sql.begin(async (tx): Promise<{ id: string } | null> => {
+      const shortId = newShortId();
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
         id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
@@ -1478,8 +1493,15 @@ export const create = async (params: {
 
       if (!created) return null;
 
-      if (data.assigneeIds !== undefined) {
-        await replaceItemAssignees(tx, created.id, data.assigneeIds);
+      if (assigneeIds !== undefined) {
+        await replaceItemAssignees(tx, created.id, assigneeIds);
+      }
+
+      for (const [index, label] of (data.checklist ?? []).entries()) {
+        await tx`
+          INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, rank)
+          VALUES (${newShortId()}, ${created.id}, ${label.trim()}, ${BigInt(index + 1) * 1024n})
+        `;
       }
 
       if (data.tagIds !== undefined) {

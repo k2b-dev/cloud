@@ -1,11 +1,14 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
+import type { DateContext } from "@k2b/stdlib";
 import type { SpaceDetail, SpaceWormhole } from "@/contracts";
 import type { SpaceUserSettings } from "../settings/SpaceSettingsStore";
 
 export type SpaceEditPanelProps = {
   space: SpaceDetail;
   baseUrl: string;
+  /** The person's date settings; template proposals in settings use the zone the new item dialog uses. */
+  dateConfig?: DateContext;
   initialSettings: SpaceUserSettings;
   onClose?: () => void;
   onWorkspaceChange?: () => void;

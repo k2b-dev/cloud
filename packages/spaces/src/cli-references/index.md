@@ -11,6 +11,7 @@ Use `cld spaces` to list and change work, track agent handoffs, manage task depe
 - [Address spaces and items](#address-spaces-and-items)
 - [List and read work](#list-and-read-work)
 - [Add and change items](#add-and-change-items)
+- [Templates](#templates)
 - [Write Markdown](#write-markdown)
 - [Track implementation work and handoffs](#track-implementation-work-and-handoffs)
 - [Dependencies](#dependencies)
@@ -90,12 +91,29 @@ cld spaces rm Item01 --yes
 cld spaces create "Hiring" --description "Open roles"
 ```
 
-- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most).
+- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most). It adds `--template`, `--kind`, `--date`, and `--no-date`; see [Templates](#templates).
 - `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
 - Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event. Other values keep the item's all-day setting; to give an all-day event times, turn off *All-day event* in the web interface.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
+
+## Templates
+
+```bash
+cld spaces templates ls "Roadmap" --json
+cld spaces templates show "Roadmap":"Weekly report"
+cld spaces add "Roadmap" --template "Weekly report"
+cld spaces add "Roadmap" --template "Weekly report" --date 2026-10-14
+cld spaces add "Roadmap":"Report for the board" --template "Weekly report" --priority high
+cld spaces add "Roadmap" --template "Notes" --no-date
+```
+
+A template stores defaults for new tasks or events of one space: title and description, which may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, priority, tags, assignees or the person who creates the item, a task checklist, and for events location, link, start time, and duration. Its date rule proposes dates: the next matching weekdays (`Wed or Thu · 17:00`), today plus some days, or none. A weekday rule offers today only while the template's time still lies ahead.
+
+- `templates ls` shows each template's kind, date rule, and the next proposals in your system timezone (`TZ` overrides it). `templates show <space>:<template>` takes a name, matched without regard to case, or an ID. A name that both a task and an event template use needs `--kind task` or `--kind event`.
+- `add --template` fills every field you leave out, so `<space>` alone is enough when the template has a title. Without `--date` the first proposal applies and the text output names the others; `--date YYYY-MM-DD` picks another day, and `--no-date` makes a task without a due date. Other `add` flags win over the template; `--tag` and `--assignee` replace its lists. Pass at most one of `--date`, `--no-date`, `--deadline`, and `--starts-at`; a given `--deadline` or `--starts-at` also picks the day the placeholders use, and `--starts-at` needs `--ends-at`.
+- Assignees who have lost access to the space are left out. Templates are managed by space administrators in the space settings or through `spaces.template.*` capabilities; the CLI only reads and uses them.
 
 ## Write Markdown
 
@@ -221,6 +239,7 @@ Run `cld spaces <command> --help` for every flag.
 | Browse | `ls [space]`, `show <item\|space:>` |
 | Spaces | `create <name>` |
 | Items | `add <space:title>`, `set <item>`, `mv <item> <column>`, `rm <item>` |
+| Templates | `templates ls <space>`, `templates show <space:template>`, `add <space> --template <name>` |
 | Quick actions | `done`, `reopen`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
 | Dependencies | `deps <item> [--add <item>] [--rm <item>]` |
 | Agent work | `work`, `claim`, `release`, `progress`, `activity`, `show --context` |
@@ -240,7 +259,9 @@ Every command takes `--json` (and `--jsonl` for lists), destructive commands nee
 | --- | --- |
 | `ls` | Array of spaces `{ id, name, description, color, createdAt, updatedAt, … }` |
 | `ls <space>` | `{ items, total, page, pageSize, totalPages }` with full items |
-| `show <space>:` | Space with `columns` and `tags` |
+| `show <space>:` | Space with `columns`, `tags`, and `templates` |
+| `templates ls` | Array of templates `{ id, kind, name, title, dateRule, timeOfDay, checklist, tags, assignees, … }` |
+| `templates show` | The template plus `proposals` (local `YYYY-MM-DD` dates) and `timeZone` |
 | `show <item>` | Item; tasks add `attachments` |
 | `show <item> --context` | Item plus `attachments`, `work`, `checklist`, `blockers`, `blocks` (page), `references`, `links`, `comments` (page) |
 | `add`, `set`, `mv`, `done`, `reopen`, `assign`, `due` | The resulting item |
