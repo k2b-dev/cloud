@@ -6,11 +6,11 @@ description: Was Chat zeigt und wo Administratoren den Zustand prüfen.
 order: 100
 ---
 
-In Chat schreiben sich Personen in Chats.
+Chat ist für Gespräche mit anderen Personen gedacht.
 
 ## Überblick {icon="layout-grid"}
 
 :::reference
-- **Chats:** Die Chats, in denen du Mitglied bist, stehen in der Seitenleiste.
+- **Chats:** Chat zeigt die Chats, in denen du Mitglied bist. Solange du in keinem Chat bist, steht dort, dass es noch keine Chats gibt.
 - **Administration:** Administratoren sehen den Zustand des Chat-Dienstes unter `/admin/chat`.
 :::

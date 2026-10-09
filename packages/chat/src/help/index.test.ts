@@ -7,7 +7,7 @@ describe("chatHelp", () => {
     const german = chatHelp.documentsByLocale?.de ?? [];
     expect(english.map((document) => document.id)).toEqual(["chat-start"]);
     expect(german.map((document) => document.id)).toEqual(english.map((document) => document.id));
-    expect(chatHelp.getMarkdown("chat-start")).toContain("people talk with each other");
-    expect(chatHelp.getMarkdown("chat-start", "de-AT")).toContain("schreiben sich Personen");
+    expect(chatHelp.getMarkdown("chat-start")).toContain("conversations with other people");
+    expect(chatHelp.getMarkdown("chat-start", "de-AT")).toContain("Gespräche mit anderen Personen");
   });
 });
