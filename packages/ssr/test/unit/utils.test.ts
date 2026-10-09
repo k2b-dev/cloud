@@ -105,6 +105,13 @@ describe("normalizeBasePath()", () => {
   test("removes trailing slashes", () => {
     expect(normalizeBasePath("/docs")).toBe("/docs");
     expect(normalizeBasePath("/docs/")).toBe("/docs");
+    expect(normalizeBasePath("/docs///")).toBe("/docs");
+    expect(normalizeBasePath("//")).toBe("");
+  });
+
+  test("keeps long runs of slashes linear", () => {
+    const input = `${"/".repeat(100_000)}x`;
+    expect(normalizeBasePath(input)).toBe(input);
   });
 
   test("rejects values without a leading slash", () => {

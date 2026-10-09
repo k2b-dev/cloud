@@ -19,7 +19,10 @@ export const normalizeBasePath = (input?: string): string => {
   if (!value.startsWith("/")) {
     throw new Error(`[ssr] basePath must start with "/" or be empty. Received: ${JSON.stringify(input)}`);
   }
-  return value.replace(/\/+$/, "");
+  // A loop instead of /\/+$/, which backtracks quadratically on long runs of slashes.
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end--;
+  return value.slice(0, end);
 };
 
 /**
