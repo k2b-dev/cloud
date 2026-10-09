@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-09-03
+updated: 2026-10-09
 ---
 
 # Dashboard widgets
@@ -173,20 +173,51 @@ Return:
 
 Cloud lists a `403` widget as unavailable at the user's access level. It skips
 `204` without a message. A timeout or another non-success response is logged
-and rendered as a small error state.
+with a bounded failure reason and shown inside that widget only.
 
-Keep widget queries bounded. Dashboard runs at most eight widget requests
-concurrently and preserves registry order. Each started widget receives a
-500 ms budget. The page deadline is `ceil(widgetCount / 8) * 500 ms`, so later
-waves are not starved by the first eight widgets. More widgets can therefore
-increase total page latency without increasing concurrency. Request cancellation
-stops queued widgets from starting. Core
-also applies a 500 ms deadline to the complete proxy operation, including
-registry lookup, invocation signing, provider fetch, and response validation;
-a slow or unavailable app must not block the others. Provider failures are
-logged with bounded failure reasons; timeout exceptions and HTTP 504 produce
-the timeout state rather than a generic error. Link to the application
-for detailed work instead of turning the widget into a full page.
+## Loading, timeouts, and failures
+
+The dashboard page renders its layout first, with a fixed space for every
+widget and a loading state inside it. The browser then asks Core for all of
+the user's visible widgets in one streamed request, the same way Universal
+Search streams its results. Each widget fills its own space as soon as its app
+answers; widgets that already arrived never wait for slower ones.
+
+- **Concurrency:** Core asks at most eight widgets at the same time and starts
+  the rest as earlier ones finish.
+- **Timeout:** each widget has its own 8-second budget, counted from the moment
+  Core starts it. Core signs every invocation of one dashboard together, so
+  widgets do not wait on one another for authorization.
+- **Failure:** a widget that times out, answers with an unexpected status, or
+  returns invalid JSON shows a short message and **Try again** in its own
+  space. Retrying asks only that widget again. The rest of the board is never
+  affected.
+- **Layout:** a widget's space has a fixed height: 20rem in the main column and
+  14rem in the side column. Longer content scrolls inside the widget, so plan
+  for the most important information at the top.
+- **Absent widgets:** the dashboard remembers on each device which widgets
+  answered `403` or `204` last time and reserves no space for them. Such a
+  widget is still asked on every load, so a change appears on the next load
+  instead of moving the open page.
+
+Keep widget queries bounded and fast: a widget is a glanceable summary, and a
+slow one keeps showing its loading state until it answers or its budget ends.
+Link to the application for detailed work instead of turning the widget into a
+full page.
+
+### Read widgets from a browser
+
+The stream is `GET /api/widgets/v1` with `Accept: application/x-ndjson`. Each
+line is a `WidgetStreamLine` from `@k2b/cloud/contracts`: `start` names the
+widgets in registry order, one `widget` line follows per widget with status
+`ok`, `empty`, `forbidden`, `timeout`, or `error`, and `done` ends the stream.
+Repeat `widget=<appId>/<widgetId>` to ask only some widgets. A browser reads
+it with `streamWidgets()` from `@k2b/cloud/browser/widgets`; aborting its
+signal stops every widget Core still waits for.
+
+`GET /api/widgets/v1/<appId>/<widgetId>` returns one widget as JSON with the
+same per-widget budget: `200` with the response, `204`, `403`, `504` for a
+timeout, or `502` for another failure.
 
 See [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

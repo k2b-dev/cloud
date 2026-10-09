@@ -18,6 +18,7 @@ import { searchInvocationOperation } from "../services/identity/invocation-opera
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
+import { ndjsonLine, ndjsonStream, ndjsonStreamHeaders, startBounded, waitWithin } from "./fanout";
 import {
   SEARCH_STREAM_CONTENT_TYPE,
   type SearchItem,
@@ -85,53 +86,6 @@ type SearchRouteDependencies = {
   withActiveSigner?: typeof withActiveIdentitySigner;
 };
 
-const startBounded = <T, R>(
-  items: readonly T[],
-  concurrency: number,
-  run: (item: T, index: number) => Promise<R>,
-  signal?: AbortSignal,
-) => {
-  const deferred = items.map(() => {
-    let settled = false;
-    let resolve!: (result: PromiseSettledResult<R>) => void;
-    const promise = new Promise<PromiseSettledResult<R>>((done) => {
-      resolve = (result) => {
-        if (settled) return;
-        settled = true;
-        done(result);
-      };
-    });
-    return { promise, resolve };
-  });
-  const abort = () => {
-    const reason = signal?.reason ?? new Error("Search fan-out deadline exceeded");
-    for (const entry of deferred) entry.resolve({ status: "rejected", reason });
-  };
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) abort();
-  let next = 0;
-  void Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (true) {
-        if (signal?.aborted) return;
-        const index = next;
-        next += 1;
-        const item = items[index];
-        if (item === undefined) return;
-        try {
-          deferred[index]?.resolve({
-            status: "fulfilled",
-            value: await run(item, index),
-          });
-        } catch (reason) {
-          deferred[index]?.resolve({ status: "rejected", reason });
-        }
-      }
-    }),
-  ).then(() => signal?.removeEventListener("abort", abort));
-  return deferred.map((entry) => entry.promise);
-};
-
 /** Highest app-provided priority first, then by title. */
 const rankItems = (items: SearchItem[]) => items.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0) || a.title.localeCompare(b.title));
 
@@ -139,37 +93,7 @@ const rankItems = (items: SearchItem[]) => items.sort((a, b) => (b.priority ?? 0
 const acceptsStream = (accept: string | undefined) =>
   accept?.split(",").some((type) => type.split(";")[0]?.trim().toLowerCase() === SEARCH_STREAM_CONTENT_TYPE) ?? false;
 
-const streamHeaders = {
-  "content-type": `${SEARCH_STREAM_CONTENT_TYPE}; charset=utf-8`,
-  // Each line must reach the browser when it is written: no cache, no transformation, no proxy buffering.
-  "cache-control": "no-store, no-transform",
-  "x-accel-buffering": "no",
-} as const;
-
-const encoder = new TextEncoder();
-const lineText = (line: SearchStreamLine) => `${JSON.stringify(line)}\n`;
-const encodeLine = (line: SearchStreamLine) => encoder.encode(lineText(line));
-
 type AppOutcome = { appId: string; status: SearchProviderStatus; items: SearchItem[]; ms: number };
-
-const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const aborted = () => reject(signal.reason);
-    // The work has already started; observe its rejection even if the client
-    // disconnected before we began waiting.
-    value.then(
-      (result) => {
-        signal.removeEventListener("abort", aborted);
-        resolve(result);
-      },
-      (error) => {
-        signal.removeEventListener("abort", aborted);
-        reject(error);
-      },
-    );
-    if (signal.aborted) return aborted();
-    signal.addEventListener("abort", aborted, { once: true });
-  });
 
 /**
  * Creates the global search route.
@@ -271,10 +195,16 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         stream
           ? new Response(
               [
-                lineText({ type: "start", query: body.query, apps, providers: [], ...(body.unsupportedTags ? { unsupportedTags } : {}) }),
-                lineText({ type: "done", status: "complete", count: 0 }),
+                ndjsonLine({
+                  type: "start",
+                  query: body.query,
+                  apps,
+                  providers: [],
+                  ...(body.unsupportedTags ? { unsupportedTags } : {}),
+                } satisfies SearchStreamLine),
+                ndjsonLine({ type: "done", status: "complete", count: 0 } satisfies SearchStreamLine),
               ].join(""),
-              { headers: streamHeaders },
+              { headers: ndjsonStreamHeaders },
             )
           : c.json(body);
 
@@ -462,35 +392,30 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       const failure = (outcome: AppOutcome) => outcome.status === "timeout" || outcome.status === "error";
 
       if (stream) {
-        let cancelled = false;
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            const write = (line: SearchStreamLine) => {
-              if (!cancelled) controller.enqueue(encodeLine(line));
+        // A slow app never holds back the others: each line is written when its app finishes.
+        return ndjsonStream<SearchStreamLine>({
+          first: { type: "start", query: query.q, apps, providers: appIds, ...(unsupportedTags.length > 0 ? { unsupportedTags } : {}) },
+          pending: outcomes.map((pending) =>
+            pending.then(
+              (outcome): SearchStreamLine => ({
+                type: "provider",
+                provider: outcome.appId,
+                status: outcome.status,
+                results: outcome.items,
+                ms: outcome.ms,
+              }),
+            ),
+          ),
+          last: (lines) => {
+            const providerLines = lines.filter((line) => line.type === "provider");
+            return {
+              type: "done",
+              status: providerLines.some((line) => line.status === "timeout" || line.status === "error") ? "partial" : "complete",
+              count: providerLines.reduce((count, line) => count + line.results.length, 0),
             };
-            write({ type: "start", query: query.q, apps, providers: appIds, ...(unsupportedTags.length > 0 ? { unsupportedTags } : {}) });
-            let count = 0;
-            let partial = false;
-            // A slow app never holds back the others: each line is written when its app finishes.
-            void Promise.all(
-              outcomes.map((pending) =>
-                pending.then((outcome) => {
-                  count += outcome.items.length;
-                  partial ||= failure(outcome);
-                  write({ type: "provider", provider: outcome.appId, status: outcome.status, results: outcome.items, ms: outcome.ms });
-                }),
-              ),
-            ).then(() => {
-              write({ type: "done", status: partial ? "partial" : "complete", count });
-              if (!cancelled) controller.close();
-            });
           },
-          cancel() {
-            cancelled = true;
-            streamCancelled.abort();
-          },
+          onCancel: () => streamCancelled.abort(),
         });
-        return new Response(body, { headers: streamHeaders });
       }
 
       const finished = await Promise.all(outcomes);

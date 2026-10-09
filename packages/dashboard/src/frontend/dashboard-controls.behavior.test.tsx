@@ -49,10 +49,7 @@ domTest("the Apps shortcut opens the app grid with each app's badge route, like 
     { id: "chat", name: "Chat", icon: "ti ti-message", href: "/app/chat", description: "Talk", badge: "/api/chat/badge" },
     { id: "mail", name: "Mail", icon: "ti ti-mail", href: "/app/mail", description: "Write" },
   ];
-  const dispose = render(
-    () => <DashboardControls apps={apps} legalLinks={[]} settings={DEFAULT_DASHBOARD_SETTINGS} available={[]} inaccessible={[]} />,
-    dom.root,
-  );
+  const dispose = render(() => <DashboardControls apps={apps} legalLinks={[]} settings={DEFAULT_DASHBOARD_SETTINGS} />, dom.root);
   try {
     Array.from(dom.document.querySelectorAll("button"))
       .find((entry) => entry.textContent?.trim() === "Apps")!

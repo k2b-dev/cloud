@@ -10,6 +10,18 @@ updated: 2026-10-10
 
 # Deprecations and migrations
 
+## Dashboard widgets stream in one by one
+
+The dashboard no longer waits for widgets before it sends the page. It renders
+a fixed space for each widget and loads all of them in the browser from the
+new streamed `GET /api/widgets/v1`, where each widget has its own 8-second
+budget instead of 500 ms and Core runs at most eight at a time. A widget that
+fails or times out shows **Try again** in its own space. The single-widget
+`GET /api/widgets/v1/<appId>/<widgetId>` keeps its responses and uses the same
+8-second budget. Widget handlers and their responses are unchanged; widgets
+taller than their space now scroll inside it. No setting or migration is
+involved. See [Dashboard widgets](/en/docs/platform/dashboard-widgets#loading-timeouts-and-failures).
+
 ## Help requires sign-in
 
 Cloud's Help surfaces are no longer public. Before, anyone could read every
