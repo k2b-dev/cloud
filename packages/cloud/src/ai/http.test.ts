@@ -1,15 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import {
   AiConversationDraftInputSchema,
   AiCreateConversationInputSchema,
   AiMessageFeedbackInputSchema,
   AiMessageRetryInputSchema,
   AiSteerInputSchema,
+  AiSubmitConversationDraftInputSchema,
   AiTurnInputSchema,
   aiTurnInputToContent,
 } from "./http";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
-import type { AiMessageFeedback } from "./types";
+import type { AiClientToolId, AiMessageFeedback } from "./types";
 
 describe("AI HTTP input helpers", () => {
   test("allows text between sixteen inline references without relaxing the attachment bound", () => {
@@ -179,14 +181,89 @@ describe("AI HTTP input helpers", () => {
     expect(() => AiMessageFeedbackInputSchema.parse({ rating: "down", comment: "x".repeat(1001) })).toThrow();
   });
 
-  test("accepts only distinct predefined optional client tools", () => {
-    expect(AiTurnInputSchema.parse({ message: "Test the app", clientToolIds: ["code_run"] }).clientToolIds).toEqual(["code_run"]);
-    expect(AiTurnInputSchema.parse({ message: "Inspect this checkout", clientToolIds: ["local_bash"] }).clientToolIds).toEqual([
-      "local_bash",
-    ]);
-    expect(() => AiTurnInputSchema.parse({ message: "Inspect this checkout", clientToolIds: ["arbitrary_tool"] })).toThrow();
-    expect(() => AiTurnInputSchema.parse({ message: "Inspect this checkout", clientToolIds: ["local_bash", "local_bash"] })).toThrow();
-  });
+  for (const { name, schema, input } of [
+    { name: "turn", schema: AiTurnInputSchema, input: { message: "Test the app" } },
+    { name: "draft submission", schema: AiSubmitConversationDraftInputSchema, input: { draftRevision: 1 } },
+  ]) {
+    describe(`${name} client tools`, () => {
+      test("ignores retired tools and keeps a typed list of known tools", () => {
+        const clientToolIds: AiClientToolId[] | undefined = schema.parse({
+          ...input,
+          clientToolIds: ["code_interact", "code_run"],
+        }).clientToolIds;
+        expect(clientToolIds).toEqual(["code_run"]);
+      });
+
+      test("accepts an older client's full list and preserves known tool order", () => {
+        expect(
+          schema.parse({
+            ...input,
+            clientToolIds: [
+              "local_bash",
+              "code_run",
+              "code_action",
+              "code_inspect",
+              "code_interact",
+              "code_stop",
+              "code_open",
+              "code_export",
+              "code_present",
+              "code_secret",
+            ],
+          }).clientToolIds,
+        ).toEqual([
+          "local_bash",
+          "code_run",
+          "code_action",
+          "code_inspect",
+          "code_stop",
+          "code_open",
+          "code_export",
+          "code_present",
+          "code_secret",
+        ]);
+        expect(schema.parse({ ...input, clientToolIds: ["code_secret", "retired_tool", "code_run", "local_bash"] }).clientToolIds).toEqual([
+          "code_secret",
+          "code_run",
+          "local_bash",
+        ]);
+      });
+
+      test("accepts advertisements longer than the previous ten-item cap", () => {
+        const knownIds: AiClientToolId[] = ["local_bash", ...CODE_RUNTIME_TOOL_NAMES];
+        const clientToolIds = ["code_interact", "future_tool", ...knownIds];
+        expect(clientToolIds.length).toBeGreaterThan(10);
+        expect(schema.parse({ ...input, clientToolIds }).clientToolIds).toEqual(knownIds);
+      });
+
+      test("accepts absent, empty, and unknown-only advertisements", () => {
+        expect(schema.parse(input).clientToolIds).toBeUndefined();
+        expect(schema.parse({ ...input, clientToolIds: [] }).clientToolIds).toEqual([]);
+        expect(schema.parse({ ...input, clientToolIds: ["arbitrary_tool"] }).clientToolIds).toEqual([]);
+      });
+
+      test("rejects duplicate names before filtering unknown tools", () => {
+        for (const id of ["local_bash", "code_interact"]) {
+          expect(() => schema.parse({ ...input, clientToolIds: [id, id] })).toThrow("Client tool IDs must be unique");
+        }
+      });
+
+      test("bounds the advertised list before filtering unknown tools", () => {
+        const clientToolIds = Array.from({ length: 63 }, (_, index) => `retired_tool_${index}`).concat("code_run");
+        expect(schema.parse({ ...input, clientToolIds }).clientToolIds).toEqual(["code_run"]);
+        expect(() => schema.parse({ ...input, clientToolIds: [...clientToolIds, "another_retired_tool"] })).toThrow();
+      });
+
+      test("bounds names and rejects malformed or non-string IDs", () => {
+        for (const id of ["a".repeat(64), "Code_run", "code-run", "local-shell", "1tool", "_tool"]) {
+          expect(schema.parse({ ...input, clientToolIds: [id] }).clientToolIds).toEqual([]);
+        }
+        for (const id of ["a".repeat(65), "", "code.run", "code run", " code_run", "code_run\n", "töol", 123, null, {}]) {
+          expect(() => schema.parse({ ...input, clientToolIds: [id] })).toThrow();
+        }
+      });
+    });
+  }
 
   test("steering is text-only and requires an idempotency key", () => {
     expect(AiSteerInputSchema.parse({ message: "  Change course  ", clientRequestId: "request-1" })).toEqual({
