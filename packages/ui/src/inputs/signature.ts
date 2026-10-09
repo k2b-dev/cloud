@@ -1,16 +1,17 @@
 /**
  * A signature as the field reports it. `kind` records how it was given, so the
  * application can keep that fact next to the image. `svg` is a standalone SVG
- * document whose ink uses `currentColor`, so it follows the surrounding text
- * colour inline and renders black as an image.
+ * document whose ink uses `currentColor`, so it renders black as an image. A
+ * value that arrives from a browser is untrusted input: read it with
+ * `parseSignature` before storing or embedding it.
  */
 export type SignatureValue = { kind: "drawn"; svg: string } | { kind: "typed"; name: string; svg: string };
 
 /** One sampled pointer position in drawing units, with a pressure from 0 to 1. */
 export type SignaturePoint = { x: number; y: number; pressure: number };
 
-/** The drawing space and one closed outline path per stroke. */
-export type SignatureDrawing = { width: number; height: number; strokes: readonly string[] };
+/** The drawing space as an SVG viewBox and one closed outline path per stroke. */
+export type SignatureDrawing = { x: number; y: number; width: number; height: number; strokes: readonly string[] };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** Typed names are laid out at this size; the SVG scales as a whole. */
@@ -20,8 +21,20 @@ const TYPED_PADDING = 12;
 const round = (value: number) => Math.round(value * 10) / 10;
 const point = (x: number, y: number) => `${round(x)} ${round(y)}`;
 
+/** Control characters, lone surrogates, and the two noncharacters XML forbids, which a strict XML parser rejects. */
+const NOT_XML_TEXT = /[\p{Cc}\p{Cs}\uFFFE\uFFFF]/gu;
+
+/** Escapes text for XML content or attributes and drops characters XML cannot hold, so the document stays well-formed. */
 export const escapeXml = (text: string): string =>
-  text.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char] ?? char);
+  text
+    .replace(NOT_XML_TEXT, "")
+    .replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char] ?? char);
+
+const unescapeXml = (text: string): string =>
+  text.replace(/&(amp|lt|gt|quot|apos);/g, (_, name: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" })[name] ?? "");
+
+/** The name as a typed signature stores it: without characters an SVG cannot hold and without surrounding space. */
+export const signatureName = (name: string): string => name.replace(NOT_XML_TEXT, "").trim();
 
 /** Stroke width in drawing units at a pressure: light pressure still leaves a readable line. */
 export const strokeWidth = (size: number, pressure: number): number => size * (0.35 + 0.65 * Math.min(1, Math.max(0, pressure)));
@@ -81,15 +94,29 @@ export const drawingToSvg = (drawing: SignatureDrawing): string | null => {
   const width = round(drawing.width);
   const height = round(drawing.height);
   const paths = drawing.strokes.map((stroke) => `<path d="${escapeXml(stroke)}"/>`).join("");
-  return `<svg xmlns="${SVG_NS}" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"><g fill="currentColor">${paths}</g></svg>`;
+  return `<svg xmlns="${SVG_NS}" viewBox="${round(drawing.x)} ${round(drawing.y)} ${width} ${height}" width="${width}" height="${height}"><g fill="currentColor">${paths}</g></svg>`;
 };
 
-/** Reads the drawing space and strokes back from an SVG this module wrote, so a stored signature can be extended or undone. */
+const NUMBER = String.raw`-?\d+(?:\.\d+)?`;
+// Exactly the markup drawingToSvg and typedToSvg write. Path data may only hold the commands and numbers strokeOutline
+// emits, and no attribute or text may hold markup, so a match cannot carry scripts, links, or other elements.
+const DRAWN_SVG = new RegExp(
+  `^<svg xmlns="${SVG_NS}" viewBox="(${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER})" width="${NUMBER}" height="${NUMBER}">` +
+    `<g fill="currentColor">((?:<path d="[MLQAZ\\d .-]+"/>)+)</g></svg>$`,
+);
+const TYPED_SVG = new RegExp(
+  `^<svg xmlns="${SVG_NS}" viewBox="0 0 (\\d+) \\d+" width="\\d+" height="\\d+">` +
+    `<text x="\\d+" y="\\d+" font-family="([^"<>]*)" font-size="\\d+" fill="currentColor">[^<>]*</text></svg>$`,
+);
+
+/** Reads the drawing space and strokes back from an SVG drawingToSvg wrote, so a stored signature can be extended or undone. */
 export const svgToDrawing = (svg: string): SignatureDrawing | null => {
-  const viewBox = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
-  if (!viewBox) return null;
-  const strokes = [...svg.matchAll(/<path d="([^"]*)"/g)].flatMap((match) => (match[1] ? [match[1]] : []));
-  return { width: Number(viewBox[1]), height: Number(viewBox[2]), strokes };
+  const match = DRAWN_SVG.exec(svg);
+  if (!match) return null;
+  const [x = 0, y = 0, width = 0, height = 0] = match.slice(1, 5).map(Number);
+  if (width <= 0 || height <= 0) return null;
+  const strokes = [...(match[5] ?? "").matchAll(/<path d="([^"]+)"\/>/g)].flatMap((path) => (path[1] ? [path[1]] : []));
+  return { x, y, width, height, strokes };
 };
 
 /**
@@ -108,6 +135,36 @@ export const typedToSvg = (name: string, fontFamily: string, measure?: (text: st
   );
 };
 
+/**
+ * Reads a submitted signature on the server: the JSON string of the field's
+ * hidden input, or a value the browser sent as JSON. It accepts only markup
+ * the field writes and returns it rebuilt, so the result is safe to store and
+ * to embed. An empty or invalid value returns `null`.
+ */
+export const parseSignature = (input: unknown): SignatureValue | null => {
+  let value: unknown = input;
+  if (typeof input === "string") {
+    if (!input) return null;
+    try {
+      value = JSON.parse(input);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== "object" || value === null || !("kind" in value) || !("svg" in value) || typeof value.svg !== "string") return null;
+  if (value.kind === "drawn") {
+    const drawing = svgToDrawing(value.svg);
+    const svg = drawing && drawingToSvg(drawing);
+    return svg ? { kind: "drawn", svg } : null;
+  }
+  if (value.kind !== "typed" || !("name" in value) || typeof value.name !== "string") return null;
+  const name = signatureName(value.name);
+  const match = TYPED_SVG.exec(value.svg);
+  if (!name || !match) return null;
+  const textWidth = Number(match[1]) - TYPED_PADDING * 2;
+  return { kind: "typed", name, svg: typedToSvg(name, unescapeXml(match[2] ?? ""), () => Math.max(0, textWidth)) };
+};
+
 export type SignaturePngOptions = {
   /** Device pixels per SVG unit. Defaults to `2`. */
   scale?: number;
@@ -123,7 +180,7 @@ export type SignaturePngOptions = {
  * installed on this device: an SVG image cannot use the page's web fonts.
  */
 export const signatureToPng = async (value: SignatureValue, options: SignaturePngOptions = {}): Promise<string> => {
-  const viewBox = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(value.svg);
+  const viewBox = /viewBox="-?[\d.]+ -?[\d.]+ ([\d.]+) ([\d.]+)"/.exec(value.svg);
   if (!viewBox) throw new Error("The signature SVG has no drawing size.");
   const scale = options.scale ?? 2;
   const width = Math.max(1, Math.round(Number(viewBox[1]) * scale));
@@ -142,5 +199,8 @@ export const signatureToPng = async (value: SignatureValue, options: SignaturePn
     context.fillRect(0, 0, width, height);
   }
   context.drawImage(image, 0, 0, width, height);
-  return canvas.toDataURL("image/png");
+  const url = canvas.toDataURL("image/png");
+  // A canvas beyond the browser's size limit returns "data:," instead of failing.
+  if (!url.startsWith("data:image/png")) throw new Error("The signature is too large for a PNG at this scale.");
+  return url;
 };

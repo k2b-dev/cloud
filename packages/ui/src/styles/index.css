@@ -4081,15 +4081,17 @@
   display: block;
   width: 100%;
   height: 100%;
-  cursor: crosshair;
-  touch-action: none;
+  outline: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 
-.k2b-ui .k2b-signature-input:is([data-disabled], [data-readonly]) .k2b-signature-input__canvas {
-  cursor: default;
+/* Only a pad that can be drawn on takes touches from the page; a read-only or
+   disabled pad still scrolls and zooms the page. */
+.k2b-ui .k2b-signature-input:not([data-disabled], [data-readonly]) .k2b-signature-input__canvas {
+  cursor: crosshair;
+  touch-action: none;
 }
 
 .k2b-ui .k2b-signature-input[data-disabled="true"] .k2b-signature-input__canvas {

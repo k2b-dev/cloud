@@ -393,6 +393,7 @@ export const hiddenUiCatalogExports = {
 export const documentedOnlyUiCatalogExports = {
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
   findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
+  parseSignature: "Documented server-side reader that rebuilds a submitted SignatureInput value.",
   ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
   ChartFilterControls: "Documented filter surface composed by ChartExplorerControls.",
   APP_WORKSPACE_DETAIL_DEFAULT: "Documented AppWorkspace detail sizing constant.",

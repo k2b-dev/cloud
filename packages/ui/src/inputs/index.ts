@@ -86,7 +86,7 @@ export { IconInput } from "./SpecialInputs";
 export type { SwitchProps } from "./Switch";
 export { Switch } from "./Switch";
 export type { SignaturePngOptions, SignatureValue } from "./signature";
-export { signatureToPng } from "./signature";
+export { parseSignature, signatureToPng } from "./signature";
 export type { TagEditorItem, TagEditorLabels, TagEditorProps, TagEditorValue } from "./TagEditor";
 export { TagEditor } from "./TagEditor";
 export type { TagsInputProps } from "./TagsInput";

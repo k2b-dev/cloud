@@ -10,6 +10,7 @@ import {
   type SignatureDrawing,
   type SignaturePoint,
   type SignatureValue,
+  signatureName,
   strokeOutline,
   svgToDrawing,
   typedToSvg,
@@ -23,7 +24,8 @@ export type SignatureInputProps = ValueFieldProps<SignatureValue | null> & {
   readOnly?: boolean;
   /**
    * Offers typing the name instead of drawing. Defaults to `true`: typing is the
-   * keyboard and screen-reader path and helps people who cannot draw.
+   * keyboard and screen-reader path and helps people who cannot draw. Without
+   * it, a typed value is still shown and can be cleared, but not edited.
    */
   allowTyped?: boolean;
 };
@@ -34,7 +36,7 @@ type SignatureMode = "draw" | "type";
 const STROKE_SIZE = 3.2;
 /** Points closer than this to the previous one add no shape, only path length. */
 const MIN_POINT_DISTANCE = 1.2;
-const EMPTY_SPACE = { width: 600, height: 200 };
+const EMPTY_SPACE = { x: 0, y: 0, width: 600, height: 200 };
 
 const sameValue = (left: SignatureValue | null, right: SignatureValue | null) =>
   left === right ||
@@ -64,13 +66,14 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
   const messages = useUiMessages();
   const text = useSignatureMessages();
   const meta = createFieldMeta(props.id);
+  const requiredId = `${meta.controlId}-required`;
   const value = () => resolveMaybeAccessor(props.value) ?? null;
   const error = () => resolveMaybeAccessor(props.error);
   const allowTyped = () => props.allowTyped !== false;
   const editable = () => !props.disabled && !props.readOnly;
 
   const initial = untrack(value);
-  const [mode, setMode] = createSignal<SignatureMode>(initial?.kind === "typed" && allowTyped() ? "type" : "draw");
+  const [mode, setMode] = createSignal<SignatureMode>(initial?.kind === "typed" ? "type" : "draw");
   const [drawing, setDrawing] = createSignal<SignatureDrawing>(drawingOf(initial));
   const [typedName, setTypedName] = createSignal(initial?.kind === "typed" ? initial.name : "");
   const [live, setLive] = createSignal("");
@@ -83,7 +86,7 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
     return markup ? { kind: "drawn", svg: markup } : null;
   };
   const typedValue = (): SignatureValue | null => {
-    const name = typedName().trim();
+    const name = signatureName(typedName());
     if (!name) return null;
     const family = nameInput ? getComputedStyle(nameInput).fontFamily : "cursive";
     return { kind: "typed", name, svg: typedToSvg(name, family, measureText) };
@@ -95,52 +98,67 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
     else props.onValueChange?.(next);
   };
 
-  // A value the parent sets (a stored signature, a reset to null) replaces the local state; our own reports echo back unchanged.
+  let stroke: { pointerId: number; pointerType: string; points: SignaturePoint[]; time: number } | null = null;
+  /** Drops the stroke in progress without keeping its ink. */
+  const abortStroke = () => {
+    if (!stroke) return;
+    const { pointerId } = stroke;
+    stroke = null;
+    setLive("");
+    if (svg?.hasPointerCapture(pointerId)) svg.releasePointerCapture(pointerId);
+  };
+  /** After Clear or the last Undo, keyboard focus moves from the now disabled button to the pad instead of the page. */
+  const keepFocus = (button: HTMLElement) => {
+    if (button.matches(":focus-visible")) queueMicrotask(() => svg?.focus());
+  };
+
+  // A value the parent sets (a stored signature, another record, a reset to null) replaces both inputs, so nothing of an
+  // earlier signer stays behind the mode switch. Our own reports echo back unchanged.
   createEffect(
     on(
       value,
       (next) => {
         if (next === lastReported || sameValue(next, lastReported)) return;
         lastReported = next;
-        if (!next) {
-          setDrawing((current) => ({ ...current, strokes: [] }));
-          setTypedName("");
-          return;
-        }
-        if (next.kind === "typed" && allowTyped()) {
-          setMode("type");
-          setTypedName(next.name);
-        } else {
-          setMode("draw");
-          setDrawing(drawingOf(next));
-        }
+        abortStroke();
+        setDrawing(drawingOf(next));
+        setTypedName(next?.kind === "typed" ? next.name : "");
+        if (next) setMode(next.kind === "typed" ? "type" : "draw");
       },
       { defer: true },
     ),
   );
+  // A field that turns disabled or read-only, or leaves drawing, ends the stroke in progress without a value.
+  createEffect(() => {
+    if (!editable() || mode() !== "draw") abortStroke();
+  });
 
   const switchMode = (next: SignatureMode) => {
     if (!editable() || next === mode()) return;
     setMode(next);
     report(next === "draw" ? drawnValue() : typedValue(), true);
   };
-  const undo = () => {
+  const undo = (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
     if (!editable()) return;
     setDrawing((current) => ({ ...current, strokes: current.strokes.slice(0, -1) }));
+    if (drawing().strokes.length === 0) keepFocus(event.currentTarget);
     report(drawnValue(), true);
   };
-  const clear = () => {
+  const clear = (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
     if (!editable()) return;
-    if (mode() === "type") {
-      setTypedName("");
+    abortStroke();
+    // Clear starts over in both modes. Without the Type option, a typed value it removes gives way to drawing.
+    setTypedName("");
+    setDrawing((current) => ({ ...current, strokes: [] }));
+    if (mode() === "type" && allowTyped()) {
       nameInput?.focus();
     } else {
-      setDrawing((current) => ({ ...current, strokes: [] }));
+      setMode("draw");
+      keepFocus(event.currentTarget);
     }
     report(null, true);
   };
 
-  let stroke: { pointerId: number; points: SignaturePoint[]; time: number } | null = null;
   const toPoint = (event: PointerEvent): { x: number; y: number } | null => {
     const matrix = svg?.getScreenCTM();
     if (!matrix) return null;
@@ -167,8 +185,47 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
     stroke.points.push({ ...position, pressure });
     setLive(strokeOutline(stroke.points, STROKE_SIZE));
   };
+  /**
+   * The drawing space after a stroke. It stays as it is while the ink lies inside it. Ink beyond it, drawn after the
+   * pad changed its shape (a rotated phone, a resized window, a drawing from another device), grows the space to the
+   * whole visible pad: the stored SVG then holds everything the signer saw, and the ink on the pad does not move.
+   */
+  const spaceAfter = (points: readonly SignaturePoint[]): Omit<SignatureDrawing, "strokes"> => {
+    const { strokes: _, ...space } = drawing();
+    const matrix = svg?.getScreenCTM();
+    if (!svg || !matrix) return space;
+    const box = svg.getBoundingClientRect();
+    const inverse = matrix.inverse();
+    const start = new DOMPoint(box.left, box.top).matrixTransform(inverse);
+    const end = new DOMPoint(box.right, box.bottom).matrixTransform(inverse);
+    // Ink reaches half the widest stroke past its points; what lies outside the pad was never visible and does not count.
+    const reach = STROKE_SIZE / 2;
+    let left = end.x;
+    let top = end.y;
+    let right = start.x;
+    let bottom = start.y;
+    for (const point of points) {
+      left = Math.min(left, Math.max(start.x, point.x - reach));
+      top = Math.min(top, Math.max(start.y, point.y - reach));
+      right = Math.max(right, Math.min(end.x, point.x + reach));
+      bottom = Math.max(bottom, Math.min(end.y, point.y + reach));
+    }
+    if (left >= space.x && top >= space.y && right <= space.x + space.width && bottom <= space.y + space.height) return space;
+    const x = Math.min(space.x, start.x);
+    const y = Math.min(space.y, start.y);
+    return {
+      x,
+      y,
+      width: Math.max(space.x + space.width, end.x) - x,
+      height: Math.max(space.y + space.height, end.y) - y,
+    };
+  };
   const startStroke = (event: PointerEvent) => {
-    if (!editable() || stroke || !svg || (event.pointerType === "mouse" && event.button !== 0)) return;
+    // Only the primary contact draws: not a mouse's other buttons, a pen's barrel button, or its eraser.
+    if (!editable() || !svg || event.button !== 0) return;
+    // A pen takes over from a touch that is still down, such as a palm resting on a tablet.
+    if (stroke?.pointerType === "touch" && event.pointerType === "pen") abortStroke();
+    if (stroke) return;
     event.preventDefault();
     try {
       // Capture keeps the stroke when the pointer leaves the pad; a pointer that already ended cannot be captured.
@@ -177,9 +234,9 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
     if (drawing().strokes.length === 0) {
       // An empty pad adopts its current size, so one drawing unit is one CSS pixel while drawing.
       const box = svg.getBoundingClientRect();
-      setDrawing({ width: Math.max(1, box.width), height: Math.max(1, box.height), strokes: [] });
+      setDrawing({ x: 0, y: 0, width: Math.max(1, box.width), height: Math.max(1, box.height), strokes: [] });
     }
-    stroke = { pointerId: event.pointerId, points: [], time: event.timeStamp };
+    stroke = { pointerId: event.pointerId, pointerType: event.pointerType, points: [], time: event.timeStamp };
     addPoint(event, true);
   };
   const moveStroke = (event: PointerEvent) => {
@@ -191,15 +248,21 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
   const endStroke = (event: PointerEvent) => {
     if (!stroke || stroke.pointerId !== event.pointerId) return;
     addPoint(event, false);
-    const outline = strokeOutline(stroke.points, STROKE_SIZE);
+    const { points } = stroke;
+    const outline = strokeOutline(points, STROKE_SIZE);
     stroke = null;
     setLive("");
     if (!outline) return;
-    setDrawing((current) => ({ ...current, strokes: [...current.strokes, outline] }));
+    const space = spaceAfter(points);
+    setDrawing((current) => ({ ...space, strokes: [...current.strokes, outline] }));
     report(drawnValue(), true);
   };
+  // A cancelled pointer (an OS gesture, palm rejection) or lost capture is not a finished stroke.
+  const cancelStroke = (event: PointerEvent) => {
+    if (stroke?.pointerId === event.pointerId) abortStroke();
+  };
 
-  const empty = () => (mode() === "draw" ? drawing().strokes.length === 0 && !live() : !typedName().trim());
+  const empty = () => (mode() === "draw" ? drawing().strokes.length === 0 && !live() : !signatureName(typedName()));
   const serialized = () => {
     const current = value();
     return current ? JSON.stringify(current) : "";
@@ -222,7 +285,7 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
         role="group"
         aria-label={props.label ? undefined : props["aria-label"]}
         aria-labelledby={props.label ? meta.labelId : undefined}
-        aria-describedby={fieldDescribedBy(meta, props)}
+        aria-describedby={[props.required ? requiredId : undefined, fieldDescribedBy(meta, props)].filter(Boolean).join(" ") || undefined}
         aria-invalid={error() ? "true" : undefined}
         data-mode={mode()}
         data-empty={empty() ? "true" : undefined}
@@ -230,6 +293,12 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
         data-disabled={props.disabled ? "true" : undefined}
         data-readonly={props.readOnly ? "true" : undefined}
       >
+        {/* A group cannot be marked required, so the required state is part of its description. */}
+        <Show when={props.required}>
+          <span id={requiredId} hidden>
+            {messages().required}
+          </span>
+        </Show>
         <div class="k2b-signature-input__toolbar">
           <Show when={allowTyped()}>
             <SegmentedControl
@@ -280,7 +349,7 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
                 autocapitalize="words"
                 spellcheck={false}
                 disabled={props.disabled}
-                readOnly={props.readOnly}
+                readOnly={props.readOnly || !allowTyped()}
                 onInput={(event) => {
                   setTypedName(event.currentTarget.value);
                   report(typedValue(), false);
@@ -297,13 +366,18 @@ export function SignatureInput(props: SignatureInputProps): JSX.Element {
               ref={svg}
               class="k2b-signature-input__canvas"
               role="img"
+              tabindex="-1"
               aria-label={drawing().strokes.length > 0 ? text().drawn : text().drawArea}
-              viewBox={`0 0 ${drawing().width} ${drawing().height}`}
+              viewBox={`${drawing().x} ${drawing().y} ${drawing().width} ${drawing().height}`}
               preserveAspectRatio="xMidYMid meet"
               onPointerDown={startStroke}
               onPointerMove={moveStroke}
               onPointerUp={endStroke}
-              onPointerCancel={endStroke}
+              onPointerCancel={cancelStroke}
+              onLostPointerCapture={(event) => {
+                // A child path that held a touch's implicit capture hands it to the pad; only the pad's own loss counts.
+                if (event.target === event.currentTarget) cancelStroke(event);
+              }}
             >
               <g fill="currentColor">
                 <For each={drawing().strokes}>{(outline) => <path d={outline} />}</For>

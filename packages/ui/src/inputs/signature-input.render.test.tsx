@@ -36,6 +36,9 @@ test("server rendering shows a stored drawing, the field contract, and the form 
   );
   expect(html).toContain('role="group"');
   expect(html).toMatch(/aria-labelledby="k2b-field-[^"]+-label"/);
+  // A group cannot carry aria-required, so its description says the field is required.
+  expect(html).toMatch(/aria-describedby="(k2b-field-[^"]+)-required \1-description \1-error"/);
+  expect(html).toMatch(/<span id="k2b-field-[^"]+-required" hidden[^>]*>Required<\/span>/);
   expect(html).toContain('aria-invalid="true"');
   expect(html).toContain('class="k2b-field__required"');
   expect(html).toContain('viewBox="0 0 300 120"');
@@ -46,7 +49,7 @@ test("server rendering shows a stored drawing, the field contract, and the form 
   expect(html).toContain('role="radiogroup" aria-label="Signature method"');
 });
 
-test("a typed value opens the typing mode in the render locale, and allowTyped=false keeps drawing only", () => {
+test("a typed value opens the typing mode in the render locale, also read-only without the Type option", () => {
   const typed = renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "de",
@@ -62,9 +65,10 @@ test("a typed value opens the typing mode in the render locale, and allowTyped=f
   const drawOnly = renderToString(() =>
     createComponent(SignatureInput, { label: "Signature", allowTyped: false, value: { kind: "typed", name: "Ada", svg: "" } }),
   );
-  expect(drawOnly).toContain('data-mode="draw"');
+  expect(drawOnly).toContain('data-mode="type"');
   expect(drawOnly).not.toContain("radiogroup");
-  expect(drawOnly).toContain("Sign here");
+  expect(drawOnly).toMatch(/<input[^>]*value="Ada"[^>]*readonly/);
+  expect(drawOnly).not.toContain("data-empty");
 });
 
 test("disabled and read-only fields render without active controls", () => {
