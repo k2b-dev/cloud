@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AiConversation, AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import type { CloudCliContext, CloudCliOutputMode } from "@k2b/cloud/cli";
-import { streamAssistantTurn } from "./stream";
+import { type AssistantTurnOutput, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
 
 const conversation: AiConversation = {
   id: "chat",
@@ -68,7 +68,26 @@ const finished = (text: string[]): AiStreamSseEvent => ({
 });
 const response = (events: AiStreamSseEvent[]) => new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
 
-const run = async (connections: AiStreamSseEvent[][], output: CloudCliOutputMode = "text", approveTools?: string[]) => {
+const textDeltas = (lines: unknown[]) =>
+  lines.flatMap((line) =>
+    typeof line === "object" &&
+    line !== null &&
+    "type" in line &&
+    line.type === "text_delta" &&
+    "blockId" in line &&
+    typeof line.blockId === "string" &&
+    "delta" in line &&
+    typeof line.delta === "string"
+      ? [`${line.blockId}:${line.delta}`]
+      : [],
+  );
+
+const run = async (
+  connections: AiStreamSseEvent[][],
+  output: CloudCliOutputMode = "text",
+  approveTools?: string[],
+  turnOutput?: AssistantTurnOutput,
+) => {
   const chunks: string[] = [],
     errors: string[] = [],
     lines: unknown[] = [],
@@ -110,12 +129,125 @@ const run = async (connections: AiStreamSseEvent[][], output: CloudCliOutputMode
     conversationId: "chat",
     turnId: "turn",
     approveTools,
+    output: turnOutput,
     signal: AbortSignal.timeout(4000),
   });
   return { text: chunks.join(""), chunks, errors, lines, requests, result };
 };
 
 describe("Assistant CLI stream", () => {
+  test("interactive resumes share printed text and tool statuses for the turn", async () => {
+    const output = createAssistantTurnOutput();
+    const query: Extract<AiTurnBlock, { kind: "tool" }> = {
+      id: "live-query",
+      kind: "tool",
+      callId: "query",
+      name: "spaces.task.list",
+      status: "completed",
+    };
+    const tool: Extract<AiTurnBlock, { kind: "tool" }> = {
+      id: "live-call",
+      kind: "tool",
+      callId: "call",
+      name: "spaces.task.create",
+      status: "awaiting_approval",
+    };
+    const first = await run(
+      [
+        [
+          delta("intro", "Ich lege die Aufgabe an."),
+          { ...wire(), type: "block_set", block: query },
+          { ...wire(), type: "block_set", block: tool },
+        ],
+      ],
+      "text",
+      undefined,
+      output,
+    );
+    expect(first.result.status).toBe("needs_attention");
+    const completed = { ...tool, id: "saved-call", status: "completed" as const };
+    const second = await run(
+      [
+        [
+          state([{ id: "m1:0", kind: "text", text: "Ich lege die Aufgabe an." }, { ...query, id: "saved-query" }, completed]),
+          { ...wire(), type: "block_set", block: completed },
+          delta("answer", "Fertig."),
+          finished(["Ich lege die Aufgabe an.", "Fertig."]),
+        ],
+      ],
+      "text",
+      undefined,
+      output,
+    );
+    expect(second.result.status).toBe("completed");
+    expect(first.text + second.text).toBe("Ich lege die Aufgabe an.\n\nFertig.\n");
+    expect([...first.errors, ...second.errors]).toEqual([
+      "spaces.task.list: completed",
+      "spaces.task.create: awaiting approval",
+      "spaces.task.create: completed",
+    ]);
+  });
+  test("prints a final answer that is a prefix of an earlier live block", async () => {
+    const reply = await run([
+      [delta("a", "Fertig. Ich prüfe noch X."), delta("b", "Fertig."), finished(["Fertig. Ich prüfe noch X.", "Fertig."])],
+    ]);
+    expect(reply.text).toBe("Fertig. Ich prüfe noch X.\n\nFertig.\n");
+  });
+  test.each([
+    ["Ich prüfe das.", "Ich prüfe das."],
+    ["Ich schaue nach.", "Ich schaue nach. Gefunden."],
+  ])("keeps separate live blocks %s and %s", async (first, second) => {
+    const events = () => [[delta("a", first), delta("b", second), finished([first, second])]];
+    expect((await run(events())).text).toBe(`${first}\n\n${second}\n`);
+    expect(textDeltas((await run(events(), "jsonl")).lines)).toEqual([`a:${first}`, `b:${second}`]);
+  });
+  test("ignores preserved leading whitespace in a converged block_set", async () => {
+    const reply = await run([
+      [
+        delta("a", "Hello world."),
+        { ...wire(), type: "block_set", block: { id: "a", kind: "text", text: "\nHello world." } },
+        finished(["\nHello world."]),
+      ],
+    ]);
+    expect(reply.text).toBe("Hello world.\n");
+  });
+  test("does not repeat adjacent live blocks merged in stored messages", async () => {
+    const reply = await run([[delta("a", "A."), delta("b", "B."), finished(["A.B."])]]);
+    expect(reply.text).toBe("A.\n\nB.\n");
+  });
+  test("keeps the first JSONL block ID after a renamed baseline", async () => {
+    const events = () => [
+      [delta("live", "Found")],
+      [state([{ id: "saved", kind: "text", text: "Found" }]), delta("saved", " it."), finished(["Found it."])],
+    ];
+    expect((await run(events())).text).toBe("Found it.\n");
+    expect(textDeltas((await run(events(), "jsonl")).lines)).toEqual(["live:Found", "live: it."]);
+  });
+  test("prints an identical new live block after a renamed baseline", async () => {
+    const events = () => [
+      [delta("a1", "Done."), state([{ id: "m1:0", kind: "text", text: "Done." }]), delta("a2", "Done."), finished(["Done.", "Done."])],
+    ];
+    expect((await run(events())).text).toBe("Done.\n\nDone.\n");
+    expect(textDeltas((await run(events(), "jsonl")).lines)).toEqual(["a1:Done.", "a2:Done."]);
+  });
+  test("emits JSONL turn_finished when the turn completed during a reconnect", async () => {
+    const reply = await run(
+      [[delta("live", "Checking.")], [{ type: "state", conversation, messages: messages("Checking.", "Done."), activeTurn: null }]],
+      "jsonl",
+    );
+    expect(reply.text).toBe("");
+    expect(textDeltas(reply.lines)).toEqual(["live:Checking."]);
+    expect(reply.lines.at(-1)).toEqual({
+      v: 1,
+      conversationId: "chat",
+      turnId: "turn",
+      type: "turn_finished",
+      status: "completed",
+      error: null,
+      text: "Checking.\n\nDone.",
+      messages: messages("Checking.", "Done."),
+    });
+  });
   test("separates non-blank text blocks and completes only the missing final suffix", async () => {
     const reply = await run([
       [

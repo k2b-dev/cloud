@@ -41,6 +41,23 @@ const expectedRequests = (title: string) => [
   { path: "/api/ai/conversations", method: "POST", body: {} },
   { path: "/api/ai/conversations/chat", method: "PATCH", body: { title } },
 ];
+test.each([" ", "x".repeat(121)])("rejects invalid title %j before resolving a new chat", async (title) => {
+  const { ctx, requests } = context();
+  await expect(resolveConversation(ctx, { title })).rejects.toThrow("Chat titles must have 1 to 120 characters.");
+  expect(requests).toEqual([]);
+});
+test.each([" ", "x".repeat(121)])("chats create rejects invalid title %j before any request", async (title) => {
+  const { ctx, requests } = context(["chats", "create"], { title });
+  await expect(
+    defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx),
+  ).rejects.toThrow("Chat titles must have 1 to 120 characters.");
+  expect(requests).toEqual([]);
+});
+test("trims an explicit title before renaming a new chat", async () => {
+  const { ctx, requests } = context();
+  expect(await resolveConversation(ctx, { title: " Research " })).toMatchObject({ title: "Research", titleSource: "user" });
+  expect(requests).toEqual(expectedRequests("Research"));
+});
 test("print-mode chat resolution creates a draft then applies the user's title through metadata", async () => {
   const { ctx, requests } = context();
   expect(await resolveConversation(ctx, { title: "Research" })).toMatchObject({ title: "Research", titleSource: "user" });

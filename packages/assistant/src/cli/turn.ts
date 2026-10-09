@@ -11,7 +11,7 @@ import {
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
-import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
+import { type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 
 export type ConversationDetail = {
   conversation: AiConversation;
@@ -51,14 +51,16 @@ export const resolveConversation = async (
   input: { conversationId?: string; title?: string; projectId?: string },
 ): Promise<AiConversation> => {
   if (input.conversationId) return (await readConversationDetail(ctx, input.conversationId)).conversation;
+  const title = input.title ? input.title.trim() : undefined;
+  if (title !== undefined && (title.length === 0 || title.length > 120)) {
+    throw new Error("Chat titles must have 1 to 120 characters.");
+  }
   const conversation = await readApi<AiConversation>(
     ctx,
     "/conversations",
     jsonRequest("POST", { ...(input.projectId ? { projectId: input.projectId } : {}) }),
   );
-  return input.title
-    ? readApi<AiConversation>(ctx, conversationPath(conversation.id), jsonRequest("PATCH", { title: input.title }))
-    : conversation;
+  return title ? readApi<AiConversation>(ctx, conversationPath(conversation.id), jsonRequest("PATCH", { title })) : conversation;
 };
 
 export const uploadAttachment = async (
@@ -130,6 +132,7 @@ export const submitAssistantTurn = async (input: {
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
+  output?: AssistantTurnOutput;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
     ? await input.ctx.fetch(`${AI_API}${conversationPath(input.conversationId, "/stream")}`, {
@@ -160,6 +163,7 @@ export const submitAssistantTurn = async (input: {
       onCapabilityApproval: input.onCapabilityApproval,
       signal: input.signal,
       onToolBlock: input.onToolBlock,
+      output: input.output,
     }),
   };
 };
