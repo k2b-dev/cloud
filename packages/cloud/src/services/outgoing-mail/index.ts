@@ -19,11 +19,15 @@ import { outgoingMailMessages, recordMailBatch, recordMailSend } from "./message
 import { sendMail } from "./send";
 import { OutgoingMailError, outgoingMailStore } from "./store";
 
-const identity = (): Result<string, MailServiceError> => {
+const identity = (read = false): Result<string, MailServiceError> => {
   const appId = getProcessApplicationId();
   if (!appId) return fail({ code: "mail_unavailable", message: "Start the application before using outgoing mail.", status: 500 });
-  if (!getProcessPlatformPermissions().includes("mail:send"))
-    return fail({ code: "mail_not_declared", message: 'Declare platformPermissions: ["mail:send"].', status: 403 });
+  if (!getProcessPlatformPermissions().includes("mail:send") && !(read && getProcessPlatformPermissions().includes("mail:read")))
+    return fail({
+      code: "mail_not_declared",
+      message: read ? 'Declare "mail:send" or "mail:read" in platformPermissions.' : 'Declare platformPermissions: ["mail:send"].',
+      status: 403,
+    });
   return ok(appId);
 };
 const failure = (error: unknown): MailServiceError => {
@@ -39,6 +43,16 @@ const failure = (error: unknown): MailServiceError => {
   };
 };
 export const mail = {
+  async readableApps(): Promise<Result<string[], MailServiceError>> {
+    const caller = identity(true);
+    if (!caller.ok) return caller;
+    try {
+      const granted = getProcessPlatformPermissions().includes("mail:read") ? await outgoingMailStore.logAppsFor(caller.data) : [];
+      return ok([caller.data, ...granted.filter((appId) => appId !== caller.data && appId !== "core").sort()]);
+    } catch (error) {
+      return fail(failure(error));
+    }
+  },
   async enqueue(messages: MailMessage[]): Promise<Result<{ batchId: string; ids: string[] }, MailServiceError>> {
     const caller = identity();
     const parsed = caller.ok ? MailBatchSchema.safeParse(messages) : undefined;
@@ -97,14 +111,28 @@ export const mail = {
     }
   },
   async list(filter: MailFilter = {}, page: MailPageParams = {}): Promise<Result<MailPage, MailServiceError>> {
-    const caller = identity();
+    const caller = identity(true);
     if (!caller.ok) return caller;
     const parsedFilter = MailFilterSchema.safeParse(filter);
     const parsedPage = MailPageParamsSchema.safeParse(page);
     if (!parsedFilter.success || !parsedPage.success)
       return fail({ code: "bad_input", message: "Invalid outgoing mail filter or page.", status: 400 });
     try {
-      return ok(await outgoingMailMessages.list({ ...parsedFilter.data, app: caller.data }, parsedPage.data));
+      const { apps = [caller.data], recipient, ...filter } = parsedFilter.data;
+      const otherApps = apps.filter((appId) => appId !== caller.data);
+      if (otherApps.length) {
+        if (!getProcessPlatformPermissions().includes("mail:read"))
+          return fail({
+            code: "mail_not_declared",
+            message: 'Declare "mail:read" in platformPermissions to read other apps’ mail logs.',
+            status: 403,
+          });
+        const granted = await outgoingMailStore.logAppsFor(caller.data);
+        const denied = otherApps.find((appId) => !granted.includes(appId));
+        if (denied)
+          return fail({ code: "app_not_allowed", message: `This application may not read the mail log of "${denied}".`, status: 403 });
+      }
+      return ok(await outgoingMailMessages.list({ ...filter, apps, recipientExact: recipient }, parsedPage.data, false, caller.data));
     } catch (error) {
       return fail(failure(error));
     }

@@ -14,8 +14,10 @@ const normalize = (source: string) =>
 describe("outgoing mail worked examples", () => {
   // typecheck:examples compiles the fixture, so each worked snippet compiles against the public exports.
   test("every worked snippet is included in the compile-checked fixture", () => {
-    const worked = snippets.filter((snippet) => /export const (sendInvoiceMail|sendDownloadLink|enqueueStockRun) =/.test(snippet));
-    expect(worked).toHaveLength(3);
+    const worked = snippets.filter((snippet) =>
+      /export const (sendInvoiceMail|sendDownloadLink|enqueueStockRun|createEmailRoutes) =/.test(snippet),
+    );
+    expect(worked).toHaveLength(4);
     for (const snippet of worked) expect(normalize(fixture)).toContain(normalize(snippet));
   });
 

@@ -293,3 +293,54 @@ test("profile text output shows IMAP host/folder and bounce check, error or off"
     expect(read.output[1]).toBe(`Bounces: ${item.bounces?.error ?? item.bounces?.checkedAt ?? "off"}`);
   }
 });
+
+test("apps list shows declared read access and comma-joined log grants", async () => {
+  const item = {
+    appId: "reader",
+    name: "Reader",
+    registered: true,
+    declared: false,
+    readDeclared: true,
+    logApps: ["a", "b"],
+    mode: "default",
+    profiles: [],
+  };
+  const result = { defaultProfile: null, items: [item] };
+  expect((await invoke(["apps", "list"], {}, result, [], "text")).output[0]).toMatchObject([{ reads: true, logApps: "a,b" }]);
+  expect((await invoke(["apps", "list"], {}, result)).output).toEqual([result]);
+});
+test("set-log-access requires exactly one mode and confirmation and validates readers and sources", async () => {
+  for (const [flags, body] of [
+    [{ apps: " a, b " }, { apps: ["a", "b"] }],
+    [{ apps: "erp_v2,ERP" }, { apps: ["erp_v2", "ERP"] }],
+    [{ "own-only": true }, { apps: [] }],
+  ] as const) {
+    expect((await invoke(["apps", "set-log-access", "reader"], { ...flags, yes: true })).requests[0]).toEqual({
+      path: "/api/admin/core/outgoing-mail/apps/reader/log-access",
+      method: "PUT",
+      body,
+    });
+    await expect(invoke(["apps", "set-log-access", "reader"], flags)).rejects.toThrow("--yes");
+  }
+  const invalid: CloudCliFlags[] = [
+    {},
+    { apps: "a", "own-only": true },
+    { apps: "" },
+    { apps: "a,,b" },
+    { apps: "a,a" },
+    { apps: "core" },
+    { apps: "reader" },
+    { apps: Array.from({ length: 101 }, (_, i) => `app-${i}`).join(",") },
+  ];
+  for (const flags of invalid) {
+    const requests: { path: string; method: string; body: unknown }[] = [];
+    await expect(invoke(["apps", "set-log-access", "reader"], { ...flags, yes: true }, {}, requests)).rejects.toThrow();
+    expect(requests).toHaveLength(0);
+  }
+  for (const appId of ["core", ""])
+    await expect(invoke(["apps", "set-log-access", appId], { "own-only": true, yes: true })).rejects.toThrow();
+  // App IDs are taken as registered and travel encoded in the path.
+  expect((await invoke(["apps", "set-log-access", "a/b"], { "own-only": true, yes: true })).requests[0]?.path).toBe(
+    "/api/admin/core/outgoing-mail/apps/a%2Fb/log-access",
+  );
+});

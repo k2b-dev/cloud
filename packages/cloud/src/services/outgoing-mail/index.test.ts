@@ -5,7 +5,7 @@ import {
   getProcessApplicationId,
   getProcessPlatformPermissions,
 } from "../../_internal/process-identity";
-import { MailProfileInputSchema, MailProfileKeySchema } from "../../contracts/outgoing-mail";
+import { MailFilterSchema, MailProfileInputSchema, MailProfileKeySchema } from "../../contracts/outgoing-mail";
 import { mail } from "./index";
 import { outgoingMailStore, resolveMailCredentials } from "./store";
 
@@ -104,7 +104,12 @@ test("list scopes every filter to the calling app and validates paging", async (
   const list = spyOn(outgoingMailMessages, "list").mockResolvedValue(page);
   try {
     expect(await mail.list({ ref: { scope: "order" }, status: ["failed"] }, { perPage: 20 })).toEqual({ ok: true, data: page });
-    expect(list).toHaveBeenCalledWith({ app: "inventory", ref: { scope: "order" }, status: ["failed"] }, { perPage: 20 });
+    expect(list).toHaveBeenCalledWith(
+      { apps: ["inventory"], recipientExact: undefined, ref: { scope: "order" }, status: ["failed"] },
+      { perPage: 20 },
+      false,
+      "inventory",
+    );
     expect(await mail.list({}, { perPage: 101 })).toMatchObject({ ok: false, error: { code: "bad_input" } });
     expect(list).toHaveBeenCalledTimes(1);
   } finally {
@@ -118,6 +123,7 @@ test("send returns recorded outcomes and quota details without leaking infrastru
   bindProcessApplicationId("inventory", ["mail:send"]);
   const record = {
     id: crypto.randomUUID(),
+    appId: "inventory",
     profile: "alerts",
     to: ["reader@example.org"],
     subject: "Hello",
@@ -146,4 +152,100 @@ test("send returns recorded outcomes and quota details without leaking infrastru
     send.mockRestore();
     recordAudit.mockRestore();
   }
+});
+
+test("mail:read-only apps list their own log but cannot use sender services", async () => {
+  const { outgoingMailMessages } = await import("./messages");
+  bindProcessApplicationId("reader", ["mail:read"]);
+  const page = { items: [], page: 1, perPage: 50, total: 0, hasNext: false };
+  const list = spyOn(outgoingMailMessages, "list").mockResolvedValue(page);
+  const grants = spyOn(outgoingMailStore, "logAppsFor").mockResolvedValue(["source"]);
+  const { audit } = await import("../audit");
+  const record = spyOn(audit, "record").mockResolvedValue();
+  try {
+    expect(await mail.list()).toEqual({ ok: true, data: page });
+    expect(list).toHaveBeenCalledWith({ apps: ["reader"], recipientExact: undefined }, {}, false, "reader");
+    expect(grants).not.toHaveBeenCalled();
+    expect(await mail.profiles()).toMatchObject({ ok: false, error: { code: "mail_not_declared", status: 403 } });
+    const message = { to: ["a@example.org"], subject: "test", text: "body" };
+    for (const result of [await mail.send(message), await mail.enqueue([message])])
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "mail_not_declared", message: 'Declare platformPermissions: ["mail:send"].', status: 403 },
+      });
+  } finally {
+    for (const mock of [list, grants, record]) mock.mockRestore();
+  }
+});
+test("other app logs require a declaration and current grants on every call", async () => {
+  const { outgoingMailMessages } = await import("./messages");
+  const page = { items: [], page: 1, perPage: 50, total: 0, hasNext: false };
+  const list = spyOn(outgoingMailMessages, "list").mockResolvedValue(page);
+  const grants = spyOn(outgoingMailStore, "logAppsFor").mockResolvedValue(["source"]);
+  try {
+    bindProcessApplicationId("reader", ["mail:send"]);
+    expect(await mail.list({ apps: ["source"] })).toMatchObject({
+      ok: false,
+      error: { code: "mail_not_declared", message: expect.stringContaining('"mail:read"'), status: 403 },
+    });
+    expect(grants).not.toHaveBeenCalled();
+    bindProcessApplicationId("reader", ["mail:read"]);
+    expect(await mail.list({ apps: ["source", "denied"] })).toMatchObject({
+      ok: false,
+      error: { code: "app_not_allowed", message: expect.stringContaining("denied"), status: 403 },
+    });
+    expect(list).not.toHaveBeenCalled();
+    expect(await mail.list({ apps: ["reader", "source"], recipient: " USER@example.org " })).toEqual({ ok: true, data: page });
+    expect(list).toHaveBeenCalledWith({ apps: ["reader", "source"], recipientExact: "USER@example.org" }, {}, false, "reader");
+    grants.mockResolvedValue([]);
+    expect(await mail.list({ apps: ["source"] })).toMatchObject({ ok: false, error: { code: "app_not_allowed" } });
+    expect(list).toHaveBeenCalledTimes(1);
+    grants.mockRejectedValue(new Error("private connection string"));
+    expect(await mail.list({ apps: ["source"] })).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+  } finally {
+    list.mockRestore();
+    grants.mockRestore();
+  }
+});
+test("readableApps puts own app first, sorts grants, and requires a reading identity", async () => {
+  const grants = spyOn(outgoingMailStore, "logAppsFor").mockResolvedValue(["zebra", "alpha"]);
+  try {
+    expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    bindProcessApplicationId("reader");
+    expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_not_declared" } });
+    bindProcessApplicationId("reader", ["mail:send"]);
+    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
+    expect(grants).not.toHaveBeenCalled();
+    bindProcessApplicationId("reader", ["mail:read"]);
+    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader", "alpha", "zebra"] });
+    grants.mockResolvedValue([]);
+    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
+    grants.mockRejectedValue(new Error("secret"));
+    expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    clearProcessApplicationId();
+    // Core reads its own mail like any app; no grant can name Core as a reader or a source.
+    bindProcessApplicationId("core", ["mail:read", "mail:send"]);
+    grants.mockResolvedValue([]);
+    expect(await mail.readableApps()).toEqual({ ok: true, data: ["core"] });
+  } finally {
+    grants.mockRestore();
+  }
+});
+test("log filters bound and normalize search, app sets, recipients and timestamps", () => {
+  expect(MailFilterSchema.parse({ q: "  AbC  ", recipient: " A@example.org " })).toEqual({ q: "AbC", recipient: "A@example.org" });
+  for (const q of ["", "ab", "  ab ", "x".repeat(201), "abc\n", "\tabc", "ab\0c", "abc\x7f", "a\nbc"])
+    expect(MailFilterSchema.safeParse({ q }).success).toBe(false);
+  // Without three letters or digits in a row, pg_trgm finds no trigram and every record would be a candidate.
+  for (const q of ["...", "%_%", "---", "___", "a.b.c", "x@y.de", "ab 12"]) expect(MailFilterSchema.safeParse({ q }).success).toBe(false);
+  for (const q of ["abc", "Müller", "@example.org", "50%_off", "RE: 123", "发票通知"])
+    expect(MailFilterSchema.safeParse({ q }).success).toBe(true);
+  // An app passes everything readableApps() returns: itself and up to 100 grants. App IDs are as registered.
+  for (const apps of [[], [""], ["reader", "reader"], Array.from({ length: 102 }, (_, i) => `app-${i}`)])
+    expect(MailFilterSchema.safeParse({ apps }).success).toBe(false);
+  expect(MailFilterSchema.safeParse({ apps: Array.from({ length: 101 }, (_, i) => `app-${i}`), q: "x".repeat(200) }).success).toBe(true);
+  expect(MailFilterSchema.safeParse({ apps: ["erp_v2", "ERP", "1crm"] }).success).toBe(true);
+  for (const until of ["yesterday", "2026-10-09", "2026-10-09T10:00:00", "2026-13-09T10:00:00Z"])
+    expect(MailFilterSchema.safeParse({ until }).success).toBe(false);
+  expect(MailFilterSchema.safeParse({ until: "2026-10-09T10:00:00+02:00" }).success).toBe(true);
+  expect(MailFilterSchema.safeParse({ recipient: "@example.org" }).success).toBe(false);
 });

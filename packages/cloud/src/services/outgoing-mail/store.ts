@@ -8,6 +8,9 @@ import {
   MailAppAccessSchema,
   type MailBounceErrorCode,
   type MailErrorCode,
+  type MailLogAccess,
+  MailLogAccessSchema,
+  MailLogAppIdSchema,
   type MailProfile,
   type MailProfileInput,
   MailProfileInputSchema,
@@ -22,7 +25,7 @@ export class OutgoingMailError extends Error {
   constructor(
     public readonly code: MailErrorCode,
     message: string,
-    public readonly status: 400 | 404 | 409 | 502 = 400,
+    public readonly status: 400 | 403 | 404 | 409 | 502 = 400,
   ) {
     super(message);
   }
@@ -75,11 +78,12 @@ const locked = async <T>(run: (tx: SQL) => Promise<T>): Promise<T> =>
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('outgoing_mail.policy', 0))`;
     return run(tx);
   });
-const record = (db: SQL, context: MailAuditContext, action: string, target: string) =>
+const record = (db: SQL, context: MailAuditContext, action: string, target: string, metadata?: Record<string, unknown>) =>
   audit.record(
     {
       ...context,
       action: `outgoing_mail.${action}`,
+      ...(metadata ? { metadata } : {}),
       outcome: "allowed",
       target: { type: action.startsWith("profile.") ? "outgoing_mail_profile" : "outgoing_mail_app", id: target },
     },
@@ -241,7 +245,9 @@ const appsState = async (
   const registered = registeredApps ?? (await listApps());
   const { access, grants } = await accessRows(db);
   const [profile] = await db<{ key: string }[]>`SELECT key FROM outgoing_mail.profiles WHERE is_default`;
-  const ids = new Set([...registered.map((app) => app.id), ...access.map((a) => a.app_id)]);
+  const logGrants = await db<{ app_id: string; source_app_id: string }[]>`
+    SELECT app_id, source_app_id FROM outgoing_mail.app_log_access ORDER BY source_app_id`;
+  const ids = new Set([...registered.map((app) => app.id), ...access.map((a) => a.app_id), ...logGrants.map((g) => g.app_id)]);
   const items = [...ids]
     .map((appId): AdminMailApp => {
       const app = registered.find((a) => a.id === appId);
@@ -251,6 +257,13 @@ const appsState = async (
         name: app?.name ?? appId,
         registered: !!app,
         declared: !!app?.platformPermissions?.includes("mail:send"),
+        readDeclared: appId !== "core" && !!app?.platformPermissions?.includes("mail:read"),
+        logApps:
+          appId === "core"
+            ? []
+            : logGrants
+                .filter((g) => g.app_id === appId && g.source_app_id !== "core" && g.source_app_id !== appId)
+                .map((g) => g.source_app_id),
         mode,
         profiles: mode === "selected" ? grants.filter((g) => g.app_id === appId).map((g) => g.key) : [],
       };
@@ -285,6 +298,41 @@ const setAppAccess = async (appId: string, value: MailAppAccess, context: MailAu
         name: appId,
         registered: false,
         declared: false,
+        readDeclared: false,
+        logApps: [],
+        mode: "default",
+        profiles: [],
+      }
+    );
+  });
+};
+const logAppsFor = async (appId: string): Promise<string[]> => {
+  if (appId === "core") return [];
+  const rows = await sql<{ source_app_id: string }[]>`SELECT source_app_id FROM outgoing_mail.app_log_access
+    WHERE app_id = ${appId} AND source_app_id <> 'core' AND source_app_id <> app_id ORDER BY source_app_id`;
+  return rows.map((row) => row.source_app_id);
+};
+const setAppLogAccess = async (appId: string, value: MailLogAccess, context: MailAuditContext): Promise<AdminMailApp> => {
+  const reader = MailLogAppIdSchema.safeParse(appId);
+  const parsed = MailLogAccessSchema.safeParse(value);
+  if (!reader.success || appId === "core" || !parsed.success || parsed.data.apps.includes(appId))
+    throw new OutgoingMailError("bad_input", "Choose a valid reader and distinct source apps other than Core or the reader itself.");
+  const apps = [...parsed.data.apps].sort();
+  const registered = await listApps();
+  return locked(async (tx) => {
+    await tx`DELETE FROM outgoing_mail.app_log_access WHERE app_id = ${appId}`;
+    await tx`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, created_by)
+      SELECT ${appId}, source_app_id, ${context.actor.userId ?? null}
+      FROM unnest(${toPgTextArray(apps)}::text[]) AS source_app_id`;
+    await record(tx, context, "app_log_access.update", appId, { apps });
+    return (
+      (await appsState(tx, registered)).items.find((app) => app.appId === appId) ?? {
+        appId,
+        name: appId,
+        registered: false,
+        declared: false,
+        readDeclared: false,
+        logApps: [],
         mode: "default",
         profiles: [],
       }
@@ -319,7 +367,18 @@ const profilesForApp = async (appId: string): Promise<MailProfile[]> => {
     quota: { dailyRecipients: row.daily_recipient_limit, usedLast24h: row.used },
   }));
 };
-export const outgoingMailStore = { list, get, put, setDefault, delete: remove, apps: appsState, setAppAccess, profilesForApp };
+export const outgoingMailStore = {
+  list,
+  get,
+  put,
+  setDefault,
+  delete: remove,
+  apps: appsState,
+  setAppAccess,
+  setAppLogAccess,
+  logAppsFor,
+  profilesForApp,
+};
 
 /** Platform email send path only. Never use this helper to shape API or CLI responses. */
 export const resolveMailCredentials = async (key?: string | { id: string }) => {

@@ -5,7 +5,7 @@ section: Platform services
 order: 535
 description: Send application mail through operator-managed profiles and read its delivery status.
 tags: [mail, smtp, permissions, services]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Outgoing mail
@@ -209,10 +209,28 @@ acceptance and before the log update can repeat a message.
 
 ## Read application delivery status
 
-`mail.list(filter?, page?)` returns only the calling application's records.
-Filters are `ref: { scope, id? }`, `ids` (at most 100 UUIDs), `batchId`,
-`status` (an array), and `since` (an ISO timestamp). Status values are `queued`,
-`sending`, `sent`, `failed`, `bounced`, and `cancelled`.
+`mail.list(filter?, page?)` returns the calling application's records unless
+`apps` names others; see [Read other apps' mail](#read-other-apps-mail). It works
+for applications that declare `mail:send` or `mail:read`. All filters combine:
+
+| Filter | Matches |
+| --- | --- |
+| `ref: { scope, id? }` | The record's domain reference; `id` optional |
+| `ids` | At most 100 record UUIDs |
+| `batchId` | Records of one `mail.enqueue` batch |
+| `status` | Any of `queued`, `sending`, `sent`, `failed`, `bounced`, `cancelled` |
+| `since`, `until` | ISO timestamps; `createdAt` from `since` (inclusive) to `until` (exclusive) |
+| `q` | Up to 200 characters with at least three letters or digits in a row, case-insensitive, found anywhere in a recipient address or the subject; no control characters |
+| `recipient` | One address, matched exactly but case-insensitively |
+| `apps` | Application IDs to read, at most your own and the 100 an operator can grant; omitted means only your own |
+
+`q` and `recipient` are trimmed. `%` and `_` in `q` match literally. Search
+covers subjects and recipients, not message bodies. Indexes keep both searches
+fast on large logs; they need three letters or digits in a row, so a `q` such
+as `ab` or `...` is `bad_input`. A search may take five seconds. One that
+matches a large share of a big log, or that runs while Core still builds the
+search indexes after an upgrade, returns `bad_input` with a message that it took
+too long. Narrow it with a longer term, fewer `apps`, or `since` and `until`.
 
 `bounced` means a standard delivery status notification (RFC 3464) reported
 failed recipients after SMTP acceptance (`sent`). Core collects these reports
@@ -242,19 +260,51 @@ navigation even when newer rows arrive or the cursor row is deleted. The page
 also retains Cloud's `items`, `page`, `perPage`, `total`, and `hasNext` fields;
 `page` without a cursor uses offset paging, and `total` reflects current rows.
 
-A `MailRecord` includes `id`, `profile`, optional `batchId` and `ref`, `to`,
-`subject`, optional `text`, attachment metadata, `status`, optional `error`,
-`failures: [{ recipient, reason, at }]`, `attempts`, optional `actor: { id, name }`,
-`createdAt`, optional `sentAt`, and optional `contentPurgedAt`. Text disappears
-after content retention; subject, recipients, actor, and attachment metadata
-remain until record retention. SMTP credentials are never returned.
+A `MailRecord` includes `id`, `appId` (the sending application), `profile`,
+optional `batchId` and `ref`, `to`, `subject`, optional `text`, attachment
+metadata, `status`, optional `error`, `failures: [{ recipient, reason, at }]`,
+`attempts`, optional `actor: { id, name }`, `createdAt`, optional `sentAt`, and
+optional `contentPurgedAt`. Text disappears after content retention; subject,
+recipients, actor, and attachment metadata remain until record retention, and
+stay searchable until then. SMTP credentials are never returned.
+
+### Read other apps' mail
+
+A business system often spans several applications on one installation, for
+example invoices, customers, and HR. One of them can offer an "Emails" page
+across all of their mail:
+
+1. Declare `platformPermissions: ["mail:read"]`, next to `mail:send` if the
+   application also sends.
+2. Ask the operator to choose which applications' mail it may read, in
+   **Administration → Outgoing mail → Apps** or with
+   [`cld admin outgoing-mail apps set-log-access`](/en/docs/operations/outgoing-mail#let-an-app-read-other-apps-mail).
+   Without a choice, an application reads only its own mail.
+3. Call `mail.readableApps()` for the application IDs you may read: your own
+   first, then the granted ones. Pass them, or a subset, as `filter.apps`.
+
+Cloud checks the declaration and the grants on every call, so a revoked grant
+applies to the next call. Naming an application without `mail:read` returns
+`mail_not_declared`; naming one without a grant returns `app_not_allowed`
+(both status 403). Core's own mail (notifications, sign-in links, password
+resets) is never readable by applications.
+
+Other applications' records carry metadata only: `text` is returned for your
+own records, never for theirs. Read access does not let an application send,
+cancel, or change mail.
+
+Cloud only decides which applications' mail your application may read.
+**Your application decides which of its users may see it**: put the page and
+its API behind your own permission check, as in
+[the Emails page example](#emails-page-across-apps).
 
 ## Handle errors
 
 | Acceptance error | Meaning |
 | --- | --- |
 | `bad_input` | Invalid addresses, message, headers, filter, or page |
-| `mail_not_declared` | The application did not declare `mail:send` |
+| `mail_not_declared` | The application did not declare `mail:send`, or `mail:read` for reading other apps' mail |
+| `app_not_allowed` | `filter.apps` names an application whose mail the operator did not let you read; status 403 |
 | `profile_unknown` | The requested profile does not exist |
 | `profile_not_allowed` | The application cannot use the requested profile |
 | `profile_required` | No usable default; choose an allowed profile explicitly |
@@ -456,6 +506,65 @@ further bounded traversal if needed. A record can move from `sent` to
 reports failed recipients. On a resumed run, known records retain their
 original batch membership; use the saved `ids` to read them in groups of at
 most 100, as described in [Enqueue a batch](#enqueue-a-batch).
+
+### Emails page across apps
+
+A back-office application shows the mail of the invoice, customer, and HR
+applications in one place. It declares `platformPermissions: ["mail:read"]`
+and the operator granted it those applications. The route answers "Did customer
+X get the invoice in March?" with `q`, `recipient`, `since`, and `until`.
+`mayReadSentMail` is your own authorization rule, for example an application
+permission for the management team; Cloud does not decide it.
+
+```ts
+import type { MailFilter } from "@k2b/cloud/contracts";
+import { type AuthContext, auth, expectUserBackedActor } from "@k2b/cloud/server";
+import { mail } from "@k2b/cloud/services";
+import { Hono } from "hono";
+
+export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<boolean>) =>
+  new Hono<AuthContext>()
+    .use("*", auth.requireRole("authenticated"))
+    .use("*", auth.requireUser())
+    .get("/emails", async (c) => {
+      // Cloud decides whose mail this app may read; this app decides who sees it.
+      if (!(await mayReadSentMail(expectUserBackedActor(c).id))) return c.json({ code: "forbidden" }, 403);
+      const apps = await mail.readableApps();
+      if (!apps.ok) return c.json({ code: apps.error.code }, apps.error.status);
+      const { q, recipient, since, until, cursor } = c.req.query();
+      const filter: MailFilter = {
+        apps: apps.data,
+        ...(q ? { q } : {}),
+        ...(recipient ? { recipient } : {}),
+        ...(since ? { since } : {}),
+        ...(until ? { until } : {}),
+      };
+      const page = await mail.list(filter, { perPage: 50, cursor });
+      if (!page.ok) return c.json({ code: page.error.code, message: page.error.message }, page.error.status);
+      return c.json({
+        items: page.data.items.map(({ id, appId, to, subject, status, failures, createdAt }) => ({
+          id,
+          appId,
+          to,
+          subject,
+          status,
+          failures,
+          createdAt,
+        })),
+        nextCursor: page.data.nextCursor,
+      });
+    });
+```
+
+`?recipient=customer@example.org&since=2026-03-01T00:00:00Z&until=2026-04-01T00:00:00Z`
+lists that customer's March mail across the granted applications; a `bounced`
+status with its `failures` answers "Which mails to this address bounced?". Pass
+`nextCursor` back with the same search for the next page. A `bad_input`
+answer means the person needs to change the search: it is invalid, such as a
+`q` without three letters or digits in a row, or it took too long and needs to
+be narrower. Show its `message`. If the operator revokes a grant between
+`readableApps()` and `list`, the call returns `app_not_allowed`; reload to use
+the current grants.
 
 ## Move from an application-owned SMTP account
 

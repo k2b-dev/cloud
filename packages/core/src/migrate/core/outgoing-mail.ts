@@ -1,6 +1,20 @@
+import { lazySync } from "@k2b/cloud";
+import { logger } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { decryptValue } from "@k2b/cloud/services/settings/crypto";
 import { type SQL, sql } from "bun";
+
+const log = logger("core:outgoing-mail");
+
+/**
+ * The send log can hold millions of rows. Even when the index exists, CREATE INDEX waits for the lock
+ * that a running concurrent build holds on the table, and new mail would queue behind it, so the
+ * catalog is checked first.
+ */
+const ensureMessagesIndex = async (tx: SQL, name: string, definition: string): Promise<void> => {
+  const [index] = await tx<{ present: boolean }[]>`SELECT to_regclass(${`outgoing_mail.${name}`}) IS NOT NULL AS present`;
+  if (!index?.present) await tx.unsafe(`CREATE INDEX IF NOT EXISTS ${name} ON outgoing_mail.messages ${definition}`).simple();
+};
 
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {
@@ -43,11 +57,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       content_purged_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       UNIQUE(app_id, idempotency_key)
     )`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_ref ON outgoing_mail.messages(app_id, ref_scope, ref_id)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_due ON outgoing_mail.messages(status, lane, profile_id, next_attempt_at)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_quota ON outgoing_mail.messages(app_id, profile_id, created_at)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_log ON outgoing_mail.messages(app_id, created_at DESC, id)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_created ON outgoing_mail.messages(created_at, id)`.simple();
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_ref", "(app_id, ref_scope, ref_id)");
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_due", "(status, lane, profile_id, next_attempt_at)");
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_quota", "(app_id, profile_id, created_at)");
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_log", "(app_id, created_at DESC, id)");
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_created", "(created_at, id)");
     const [existing] = await tx<{ count: number }[]>`SELECT count(*)::int AS count FROM outgoing_mail.profiles`;
     if (existing!.count) return;
     const rows = await tx<{ key: string; value: string }[]>`SELECT key, value FROM settings.entries WHERE key LIKE 'mail.noreply.%'`;
@@ -80,9 +94,13 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // Additive, repeatable step: also runs when the original profile import returns early.
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_batch ON outgoing_mail.messages(batch_id) WHERE batch_id IS NOT NULL`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_bulk_due ON outgoing_mail.messages(profile_id, (COALESCE(next_attempt_at, created_at)), id) WHERE status = 'queued' AND lane = 'bulk'`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS outgoing_mail_messages_bulk_deadline ON outgoing_mail.messages(deadline_at) WHERE status = 'queued' AND lane = 'bulk'`.simple();
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_batch", "(batch_id) WHERE batch_id IS NOT NULL");
+    await ensureMessagesIndex(
+      tx,
+      "outgoing_mail_messages_bulk_due",
+      "(profile_id, (COALESCE(next_attempt_at, created_at)), id) WHERE status = 'queued' AND lane = 'bulk'",
+    );
+    await ensureMessagesIndex(tx, "outgoing_mail_messages_bulk_deadline", "(deadline_at) WHERE status = 'queued' AND lane = 'bulk'");
   });
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
@@ -98,4 +116,117 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       ADD COLUMN IF NOT EXISTS imap_checked_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS imap_error TEXT`.simple();
   });
+  await db.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('core.outgoing_mail.migrations', 0))`;
+    await tx`CREATE EXTENSION IF NOT EXISTS pg_trgm`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS outgoing_mail.app_log_access (
+      app_id TEXT NOT NULL, source_app_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), created_by TEXT,
+      PRIMARY KEY(app_id, source_app_id), CHECK(app_id <> source_app_id), CHECK(source_app_id <> 'core')
+    )`.simple();
+    await tx`CREATE OR REPLACE FUNCTION outgoing_mail.search_text(subject pg_catalog.text, addresses pg_catalog.text[])
+      RETURNS pg_catalog.text LANGUAGE sql IMMUTABLE PARALLEL SAFE
+      AS $$ SELECT pg_catalog.lower(subject OPERATOR(pg_catalog.||) E'\\n' OPERATOR(pg_catalog.||)
+        pg_catalog.array_to_string(addresses, E'\\n')) $$`.simple();
+    await tx`CREATE OR REPLACE FUNCTION outgoing_mail.lower_addresses(addresses pg_catalog.text[])
+      RETURNS pg_catalog.text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE
+      AS $$ SELECT ARRAY(SELECT pg_catalog.lower(address) FROM pg_catalog.unnest(addresses) AS address) $$`.simple();
+  });
+};
+
+/** Send-log search indexes on recipients and subjects. */
+const searchIndexes = {
+  outgoing_mail_messages_search: "USING gin (outgoing_mail.search_text(subject, to_addresses) gin_trgm_ops)",
+  outgoing_mail_messages_recipients: "USING gin (outgoing_mail.lower_addresses(to_addresses))",
+} as const;
+type SearchIndex = keyof typeof searchIndexes;
+type BuildOutcome = "ready" | "busy" | "built" | "failed";
+
+/**
+ * One Core process builds at a time: two builds on the same table wait for each other, and Postgres
+ * cancels one of them. The lease is renewed while the build runs.
+ */
+const SEARCH_INDEX_LEASE_MS = 60_000;
+const searchIndexBuildMutex = lazySync((sync) =>
+  sync.mutex({ id: "core:outgoing-mail:search-index-build", ttlMs: SEARCH_INDEX_LEASE_MS, retry: { maxAttempts: 1 } }),
+);
+
+/**
+ * The index as the database sees it. `building` is any index build on the send log, in any process.
+ * Postgres hides what another role builds, so any build of another role in this database counts.
+ */
+const readSearchIndex = async (db: SQL, name: SearchIndex) => {
+  const index = `outgoing_mail.${name}`;
+  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
+    SELECT to_regclass(${index}) IS NOT NULL AS present,
+      EXISTS (SELECT 1 FROM pg_catalog.pg_index WHERE indexrelid = to_regclass(${index}) AND indisvalid AND indisready AND indislive) AS valid,
+      EXISTS (SELECT 1 FROM pg_catalog.pg_stat_progress_create_index progress
+        WHERE progress.datname = pg_catalog.current_database()
+          AND (progress.relid = to_regclass('outgoing_mail.messages') OR progress.relid IS NULL)) AS building`;
+  return state ?? { present: false, valid: false, building: false };
+};
+
+const dropSearchIndex = (db: SQL, name: SearchIndex) => db.unsafe(`DROP INDEX CONCURRENTLY IF EXISTS outgoing_mail.${name}`).simple();
+
+const buildSearchIndex = async (db: SQL, name: SearchIndex): Promise<BuildOutcome> => {
+  const before = await readSearchIndex(db, name);
+  if (before.valid) return "ready";
+  if (before.building) return "busy";
+  // IF NOT EXISTS would keep an invalid index, such as one whose build was interrupted.
+  if (before.present) await dropSearchIndex(db, name);
+  log.info("Building a send log search index", { index: name });
+  const startedAt = performance.now();
+  try {
+    await db.unsafe(`CREATE INDEX CONCURRENTLY IF NOT EXISTS ${name} ON outgoing_mail.messages ${searchIndexes[name]}`).simple();
+  } catch (error) {
+    const after = await readSearchIndex(db, name);
+    if (after.valid) return "ready";
+    if (after.building) return "busy";
+    log.warn("A send log search index was not built; searches run without it until the next start", {
+      index: name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await dropSearchIndex(db, name);
+    return "failed";
+  }
+  // IF NOT EXISTS skips the build when another build created the index meanwhile; it is valid only if that build succeeded.
+  if (!(await readSearchIndex(db, name)).valid) return "busy";
+  log.info("Built a send log search index", { index: name, durationMs: Math.round(performance.now() - startedAt) });
+  return "built";
+};
+
+/**
+ * Builds the send-log search indexes after Core's setup, without blocking new mail or Core's start;
+ * searches run without them until they are valid. One process builds at a time through a NATS lease.
+ * An index left invalid by an interrupted build is replaced, and one that another process still builds
+ * is left to the next start. Every database step is one statement without session state, so a
+ * transaction pooler may send each to another backend. Never throws.
+ */
+export const buildSearchIndexes = async (db: SQL = sql): Promise<BuildOutcome> => {
+  try {
+    const names = Object.keys(searchIndexes) as SearchIndex[];
+    if ((await Promise.all(names.map((name) => readSearchIndex(db, name)))).every((state) => state.valid)) return "ready";
+    const mutex = searchIndexBuildMutex();
+    const lease = await mutex.acquire({ resource: "send-log-search" });
+    if (!lease) return "busy";
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), SEARCH_INDEX_LEASE_MS / 3);
+    renewal.unref();
+    try {
+      let outcome: BuildOutcome = "ready";
+      for (const name of names) {
+        const built = await buildSearchIndex(db, name);
+        if (built === "busy" || built === "failed") return built;
+        if (built === "built") outcome = "built";
+      }
+      return outcome;
+    } finally {
+      clearInterval(renewal);
+      await mutex.release(lease).catch(() => false);
+    }
+  } catch (error) {
+    log.warn("Send log search indexes are unavailable; searches run without them", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "failed";
+  }
 };

@@ -19,6 +19,7 @@ import identityOAuthIssuanceRoutes from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
 import { app } from "./config";
 import { coreHelp } from "./help";
+import { buildSearchIndexes as buildOutgoingMailSearchIndexes } from "./migrate/core/outgoing-mail";
 import { createCoreNotificationSender } from "./notifications";
 import { createPagesRouter } from "./pages/create";
 import { runCoreSetup, startCoreServices, stopCoreServices } from "./runtime-helpers";
@@ -57,6 +58,8 @@ const result = await app.start({
   lifecycle: {
     setup: async () => {
       await runCoreSetup();
+      // Searches run without the send log indexes until they are built, so startup does not wait for them.
+      void buildOutgoingMailSearchIndexes();
     },
     start: async () => {
       await startCoreServices(notificationSender, aiNotifications);
