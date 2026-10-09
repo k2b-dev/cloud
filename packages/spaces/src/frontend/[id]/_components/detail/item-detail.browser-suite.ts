@@ -240,7 +240,11 @@ const hostLoad = (from: ReturnType<typeof hostCpu>, to: ReturnType<typeof hostCp
   if (from.ticks && to.ticks) {
     const delta = to.ticks.map((value, index) => value - from.ticks![index]!);
     const total = delta.reduce((sum, value) => sum + value, 0);
-    parts.push(`${percent(total - delta[3]! - delta[4]!, total)} busy`, `${percent(delta[7]!, total)} stolen by the hypervisor`);
+    // Busy is the time this machine ran work; time the hypervisor gave to other guests counts as stolen only.
+    parts.push(
+      `${percent(total - delta[3]! - delta[4]! - delta[7]!, total)} busy`,
+      `${percent(delta[7]!, total)} stolen by the hypervisor`,
+    );
   }
   if (from.waited !== undefined && to.waited !== undefined) {
     parts.push(`a runnable task waited for a CPU ${percent(to.waited - from.waited, (to.at - from.at) * 1000)} of the time`);
@@ -257,51 +261,67 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     hasTouch: view.touch,
     reducedMotion: "reduce",
   });
-  const page = await context.newPage();
-  // WebKit's page process can stall for many seconds on a loaded host (contributing/testing.md). When the page does
-  // not hydrate in time, the failure says what the page got and whether its main thread still answers.
+  // WebKit's page process can stall for many seconds on a loaded host (contributing/testing.md). Opening the page has
+  // one budget that ends well before the shortest test timeout, so a stall in any step fails here, with time left to
+  // say what the page got and whether its main thread still answers.
+  const budget = 15_000;
   const started = performance.now();
   const cpuAtStart = hostCpu();
   const at = () => `${Math.round(performance.now() - started)} ms`;
+  /** Waits for one opening step until the budget runs out. A late step keeps running until the context closes. */
+  const inTime = async <T>(step: string, work: Promise<T>) => {
+    const done = await Promise.race([work.then((value) => ({ value })), Bun.sleep(Math.max(0, started + budget - performance.now()))]);
+    if (!done) throw new Error(`${step} did not finish within ${budget / 1000} s.`);
+    return done.value;
+  };
   const pageErrors: string[] = [];
   const failedRequests: string[] = [];
   const modules = new Map<string, string>();
-  page.on("pageerror", (error) => pageErrors.push(`${at()} ${error.message}`));
-  page.on("requestfailed", (request) => failedRequests.push(`${at()} ${request.url()} ${request.failure()?.errorText ?? ""}`));
   const islandModule = (url: string, status: string) => {
     const path = new URL(url).pathname;
     if (path.startsWith("/_ssr/")) modules.set(path, `${status} at ${at()}`);
   };
-  page.on("request", (request) => islandModule(request.url(), "requested"));
-  page.on("requestfinished", (request) => islandModule(request.url(), "loaded"));
+  // The context reports its page's events, so listening needs no page, which may stall while it opens.
+  context.on("weberror", (webError) => pageErrors.push(`${at()} ${webError.error().message}`));
+  context.on("request", (request) => islandModule(request.url(), "requested"));
+  // A module the server answers with an error status fails to load, which the browser reports as a cancelled request.
+  context.on("response", (response) => islandModule(response.url(), `answered ${response.status()}`));
+  context.on("requestfailed", (request) => failedRequests.push(`${at()} ${request.url()} ${request.failure()?.errorText ?? ""}`));
+  let page: Page | undefined;
   try {
-    await page.goto(`${server.url}app/spaces/${spaceId}?item=Item01&case=${id}`);
-    await page.evaluate(() => window.document.fonts.ready);
+    page = await inTime("Opening the page", context.newPage());
+    await inTime("Loading the page", page.goto(`${server.url}app/spaces/${spaceId}?item=Item01&case=${id}`));
+    await inTime(
+      "Loading its fonts",
+      page.evaluate(() => window.document.fonts.ready),
+    );
     // Hydrated icon buttons drop their server-only native title.
-    await page.waitForSelector('[aria-label="Close item details"]:not([title]), [aria-label="Eintragsdetails schließen"]:not([title])', {
-      timeout: 15_000,
-    });
+    await inTime(
+      "Hydrating the close button",
+      page.waitForSelector('[aria-label="Close item details"]:not([title]), [aria-label="Eintragsdetails schließen"]:not([title])'),
+    );
   } catch (error) {
     const failedAt = at();
     const cpuAtFailure = hostCpu();
     const probeStarted = performance.now();
-    const mainThread = await Promise.race([
-      page
-        .evaluate(() => {
-          const close = window.document.querySelector('[aria-label="Close item details"], [aria-label="Eintragsdetails schließen"]');
-          return `readyState ${window.document.readyState}, close button ${close ? (close.hasAttribute("title") ? "not hydrated" : "hydrated") : "missing"}`;
-        })
-        .then(
-          (state) => `answered in ${Math.round(performance.now() - probeStarted)} ms (${state})`,
-          (probeError) => `probe failed: ${String(probeError)}`,
-        ),
-      Bun.sleep(2_000).then(() => "no answer within 2 s"),
-    ]);
-    await context.close();
+    const mainThread = page
+      ? await Promise.race([
+          page
+            .evaluate(() => {
+              const close = window.document.querySelector('[aria-label="Close item details"], [aria-label="Eintragsdetails schließen"]');
+              return `readyState ${window.document.readyState}, close button ${close ? (close.hasAttribute("title") ? "not hydrated" : "hydrated") : "missing"}`;
+            })
+            .then(
+              (state) => `answered in ${Math.round(performance.now() - probeStarted)} ms (${state})`,
+              (probeError) => `probe failed: ${String(probeError)}`,
+            ),
+          Bun.sleep(2_000).then(() => "no answer within 2 s"),
+        ])
+      : "no page yet";
     const list = (items: string[]) => (items.length > 0 ? `\n    ${items.join("\n    ")}` : " none");
-    throw new Error(
+    const report = new Error(
       [
-        `The detail page did not hydrate (${view.width}x${view.height}, ${scenario.locale}, failed at ${failedAt}).`,
+        `The detail page did not become interactive (${view.width}x${view.height}, ${scenario.locale}, failed at ${failedAt}).`,
         `  main thread: ${mainThread}`,
         `  island modules:${list([...modules].map(([path, status]) => `${path} ${status}`))}`,
         `  page errors:${list(pageErrors)}`,
@@ -311,6 +331,9 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
       ].join("\n"),
       { cause: error },
     );
+    // Closing the context must neither replace nor hold back the report.
+    await Promise.race([context.close().catch(() => {}), Bun.sleep(2_000)]);
+    throw report;
   }
   await page.mouse.move(view.width - 2, view.height - 2);
   return page;

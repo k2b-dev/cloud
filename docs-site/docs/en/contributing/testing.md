@@ -158,17 +158,23 @@ Host networking lets the browser reach the servers that tests start on
 with `./packages/ui/node_modules/.bin/playwright install webkit` and leave
 `TEST_BROWSER_ENDPOINT` unset.
 
-WebKit in the Playwright image can stall the main thread of a fresh page for
-15 to 100 seconds when the host has no CPU to spare, for example while other
-test runs, builds, or a development stack share the machine. The page is right
-and becomes interactive afterwards, but a step that waits for it times out.
-Run WebKit tests on a machine with spare cores, and do not mistake a timeout
-that appears only under such load for a product bug. `bun run test --browser`
-runs one file at a time, so in CI a WebKit page shares its runner only with
-its own test file. When the Spaces item detail page does not become
-interactive in time, its suite reports whether the page's main thread still
-answers, which island modules loaded, page errors, failed requests, and how
-busy the host's CPUs were meanwhile.
+On a development machine whose CPUs were saturated by other test runs,
+builds, and a development stack, WebKit in the Playwright image stalled the
+main thread of a fresh page for 15 to 100 seconds, and steps that waited for
+the page timed out. Run WebKit tests on a machine with spare cores. Whether the
+same stall explains WebKit timeouts in CI is not established yet:
+`bun run test --browser` runs one file at a time, so there a WebKit page shares
+its runner only with its own test file.
+
+The Spaces item detail suite gives its page 15 seconds to become interactive.
+When that fails, the error reports whether the page's main thread still
+answers a short probe, the status of each island module, page errors, failed
+requests, and how busy the host's CPUs were, how much time the hypervisor took
+from them, and how often a task waited for one. A main thread that does not
+answer while the CPUs are saturated points to an engine stall under load; one
+that does not answer on an idle host points to a script that blocks it. A main
+thread that answers while an island module is missing, answered with an error,
+or did not hydrate points to a product or test bug.
 
 ### Engine differences
 
