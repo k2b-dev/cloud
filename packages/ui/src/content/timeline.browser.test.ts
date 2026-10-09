@@ -427,6 +427,36 @@ describe(`@k2b/ui Timeline in ${browserName}`, () => {
     }
   }
 
+  for (const [axisName, context] of [
+    ["horizontal", desktop],
+    ["vertical", phone],
+  ] as const) {
+    test(`stops asking for earlier days that only fold into the empty days at the start, until the reader comes back (${axisName})`, async () => {
+      const page = await open(
+        { ...context, reducedMotion: "reduce" },
+        { load: true, from: "2026-10-07T00:00:00+02:00", drop: ["e1"], earlier: "empty" },
+      );
+      try {
+        // An empty week folds into the fold at the start, so the reader stays near it; that must not ask for the next one.
+        for (let round = 0; round < 4; round++) {
+          await release(page);
+          await frames(page, 4);
+        }
+        expect(await loads(page)).toEqual(["earlier"]);
+        // Away from the start and back, the reader asks again.
+        await page.evaluate(() => {
+          const port = document.querySelector(".k2b-timeline__viewport")!;
+          port.scrollTo({ left: port.scrollWidth / 2, top: port.scrollHeight / 2 });
+        });
+        await frames(page, 4);
+        await page.evaluate(() => document.querySelector(".k2b-timeline__viewport")!.scrollTo({ left: 0, top: 0 }));
+        await page.waitForFunction(() => (window as unknown as Fixture).loads.filter((edge) => edge === "earlier").length === 2);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
   test("a mouse wheel glides the strip by its notch, then stops and leaves other scrolls alone", async () => {
     const page = await open(desktop);
     try {

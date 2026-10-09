@@ -92,8 +92,12 @@ an all-day row; all-day items that cover several days repeat there.
 ### Load more days
 
 Set `onLoadEarlier` and `onLoadLater` to load days when the reader nears
-either end. The timeline calls each once, and again after `from` or `to`
-changed. Extend the range and add the items of the new days together, in one
+either end. The timeline calls each once, and again once `from` or `to` moved
+and changed the strip's length. Days that only fold into the fold at that end,
+such as an empty week, leave the strip as long as it was, so the timeline
+asks for that end again only after the reader has scrolled more than a screen
+away and come back; an empty calendar does not load week after week on its
+own. Extend the range and add the items of the new days together, in one
 `batch`; what the reader sees stays in place, to the pixel, also when days
 load at the start. Days fold only once their waking hours are loaded, so an
 empty weekend at the edge does not change size later. Where the view starts
