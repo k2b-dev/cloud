@@ -94,6 +94,9 @@ increase bundle size and make server and browser ownership unclear.
 
 Do not nest an island import inside another island or client component.
 
+See [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations)
+for typed calls and writes from an island.
+
 ## Load media only in the browser
 
 An island shows its server HTML until it mounts. Then it renders its own DOM
@@ -103,17 +106,23 @@ mounts, and loads again. In WebKit on Linux, which plays media through
 GStreamer, stopping a media element while it loads can freeze the page for
 good.
 
-Give media its source only in the browser. The server keeps the element and
-its size, so nothing moves when the island mounts:
+Give media its source only in the browser. Size the box around it on the
+server: until a video knows its own size, it has a default one, so an unsized
+video moves the page once its metadata arrives.
 
 ```tsx
 import { isServer } from "solid-js/web";
 
-<video src={isServer ? undefined : `${url}#t=0.001`} preload="metadata" muted playsinline />;
+<div class="size-20">
+  <video
+    src={isServer ? undefined : `${url}#t=0.001`}
+    class="size-full object-contain"
+    preload="metadata"
+    muted
+    playsinline
+  />
+</div>;
 ```
-
-See [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations)
-for typed calls and writes from an island.
 
 ## When an island fails
 

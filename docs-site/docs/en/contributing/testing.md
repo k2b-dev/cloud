@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-07
+updated: 2026-10-09
 ---
 
 # Testing
@@ -158,23 +158,49 @@ Host networking lets the browser reach the servers that tests start on
 with `./packages/ui/node_modules/.bin/playwright install webkit` and leave
 `TEST_BROWSER_ENDPOINT` unset.
 
-On a development machine whose CPUs were saturated by other test runs,
-builds, and a development stack, WebKit in the Playwright image stalled the
-main thread of a fresh page for 15 to 100 seconds, and steps that waited for
-the page timed out. Run WebKit tests on a machine with spare cores. Whether the
-same stall explains WebKit timeouts in CI is not established yet:
-`bun run test --browser` runs one file at a time, so there a WebKit page shares
-its runner only with its own test file.
+### When a WebKit page stops answering
+
+WebKit on Linux plays media through GStreamer. Stopping a `<video>` or
+`<audio>` element while its source still waits for data can deadlock the page:
+the main thread waits in a GStreamer state change for the source thread, which
+waits for the main thread. The page never answers again, however long a test
+waits. It is a race, not a slowdown: in CI, the other tests of the suite ran
+at their usual speed around the one that hung. An island that discards a
+server-rendered `<video src>` when it mounts stops it this way, so media gets
+its source only in the browser, as
+[Islands and hydration](/en/docs/frontend/islands-and-hydration#load-media-only-in-the-browser)
+describes. This deadlock made the Spaces item detail video test time out in
+CI.
+
+Apart from this deadlock, WebKit in the Playwright image stalled the main
+thread of a fresh page for 15 to 100 seconds, but only on a development
+machine with 24 CPUs and a load average of 180 or more. Run WebKit tests on a machine with
+spare cores.
 
 The Spaces item detail suite gives its page 15 seconds to become interactive.
 When that fails, the error reports whether the page's main thread still
 answers a short probe, the status of each island module, page errors, failed
 requests, and how busy the host's CPUs were, how much time the hypervisor took
-from them, and how often a task waited for one. A main thread that does not
-answer while the CPUs are saturated points to an engine stall under load; one
-that does not answer on an idle host points to a script that blocks it. A main
-thread that answers while an island module is missing, answered with an error,
-or did not hydrate points to a product or test bug.
+from them, and how often a task waited for one. A main thread that answers
+while an island module is missing, answered with an error, or did not hydrate
+points to a product or test bug. A main thread that does not answer is blocked
+by a script, a media deadlock, or, on saturated CPUs only, load. Its
+backtrace shows which. While the page hangs, print the main thread of every
+WebKit page process from a container that shares the browser container's
+processes:
+
+```bash
+docker run --rm --network host --pid=container:playwright-webkit \
+  --cap-add SYS_PTRACE --security-opt seccomp=unconfined \
+  "mcr.microsoft.com/playwright:v$version-noble" bash -c '
+  apt-get update -qq && apt-get install -y -qq gdb > /dev/null
+  for pid in $(pgrep -x WPEWebProcess); do
+    gdb -q -batch -p "$pid" -ex "set sysroot /proc/$pid/root" -ex "thread apply 1 bt 16"
+  done'
+```
+
+A main thread in `gst_pad_stop_task` under `gst_element_change_state` is the
+media deadlock.
 
 ### Engine differences
 
