@@ -1,5 +1,6 @@
 import { type AccessSubject, buildAccessPrincipalCondition, err, fail, ok, type RequestActor, type Result } from "@k2b/cloud/server";
 import { escapeLikePattern, isUniqueViolation, requestPublicHttps, secrets, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { createPgOutbox } from "@k2b/cloud/services/outbox";
 import { sql } from "bun";
 
 type InventoryItem = {
@@ -70,6 +71,25 @@ export const migrateInventory = async (): Promise<void> => {
       delta INT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
+  `.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS inventory.stock_reports (
+      seq BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+      item_id UUID NOT NULL,
+      delta INT NOT NULL,
+      attempts INT NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      claimed_until TIMESTAMPTZ,
+      last_error TEXT
+    )
+  `.simple();
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS inventory_stock_reports_busy
+    ON inventory.stock_reports (item_id)
+    WHERE claimed_until IS NOT NULL OR attempts > 0
   `.simple();
 
   await sql`
@@ -224,3 +244,35 @@ export async function readExternalInventoryStatus(signal: AbortSignal) {
     signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
   });
 }
+
+type StockReport = { id: string; attempts: number; item_id: string; delta: number };
+
+// Each replica starts it in lifecycle start and stops it in lifecycle stop.
+export const stockReports = createPgOutbox<StockReport>({
+  table: "inventory.stock_reports",
+  name: "inventory:stock-reports",
+  orderBy: "item_id",
+  sequence: "seq",
+  reconcileIntervalMs: 10_000,
+  publish: async (report) => {
+    const response = await requestPublicHttps({
+      url: "https://erp.example.com/stock-movements",
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": report.id },
+      body: new TextEncoder().encode(JSON.stringify({ itemId: report.item_id, delta: report.delta })),
+      maxBytes: 16 * 1024,
+      signal: AbortSignal.timeout(10_000),
+    });
+    // Retry what may succeed later; any other answer is final and removes the row.
+    if (response.status === 429 || response.status >= 500) throw new Error(`ERP answered ${response.status}`);
+  },
+});
+
+// The report commits with the stock change, so a crash after the commit cannot lose it.
+export const reportStockChange = async (itemId: string, delta: number): Promise<void> => {
+  await sql.begin(async (tx) => {
+    await tx`UPDATE inventory.items SET quantity = quantity + ${delta} WHERE id = ${itemId}::uuid`;
+    await tx`INSERT INTO inventory.stock_reports (item_id, delta) VALUES (${itemId}::uuid, ${delta})`;
+  });
+  void stockReports.notify();
+};

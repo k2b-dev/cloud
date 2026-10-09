@@ -4,8 +4,8 @@ navTitle: Secrets and state
 section: Data
 order: 440
 description: Store sensitive configuration and durable application state in the correct platform service.
-tags: [data, secrets, settings, valkey, storage]
-updated: 2026-07-27
+tags: [data, secrets, settings, valkey, storage, https, ssrf]
+updated: 2026-10-09
 ---
 
 # Secrets and persistent state
@@ -158,13 +158,14 @@ The complete
 [Inventory data example](https://github.com/k2b-dev/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
 shows encrypted application credentials.
 
-## Send an authorized credential to a public API
+## Call a public HTTPS address
 
-An application can use `requestPublicHttps` from `@k2b/cloud/services` for one
-bounded public HTTPS request. It resolves and validates the destination, pins
-the connection to a checked address, and preserves TLS hostname verification.
-It never follows redirects or retries. The caller must authorize the request
-and credential destination, supply a deadline, and bound the request body.
+Use `requestPublicHttps` from `@k2b/cloud/services` for every server-side
+request whose destination a person, an administrator, or remote content
+chooses: a link preview, a webhook, or an external API called with a stored
+credential. `fetch()` would follow such a URL into the installation's internal
+network. `requestPublicHttps` sends one bounded HTTPS request to a checked
+public address and never follows redirects or retries.
 
 ```ts
 import { requestPublicHttps } from "@k2b/cloud/services";
@@ -178,12 +179,63 @@ const response = await requestPublicHttps({
 });
 ```
 
+| Field | Meaning |
+| --- | --- |
+| `url` | An `https:` URL without a user name or password |
+| `method` | The HTTP method |
+| `headers` | Request headers; Cloud sets `host` and `accept-encoding: identity` |
+| `body` | Optional request bytes |
+| `maxBytes` | The largest response body; a larger body fails instead of being cut |
+| `signal` | Required deadline and cancellation; it also ends a stalled DNS lookup |
+
+### Know what it refuses
+
+Before it opens a connection, `requestPublicHttps` throws for:
+
+- a URL that is not `https:` or carries a user name or password
+  (`HTTPS_REQUIRED`);
+- a `maxBytes` that is not a whole number of zero or more
+  (`INVALID_BYTE_LIMIT`);
+- `localhost`, names under `.localhost` or `.internal`, and
+  `metadata.google.internal`;
+- a name with any DNS answer in a private, loopback, link-local, shared,
+  documentation, multicast, or other reserved range, IPv4 addresses mapped
+  into IPv6 included. One such answer is enough.
+
+It then connects to the address it checked, without a second lookup, so a DNS
+answer that changes in between cannot move the request. TLS still verifies the
+certificate for the URL's host name.
+
+### Read the result
+
 The result contains `status`, a bounded `body` as bytes, and selected response
-headers: content-type, retry-after, etag and last-modified. HTTP errors retain
-status and body; redirects return an empty body. Encoded responses are rejected.
-Network failures throw a generic error without outgoing credentials. A timeout
-does not prove that an external mutation failed. Do not forward Cloud cookies
-or invocation tokens, and do not automatically retry uncertain writes.
+headers: content-type, retry-after, etag and last-modified.
+
+- An HTTP error resolves with its status and body; the caller decides what it
+  means.
+- A redirect resolves with its status and an empty body. `Location` is not
+  returned, so the caller cannot follow it either.
+- A compressed response, a body above `maxBytes`, and a network or TLS failure
+  throw `HTTP_FAILED`. Cancellation throws as well. Errors never contain the
+  request's headers or credentials.
+
+A timeout does not prove that an external mutation failed. Do not
+automatically retry uncertain writes; deliver a write that must happen once
+through an [outbox](/en/docs/data/migrations-and-transactions#deliver-an-outbox)
+with an idempotency key.
+
+### Fetch a URL that someone else chose
+
+Treat the URL and everything it returns as untrusted. Bound each request with
+a short deadline and a small `maxBytes`, parse only the bytes you need, and
+cache results so that one link is not fetched for every reader. A link that
+redirects, or points to an internal or plain-HTTP address, gets no result.
+
+### Send an authorized credential
+
+The caller must authorize the request and the credential's destination,
+supply a deadline, and bound the request body. Do not forward Cloud cookies or
+invocation tokens.
 
 This transport does not grant access to an application's secrets. Applications
 own their authorization and must treat remote response content as untrusted.

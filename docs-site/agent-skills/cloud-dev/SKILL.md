@@ -66,13 +66,13 @@ and durable data.
   bundle breaks `await import("bun")`.
 - Store durable state explicitly, never in process memory or container files.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
-  and Cloud rate limits. Commit state before retryable
-  effects and give those effects stable keys.
+  and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
+  that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
 
 ## Reuse public building blocks
 
 Choose documented Cloud entry points and services before creating a parallel
-mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals.
+mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks.
 
 Prefer the documented K2B foundations before building an application-local
 alternative:

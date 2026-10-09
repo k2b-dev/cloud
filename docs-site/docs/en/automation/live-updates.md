@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-10-05
+updated: 2026-10-09
 ---
 
 # Live updates
@@ -324,8 +324,8 @@ at most 256 KiB.
   transaction, that is the call order. Across transactions, it is the commit
   order when the writers lock the same row, which is normal for one resource.
   A subscription receives its updates in topic order.
-- **No dead state.** A failed publish retries with a backoff of up to five
-  minutes and does not block other keys. Updates that wait longer than 60
+- **No dead state.** A failed publish retries with a backoff of up to 256
+  seconds and does not block other keys. Updates that wait longer than 60
   seconds are logged once a minute as `Live updates wait to be published`.
 - **Batches.** A replica publishes up to 100 pending updates at a time:
   different keys in parallel, the updates of one key in order. Updates wait
