@@ -552,6 +552,8 @@ export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearch
  * Returns null when a saved view or folder parameter is not part of this mailbox; a conversation or message that is
  * not opens the view without it. A folder or tag condition whose folder or
  * tag no longer exists matches nothing, so a stale search link still opens and shows no results.
+ * This runs before access checks, so a folder an assigned-only reader cannot see resolves and lists nothing while an
+ * unknown one returns null: the difference reveals only that the folder ID exists, never its name or content.
  */
 export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string): Promise<MailWorkspaceRequest | null> => {
   const requestUrl = new URL(publicUrl);

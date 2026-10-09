@@ -178,7 +178,11 @@ Such people:
   conversations.
 
 Every other conversation, message, draft, and attachment answers 404 to them,
-as if it did not exist, and they see and cancel only the commands they started. When an assignment ends, access ends at once: lists,
+as if it did not exist, and they see and cancel only the commands they started.
+A link to a folder without one of their conversations opens that folder empty,
+while a link to a folder that does not exist opens the mailbox, so such a link
+tells them only that the folder exists, never its name or content. When an
+assignment ends, access ends at once: lists,
 open views, search, attachment downloads in progress, reminders, and queued or
 scheduled actions they started for the conversation stop. A person with
 mailbox-wide access keeps it; an additional assigned-only grant changes

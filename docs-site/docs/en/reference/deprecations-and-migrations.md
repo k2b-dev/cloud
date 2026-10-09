@@ -10,6 +10,46 @@ updated: 2026-10-09
 
 # Deprecations and migrations
 
+## Mail conversations have several assignees
+
+A Mail conversation can have up to 20 assignees, and a mailbox grant can cover
+only the conversations assigned to a person. The single assignee fields are
+gone without an alias; see
+[Assign conversations and limit access to them](/en/apps/mail#assign-conversations-and-limit-access-to-them).
+
+| Before | Now |
+| --- | --- |
+| `assigneeUserId` on list items, search hits, and focus items | `assigneeUserIds`, an array in assignment order |
+| `assigneeUserId` on `PATCH /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/collaboration` | `assigneeUserIds`, which replaces the whole set; `[]` clears it |
+| `assigneeUserId` on `POST /api/mail/mailboxes/{mailboxId}/conversations/assign` | `assigneeUserIds` with `mode`: `add`, `remove`, or `replace`; `replace` with `[]` clears it |
+| `assignee` in collaboration data and in the `conversation.read` capability | `assignees`, an array of users |
+| `assigneeUserId` in the `conversation.assign` and `conversation.assign.batch` capabilities | `assigneeUserIds` with `mode` |
+| `assignee` in the `conversation.assign.batch` result | `assignees`, the users named in the request |
+| Workflow data field `inputs.conversation.assigneeUserId` | `inputs.conversation.assigneeUserIds` |
+| `cld mail assign --to` replaced the assignee | `--to` adds people; add `--replace` to replace them, use `--remove` to remove some |
+
+Update a third-party application or script that reads or sends the old fields
+before it talks to the new Mail version. A request with `assigneeUserId` fails
+validation, and a missing `mode` on the assign route fails too. Mailbox
+responses gain `accessScope`, and access entries carry `scope: "assigned"` for
+grants that cover only assigned conversations.
+
+A saved workflow that refers to `inputs.conversation.assigneeUserId` keeps its
+bound version, but the field no longer exists in its runs: a step that reads it
+fails with an unavailable reference, and `exists` on it is false. Saving or
+validating the workflow again reports a diagnostic for the unknown field. Replace it with `inputs.conversation.assigneeUserIds`,
+for example `${{ inputs.conversation.assigneeUserIds.0 }}` for the first
+assignee. The workflow action `assignConversation` keeps its `user` input: it
+replaces all assignees with that person, and `null` removes them all.
+
+Platform administrators without a mailbox grant no longer count as mailbox
+users in Mail's background checks either: reminders and other conversation
+notifications, workflow notices, viewing presence, saved views shared with
+them, the person who authorized an incoming automation, and whether an
+assignee can still work on a conversation all need a grant, as opening the
+mailbox always did. On upgrade, Mail copies each existing assignment once; see
+[Upgrade Mail to several assignees](/en/docs/operations/deployment-requirements#upgrade-mail-to-several-assignees).
+
 ## Spaces removes the calendar timeline
 
 The Spaces calendar no longer has a **Timeline** view. A saved link with
