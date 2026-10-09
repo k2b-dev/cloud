@@ -560,8 +560,9 @@ Write `index.html`, optional styles/modules, and `steps.json`. Call
 Fix the findings, call `view_image` with the report's `review.prompt` for every
 path in `review.paths`, and check again. The prompt asks for visible defects:
 rows at different heights, cut-off, overlapping or doubled content, error
-messages and raw values. The paths are the three screenshots and every PDF the
-steps downloaded. `passed` means the app passed the automated checks; it does
+messages, raw values and wrong plurals. It leaves contrast to the measured axe
+findings, so a vision model does not push apps away from the flat base style.
+The paths are the three screenshots and every PDF the steps downloaded. `passed` means the app passed the automated checks; it does
 not judge the design or business logic. The report includes desktop before
 steps, desktop after steps, phone after steps, captured downloads, call counts
 and an accessibility tree. Each screenshot shows the whole page up to 2000 px

@@ -207,7 +207,7 @@ function clipJson(text: string, bytes: number) {
 }
 /** What the agent asks `view_image` about every screenshot and PDF, so it looks for defects instead of describing content. */
 export const CHECK_REVIEW_PROMPT =
-  'Review this rendering of an app or document for visible defects only, and say where each one is: elements of one row, or a label and its value, at different heights; text or controls cut off, overlapping or doubled; a visible error message or a raw value such as undefined, NaN or [object Object]; an empty or placeholder state where content belongs; cramped spacing or low contrast. Answer "No visible defects" only when there are none.';
+  'Review this rendering of an app or document for visible defects only, and say where each one is: elements of one row, or a label and its value, at different heights; text or controls cut off, overlapping or doubled; a visible error message, a raw value such as undefined, NaN or [object Object], or a wrong singular or plural; an empty or placeholder state where content belongs; cramped spacing. Do not judge contrast or the flat, borderless style; the check measures contrast itself. Answer "No visible defects" only when there are none.';
 export function modelCheckReport(report: CheckReport) {
   const issues: CheckIssue[] = [];
   const base = {
