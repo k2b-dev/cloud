@@ -463,6 +463,19 @@ public recipients and `["read", "admin"]` for users and groups. A single allowed
 level renders as a fixed badge. Enforce the same restriction in the resource's
 service; the editor does not authorize requests.
 
+### Offer a level on part of the resource
+
+An `allowedLevels` entry may carry a `scope`: the level then applies to a
+narrower part of the resource that the application defines, such as Mail's
+conversations assigned to the person. The editor lists it next to the
+whole-resource levels with its own `label`, `icon`, and an optional
+`description` in the level menu. It shows an entry's level by its `level` and
+`scope` together and passes the chosen `scope` to `grantAccess` as the fourth
+argument and to `updateAccess` as the third; a whole-resource level passes
+`undefined`. Return `scope` on the `AccessEntry` of a scoped grant. A scoped
+grant never counts as a manager. The application stores the scope and enforces
+it in its service.
+
 ### Show the last manager
 
 When exactly one entry is a manager, as defined in
