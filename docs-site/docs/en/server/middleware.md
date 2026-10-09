@@ -139,7 +139,10 @@ access outside a request.
 | `401` and `403` | Info |
 | Other statuses | Not stored by this middleware |
 
-It includes method, path, status, duration, and the user ID when available.
+It includes method, the matched Hono route template, status, duration, and the
+user ID when available. When no route pattern answered, it falls back to the
+[redacted pathname](/en/docs/platform/logging). Query strings are omitted from
+both messages and metadata.
 
 Static assets, SSR chunks, favicons, and branding paths are skipped.
 

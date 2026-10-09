@@ -1,6 +1,8 @@
 import { createMiddleware } from "hono/factory";
 import { logger } from "../../services/logging";
+import { redactSensitivePath } from "../../services/logging/redaction";
 import type { AuthContext } from "./auth";
+import { matchedRouteTemplate } from "./route-template";
 
 const log = logger("http");
 
@@ -15,11 +17,18 @@ const SKIP_PREFIXES = ["/public/", "/_ssr/", "/favicon", "/branding/"];
  * - Everything else (2xx, 3xx, 400, 404) → not logged (too noisy)
  */
 export const requestLogger = createMiddleware<AuthContext>(async (c, next) => {
-  const path = c.req.path;
-  if (SKIP_PREFIXES.some((p) => path.startsWith(p))) return next();
+  const requestPath = c.req.path;
+  if (SKIP_PREFIXES.some((p) => requestPath.startsWith(p))) return next();
 
   const start = Date.now();
   await next();
+  let path: string | null = null;
+  try {
+    path = matchedRouteTemplate(c);
+  } catch {
+    // Best-effort: an unrouted context must never break request logging.
+  }
+  path ??= redactSensitivePath(requestPath);
   const status = c.res.status;
   const duration = Date.now() - start;
 

@@ -10,14 +10,36 @@ describe("derivePathTemplate", () => {
     expect(derivePathTemplate("/api/notifications/4711")).toBe("/api/notifications/:n");
   });
 
-  test("collapses long opaque tokens", () => {
-    expect(derivePathTemplate("/share/mail/attachments/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/share/mail/attachments/:token");
+  test("collapses all share descendants before opaque-token heuristics", () => {
+    expect(derivePathTemplate("/share/mail/attachments/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/share/mail/:token");
+  });
+
+  test("redacts digit-free tokens, short tokens and encoded tokens", () => {
+    for (const path of ["/share/demo/abcdefghijklmnopqrstuvwxyzABCDEF", "//share/demo/short/", "/share/demo/forms/%61%62%63"]) {
+      expect(derivePathTemplate(path)).toBe("/share/demo/:token");
+    }
+    expect(derivePathTemplate("/api/mail/public-attachments/short/download")).toBe("/api/mail/public-attachments/:token");
+    expect(derivePathTemplate("/app/mail/a/short")).toBe("/app/mail/a/:token");
+    expect(derivePathTemplate("/share/application123456789/short")).toBe("/share/application123456789/:token");
+    expect(derivePathTemplate("/api/demo/01HXYZ8QF3K2M9P4R7T6V0W5Z1")).toBe("/api/demo/:token");
+  });
+
+  test.each([
+    ["/api/demo/123456/:token", "/api/demo/:n/:token"],
+    ["/a/b/c/d/e/f/g/h/i/j/:token", "/a/b/c/d/e/f/g/h/..."],
+    ["/api/grids/bases/20838fd2-8c26-42fa-a22d-904cfccda342/:token", "/api/grids/bases/:id/:token"],
+    [`/api/venue/calendar/${"0123456789abcdef".repeat(3)}.ics`, "/api/venue/calendar/:token"],
+    ["/api/grids/forms/public/AbCdEfGhIjKlMnOpQrStUv", "/api/grids/forms/public/:token"],
+  ])("redacts and bounds %s even with a literal token marker", (path, expected) => {
+    expect(derivePathTemplate(path)).toBe(expected);
   });
 
   test("keeps human-readable route params", () => {
     // These are real param shapes in the repo (:topic, :cn, :key) — a
     // heuristic that collapsed them would destroy the useful breakdown.
     expect(derivePathTemplate("/admin/gateway/help/getting-started")).toBe("/admin/gateway/help/getting-started");
+    expect(derivePathTemplate("/help/getting-started-with-grids")).toBe("/help/getting-started-with-grids");
+    expect(derivePathTemplate("/settings/some_setting_key_name")).toBe("/settings/some_setting_key_name");
     expect(derivePathTemplate("/api/ipa-hosts/hostgroups/webservers")).toBe("/api/ipa-hosts/hostgroups/webservers");
   });
 

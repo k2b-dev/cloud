@@ -107,6 +107,13 @@ The application owns:
 - expiry and revocation;
 - the resource operation allowed by the token.
 
+Carry link tokens in a route parameter and generate them from at least 16
+random bytes, encoded as hex or base64url. Logs and gateway telemetry redact
+everything below `/share/<app>/` whatever the token looks like. Token URLs
+elsewhere, such as calendar feeds and webhooks, are recognized by
+[shape](/en/docs/platform/logging) only, so short or word-like tokens can
+appear there.
+
 Validate the token in the service before loading protected data.
 
 Do not convert a share token into a Cloud user or session.

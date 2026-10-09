@@ -72,23 +72,22 @@ const shouldLogError = (appId: string): boolean => {
   return true;
 };
 
-const REDACTED_PATH_SEGMENT = "[REDACTED]";
-
-/** Prevent bearer-style public link tokens from entering gateway logs. */
-export const redactSensitivePath = (pathname: string): string =>
-  pathname
-    .replace(/(\/share\/mail\/attachments\/)[^/]+/g, `$1${REDACTED_PATH_SEGMENT}`)
-    .replace(/(\/api\/mail\/public-attachments\/)[^/]+/g, `$1${REDACTED_PATH_SEGMENT}`)
-    .replace(/(\/app\/mail\/a\/)[^/]+/g, `$1${REDACTED_PATH_SEGMENT}`);
+const SAFE_ERROR_CODE = /^[A-Za-z0-9_]{1,40}$/;
 
 /**
- * Route template for a request the app never answered — unmatched routes
- * and upstream failures. Collapse ids first so opaque values are gone
- * regardless of path shape, then run the denylist as a backstop for the
- * few known-sensitive segments short enough to survive collapsing.
+ * Loggable fields of a transport failure. Messages and `err.path` can carry the
+ * upstream URL and query, so keep only the error type and an enum-like code
+ * (Bun reports every fetch failure as `TypeError`; `ConnectionRefused` or
+ * `ENOTFOUND` tells the operator what failed).
  */
-const fallbackPathTemplate = (appId: string, pathname: string): string =>
-  boundTemplateCardinality(appId, redactSensitivePath(derivePathTemplate(pathname)));
+export const transportErrorFields = (err: unknown): { error: string; code?: string } => {
+  const error = err instanceof Error ? err.name : "UnknownError";
+  const code = err instanceof Error && "code" in err ? err.code : undefined;
+  return typeof code === "string" && SAFE_ERROR_CODE.test(code) ? { error, code } : { error };
+};
+
+/** Bound the shared, redacted fallback template for requests without an app template. */
+const fallbackPathTemplate = (appId: string, pathname: string): string => boundTemplateCardinality(appId, derivePathTemplate(pathname));
 
 // ─── Request proxying ────────────────────────────────────────────────────────
 
@@ -212,11 +211,12 @@ export const proxyRequest = async (
     appStats.totalMs += ms;
     appStats.errors++;
     trackRoute(stats, match.matchedPrefix, true);
+    const pathTemplate = fallbackPathTemplate(match.appId, url.pathname);
     publishRequestTelemetry({
       appId: match.appId,
       routePrefix: match.matchedPrefix,
       // No response to read a template off — the request died in flight.
-      pathTemplate: fallbackPathTemplate(match.appId, url.pathname),
+      pathTemplate,
       method: req.method,
       status: 502,
       durationMs: ms,
@@ -227,8 +227,9 @@ export const proxyRequest = async (
     if (shouldLogError(match.appId)) {
       log("Upstream unavailable", {
         appId: match.appId,
-        path: redactSensitivePath(url.pathname),
-        error: err instanceof Error ? err.message : String(err),
+        // Unbounded by the telemetry budget: this log is already throttled per app.
+        path: derivePathTemplate(url.pathname),
+        ...transportErrorFields(err),
       });
     }
 

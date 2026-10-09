@@ -1,16 +1,182 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as services from "@k2b/cloud/services";
-import { createProxyStats, proxyRequest, redactSensitivePath } from "./proxy";
+import { boundTemplateCardinality, resetTemplateCardinality } from "./path-template";
+import { createProxyStats, proxyRequest } from "./proxy";
 import { buildRouteTable } from "./trie";
 
-describe("gateway path redaction", () => {
-  test("redacts public Mail attachment tokens without changing unrelated paths", () => {
-    expect(redactSensitivePath("/share/mail/attachments/secret-token")).toBe("/share/mail/attachments/[REDACTED]");
-    expect(redactSensitivePath("/api/mail/public-attachments/secret-token/download")).toBe(
-      "/api/mail/public-attachments/[REDACTED]/download",
+describe("public share telemetry", () => {
+  const token = "abcdefghijklmnopqrstuvwxyzABCDEF";
+
+  test("redacts unmatched share requests", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    try {
+      const response = await proxyRequest(
+        new Request(`http://cloud.test//share/demo/${token}/?secret=query-secret`),
+        buildRouteTable([]),
+        createProxyStats(),
+        () => {},
+      );
+      expect(response.status).toBe(502);
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ pathTemplate: "/share/demo/:token", errorKind: "unmatched_route" }));
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain(token);
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain("query-secret");
+    } finally {
+      telemetry.mockRestore();
+    }
+  });
+
+  test("uses the same redacted template in upstream failure logs and telemetry", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const upstream = spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error(`Cannot connect to http://upstream/share/demo/${token}?secret=query-secret`),
     );
-    expect(redactSensitivePath("/app/mail/a/secret-token")).toBe("/app/mail/a/[REDACTED]");
-    expect(redactSensitivePath("/app/mail/inbox")).toBe("/app/mail/inbox");
+    const entries: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
+    try {
+      const response = await proxyRequest(
+        new Request(`http://cloud.test/share/demo/${token}`),
+        buildRouteTable([{ prefix: "/share/demo", appId: "share-failure", baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        (message, metadata) => entries.push({ message, metadata }),
+      );
+      expect(response.status).toBe(502);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.metadata?.path).toBe("/share/demo/:token");
+      expect(telemetry).toHaveBeenCalledWith(
+        expect.objectContaining({ pathTemplate: entries[0]?.metadata?.path, errorKind: "upstream_unavailable" }),
+      );
+      expect(JSON.stringify(entries)).not.toContain(token);
+      expect(JSON.stringify(entries)).not.toContain("query-secret");
+      expect(await response.text()).not.toContain(token);
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+
+  test("redacts an answered request without a route-template header", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const upstream = spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
+    try {
+      const response = await proxyRequest(
+        new Request(`http://cloud.test/share/demo/${token}`),
+        buildRouteTable([{ prefix: "/share/demo", appId: "demo", baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        () => {},
+      );
+      expect(response.status).toBe(200);
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ pathTemplate: "/share/demo/:token", errorKind: null }));
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain(token);
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+});
+
+describe("bearer-token fallback telemetry", () => {
+  const hex = "0123456789abcdef".repeat(3);
+  const formToken = "AbCdEfGhIjKlMnOpQrStUv";
+  const paths = [
+    { path: `/api/venue/calendar/${hex}.ics`, template: "/api/venue/calendar/:token", token: hex, prefix: "/api/venue" },
+    { path: `/api/grids/forms/public/${formToken}`, template: "/api/grids/forms/public/:token", token: formToken, prefix: "/api/grids" },
+  ];
+
+  test.each(paths)("keeps $path out of upstream failure logs and telemetry", async ({ path, template, token, prefix }) => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const upstream = spyOn(globalThis, "fetch").mockRejectedValue(
+      Object.assign(new TypeError(`Cannot connect to http://upstream${path}?secret=query-secret`), {
+        code: "ConnectionRefused",
+        path: `http://upstream${path}?secret=query-secret`,
+      }),
+    );
+    const entries: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
+    try {
+      const response = await proxyRequest(
+        new Request(`http://cloud.test${path}?secret=query-secret`),
+        buildRouteTable([{ prefix, appId: `failure-${prefix}`, baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        (message, metadata) => entries.push({ message, metadata }),
+      );
+      expect(response.status).toBe(502);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.metadata).toEqual({ appId: `failure-${prefix}`, path: template, error: "TypeError", code: "ConnectionRefused" });
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ pathTemplate: template, errorKind: "upstream_unavailable" }));
+      expect(JSON.stringify([entries, telemetry.mock.calls])).not.toContain(token);
+      expect(JSON.stringify([entries, telemetry.mock.calls])).not.toContain("query-secret");
+      expect(JSON.stringify(entries)).not.toContain("http://");
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+
+  test.each(paths)("redacts $path after the app deregisters", async ({ path, template, token }) => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    try {
+      const response = await proxyRequest(
+        new Request(`http://cloud.test${path}?secret=query-secret`),
+        buildRouteTable([]),
+        createProxyStats(),
+        () => {},
+      );
+      expect(response.status).toBe(502);
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ pathTemplate: template, errorKind: "unmatched_route" }));
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain(token);
+      expect(JSON.stringify(telemetry.mock.calls)).not.toContain("query-secret");
+    } finally {
+      telemetry.mockRestore();
+    }
+  });
+
+  test.each([
+    { code: "http://upstream/?secret=query-secret", appId: "code-url" },
+    { code: "x".repeat(41), appId: "code-long" },
+    { code: "", appId: "code-empty" },
+    { code: 42, appId: "code-number" },
+  ])("omits unsafe transport code for $appId", async ({ code, appId }) => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const upstream = spyOn(globalThis, "fetch").mockRejectedValue(Object.assign(new TypeError("URL-bearing message"), { code }));
+    const entries: Array<Record<string, unknown> | undefined> = [];
+    try {
+      await proxyRequest(
+        new Request(`http://cloud.test/api/venue/calendar/${hex}.ics`),
+        buildRouteTable([{ prefix: "/api/venue", appId, baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        (_, metadata) => entries.push(metadata),
+      );
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toEqual({ appId, path: "/api/venue/calendar/:token", error: "TypeError" });
+      expect(JSON.stringify(entries)).not.toContain("query-secret");
+      expect(JSON.stringify(entries)).not.toContain("http://");
+    } finally {
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
+  });
+
+  test("preserves the redacted log template after the telemetry budget is spent", async () => {
+    resetTemplateCardinality();
+    const appId = "budget-failure";
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const upstream = spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("connection failed"));
+    const entries: Array<Record<string, unknown> | undefined> = [];
+    try {
+      for (let i = 0; i < 200; i++) boundTemplateCardinality(appId, `/probe/${i}x`);
+      await proxyRequest(
+        new Request(`http://cloud.test/api/venue/calendar/${hex}.ics`),
+        buildRouteTable([{ prefix: "/api/venue", appId, baseUrl: "http://upstream" }]),
+        createProxyStats(),
+        (_, metadata) => entries.push(metadata),
+      );
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ pathTemplate: "(other)" }));
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.path).toBe("/api/venue/calendar/:token");
+      expect(JSON.stringify(entries)).not.toContain(hex);
+    } finally {
+      resetTemplateCardinality();
+      upstream.mockRestore();
+      telemetry.mockRestore();
+    }
   });
 });
 
