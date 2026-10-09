@@ -17,6 +17,20 @@ Views let the same work appear in the shape that fits the current job. The view 
 - **Calendar:** Best for events, deadlines, planning windows, and work that is primarily time-based.
 :::
 
+## Calendar timeline {icon="timeline"}
+
+:::reference
+- **Open it:** Choose **Timeline** next to **Day**, **Week**, **Month**, and **Year** in the calendar. It shows one Space as a continuous strip of time, and the link keeps the view, the day, and the filters, so a reload or a shared link opens the same strip.
+- **Read it:** Hours from 06:00 to 22:00 take their real length, so the length of an event, free time between events, and the evening show at a glance. Each night from 22:00 to 06:00 is a narrow strip, and a run of days without timed entries folds into one. All-day events sit in a row above the hours.
+- **Tasks:** A task appears as a marker at the time it is due; a deadline always has a time, 17:00 unless you choose another. A task whose due date was set as a whole day sits in the all-day row. If you may edit the Space, the marker has a checkbox that completes the task; the confirmation offers **Undo**. A task that open tasks still block has no checkbox. Urgent and high priority, and how many tasks still block a task, show with its title where there is room. Completed items are not shown.
+- **Colors:** Events and tasks take the same colors as in the other calendar views, so the **Color by** choice in **Scope** changes them here too.
+- **Overlaps:** Up to three overlapping events share the strip in lanes. More collapse into a **+n** entry that lists them with their times.
+- **Move through time:** Scroll sideways with a trackpad, a swipe, or Shift and the mouse wheel. Where the timeline fills the page, the mouse wheel scrolls it sideways too. It opens on the evening before the chosen day and loads a week at a time as you near either end, up to one year; what you look at stays in place while days load. Where a week brings nothing to see, the strip stops loading at that end until you scroll away and come back. **Today** returns to the current day, and the arrows open the strip one day earlier or later.
+- **Phones:** On a narrow screen the same strip runs from top to bottom.
+- **Keyboard:** The timeline is one stop for **Tab**. The arrow keys move to the previous or next item, **Page Up** and **Page Down** to the previous or next day, **Home** and **End** to the first or last item of a day, and **T** to now. **Enter** opens an item, and **Space** completes a task when you may edit it.
+- **Filters:** The scope, priority, status, and tag filters of the calendar apply to the timeline too.
+:::
+
 ## Filter with intent {icon="search"}
 
 :::reference

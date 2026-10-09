@@ -350,6 +350,11 @@ export const CalendarItemSchema = z.object({
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),
   columnId: ResourceShortIdSchema.describe("Current column ID; the column's color colors the item when it has no tag"),
   assignees: z.array(SpaceItemAssigneeSchema).describe("Assigned users"),
+  activeBlockerCount: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("Number of incomplete tasks that currently block this task; a blocked task cannot be completed"),
 });
 export type CalendarItem = z.infer<typeof CalendarItemSchema>;
 

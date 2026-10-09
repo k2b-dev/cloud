@@ -80,11 +80,21 @@ export type CalendarEventRenderContext = {
   timeLabel: string;
 };
 
-export type CalendarProps = {
+/** A view the application adds to the switcher; the calendar shows its header and toolbar, the application the body. */
+export type CalendarCustomView<V extends string = string> = {
+  value: V;
+  label: string;
+};
+
+export type CalendarProps<V extends string = never> = {
   date: Date | string;
   events: CalendarEvent[];
-  view?: CalendarView;
+  view?: CalendarView | V;
   views?: CalendarView[];
+  /** Views after the built-in ones. While one is active, `children` is the body and the header pages by day. */
+  customViews?: CalendarCustomView<V>[];
+  /** The body of the active custom view. */
+  children?: JSX.Element;
   labels?: CalendarLabels;
   /** stdlib date context used for timezone-aware rendering and calendar math. */
   dateConfig?: DateContext;
@@ -101,8 +111,9 @@ export type CalendarProps = {
   selectedDate?: Date | string;
   selectedEventId?: string;
   dayBadges?: Record<string, CalendarDayBadge>;
-  getViewHref?: (view: CalendarView) => string;
-  getDateHref?: (date: Date, view: CalendarView) => string;
+  // Methods, not function properties: props for custom views stay assignable to the plain props the overloads expose.
+  getViewHref?(view: CalendarView | V): string;
+  getDateHref?(date: Date, view: CalendarView | V): string;
   getEventHref?: (event: CalendarEvent) => string | undefined;
   renderEvent?: (event: CalendarEvent, context: CalendarEventRenderContext) => JSX.Element;
   /** Progressively enhance canonical calendar links after the app has loaded their target state. */
@@ -112,8 +123,8 @@ export type CalendarProps = {
   /** Optionally preload the target behind a canonical calendar link. */
   onPrefetch?: (href: string) => void;
   navigationPending?: boolean;
-  onViewChange?: (view: CalendarView) => void;
-  onDateChange?: (date: Date, view: CalendarView) => void;
+  onViewChange?(view: CalendarView | V): void;
+  onDateChange?(date: Date, view: CalendarView | V): void;
   /** One activation contract for pointer and keyboard input. */
   onEventActivate?: (event: CalendarEvent) => void;
   /** Pointer gesture used for activation. Keyboard activation is always immediate. */
@@ -168,7 +179,10 @@ type TimedOverflowLayout = {
   groupEndDate: Date;
 };
 
-const ownerDateConfig = (owner: CalendarProps): DateContext => ({
+/** What the built-in views read from the props: they only ever link to built-in views. */
+type CalendarOwner = Omit<CalendarProps, "view" | "customViews" | "children">;
+
+const ownerDateConfig = (owner: CalendarOwner): DateContext => ({
   ...owner.dateConfig,
   timeZone: owner.timeZone ?? owner.dateConfig?.timeZone,
   firstDayOfWeek: owner.firstDayOfWeek ?? owner.dateConfig?.firstDayOfWeek ?? owner.dateConfig?.weekStartsOn ?? 1,
@@ -278,7 +292,7 @@ const normalizeEvents = (events: CalendarEvent[], context?: DateContext): Normal
     return days;
   });
 
-const eventHref = (props: CalendarProps, event: CalendarEvent): string | undefined => props.getEventHref?.(event) ?? event.href;
+const eventHref = (props: CalendarOwner, event: CalendarEvent): string | undefined => props.getEventHref?.(event) ?? event.href;
 
 const moveEventTo = (event: NormalizedEvent, target: Date, allDay = false, context?: DateContext): CalendarEventTimeChange => {
   const duration = Math.max(30 * 60 * 1000, event.sourceEndDate.getTime() - event.sourceStartDate.getTime());
@@ -333,7 +347,7 @@ const timedEventLayouts = (events: NormalizedEvent[]): TimedEventLayout[] => {
 
 const EventChip = (props: {
   event: NormalizedEvent;
-  owner: CalendarProps;
+  owner: CalendarOwner;
   href?: string;
   compact?: boolean;
   fill?: boolean;
@@ -493,7 +507,7 @@ const EventChip = (props: {
 };
 
 const slotInteractionProps = (
-  owner: CalendarProps,
+  owner: CalendarOwner,
   slot: () => CalendarEventTimeChange,
   suppressed?: () => boolean,
   nativeControl = false,
@@ -529,7 +543,7 @@ const slotInteractionProps = (
 };
 
 type CalendarNavigationLinkProps = ParentProps<{
-  owner: CalendarProps;
+  owner: CalendarOwner;
   href: string;
   anchorProps?: Omit<JSX.AnchorHTMLAttributes<HTMLAnchorElement>, "children" | "href" | "onClick"> & {
     "data-divider"?: string;
@@ -583,10 +597,10 @@ const CalendarNavigationLink = (props: CalendarNavigationLinkProps): JSX.Element
   );
 };
 
-const CalendarViewLinks = (props: {
-  owner: CalendarProps;
-  view: CalendarView;
-  options: Array<{ value: CalendarView; label: string }>;
+const CalendarViewLinks = <V extends string>(props: {
+  owner: CalendarProps<V>;
+  view: CalendarView | V;
+  options: Array<{ value: CalendarView | V; label: string }>;
 }): JSX.Element => {
   const messages = useUiMessages();
   const refs: HTMLAnchorElement[] = [];
@@ -648,13 +662,19 @@ const CalendarViewLinks = (props: {
   );
 };
 
-const adjacentCalendarDate = (date: Date, view: CalendarView, direction: -1 | 1, dateConfig: DateContext) => {
+/** Custom views page by day, like the day view. */
+const adjacentCalendarDate = (date: Date, view: string, direction: -1 | 1, dateConfig: DateContext) => {
   if (view === "year") return calendar.addMonths(date, direction * 12, dateConfig);
   if (view === "month" || view === "mobile-month") return calendar.addMonths(date, direction, dateConfig);
-  return calendar.addDays(date, direction * (view === "day" ? 1 : 7), dateConfig);
+  return calendar.addDays(date, direction * (view === "week" ? 7 : 1), dateConfig);
 };
 
-const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Required<CalendarLabels>; owner: CalendarProps }): JSX.Element => {
+const CalendarHeader = <V extends string>(props: {
+  date: Date;
+  view: CalendarView | V;
+  labels: Required<CalendarLabels>;
+  owner: CalendarProps<V>;
+}): JSX.Element => {
   const messages = useUiMessages();
   const dateConfig = () => ownerDateConfig(props.owner);
   const previous = () => adjacentCalendarDate(props.date, props.view, -1, dateConfig());
@@ -662,7 +682,7 @@ const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Require
   const title = () => {
     if (props.view === "year")
       return new Intl.DateTimeFormat(dateConfig().locale ?? "en", { year: "numeric", timeZone: dateConfig().timeZone }).format(props.date);
-    if (props.view === "day")
+    if (props.view !== "week" && props.view !== "month" && props.view !== "mobile-month")
       return props.date.toLocaleDateString(dateConfig().locale ?? "en", {
         weekday: "long",
         month: "long",
@@ -675,7 +695,7 @@ const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Require
     return formatMonth(props.date, dateConfig());
   };
   const goDate = (date: Date) => props.owner.onDateChange?.(date, props.view);
-  const goView = (view: CalendarView) => {
+  const goView = (view: CalendarView | V) => {
     if (props.owner.onViewChange) {
       props.owner.onViewChange(view);
       return;
@@ -733,15 +753,18 @@ const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Require
       </CalendarNavigationLink>
     );
   };
-  const viewOptions = createMemo(() =>
-    (
-      [
-        { value: "day", label: props.labels.day },
-        { value: "week", label: props.labels.week },
-        { value: "month", label: props.labels.month },
-        { value: "year", label: props.labels.year },
-      ] satisfies Array<{ value: CalendarView; label: string }>
-    ).filter((option) => !props.owner.views || props.owner.views.includes(option.value)),
+  const viewOptions = createMemo(
+    (): Array<{ value: CalendarView | V; label: string }> => [
+      ...(
+        [
+          { value: "day", label: props.labels.day },
+          { value: "week", label: props.labels.week },
+          { value: "month", label: props.labels.month },
+          { value: "year", label: props.labels.year },
+        ] satisfies Array<{ value: CalendarView; label: string }>
+      ).filter((option) => !props.owner.views || props.owner.views.includes(option.value)),
+      ...(props.owner.customViews ?? []),
+    ],
   );
 
   return (
@@ -776,7 +799,7 @@ const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Require
 };
 
 const MonthView = (props: {
-  owner: CalendarProps;
+  owner: CalendarOwner;
   date: Date;
   now: Date;
   events: NormalizedEvent[];
@@ -1008,7 +1031,7 @@ const MonthView = (props: {
 };
 
 const TimeGridView = (props: {
-  owner: CalendarProps;
+  owner: CalendarOwner;
   date: Date;
   now: Date;
   events: NormalizedEvent[];
@@ -1495,7 +1518,7 @@ const TimeGridView = (props: {
   );
 };
 
-const YearView = (props: { owner: CalendarProps; date: Date; now: Date; events: NormalizedEvent[] }): JSX.Element => {
+const YearView = (props: { owner: CalendarOwner; date: Date; now: Date; events: NormalizedEvent[] }): JSX.Element => {
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const year = createMemo(() => zonedYearMonth(props.date, dateConfig()).year);
   const todayKey = createMemo(() => calendar.formatDateKey(props.now, dateConfig()));
@@ -1573,7 +1596,7 @@ const YearView = (props: { owner: CalendarProps; date: Date; now: Date; events: 
 };
 
 const MobileMonthView = (props: {
-  owner: CalendarProps;
+  owner: CalendarOwner;
   date: Date;
   now: Date;
   selectedDate: Date;
@@ -1616,7 +1639,7 @@ const MobileMonthView = (props: {
 
 const CalendarBody = (props: { children: JSX.Element }): JSX.Element => <div class="k2b-calendar-body">{props.children}</div>;
 
-const Calendar = (props: CalendarProps): JSX.Element => {
+const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.Element => {
   const messages = useUiMessages();
   // Subviews derive their date config from the owner props, so the inherited
   // render locale is merged here once; an explicit dateConfig.locale wins.
@@ -1627,6 +1650,7 @@ const Calendar = (props: CalendarProps): JSX.Element => {
     },
   });
   const view = () => props.view ?? "month";
+  const custom = () => props.customViews?.some((option) => option.value === view()) ?? false;
   const dateConfig = createMemo(() => ownerDateConfig(owner));
   const safeDate = (value: Date | string) => {
     const parsed = parseDate(value, dateConfig());
@@ -1666,43 +1690,52 @@ const Calendar = (props: CalendarProps): JSX.Element => {
     <section class={`k2b-content-calendar ${props.class ?? ""}`} aria-busy={props.navigationPending ? "true" : undefined}>
       <CalendarHeader date={date()} view={view()} labels={mergedLabels()} owner={owner} />
       {props.toolbarContent}
-      <Show
-        when={view() !== "month"}
-        fallback={
-          <CalendarBody>
-            <MonthView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} />
-          </CalendarBody>
-        }
-      >
+      <Show when={!custom()} fallback={<CalendarBody>{props.children}</CalendarBody>}>
         <Show
-          when={view() !== "year"}
+          when={view() !== "month"}
           fallback={
             <CalendarBody>
-              <YearView owner={owner} date={date()} now={now()} events={normalizedEvents()} />
+              <MonthView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} />
             </CalendarBody>
           }
         >
           <Show
-            when={view() !== "mobile-month"}
+            when={view() !== "year"}
             fallback={
               <CalendarBody>
-                <MobileMonthView
-                  owner={owner}
-                  date={date()}
-                  now={now()}
-                  selectedDate={selectedDate()}
-                  events={normalizedEvents()}
-                  labels={mergedLabels()}
-                />
+                <YearView owner={owner} date={date()} now={now()} events={normalizedEvents()} />
               </CalendarBody>
             }
           >
-            <TimeGridView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} days={days()} />
+            <Show
+              when={view() !== "mobile-month"}
+              fallback={
+                <CalendarBody>
+                  <MobileMonthView
+                    owner={owner}
+                    date={date()}
+                    now={now()}
+                    selectedDate={selectedDate()}
+                    events={normalizedEvents()}
+                    labels={mergedLabels()}
+                  />
+                </CalendarBody>
+              }
+            >
+              <TimeGridView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} days={days()} />
+            </Show>
           </Show>
         </Show>
       </Show>
     </section>
   );
 };
+
+/** JSX infers the values of `customViews`; inference from the last signature, as in `createComponent`, sees plain props. */
+function Calendar<V extends string = never>(props: CalendarProps<V>): JSX.Element;
+function Calendar(props: CalendarProps): JSX.Element;
+function Calendar(props: CalendarProps<string>): JSX.Element {
+  return CalendarRoot(props);
+}
 
 export default Calendar;

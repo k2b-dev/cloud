@@ -1,5 +1,6 @@
 export type {
   CalendarAttendee,
+  CalendarCustomView,
   CalendarDayBadge,
   CalendarEvent,
   CalendarEventColor,

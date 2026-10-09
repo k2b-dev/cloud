@@ -25,6 +25,9 @@ choose the first time the reader should see, for example yesterday evening.
 Give the timeline a bounded height, such as the growing part of a flex
 column, and place it on a surface: day headings use the surface color.
 
+To offer the timeline as one view of a [Calendar](/en/ui/surfaces/calendar),
+add it with `customViews` and render it as the calendar's body.
+
 Without `now`, the timeline reads the clock and moves the now line every 30
 seconds. Pass `now` for a fixed time, for example in tests. The server and
 the browser read their own clocks, so a page rendered just before midnight
@@ -89,8 +92,12 @@ an all-day row; all-day items that cover several days repeat there.
 ### Load more days
 
 Set `onLoadEarlier` and `onLoadLater` to load days when the reader nears
-either end. The timeline calls each once, and again after `from` or `to`
-changed. Extend the range and add the items of the new days together, in one
+either end. The timeline calls each once, and again once `from` or `to` moved
+and changed the strip's length. Days that only fold into the fold at that end,
+such as an empty week, leave the strip as long as it was, so the timeline
+asks for that end again only after the reader has scrolled more than a screen
+away and come back; an empty calendar does not load week after week on its
+own. Extend the range and add the items of the new days together, in one
 `batch`; what the reader sees stays in place, to the pixel, also when days
 load at the start. Days fold only once their waking hours are loaded, so an
 empty weekend at the edge does not change size later. Where the view starts
@@ -98,9 +105,10 @@ in a night or a fold at the start of the range, which spreads over other
 times once earlier days load, everything from the end of that night or fold
 stays in place.
 
-While the reader scrolls or has a finger on the strip, a change that would
-move what they see waits until the scroll rests: a scroll write can stop
-or fight touch momentum, as on iOS. Changes after the visible start, such as
+While the reader scrolls or has a finger on the strip, and while a smooth
+scroll the timeline started itself through the controller or keyboard focus
+runs, a change that would move what they see waits until the scroll rests: a
+scroll write can stop a smooth scroll or fight touch momentum, as on iOS. Changes after the visible start, such as
 days loading at the end or a checked task, apply at once. Return a promise to
 have the timeline wait for it before it asks again, and set `busy` while a
 load runs.
@@ -119,7 +127,8 @@ area around it, which then keeps the reading position too.
 
 The `controller` callback receives `scrollToTime(time, { align })` and
 `scrollToNow()`, for example for a "Today" button. Scrolling is smooth unless
-the reader prefers reduced motion.
+the reader prefers reduced motion, and days that load meanwhile do not stop
+it short of its target.
 
 ### Activation and checkboxes
 

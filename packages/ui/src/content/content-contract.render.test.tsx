@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { CalendarEvent } from "./Calendar";
+import type { CalendarEvent, CalendarView } from "./Calendar";
 import type { DataTableProps } from "./DataTable";
 import { getFileViewPreviewKind } from "./file-view-preview";
 
@@ -196,6 +196,36 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(contentCss).toMatch(
       /\.k2b-calendar-year__month:nth-child\(3n\) \{[^}]*border-start-end-radius: 0;[^}]*border-end-end-radius: 0;/s,
     );
+  });
+
+  test("adds an application view to the switcher, pages it by day, and renders its body", () => {
+    const html = renderToString(() =>
+      createComponent(Calendar<"timeline">, {
+        date: "2026-07-15T12:00:00Z",
+        events: [{ id: "review", title: "Review", start: "2026-07-15T09:00:00Z", end: "2026-07-15T10:00:00Z" }],
+        view: "timeline",
+        views: ["day", "week", "month"],
+        customViews: [{ value: "timeline", label: "Timeline" }],
+        timeZone: "UTC",
+        getDateHref: (date, view) => `/calendar?view=${view}&date=${date.toISOString().slice(0, 10)}`,
+        getViewHref: (view) => `/calendar?view=${view}`,
+        children: "Custom body",
+      }),
+    );
+
+    expect(html).toMatch(/<a role="radio" aria-checked="true"[^>]*href="\/calendar\?view=timeline">Timeline<\/a>/);
+    expect(html).toMatch(/<a role="radio" aria-checked="false"[^>]*href="\/calendar\?view=month">Month<\/a>/);
+    expect(html).not.toContain("view=year");
+    expect(html).toContain("Wednesday, July 15, 2026");
+    expect(html).toContain('href="/calendar?view=timeline&amp;date=2026-07-14"');
+    expect(html).toContain('href="/calendar?view=timeline&amp;date=2026-07-16"');
+    expect(html).toContain('<div class="k2b-calendar-body">Custom body</div>');
+    expect(html).not.toContain("k2b-calendar-month");
+    expect(html).not.toContain("Review");
+
+    // Never rendered: without custom views, JSX keeps the built-in view type in the callbacks.
+    const builtIn = (view: CalendarView) => view;
+    void (() => <Calendar date="2026-07-15" events={[]} onViewChange={(view) => builtIn(view)} />);
   });
 
   test("indexes year-view events once instead of rescanning them for every day", () => {

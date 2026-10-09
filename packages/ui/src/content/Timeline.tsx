@@ -63,9 +63,12 @@ export type TimelineProps = {
   onActivate?: (item: TimelineItem) => void;
   /** Changes the checkbox of an item, on a click on the box or Space. Leave it out when the reader may not change it. */
   onToggle?: (item: TimelineItem, checked: boolean) => void;
-  /** Called once when the reader nears the start, again after `from` changed. Extend `from` to load earlier days. */
+  /**
+   * Called once when the reader nears the start, again once `from` moved and changed the strip's length. Extend `from`
+   * to load earlier days.
+   */
   onLoadEarlier?: () => unknown;
-  /** Called once when the reader nears the end, again after `to` changed. Extend `to` to load later days. */
+  /** Called once when the reader nears the end, again once `to` moved and changed the strip's length. Extend `to` to load later days. */
   onLoadLater?: () => unknown;
   /** Marks the region busy, for example while a range loads. */
   busy?: boolean;
@@ -266,8 +269,13 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     const time = anchorAt(before, visible()[0], units);
     return spanPx(after.posOf(time), units) - spanPx(before.posOf(time), units);
   };
-  let requestedFrom: number | undefined;
-  let requestedTo: number | undefined;
+  /**
+   * Where each end of the range was, and how long the strip was, when that end was last asked for. An end is asked
+   * again only once the range moved there and the strip's length changed: days that fold into the fold at that end
+   * leave the reader where they were, and asking again would load an empty calendar week after week on its own.
+   */
+  let requestedFrom: { at: number; length: number } | undefined;
+  let requestedTo: { at: number; length: number } | undefined;
   let pendingEarlier = false;
   let pendingLater = false;
   const loadEdge = (edge: "earlier" | "later") => {
@@ -293,14 +301,16 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     if (built.timeAt(start - reach / 2, units) < low || built.timeAt(end + reach / 2, units) > high)
       setRange([built.timeAt(start - reach, units), built.timeAt(end + reach, units)]);
     const length = spanPx(built.total, units);
+    const due = (requested: { at: number; length: number } | undefined, at: number) =>
+      requested === undefined || (requested.at !== at && requested.length !== length);
     if (start > reach) requestedFrom = undefined;
-    else if (!pendingEarlier && requestedFrom !== built.from) {
-      requestedFrom = built.from;
+    else if (!pendingEarlier && due(requestedFrom, built.from)) {
+      requestedFrom = { at: built.from, length };
       loadEdge("earlier");
     }
     if (end < length - reach) requestedTo = undefined;
-    else if (!pendingLater && requestedTo !== built.to) {
-      requestedTo = built.to;
+    else if (!pendingLater && due(requestedTo, built.to)) {
+      requestedTo = { at: built.to, length };
       loadEdge("later");
     }
   };
@@ -309,7 +319,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     if (!viewport) return;
     const [start, end] = visible();
     const target = px(time) - (align === "center" ? (end - start) / 2 : 16);
-    scrollBy(target - start, reducedMotion() ? "auto" : "smooth");
+    scrollBy(target - start, ownScrollBehavior());
   };
 
   // Keyboard: one tab stop, moved by the keys of the axis.
@@ -320,7 +330,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     setActive(id);
     const element = elementOf(id);
     element?.focus({ preventScroll: true });
-    element?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+    element?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: ownScrollBehavior() });
     if (message) announce(message);
   };
   const groupLabel = (group: TimelineGroup) => dayRange(group.firstKey, group.lastKey, longDayFormat());
@@ -432,6 +442,16 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     setResting(false);
     quietFrames = 0;
     if (!restFrame) restFrame = requestAnimationFrame(countQuiet);
+  };
+  /**
+   * How a scroll the timeline starts itself moves. A smooth one reports its first frame only later, and a write that
+   * keeps the view in place stops it, so it counts as scrolling from its start: days that load meanwhile wait until it
+   * arrives instead of cutting it short.
+   */
+  const ownScrollBehavior = (): ScrollBehavior => {
+    if (reducedMotion()) return "auto";
+    scrolled();
+    return "smooth";
   };
   const onTouchStart = (event: TouchEvent) => {
     const target = event.target;

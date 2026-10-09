@@ -62,8 +62,10 @@
   white-space: nowrap;
 }
 
+/* On a narrow screen the actions wrap instead of running out of the header. */
 .k2b-ui .k2b-calendar-header__actions {
   width: 100%;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
 }
