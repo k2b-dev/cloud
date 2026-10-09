@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { fixtureHelpReader } from "../../test/help-reader";
+import type { RequestActor } from "../contracts/shared";
+import type { HelpReaderFactory } from "../services/help";
+import { session } from "../services/session";
+import { buildProjectedUser } from "../services/session/user";
 import { createHelpRoutes } from "./help";
 
 const authenticate = async (_c: unknown, next: () => Promise<void>) => next();
@@ -51,6 +55,33 @@ describe("Help API", () => {
       (await routes.request("/help/v1/inventory/documents/start", { headers: { "x-cloud-locale": locale } })).json();
     expect((await read("de-AT")).html).toContain('<span class="k2b-sr-only">Warnung: </span>');
     expect((await read("en")).html).toContain('<span class="k2b-sr-only">Warning: </span>');
+  });
+  test("refuses anonymous requests by default and reads as the signed-in viewer", async () => {
+    const viewers: (RequestActor | undefined)[] = [];
+    const recording: HelpReaderFactory = (locale, viewer) => {
+      viewers.push(viewer);
+      return help(locale, viewer);
+    };
+    const routes = createHelpRoutes({ help: recording });
+    for (const path of ["/help/v1/inventory/search?q=create", "/help/v1/inventory/documents/start"]) {
+      expect((await routes.request(path, { headers: { Accept: "application/json" } })).status).toBe(401);
+    }
+    expect(viewers).toEqual([]);
+
+    const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: false });
+    const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
+      user,
+      data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: new Date(Date.now() + 60_000).toISOString() },
+    });
+    try {
+      const response = await routes.request("/help/v1/inventory/documents/start", {
+        headers: { Accept: "application/json", Cookie: "session_token=test" },
+      });
+      expect(response.status).toBe(200);
+      expect(viewers).toEqual([{ kind: "user", user }]);
+    } finally {
+      authenticate.mockRestore();
+    }
   });
   test("rejects entry before reading and propagates outages", async () => {
     const routes = createHelpRoutes({ help, authenticate: async (c) => c.json({ error: "unauthorized" }, 401) });

@@ -10,6 +10,24 @@ updated: 2026-10-09
 
 # Deprecations and migrations
 
+## Help requires sign-in
+
+In-product Help is no longer public. Before, anyone could read every
+application's Help without signing in, including Help of administrator-only
+applications. Now `/api/help/v1/...` answers `401` without sign-in, and
+`/help/apps/...` and `/app/<id>/help` lead to sign-in. Signed-in users only see
+Help of applications they may see: an application's `nav.requiresRoles`
+limits its Help like the navigation, and an application reached only through
+the admin area shows Help to administrators. The Assistant's `search_help` and
+`read_help` and the MCP Help tools and resources apply the same rule; a service
+account without a user sees no Help.
+
+Nothing needs to be configured or migrated. Links to Help from outside Cloud
+now ask for sign-in first. For application authors, `preloadLayoutHelp(c,
+appId)` returns `null` without a signed-in user, and the router of the legacy
+`defineHelpCollection()` requires one. See
+[Who can read Help](/en/docs/platform/help#who-can-read-help).
+
 ## Spaces removes the calendar timeline
 
 The Spaces calendar no longer has a **Timeline** view. A saved link with

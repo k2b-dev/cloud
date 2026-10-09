@@ -1,4 +1,5 @@
 import type { AppRegistryHelpSummary } from "../../contracts/registry";
+import type { RequestActor } from "../../contracts/shared";
 import type { HelpDocumentManifest } from "../../shared/help";
 
 export type HelpDocument = {
@@ -36,11 +37,11 @@ export type HelpSearchInput = { query: string; appId?: string; limit?: number };
 export type HelpReadInput = { appId: string; documentId: string };
 export type HelpManifestResult = AppRegistryHelpSummary & { locale: string; documents: readonly HelpDocumentManifest[] };
 
-/** One request's language; operations resolve the current published app versions. */
+/** One request's language and viewer; operations resolve the current published versions of the apps the viewer may see. */
 export type HelpReader = {
   manifest(appId: string): Promise<HelpManifestResult | null>;
   list(cursor?: string): Promise<HelpMetadata[]>;
   search(input: HelpSearchInput): Promise<HelpMatch[]>;
   read(input: HelpReadInput): Promise<HelpArticle | null>;
 };
-export type HelpReaderFactory = (locale: string) => HelpReader;
+export type HelpReaderFactory = (locale: string, viewer: RequestActor | undefined) => HelpReader;

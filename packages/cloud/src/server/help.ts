@@ -3,6 +3,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { type HelpDocumentManifest, type HelpDocumentPayload, type HelpSearchPayload, helpLocaleChain } from "../shared/help";
 import { markdownToPlainText, renderHelpMarkdown } from "../shared/markdown";
+import { auth } from "./middleware/auth";
 
 const metadataSchema = z.object({
   id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -151,7 +152,10 @@ export const defineHelpCollection = (options: { basePath: string; sources: reado
     url: `${basePath}/${encodeURIComponent(id)}`,
   }));
 
-  const router = new Hono()
+  // Help is for signed-in people wherever an app mounts this router; its own route policy may narrow it further.
+  const router = new Hono();
+  router.use(auth.requireRole("authenticated"), auth.requireUser());
+  router
     .get("/search", (context) => {
       const query = context.req.query("q")?.trim().toLocaleLowerCase().slice(0, 200) ?? "";
       const payload: HelpSearchPayload = {

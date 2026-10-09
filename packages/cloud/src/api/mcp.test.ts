@@ -293,6 +293,20 @@ describe("capability MCP projection", () => {
     }
   });
 
+  test("reads Help as the caller", async () => {
+    const viewers: (RequestActor | undefined)[] = [];
+    const routes = createMcpRoutes({
+      listApps: async () => [helpSummary()],
+      help: (locale, viewer) => {
+        viewers.push(viewer);
+        return fixtureHelpReader(async () => [help])(locale, viewer);
+      },
+    });
+    const response = await rpc(routes, { jsonrpc: "2.0", id: 1, method: "resources/list", params: {} });
+    expect(response.status).toBe(200);
+    expect(viewers).toMatchObject([{ kind: "user", user: { id: "11111111-1111-4111-8111-111111111111" } }]);
+  });
+
   test("initializes current and compatible clients with self-contained server guidance", async () => {
     const routes = createMcpRoutes({ authenticate: authenticated });
     for (const version of ["2025-11-25", "2025-06-18"]) {

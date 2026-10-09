@@ -13,21 +13,24 @@ export type HelpRouteDependencies = {
 
 export const createHelpRoutes = (dependencies: HelpRouteDependencies = {}) => {
   const reader = dependencies.help ?? createHelpReader;
+  // Help is for signed-in people; the reader then hides apps the viewer may not see, like missing ones.
   return new Hono<AuthContext>()
-    .use(dependencies.authenticate ?? auth.requireRole("*"))
+    .use(dependencies.authenticate ?? auth.requireRole("authenticated"))
     .get("/help/v1/:appId/search", async (c) => {
       const locale = getLocale(c);
       const query = c.req.query("q")?.trim().slice(0, 200) ?? "";
       const payload: HelpSearchPayload = {
         locale,
-        ids: (await reader(locale).search({ query, appId: c.req.param("appId"), limit: 25 })).map((document) => document.documentId),
+        ids: (await reader(locale, c.get("actor")).search({ query, appId: c.req.param("appId"), limit: 25 })).map(
+          (document) => document.documentId,
+        ),
       };
       return c.json(payload);
     })
     .get("/help/v1/:appId/documents/:documentId", async (c) => {
       const locale = getLocale(c);
       const { t } = helpApiMessages.resolve([locale]);
-      const document = await reader(locale).read({ appId: c.req.param("appId"), documentId: c.req.param("documentId") });
+      const document = await reader(locale, c.get("actor")).read({ appId: c.req.param("appId"), documentId: c.req.param("documentId") });
       if (!document) return c.json({ code: "HELP_NOT_FOUND", message: t.notFound }, 404);
       const payload: HelpDocumentPayload = {
         locale: document.locale,
