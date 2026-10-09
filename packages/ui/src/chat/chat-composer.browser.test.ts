@@ -61,7 +61,9 @@ render(
               // A server round trip, as an application that waits for its request.
               if (options.submitDelay) return new Promise((done) => setTimeout(done, options.submitDelay));
             },
-            fileSelection: { onSelect: () => {} },
+            // "files" attaches directly, "menu" turns attach into the add menu, "none" leaves it out.
+            fileSelection: options.attach === "none" ? undefined : { onSelect: () => {} },
+            menuActions: options.attach === "menu" ? [{ id: "poll", label: "Poll", onSelect: () => {} }] : undefined,
             formatting: true,
             emoji: { onOpen: ({ insert }) => insert("🙂") },
             get microphone() {
@@ -106,7 +108,7 @@ afterAll(async () => {
 const height = 800;
 
 const open = async (
-  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number } = {},
+  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number; attach?: "files" | "menu" | "none" } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const width = options.width ?? 720;
@@ -374,6 +376,9 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       expect(await page.locator("textarea").first().inputValue()).toBe("****");
       await page.locator('button[aria-label="Formatting"]').tap();
       await page.evaluate(() => fixture.setDraft(""));
+      await frames(page, 2);
+      // Closing the row gives its height back; the field and every control are where they were.
+      expect(await layout(page)).toEqual(before);
 
       const field = page.locator("textarea").first();
       await field.tap();
@@ -385,6 +390,31 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent)).toEqual(["Hello\n"]);
       expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
       await page.close();
+    }
+  }, 30_000);
+
+  test("the formatting row starts at the field's edge also with the add menu or without an attach control", async () => {
+    const devices: [number, BrowserContextOptions][] = [
+      [720, {}],
+      [390, { hasTouch: true, isMobile: true }],
+    ];
+    for (const attach of ["menu", "none"] as const) {
+      for (const [width, context] of devices) {
+        const page = await open({ width, attach }, context);
+        // The add menu's attach sits in the Dropdown's wrapper; "none" has no attach control at all.
+        expect(await page.locator(".k2b-chat-composer__row .k2b-dropdown .k2b-chat-composer__attach").count()).toBe(
+          attach === "menu" ? 1 : 0,
+        );
+        expect(await page.locator(".k2b-chat-composer__attach").count()).toBe(attach === "menu" ? 1 : 0);
+        const before = await layout(page);
+        await page.locator('button[aria-label="Formatting"]').click();
+        await frames(page, 2);
+        expect((await layout(page)).row).toEqual(before.row);
+        const format = await formatButtons(page);
+        expect(format.buttons).toHaveLength(3);
+        expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
+        await page.close();
+      }
     }
   }, 30_000);
 });

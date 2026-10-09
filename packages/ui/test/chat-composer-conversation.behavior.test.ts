@@ -395,6 +395,24 @@ test("Aa shows the formatting buttons, which format the selection like their sho
   composer.done();
 });
 
+test("the default composer's Aa opens the same three buttons above its footer", async () => {
+  const composer = await mount("plain", { variant: "default", formatting: true });
+  composer.button("Formatting")!.click();
+  const group = composer.dom.root.querySelector(".k2b-chat-composer__format")!;
+  expect(group.nextElementSibling?.tagName).toBe("FOOTER");
+  expect(Array.from(group.querySelectorAll("button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+    "Bold (Ctrl/Cmd+B)",
+    "Italic (Ctrl/Cmd+I)",
+    "Bullet list (Ctrl/Cmd+Shift+8)",
+  ]);
+  composer.textarea.setSelectionRange(0, 5);
+  expect(composer.press({ key: "b", ctrlKey: true })).toBe(true);
+  expect(composer.value()).toBe("**plain**");
+  expect(composer.press({ key: "e", ctrlKey: true })).toBe(false);
+  expect(composer.value()).toBe("**plain**");
+  composer.done();
+});
+
 test("formatting shortcuts stay off without formatting", async () => {
   const composer = await mount("plain");
   composer.textarea.setSelectionRange(0, 5);
