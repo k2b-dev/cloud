@@ -7,11 +7,13 @@ import {
   type CalendarEventRenderContext,
   type CalendarEventTimeChange,
   Calendar as CoreCalendar,
+  type CalendarView as CoreCalendarView,
   dialogCore,
   FilterChip,
   type FilterChipSection,
   PanelDialog,
   panelDialogOptions,
+  type TimelineController,
   toast,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
@@ -33,8 +35,16 @@ import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
-import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
+import {
+  type CalendarColorBy,
+  CalendarColorBySchema,
+  type CalendarFilter,
+  defaultCalendarFilter,
+  parseCalendarRoute,
+  writeCalendarFilter,
+} from "./filter";
 import { CalendarItemContent } from "./ItemContent";
+import SpacesTimeline from "./SpacesTimeline";
 import type { CalendarProps, CalendarView } from "./types";
 
 const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
@@ -64,6 +74,9 @@ const buildCalendarHref = (
   }
   return `${url.pathname}?${url.searchParams.toString()}`;
 };
+
+/** Spaces never shows the compact mobile month, so its links name the month view. */
+const asView = (view: CoreCalendarView | "timeline"): CalendarView => (view === "mobile-month" ? "month" : view);
 
 const toCalendarEvent = (
   item: CalendarItem,
@@ -210,11 +223,13 @@ export default function Calendar(props: CalendarProps) {
     },
   });
   const events = () =>
-    props.items.map((item) => {
-      const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
-      const optimistic = optimisticTimes()[item.id];
-      return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
-    });
+    props.view === "timeline"
+      ? []
+      : props.items.map((item) => {
+          const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
+          const optimistic = optimisticTimes()[item.id];
+          return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
+        });
   const itemsById = createMemo(() => new Map(props.items.map((item) => [item.id, item])));
   const renderEvent = (event: CalendarEvent, context: CalendarEventRenderContext) => {
     const item = itemsById().get(event.id);
@@ -552,6 +567,30 @@ export default function Calendar(props: CalendarProps) {
     }
   };
   const creatingEvent = createDialogPending;
+  let timelineController: TimelineController | undefined;
+  /** A new anchor day opens a new strip; the same one keeps the strip and where the reader is. */
+  const timelineAnchor = createMemo(() => (props.view === "timeline" ? props.timeline?.anchor : undefined));
+  const timelineHref = (item: CalendarItem) =>
+    buildCalendarHref(
+      props.baseUrl,
+      "timeline",
+      props.date,
+      props.filter,
+      item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id,
+      item.recurrenceId ?? undefined,
+      props.dateConfig,
+    );
+  /** "Today" and the active view link lead to the strip already shown, so they scroll it instead of loading it again. */
+  const navigateHref = (href: string) => {
+    const timeline = props.view === "timeline" ? props.timeline : undefined;
+    const target = parseCalendarRoute(new URL(href, "http://spaces.local"), props.dateConfig);
+    if (timeline && timelineController && target.view === "timeline" && target.date === timeline.anchor) {
+      if (timeline.anchor === calendar.today(props.dateConfig).toISOString()) timelineController.scrollToNow();
+      else timelineController.scrollToTime(timeline.from);
+      return;
+    }
+    props.onNavigateHref?.(href);
+  };
   const defaultNewEventSlot = (): CalendarEventTimeChange => {
     const dateKey = calendar.formatDateKey(props.date, props.dateConfig);
     const start = props.dateConfig?.timeZone
@@ -584,7 +623,8 @@ export default function Calendar(props: CalendarProps) {
               onClick={() => void createEventFromSlot(defaultNewEventSlot())}
             >
               <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} />
-              {t.newEvent}
+              {/* A phone keeps the icon, so the header holds the five views in one row. */}
+              <span class="max-sm:sr-only">{t.newEvent}</span>
             </Button>
           </Show>
         }
@@ -640,23 +680,27 @@ export default function Calendar(props: CalendarProps) {
               />
             </Show>
             <span class="ml-auto inline-flex min-w-16 shrink-0 items-center justify-end gap-1 text-xs text-dimmed">
-              <Show when={props.navigationPending} fallback={t.shownCount({ count: props.items.length })}>
+              <Show
+                when={props.navigationPending}
+                fallback={props.view === "timeline" ? undefined : t.shownCount({ count: props.items.length })}
+              >
                 <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
                 {t.updating}
               </Show>
             </span>
           </div>
         }
+        customViews={[{ value: "timeline", label: t.timeline }]}
         getViewHref={(view) =>
-          buildCalendarHref(props.baseUrl, view as CalendarView, props.date, props.filter, undefined, undefined, props.dateConfig)
+          buildCalendarHref(props.baseUrl, asView(view), props.date, props.filter, undefined, undefined, props.dateConfig)
         }
         getDateHref={(date, view) =>
-          buildCalendarHref(props.baseUrl, view as CalendarView, date, props.filter, undefined, undefined, props.dateConfig)
+          buildCalendarHref(props.baseUrl, asView(view), date, props.filter, undefined, undefined, props.dateConfig)
         }
         getEventHref={(event) => event.href}
         renderEvent={renderEvent}
         selectedEventId={props.selectedItemId}
-        onNavigateHref={props.onNavigateHref}
+        onNavigateHref={props.onNavigateHref ? navigateHref : undefined}
         onPrefetch={props.onPrefetch}
         navigationPending={props.navigationPending}
         onEventActivate={selectEvent}
@@ -667,7 +711,28 @@ export default function Calendar(props: CalendarProps) {
             ? (slot) => void createEventFromSlot(slot)
             : undefined
         }
-      />
+      >
+        <Show when={timelineAnchor()} keyed>
+          <Show when={props.timeline}>
+            {(timeline) => (
+              <SpacesTimeline
+                spaceId={props.spaceId}
+                range={timeline()}
+                items={timeline().items}
+                busy={timeline().busy || Boolean(props.navigationPending)}
+                canWrite={props.canWrite}
+                dateConfig={props.dateConfig}
+                hrefFor={timelineHref}
+                onLoadEarlier={() => timeline().onLoadEarlier()}
+                onLoadLater={() => timeline().onLoadLater()}
+                controller={(controller) => {
+                  timelineController = controller;
+                }}
+              />
+            )}
+          </Show>
+        </Show>
+      </CoreCalendar>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import { AssignedToFilterSchema, ItemTypeSchema, PrioritySchema } from "@/contracts";
+import type { CalendarView } from "./types";
 
 /** What an item's calendar color shows; `tag` is the default. */
 export const CalendarColorBySchema = z.enum(["tag", "status", "priority", "person"]);
@@ -43,8 +44,8 @@ export const parseCalendarColorBy = (url: URL): CalendarColorBy =>
   CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(url.searchParams.get(PARAMS.colorBy));
 
 const values = (url: URL, key: string) => url.searchParams.get(key)?.split(",").filter(Boolean) ?? [];
-const isCalendarView = (value: string | null): value is "day" | "week" | "month" | "year" =>
-  value === "day" || value === "week" || value === "month" || value === "year";
+const isCalendarView = (value: string | null): value is CalendarView =>
+  value === "day" || value === "week" || value === "month" || value === "year" || value === "timeline";
 
 /** Parses only known values; malformed or stale URL filters degrade to safe defaults. */
 export const parseCalendarFilter = (url: URL): CalendarFilter => ({

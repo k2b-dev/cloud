@@ -35,7 +35,7 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/data-variant="input"[^>]*>.*New event<\/span><\/button>/);
+    expect(html).toMatch(/data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><\/span><\/button>/);
     expect(html).toMatch(/class="k2b-calendar-month__day-target\s*"/);
     expect(html).toContain("view=calendar&amp;cv=day");
     expect(html).not.toContain("Create event on");
@@ -259,5 +259,82 @@ describe("Spaces calendar colors", () => {
     expect(html).toContain("view=calendar&amp;cv=day");
     expect([...html.matchAll(/href="([^"]*view=calendar[^"]*)"/g)].every(([, href]) => href!.includes("ccolor=person"))).toBe(true);
     expect(renderView("month", "en")).not.toContain("ccolor=");
+  });
+
+  test("shows the timeline with events as bands and due tasks as markers at their time", () => {
+    const base = {
+      spaceId: "Space1",
+      spaceName: "Planning",
+      spaceColor: "#3b82f6",
+      descriptionPreview: null,
+      url: null,
+      allDay: false,
+      priority: null,
+      recurrence: null,
+      recurringEventId: null,
+      recurrenceId: null,
+    } satisfies Partial<CalendarItem>;
+    const items: CalendarItem[] = [
+      {
+        ...base,
+        id: "Event1",
+        title: "Release planning",
+        location: "Room Schlei",
+        startsAt: "2026-10-08T14:00:00.000Z",
+        endsAt: "2026-10-08T15:30:00.000Z",
+        deadline: null,
+        tags: [{ id: "Tag1", name: "Release", color: "#8b5cf6" }],
+      },
+      {
+        ...base,
+        id: "Task1",
+        title: "Check invoice",
+        location: null,
+        startsAt: null,
+        endsAt: null,
+        deadline: "2026-10-08T15:00:00.000Z",
+        priority: "high",
+      },
+    ];
+    const render = (canWrite: boolean) =>
+      renderToString(() =>
+        createComponent(Calendar, {
+          spaceId: "Space1",
+          items,
+          columns: [],
+          tags: [],
+          filter: defaultCalendarFilter,
+          view: "timeline",
+          date: new Date("2026-10-08T00:00:00.000Z"),
+          baseUrl: "/app/spaces/Space1?view=calendar&cv=timeline",
+          dateConfig: { locale: "en", timeZone: "UTC", weekStartsOn: 1 },
+          canWrite,
+          timeline: {
+            anchor: "2026-10-08T00:00:00.000Z",
+            from: "2026-10-07T20:00:00.000Z",
+            to: "2026-10-16T00:00:00.000Z",
+            items,
+            busy: false,
+            onLoadEarlier: async () => undefined,
+            onLoadLater: async () => undefined,
+          },
+        }),
+      );
+
+    const html = render(true);
+    expect(html).toMatch(/role="radio" aria-checked="true"[^>]*href="[^"]*cv=timeline[^"]*">Timeline<\/a>/);
+    expect(html).toContain('aria-label="Timeline"');
+    expect(html).toContain("Release planning, 14:00 to 15:30, Room Schlei, Thursday, October 8");
+    expect(html).toMatch(/data-kind="band"[^>]*data-span="m"[^>]*--k2b-timeline-accent:#8b5cf6/);
+    expect(html).toContain("Check invoice, 15:00, Thursday, October 8, open");
+    expect(html).toMatch(/data-kind="marker"[^>]*data-color="red"/);
+    expect(html).toContain('class="k2b-timeline__check"');
+    expect(html).toContain("cv=timeline&amp;cd=2026-10-08&amp;item=Task1");
+    expect(html).not.toContain("k2b-calendar-month");
+
+    const readOnly = render(false);
+    expect(readOnly).toContain("Check invoice, 15:00, Thursday, October 8");
+    expect(readOnly).not.toContain("Check invoice, 15:00, Thursday, October 8, open");
+    expect(readOnly).not.toContain('class="k2b-timeline__check"');
   });
 });

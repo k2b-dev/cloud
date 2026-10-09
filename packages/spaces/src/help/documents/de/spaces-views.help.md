@@ -17,6 +17,19 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 - **Kalender:** Eignet sich für Termine, Fälligkeitsdaten, Planungszeiträume und überwiegend zeitgebundene Arbeit.
 :::
 
+## Zeitleiste im Kalender {icon="timeline"}
+
+:::reference
+- **Öffnen:** Wähle im Kalender **Zeitleiste** neben **Tag**, **Woche**, **Monat** und **Jahr**. Sie zeigt einen Space als durchgehenden Zeitstreifen. Der Link enthält Ansicht, Tag und Filter, daher öffnen ein Neuladen oder ein geteilter Link denselben Streifen.
+- **Lesen:** Die Stunden von 06:00 bis 22:00 sind so lang, wie sie dauern. So siehst du die Dauer von Terminen, freie Zeit dazwischen und den Abend auf einen Blick. Jede Nacht von 22:00 bis 06:00 ist ein schmaler Streifen, und aufeinanderfolgende Tage ohne Einträge mit Uhrzeit sind zu einem zusammengefasst. Ganztägige Termine stehen in einer Zeile über den Stunden.
+- **Aufgaben:** Eine Aufgabe erscheint als Markierung zu der Uhrzeit, zu der sie fällig ist. Ein Fälligkeitsdatum hat immer eine Uhrzeit, ohne eigene Wahl 17:00. Eine Aufgabe, deren Fälligkeitsdatum als ganzer Tag gesetzt wurde, steht in der Ganztagszeile. Wenn du den Space bearbeiten darfst, hat die Markierung ein Kästchen, das die Aufgabe erledigt; die Bestätigung bietet **Rückgängig**. Erledigte Einträge werden nicht angezeigt.
+- **Überschneidungen:** Bis zu drei Termine teilen sich die Höhe nebeneinander. Weitere werden zu einem Eintrag **+n** zusammengefasst, der sie mit ihren Uhrzeiten auflistet.
+- **Durch die Zeit bewegen:** Scrolle seitwärts mit dem Trackpad, einer Wischbewegung oder Umschalt und dem Mausrad. Wenn die Zeitleiste die Seite füllt, scrollt auch das Mausrad seitwärts. Sie beginnt am Abend vor dem gewählten Tag und lädt jeweils eine Woche, sobald du dich einem Ende näherst, insgesamt bis zu einem Jahr. Was du gerade ansiehst, bleibt dabei an seinem Platz. **Heute** führt zurück zum aktuellen Tag, die Pfeile öffnen den Streifen einen Tag früher oder später.
+- **Telefon:** Auf einem schmalen Bildschirm verläuft derselbe Streifen von oben nach unten.
+- **Tastatur:** Die Zeitleiste ist ein einziger Halt für **Tab**. Die Pfeiltasten springen zum vorherigen oder nächsten Eintrag, **Bild↑** und **Bild↓** zum vorherigen oder nächsten Tag, **Pos1** und **Ende** zum ersten oder letzten Eintrag eines Tages und **T** zur aktuellen Uhrzeit. **Enter** öffnet einen Eintrag, und die **Leertaste** erledigt eine Aufgabe, wenn du den Space bearbeiten darfst.
+- **Filter:** Die Filter für Umfang, Priorität, Status und Tags im Kalender gelten auch für die Zeitleiste.
+:::
+
 ## Gezielt filtern {icon="search"}
 
 :::reference

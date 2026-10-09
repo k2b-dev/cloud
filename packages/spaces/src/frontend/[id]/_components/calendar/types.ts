@@ -1,8 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
 import type { CalendarFilter } from "./filter";
+import type { TimelineRange } from "./timeline";
 
-export type CalendarView = "day" | "week" | "month" | "year";
+export type CalendarView = "day" | "week" | "month" | "year" | "timeline";
 
 /** Weather data for a specific date */
 export type DayWeather = {
@@ -29,4 +30,15 @@ export type CalendarProps = {
   navigationPending?: boolean;
   /** Weather forecasts indexed by date string (YYYY-MM-DD) */
   weather?: Record<string, DayWeather>;
+  /** The loaded days of the timeline view, once they are in. */
+  timeline?: CalendarTimeline;
+};
+
+export type CalendarTimeline = TimelineRange & {
+  /** The day the timeline opened on; another anchor opens a new strip. */
+  anchor: string;
+  items: CalendarItem[];
+  busy: boolean;
+  onLoadEarlier: () => Promise<void>;
+  onLoadLater: () => Promise<void>;
 };
