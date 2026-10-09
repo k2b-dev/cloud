@@ -126,6 +126,13 @@ suite("Spaces item templates", () => {
       expect((await admin.call(`${base}/templates`, { method: "POST", body: { kind: "task", name: "Bad", location: "x" } })).status).toBe(
         400,
       );
+      // An empty location means none, also for a task.
+      const placeless = await admin.call(`${base}/templates`, { method: "POST", body: { kind: "task", name: "Placeless", location: "" } });
+      expect(placeless.status).toBe(200);
+      const placelessTemplate = (await placeless.json()) as SpaceItemTemplate;
+      expect(placelessTemplate.location).toBeNull();
+      expect((await admin.call(`${base}/templates/${placelessTemplate.id}`, { method: "PATCH", body: { location: "" } })).status).toBe(200);
+      expect((await admin.call(`${base}/templates/${placelessTemplate.id}`, { method: "DELETE" })).status).toBe(200);
 
       // Everyone with read access lists them, in the Space detail too; readers cannot draft.
       const listed = (await (await reader.call(`${base}/templates?kind=task`)).json()) as SpaceItemTemplate[];
@@ -156,11 +163,25 @@ suite("Spaces item templates", () => {
       expect((await writer.call(`${base}/templates/${template.id}/draft?timeZone=Mars/Base`)).status).toBe(400);
       expect((await writer.call(`${base}/templates/${template.id}/draft?date=2026-02-30`)).status).toBe(400);
 
-      // A default assignee who lost access drops out of new drafts but stays on the template.
+      // A default assignee who lost access drops out of the template wherever it is read, so the web form, drafts,
+      // and a settings save that sends the shown people back all keep working; the choice returns with the access.
       await sql`DELETE FROM auth.access WHERE id = ${leaver.accessId}::uuid`;
       const later = (await (await writer.call(`${base}/templates/${template.id}/draft?timeZone=UTC`)).json()) as ItemTemplateDraft;
       expect(later.item.assigneeIds).toEqual([]);
-      expect(((await (await reader.call(`${base}/templates/${template.id}`)).json()) as SpaceItemTemplate).assignees).toHaveLength(1);
+      const shown = (await (await admin.call(`${base}/templates/${template.id}`)).json()) as SpaceItemTemplate;
+      expect(shown.assignees).toEqual([]);
+      const inDetail = ((await (await reader.call(base)).json()) as SpaceDetail).templates.find((entry) => entry.id === template.id);
+      expect(inDetail?.assignees).toEqual([]);
+      const regranted = await grant(space!.id, { userId: leaver.id }, "write");
+      expect(((await (await reader.call(`${base}/templates/${template.id}`)).json()) as SpaceItemTemplate).assignees).toMatchObject([
+        { id: leaver.id },
+      ]);
+      await sql`DELETE FROM auth.access WHERE id = ${regranted}::uuid`;
+      const resaved = await admin.call(`${base}/templates/${template.id}`, {
+        method: "PATCH",
+        body: { title: shown.title, assigneeIds: shown.assignees.map((assignee) => assignee.id) },
+      });
+      expect(resaved.status).toBe(200);
 
       // Creating from the draft makes the task, its checklist, and the creator's assignment in one request.
       const createdItem = await writer.call(`${base}/items`, {

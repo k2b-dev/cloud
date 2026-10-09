@@ -450,6 +450,7 @@ export const spacesApiErrorMessage = (status: number, locale?: string | null, ba
       "Dieser Space hat schon die größtmögliche Zahl an Vorlagen dieser Art.",
     "A checklist is only available for tasks": "Eine Checkliste gibt es nur bei Aufgaben.",
     "An event needs a date": "Ein Termin braucht ein Datum.",
+    "Pass either a date or no date, not both": "Gib entweder ein Datum oder kein Datum an, nicht beides.",
     "Unknown time zone": "Unbekannte Zeitzone.",
   };
   if (resolved.locale === "de" && baseMessage && workErrors[baseMessage]) return workErrors[baseMessage];

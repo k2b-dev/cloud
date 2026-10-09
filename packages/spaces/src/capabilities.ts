@@ -116,7 +116,13 @@ import {
   type SpaceItemTemplate,
   type TemplateDateRule,
 } from "./contracts";
-import { describeTemplateDateRule, formatTemplateDate, proposeTemplateDates, type TemplateItemDraft } from "./presentation/item-templates";
+import {
+  describeTemplateDateRule,
+  formatTemplateDate,
+  localNow,
+  proposeTemplateDates,
+  type TemplateItemDraft,
+} from "./presentation/item-templates";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
@@ -1373,7 +1379,8 @@ const commentMutationResult = async (
   });
 };
 
-type TemplateUse = { templateId?: string; date?: string; timeZone?: string; noDate?: boolean };
+/** `at` is an explicit deadline or start; its local day then fills the placeholders and names the date. */
+type TemplateUse = { templateId?: string; date?: string; timeZone?: string; noDate?: boolean; at?: string };
 type TemplateFilled = {
   item: TemplateItemDraft;
   template: SpaceItemTemplate;
@@ -1414,8 +1421,7 @@ const fillFromTemplate = async (
   if (!timeZone.ok) return timeZone;
   const draft = await spacesService.template.draft({
     template: resolved.data.internal,
-    internalSpaceId,
-    date: input.date,
+    date: input.date ?? (input.at ? localNow(new Date(input.at), timeZone.data).date : undefined),
     noDate: input.noDate,
     timeZone: timeZone.data,
     locale: context.locale,
@@ -1450,7 +1456,12 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
     const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
     const { spaceId, templateId, date, timeZone, noDate, ...explicit } = input;
-    const filled = await fillFromTemplate({ templateId, date, timeZone, noDate }, "task", access.data.internalId, context);
+    const filled = await fillFromTemplate(
+      { templateId, date, timeZone, noDate, at: explicit.deadline },
+      "task",
+      access.data.internalId,
+      context,
+    );
     if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
       spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),
@@ -1527,7 +1538,7 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
     const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
     const { spaceId, templateId, date, timeZone, ...explicit } = input;
-    const filled = await fillFromTemplate({ templateId, date, timeZone }, "event", access.data.internalId, context);
+    const filled = await fillFromTemplate({ templateId, date, timeZone, at: explicit.startsAt }, "event", access.data.internalId, context);
     if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
       spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),

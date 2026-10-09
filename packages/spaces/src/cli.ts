@@ -37,7 +37,7 @@ import type {
   SpaceTaskDependent,
 } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
-import { describeTemplateDateRule, formatTemplateDate, proposeTemplateDates } from "./presentation/item-templates";
+import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
 import type { TaskWork } from "./work-contracts";
 
 const SHORT_ID = /^[0-9A-Za-z]{6}$/;
@@ -671,18 +671,28 @@ function spacesCommands(locale?: string) {
             printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
             return;
           }
-          if (flags.date && (flags.noDate || explicit.deadline || explicit.startsAt))
+          if ([flags.date, flags.noDate || undefined, explicit.deadline, explicit.startsAt].filter(Boolean).length > 1)
             throw new Error(
               t({
                 en: "Pass only one of --date, --no-date, --deadline, or --starts-at.",
                 de: "Übergib nur eines von --date, --no-date, --deadline oder --starts-at.",
               }),
             );
+          // Given times replace the template's as a whole, so half a range never mixes with the template's other end.
+          if (Boolean(explicit.startsAt) !== Boolean(explicit.endsAt))
+            throw new Error(
+              t({
+                en: "With --template, pass --starts-at and --ends-at together.",
+                de: "Mit --template übergib --starts-at und --ends-at zusammen.",
+              }),
+            );
           const template = resolveTemplate(space, flags.template, flags.kind);
+          // A given deadline or start picks the day, so the template's placeholders name the day the item gets.
+          const at = explicit.deadline ?? explicit.startsAt;
           const draft = await readApi<ItemTemplateDraft>(
             ctx,
             withQuery(api(`/${space.id}/templates/${encodeURIComponent(template.id)}/draft`), {
-              date: flags.date,
+              date: flags.date ?? (at ? localNow(new Date(at), localTimeZone()).date : undefined),
               noDate: flags.noDate ? "true" : undefined,
               timeZone: localTimeZone(),
             }),
@@ -693,7 +703,7 @@ function spacesCommands(locale?: string) {
             ...defaults,
             ...(template.kind === "task" ? { checklist } : {}),
             ...given,
-            // Given times replace the template's together, so a given range never keeps its all-day flag.
+            // A given range never keeps the template's all-day flag.
             ...(explicit.startsAt ? { allDay: explicit.allDay ?? false } : {}),
             columnId,
           };

@@ -10,6 +10,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { audit } from "@k2b/cloud/services";
+import * as settings from "@k2b/cloud/services/settings";
 import { decodeSpacesCapabilityCursor, spacesCapabilities } from "./capabilities";
 import {
   CalendarDestinationListInputSchema,
@@ -29,8 +30,10 @@ import {
   TaskListDataSchema,
   TaskListInputSchema,
   TaskUpdateInputSchema,
+  TemplateCreateInputSchema,
   TemplateListDataSchema,
   TemplateListInputSchema,
+  TemplateUpdateInputSchema,
 } from "./capability-contracts";
 import type { SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
 import { spacesService } from "./service";
@@ -1447,7 +1450,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
     spyOn(spacesService.template, "draft").mockImplementation(async (params) => {
-      expect(params).toMatchObject({ internalSpaceId: spaceUuid, date: "2026-10-14", timeZone: "Europe/Berlin" });
+      expect(params).toMatchObject({ date: "2026-10-14", timeZone: "Europe/Berlin" });
       return {
         ok: true,
         data: {
@@ -1498,6 +1501,161 @@ describe("spaces capabilities", () => {
       ok: true,
       data: { summary: `Created “${task.title}” in ${space.name} from template “Weekly report” for Wed 10/14.` },
     });
+  });
+
+  test("an explicit deadline names the day the template text and the summary use", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    const draft = spyOn(spacesService.template, "draft");
+    const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: { ...task, title: "Weekly report 43" } });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const result = await spacesCapabilities.actions["task.create"].run(
+      TaskCreateInputSchema.parse({ spaceId, columnId, templateId, deadline: "2026-10-23T10:00:00Z", timeZone: "Europe/Berlin" }),
+      userContext,
+    );
+
+    expect(draft).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-10-23", timeZone: "Europe/Berlin" }));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Weekly report 43",
+          deadline: "2026-10-23T10:00:00Z",
+          checklist: ["Collect numbers", "Send"],
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: { summary: `Created “Weekly report 43” in ${space.name} from template “Weekly report” for Fri 10/23.` },
+    });
+  });
+
+  test("creates events from a template: its proposal, an explicit range, and all-day bounds", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const standup: SpaceItemTemplate = {
+      ...weeklyTemplate,
+      kind: "event",
+      name: "Standup",
+      title: "Standup {{weekday}}",
+      tags: [],
+      assignCreator: false,
+      checklist: [],
+      location: "Room 2",
+      durationMinutes: 15,
+      timeOfDay: "09:00",
+      dateRule: { type: "weekdays", weekdays: ["MO"] },
+    };
+    const getTemplate = spyOn(spacesService.template, "get").mockResolvedValue(standup);
+    const create = spyOn(spacesService.item, "create").mockImplementation(async ({ data }) => ({
+      ok: true,
+      data: { ...event, title: data.title },
+    }));
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+    const run = (input: Record<string, unknown>) =>
+      spacesCapabilities.actions["event.create"].run(
+        EventCreateInputSchema.parse({ spaceId, columnId, templateId, timeZone: "Europe/Berlin", ...input }),
+        userContext,
+      );
+
+    const proposed = await run({ date: "2026-10-19" });
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Standup Monday",
+          location: "Room 2",
+          startsAt: "2026-10-19T07:00:00.000Z",
+          endsAt: "2026-10-19T07:15:00.000Z",
+          allDay: false,
+        }),
+      }),
+    );
+    expect(create.mock.lastCall?.[0].data).not.toHaveProperty("checklist");
+    expect(proposed).toMatchObject({ ok: true, data: { summary: expect.stringContaining("for Mon 10/19.") } });
+
+    // An explicit range wins over the proposal, and its day fills the text and the summary.
+    const explicit = await run({ startsAt: "2026-10-20T13:00:00Z", endsAt: "2026-10-20T14:00:00Z" });
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Standup Tuesday",
+          startsAt: "2026-10-20T13:00:00Z",
+          endsAt: "2026-10-20T14:00:00Z",
+          allDay: false,
+        }),
+      }),
+    );
+    expect(explicit).toMatchObject({ ok: true, data: { summary: expect.stringContaining("for Tue 10/20.") } });
+
+    // An all-day template spans the person's local day.
+    getTemplate.mockResolvedValue({ ...standup, allDay: true, timeOfDay: null, durationMinutes: null });
+    await run({ date: "2026-10-19", timeZone: "America/New_York" });
+    expect(create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ startsAt: "2026-10-19T04:00:00.000Z", endsAt: "2026-10-20T04:00:00.000Z", allDay: true }),
+      }),
+    );
+  });
+
+  test("only Space admins change templates, never a write-scoped key", async () => {
+    spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.template, "get").mockResolvedValue(weeklyTemplate);
+    const create = spyOn(spacesService.template, "create").mockResolvedValue({ ok: true, data: weeklyTemplate });
+    const update = spyOn(spacesService.template, "update").mockResolvedValue({ ok: true, data: weeklyTemplate });
+    const remove = spyOn(spacesService.template, "remove").mockResolvedValue({ ok: true, data: undefined });
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+    const agentId = crypto.randomUUID();
+    const writeKey = {
+      ...serviceAccountContext,
+      actor: {
+        ...serviceAccountContext.actor,
+        serviceAccount: {
+          ...serviceAccountContext.actor.serviceAccount,
+          id: agentId,
+          kind: "agent" as const,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+        },
+        scopes: ["read", "write"],
+      },
+      accessSubject: { type: "service_account" as const, serviceAccountId: agentId },
+    };
+    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", tagIds: [tagId] });
+    const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report" });
+    const attempt = async (context: CapabilityExecutionContext) => [
+      (await spacesCapabilities.actions["template.create"].run(createInput, context)).ok,
+      (await spacesCapabilities.actions["template.update"].run(updateInput, context)).ok,
+      (await spacesCapabilities.actions["template.delete"].run({ templateId }, context)).ok,
+    ];
+
+    for (const level of ["read", "write"] as const) {
+      permission.mockResolvedValue(level);
+      expect(await attempt(userContext)).toEqual([false, false, false]);
+    }
+    permission.mockResolvedValue("admin");
+    expect(await attempt(writeKey)).toEqual([false, false, false]);
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+
+    expect(await attempt(userContext)).toEqual([true, true, true]);
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ spaceId: spaceUuid, data: expect.objectContaining({ tagIds: [tagUuid] }) }),
+    );
+    expect(update).toHaveBeenCalledWith({ id: templateUuid, data: expect.objectContaining({ name: "Status report" }) });
+    expect(remove).toHaveBeenCalledWith({ id: templateUuid });
+    const review = await spacesCapabilities.actions["template.delete"].review!({ templateId }, userContext);
+    expect(review).toMatchObject({ ok: true, data: { message: "Delete template “Weekly report”. Items created from it stay." } });
+
+    // Fields of the other kind never reach the service.
+    expect(TemplateCreateInputSchema.safeParse({ spaceId, kind: "task", name: "Bad", location: "Room 2" }).success).toBeFalse();
+    expect(TemplateCreateInputSchema.safeParse({ spaceId, kind: "event", name: "Bad", checklist: ["x"] }).success).toBeFalse();
   });
 
   test("refuses templates of another kind or Space and ambiguous dates", async () => {

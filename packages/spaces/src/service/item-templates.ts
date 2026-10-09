@@ -102,13 +102,23 @@ const loadRelations = async (rows: DbTemplate[]): Promise<SpaceItemTemplate[]> =
       ORDER BY u.display_name
     `,
   ]);
+  // A default assignee counts only while they can access the Space, so the form, the API, capabilities, and new
+  // items all see the same people; the stored choice returns with the access.
+  const withAccess = new Map<string, Set<string>>();
+  for (const spaceId of new Set(rows.map((row) => row.space_id))) {
+    const templateIds = new Set(rows.filter((row) => row.space_id === spaceId).map((row) => row.id));
+    const userIds = assigneeRows.filter((row) => templateIds.has(row.template_id)).map((row) => row.id);
+    withAccess.set(spaceId, new Set(await filterAssigneeIdsWithAccess(spaceId, userIds)));
+  }
   const tags = Map.groupBy(tagRows, (row) => row.template_id);
   const assignees = Map.groupBy(assigneeRows, (row) => row.template_id);
   return rows.map((row) =>
     mapTemplate(
       row,
       (tags.get(row.id) ?? []).map((tag) => ({ id: tag.id, spaceId: tag.space_id, name: tag.name, color: tag.color })),
-      (assignees.get(row.id) ?? []).map((user) => ({ id: user.id, displayName: user.display_name, avatarHash: user.avatar_hash })),
+      (assignees.get(row.id) ?? [])
+        .filter((user) => withAccess.get(row.space_id)?.has(user.id))
+        .map((user) => ({ id: user.id, displayName: user.display_name, avatarHash: user.avatar_hash })),
     ),
   );
 };
@@ -151,6 +161,9 @@ export const findByName = async (params: { spaceId: string; name: string; kind?:
 };
 
 type TemplateValues = Omit<CreateItemTemplate, "kind" | "tagIds" | "assigneeIds">;
+
+/** An empty location means none, as a task template requires. */
+const blankToNull = (value: string | null | undefined): string | null => (value?.trim() ? value : null);
 
 const dateRuleColumns = (rule: TemplateDateRule) => ({
   date_rule: rule.type,
@@ -213,7 +226,7 @@ export const create = async (params: {
           ) VALUES (
             ${shortId}, ${spaceId}::uuid, ${data.kind}, ${data.name.trim()}, ${data.title}, ${data.description ?? null},
             ${data.priority ?? null}, ${data.assignCreator}, ${toPgTextArray(data.checklist ?? [])}::text[],
-            ${data.estimatedDurationMinutes ?? null}, ${data.location ?? null}, ${data.url ?? null}, ${data.allDay},
+            ${data.estimatedDurationMinutes ?? null}, ${blankToNull(data.location)}, ${data.url ?? null}, ${data.allDay},
             ${data.durationMinutes ?? null}, ${data.timeOfDay ?? null}::time, ${rule.date_rule},
             ${toPgTextArray(rule.date_weekdays)}::text[], ${rule.date_offset_days}, ${params.createdBy}::uuid
           )
@@ -269,7 +282,7 @@ export const update = async (params: { id: string; data: UpdateItemTemplate }): 
           assign_creator = ${merged.assignCreator},
           checklist = ${toPgTextArray(merged.checklist ?? [])}::text[],
           estimated_duration_minutes = ${merged.estimatedDurationMinutes ?? null},
-          location = ${merged.location ?? null},
+          location = ${blankToNull(merged.location)},
           url = ${merged.url ?? null},
           all_day = ${merged.allDay},
           duration_minutes = ${merged.durationMinutes ?? null},
@@ -307,7 +320,6 @@ export type TemplateDraftResult = { proposals: string[]; date: string | null; ti
  */
 export const draft = async (params: {
   template: SpaceItemTemplate;
-  internalSpaceId: string;
   date?: string;
   noDate?: boolean;
   timeZone: string;
@@ -321,12 +333,12 @@ export const draft = async (params: {
   const now = params.now ?? new Date();
   const proposals = proposeTemplateDates(template, { now, timeZone: params.timeZone });
   const date = params.noDate ? null : (params.date ?? defaultTemplateDate(template, { now, timeZone: params.timeZone }));
-  const assigneeIds = await filterAssigneeIdsWithAccess(
-    params.internalSpaceId,
-    template.assignees.map((assignee) => assignee.id),
-  );
   const item = draftFromTemplate(
-    { ...template, tagIds: template.tags.map((tag) => tag.id), assigneeIds },
+    {
+      ...template,
+      tagIds: template.tags.map((tag) => tag.id),
+      assigneeIds: template.assignees.map((assignee) => assignee.id),
+    },
     { date, timeZone: params.timeZone, locale: params.locale, now },
   );
   return { ok: true, data: { proposals, date, timeZone: params.timeZone, item } };

@@ -18,6 +18,9 @@ describe("Spaces messages", () => {
     });
     expect(spacesApiErrorMessage(409, "de-CH")).toBe("Die Spaces-Änderung steht im Konflikt mit dem aktuellen Stand");
     expect(spacesApiErrorMessage(500, "en")).toBe("The Spaces operation failed");
+    expect(spacesApiErrorMessage(400, "de", "Pass either a date or no date, not both")).toBe(
+      "Gib entweder ein Datum oder kein Datum an, nicht beides.",
+    );
   });
 
   test("keeps concurrent locale resolution isolated", async () => {

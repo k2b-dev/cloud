@@ -2224,7 +2224,6 @@ const app = new Hono<AuthContext>()
       const query = c.req.valid("query");
       const draft = await spacesService.template.draft({
         template: projected!,
-        internalSpaceId: spaceId!,
         date: query.date,
         noDate: query.noDate === "true",
         timeZone: query.timeZone ?? getTimeZone(c),

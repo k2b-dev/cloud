@@ -674,7 +674,25 @@ describe("templates", () => {
     expect(
       (await failing(["add", "Roadmap", "--template", "Tpl001", "--date", "2026-10-15", "--deadline", "2026-10-16"])).stderr,
     ).toContain("--date");
+    expect((await failing(["add", "Roadmap", "--template", "Tpl001", "--no-date", "--deadline", "2026-10-16"])).stderr).toContain(
+      "--no-date",
+    );
     expect((await failing(["add", "Roadmap:x", "--date", "2026-10-15"])).stderr).toContain("--template");
+  });
+
+  test("add --template with a given deadline drafts its day; a given range needs both ends", async () => {
+    const dated = await run(["add", "Roadmap", "--template", "Tpl001", "--deadline", "2026-10-23"]);
+    expect(dated.requests.find((entry) => entry.path.includes("/draft"))?.path).toBe(
+      "/api/spaces/Space1/templates/Tpl001/draft?date=2026-10-23&timeZone=Europe%2FBerlin",
+    );
+    expect(writes(dated.requests)[0]?.body).toMatchObject({ deadline: "2026-10-23T15:00:00.000Z" });
+
+    const halfRange = await failing(["add", "Roadmap", "--template", "Tpl002", "--starts-at", "2026-10-14T08:30:00Z"]);
+    expect(halfRange.stderr).toContain("--ends-at");
+    expect(writes(halfRange.requests)).toEqual([]);
+    expect((await failing(["add", "Roadmap", "--template", "Tpl002", "--ends-at", "2026-10-14T10:00:00Z"])).stderr).toContain(
+      "--starts-at",
+    );
   });
 });
 
