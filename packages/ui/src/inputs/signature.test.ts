@@ -102,10 +102,12 @@ describe("parseSignature", () => {
       drawn.replace("</g>", '<image href="https://example.com/x.png"/></g>'),
       drawn.replace('viewBox="0 0', 'viewBox="0 0 0'),
       drawn.replace('width="300"', 'width="300" style="x"'),
+      drawn.replace("www.w3.org", "wwwxw3.org"),
     ];
     for (const svg of attacks) expect(parseSignature({ kind: "drawn", svg })).toBeNull();
     expect(parseSignature({ kind: "typed", name: "Ada", svg: typed.replace(">Ada", "><tspan>Ada") })).toBeNull();
     expect(parseSignature({ kind: "typed", name: "Ada", svg: typed.replace("<text ", '<text onclick="x" ') })).toBeNull();
+    expect(parseSignature({ kind: "typed", name: "Ada", svg: typed.replace("www.w3.org", "wwwxw3.org") })).toBeNull();
   });
 
   test("a typed value takes its name from the value and escapes it again", () => {

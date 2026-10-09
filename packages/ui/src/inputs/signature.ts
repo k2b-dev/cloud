@@ -98,14 +98,15 @@ export const drawingToSvg = (drawing: SignatureDrawing): string | null => {
 };
 
 const NUMBER = String.raw`-?\d+(?:\.\d+)?`;
+const SVG_NS_PATTERN = String.raw`http://www\.w3\.org/2000/svg`;
 // Exactly the markup drawingToSvg and typedToSvg write. Path data may only hold the commands and numbers strokeOutline
 // emits, and no attribute or text may hold markup, so a match cannot carry scripts, links, or other elements.
 const DRAWN_SVG = new RegExp(
-  `^<svg xmlns="${SVG_NS}" viewBox="(${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER})" width="${NUMBER}" height="${NUMBER}">` +
+  `^<svg xmlns="${SVG_NS_PATTERN}" viewBox="(${NUMBER}) (${NUMBER}) (${NUMBER}) (${NUMBER})" width="${NUMBER}" height="${NUMBER}">` +
     `<g fill="currentColor">((?:<path d="[MLQAZ\\d .-]+"/>)+)</g></svg>$`,
 );
 const TYPED_SVG = new RegExp(
-  `^<svg xmlns="${SVG_NS}" viewBox="0 0 (\\d+) \\d+" width="\\d+" height="\\d+">` +
+  `^<svg xmlns="${SVG_NS_PATTERN}" viewBox="0 0 (\\d+) \\d+" width="\\d+" height="\\d+">` +
     `<text x="\\d+" y="\\d+" font-family="([^"<>]*)" font-size="\\d+" fill="currentColor">[^<>]*</text></svg>$`,
 );
 
