@@ -10,7 +10,7 @@
     "./capability-contracts": "./src/capability-contracts.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
     "test": "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src",
     "test:integration": "bun --cwd=../.. test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts --preload ./packages/mail/test/integration-preload.ts packages/mail/src"
   },

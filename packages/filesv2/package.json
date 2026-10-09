@@ -9,7 +9,7 @@
     "./cli": "./src/cli.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
     "test": "bun test --isolate ./src && bun test --isolate --preload ./test/solid-ssr-preload.ts ./test/files-ui.render.test.tsx",
     "test:integration": "APP_DIR=packages/filesv2 bun --cwd=../.. test --isolate --preload ./scripts/fixtures/test-infra.ts --preload ./packages/filesv2/test/integration-preload.ts packages/filesv2/src packages/filesv2/test/filegate-lifecycle.integration.test.ts packages/filesv2/test/filegate-transfer.integration.test.ts packages/filesv2/test/filegate-execution.integration.test.ts packages/filesv2/test/filegate-stable-refs.integration.test.ts"
   },

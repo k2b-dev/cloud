@@ -20,7 +20,7 @@
     "dev:docker:logs": "docker compose -f compose.yml logs -f fibel",
     "dev:docker:down": "docker compose -f compose.yml down --remove-orphans --volumes",
     "pretypecheck": "bun run build:ui",
-    "typecheck": "tsc -p ./tsconfig.json --noEmit --pretty false",
+    "typecheck": "tsc --checkers 2 -p ./tsconfig.json --noEmit --pretty false",
     "pretypecheck:examples": "bun run build:ui",
     "typecheck:examples": "tsc -p ./examples/cloud-docs/tsconfig.json --noEmit --pretty false",
     "prebuild": "bun run build:ui",

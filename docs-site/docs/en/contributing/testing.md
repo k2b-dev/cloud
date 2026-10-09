@@ -32,6 +32,12 @@ lists in its scripts README, currently three manual Grids tools. The root
 `scripts/` directory is not typechecked. `bun run test` runs every workspace in
 its own process and reports the integration files it skipped.
 
+Both commands are heavy: one machine runs only one of them at a time. A second
+`bun run check` or `bun run test`, for example in another worktree, waits for
+the first and says so. Package typechecks use two checker threads each, and the
+typecheck rule runs as many of them in parallel as the machine's memory allows
+(about 8 GiB per package). CI runs without the lock.
+
 The localization check also rejects hard-coded prose in frontends whose text
 comes only from message catalogs, currently Mail: JSX text and expressions,
 labels, titles, descriptions, placeholders, and toast or prompt messages with
