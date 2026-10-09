@@ -5,10 +5,49 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-08
+updated: 2026-10-09
 ---
 
 # Deprecations and migrations
+
+## Security fix: the gateway keeps requests on the application's host
+
+This release contains a security fix in the gateway. Update promptly.
+
+Before this release, a request whose path started with two slashes could make
+the gateway forward it, with its cookies and other headers, to a host other
+than the matched application. The gateway now always sends a request to the
+host and port of the application's `baseUrl`, for HTTP and WebSocket, and
+passes a leading run of slashes on as one slash. Other paths, including inner
+double slashes and percent-encoded characters, reach the application
+unchanged.
+
+Whether an installation was exposed depends on what sits in front of the
+gateway. `compose.prod.yml` runs behind the operator's external Traefik and
+does not pin its version:
+
+- **Traefik v2.11.24 or later, or v3.3.6 or later,** with the default
+  `sanitizePath: true` collapses duplicate slashes before the gateway sees the
+  request. An installation behind it was not exposed this way.
+- **An older Traefik, an entrypoint with `sanitizePath: false`, another
+  reverse proxy that passes the path unchanged, or a gateway port that clients
+  reach directly** forwarded such requests. Update, then check the reverse
+  proxy's access logs for request paths that start with `//`. If such requests
+  came from untrusted sources, treat the sessions of the users who sent them as
+  exposed and revoke them; see
+  [Emergency signing-key revocation](/en/docs/operations/identity-key-operations#emergency-signing-key-revocation)
+  for invalidating every session at once.
+
+The same release also hardens related path handling:
+
+- Sign-in redirects and the configured home path no longer accept a target
+  whose dot segments resolve to `//host`.
+- Proxy authentication returns to the protected host's root when
+  `X-Forwarded-Uri` would resolve to another host.
+- The Jobs **Run now** action in Gateway operations and the Grids last-visited
+  base stay within Cloud for the same kind of path.
+
+No configuration change is needed.
 
 ## A failing island shows a notice instead of freezing
 

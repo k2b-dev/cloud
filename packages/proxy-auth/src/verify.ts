@@ -10,6 +10,24 @@ const getUserBackedActor = (c: Context<AuthContext>) => {
 };
 
 /**
+ * The protected request's URL from Traefik's X-Forwarded-* headers, or the
+ * fallback for direct and local calls. A URI that resolves to another host,
+ * such as `//other.example/x`, returns to the protected host's root instead.
+ */
+export const forwardedRequestUrl = (headers: Headers, fallback: string): string => {
+  const host = headers.get("X-Forwarded-Host");
+  if (!host) return fallback;
+  const uri = headers.get("X-Forwarded-Uri") ?? "/";
+  try {
+    const origin = new URL(`${headers.get("X-Forwarded-Proto") ?? "https"}://${host}`);
+    const url = new URL(uri.startsWith("/") ? uri : `/${uri}`, origin);
+    return url.origin === origin.origin ? url.href : origin.href;
+  } catch {
+    return fallback;
+  }
+};
+
+/**
  * Traefik ForwardAuth verify endpoint.
  *
  * Traefik sends a GET request with X-Forwarded-* headers.
@@ -22,21 +40,7 @@ const app = new Hono<AuthContext>().get("/verify/:clientId", auth.requireRole("*
   const user = getUserBackedActor(c);
   const clientId = c.req.param("clientId");
 
-  // Build original URL from Traefik headers when available.
-  // Fallback to the current request URL for direct/local testing.
-  const forwardedProto = c.req.header("X-Forwarded-Proto") ?? "https";
-  const forwardedHost = c.req.header("X-Forwarded-Host");
-  const forwardedUri = c.req.header("X-Forwarded-Uri") ?? "/";
-
-  const originalUrl = (() => {
-    if (!forwardedHost) return c.req.url;
-    const path = forwardedUri.startsWith("/") ? forwardedUri : `/${forwardedUri}`;
-    try {
-      return new URL(path, `${forwardedProto}://${forwardedHost}`).toString();
-    } catch {
-      return c.req.url;
-    }
-  })();
+  const originalUrl = forwardedRequestUrl(c.req.raw.headers, c.req.url);
 
   // Validate the forward-auth client before issuing any post-login return token.
   const client = await proxyAuthService.client.getByClientId({ clientId });

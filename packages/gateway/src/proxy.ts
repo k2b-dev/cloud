@@ -2,7 +2,7 @@ import { PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import type { ClientAddress } from "./client-address";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
-import { isInternalPath } from "./request-boundary";
+import { isInternalPath, upstreamUrl } from "./request-boundary";
 import type { RouteTable } from "./trie";
 import { matchRoute } from "./trie";
 
@@ -143,8 +143,7 @@ export const proxyRequest = async (
   trackRoute(stats, match.matchedPrefix, false);
 
   try {
-    // Build target URL preserving path and query
-    const targetUrl = new URL(url.pathname + url.search, match.baseUrl);
+    const targetUrl = upstreamUrl(match.baseUrl, url);
 
     // Forward the request — fix Host header for upstream
     const fwdHeaders = new Headers(req.headers);

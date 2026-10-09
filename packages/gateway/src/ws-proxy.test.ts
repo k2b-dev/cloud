@@ -113,6 +113,29 @@ describe("gateway WebSocket proxy", () => {
     },
   );
 
+  test("a client path never moves the socket or its credentials to another host", () => {
+    (globalThis as { WebSocket: unknown }).WebSocket = FakeUpstream;
+    const table = buildRouteTable([{ prefix: "/", appId: "core", baseUrl: "http://core.test:3000" }]);
+    const cases: [sent: string, forwarded: string][] = [
+      ["//evil.example/ws?a=1", "ws://core.test:3000/evil.example/ws?a=1"],
+      ["///evil.example/ws", "ws://core.test:3000/evil.example/ws"],
+      ["/\\evil.example/ws", "ws://core.test:3000/evil.example/ws"],
+      ["/.//evil.example/ws", "ws://core.test:3000/evil.example/ws"],
+      ["/%2F%2Fevil.example/ws", "ws://core.test:3000/%2F%2Fevil.example/ws"],
+      ["/%5Cevil.example/ws", "ws://core.test:3000/%5Cevil.example/ws"],
+      ["/api/notebooks//ws?doc=a%2Fb", "ws://core.test:3000/api/notebooks//ws?doc=a%2Fb"],
+    ];
+    for (const [sent] of cases) {
+      tryUpgradeWebSocket(
+        new Request(`http://cloud.test${sent}`, { headers: { Upgrade: "websocket", Cookie: "session_token=secret" } }),
+        { upgrade: () => true },
+        table,
+        () => undefined,
+      );
+    }
+    expect(FakeUpstream.instances.map((upstream) => upstream.url)).toEqual(cases.map(([, forwarded]) => forwarded));
+  });
+
   test("forwards the resolved client address instead of the client's own headers", () => {
     FakeUpstream.instances = [];
     (globalThis as { WebSocket: unknown }).WebSocket = FakeUpstream;

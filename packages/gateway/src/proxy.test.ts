@@ -326,3 +326,75 @@ describe("byte ranges", () => {
     }
   });
 });
+
+/** Send one raw request line, so the path reaches the gateway byte for byte as a client wrote it. */
+const rawGet = async (port: number, path: string, headers: Record<string, string>): Promise<string> => {
+  let received = "";
+  const { promise, resolve } = Promise.withResolvers<string>();
+  const socket = await Bun.connect({
+    hostname: "127.0.0.1",
+    port,
+    socket: {
+      data: (_socket, chunk) => {
+        received += chunk.toString();
+      },
+      close: () => resolve(received),
+    },
+  });
+  const lines = Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`);
+  socket.write(`GET ${path} HTTP/1.1\r\nHost: cloud.example\r\n${lines.join("")}Connection: close\r\n\r\n`);
+  return promise;
+};
+
+describe("upstream origin", () => {
+  test("a client path never moves the request or its credentials to another host", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const foreign: string[] = [];
+    const elsewhere = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (req) => {
+        foreign.push(`${new URL(req.url).pathname} ${req.headers.get("cookie")}`);
+        return new Response("elsewhere");
+      },
+    });
+    const seen: string[] = [];
+    const app = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (req) => {
+        const url = new URL(req.url);
+        seen.push(`${url.pathname}${url.search} ${req.headers.get("cookie")}`);
+        return new Response("app");
+      },
+    });
+    const table = buildRouteTable([{ prefix: "/", appId: "core", baseUrl: `http://127.0.0.1:${app.port}` }]);
+    const gateway = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => proxyRequest(req, table, createProxyStats(), () => {}) });
+    const other = `127.0.0.1:${elsewhere.port}`;
+    try {
+      const cases: [sent: string, forwarded: string][] = [
+        [`//${other}/x?a=1`, `/${other}/x?a=1`],
+        [`///${other}/x`, `/${other}/x`],
+        [`/\\${other}/x`, `/${other}/x`],
+        [`/\\\\${other}/x`, `/${other}/x`],
+        [`/.//${other}/x`, `/${other}/x`],
+        [`/%2F%2F${other}/x`, `/%2F%2F${other}/x`],
+        [`/%5C${other}/x`, `/%5C${other}/x`],
+        [`/%2f/${other}/x`, `/%2f/${other}/x`],
+        // Ordinary paths, including inner double slashes and escapes, reach the app unchanged.
+        ["/api/files/a//b?path=x%2Fy", "/api/files/a//b?path=x%2Fy"],
+        ["/app/files/%C3%A4%20b", "/app/files/%C3%A4%20b"],
+      ];
+      for (const [sent] of cases) {
+        expect(await rawGet(gateway.port!, sent, { Cookie: "session_token=secret" })).toStartWith("HTTP/1.1 200");
+      }
+      expect(foreign).toEqual([]);
+      expect(seen).toEqual(cases.map(([, forwarded]) => `${forwarded} session_token=secret`));
+    } finally {
+      await gateway.stop(true);
+      await app.stop(true);
+      await elsewhere.stop(true);
+      telemetry.mockRestore();
+    }
+  });
+});

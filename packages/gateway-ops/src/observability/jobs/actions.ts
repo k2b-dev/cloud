@@ -1,4 +1,5 @@
 import type { AuthContext } from "@k2b/cloud/server";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import type { Context } from "hono";
 import { syncOpsCredentials } from "../sync/service";
 import { jobsObservabilityService } from "./service";
@@ -10,16 +11,7 @@ const field = (body: Record<string, FormDataEntryValue>, key: string): string =>
   return typeof value === "string" ? value : "";
 };
 
-const safeRedirect = (value: string): string => {
-  if (!value.startsWith("/") || value.startsWith("//")) return baseUrl;
-  try {
-    const parsed = new URL(value, "http://cloud.local");
-    if (parsed.origin !== "http://cloud.local") return baseUrl;
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return baseUrl;
-  }
-};
+const safeRedirect = (value: string): string => normalizeRedirectTo(value) ?? baseUrl;
 
 const withFeedback = (target: string, status: "accepted" | "error", message: string): string => {
   const url = new URL(target, "http://cloud.local");
