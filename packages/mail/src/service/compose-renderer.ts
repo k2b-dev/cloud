@@ -15,6 +15,8 @@ const MAX_CSS_VALUE_BYTES = 512;
 const MAX_CUSTOM_CSS_BYTES = 32 * 1024;
 const MAX_EMAIL_HTML_ELEMENTS = 1_000;
 const MAX_COMPOSE_TEMPLATE_SEGMENTS = 100;
+// All signature segments of one body share the single-render Liquid time budget.
+const MAX_COMPOSE_RENDER_MS = 1_000;
 const MAX_INLINE_WORK_BYTES = 8 * 1024 * 1024;
 const MAX_MARKDOWN_BLOCKS = 1_000;
 const MAX_MARKDOWN_LINES = 5_000;
@@ -270,10 +272,13 @@ const renderComposeTemplate = (
   source: string,
   context: ComposeRenderContext,
   output: "plain" | "markdown" | "editable_markdown",
+  renderTimeoutMs?: number,
 ): Result<string> => {
   const valid = validateComposeTemplateSource(source);
   if (!valid.ok) return valid;
-  const rendered = renderMailLiquidTemplate(source, context, output === "editable_markdown" ? "editable_markdown" : "markdown");
+  const rendered = renderMailLiquidTemplate(source, context, output === "editable_markdown" ? "editable_markdown" : "markdown", {
+    renderTimeoutMs,
+  });
   if (!rendered.ok && "reason" in rendered.error && rendered.error.reason === "render_too_large") {
     return fail(err.badInput("Rendered email content exceeds the safe size limit"));
   }
@@ -289,6 +294,7 @@ const renderComposeTemplateSegments = (source: string, context: ComposeRenderCon
   let cursor = 0;
   let outputBytes = 0;
   let segmentCount = 0;
+  let remainingRenderMs = MAX_COMPOSE_RENDER_MS;
   const output: string[] = [];
   const append = (value: string): Result<void> => {
     outputBytes += sourceBytes(value);
@@ -316,7 +322,14 @@ const renderComposeTemplateSegments = (source: string, context: ComposeRenderCon
     if (segmentCount > MAX_COMPOSE_TEMPLATE_SEGMENTS) {
       return fail(err.badInput(`Email may contain at most ${MAX_COMPOSE_TEMPLATE_SEGMENTS} signature segments`));
     }
-    const rendered = renderComposeTemplate(source.slice(start + COMPOSE_SEGMENT_START.length, end), context, format);
+    const renderStart = performance.now();
+    const rendered = renderComposeTemplate(
+      source.slice(start + COMPOSE_SEGMENT_START.length, end),
+      context,
+      format,
+      Math.max(0, remainingRenderMs),
+    );
+    remainingRenderMs -= performance.now() - renderStart;
     if (!rendered.ok) return rendered;
     const segment = append(rendered.data);
     if (!segment.ok) return segment;

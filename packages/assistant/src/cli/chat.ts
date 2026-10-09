@@ -15,7 +15,7 @@ import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
-import { type ConversationDetail, conversationPath, submitAndMaybeWatch } from "./turn";
+import { type ConversationDetail, conversationPath, resolveConversation, submitAndMaybeWatch } from "./turn";
 
 type FullConversationDetail = ConversationDetail & {
   messages: AiStoredMessage[];
@@ -118,11 +118,7 @@ export const assistantChatCommands = [
     summary: "Create an empty chat",
     flags: { title: flag.string(), project: flag.string({ description: "Attach the chat to a Project ID" }) },
     async run({ ctx, flags }) {
-      const chat = await readApi<AiConversation>(
-        ctx,
-        "/conversations",
-        jsonRequest("POST", { ...(flags.title ? { title: flags.title } : {}), ...(flags.project ? { projectId: flags.project } : {}) }),
-      );
+      const chat = await resolveConversation(ctx, { title: flags.title, projectId: flags.project });
       printValue(ctx, chat, `${chat.id}\t${chat.title}`);
     },
   }),

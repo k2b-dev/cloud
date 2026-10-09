@@ -4,6 +4,8 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
+import { z } from "zod";
+import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { CustomAppCapabilitiesSchema, type CustomAppDefinition, type CustomAppReferencedRecordsBlock } from "../custom-apps/contracts";
@@ -1141,6 +1143,53 @@ describe("Grids App Form runtime", () => {
         const listedFiles = await api.request(filesUrl);
         expect(listedFiles.status).toBe(200);
         expect(await listedFiles.json()).toMatchObject({ items: [{ id: filePublicId, filename: "preview.png" }] });
+
+        const jpeg = await tinyJpeg();
+        const photo = withCameraMetadata(jpeg, 1);
+        const imageForm = (bytes: Uint8Array) => {
+          const form = new FormData();
+          form.set("file", new File([new Uint8Array(bytes)], "photo.jpg", { type: "image/jpeg" }));
+          return form;
+        };
+        const malformedUpload = await api.request(filesUrl, {
+          method: "POST",
+          headers: { "accept-language": "de" },
+          body: imageForm(photo.subarray(0, 30)),
+        });
+        expect(malformedUpload.status).toBe(422);
+        expect(await malformedUpload.json()).toMatchObject({
+          code: "MALFORMED_IMAGE",
+          message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+        });
+        const imageUpload = await api.request(filesUrl, { method: "POST", body: imageForm(photo) });
+        expect(imageUpload.status).toBe(200);
+        const imageFile = z.object({ id: z.string(), sizeBytes: z.number() }).parse(await imageUpload.json());
+        expect(imageFile.sizeBytes).toBe(jpeg.length);
+        const imageUrl = `${filesUrl.slice(0, filesUrl.indexOf("?"))}/${imageFile.id}?request_id=${body.recordId}`;
+        const imageContentUrl = `${filesUrl.slice(0, filesUrl.indexOf("?"))}/${imageFile.id}/content?request_id=${body.recordId}`;
+        expect(new Uint8Array(await (await api.request(imageContentUrl)).arrayBuffer())).toEqual(jpeg);
+        const malformedReplacement = await api.request(imageUrl, {
+          method: "PUT",
+          headers: { "accept-language": "de" },
+          body: imageForm(photo.subarray(0, 30)),
+        });
+        expect(malformedReplacement.status).toBe(422);
+        expect(await malformedReplacement.json()).toMatchObject({
+          code: "MALFORMED_IMAGE",
+          message: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
+        });
+        const imageReplacement = await api.request(imageUrl, { method: "PUT", body: imageForm(photo) });
+        expect(imageReplacement.status).toBe(200);
+        const nextImage = z.object({ id: z.string() }).parse(await imageReplacement.json());
+        const nextImageContent = `${filesUrl.slice(0, filesUrl.indexOf("?"))}/${nextImage.id}/content?request_id=${body.recordId}`;
+        expect(new Uint8Array(await (await api.request(nextImageContent)).arrayBuffer())).toEqual(jpeg);
+        expect(
+          (
+            await api.request(`${filesUrl.slice(0, filesUrl.indexOf("?"))}/${nextImage.id}?request_id=${body.recordId}`, {
+              method: "DELETE",
+            })
+          ).status,
+        ).toBe(204);
 
         const uploadBody = new FormData();
         uploadBody.set("file", new File([new Uint8Array([1, 2, 3])], "receipt.pdf", { type: "application/pdf" }));

@@ -11,6 +11,7 @@ import {
   type PendingAiVfsFile,
   readImageFile,
   readVfsFile,
+  VFS_FILE_MAX_BYTES,
 } from "./message-utils";
 
 export type { AiComposerAttachment } from "./message-utils";
@@ -36,6 +37,13 @@ export type AiComposerFileResult = {
 };
 
 export const aiComposerFileAccept = FILE_INPUT_ACCEPT;
+
+/**
+ * The `maxBytes` for `chooseFiles` while a composer holds `attached` attachments. Files from Cloud apps are read into
+ * the browser before `readAiComposerFiles` checks them, so together they stay within what the draft can still take:
+ * each free slot at most the largest file the composer attaches. 0 when every slot is taken.
+ */
+export const aiComposerChooseMaxBytes = (attached: number): number => Math.max(0, MAX_ATTACHMENTS - attached) * VFS_FILE_MAX_BYTES;
 
 export const aiChatModelOptions = (profiles: readonly AiPublicModelProfile[]): ChatModelOption[] =>
   profiles.map((profile) => ({

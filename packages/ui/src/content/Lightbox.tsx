@@ -2,10 +2,19 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
 
+/** One more thing to do with the shown image, beside Download: a short label, its icon class, and what it does. */
+export type LightboxAction = {
+  label: string;
+  icon: string;
+  onClick: () => void;
+};
+
 export type LightboxImage = {
   src: string;
   alt?: string;
   downloadUrl?: string;
+  /** Actions for this image, shown before Download in the same style. */
+  actions?: readonly LightboxAction[];
 };
 
 type LightboxProps = {
@@ -64,8 +73,16 @@ export default function Lightbox(props: LightboxProps) {
     props.onClose();
   };
 
+  // A key belongs to the Lightbox while focus is inside it, or on the page with no other dialog open. A dialog opened
+  // from one of its actions keeps its own keys: Escape closes that dialog, and arrows stay in its fields.
+  const ownsKey = (target: EventTarget | null) =>
+    target instanceof Node &&
+    (dialogRef.contains(target) ||
+      (target === document.body && Array.from(document.querySelectorAll("dialog[open]")).every((dialog) => dialog === dialogRef)));
+
   // Keyboard navigation
   const handleKeyDown = (e: KeyboardEvent) => {
+    if (!ownsKey(e.target)) return;
     switch (e.key) {
       case "Escape":
         // Handled here, so WebKit does not light the returned focus for this key.
@@ -159,6 +176,14 @@ export default function Lightbox(props: LightboxProps) {
         </div>
 
         <div class="k2b-content-lightbox__actions">
+          <For each={current()?.actions ?? []}>
+            {(action) => (
+              <button type="button" onClick={() => action.onClick()} class="k2b-content-lightbox__button" aria-label={action.label}>
+                <i class={action.icon} aria-hidden="true" />
+                <span class="k2b-content-lightbox__button-label">{action.label}</span>
+              </button>
+            )}
+          </For>
           <Show when={current()?.downloadUrl}>
             <a href={current()!.downloadUrl} download="" class="k2b-content-lightbox__button" aria-label={messages().downloadImage}>
               <i class="ti ti-download" aria-hidden="true" />

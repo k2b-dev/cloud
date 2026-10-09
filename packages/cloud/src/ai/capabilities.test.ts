@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { nessi, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
@@ -7,6 +7,8 @@ import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
 import { type CapabilityActionReview, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { coreSettings } from "../services";
+import { aiChatAccessSubject } from "./assistant-models";
 import {
   aiCapabilityInputSchema,
   aiCapabilityToolName,
@@ -23,8 +25,37 @@ import {
   reduceAiCapabilityInputSchema,
   searchAiTools,
 } from "./capabilities";
+import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { aiModelAccess } from "./model-access";
+import * as settings from "./settings";
 import { prepareAiTools } from "./tools";
+import type { AiModelProfile } from "./types";
+
+afterEach(() => mock.restore());
+
+const configureAudio = async (audioModelId = "speech") => {
+  const audio: AiModelProfile = {
+    id: "speech",
+    label: "Speech",
+    provider: "openai-compatible",
+    model: "whisper",
+    baseURL: "https://example.invalid/v1",
+    enabled: true,
+    capabilities: ["transcription"],
+    dataBoundary: "private",
+  };
+  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
+  const state = await settings.resolveAiSettingsStateFromRaw({
+    enabled: true,
+    defaultModelId: chat.id,
+    profilesJson: JSON.stringify([chat, audio]),
+  });
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+  spyOn(coreSettings, "get").mockResolvedValue(audioModelId);
+  spyOn(credentials, "getAiCredential").mockResolvedValue(null);
+  spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+};
 
 describe("capability action review details", () => {
   test("validates semantic date formats without changing ordinary text", () => {
@@ -487,7 +518,8 @@ describe("AI capability catalog", () => {
   });
 
   test("keeps only the eager baseline loaded and discovers deferred built-ins", async () => {
-    const allBuiltIns = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "" });
+    await configureAudio();
+    const allBuiltIns = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", accessSubject: aiChatAccessSubject(actor) });
     let loaded: string[] = [];
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",
@@ -539,10 +571,11 @@ describe("AI capability catalog", () => {
   });
 
   test("keeps configured web search and extraction eager together", async () => {
+    await configureAudio();
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",
       actor,
-      staticTools: await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "test-key" }),
+      staticTools: await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "test-key", accessSubject: aiChatAccessSubject(actor) }),
       store: {
         getLoadedTools: async () => [],
         loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
@@ -1291,4 +1324,43 @@ describe("AI capability catalog", () => {
     expect(JSON.stringify(requests[0]?.tools)).not.toContain("Optional title text.");
     expect(executed).toBe("contacts.list");
   });
+});
+
+test("unconfigured audio cannot be discovered or loaded, including previously loaded names", async () => {
+  await configureAudio("");
+  const loaded: string[] = ["transcribe_audio"];
+  const resolver = createAiToolResolver({
+    conversationId: "conversation-1",
+    actor,
+    staticTools: await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", accessSubject: aiChatAccessSubject(actor) }),
+    store: {
+      getLoadedTools: async () => loaded,
+      loadTools: async ({ names }) => {
+        loaded.push(...names);
+        return { loaded: names, alreadyLoaded: [], evicted: [] };
+      },
+    },
+    help: fixtureHelpReader(async () => []),
+  });
+  const tools = await resolver();
+  expect(tools.some((tool) => tool.def.name === "transcribe_audio")).toBe(false);
+  const search = tools.find((tool) => tool.def.name === "search_tools");
+  const load = tools.find((tool) => tool.def.name === "load_tools");
+  if (!search || search.kind !== "server" || !load || load.kind !== "server") throw new Error("Discovery tools missing");
+  const context = {
+    signal: AbortSignal.timeout(1_000),
+    requestApproval: async () => true,
+    requestClientTool: async <T>(): Promise<T> => {
+      throw new Error("Unexpected client tool");
+    },
+  };
+  const found = z
+    .object({ tools: z.array(z.object({ name: z.string() }).passthrough()) })
+    .parse(await search.execute({ query: "transcribe audio" }, context));
+  expect(found.tools.some((tool) => tool.name === "transcribe_audio")).toBe(false);
+  expect(await load.execute({ names: ["transcribe_audio"] }, context)).toMatchObject({
+    loaded: [],
+    unavailable: [{ name: "transcribe_audio" }],
+  });
+  expect(loaded).toEqual(["transcribe_audio"]);
 });

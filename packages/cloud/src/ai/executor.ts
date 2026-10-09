@@ -14,7 +14,7 @@ import {
   aiTurnAllowsRememberedApprovals,
   hasRememberedAiToolApproval,
 } from "./approvals";
-import { isAssistantChatTurn } from "./assistant-models";
+import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -60,6 +60,7 @@ import { aiToolAudit } from "./tool-audit";
 import { acceptCanonicalToolNames } from "./tool-call-names";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
+import { AiTranscriptionError } from "./transcription";
 import {
   AiTurnFailure,
   type AiTurnFailureInfo,
@@ -564,7 +565,10 @@ const materializeChatConfig = async (config: AiChatTurnRunConfig, signal: AbortS
     tools:
       source.kind === "default"
         ? [
-            ...(await createConfiguredDefaultCloudAiTools()),
+            ...(await createConfiguredDefaultCloudAiTools({
+              accessSubject: aiChatAccessSubject(config.actor),
+              allowedDataBoundaries: config.modelPolicy?.allowedDataBoundaries,
+            })),
             // Cloud runs the code tools itself; only tools a client must run wait for that client to declare them.
             ...[createCloudAiLocalBashTool(), ...createCloudAiCodeTools()].filter(
               (tool) => tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name),
@@ -862,6 +866,20 @@ export class AiTurnExecutor {
           (tool) => (!allowed || allowed.has(tool.def.name)) && !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
         )
       : [];
+    let audioUnavailableInstruction: string | undefined;
+    if (
+      defaultToolSource &&
+      toolsSupported &&
+      [...(config.files?.attached ?? []), ...(config.files?.available ?? [])].some((file) => file.mediaType.startsWith("audio/")) &&
+      !sourceToolNames.includes("transcribe_audio")
+    ) {
+      try {
+        await resolveAssistantAudioModel(aiChatAccessSubject(config.actor), material.modelPolicy?.allowedDataBoundaries);
+      } catch (error) {
+        const reason = error instanceof AiTranscriptionError ? error.message : "Audio transcription is not available right now.";
+        audioUnavailableInstruction = `Audio files in this conversation cannot be transcribed: ${reason} Tell the user this reason when they ask about audio content.`;
+      }
+    }
     const offeredToolNames = new Set(activeTools.map((tool) => tool.def.name));
     // Built-ins that exist but this turn does not offer: client tools without their client, tools a
     // task cannot use, and tools outside the conversation's fixed scope. load_tools explains each one.
@@ -1114,6 +1132,7 @@ export class AiTurnExecutor {
       loadedSkills,
       turnInstructions: [
         material.systemPrompt,
+        audioUnavailableInstruction,
         workingPlan
           ? `Current working plan (new todo_write results supersede this):\n${JSON.stringify({ todos: workingPlan.todos })}`
           : undefined,
@@ -1147,6 +1166,13 @@ export class AiTurnExecutor {
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
     const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const providerNamesByCallId = new Map(
+      turnMessages.flatMap(({ message }) =>
+        message.role === "assistant"
+          ? message.content.flatMap((part) => (part.type === "tool_call" ? [[part.id, part.name] as const] : []))
+          : [],
+      ),
+    );
     const priorToolRounds = toolRoundState(turnMessages);
     const quotaSubject = accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
@@ -1181,7 +1207,7 @@ export class AiTurnExecutor {
       runBudgetMs: claim.turn.runBudgetMs ?? null,
       finishedToolCalls: turnBlocks
         .slice(turnBlocks.findLastIndex((block) => block.kind === "steer_applied") + 1)
-        .flatMap((block) => (block.kind === "tool" ? [block] : [])),
+        .flatMap((block) => (block.kind === "tool" ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }] : [])),
       onDecision: (decision) =>
         decision.kind === "hint"
           ? log.warn("AI turn got a loop hint", { conversationId, turnId, hints: decision.hints })

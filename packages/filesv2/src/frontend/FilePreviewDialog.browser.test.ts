@@ -130,6 +130,9 @@ afterAll(async () => {
 // either arrives. Without a hold, a test measures the dialog with the icon font in place.
 const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", hold?: Promise<void>) => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
+  // Chromium's headless shell reports no inline PDF viewer, where the preview shows a hint instead of the frame;
+  // these tests measure the frame a desktop or phone browser with a viewer shows.
+  await context.addInitScript(() => Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => true }));
   const tab = await context.newPage();
   await tab.route("http://preview.test/**", async (route) => {
     const url = new URL(route.request().url());

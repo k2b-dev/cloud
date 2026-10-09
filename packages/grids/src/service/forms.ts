@@ -1,3 +1,4 @@
+import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import {
@@ -422,6 +423,9 @@ const generatePublicToken = (): string => {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url");
 };
 
+const stripTitleImageMetadata = (config: FormConfig): FormConfig =>
+  config.titleImage === undefined ? config : { ...config, titleImage: stripImageDataUrlMetadata(config.titleImage) };
+
 export const create = async (input: CreateFormInput, actorId: string | null, locale?: string): Promise<Result<Form>> => {
   const t = formMessagesFor(locale);
   const name = input.name.trim();
@@ -432,7 +436,7 @@ export const create = async (input: CreateFormInput, actorId: string | null, loc
   }
   const configValid = await validateFormConfig(input.tableId, input.config ?? { fields: [] }, locale);
   if (!configValid.ok) return configValid;
-  const config = configValid.data;
+  const config = stripTitleImageMetadata(configValid.data);
   const publicToken = input.isPublic ? generatePublicToken() : null;
   const form = await sql.begin(async (tx) => {
     const row = await insertWithShortIdForDb(tx, "idx_grids_forms_short_id", async (db, shortId) => {
@@ -489,7 +493,7 @@ export const update = async (id: string, input: UpdateFormInput, actorId: string
   if (input.config !== undefined) {
     const configValid = await validateFormConfig(existing.tableId, input.config, locale);
     if (!configValid.ok) return configValid;
-    config = configValid.data;
+    config = stripTitleImageMetadata(configValid.data);
   }
   const newPublicToken = input.isPublic === true ? generatePublicToken() : null;
 

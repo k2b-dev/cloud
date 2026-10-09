@@ -3,6 +3,7 @@ import { CodeActionInput, CodeCheckInput, CodeResourceId } from "@k2b/cloud/ai/b
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { type AuthContext, auth, getLocale, respond, v } from "@k2b/cloud/server";
 import { GotenbergRenderError } from "@k2b/cloud/services";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -101,6 +102,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       await next();
     })
     .onError((error, c) => {
+      if (error instanceof ImageMetadataError) return respond(c, { ok: false, code: error.code, status: 422, error: error.message });
       if (error instanceof AiQuotaError) return respond(c, { ok: false, code: error.code, status: 429, error: error.message });
       if (isAiSettingsError(error)) return respond(c, { ok: false, code: error.aiError.code, status: 403, error: error.aiError.message });
       if (error instanceof ArtifactCompileError || error instanceof ActionInputError || error instanceof AiFileWriteError)

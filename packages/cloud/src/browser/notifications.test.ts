@@ -88,3 +88,83 @@ test("push registration preserves opt-in, rebinding, disable, and failure behavi
   const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
   expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
 });
+
+test("group closure and badges are device-local, optional, and never opt in", async () => {
+  const script = `
+    import { mock } from "bun:test";
+    import assert from "node:assert/strict";
+    mock.module(${JSON.stringify(new URL("../clients/core.ts", import.meta.url).pathname)}, () => ({ apiClient: {} }));
+    const { browserNotificationClient: client } = await import(${JSON.stringify(new URL("./notifications.ts", import.meta.url).pathname)});
+    const calls = [];
+    const visible = [
+      { tag: "inventory:stock:one", close() { calls.push(this.tag); } },
+      { tag: "inventory:stock:two", close() { calls.push(this.tag); } },
+      { tag: "other:stock:one", close() { calls.push(this.tag); } },
+    ];
+    let registration = {
+      scope: "https://cloud.example/",
+      getNotifications: async options => {
+        calls.push(options);
+        return visible.filter(item => item.tag === options.tag);
+      },
+    };
+    const nav = {
+      serviceWorker: {
+        getRegistration: async scope => { assert.equal(scope, "/"); return registration; },
+        register: async () => { throw new Error("Must not register"); },
+      },
+      setAppBadge: async count => { calls.push(["set", count]); },
+      clearAppBadge: async () => { calls.push(["clear"]); },
+    };
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { origin: "https://cloud.example" } } });
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: nav });
+    Object.defineProperty(globalThis, "Notification", { configurable: true, value: {
+      requestPermission: async () => { throw new Error("Must not prompt"); },
+    } });
+    await client.closeGroup("inventory", "stock:one");
+    assert.deepEqual(calls, [{ tag: "inventory:stock:one" }, "inventory:stock:one"]);
+    calls.length = 0;
+    await client.closeGroup("inventory", "g".repeat(128));
+    assert.deepEqual(calls, [{ tag: "inventory:" + "g".repeat(128) }]);
+    calls.length = 0;
+    for (const [appId, group] of [
+      ["", "group"], ["other:inventory", "group"], ["Inventory", "group"], ["inventory", ""],
+      ["inventory", "g".repeat(129)], ["inventory", "group space"], ["inventory", "group/one"],
+      ["inventory", " group"], [null, "group"], ["inventory", null],
+    ]) await client.closeGroup(appId, group);
+    assert.deepEqual(calls, []);
+    await client.setBadge(5);
+    await client.setBadge(0);
+    await client.setBadge(Number.MAX_SAFE_INTEGER);
+    assert.deepEqual(calls, [["set", 5], ["clear"], ["set", Number.MAX_SAFE_INTEGER]]);
+    calls.length = 0;
+    for (const count of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "2", null]) await client.setBadge(count);
+    assert.deepEqual(calls, []);
+    registration = undefined;
+    await client.closeGroup("inventory", "stock:one");
+    registration = { scope: "https://cloud.example/", getNotifications: undefined };
+    await client.closeGroup("inventory", "stock:one");
+    registration = { scope: "https://cloud.example/pwa/login", getNotifications: () => { throw new Error("Wrong worker"); } };
+    await client.closeGroup("inventory", "stock:one");
+    nav.serviceWorker.getRegistration = async () => { throw new Error("Unavailable"); };
+    await client.closeGroup("inventory", "stock:one");
+    nav.setAppBadge = async () => { throw new Error("Unavailable"); };
+    nav.clearAppBadge = () => { throw new Error("Unavailable"); };
+    await client.setBadge(2);
+    await client.setBadge(0);
+    delete nav.serviceWorker;
+    delete nav.setAppBadge;
+    delete nav.clearAppBadge;
+    await client.closeGroup("inventory", "stock:one");
+    await client.setBadge(2);
+    await client.setBadge(0);
+    delete globalThis.navigator;
+    delete globalThis.window;
+    await client.closeGroup("inventory", "stock:one");
+    await client.setBadge(2);
+    assert.deepEqual(calls, []);
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
+});

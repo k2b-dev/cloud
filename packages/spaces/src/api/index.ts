@@ -13,6 +13,7 @@ import {
   v,
 } from "@k2b/cloud/server";
 import { coreSettings, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -78,6 +79,7 @@ import {
   WormholeTransferResultSchema,
 } from "@/contracts";
 import { SpaceApiKeySchema, SpaceSettingsContextSchema } from "@/settings-context";
+import { TIMELINE_MAX_DAYS } from "../frontend/[id]/_components/calendar/timeline";
 import { loadSpaceSettingsContext } from "../frontend/[id]/_components/edit/settings-state";
 import { parseSpaceSettings } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import { loadSpaceItemDetail, loadSpacesViewSnapshot } from "../frontend/[id]/_components/workspace/workspace-state";
@@ -166,6 +168,24 @@ const OverviewActivityQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
+const WorkspaceViewQuerySchema = z
+  .object({
+    href: z.string().min(1).max(3000),
+    from: z.string().datetime().optional().describe("Timeline only: start of the range to load (ISO)"),
+    to: z.string().datetime().optional().describe("Timeline only: end of the range to load, exclusive (ISO)"),
+  })
+  .refine((query) => (query.from === undefined) === (query.to === undefined), {
+    message: "Pass both from and to, or neither",
+    path: ["to"],
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.to) > Date.parse(query.from), {
+    message: "End time must be after start time",
+    path: ["to"],
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.to) - Date.parse(query.from) <= TIMELINE_MAX_DAYS * 86_400_000, {
+    message: `A range spans at most ${TIMELINE_MAX_DAYS} days`,
+    path: ["to"],
+  });
 const OverviewSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(300),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -728,7 +748,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Refresh the active workspace view",
-      description: "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL.",
+      description:
+        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. The timeline calendar view may pass `from` and `to` to load another range of at most 366 days, such as the next week while the reader scrolls.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpacesViewSnapshotSchema, "Active workspace view snapshot"),
@@ -737,13 +758,16 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Space not found"),
       },
     }),
-    v("query", z.object({ href: z.string().min(1).max(3000) })),
+    v("query", WorkspaceViewQuerySchema),
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const href = c.req.valid("query").href;
+      const { href, from, to } = c.req.valid("query");
       const target = parseSpacesWorkspaceHref(href);
       if (!target) return respond(c, fail(err.badInput("Unsupported workspace view route")));
+      if (from && new URL(href, "http://spaces.local").searchParams.get("cv") !== "timeline") {
+        return respond(c, fail(err.badInput("Only the timeline loads a chosen range")));
+      }
       const spaceId = await resolvePublicId("spaces", target.spaceId);
       if (!spaceId) return respond(c, fail(err.notFound("Space")));
       const snapshot = await loadSpacesViewSnapshot({
@@ -754,6 +778,7 @@ const app = new Hono<AuthContext>()
         cookieHeader: c.req.header("Cookie"),
         authorizationHeader: c.req.header("Authorization"),
         dateConfig: getDateConfig(c),
+        timelineRange: from && to ? { from, to } : undefined,
       });
       if (snapshot.kind === "accessDenied") return respond(c, fail(err.forbidden(snapshot.message)));
       if (snapshot.kind === "notFound") return respond(c, fail(err.notFound("Space")));
@@ -998,6 +1023,7 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Task not found"),
         409: jsonResponse(ErrorResponseSchema, "Attachment limit reached"),
         413: jsonResponse(ErrorResponseSchema, "File too large"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image container or EXIF"),
       },
     }),
     bodyLimit({
@@ -1018,17 +1044,25 @@ const app = new Hono<AuthContext>()
       if (!(file instanceof File)) return respond(c, fail(err.badInput("Missing 'file' field")));
       if (file.size > MAX_TASK_ATTACHMENT_SIZE_BYTES) return attachmentTooLarge(c);
 
-      return respond(
-        c,
-        spacesService.item.attachments.upload({
-          itemId: item.data.id,
-          spaceId: access.internalId!,
-          filename: file.name || "untitled",
-          mimeType: file.type || "application/octet-stream",
-          content: new Uint8Array(await file.arrayBuffer()),
-          userId: access.user?.id ?? null,
-        }),
-      );
+      try {
+        return await respond(
+          c,
+          spacesService.item.attachments.upload({
+            itemId: item.data.id,
+            spaceId: access.internalId!,
+            filename: file.name || "untitled",
+            mimeType: file.type || "application/octet-stream",
+            content: new Uint8Array(await file.arrayBuffer()),
+            userId: access.user?.id ?? null,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof ImageMetadataError) {
+          c.header("Content-Language", getLocale(c));
+          return respond(c, { ok: false, error: spacesMessages(getLocale(c)).malformedImage, status: 422, code: error.code });
+        }
+        throw error;
+      }
     },
   )
   .get(

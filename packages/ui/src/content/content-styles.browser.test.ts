@@ -195,6 +195,8 @@ beforeAll(async () => {
       `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
       `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
   );
+  // Chromium's headless shell reports no inline PDF viewer, where a PDF preview shows a hint instead of its frame.
+  await page.evaluate(() => Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", { get: () => true }));
   await page.addScriptTag({ content: script });
   await page.locator("#excerpt .k2b-content-code-display").waitFor();
   await page.locator("#plain .k2b-content-markdown").waitFor();

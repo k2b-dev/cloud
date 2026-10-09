@@ -81,8 +81,8 @@ error, the 25-minute limit or the 60-turn limit, is marked as not measured and
 left out of the totals. Neither number proves that the app looks good or
 calculates correctly: look at the first and final screenshots, open the PDFs
 before you report a result, and compare calculated values with the source data.
-A screenshot shows only the first viewport after the last step, so report a
-case whose requested main state it does not show as unverified. Runs with
+A screenshot shows the page after the last step, up to 2000 px tall, so report
+a case whose requested main state it does not show as unverified. Runs with
 different models, reasoning efforts or commits are not a controlled comparison;
 a commit ending in `-dirty` had uncommitted changes.
 
@@ -90,8 +90,9 @@ a commit ending in `-dirty` had uncommitted changes.
 
 For an HTML interface, write its main flow into `steps.json` and run
 `code_check` before presenting or publishing. The gate binds files, steps and
-table definitions to the checking user/conversation. Inspect all three returned
-screenshots with `view_image`; a passing report does not establish visual quality.
+table definitions to the checking user/conversation. Inspect every path in the
+report's `review.paths` with `view_image` and its `review.prompt`; a passing
+report does not establish visual quality.
 
 The [HTML app check contract](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 describes desktop/phone runs, disposable data, schema-only copies above the

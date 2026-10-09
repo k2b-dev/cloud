@@ -58,13 +58,19 @@ The person approves in a web session. The mobile app's session never
 authorizes a client: `/oauth/authorize` treats it as no session and leads to
 sign-in, and consent decisions from it are refused.
 
+Every page a person sees during an authorization, from code entry and consent
+to the result and `/oauth/error`, is a standalone page: one centered card
+without the Cloud header, rail, or app navigation, with the language and theme
+settings in its footer. On phones the card is flat and uses the full width.
+
 Every client that uses PKCE must use `S256`. Public clients must use PKCE;
 confidential clients may omit it because they also authenticate at the token
 endpoint. Cloud does not accept PKCE `plain`.
 
 Dynamic clients additionally require an explicit `resource` on the same Cloud
 origin. Before issuing a code, Cloud shows the resource owner the client name,
-callback host, exact resource, and requested scopes. Approval and denial are
+callback host, exact resource, client ID, and requested scopes, with a note that
+the client is unverified. Approval and denial are
 single-use, bound to the person who opened the request, and expire after five
 minutes. A decision whose `Origin` header is not Cloud's own origin, the origin
 of the `app.url` setting, ends on `/oauth/error` with `invalid_request`; this
@@ -169,12 +175,18 @@ stores only SHA-256 hashes of both codes.
 
 The person opens the verification URI, enters the code, and sees the client
 name, client ID, the code again, the requested scopes, and a warning to approve
-only codes they started themselves. The page requires a browser session on the
-web. API keys, OAuth access tokens and the mobile app's session cannot approve a
-device. The client profile and access rules apply exactly as in the
-authorization-code flow. The approve or deny form carries
-a single-use confirmation token bound to that person, and cross-origin
-submissions are rejected. Cloud records both decisions in the audit log as
+only codes they started themselves. Deny and Allow sit side by side, Allow as
+the primary action. After a decision the page and its tab title show the
+result: the device is connected, or it was not, and the tab can be closed. A
+confirmation that expired or was already answered ends on "Request no longer
+valid", which asks the person to start the sign-in on the device again and
+offers to enter another code. Code entry rejects a code that already expired
+with the same message as a mistyped one. The page requires a browser session on
+the web. API keys, OAuth access tokens and the mobile app's session cannot
+approve a device. The client profile and access rules apply exactly as in the
+authorization-code flow. The approve or deny form carries a single-use
+confirmation token bound to that person, and cross-origin submissions are
+rejected. Cloud records both decisions in the audit log as
 `oauth.device.authorize`.
 
 Poll the token endpoint no faster than `interval`:

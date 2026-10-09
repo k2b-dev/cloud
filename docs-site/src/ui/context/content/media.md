@@ -18,6 +18,7 @@ Use `ZoomPanViewport` when content has detail that does not fit its box, such as
 import {
   Lightbox,
   PdfPreview,
+  type LightboxAction,
   type LightboxImage,
   type PdfPreviewProps,
   type PdfPreviewRequest,
@@ -34,6 +35,8 @@ import {
 
 Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. Pass a meaningful `alt` for informative images. Omit it only when the image is decorative.
 
+An image may also carry `actions`: further things to do with that image, each a short `label`, a Tabler `icon` class, and `onClick`. They sit before **Download** in the same style and show their label on wider screens. Cloud apps use one for **Save to Files**. Keep the list short; the bar holds a few buttons, not a menu.
+
 `initialIndex` selects the first visible image. The parent owns the open state and removes the component through `onClose`.
 
 ## Video
@@ -46,7 +49,7 @@ The browser fetches the video by range while it plays and seeks. Serve `src` inl
 
 `src` may be `null` while the host still fetches the address, for example a signed URL: the frame shows a loading state at its final size. Without `poster`, the player shows the video's first frame before playback, also on iOS.
 
-Pass `renew` when `src` can expire during playback, such as a short-lived lease. When playback fails, the player asks `renew` for a fresh address of the same video and continues at the same time and speed, playing if it was. It does so after every expiry, also across long pauses. A renewed address that fails before it shows that point, or within ten seconds after, ends in the fallback, because a video that cannot play there fails again at once. Issue renewed addresses that stay valid much longer, a minute or more. Changing `src` itself starts a different video from the beginning.
+Pass `renew` when `src` can expire during playback, such as a short-lived lease. When playback fails, the player asks `renew` for a fresh address of the same video and continues at the same time and speed, playing if it was. It does so after every expiry, also across long pauses. The renewed address starts at that point through a media fragment, `#t=`, in place of any fragment it brings, so the video does not show its beginning again. A renewed address that fails before it shows that point, or within ten seconds after, ends in the fallback, because a video that cannot play there fails again at once. Issue renewed addresses that stay valid much longer, a minute or more. Changing `src` itself starts a different video from the beginning.
 
 When the browser cannot play the video, for example because of its codec, the frame shows a localized notice with `fallbackAction`, typically a download link, and calls `onFallback`. A video whose picture the browser cannot decode falls back as well, even when its sound would play: an HEVC recording from an iPhone plays in Safari, but a browser without an HEVC decoder would otherwise play only its sound in an empty frame.
 
@@ -56,7 +59,11 @@ Pass `error` to show the host's own content in the frame instead of the video, f
 
 `PdfPreview` accepts a `request` function that resolves to a `Blob` or `Response`. A failed response becomes an error state. A Blob with a declared type other than `application/pdf` is rejected.
 
-Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs, and `state="error"` with the message after a failure. The error state never adds a second retry: an on-demand preview retries with its render action in the toolbar. These states and the document share one box, so loading and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. A long error scrolls inside that box from its top. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
+Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs, and `state="error"` with the message after a failure. The loading state lasts until the frame reports the document loaded, not only until the document arrives: the frame loads it transparently and out of keyboard reach beneath the placeholder and appears when it fires `load`. That event says the browser's viewer has the document, not that it has painted the first page, so a large PDF on a slow device can still take a moment to appear; no browser reports more. An engine that reports a viewer but never fires `load` for a PDF in a frame keeps the loading state, and the open action remains the way to the document. The error state never adds a second retry: an on-demand preview retries with its render action in the toolbar.
+
+Where the browser has no inline PDF viewer, `navigator.pdfViewerEnabled === false`, as in Chrome on Android and some embedded browsers, a frame would stay empty or download the file. The preview then shows no frame but a placeholder that says in the inherited locale that the browser cannot show PDFs inside a page and asks to open the document. An automatic preview shows this hint at once and requests nothing, because it could not show the document anyway: the open action fetches the document when someone chooses it, and a failure appears only then. An on-demand preview still renders on its render action, because its request also checks the caller's input, and shows the hint once the document has arrived. The hint adds no action of its own. The way to the document is the open action and the caller's `onDownload`, or the host's own open and download actions when it leaves `actions` out.
+
+These states and the document share one box, so loading, the hint, and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. A long error scrolls inside that box from its top. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
 
 Without a `children` render function, the preview is a standalone frame: an optional `title` heading and the actions in a toolbar above the document. Spacing, not a divider line, separates the toolbar from the document.
 
@@ -66,9 +73,9 @@ By default, the open action shows a temporary local copy of the document in a ne
 
 Pass `onDownload` to add a **Download** action. The caller owns the download, for example issuing a fresh attachment URL with the right file name; `disabled` also disables it.
 
-Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows the loading placeholder. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
+Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled or the browser has no inline PDF viewer, and shows the loading placeholder. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
 
-An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting. After a failed request, the render action moves into the error state as its retry, labeled with `buttonLabel` or **Retry**; beside `renderError` content, it stays in the toolbar and in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
+An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting, and never without an inline viewer, where the open action is also the retry after a failure. After a failed request, the render action moves into the error state as its retry, labeled with `buttonLabel` or **Retry**; beside `renderError` content, it stays in the toolbar and in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
 
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
@@ -100,7 +107,10 @@ Without a height, the viewport takes the height of its content. Give it a height
 ```ts
 type LightboxImage = {
   src: string; alt?: string; downloadUrl?: string;
+  actions?: readonly LightboxAction[];
 };
+
+type LightboxAction = { label: string; icon: string; onClick: () => void };
 
 type PdfPreviewRequest = () => Promise<Response | Blob>;
 
@@ -137,9 +147,9 @@ type ZoomPanViewportProps = {
 
 ## Accessibility
 
-The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`.
+The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`. A dialog that an image action opens above the lightbox keeps its own keys: Escape closes that dialog, and arrow keys stay in its fields.
 
-`PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a retry removes the focused retry action, focus moves to the open action once the document is shown, to the document itself when the host leaves `actions` out, or to the retry of a new error state.
+`PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a rendered document turns the loading state into the missing-viewer hint, the preview announces the hint politely. When a retry removes the focused retry action, focus moves to the open action once the document is shown; when the host leaves `actions` out, it waits in the viewer until the frame has loaded the document and then moves to the document; after another failure it moves to the retry of the new error state.
 
 `VideoPlayer` names its video with `label`. The browser's controls bring their own labels and keyboard support. With focus on the video, the player adds the same keys in every engine: Space and `K` play and pause, the left and right arrows seek five seconds, `M` mutes, and `F` opens fullscreen. Focus draws its ring around the frame. The loading state is a polite status. The fallback is an alert that names the problem and offers its action; when it replaces the focused video, focus moves to that action, or to the frame when there is none.
 

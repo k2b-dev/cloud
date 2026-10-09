@@ -4,18 +4,29 @@ import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   type CalendarEvent,
+  type CalendarEventRenderContext,
   type CalendarEventTimeChange,
   Calendar as CoreCalendar,
+  type CalendarView as CoreCalendarView,
   dialogCore,
   FilterChip,
   type FilterChipSection,
   PanelDialog,
   panelDialogOptions,
+  type TimelineController,
   toast,
 } from "@k2b/ui";
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySchema, type Recurrence, type SpaceItem } from "@/contracts";
+import {
+  AssignedToFilterSchema,
+  type CalendarItem,
+  ItemTypeSchema,
+  PrioritySchema,
+  type Recurrence,
+  type SpaceColumn,
+  type SpaceItem,
+} from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
@@ -23,8 +34,19 @@ import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
-import { type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
-import type { CalendarProps, CalendarView } from "./types";
+import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
+import {
+  type CalendarColorBy,
+  CalendarColorBySchema,
+  type CalendarFilter,
+  defaultCalendarFilter,
+  parseCalendarRoute,
+  writeCalendarFilter,
+} from "./filter";
+import { CalendarItemContent } from "./ItemContent";
+import SpacesTimeline from "./SpacesTimeline";
+import { timelineWindow } from "./timeline";
+import type { CalendarProps, CalendarTimeline, CalendarView } from "./types";
 
 const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
 const eventEnd = (item: CalendarItem) => item.endsAt ?? item.deadline ?? eventStart(item);
@@ -54,14 +76,12 @@ const buildCalendarHref = (
   return `${url.pathname}?${url.searchParams.toString()}`;
 };
 
-const priorityColor = (item: CalendarItem) => {
-  if (!item.deadline || item.startsAt) return undefined;
-  if (item.priority === "urgent" || item.priority === "high") return "red";
-  return "amber";
-};
+/** Spaces never shows the compact mobile month, so its links name the month view. */
+const asView = (view: CoreCalendarView | "timeline"): CalendarView => (view === "mobile-month" ? "month" : view);
 
 const toCalendarEvent = (
   item: CalendarItem,
+  columns: SpaceColumn[],
   baseUrl: string,
   view: CalendarView,
   date: Date,
@@ -69,7 +89,7 @@ const toCalendarEvent = (
   dateConfig?: DateContext,
 ): CalendarEvent => {
   const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
-  const isDeadline = Boolean(item.deadline && !item.startsAt);
+  const isDeadline = isCalendarTask(item);
   const detailItemId = item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id;
   const occurrenceId = item.recurrenceId ?? undefined;
   return {
@@ -79,8 +99,13 @@ const toCalendarEvent = (
     start: eventStart(item),
     end: eventEnd(item),
     allDay: item.allDay || !item.startsAt,
-    color: priorityColor(item),
-    colorHex: isDeadline ? undefined : (item.tags?.[0]?.color ?? "#0ea5e9"),
+    colorHex: calendarItemColors(item, filter.colorBy, columns).color,
+    display: isDeadline ? "marker" : undefined,
+    // The checkbox marker and the flag are visual only, so the accessible name says what they show.
+    accessibleDetail:
+      [isDeadline ? t.deadline : null, isCalendarFlagged(item) ? `${t.priority}: ${item.priority === "urgent" ? t.urgent : t.high}` : null]
+        .filter(Boolean)
+        .join(", ") || undefined,
     href: buildCalendarHref(baseUrl, view, date, filter, detailItemId, occurrenceId, dateConfig),
     dataSpaceItemId: detailItemId,
     calendarName: item.spaceName,
@@ -199,11 +224,27 @@ export default function Calendar(props: CalendarProps) {
     },
   });
   const events = () =>
-    props.items.map((item) => {
-      const event = toCalendarEvent(item, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
-      const optimistic = optimisticTimes()[item.id];
-      return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
-    });
+    props.view === "timeline"
+      ? []
+      : props.items.map((item) => {
+          const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
+          const optimistic = optimisticTimes()[item.id];
+          return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
+        });
+  const itemsById = createMemo(() => new Map(props.items.map((item) => [item.id, item])));
+  const renderEvent = (event: CalendarEvent, context: CalendarEventRenderContext) => {
+    const item = itemsById().get(event.id);
+    if (!item) return undefined;
+    return (
+      <CalendarItemContent
+        event={event}
+        context={context}
+        task={isCalendarTask(item)}
+        flag={isCalendarFlagged(item) ? { label: item.priority === "urgent" ? t.urgent : t.high } : null}
+        extra={calendarItemColors(item, props.filter.colorBy, props.columns).extra}
+      />
+    );
+  };
   const clearOptimisticTime = (eventId: string) => {
     const current = optimisticTimes();
     if (!(eventId in current)) return;
@@ -248,6 +289,7 @@ export default function Calendar(props: CalendarProps) {
       options: props.tags.map((tag) => ({ value: tag.id, label: tag.name, color: tag.color })),
     },
   ];
+  // The color choice is one row of this menu: it changes no data, and the toolbar has no room for another control.
   const scopeOptions: FilterChipSection[] = [
     {
       label: t.type,
@@ -264,6 +306,16 @@ export default function Calendar(props: CalendarProps) {
         { value: "assigned:assigned", label: t.assigned, icon: "ti ti-user-check" },
         { value: "assigned:me", label: t.me, icon: "ti ti-user" },
         { value: "assigned:unassigned", label: t.unassigned, icon: "ti ti-user-off" },
+      ],
+    },
+    {
+      label: t.colorBy,
+      layout: "row",
+      options: [
+        { value: "color:tag", label: t.tag },
+        { value: "color:status", label: t.status },
+        { value: "color:priority", label: t.priority },
+        { value: "color:person", label: t.person },
       ],
     },
   ];
@@ -291,6 +343,16 @@ export default function Calendar(props: CalendarProps) {
   const setFilter = (patch: Partial<CalendarFilter>) => {
     void navigateRoute(
       buildCalendarHref(props.baseUrl, props.view, props.date, { ...props.filter, ...patch }, undefined, undefined, props.dateConfig),
+      { replace: true },
+    );
+  };
+  // Another color re-colors the same items, so an open item stays open; a filter change starts without one.
+  const setColorBy = (colorBy: CalendarColorBy) => {
+    const selection = new URL(window.location.href).searchParams;
+    const item = selection.get("item") ?? undefined;
+    const occurrence = selection.get("occurrence") ?? undefined;
+    void navigateRoute(
+      buildCalendarHref(props.baseUrl, props.view, props.date, { ...props.filter, colorBy }, item, occurrence, props.dateConfig),
       { replace: true },
     );
   };
@@ -506,6 +568,36 @@ export default function Calendar(props: CalendarProps) {
     }
   };
   const creatingEvent = createDialogPending;
+  let timelineController: TimelineController | undefined;
+  /** A new anchor day opens a new strip; the same one keeps the strip and where the reader is. */
+  const timelineAnchor = createMemo(() => (props.view === "timeline" ? props.timeline?.anchor : undefined));
+  /**
+   * An item's link names the strip on screen. While another day or filter loads, the strip stays, and so must the
+   * address its links share with the page, or opening an item would load the whole page instead of its detail.
+   */
+  const timelineHref = (timeline: CalendarTimeline, item: CalendarItem) =>
+    buildCalendarHref(
+      props.baseUrl,
+      "timeline",
+      new Date(timeline.anchor),
+      { ...timeline.filter, colorBy: props.filter.colorBy },
+      item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id,
+      item.recurrenceId ?? undefined,
+      props.dateConfig,
+    );
+  /** "Today" and the active view link lead to the strip already shown, so they scroll it instead of loading it again. */
+  const navigateHref = (href: string) => {
+    const timeline = props.view === "timeline" ? props.timeline : undefined;
+    const target = parseCalendarRoute(new URL(href, "http://spaces.local"), props.dateConfig);
+    if (timeline && timelineController && target.view === "timeline" && target.date === timeline.anchor) {
+      if (timeline.anchor === calendar.today(props.dateConfig).toISOString()) timelineController.scrollToNow();
+      // Back to where the strip opened, not to the first of the weeks loaded since.
+      else timelineController.scrollToTime(timelineWindow(new Date(timeline.anchor), props.dateConfig).from);
+      // A day the reader asked for before still loads; this link replaces it with the strip they see.
+      if (!props.navigationPending) return;
+    }
+    props.onNavigateHref?.(href);
+  };
   const defaultNewEventSlot = (): CalendarEventTimeChange => {
     const dateKey = calendar.formatDateKey(props.date, props.dateConfig);
     const start = props.dateConfig?.timeZone
@@ -538,7 +630,8 @@ export default function Calendar(props: CalendarProps) {
               onClick={() => void createEventFromSlot(defaultNewEventSlot())}
             >
               <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} />
-              {t.newEvent}
+              {/* A phone keeps the icon, so the header holds the five views in one row. */}
+              <span class="max-sm:sr-only">{t.newEvent}</span>
             </Button>
           </Show>
         }
@@ -548,16 +641,26 @@ export default function Calendar(props: CalendarProps) {
               label={t.scope}
               icon="ti ti-filter"
               options={scopeOptions}
-              value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`]}
-              defaultValue={[`type:${defaultCalendarFilter.type}`, `assigned:${defaultCalendarFilter.assignedTo}`]}
+              value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`, `color:${props.filter.colorBy}`]}
+              // The color is a display choice, not a filter: Reset keeps it and appears only for a changed filter.
+              defaultValue={[
+                `type:${defaultCalendarFilter.type}`,
+                `assigned:${defaultCalendarFilter.assignedTo}`,
+                `color:${props.filter.colorBy}`,
+              ]}
               isActive={props.filter.type !== defaultCalendarFilter.type || props.filter.assignedTo !== defaultCalendarFilter.assignedTo}
               onValueChange={(values) => {
-                const type = values.find((value) => value.startsWith("type:"))?.slice(5);
-                const assignedTo = values.find((value) => value.startsWith("assigned:"))?.slice(9);
-                setFilter({
-                  type: ItemTypeSchema.catch(defaultCalendarFilter.type).parse(type),
-                  assignedTo: AssignedToFilterSchema.catch(defaultCalendarFilter.assignedTo).parse(assignedTo),
-                });
+                const type = ItemTypeSchema.catch(defaultCalendarFilter.type).parse(
+                  values.find((value) => value.startsWith("type:"))?.slice(5),
+                );
+                const assignedTo = AssignedToFilterSchema.catch(defaultCalendarFilter.assignedTo).parse(
+                  values.find((value) => value.startsWith("assigned:"))?.slice(9),
+                );
+                const colorBy = CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(
+                  values.find((value) => value.startsWith("color:"))?.slice(6),
+                );
+                if (type === props.filter.type && assignedTo === props.filter.assignedTo) setColorBy(colorBy);
+                else setFilter({ type, assignedTo, colorBy });
               }}
             />
             <FilterChip
@@ -584,22 +687,27 @@ export default function Calendar(props: CalendarProps) {
               />
             </Show>
             <span class="ml-auto inline-flex min-w-16 shrink-0 items-center justify-end gap-1 text-xs text-dimmed">
-              <Show when={props.navigationPending} fallback={t.shownCount({ count: props.items.length })}>
+              <Show
+                when={props.navigationPending}
+                fallback={props.view === "timeline" ? undefined : t.shownCount({ count: props.items.length })}
+              >
                 <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
                 {t.updating}
               </Show>
             </span>
           </div>
         }
+        customViews={[{ value: "timeline", label: t.timeline }]}
         getViewHref={(view) =>
-          buildCalendarHref(props.baseUrl, view as CalendarView, props.date, props.filter, undefined, undefined, props.dateConfig)
+          buildCalendarHref(props.baseUrl, asView(view), props.date, props.filter, undefined, undefined, props.dateConfig)
         }
         getDateHref={(date, view) =>
-          buildCalendarHref(props.baseUrl, view as CalendarView, date, props.filter, undefined, undefined, props.dateConfig)
+          buildCalendarHref(props.baseUrl, asView(view), date, props.filter, undefined, undefined, props.dateConfig)
         }
         getEventHref={(event) => event.href}
+        renderEvent={renderEvent}
         selectedEventId={props.selectedItemId}
-        onNavigateHref={props.onNavigateHref}
+        onNavigateHref={props.onNavigateHref ? navigateHref : undefined}
         onPrefetch={props.onPrefetch}
         navigationPending={props.navigationPending}
         onEventActivate={selectEvent}
@@ -610,7 +718,30 @@ export default function Calendar(props: CalendarProps) {
             ? (slot) => void createEventFromSlot(slot)
             : undefined
         }
-      />
+      >
+        <Show when={timelineAnchor()} keyed>
+          <Show when={props.timeline}>
+            {(timeline) => (
+              <SpacesTimeline
+                spaceId={props.spaceId}
+                range={timeline()}
+                items={timeline().items}
+                columns={props.columns}
+                colorBy={props.filter.colorBy}
+                busy={timeline().busy || Boolean(props.navigationPending)}
+                canWrite={props.canWrite}
+                dateConfig={props.dateConfig}
+                hrefFor={(item) => timelineHref(timeline(), item)}
+                onLoadEarlier={() => timeline().onLoadEarlier()}
+                onLoadLater={() => timeline().onLoadLater()}
+                controller={(controller) => {
+                  timelineController = controller;
+                }}
+              />
+            )}
+          </Show>
+        </Show>
+      </CoreCalendar>
     </div>
   );
 }

@@ -126,6 +126,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                   view: state.calendarView,
                   date: state.calendarDate,
                   filter: state.calendarFilter,
+                  range: state.calendarRange,
                   items: state.calendarItems,
                   weather: state.calendarWeather,
                 }}

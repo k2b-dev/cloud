@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-07
+updated: 2026-10-09
 ---
 
 # Assistant
@@ -188,8 +188,10 @@ available when the work continues later.
   message, optionally choose a Project below the composer to use its shared
   context.
 - Attach source files or Cloud resources when the answer must use material
-  beyond the message. Files and screenshots can also be pasted directly into
-  the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
+  beyond the message. **Attach files** takes files from this device or, when
+  Cloud apps offer files, a copy from one of them, such as Files; **Choose
+  resource** links the resource itself. Files and screenshots can also be
+  dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
   **Show in text field** moves a bounded text attachment back into the draft.
   You can attach up to 16 items.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV
@@ -286,7 +288,9 @@ palette, `/new`, and the keyboard shortcut behave the same. A new chat is named
 | Project | Shared instructions, knowledge, files, references, and defaults used by private chats |
 
 Project members with write access can manage knowledge, files and Cloud
-references. Project administrators manage instructions, the default model and
+references. **Add files** and **Add images** take files from this device or,
+when Cloud apps offer files, copies from one of them, such as Files; files
+dropped on the Project context are added too. Project administrators manage instructions, the default model and
 access. Reference search can be narrowed to one Cloud application.
 
 Project chats present that shared context together with chat sources and files,
@@ -1021,3 +1025,18 @@ app and person: a shared app spends the allowance of the person running it, and
 at most 32 `cloud.*` calls of one running app are pending at once. Public and local-only runners cannot
 use these methods. Stopping a run cancels pending inference. The Code Mode skill's
 AI reference documents options, limits and examples.
+
+## Image upload privacy
+
+New JPEG, PNG, and WebP image uploads remove location and device metadata
+without changing image quality. JPEG orientation, colour profiles,
+transparency, and supported animation data remain. Malformed containers are
+rejected with HTTP 422. This applies to conversation uploads, Project files,
+and shared App files, including images the assistant writes there, such as
+fetched web images. A file counts as an image by its media type or its path
+extension.
+
+Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
+formats remain unchanged and can retain metadata. Previously uploaded images
+are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
+for the supported formats and limits.

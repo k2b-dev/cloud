@@ -9,6 +9,7 @@
 
 import { err, fail, ok, type PageParams, type Paginated } from "@k2b/stdlib";
 import { paginateItems } from "../../server/services";
+import { ImageMetadataError } from "../image-metadata";
 import type { SettingEntry } from ".";
 import * as settingsPrimitives from ".";
 import { SETTINGS_MAP, validateSettingValue } from "./defaults";
@@ -66,6 +67,8 @@ export const settingsService = {
         await settingsPrimitives.set(config.key, validated.value);
         return ok(undefined);
       } catch (error) {
+        // A Result cannot carry 422; the typed HTTPException keeps its status through Hono.
+        if (error instanceof ImageMetadataError) throw error;
         const message = error instanceof Error ? error.message : String(error);
         if (message.startsWith("Unknown setting:")) {
           return fail(err.badInput(message));

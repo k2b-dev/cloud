@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
+import { err, fail, fileIcons, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
 import { documentServiceText } from "./document-messages";
@@ -482,6 +483,10 @@ export const upload = async (params: {
   if (!matchesAccept(filename, params.mimeType || "application/octet-stream", target.data.config.accept)) {
     return fail(err.badInput(t.fileTypeRejected));
   }
+  const bytes =
+    fileIcons.getFileCategory({ name: filename, type: "file", mimeType: params.mimeType }) === "image"
+      ? stripImageMetadata(params.bytes)
+      : params.bytes;
   const maxFiles = target.data.config.maxFiles;
 
   return sql.begin(async (tx) => {
@@ -518,9 +523,9 @@ export const upload = async (params: {
           ${shortId},
           ${filename},
           ${params.mimeType || "application/octet-stream"},
-          ${params.bytes.byteLength},
-          ${sha256Hex(params.bytes)},
-          ${params.bytes},
+          ${bytes.byteLength},
+          ${sha256Hex(bytes)},
+          ${bytes},
           ${params.userId}::uuid
         )
         RETURNING id::text AS id, short_id, filename, mime_type, size_bytes, sha256,
@@ -579,6 +584,8 @@ export const replace = async (params: {
   if (!target.ok) return target;
   const filename = normalizeFilename(params.filename);
   const mimeType = params.mimeType || "application/octet-stream";
+  const bytes =
+    fileIcons.getFileCategory({ name: filename, type: "file", mimeType }) === "image" ? stripImageMetadata(params.bytes) : params.bytes;
   if (!matchesAccept(filename, mimeType, target.data.config.accept)) {
     return fail(err.badInput(t.fileTypeRejected));
   }
@@ -608,8 +615,8 @@ export const replace = async (params: {
       const [created] = await attempt<Omit<DbRow, "record_id" | "field_id" | "position">[]>`
         INSERT INTO grids.files (short_id, filename, mime_type, size_bytes, sha256, bytes, created_by)
         VALUES (
-          ${shortId}, ${filename}, ${mimeType}, ${params.bytes.byteLength},
-          ${sha256Hex(params.bytes)}, ${params.bytes}, ${params.userId}::uuid
+          ${shortId}, ${filename}, ${mimeType}, ${bytes.byteLength},
+          ${sha256Hex(bytes)}, ${bytes}, ${params.userId}::uuid
         )
         RETURNING id::text AS id, short_id, filename, mime_type, size_bytes, sha256,
                   created_by::text AS created_by, created_at

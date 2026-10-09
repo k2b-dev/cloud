@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { sql } from "bun";
 import webpush from "web-push";
 import { z } from "zod";
+import { notificationGroupTag } from "../../contracts/notification-group";
 import { isSafeNotificationTargetHref } from "../../contracts/notification-types";
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../../contracts/user-notifications";
 import { decryptSecret, encryptSecret } from "../secrets";
 import { coreSettings } from "../settings/api";
 import { type NotificationDestination, registerNotificationChannel } from "./channels";
+import { NOTIFICATION_PREVIEW_LIMIT } from "./preview";
 import { sendPinnedWebPush } from "./web-push-transport";
 
 type EndpointRow = {
@@ -21,15 +23,41 @@ type BrowserDeliveryPayload = {
   subscription: BrowserPushSubscription;
   eventId: string;
   title: string;
+  preview?: string;
   targetHref?: string;
+  group?: string;
+  badge?: number;
+  createdAt?: number;
 };
+
+// RFC 8030 section 7.2 guarantees 4,096 bytes; aes128gcm adds a header, tag, and padding delimiter.
+const WEB_PUSH_PLAINTEXT_BUDGET = 4_096 - 86 - 16 - 1;
+
+const browserPushMessage = (payload: BrowserDeliveryPayload): string =>
+  JSON.stringify({
+    type: "cloud-notification",
+    eventId: payload.eventId,
+    title: payload.title,
+    ...(payload.preview !== undefined ? { preview: payload.preview } : {}),
+    targetHref: payload.targetHref,
+    ...(payload.group !== undefined ? { group: payload.group } : {}),
+    ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
+    ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}),
+  });
 
 const BrowserDeliveryPayloadSchema = z.object({
   endpointId: z.uuid(),
   subscription: BrowserPushSubscriptionSchema,
   eventId: z.uuid(),
   title: z.string().min(1).max(200),
+  preview: z.string().min(1).max(NOTIFICATION_PREVIEW_LIMIT).optional(),
   targetHref: z.string().max(4_000).refine(isSafeNotificationTargetHref).optional(),
+  group: z
+    .string()
+    .regex(/^[A-Za-z0-9._:-]+$/)
+    .optional(),
+  badge: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  createdAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 });
 
 const BrowserDestinationContextSchema = z.object({
@@ -142,13 +170,27 @@ const browserDriver = {
   },
   createPayload: ({ presentation, destination, event }) => {
     const context = BrowserDestinationContextSchema.parse(destination.context);
-    return BrowserDeliveryPayloadSchema.parse({
+    const group =
+      presentation.group === undefined
+        ? undefined
+        : notificationGroupTag(event.definitionId.slice(0, event.definitionId.lastIndexOf(".")), presentation.group);
+    if (group === null) throw new Error("Invalid notification group tag");
+    const payload = BrowserDeliveryPayloadSchema.parse({
       endpointId: context.endpointId,
       subscription: context.subscription,
       eventId: event.id,
       title: presentation.title,
+      ...(presentation.preview !== undefined ? { preview: presentation.preview } : {}),
       targetHref: presentation.targetHref,
+      ...(group !== undefined ? { group } : {}),
+      ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
+      ...(presentation.group !== undefined || presentation.badge !== undefined ? { createdAt: Date.now() } : {}),
     });
+    if (payload.preview !== undefined && Buffer.byteLength(browserPushMessage(payload), "utf8") > WEB_PUSH_PLAINTEXT_BUDGET) {
+      const { preview: _preview, ...titleOnlyPayload } = payload;
+      return titleOnlyPayload;
+    }
+    return payload;
   },
   deliver: async (value: unknown) => {
     const payload: BrowserDeliveryPayload = BrowserDeliveryPayloadSchema.parse(value);
@@ -166,20 +208,11 @@ const browserDriver = {
     }
     await ensureWebPushConfigured();
     try {
-      await sendPinnedWebPush(
-        payload.subscription,
-        JSON.stringify({
-          type: "cloud-notification",
-          eventId: payload.eventId,
-          title: payload.title,
-          targetHref: payload.targetHref,
-        }),
-        {
-          TTL: 24 * 60 * 60,
-          urgency: "normal",
-          topic: createHash("sha256").update(payload.eventId).digest("base64url").slice(0, 32),
-        },
-      );
+      await sendPinnedWebPush(payload.subscription, browserPushMessage(payload), {
+        TTL: 24 * 60 * 60,
+        urgency: "normal",
+        topic: createHash("sha256").update(payload.eventId).digest("base64url").slice(0, 32),
+      });
     } catch (error) {
       const statusCode = error && typeof error === "object" && "statusCode" in error ? Number(error.statusCode) : null;
       if (statusCode === 404 || statusCode === 410) {

@@ -1,4 +1,5 @@
 import type { ArtifactSource } from "./contracts";
+import { stepsProblem } from "./html/check-contracts";
 import { lintSource } from "./html/compose";
 import { compilationDiagnostic, compileArtifact, validateArtifact } from "./runtime/compile";
 import type { ArtifactBundle } from "./service";
@@ -12,6 +13,9 @@ export async function sourceDiagnostics(source: ArtifactSource) {
       if (/\.(?:js|mjs|css)$/.test(file.path))
         for (const issue of lintSource(file.path, file.content, files))
           diagnostics.push(`${issue.severity} ${issue.where ?? file.path}: ${issue.message}`);
+    // code_check would refuse it; say so while the file is being written.
+    const steps = stepsProblem(source.files);
+    if (steps) diagnostics.push(`error steps.json: ${steps}`);
   }
   try {
     // An HTML interface is not compiled; its actions are.

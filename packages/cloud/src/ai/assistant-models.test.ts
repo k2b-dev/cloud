@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assistantAiSettingsState, isAssistantChatTurn, selectAssistantAiModelId } from "./assistant-models";
+import { assistantAiSettingsState, isAssistantChatTurn, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { aiModelAccess } from "./model-access";
 import * as settings from "./settings";
 import * as transcription from "./transcription";
-import type { AiPublicModelProfile } from "./types";
+import type { AiModelProfile, AiPublicModelProfile } from "./types";
 
 const subject = { type: "user" as const, userId: "user" };
 const models: AiPublicModelProfile[] = ["restricted", "allowed"].map((id) => ({
@@ -70,4 +70,56 @@ describe("Assistant model boundary", () => {
     expect(isAssistantChatTurn({ input: "job", assistantChat: true, mandate: { id: "mandate", revision: 1 } })).toBe(false);
     expect(isAssistantChatTurn({ input: "job" })).toBe(false);
   });
+});
+
+const audioProfile: AiModelProfile = {
+  id: "speech",
+  label: "Speech",
+  provider: "openai-compatible",
+  model: "whisper",
+  baseURL: "https://example.invalid/v1",
+  enabled: true,
+  capabilities: ["transcription"],
+  dataBoundary: "private",
+};
+
+const setupAudio = () => {
+  const model = { profile: audioProfile, provider: transcription.createAiTranscriptionProvider(audioProfile) };
+  spyOn(transcription, "resolveAiAudioModel").mockResolvedValue(model);
+  return model;
+};
+
+test("Assistant audio access failures keep their cause during configuration classification", async () => {
+  setupAudio();
+  const aiError = { code: "model_access_denied", message: "Model access denied" };
+  spyOn(aiModelAccess, "assertAllowed").mockRejectedValue(Object.assign(new Error(aiError.message), { aiError }));
+  let failure: unknown;
+  try {
+    await resolveAssistantAudioModel(subject);
+  } catch (error) {
+    failure = error;
+  }
+  expect(failure).toBeInstanceOf(transcription.AiTranscriptionError);
+  if (!(failure instanceof transcription.AiTranscriptionError)) throw new Error("Expected audio access failure");
+  expect(failure.code).toBe("transcription_access_denied");
+  expect(failure.message).toBe(
+    "Audio transcription is not available to you: you do not have access to the audio model. An administrator can grant access in the AI settings.",
+  );
+  expect(failure).toMatchObject({ aiError });
+  expect(transcription.describeTranscriptionFailure(failure, "configuration")).toBe(failure);
+});
+
+test("Assistant audio resolution passes the subject and data boundaries to their owners", async () => {
+  const model = setupAudio();
+  const access = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+  expect(await resolveAssistantAudioModel(subject, ["private"])).toBe(model);
+  expect(transcription.resolveAiAudioModel).toHaveBeenCalledWith({ allowedDataBoundaries: ["private"] });
+  expect(access).toHaveBeenCalledWith(audioProfile.id, subject);
+});
+
+test("Assistant audio resolution rethrows unrelated access errors unchanged", async () => {
+  setupAudio();
+  const failure = new Error("Access database unavailable");
+  spyOn(aiModelAccess, "assertAllowed").mockRejectedValue(failure);
+  await expect(resolveAssistantAudioModel(subject)).rejects.toBe(failure);
 });

@@ -4,6 +4,7 @@
  * text, JSON and tables open in a preview dialog that follows the Files preview; every other file keeps the confirmed
  * download.
  */
+import { SAVE_FILES_ICON, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { encoding, fileIcons } from "@k2b/stdlib";
 import {
   CopyButton,
@@ -40,14 +41,22 @@ export const attachmentPreviewKind = (attachment: PreviewAttachment): FileViewPr
   return kind === "audio" || kind === "video" ? null : kind;
 };
 
-/** Shows one image in the shared lightbox, captioned with its name, with a download action. */
+/** Shows one image in the shared lightbox, captioned with its name, with download and "Save to Files" actions. */
 const openAttachmentImage = (src: string, name: string): void => {
   const host = document.createElement("div");
   document.body.append(host);
+  const save = () => void saveFiles([{ name, content: src }]);
   const dispose = render(
     () => (
       <Lightbox
-        images={[{ src, alt: name, downloadUrl: src }]}
+        images={[
+          {
+            src,
+            alt: name,
+            downloadUrl: src,
+            actions: [{ label: saveFilesLabel(useLocale()()), icon: SAVE_FILES_ICON, onClick: save }],
+          },
+        ]}
         onClose={() =>
           queueMicrotask(() => {
             dispose();
@@ -205,6 +214,12 @@ function AttachmentPreviewDialog(props: {
                 <i class="ti ti-external-link" aria-hidden="true" />
               </IconButtonLink>
             </Show>
+            <SaveFilesButton
+              size="sm"
+              files={() => [
+                { name: filename(), content: props.contentUrl, mediaType: props.attachment.mimeType, size: props.attachment.sizeBytes },
+              ]}
+            />
             <IconButtonLink size="sm" label={t().download} href={props.contentUrl} download={filename()}>
               <i class="ti ti-download" aria-hidden="true" />
             </IconButtonLink>

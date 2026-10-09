@@ -10,6 +10,28 @@ import {
 } from "./template-rendering";
 
 describe("Mail Liquid templates", () => {
+  test("preserves typed output and memory limit reasons", () => {
+    expect(renderMailLiquidTemplate("{{ value }}", { value: "x".repeat(3 * 1024 * 1024 + 1) })).toMatchObject({
+      ok: false,
+      error: { reason: "render_too_large" },
+    });
+    expect(renderMailLiquidTemplate("{% for i in (1..1000000000) %}{% endfor %}", {})).toMatchObject({
+      ok: false,
+      error: { reason: "render_memory_limit" },
+    });
+  });
+
+  test("uses the shared default time budget despite its larger output cap", () => {
+    const start = performance.now();
+    expect(
+      renderMailLiquidTemplate(
+        "{% for a in items %}{% for b in items %}{% for c in items %}{% assign x = c %}{% endfor %}{% endfor %}{% endfor %}",
+        { items: Array.from({ length: 1000 }, (_, i) => i) },
+      ),
+    ).toMatchObject({ ok: false, error: { reason: "render_timeout" } });
+    expect(performance.now() - start).toBeLessThan(3_000);
+  });
+
   test("renders strict text and Mail filters", () => {
     expect(renderMailLiquidTemplate("REF-{{ year }}-{{ sequence | pad_start: 6 }}", { year: 2026, sequence: 42n })).toEqual({
       ok: true,

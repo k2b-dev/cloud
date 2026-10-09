@@ -1,5 +1,6 @@
 export type {
   CalendarAttendee,
+  CalendarCustomView,
   CalendarDayBadge,
   CalendarEvent,
   CalendarEventColor,
@@ -75,7 +76,7 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
-export type { LightboxImage } from "./Lightbox";
+export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
@@ -123,6 +124,8 @@ export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
+export type { TimelineColor, TimelineController, TimelineItem, TimelineProps } from "./Timeline";
+export { default as Timeline } from "./Timeline";
 export { VideoPlayer, type VideoPlayerProps } from "./VideoPlayer";
 export type { VirtualFeedController, VirtualFeedProps, VirtualFeedScrollOptions } from "./VirtualFeed";
 export { VirtualFeed } from "./VirtualFeed";

@@ -180,11 +180,12 @@ const load = async (
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  // Every API request of the page, and whether the page aborted it.
+  // Every API request of the page, and whether the page aborted it. The page looks up once, while idle, which apps
+  // store files for "Save to Files"; that lookup is not one of the list's requests.
   const requests: { path: string; aborted: boolean }[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (path.startsWith("/api/")) requests.push({ path, aborted: false });
+    if (path.startsWith("/api/") && path !== "/api/capabilities/v1/catalog") requests.push({ path, aborted: false });
   });
   page.on("requestfailed", (request) => {
     const path = new URL(request.url()).pathname;

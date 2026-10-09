@@ -1,4 +1,5 @@
 import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@k2b/cloud/ai";
+import { chooseFiles, SAVE_FILES_ICON, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { coreClient } from "@k2b/cloud/clients/core";
@@ -7,7 +8,7 @@ import { query as solidQuery } from "@k2b/stdlib/solid";
 import {
   Button,
   type DropdownItem,
-  FileDropzone,
+  FileDropTarget,
   Format,
   IconButton,
   InlineGuidance,
@@ -16,6 +17,7 @@ import {
   prompts,
   ScrollArea,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
@@ -36,6 +38,7 @@ import {
   openAssistantContextFiles,
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
+  saveAssistantContextFile,
 } from "./AssistantContextContent";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { AssistantProjectApps } from "./AssistantProjectApps";
@@ -58,6 +61,7 @@ const CONTEXT_PREVIEW_LIMIT = 3;
 
 export default function AssistantProjectView(props: Props) {
   const text = useAssistantText();
+  const locale = useLocale();
   const copy = useAssistantCopy();
   const chats = solidQuery.createInfinite<string, AiConversationPage, number, AssistantLiveInvalidation>({
     source: () => props.project.id,
@@ -93,6 +97,7 @@ export default function AssistantProjectView(props: Props) {
   let chatListViewport: HTMLDivElement | undefined;
   let loadMoreSentinel: HTMLDivElement | undefined;
   const [contextAction, setContextAction] = createSignal<string | null>(null);
+  const [contextPanel, setContextPanel] = createSignal<HTMLElement>();
   const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
     null,
   );
@@ -216,24 +221,14 @@ export default function AssistantProjectView(props: Props) {
     }
   };
 
-  const chooseFiles = (imagesOnly = false) =>
-    prompts.dialog<void>(
-      (close) => (
-        <div class="k2b-dialog__body">
-          <FileDropzone
-            multiple
-            accept={imagesOnly ? "image/*" : undefined}
-            title={text(imagesOnly ? "Add Project images" : "Add Project files")}
-            subtitle={text("Drop files here or choose them from this device")}
-            onDrop={(files) => {
-              close();
-              void uploadFiles(files);
-            }}
-          />
-        </div>
-      ),
-      { title: text(imagesOnly ? "Add images" : "Add files"), icon: imagesOnly ? "ti ti-photo" : "ti ti-files", size: "medium" },
-    );
+  /**
+   * From this device or from a Cloud app, straight from the + button; files dropped on the Project context take the
+   * same path. No `maxBytes`: a Project has no file count and its size limit is per file, so there is no total to pass.
+   */
+  const addFiles = async (imagesOnly = false) => {
+    const files = await chooseFiles({ multiple: true, accept: imagesOnly ? "image/*" : undefined });
+    if (files.length > 0) await uploadFiles(files);
+  };
 
   const deleteFile = async (file: Pick<AssistantContextFile, "id" | "path">) => {
     if (!(await prompts.confirm(copy().removeFromProject({ name: file.path }), { title: text("Delete file"), variant: "danger" }))) return;
@@ -269,6 +264,10 @@ export default function AssistantProjectView(props: Props) {
     );
   };
 
+  // Only reading a file without a download route can fail here; the save dialog explains its own failures.
+  const saveFile = (file: AssistantContextFile) =>
+    saveAssistantContextFile(file).catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)));
+
   const downloadFile = async (file: AssistantContextFile) => {
     try {
       await downloadAssistantContextFile(file);
@@ -295,6 +294,7 @@ export default function AssistantProjectView(props: Props) {
 
   const fileMenu = (file: AssistantContextFile): DropdownItem[] => [
     { icon: "ti ti-download", label: text("Download"), action: () => void downloadFile(file) },
+    { icon: SAVE_FILES_ICON, label: saveFilesLabel(locale()), action: () => void saveFile(file) },
     ...(canWrite()
       ? ([
           {
@@ -448,9 +448,14 @@ export default function AssistantProjectView(props: Props) {
         </main>
 
         <aside
+          ref={setContextPanel}
           class="min-h-0 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 lg:sticky lg:top-[var(--ui-space-section)]"
           aria-label={text("Project context")}
         >
+          <Show when={props.project.permission !== "read"}>
+            {/* Files dropped on the Project context become Project files; elsewhere on the page they attach to the message. */}
+            <FileDropTarget for={contextPanel()} label={text("Drop to add to the Project")} onDrop={(files) => void uploadFiles(files)} />
+          </Show>
           <div class="flex flex-col gap-5">
             <AssistantContextSection
               title={props.project.name}
@@ -537,7 +542,7 @@ export default function AssistantProjectView(props: Props) {
                     title={assistantContextCountTitle(imageFiles().length, text("Image"), text("Images"))}
                     action={
                       <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add images")} onClick={() => void chooseFiles(true)}>
+                        <IconButton size="xs" label={text("Add images")} onClick={() => void addFiles(true)}>
                           <i class="ti ti-plus" aria-hidden="true" />
                         </IconButton>
                       </Show>
@@ -565,7 +570,7 @@ export default function AssistantProjectView(props: Props) {
                     title={assistantContextCountTitle(regularFiles().length, text("File"), text("Files"))}
                     action={
                       <Show when={props.project.permission !== "read"}>
-                        <IconButton size="xs" label={text("Add files")} onClick={() => void chooseFiles()}>
+                        <IconButton size="xs" label={text("Add files")} onClick={() => void addFiles()}>
                           <i class="ti ti-plus" aria-hidden="true" />
                         </IconButton>
                       </Show>

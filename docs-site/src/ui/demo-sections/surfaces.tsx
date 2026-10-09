@@ -25,9 +25,11 @@ import {
   StatCell,
   StatGrid,
   StatusBadge,
+  Timeline,
+  type TimelineItem,
 } from "@k2b/ui";
 import baseCss from "@k2b/ui/base.css" with { type: "text" };
-import { createSignal, For, type JSX } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -613,6 +615,8 @@ const OperationalDemo = () => {
   PanelHeader,
   RangePicker,
   StatusBadge,
+  Timeline,
+  type TimelineItem,
 } from "@k2b/ui";
 
 const notices = [
@@ -718,7 +722,7 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
     { id: "review", title: "Design review", start: at(5, 10), end: at(5, 11, 30), color: "cyan" },
     { id: "handover", title: "Ops handover", start: at(9, 8, 30), end: at(9, 9, 15), color: "zinc" },
     { id: "focus", title: "Focus block", start: at(9, 9), end: at(9, 12), color: "blue" },
-    { id: "checklist", title: "Launch checklist", start: at(12), end: at(13), allDay: true, color: "amber" },
+    { id: "checklist", title: "Launch checklist", start: at(12), end: at(13), allDay: true, color: "amber", display: "marker" },
     { id: "launch", title: "Product launch", start: at(12), end: at(13), allDay: true, color: "red" },
     { id: "standup", title: "Team stand-up", start: at(12, 9), end: at(12, 10), color: "emerald" },
     {
@@ -752,10 +756,26 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
   ];
 };
 
+const isHexColor = (value: string | undefined): value is `#${string}` => value?.startsWith("#") ?? false;
+/** The calendar's events on the timeline view, from the evening before the date through the week after it. */
+const timelineDemoItems = (events: CalendarEvent[]): TimelineItem[] =>
+  events.map((event) => ({
+    id: event.id,
+    label: event.title,
+    start: event.start,
+    end: event.end,
+    allDay: event.allDay,
+    color: isHexColor(event.colorHex) ? event.colorHex : event.color,
+  }));
+const timelineDemoRange = (date: Date) => ({
+  from: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - 1, 20)),
+  to: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 8)),
+});
+
 export const CalendarDemo = () => {
   const initialDate = calendarDemoDate();
   const [date, setDate] = createSignal(initialDate);
-  const [view, setView] = createSignal<"day" | "week" | "month" | "year">("month");
+  const [view, setView] = createSignal<"day" | "week" | "month" | "year" | "timeline">("month");
   const [selectedEventId, setSelectedEventId] = createSignal<string>();
   const [events, setEvents] = createSignal<CalendarEvent[]>(calendarDemoEvents(initialDate));
   const changeDate = (next: Date) => {
@@ -769,7 +789,7 @@ export const CalendarDemo = () => {
     <DemoCard
       id="calendar"
       chip={{ kind: "component", name: "Calendar", from: "@k2b/ui" }}
-      description="A controlled calendar with overlapping, crowded, all-day, and multi-day events generated for every visible month."
+      description="A controlled calendar with overlapping, crowded, all-day, and multi-day events generated for every visible month, and a Timeline added as a fifth view."
       code={`const initialDate = calendarDemoDate();
 const [date, setDate] = createSignal(initialDate);
 const [events, setEvents] = createSignal(calendarDemoEvents(initialDate));
@@ -787,6 +807,7 @@ const changeDate = (next: Date) => {
   date={date()}
   view={view()}
   views={["day", "week", "month", "year"]}
+  customViews={[{ value: "timeline", label: "Timeline" }]}
   dateConfig={{ timeZone: "UTC", locale: "en" }}
   events={events()}
   selectedEventId={selectedEventId()}
@@ -795,12 +816,25 @@ const changeDate = (next: Date) => {
   onEventActivate={(event) => setSelectedEventId(event.id)}
   onEventDrop={moveEvent}
   onEventResize={resizeEvent}
-/>`}
+>
+  {/* A new date opens a new strip from the evening before it. */}
+  <Show when={view() === "timeline" && date()} keyed>
+    {(day) => (
+      <Timeline
+        items={timelineDemoItems(events())}
+        {...timelineDemoRange(day)}
+        timeZone="UTC"
+        onActivate={(item) => setSelectedEventId(item.id)}
+      />
+    )}
+  </Show>
+</Calendar>`}
     >
       <Calendar
         date={date()}
         view={view()}
         views={["day", "week", "month", "year"]}
+        customViews={[{ value: "timeline", label: "Timeline" }]}
         dateConfig={{ timeZone: "UTC", locale: "en" }}
         events={events()}
         selectedEventId={selectedEventId()}
@@ -835,7 +869,18 @@ const changeDate = (next: Date) => {
             ),
           )
         }
-      />
+      >
+        <Show when={view() === "timeline" && date()} keyed>
+          {(day) => (
+            <Timeline
+              items={timelineDemoItems(events())}
+              {...timelineDemoRange(day)}
+              timeZone="UTC"
+              onActivate={(item) => setSelectedEventId(item.id)}
+            />
+          )}
+        </Show>
+      </Calendar>
     </DemoCard>
   );
 };

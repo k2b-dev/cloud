@@ -15,6 +15,11 @@ Do not add a second "From Cloud" button next to it, and do not use it to pick
 a reference to a resource; use the
 [resource picker](/en/ui/cloud/resource-picker) for that.
 
+A `FileDropzone` or `ChatComposer` takes it as its `choose` function, so its
+click or **Attach files** opens the chooser and drops keep their path. When a
+dialog holds the dropzone, the chooser opens over it and returns to it, with
+focus on the dropzone, when it closes.
+
 ## Import
 
 ```ts
@@ -73,10 +78,52 @@ it; Back on a phone closes it too. Sources keep no selection, so Escape closes
 from there at once. Each folder change is announced with its name and number
 of entries.
 
+## Save files
+
+`saveFiles()` is the other direction: it saves copies of files a page already
+shows into any Cloud application that stores files, such as Files. Offer it
+beside each download, not instead of it.
+
+```ts
+import { SAVE_FILES_ICON, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+```
+
+- `SaveFilesButton` is an `IconButton` with the `ti-folder-down` icon. Pass
+  `files`, an accessor of `{ name, content, mediaType?, size? }`, where
+  `content` is a `Blob` or a same-origin URL such as the download route.
+  With `all`, its label saves every file of a list.
+- In menus and in a `Lightbox` image's `actions`, use
+  `saveFilesLabel(locale)` and `SAVE_FILES_ICON` and call `saveFiles()`.
+- The label names the application once the page knows that exactly one
+  stores files, for example **Save report.pdf to Files**, and says
+  **Save report.pdf to…** before that. Only the accessible name and tooltip
+  change, so an icon button never moves. Do not use it as a text button.
+
+The dialog uses the chooser's frame, path row, filter, and states. With one
+application that stores files it opens straight in it, and the path starts
+there; with several, the first view lists them; with none, it says calmly
+that no application can store files and suggests the download. Files appear
+in the folder list but are disabled, so people see taken names. The footer
+status says **Choose a folder**, **You cannot save in this folder**, or
+**Saves to Docs**, and **Save** is enabled only in a writable folder.
+
+After **Save**, each file shows its progress. A taken name turns that file's
+row into a name field prefilled as `Report (2).pdf` with its own **Save**;
+Enter saves it too. Failed files name the reason, and the footer **Save**
+tries them again. **Cancel**, Escape, and Back on a phone stop what is still
+running; files already saved stay saved. When the dialog closes after
+saving, a confirmation toast links to the saved file, for example **Show in
+Files**.
+
+Focus starts on the first folder. After **Save**, it moves to **Cancel**,
+then to the first name field or the footer **Save** when a file needs the
+person. The title names the file or the number of files.
+
 ## Runtime
 
-The chooser reads the provider list once per page from the capability catalog
-and calls each provider's `list` and `read` capabilities as the signed-in user.
+The chooser and the save dialog share the provider list, read once per page
+from the capability catalog, and call each provider's `list`, `read`, and
+`save` capabilities as the signed-in user.
 Every provider authorizes each call. See
 [File providers](/en/docs/platform/file-providers) for the contract.
 

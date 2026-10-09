@@ -1,21 +1,25 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
 import { sql } from "bun";
+import { z } from "zod";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import type { User } from "../contracts";
+import { coreSettings } from "../services";
 import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatTasks } from "./chat-tasks";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
+import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
 import { listPendingAiTurnActions } from "./runtime";
+import * as settings from "./settings";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
@@ -1223,6 +1227,78 @@ suite("AI executor integration", () => {
         ],
       });
     } finally {
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("explains unavailable audio transcription in the first provider prompt", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const requestSchema = z.object({
+      messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
+      tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
+    });
+    const requests: z.infer<typeof requestSchema>[] = [];
+
+    try {
+      await aiFileStore.write({
+        conversationId: conversation.id,
+        path: "/Sprachnachricht_Jana.wav",
+        bytes: new Uint8Array([1, 2, 3]),
+        mediaType: "audio/wav",
+        origin: "user",
+      });
+      const uploaded = await aiFileStore.stat({ conversationId: conversation.id, path: "/Sprachnachricht_Jana.wav" });
+      if (!uploaded) throw new Error("Expected uploaded audio");
+      const validated = await fakeValidateToolTurn({ input: "Was sagt sie?" });
+      spyOn(settings, "readAiSettingsState").mockResolvedValue(validated.settings);
+      spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+      spyOn(coreSettings, "get").mockResolvedValue(""); // Includes an empty ai.audio_model_id.
+      completionQueue = [textCompletion("An administrator must configure an audio model.")];
+      onCompletionRequest = (body) => {
+        requests.push(requestSchema.parse(body));
+      };
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          assistantChat: true,
+          input: "Was sagt sie?",
+          chatId: conversation.shortId,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+          files: { attached: [uploaded], available: [], total: 1 },
+        },
+        userMessage: userMessage("Was sagt sie?"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "unavailable-audio-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected turn claim");
+      await createExecutor("unavailable-audio-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+
+      expect(requests).toHaveLength(1);
+      expect(String(requests[0]?.messages.find((message) => message.role === "system")?.content)).toContain(
+        "Audio files in this conversation cannot be transcribed: Audio transcription is not set up: no audio model is configured.",
+      );
+      expect((requests[0]?.tools ?? []).map((tool) => tool.function.name)).not.toContain("transcribe_audio");
+    } finally {
+      mock.restore();
       completionQueue = [];
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;

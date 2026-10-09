@@ -24,6 +24,7 @@ import contentMessageRows from "./content/message-rows.md" with { type: "text" }
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
+import contentTimeline from "./content/timeline.md" with { type: "text" };
 import contentVirtualFeed from "./content/virtual-feed.md" with { type: "text" };
 import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
@@ -146,6 +147,7 @@ const catalogContextSources = {
   "content/charts": { file: "content/charts.md", content: contentCharts },
   "content/tables": { file: "content/tables.md", content: contentTables },
   "content/calendar": { file: "surfaces/calendar.md", content: contentCalendar },
+  "content/timeline": { file: "content/timeline.md", content: contentTimeline },
   "content/pagination": { file: "layout/pagination.md", content: contentPagination },
   "content/code": { file: "content/code.md", content: contentCode },
   "content/logs": { file: "content/logs.md", content: contentLogs },

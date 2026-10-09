@@ -20,10 +20,17 @@ export const createAiTranscriptionProvider = (profile: AiModelProfile, apiKey?: 
     !profile.capabilities.includes("transcription") ||
     (profile.provider !== "openai" && profile.provider !== "openai-compatible")
   ) {
-    throw new Error("Choose an audio transcription profile with an OpenAI-compatible endpoint.");
+    throw new AiTranscriptionError(
+      "transcription_configuration_failed",
+      "Audio transcription is not set up: the selected profile is not a compatible transcription model. An administrator can configure an OpenAI-compatible audio model in the AI settings.",
+    );
   }
   const baseURL = profile.baseURL ?? (profile.provider === "openai" ? "https://api.openai.com/v1" : undefined);
-  if (!baseURL) throw new Error("Audio transcription requires a base URL.");
+  if (!baseURL)
+    throw new AiTranscriptionError(
+      "transcription_configuration_failed",
+      "Audio transcription is not set up: the audio model has no base URL. An administrator can set the audio provider URL in the AI settings.",
+    );
   return openAICompatibleTranscription(profile.model, { name: profile.provider, baseURL, apiKey });
 };
 
@@ -31,18 +38,56 @@ export const resolveAiAudioModel = async (
   input: { requestedModelId?: string; allowedDataBoundaries?: AiDataBoundary[] } = {},
 ): Promise<AiResolvedAudioModel> => {
   const state = await readAiSettingsState();
-  if (!state.ok) throw Object.assign(new Error(state.error.message), { aiError: state.error });
-  if (!state.enabled) throw new Error("AI is disabled.");
+  if (!state.ok)
+    throw Object.assign(
+      new AiTranscriptionError(
+        "transcription_configuration_failed",
+        `Audio transcription is not available: ${state.error.message} An administrator can fix this in the AI settings.`,
+      ),
+      { aiError: state.error },
+    );
+  if (!state.enabled)
+    throw new AiTranscriptionError(
+      "transcription_configuration_failed",
+      "Audio transcription is not available: AI is disabled. An administrator can enable AI in the AI settings.",
+    );
   const modelId = input.requestedModelId ?? String((await coreSettings.get<string>(AI_AUDIO_MODEL_SETTING_KEY)) ?? "").trim();
-  if (!modelId) throw new Error("No audio transcription model is configured.");
-  const profile = selectAiModelProfile(state, {
-    kind: "locked",
-    modelId,
-    requiredCapabilities: ["transcription"],
-    allowedDataBoundaries: input.allowedDataBoundaries,
-  });
+  if (!modelId)
+    throw new AiTranscriptionError(
+      "transcription_configuration_failed",
+      "Audio transcription is not set up: no audio model is configured. An administrator can configure an audio model in the AI settings.",
+    );
+  let profile: AiModelProfile;
+  try {
+    profile = selectAiModelProfile(state, {
+      kind: "locked",
+      modelId,
+      requiredCapabilities: ["transcription"],
+      allowedDataBoundaries: input.allowedDataBoundaries,
+    });
+  } catch (error) {
+    const selected = state.profiles.find((candidate) => candidate.id === modelId);
+    const reason = !selected
+      ? "the selected audio model profile does not exist"
+      : !selected.enabled
+        ? "the selected audio model is disabled"
+        : !selected.capabilities.includes("transcription")
+          ? "the selected audio model does not support transcription"
+          : "the selected audio model is not allowed for this data boundary";
+    throw Object.assign(
+      new AiTranscriptionError(
+        "transcription_configuration_failed",
+        `Audio transcription is not available: ${reason}. An administrator can select an enabled transcription model permitted by the application's policy in the AI settings.`,
+      ),
+      error instanceof Error && "aiError" in error ? { aiError: error.aiError } : {},
+    );
+  }
   const credential = await getAiCredential(profile.id);
-  if (profile.provider === "openai" && !credential?.trim()) throw new Error("The audio model is missing provider credentials.");
+  if (profile.provider === "openai" && !credential?.trim())
+    throw new AiTranscriptionError(
+      "transcription_configuration_failed",
+      "Audio transcription is not set up: the audio model is missing provider credentials. An administrator can add the audio provider API key in the AI settings.",
+    );
   return { profile, provider: createAiTranscriptionProvider(profile, credential?.trim() || undefined) };
 };
 
@@ -194,7 +239,7 @@ export const describeTranscriptionFailure = (error: unknown, stage: Transcriptio
   return new AiTranscriptionError(
     `transcription_${stage}_failed`,
     stage === "configuration"
-      ? "Audio model configuration could not be resolved. Check the audio profile, base URL, credentials and access policy."
+      ? "Audio transcription is not set up: the audio model configuration could not be read. An administrator can check the audio model, provider URL, credentials, and access policy in the AI settings."
       : stage === "input"
         ? "Audio input is invalid or exceeds the supported size."
         : "Audio provider returned an invalid response or an unclassified error.",

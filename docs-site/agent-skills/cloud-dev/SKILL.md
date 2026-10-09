@@ -72,7 +72,7 @@ and durable data.
 ## Reuse public building blocks
 
 Choose documented Cloud entry points and services before creating a parallel
-mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP.
+mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals.
 
 Prefer the documented K2B foundations before building an application-local
 alternative:
@@ -81,7 +81,7 @@ alternative:
   `@k2b/stdlib/solid` for owner-local queries, mutations, and interaction
   primitives;
 - `@k2b/ssr` with `@k2b/cloud/ssr` for SSR, islands, and navigation;
-- `chooseFiles()` from `@k2b/cloud/browser/files` and `FileDropTarget` for uploads;
+- `chooseFiles()` from `@k2b/cloud/browser/files` (also as `choose` of `FileDropzone` and `ChatComposer`) and `FileDropTarget` for uploads, and `SaveFilesButton` or `saveFiles()` beside each download;
 - `@k2b/sync` for jobs, queues, schedulers, topics, mutexes, and bounded
   distributed coordination, `@k2b/sync/retry` for local retries, and
   `@k2b/cloud/server` for rate limits;

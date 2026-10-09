@@ -522,6 +522,17 @@ describe("@k2b/ui files and media runtime behavior", () => {
     setInitialIndex(-5);
     expect(image()?.src).toEndWith("/a.png");
 
+    // An image's own actions sit before Download, in the same style, and act on that image only.
+    const saved: string[] = [];
+    const save = (src: string) => [{ label: "Save to Files", icon: "ti ti-folder-down", onClick: () => saved.push(src) }];
+    setImages([{ ...first, downloadUrl: "/a.png", actions: save("/a.png") }, second]);
+    const buttons = () => [...dom.root.querySelectorAll<HTMLElement>(".k2b-content-lightbox__actions .k2b-content-lightbox__button")];
+    expect(buttons().map((button) => button.getAttribute("aria-label"))).toEqual(["Save to Files", "Download image", "Close lightbox"]);
+    buttons()[0]!.click();
+    expect(saved).toEqual(["/a.png"]);
+    dom.root.querySelector<HTMLButtonElement>('.k2b-content-lightbox__nav[data-direction="next"]')!.click();
+    expect(buttons().map((button) => button.getAttribute("aria-label"))).toEqual(["Close lightbox"]);
+
     dispose();
     dom.cleanup();
   });

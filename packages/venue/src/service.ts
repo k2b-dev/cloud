@@ -23,6 +23,7 @@ import {
   serviceAccounts,
   toPgUuidArray,
 } from "@k2b/cloud/services";
+import { stripImageDataUrlMetadata } from "@k2b/cloud/services/image-metadata";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
@@ -651,7 +652,7 @@ const createVenueInTx = async (tx: SqlClient, input: VenueInput, user: UserLike)
         ${shortId}, ${slugify(input.slug)}, ${input.name.trim()}, ${input.icon || "ti ti-building-carousel"}, ${input.description?.trim() || null},
         ${input.timezone || "Europe/Berlin"}, ${input.openMode}, ${input.signupMode},
         ${input.publicEnabled}, ${input.feedbackEnabled}, ${input.accentColor},
-        ${input.logoBase64 || null}, ${input.bannerBase64 || null}
+        ${input.logoBase64 ? stripImageDataUrlMetadata(input.logoBase64) : null}, ${input.bannerBase64 ? stripImageDataUrlMetadata(input.bannerBase64) : null}
       )
       RETURNING *
     `,
@@ -794,7 +795,23 @@ const createTemplateInTx = async (tx: SqlClient, venueId: string, input: ShiftTe
   return row ? ok(mapTemplate(row)) : fail(err.internal("Failed to create shift"));
 };
 
+const stripSectionImages = (input: PublicSectionInput): PublicSectionInput => {
+  if (input.kind !== "menu" || !Array.isArray(input.content.items)) return input;
+  return {
+    ...input,
+    content: {
+      ...input.content,
+      items: input.content.items.map((item: unknown) =>
+        typeof item === "object" && item !== null && "image" in item && typeof item.image === "string"
+          ? { ...item, image: stripImageDataUrlMetadata(item.image) }
+          : item,
+      ),
+    },
+  };
+};
+
 const createSectionInTx = async (tx: SqlClient, venueId: string, input: PublicSectionInput): Promise<Result<PublicSection>> => {
+  input = stripSectionImages(input);
   const rows = await withShortIdDb(
     tx,
     "section",
@@ -822,8 +839,8 @@ const updateVenue = async (id: string, input: VenueInput): Promise<Result<Venue>
       public_enabled = ${input.publicEnabled},
       feedback_enabled = ${input.feedbackEnabled},
       accent_color = ${input.accentColor},
-      logo_base64 = ${input.logoBase64 || null},
-      banner_base64 = ${input.bannerBase64 || null},
+      logo_base64 = ${input.logoBase64 ? stripImageDataUrlMetadata(input.logoBase64) : null},
+      banner_base64 = ${input.bannerBase64 ? stripImageDataUrlMetadata(input.bannerBase64) : null},
       updated_at = now()
     WHERE id = ${id}::uuid
     RETURNING *
@@ -1563,7 +1580,7 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
     if (!merged.success) {
       return fail(err.badInput(merged.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")));
     }
-    const input = merged.data;
+    const input = stripSectionImages(merged.data);
     const [updated] = await tx<DbPublicSection[]>`
       UPDATE venue.public_sections
       SET kind = ${input.kind},

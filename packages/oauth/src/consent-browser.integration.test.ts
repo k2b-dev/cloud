@@ -1,18 +1,15 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import { get, oauthTokens, set } from "@k2b/cloud/services";
 import { invalidateIdentityRuntimeConfig } from "@k2b/cloud/services/identity/runtime-config";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import * as cloudSsr from "@k2b/cloud/ssr";
 import { createConfig } from "@k2b/ssr";
-import { LocaleProvider } from "@k2b/ui";
 import { type Server, sql } from "bun";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
-import { createComponent, type JSX } from "solid-js";
 import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
@@ -33,7 +30,6 @@ const pkceChallenge = async () =>
 
 suite("OAuth consent in a browser", () => {
   const root = mkdtempSync(join(tmpdir(), "oauth-consent-browser-"));
-  const spies: Array<{ mockRestore(): void }> = [];
   const consentOrigins: string[] = [];
   const clientIds: string[] = [];
   let browser: Browser;
@@ -49,16 +45,6 @@ suite("OAuth consent in a browser", () => {
   beforeAll(async () => {
     const { plugin } = createConfig({ dev: true, rootDir: root });
     Bun.plugin(plugin());
-    // The page shell needs the whole runtime; the consent form, its headers and its action do not.
-    spies.push(
-      spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof getLocale>[0]; children: JSX.Element }) =>
-        createComponent(LocaleProvider, {
-          locale: getLocale(props.c),
-          get children() {
-            return props.children;
-          },
-        })) as never),
-    );
     const { default: pages } = await import("./frontend");
     const app = new Hono<AuthContext>()
       .use("/oauth/consent", async (c, next) => {
@@ -89,7 +75,6 @@ suite("OAuth consent in a browser", () => {
     await browser?.close();
     await server?.stop(true);
     await listener?.stop(true);
-    for (const spy of spies.splice(0)) spy.mockRestore();
     if (typeof previousAppUrl === "string") await set("app.url", previousAppUrl);
     invalidateIdentityRuntimeConfig();
     if (clientIds.length > 0) await sql`DELETE FROM oauth.clients WHERE client_id IN ${sql(clientIds)}`;

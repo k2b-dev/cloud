@@ -137,7 +137,10 @@ domain payload schema. `render()` returns:
 | --- | --- | --- |
 | `title` | Yes | Trimmed, non-empty, and at most 200 characters |
 | `body` | No | Trimmed and at most 4,000 characters; an empty body is omitted |
+| `preview` | No | Browser-only text; normalized and shortened at a grapheme boundary to at most 200 UTF-16 code units, including a final `…` when shortened; an empty result is omitted |
 | `targetHref` | No | Canonical same-origin absolute path beginning with `/` |
+| `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace; grouping requires an application ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens |
+| `badge` | No | Non-negative safe integer for the app badge; `0` clears it |
 
 `targetHref` must point to a route on the same Cloud origin. External URLs are
 rejected.
@@ -235,9 +238,62 @@ does not suppress the notification. Multiple tabs in the same browser profile
 do not create extra deliveries. Browser and operating-system settings control
 when and how notifications appear.
 
-Notifications show the rendered title and Cloud icon. The presentation body
-stays out of the push payload. Clicking a notification opens or focuses its
-Cloud destination, where normal authentication and authorization apply.
+Notifications show the rendered title and Cloud icon, plus `preview` as the
+notification text when supplied. The presentation `body` stays out of the push
+payload; without `preview`, no text beyond the title is sent. Clicking a
+notification opens or focuses its Cloud destination, where normal
+authentication and authorization apply.
+
+Applications resolve `preview` in the `locale` received by `render()`, selected
+by `send()`. Cloud examines only the first 1,000 UTF-16 code units, collapses
+runs of whitespace and control characters to one space, and trims the result.
+It shortens long text at a grapheme boundary to at most 200 code units,
+including a single `…`; emoji and combining characters remain intact. A
+grapheme cut by the input bound is omitted. Empty previews are omitted, and
+long message text is shortened rather than rejected.
+If the preview would make the encrypted push message larger than 4,096 bytes,
+the size every push service must accept
+([RFC 8030](https://www.rfc-editor.org/rfc/rfc8030#section-7.2)), Cloud omits
+the preview and the notification arrives with its title only.
+
+Preview text is shown by the operating system, including on the lock screen
+and in notification centres, and may be mirrored to paired devices. It travels
+through the browser vendor's push service encrypted for the subscription
+([RFC 8291](https://www.rfc-editor.org/rfc/rfc8291)); the push service sees
+timing and size, but not the text. Cloud keeps the preview only inside the
+encrypted delivery payload until the attempt succeeds or fails permanently,
+never on the event or in history. Only the browser channel receives `preview`;
+email and deployment channels never see it.
+
+The preview is fixed when `send()` runs. Cloud does not check access again
+before a queued, retried, or fallback browser delivery. After the push service
+accepts a push, Cloud cannot recall or change it. An offline device receives it
+when it reconnects, up to 24 hours later. Decide as late as possible before
+`send()` whether the recipient may read the content, and offer operators a
+setting to turn previews off where content is sensitive.
+
+Set `group` in `render()` to replace notifications for the same subject on each
+device. Cloud prefixes the key with the application's ID: `inventory` and
+`group: "stock:item-42"` use the tag `inventory:stock:item-42`. Other
+applications cannot collide with that tag. Each new notification in the group
+replaces the previous one and requests a fresh alert with `renotify: true`;
+the browser and operating system control the alert. The push topic stays per
+event, so the push service cannot link pushes by group and an offline device
+receives each push when it reconnects. If an older notification arrives after
+a newer one in the same group, for example after a delivery retry, the device
+keeps the newer notification without a new alert. Without `group`, notifications
+keep their event ID as the tag.
+
+Set `badge` to the application's current unread count. A positive count calls
+the Badging API; `0` clears the badge. Omitting it leaves the badge unchanged.
+The device applies a badge only when it was rendered at or after the last badge
+it applied. Badge support is optional: unsupported browsers and rejected badge
+requests silently leave it absent or unchanged, and the notification still appears.
+The badge belongs to the installed Cloud application, so applications that
+set it must decide which count to use. Email ignores `group` and `badge`.
+None of `group`, `badge`, and `preview` is stored on the notification event.
+The presentation `body` still stays out of the browser payload; applications
+opt into notification text through `preview`.
 
 Without an active endpoint, Cloud records `no_endpoint` for that browser
 delivery. A later configured recommended channel can still receive the event.
@@ -265,6 +321,28 @@ Use `state()` to inspect support, permission, and subscription state. Use
 `disable()` to disable the endpoint and unsubscribe this browser. Before sending
 a queued browser delivery, Cloud checks that its endpoint is still active.
 Disabling or rebinding that endpoint prevents later attempts from sending to it.
+
+After reading a group's content, close its notifications on the current device
+and update the badge from the open tab:
+
+```ts
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
+
+await browserNotificationClient.closeGroup("inventory", "stock:item-42");
+await browserNotificationClient.setBadge(remainingUnreadCount);
+// Use setBadge(0) to clear the badge.
+```
+
+`closeGroup(appId, group)` closes only notifications with that application's
+group tag on the existing Cloud service-worker registration (scope `/`).
+It never registers a worker or prompts for permission. Unsupported browsers,
+missing registrations, and invalid inputs silently do nothing.
+`setBadge(count)` also silently does nothing when unsupported, refused, or
+given a count that is not a non-negative safe integer.
+
+Closing a group affects only the reading device. Web Push cannot reliably
+close notifications on other devices, and closing notifications does not
+change the badge automatically.
 
 Browser delivery requires a secure context, service-worker and Push API support.
 On iPhone and iPad, Cloud must run as an installed Home Screen application.
@@ -330,8 +408,10 @@ const unregisterSms = registerNotificationChannel(smsDriver);
 ```
 
 A driver resolves destinations, builds a persisted provider payload, and
-delivers that payload. `deliver(payload, context)` receives an optional second
-argument with `deliveryId` and, during worker processing, an abort `signal`.
+delivers that payload. Drivers receive the presentation without `preview`,
+which Cloud reserves for browser notifications. `deliver(payload, context)`
+receives an optional second argument with `deliveryId` and, during worker
+processing, an abort `signal`.
 For an email recovery, it also includes the persisted `outgoingMailId`.
 Existing drivers may keep returning `void` to indicate delivery. A driver that
 hands work to a durable provider may return `{ status: "pending", retryAfterMs,
@@ -424,7 +504,7 @@ failures before event creation include:
 - an empty or overlong idempotency key;
 - payload data rejected by the Zod schema;
 - an error from `render()`;
-- an empty or overlong title, overlong body, or unsafe `targetHref`;
+- an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, or invalid `badge`;
 - a user ID that does not exist;
 - an invalid direct email address.
 

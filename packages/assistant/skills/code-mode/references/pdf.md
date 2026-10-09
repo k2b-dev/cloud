@@ -47,6 +47,12 @@ defaulting to 15. Use `page` for paper dimensions and margins; avoid conflicting
 CSS `@page` rules. `tagged` defaults to true, which requests a tagged PDF but does
 not certify accessibility.
 
+In Studio Apps the document gets the base stylesheet of [HTML apps](apps.md)
+first, so a custom flex or grid row, such as two signature columns, needs
+`> * { margin: 0 }`. `code_check` lays out the HTML of every PDF the steps create
+as it prints, with print media, and warns when siblings of one row sit at
+different heights.
+
 Charts render in Cloud light colors through a shared chart stylesheet. Your HTML may include `<style>`; header and footer are separate documents with their own CSS. Scripts, redirects, frames and outbound
 resources are blocked. MathML (`math`) and the SVG elements `foreignObject` and
 `desc` are removed; write formulas and labels as HTML and CSS or as SVG text.

@@ -130,6 +130,14 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("bg-amber-50");
   });
 
+  test("Attach files reads from Cloud apps only within what the draft can still take", async () => {
+    const workspace = await read("./AssistantWorkspace.island.tsx");
+
+    expect(workspace).toContain("choose: () => chooseComposerFiles(sessionKey())");
+    expect(workspace).toContain("aiComposerChooseMaxBytes(composerAttachmentsFor(sessionKey).length)");
+    expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes })");
+  });
+
   test("follows AI live updates on Core's shared live socket and streams the visible turn over SSE", async () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 

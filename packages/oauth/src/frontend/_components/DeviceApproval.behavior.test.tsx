@@ -103,13 +103,16 @@ describe("device approval page DOM", () => {
 
     const approved = await mount("de", { kind: "result", outcome: "approved" });
     try {
-      expect(approved.root.querySelector("h1")?.textContent).toBe("Gerät verbunden");
+      const status = approved.root.querySelector('[role="status"]');
+      expect(status?.querySelector("h1")?.textContent).toBe("Gerät verbunden");
+      expect(status?.textContent).toContain("Du kannst diesen Tab jetzt schließen.");
     } finally {
       approved.close();
     }
     const denied = await mount("en", { kind: "result", outcome: "denied" });
     try {
-      expect(denied.root.querySelector("h1")?.textContent).toBe("Access denied");
+      expect(denied.root.querySelector('[role="status"] h1')?.textContent).toBe("Access denied");
+      expect(denied.root.textContent).toContain("You can close this tab now.");
       expect(denied.root.querySelector("form")).toBeNull();
     } finally {
       denied.close();

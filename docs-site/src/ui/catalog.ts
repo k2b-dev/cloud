@@ -233,6 +233,12 @@ const portableSections = [
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
       page("calendar", "Calendar", "ti ti-calendar-month", "Controlled generic calendar navigation and items."),
+      page(
+        "timeline",
+        "Timeline",
+        "ti ti-timeline",
+        "Time as a continuous filmstrip with folded nights and empty days, lanes, and loading at both ends.",
+      ),
       page("pagination", "Pagination", "ti ti-arrow-right", "Server-friendly href pagination with compact page windows."),
       page("code", "Code", "ti ti-code", "Selectable source with language-aware highlighting and copy."),
       page("logs", "Logs", "ti ti-list-details", "Semantic timestamped log entries with structured metadata."),
@@ -308,7 +314,7 @@ const cloudPages: UiCatalogPage[] = [
     slug: "file-chooser",
     title: "Cloud file chooser",
     icon: "ti ti-paperclip",
-    summary: "Add files from this device or from any Cloud app that offers files, as ordinary File objects.",
+    summary: "Add files from this device or from any Cloud app that offers files, and save copies into apps such as Files.",
   },
 ];
 
@@ -343,7 +349,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 128;
+export const portableUiComponentCount = 129;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

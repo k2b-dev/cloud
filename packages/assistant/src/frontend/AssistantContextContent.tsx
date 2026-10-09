@@ -1,4 +1,5 @@
 import type { AiProjectFile } from "@k2b/cloud/ai";
+import { SAVE_FILES_ICON, type SaveFileSource, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
   type CapabilityCatalogClientResult,
   type CapabilityClientResult,
@@ -299,6 +300,27 @@ export const assistantProjectFileSource = (projectId: string, files: () => reado
   isReadOnly: () => true,
 });
 
+/**
+ * What "Save to Files" reads: the download route when the source has one, otherwise the file's content, which `loaded`
+ * passes when the page already holds it.
+ */
+const contextSaveSource = async (file: AssistantContextFile, loaded?: FileViewContent): Promise<SaveFileSource> => {
+  const name = file.path.replace(/^.*\//u, "") || "download";
+  const href = file.source.downloadHref?.(file.path);
+  if (href) return { name, content: href, mediaType: file.mediaType, size: file.size };
+  const content = loaded ?? (await file.source.read(file.path));
+  const bytes =
+    content.encoding === "utf8"
+      ? new TextEncoder().encode(content.content)
+      : Uint8Array.from(atob(content.content), (character) => character.charCodeAt(0));
+  return { name, content: new Blob([bytes], { type: content.mediaType || file.mediaType }) };
+};
+
+/** Saves a copy of a chat or project file into an app that stores files, such as Files. */
+export const saveAssistantContextFile = async (file: AssistantContextFile, loaded?: FileViewContent): Promise<void> => {
+  await saveFiles([await contextSaveSource(file, loaded)]);
+};
+
 export const downloadAssistantContextFile = async (file: AssistantContextFile): Promise<void> => {
   const name = file.path.replace(/^.*\//u, "") || "download";
   const href = file.source.downloadHref?.(file.path);
@@ -340,7 +362,16 @@ export const loadAssistantContextImages = async (files: readonly AssistantContex
         content.encoding === "base64"
           ? `data:${content.mediaType};base64,${content.content}`
           : `data:${content.mediaType};charset=utf-8,${encodeURIComponent(content.content)}`;
-      return { file, image: { src, alt: file.path.replace(/^.*\//u, ""), downloadUrl: file.source.downloadHref?.(file.path) ?? src } };
+      // The shown image is already loaded, so saving it never reads it again and cannot fail before its dialog opens.
+      const save = {
+        label: saveFilesLabel(document.documentElement.lang || "en"),
+        icon: SAVE_FILES_ICON,
+        onClick: () => void saveAssistantContextFile(file, content),
+      };
+      return {
+        file,
+        image: { src, alt: file.path.replace(/^.*\//u, ""), downloadUrl: file.source.downloadHref?.(file.path) ?? src, actions: [save] },
+      };
     }),
   );
 

@@ -134,7 +134,8 @@ The sidebar compound members cover these jobs:
 - `SidebarDesktop`, `SidebarBody`, `SidebarSection`, and `SidebarFooter`
   compose the persistent navigation;
 - `SidebarItem`, `SidebarItemIcon`, `SidebarItemLabel`, `SidebarItemMeta`,
-  `SidebarItemAction`, and `SidebarItemActions` compose a navigation row;
+  `SidebarItemStatus`, `SidebarItemAction`, and `SidebarItemActions` compose a
+  navigation row;
 - `NavTree` and `NavTree.Item` compose nested folder, mailbox, category, or tag
   navigation with automatic indentation and keyboard interaction;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
@@ -223,6 +224,50 @@ state visible with the default `"always"` value.
     </AppWorkspace.SidebarItemActions>
   }
 />
+```
+
+### Unread counts, dots, and mentions
+
+Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
+`meta` to show what is new in a conversation, inbox, or feed:
+
+- `unread` as a positive number shows a count, above 99 as "99+", and sets
+  the label in a stronger weight than the regular label of its row variant;
+- `unread={true}` shows a quiet dot for new activity that should not draw
+  attention, such as in a muted conversation or a channel that notifies only
+  on mentions; the label keeps its regular weight;
+- `mention` adds "@" and accents the count;
+- `muted` adds a muted bell.
+
+Each mark has a fixed width and fits the label line, so the row keeps its
+height in every state. Whenever the status shows anything, it reserves the
+unread slot at the end of the row, which a count and a dot share; the bell and
+then "@" sit before it. New activity, a mention, or reading therefore never
+moves another mark, and counts, dots, and bells stay aligned across rows.
+Unread rows differ in weight and count, never in color alone.
+
+The marks are hidden from assistive technology; the row's accessible name gets
+one phrase instead, such as "Design, 3 unread, mentions you", in the
+inherited locale. Above 99 the phrase says "more than 99 unread", like the
+badge, so an application can pass a capped count such as 100. A row whose
+preview opens from the whole row (`trigger: "row"`) is named by the preview
+label and keeps the phrase as its description. Without unread items, a
+mention, or muting, the component renders nothing, and a `SidebarItem` shows
+no meta slot. The collapsed rail shows only row icons, so the marks hide there
+with the label. The application decides which state applies, for example
+whether a muted conversation shows a count or only a dot.
+
+```tsx
+<AppWorkspace.SidebarItem href="/app/chat/c/design" icon="ti ti-hash">
+  <AppWorkspace.SidebarItemLabel>Design</AppWorkspace.SidebarItemLabel>
+  <AppWorkspace.SidebarItemMeta>
+    <AppWorkspace.SidebarItemStatus unread={3} mention />
+  </AppWorkspace.SidebarItemMeta>
+</AppWorkspace.SidebarItem>
+
+<AppWorkspace.SidebarItem href="/app/chat/c/releases" icon="ti ti-hash" meta={<AppWorkspace.SidebarItemStatus unread muted />}>
+  Releases
+</AppWorkspace.SidebarItem>
 ```
 
 ### Nested navigation
@@ -390,6 +435,10 @@ type AppWorkspaceSidebarItemActionProps = {
 
 type AppWorkspaceSidebarItemActionsProps = {
   children: JSX.Element; visibility?: AppWorkspaceSidebarAccessoryVisibility;
+};
+
+type AppWorkspaceSidebarItemStatusProps = {
+  unread?: number | boolean; mention?: boolean; muted?: boolean;
 };
 
 ```

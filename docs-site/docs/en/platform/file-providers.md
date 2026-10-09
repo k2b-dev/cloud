@@ -3,9 +3,9 @@ title: Offer and choose files across applications
 navTitle: File providers
 section: Platform services
 order: 558
-description: Let people add files from any Cloud application with one chooser, and implement the file-provider contract so your application can offer its files.
+description: Let people add files from any Cloud application with one chooser, save copies into applications such as Files, and implement the file-provider contract so your application can offer its files.
 tags: [capabilities, files, contracts, streams, upload]
-updated: 2026-10-06
+updated: 2026-10-09
 ---
 
 # Offer and choose files across applications
@@ -17,8 +17,10 @@ declaration becomes a provider, with the same contract and no special
 treatment. Files is one.
 
 Most applications only consume: their upload action calls `chooseFiles()` and
-people add files from this device or from any provider. Implement the contract
-when your application stores files that people want to use elsewhere.
+people add files from this device or from any provider, and their download
+action gets a **Save to Files** beside it through `saveFiles()`. Implement the
+contract when your application stores files that people want to use
+elsewhere.
 
 The contract is a set of schemas exported from `@k2b/cloud/contracts`, built
 from ordinary [capabilities](/en/docs/platform/capabilities) and
@@ -44,12 +46,16 @@ const attach = async () => {
 
 It resolves ordinary `File` objects with name, type, size, and modification
 time, or `[]` when the person cancels. Your limits, progress display,
-permission checks, and scans keep working on them unchanged. Mail attaches
-files this way.
+permission checks, and scans keep working on them unchanged. Mail drafts,
+Spaces task media, Grids file fields, Notebooks attachments, and Assistant
+chats and Projects attach files this way.
 
 - **No providers:** it opens the device's file dialog directly, as an
   `<input type="file">` would. That dialog needs the user activation of the
-  click, so do not `await` anything before calling it.
+  click, so do not `await` anything before calling it. A visitor whom the
+  capability catalog refuses, such as someone on a public page, has no
+  providers either. That answer is not kept: the next call asks the catalog
+  again, so a session renewed in the meantime finds its providers.
 - **With providers:** it opens one chooser. **This device** comes first, then
   every provider. Inside a provider, people browse folders page by page,
   filter by name, and choose files. See the
@@ -78,6 +84,29 @@ A chosen file is a copy. `chooseFiles()` does not return where it came from,
 and later changes in the provider do not reach your copy. Keep one upload
 action: do not add a second "From Cloud" button next to it.
 
+### Use it with the dropzone and chat composer
+
+`FileDropzone` and `ChatComposer` open the device's file dialog by default.
+Pass `chooseFiles` as their `choose` function, and their click or **Attach
+files** goes through the same chooser while drops and pasted files keep their
+path:
+
+```tsx
+import { chooseFiles } from "@k2b/cloud/browser/files";
+import { ChatComposer, FileDropzone } from "@k2b/ui";
+
+<FileDropzone choose={() => chooseFiles({ multiple: true })} onDrop={(files) => void uploadAttachments(files)} />;
+
+<ChatComposer
+  {...composerProps}
+  fileSelection={{ choose: () => chooseFiles({ multiple: true }), onSelect: addFiles }}
+/>;
+```
+
+Both call `choose` inside the click or menu activation, so the device's dialog
+still opens when there are no providers. When a dialog holds the dropzone, the
+chooser opens over it and returns to it when it closes.
+
 ### Take dropped files too
 
 Wherever your upload action lives, let people drop files from their computer
@@ -102,6 +131,94 @@ specific target inside, such as a folder row, wins under the pointer. While the
 chooser is open it takes dropped files itself, like files picked from this
 device, and the page behind it does not. Keep the upload button; dropping
 needs a pointer.
+
+## Save files into providers
+
+Where your application offers a download, offer to save a copy into a
+provider too. `saveFiles()` from `@k2b/cloud/browser/files` opens one dialog
+in which people pick an application that stores files and one of its
+folders. Pass each file's name and its bytes, or a same-origin URL that the
+page can read with its session, usually your own download route:
+
+```tsx
+import { SaveFilesButton } from "@k2b/cloud/browser/files";
+import { IconButtonLink } from "@k2b/ui";
+
+const downloadHref = `/api/archive/documents/${document.id}/content`;
+
+<>
+  <SaveFilesButton
+    size="sm"
+    files={() => [{ name: document.filename, content: downloadHref, mediaType: document.mediaType, size: document.size }]}
+  />
+  <IconButtonLink size="sm" href={downloadHref} download={document.filename} label={t().download}>
+    <i class="ti ti-download" aria-hidden="true" />
+  </IconButtonLink>
+</>;
+```
+
+`SaveFilesButton` is an `IconButton` that calls `saveFiles(files())` and
+takes the props of `IconButton`. Its label and tooltip say **Save
+report.pdf to Files** once the page knows that Files is the one
+application that stores files, and **Save report.pdf to…** before that or
+when there are several. With `all`, it says **Save all to Files**, for a list
+such as the attachments of a message. In a menu or a lightbox, use
+`saveFilesLabel(locale)` and `SAVE_FILES_ICON` and call `saveFiles()` from
+the action:
+
+```ts
+import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
+
+const menu = [
+  { icon: "ti ti-download", label: t().download, action: download },
+  { icon: SAVE_FILES_ICON, label: saveFilesLabel(locale()), action: () => void saveFiles([source]) },
+];
+```
+
+Mail attachments, one or all of a message and each in the details panel,
+Spaces task media, Notebooks attachments, Grids file fields and record
+versions, and Assistant chat and Project files save this way.
+
+- **Where:** the dialog lists every provider whose `save` passes
+  `fileProviderIssues`. With one, such as Files, it opens straight in that
+  provider; with none, it says calmly that no application can store files and
+  points to the download. When the catalog refused the page earlier, such as
+  during a session renewal, the dialog asks it again. Inside a provider,
+  people browse and filter folders as in the chooser. Files are listed so
+  that taken names are visible, but only folders open. **Save** is enabled in a folder whose page reports
+  `writable`; a provider's root is never a target.
+- **Content:** a `Blob` is saved as it is. A URL is read only after the
+  person chose a folder and pressed **Save**. Pass `size` when you know it: a
+  file above the provider's write limit is then refused before it downloads.
+  Without it, a `content-length` above the limit or a body that grows past it
+  stops the read. Files takes up to 50 MiB. At most two files are read and
+  saved at once, so the browser holds at most two of them.
+- **Names:** path separators and control characters in `name` become `_`.
+  Saving never replaces a file. When the name is taken, that file asks for
+  another name, prefilled as `Report (2).pdf`; the other files continue.
+- **Transfer:** each file is created through the provider's `save` Action
+  with an idempotency key for its name and folder, then its bytes go through
+  the write stream with progress. A double click or a retry never creates a
+  second file. A write whose answer was lost, or that Core answers with 499,
+  502, or 504 because the transfer broke off, is checked through the
+  stream's status before it fails. **Cancel**, Escape, or `signal` stops what
+  is still running and aborts its stream; files saved before stay saved.
+- **Failures:** each file says why it failed: too large, not readable from
+  your URL, no permission to save in the folder, or offline. **Save** tries
+  the failed files again. A file whose provider never opened a stream gets a
+  new idempotency key, because no byte was sent; one with a stream keeps its
+  key, so the provider can return a file it already created.
+- **Confirmation:** when the dialog closes after saving, a confirmation names
+  the file or the number of files and links to the provider's `open` link,
+  for example **Show in Files**. `saveFiles()` resolves once the stopped
+  transfers settled, with the saved files as `{ name, app, href? }`, including
+  one whose receipt arrived as the dialog closed, or `[]` when nothing was
+  saved.
+- **Access:** every call runs as the signed-in person, and the provider
+  authorizes each one again. A folder that is listed or `writable` is not a
+  grant.
+
+A saved file is a copy. Later changes in your application do not reach it.
 
 ## Functions
 
@@ -137,7 +254,8 @@ function, and `FILE_PROVIDER_FUNCTIONS` lists their names. `save` must declare
   this code. Every other failure keeps its own code, even with status `409`,
   for example when storage is full. The completed write returns
   `{ file: { id, name, size } }`; the call that opens the stream has no file
-  yet.
+  yet. Return an `open` link with it: the confirmation of `saveFiles()` links
+  there.
 
 ## Implement a provider
 
@@ -279,9 +397,10 @@ no separate registration, route, or setting. The declaration names the local
 IDs to call; invoke them through the ordinary capability client and stream
 transfer.
 
-`chooseFiles()` does this for you. It reads every catalog page once per page
-load, while the browser is idle, and keeps the applications whose `list` and
-`read` pass `fileProviderIssues`. If the list is not known yet when someone
+`chooseFiles()` and `saveFiles()` do this for you. The page reads every
+catalog page once per load, while the browser is idle, and keeps the
+applications whose `list` and `read` pass `fileProviderIssues`; saving also
+needs a `save` that passes. If the list is not known yet when someone
 clicks, the chooser opens at once and providers join below **This device** as
 they arrive. A failed catalog read shows **Try again** instead of an empty
 list.

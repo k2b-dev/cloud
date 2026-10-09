@@ -5,10 +5,14 @@
  * type and drives whether the markdown insertion is `![...]()` (block
  * image) or `[...]()` (inline file pill).
  *
+ * Its dropzone takes dropped files, and a click on it chooses files from
+ * this device or from a Cloud app (`chooseFiles`).
+ *
  * Selecting (upload OR pick) dispatches `EDITOR_INSERT_ATTACHMENT_EVENT`
  * with {id, kind, filename}. The editor listens, inserts at cursor.
  */
 
+import { chooseFiles } from "@k2b/cloud/browser/files";
 import { fileIcons } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, FileDropzone, prompts, useLocale } from "@k2b/ui";
@@ -93,6 +97,9 @@ const AttachmentPicker = (props: Props) => {
         subtitle={t().attachmentDropSubtitle}
         hint={t().attachmentLimit}
         busy={upload.loading()}
+        // A click chooses from this device or from a Cloud app; either way the files take the upload path below. No
+        // `maxBytes`: a notebook has no attachment count and its size limit is per file, so there is no total to pass.
+        choose={() => chooseFiles({ multiple: true })}
         onDrop={handleFiles}
       />
 

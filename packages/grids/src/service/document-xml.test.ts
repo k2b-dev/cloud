@@ -74,3 +74,16 @@ test("empty results, conditions, static namespaces and escaped entity-looking va
     renderDocumentXml("<root>{% if document.number %}{{ document.number }}{% endif %}</root>", { document: { number: "&#0;" } }),
   ).toEqual({ ok: true, data: "<root>&amp;#0;</root>" });
 });
+
+test("XML rendering names a timeout before falling back to an invalid XML error", () => {
+  expect(
+    renderDocumentXml(
+      "<root>{% for a in rows %}{% for b in rows %}{% for c in rows %}{% endfor %}{% endfor %}{% endfor %}</root>",
+      { rows: Array.from({ length: 1_000 }, (_, i) => i) },
+      "de",
+    ),
+  ).toMatchObject({
+    ok: false,
+    error: { message: "Das Rendern der Vorlage hat zu lange gedauert. Vereinfache die Vorlage oder verwende weniger Daten." },
+  });
+});

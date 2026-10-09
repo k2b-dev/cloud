@@ -23,6 +23,7 @@ import {
   v,
 } from "@k2b/cloud/server";
 import { coreSettings, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -158,7 +159,11 @@ const listVenueApiKeys = async (venueId: string): Promise<VenueApiKey[]> => {
   });
 };
 
-const root = new Hono<AuthContext>();
+const root = new Hono<AuthContext>().onError((error, c) => {
+  if (error instanceof ImageMetadataError)
+    return respond(c, { ok: false, error: venueMessages.resolve([getLocale(c)]).t.malformedImage, status: 422, code: error.code });
+  throw error;
+});
 // biome-ignore format: check-service-api-contracts requires a leading `.use(...)` line before route handlers.
 root
   .use(rateLimit());
@@ -361,6 +366,7 @@ const venueRoutes = new Hono<AuthContext>()
       responses: {
         201: jsonResponse(VenueSchema, "Created venue"),
         400: jsonResponse(ErrorResponseSchema, "Invalid venue"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image"),
         409: jsonResponse(ErrorResponseSchema, "Venue slug already in use"),
       },
     }),
@@ -442,12 +448,22 @@ const venueRoutes = new Hono<AuthContext>()
       return respond(c, ok(await venueService.publicResources.projectPublicStatus(status)));
     },
   )
-  .patch("/:id", v("param", VenueIdParamSchema), v("json", VenueInputSchema), async (c) => {
-    const venue = await adminVenue(c, c.req.valid("param").id);
-    if (!venue.ok) return respond(c, venue);
-    const updated = await venueService.venues.update(venue.data.id, c.req.valid("json"));
-    return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectVenues([value]))[0]!));
-  })
+  .patch(
+    "/:id",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Update venue",
+      responses: { 200: jsonResponse(VenueSchema, "Updated venue"), 422: jsonResponse(ErrorResponseSchema, "Malformed image") },
+    }),
+    v("param", VenueIdParamSchema),
+    v("json", VenueInputSchema),
+    async (c) => {
+      const venue = await adminVenue(c, c.req.valid("param").id);
+      if (!venue.ok) return respond(c, venue);
+      const updated = await venueService.venues.update(venue.data.id, c.req.valid("json"));
+      return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectVenues([value]))[0]!));
+    },
+  )
   .delete(
     "/:id",
     describeRoute({
@@ -799,16 +815,29 @@ const venueRoutes = new Hono<AuthContext>()
     await notifyShiftCancelled({ venue: venue.data, cancelled: cancelled.data, actor: user.data });
     return respond(c, ok());
   })
-  .post("/:id/sections", v("param", VenueIdParamSchema), v("json", PublicSectionInputSchema), async (c) => {
-    const venue = await adminVenue(c, c.req.valid("param").id);
-    if (!venue.ok) return respond(c, venue);
-    const created = await venueService.sections.create(venue.data.id, c.req.valid("json"));
-    return respond(
-      c,
-      await projectResult(created, async (value) => (await venueService.publicResources.projectSections([value]))[0]!),
-      201,
-    );
-  })
+  .post(
+    "/:id/sections",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Create public section",
+      responses: {
+        201: jsonResponse(PublicSectionSchema, "Created public section"),
+        422: jsonResponse(ErrorResponseSchema, "Malformed image"),
+      },
+    }),
+    v("param", VenueIdParamSchema),
+    v("json", PublicSectionInputSchema),
+    async (c) => {
+      const venue = await adminVenue(c, c.req.valid("param").id);
+      if (!venue.ok) return respond(c, venue);
+      const created = await venueService.sections.create(venue.data.id, c.req.valid("json"));
+      return respond(
+        c,
+        await projectResult(created, async (value) => (await venueService.publicResources.projectSections([value]))[0]!),
+        201,
+      );
+    },
+  )
   .put(
     "/:id/sections/order",
     describeRoute({
@@ -842,6 +871,7 @@ const venueRoutes = new Hono<AuthContext>()
       description:
         "Change only the fields in the body. Omitted fields keep their stored value: an edit keeps a draft (`enabled: false`) off the public page and keeps its position. Requires admin permission.",
       responses: {
+        422: jsonResponse(ErrorResponseSchema, "Malformed image"),
         200: jsonResponse(PublicSectionSchema, "Updated section"),
         400: jsonResponse(ErrorResponseSchema, "Invalid section"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),

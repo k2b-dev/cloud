@@ -287,6 +287,7 @@ const messages = i18n.define({
         `${count === 1 ? "1 message" : `${count} messages`} summarized · ${date}`,
       compactedHint: "From here on, the model sees this summary instead of the messages above.",
       compactedEmpty: "No visible content",
+      malformedImage: "This image could not be read. Export it again or choose another file.",
     },
     de: {
       backgroundRun: "Hintergrundlauf",
@@ -577,6 +578,7 @@ const messages = i18n.define({
       compactedCount: ({ count, date }) => `${count === 1 ? "1 Nachricht" : `${count} Nachrichten`} zusammengefasst · ${date}`,
       compactedHint: "Ab hier sieht das Modell diese Zusammenfassung statt der Nachrichten darüber.",
       compactedEmpty: "Kein sichtbarer Inhalt",
+      malformedImage: "Dieses Bild konnte nicht gelesen werden. Exportiere es erneut oder wähle eine andere Datei.",
     },
   },
 });

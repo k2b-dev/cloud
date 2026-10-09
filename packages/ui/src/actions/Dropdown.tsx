@@ -40,7 +40,8 @@ export type DropdownAction =
   | (DropdownActionBase & {
       href: string;
       external?: boolean;
-      action?: never;
+      /** Runs on a plain click instead of following the link; modified clicks, middle-click, and the link's menu keep it. */
+      action?: () => void;
     })
   | (DropdownActionBase & {
       disabled: true;
@@ -60,6 +61,11 @@ export type DropdownChoice = DropdownActionBase & {
 
 export type DropdownSection = {
   sectionLabel?: string;
+  /**
+   * `row` sets a few short radio choices, such as a sort direction, side by side as one segmented row. Give it a
+   * `sectionLabel`: the label names the choice above the row and for screen readers.
+   */
+  layout?: "row";
   items: readonly (DropdownAction | DropdownChoice)[];
 };
 
@@ -114,6 +120,7 @@ export type DropdownItemProps = {
   variant?: "danger";
   href?: string;
   external?: boolean;
+  /** Runs when the item is chosen. With `href`, a plain click runs it instead of following the link. */
   onSelect?: () => void;
   class?: string;
 };
@@ -151,6 +158,21 @@ const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
   const items = actionableItems(menu);
   if (items.length === 0) return;
   items[(index + items.length) % items.length]?.focus();
+};
+
+/**
+ * Left and Right cycle through the segments of a row section; Up and Down leave it like any item. Returns whether
+ * the key moved focus.
+ */
+export const focusRowSegment = (items: HTMLElement[], key: string): boolean => {
+  if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
+  const active = document.activeElement as HTMLElement | null;
+  const row = active?.closest(".k2b-dropdown__row");
+  if (!active || !row) return false;
+  const segments = items.filter((item) => row.contains(item));
+  const next = segments.indexOf(active) + (key === "ArrowRight" ? 1 : -1);
+  segments[(next + segments.length) % segments.length]?.focus();
+  return true;
 };
 
 export const dropdownPosition = (
@@ -225,9 +247,15 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
-          onClick={() => {
+          onClick={(event) => {
+            // With `onSelect`, a plain click runs it in place of the link; a modified click keeps its browser meaning.
+            if (props.onSelect && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+              event.preventDefault();
+              menu?.close();
+              props.onSelect();
+              return;
+            }
             menu?.close(false);
-            props.onSelect?.();
           }}
         >
           {content}
@@ -313,10 +341,20 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
               class="k2b-dropdown__section"
               data-divided={index() > 0 ? "true" : undefined}
               role="group"
-              aria-label={(item as DropdownSection).sectionLabel ?? messages().actions}
+              // A row of choices is no set of actions: without a label it stays unnamed rather than misnamed.
+              aria-label={
+                (item as DropdownSection).sectionLabel ?? ((item as DropdownSection).layout === "row" ? undefined : messages().actions)
+              }
             >
               <Show when={(item as DropdownSection).sectionLabel}>{(label) => <div class="k2b-dropdown__label">{label()}</div>}</Show>
-              <For each={(item as DropdownSection).items}>{renderItem}</For>
+              <Show
+                when={(item as DropdownSection).layout === "row"}
+                fallback={<For each={(item as DropdownSection).items}>{renderItem}</For>}
+              >
+                <div class="k2b-dropdown__row">
+                  <For each={(item as DropdownSection).items}>{renderItem}</For>
+                </div>
+              </Show>
             </div>
           </Show>
         )}
@@ -501,6 +539,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       focusMenuItem(menuRef, current + (event.key === "ArrowDown" ? 1 : -1));
+    } else if (focusRowSegment(items, event.key)) {
+      event.preventDefault();
     } else if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       focusMenuItem(menuRef, event.key === "Home" ? 0 : -1);

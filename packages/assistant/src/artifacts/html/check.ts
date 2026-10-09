@@ -13,6 +13,7 @@ import {
 import type { CheckState } from "./check-host";
 import type { CheckCommand } from "./check-realm";
 
+const Finding = z.object({ severity: z.enum(["error", "warning"]), kind: z.string(), message: z.string(), key: z.string() });
 const Point = z.object({ x: z.number(), y: z.number(), checked: z.boolean(), type: z.string() });
 const Measure = z.object({
   height: z.number(),
@@ -24,6 +25,7 @@ const Measure = z.object({
   interactive: z.boolean(),
   password: z.boolean(),
   untyped: z.boolean(),
+  layout: z.array(Finding),
 });
 const Violations = z.array(
   z.object({ id: z.string(), impact: z.string().nullable(), help: z.string(), count: z.number(), target: z.string() }),
@@ -135,7 +137,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
             .replace(/^\.+/, "")
             .slice(0, 180) || "download";
         const path = await save(`${view}-${ordinal}-${safe}`, bytes, type || "application/octet-stream");
-        downloads.push({ name, type, size: bytes.byteLength, path });
+        downloads.push({ name, type, size: bytes.byteLength, path, view });
       });
       signal.throwIfAborted();
       await driver.initialize(page);
@@ -167,6 +169,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
       };
       const collect = (state: CheckState) => {
         for (const issue of state.lint) add(`lint:${issue.kind}`, issue.message, issue.severity, issue.where);
+        for (const finding of state.pdf) add(finding.kind, finding.message, finding.severity);
         for (const event of state.events) {
           if (event.type === "error" || (event.type === "log" && event.level === "error"))
             add(
@@ -186,16 +189,40 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
           }
         }
       };
-      const shot = async (name: "desktop-start" | "desktop" | "mobile") => {
+      // A finding reported once per view: a text shown after one step usually stays for the next ones,
+      // and a misaligned row is reported in the final state, from startup only when the steps removed it.
+      const reported = new Set<string>();
+      const report = (finding: z.infer<typeof Finding>, prefix = "") => {
+        if (reported.has(finding.key)) return;
+        reported.add(finding.key);
+        add(finding.kind, prefix + finding.message, finding.severity);
+      };
+      // The whole page up to a bounded height: what lies below the first screen is part of the result.
+      const shot = async (name: "desktop-start" | "desktop" | "mobile", pageHeight: number) => {
         signal.throwIfAborted();
-        await page.mouse.move(0, 0);
-        signal.throwIfAborted();
-        const bytes = await page.screenshot({ type: "png", timeout: CHECK_LIMITS.readyMs });
-        screenshots.push({
-          view: name,
-          theme: viewTheme,
-          path: await save(`${name}-${viewTheme}.png`, new Uint8Array(bytes), "image/png"),
-        });
+        const viewport = page.viewportSize()!;
+        let height = viewport.height,
+          full = pageHeight;
+        try {
+          // A taller viewport grows layouts sized in viewport units, so measure again, and grow at most once more.
+          for (let round = 0; round < 2 && full > height && height < CHECK_LIMITS.screenshotHeight; round++) {
+            height = Math.min(full, CHECK_LIMITS.screenshotHeight);
+            await page.setViewportSize({ width: viewport.width, height });
+            await settle();
+            full = z.number().parse(await command({ op: "height" }));
+          }
+          await page.mouse.move(0, 0);
+          signal.throwIfAborted();
+          const bytes = await page.screenshot({ type: "png", timeout: CHECK_LIMITS.readyMs });
+          screenshots.push({
+            view: name,
+            theme: viewTheme,
+            path: await save(`${name}-${viewTheme}.png`, new Uint8Array(bytes), "image/png"),
+            cropped: full > height,
+          });
+        } finally {
+          if (height > viewport.height) await page.setViewportSize(viewport);
+        }
       };
       await mount();
       let ready = true;
@@ -211,7 +238,8 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
         const before = Measure.parse(await command({ op: "measure" }));
         for (const issue of layoutIssues(view, { ...before, invalid: [] }, start.steps.length))
           add(issue.kind, issue.message, issue.severity, issue.where);
-        if (view === "desktop") await shot("desktop-start");
+        for (const finding of before.layout) if (finding.kind.startsWith("shown-")) report(finding);
+        if (view === "desktop") await shot("desktop-start", before.height);
         for (const [index, step] of start.steps.entries()) {
           signal.throwIfAborted();
           try {
@@ -251,6 +279,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
               }
             }
             await settle();
+            for (const finding of Finding.array().parse(await command({ op: "shown" }))) report(finding, `After step ${index + 1}: `);
           } catch (error) {
             signal.throwIfAborted();
             add("step", `Step ${index + 1} (${step.action}): ${stepError(error)}`);
@@ -265,6 +294,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
         for (const issue of layoutIssues(view, measure, start.steps.length)) add(issue.kind, issue.message, issue.severity, issue.where);
         if (measure.password) add("password", "App contains a password field; use Cloud secret input for credentials.", "warning");
         if (measure.untyped) add("buttons", "Several buttons in a form have no explicit type.", "warning");
+        for (const finding of [...measure.layout, ...before.layout]) report(finding);
         for (const v of Violations.parse(await command({ op: "axe" })))
           add(
             "a11y",
@@ -272,7 +302,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
             ["critical", "serious"].includes(v.impact ?? "") ? "error" : "warning",
             v.target,
           );
-        await shot(view);
+        await shot(view, measure.height);
       }
       collect(await page.evaluate(() => window.assistantCheckState()));
     } catch (error) {

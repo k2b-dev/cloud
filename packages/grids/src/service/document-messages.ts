@@ -91,6 +91,8 @@ export const documentServiceMessages = i18n.define({
       liquidUnknownVariable: ({ label, root }: { label: string; root: string }) => `${label} uses unknown Liquid variable "${root}".`,
       templateTooLarge: "The template is too large.",
       renderedTemplateTooLarge: "The rendered template is too large.",
+      templateRenderTimeout: "The template took too long to render. Simplify it or use less data.",
+      templateRenderMemoryLimit: "The template needs too much memory to render. Simplify it or use less data.",
       templateRenderFailed: "Template rendering failed.",
       templateInvalid: "The Liquid template is invalid.",
       draftTemplate: "Draft template",
@@ -278,6 +280,8 @@ export const documentServiceMessages = i18n.define({
       liquidUnknownVariable: ({ label, root }) => `${label} verwendet die unbekannte Liquid-Variable „${root}“.`,
       templateTooLarge: "Die Vorlage ist zu groß.",
       renderedTemplateTooLarge: "Die gerenderte Vorlage ist zu groß.",
+      templateRenderTimeout: "Das Rendern der Vorlage hat zu lange gedauert. Vereinfache die Vorlage oder verwende weniger Daten.",
+      templateRenderMemoryLimit: "Die Vorlage braucht zum Rendern zu viel Speicher. Vereinfache die Vorlage oder verwende weniger Daten.",
       templateRenderFailed: "Die Vorlage konnte nicht gerendert werden.",
       templateInvalid: "Die Liquid-Vorlage ist ungültig.",
       draftTemplate: "Vorlagenentwurf",
@@ -382,5 +386,16 @@ export const isGermanDocumentLocale = (locale?: string): boolean => {
     return new Intl.Locale(locale ?? "en").language === "de";
   } catch {
     return false;
+  }
+};
+
+export const liquidBudgetFailureMessage = (reason: string | undefined, t: ReturnType<typeof documentServiceText>): string | undefined => {
+  switch (reason) {
+    case "render_too_large":
+      return t.renderedTemplateTooLarge;
+    case "render_timeout":
+      return t.templateRenderTimeout;
+    case "render_memory_limit":
+      return t.templateRenderMemoryLimit;
   }
 };

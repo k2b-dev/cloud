@@ -95,6 +95,32 @@ describe("buildCliPlugin", () => {
     }
   });
 
+  test("a relocated Playwright plugin carries its package and browser metadata", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cloud-cli-playwright-"));
+    try {
+      await writeApp(directory, "browser");
+      const playwright = Bun.resolveSync("playwright", resolve(import.meta.dir, "../../../assistant"));
+      await writeFile(
+        join(directory, "src/cli.ts"),
+        `
+        import { chromium } from ${JSON.stringify(playwright)};
+        export default () => chromium.executablePath();
+      `,
+      );
+      const plugin = await buildCliPlugin({ appDir: directory, appId: "browser", name: "browser", declaration, version: "test" });
+      // The container's dependency tree does not exist on a plugin consumer's
+      // machine. Rewrite build paths to emulate relocation without moving it.
+      const source = new TextDecoder().decode(plugin.files.get("cli.js"));
+      const buildRoot = resolve(import.meta.dir, "../../../..");
+      const entry = join(directory, "relocated.mjs");
+      await writeFile(entry, source.replaceAll(buildRoot, "/cloud-cli-build-machine"));
+      const loaded = await import(entry);
+      expect(loaded.default()).toContain("chrom");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("requires index.md and only Markdown references", async () => {
     const other = await mkdtemp(join(tmpdir(), "cloud-cli-plugin-app-"));
     try {

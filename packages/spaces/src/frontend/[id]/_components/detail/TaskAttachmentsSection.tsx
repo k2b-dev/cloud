@@ -1,3 +1,4 @@
+import { chooseFiles, SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
   ButtonLink,
   DetailPanel,
@@ -12,6 +13,7 @@ import {
   prompts,
   Tooltip,
   toast,
+  useLocale,
   VideoPlayer,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -38,6 +40,7 @@ export default function TaskAttachmentsSection(props: {
   onChanged: () => void;
 }) {
   const t = useSpaceMessages();
+  const locale = useLocale();
   const retryToast = createRetryToasts();
   const [attachments, setAttachments] = createSignal([...props.attachments]);
   const [uploading, setUploading] = createSignal(false);
@@ -51,6 +54,13 @@ export default function TaskAttachmentsSection(props: {
 
   const contentUrl = (attachment: SpaceItemAttachment, download = false) =>
     `/api/spaces/${encodeURIComponent(props.spaceId)}/items/${encodeURIComponent(props.itemId)}/attachments/${encodeURIComponent(attachment.id)}/content${download ? "?download=true" : ""}`;
+  /** "Save to Files" reads the same download the Download action serves. */
+  const saveSource = (attachment: SpaceItemAttachment): SaveFileSource => ({
+    name: attachment.filename,
+    content: contentUrl(attachment, true),
+    mediaType: attachment.mimeType,
+    size: attachment.sizeBytes,
+  });
   const isVideo = (attachment: SpaceItemAttachment) => isPlayableVideoType(attachment.mimeType);
   const images = createMemo(() => attachments().filter((attachment) => attachment.kind === "image"));
   /** Images and playable videos, in upload order; other files have no tile. */
@@ -60,6 +70,7 @@ export default function TaskAttachmentsSection(props: {
       src: contentUrl(attachment),
       alt: attachment.filename,
       downloadUrl: contentUrl(attachment, true),
+      actions: [{ label: saveFilesLabel(locale()), icon: SAVE_FILES_ICON, onClick: () => void saveFiles([saveSource(attachment)]) }],
     })),
   );
 
@@ -128,12 +139,17 @@ export default function TaskAttachmentsSection(props: {
     }
   };
 
+  /**
+   * From this device or from a Cloud app, then the same path as dropped files. Files from an app are read into the
+   * browser first, so together they stay within what the remaining attachments may hold. The budget counts an image
+   * before it is downscaled, so with few attachments left an app image above it is refused, which a device pick
+   * would still shrink; bounded memory is worth that rare case.
+   */
   const chooseAndUploadMedia = async () => {
     try {
-      const { files } = await import("@k2b/stdlib/browser");
-      await uploadMedia(await files.showFileDialog({ accept: MEDIA_ACCEPT, multiple: true }));
+      const chosen = await chooseFiles({ accept: MEDIA_ACCEPT, multiple: true, maxBytes: remaining() * MAX_TASK_ATTACHMENT_SIZE_BYTES });
+      if (chosen.length > 0) await uploadMedia(chosen);
     } catch (error) {
-      if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) return;
       toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
     }
   };
@@ -146,9 +162,12 @@ export default function TaskAttachmentsSection(props: {
           <PanelDialog.Header
             title={attachment.filename}
             actions={
-              <IconButtonLink size="sm" href={contentUrl(attachment, true)} download={attachment.filename} label={t.downloadAttachment}>
-                <i class="ti ti-download" aria-hidden="true" />
-              </IconButtonLink>
+              <>
+                <SaveFilesButton size="sm" files={() => [saveSource(attachment)]} />
+                <IconButtonLink size="sm" href={contentUrl(attachment, true)} download={attachment.filename} label={t.downloadAttachment}>
+                  <i class="ti ti-download" aria-hidden="true" />
+                </IconButtonLink>
+              </>
             }
             close={() => close()}
           />

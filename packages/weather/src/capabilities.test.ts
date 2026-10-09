@@ -8,7 +8,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { audit, weatherService } from "@k2b/cloud/services";
-import { ok } from "@k2b/stdlib";
+import { fail, ok } from "@k2b/stdlib";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
 
@@ -409,3 +409,26 @@ describe("weather capabilities", () => {
     expect(() => compileCapabilityManifest("weather", weatherCapabilities)).not.toThrow();
   });
 });
+
+for (const [locale, admin] of [
+  ["en", "administrator"],
+  ["de", "Administrator"],
+] as const) {
+  test(`city search preserves configuration failures and localizes recovery in ${locale}`, async () => {
+    const list = spyOn(weatherService.location.city, "list").mockResolvedValue(
+      fail({ code: "WEATHER_CITY_SEARCH_NOT_CONFIGURED", status: 500, message: "internal details" }),
+    );
+    const result = await weatherCapabilities.queries["city.search"].run({ query: "Ulm", limit: 5 }, { ...userContext, locale });
+    expect(result).toMatchObject({ ok: false, error: { code: "WEATHER_CITY_SEARCH_NOT_CONFIGURED", status: 500 } });
+    if (result.ok) throw new Error("Expected failure");
+    expect(result.error.message).toContain(admin);
+    expect(result.error.message).toContain('source.kind = "coordinates"');
+    expect(result.error.message).not.toContain("internal details");
+    list.mockResolvedValue(fail({ code: "WEATHER_CITY_SEARCH_UNAVAILABLE", status: 500, message: "private body" }));
+    const unavailable = await weatherCapabilities.queries["city.search"].run({ query: "Ulm", limit: 5 }, { ...userContext, locale });
+    expect(unavailable).toMatchObject({ ok: false, error: { code: "WEATHER_CITY_SEARCH_UNAVAILABLE", status: 500 } });
+    if (unavailable.ok) throw new Error("Expected failure");
+    expect(unavailable.error.message).toContain('source.kind = "coordinates"');
+    expect(unavailable.error.message).not.toContain("private body");
+  });
+}

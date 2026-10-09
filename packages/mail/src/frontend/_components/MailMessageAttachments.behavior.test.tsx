@@ -104,4 +104,41 @@ describe("Mail attachment preview", () => {
       dom.cleanup();
     }
   });
+
+  test("offers each attachment and all of them to an app that stores files, reading them from their download route", async () => {
+    const dom = createDomTestHarness();
+    const requested: string[] = [];
+    globalThis.fetch = Object.assign(
+      (input: RequestInfo | URL) => {
+        requested.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        return Promise.resolve(Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 }));
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: MailMessageAttachments } = await import("./MailMessageAttachments");
+    const { dialogCore } = await import("@k2b/ui");
+    const { render } = await import("solid-js/web");
+    const dispose = render(
+      () => createComponent(MailMessageAttachments, { mailboxId: "Box001", messageId: "Msg001", attachments }),
+      dom.root,
+    );
+    try {
+      const labels = [...dom.root.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
+      expect(labels).toContain("Save all to…");
+      expect(labels).toContain("Save Summer_party.md to…");
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Save all to…"]')!.click();
+      await settle();
+      const dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]")!;
+      expect(dialog.querySelector("h2")?.textContent).toBe("Save 4 files");
+      // Nothing is read before a folder is chosen; an outage of the app list is calm and offers a retry.
+      expect(requested.some((url) => url.includes("/attachments/"))).toBeFalse();
+      expect(dialog.textContent).toContain("Apps that store files could not be loaded.");
+    } finally {
+      dialogCore.close();
+      // The save dialog keeps a history entry; let it leave before the page goes away.
+      await settle();
+      dispose();
+      dom.cleanup();
+    }
+  });
 });

@@ -187,8 +187,22 @@ branch:
   the browser focused first. A test that types into a dialog right after it
   opens first waits for the dialog's content and then for one frame:
   `await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))`.
+- Neither engine shows a PDF in a frame. Chromium's headless shell reports
+  `navigator.pdfViewerEnabled === false`, so `PdfPreview` shows its
+  missing-viewer hint instead of the frame, and an automatic preview requests
+  nothing; Playwright's WebKit reports a viewer but never loads the document,
+  so the loading state stays over the frame. A test therefore defines
+  `pdfViewerEnabled` on `Navigator.prototype` in an init script: `true` where
+  it measures the frame, `false` where it checks the hint. Where it needs the
+  loaded document, it dispatches the frame's `load` event itself.
 - Fonts differ between machines and engines. A test that expects text to wrap
   or fit uses text that is clearly too long or clearly short enough.
+- Playwright's WebKit on Linux can stop a video for good after a seek when the
+  machine is heavily loaded, also after the seek that a media fragment such as
+  `#t=1` starts with: `waiting` follows, and the time no longer advances. A
+  test that checks that a video plays waits for its `playing` event or for the
+  promise of `play()`. It waits for `ended` only when playing to the end is
+  what it checks.
 
 ## Replace modules in tests
 

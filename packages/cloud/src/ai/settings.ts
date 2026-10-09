@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { coreSettings } from "../services";
+import { stripImageDataUrlMetadata } from "../services/image-metadata";
 import { AiModelPricingSchema } from "../shared/ai-costs";
 import {
   AI_REQUEST_HEADERS_PROVIDER_ERROR,
@@ -150,6 +151,18 @@ const normalizeProfile = (raw: z.infer<typeof ModelProfileSchema>): AiModelProfi
     capabilities: normalizeCapabilities(capabilities),
     dataBoundary: normalizeDataBoundary(dataBoundary ?? legacyDataPolicy, raw.provider),
   };
+};
+
+/** Sanitize every submitted model logo, including unchanged images from stored profiles. */
+export const prepareAiModelProfileImages = (rawJson: string): string => {
+  const raw: unknown = JSON.parse(rawJson);
+  if (!Array.isArray(raw)) return rawJson;
+  return JSON.stringify(
+    raw.map((profile: unknown) => {
+      if (typeof profile !== "object" || profile === null || !("image" in profile) || typeof profile.image !== "string") return profile;
+      return { ...profile, image: stripImageDataUrlMetadata(profile.image) };
+    }),
+  );
 };
 
 export const parseAiModelProfiles = (rawJson: string): { profiles: AiModelProfile[]; error?: AiSettingsError } => {
@@ -468,13 +481,18 @@ export const selectAiModelProfile = (
   const modelId = resolvePolicyModelId(state, policy, requestedModelId);
   const profile = state.profiles.find((candidate) => candidate.id === modelId);
   if (!profile || !matchesPolicy(profile, policy)) {
-    throw Object.assign(new Error(`AI model "${modelId}" is not allowed for this chat.`), {
-      aiError: {
-        code: "model_policy_mismatch",
-        message: `AI model "${modelId}" is not allowed for this chat.`,
-        fields: { modelProfileId: "Choose an allowed enabled model profile." },
-      } satisfies AiSettingsError,
-    });
+    throw Object.assign(
+      new Error(
+        `AI model "${modelId}" is unavailable or not allowed for this chat or data boundary. An administrator can enable a compatible model permitted by the application policy in the AI settings.`,
+      ),
+      {
+        aiError: {
+          code: "model_policy_mismatch",
+          message: `AI model "${modelId}" is unavailable or not allowed for this chat or data boundary. An administrator can enable a compatible model permitted by the application policy in the AI settings.`,
+          fields: { modelProfileId: "Choose an allowed enabled model profile." },
+        } satisfies AiSettingsError,
+      },
+    );
   }
   return profile;
 };
@@ -497,8 +515,19 @@ const visionModelPolicy = (modelId: string, allowedDataBoundaries?: AiDataBounda
 export const resolveAiVisionModel = async (allowedDataBoundaries?: AiDataBoundary[]): Promise<AiResolvedModel> => {
   const state = await readAiSettingsState();
   if (!state.ok) throw Object.assign(new Error(state.error.message), { aiError: state.error });
+  if (!state.enabled) {
+    throw Object.assign(new Error("AI is disabled. An administrator can enable AI in the AI settings."), {
+      aiError: {
+        code: "ai_disabled",
+        message: "AI is disabled. An administrator can enable AI in the AI settings.",
+      } satisfies AiSettingsError,
+    });
+  }
   const modelId = (state.visionModelId ?? "").trim();
-  if (!modelId) throw new Error("No vision model is configured.");
+  if (!modelId)
+    throw new Error(
+      "Image inspection is not set up: no vision model is configured. An administrator can configure a vision model in the AI settings.",
+    );
   return resolveAiModelFromState(state, visionModelPolicy(modelId, allowedDataBoundaries));
 };
 
@@ -520,8 +549,11 @@ export const resolveAiModelFromState = async (
 ): Promise<AiResolvedModel> => {
   if (!state.ok) throw Object.assign(new Error(state.error.message), { aiError: state.error });
   if (!state.enabled) {
-    throw Object.assign(new Error("AI is disabled."), {
-      aiError: { code: "ai_disabled", message: "AI is disabled." } satisfies AiSettingsError,
+    throw Object.assign(new Error("AI is disabled. An administrator can enable AI in the AI settings."), {
+      aiError: {
+        code: "ai_disabled",
+        message: "AI is disabled. An administrator can enable AI in the AI settings.",
+      } satisfies AiSettingsError,
     });
   }
 
@@ -529,13 +561,18 @@ export const resolveAiModelFromState = async (
 
   const credential = providerSupportsCredential(profile.provider) ? await getAiCredential(profile.id) : null;
   if (providerRequiresCredential(profile.provider) && !credential?.trim()) {
-    throw Object.assign(new Error(`AI model "${profile.id}" is missing provider credentials.`), {
-      aiError: {
-        code: "missing_provider_credential",
-        message: `AI model "${profile.id}" is missing provider credentials.`,
-        fields: { "ai.model_profiles_json": "Enter the provider API key on this model profile." },
-      } satisfies AiSettingsError,
-    });
+    throw Object.assign(
+      new Error(
+        `AI model "${profile.id}" is missing provider credentials. An administrator can add the provider API key in the AI settings.`,
+      ),
+      {
+        aiError: {
+          code: "missing_provider_credential",
+          message: `AI model "${profile.id}" is missing provider credentials. An administrator can add the provider API key in the AI settings.`,
+          fields: { "ai.model_profiles_json": "Enter the provider API key on this model profile." },
+        } satisfies AiSettingsError,
+      },
+    );
   }
 
   const headers = providerSupportsRequestHeaders(profile.provider) ? await getAiRequestHeaders(profile.id) : {};

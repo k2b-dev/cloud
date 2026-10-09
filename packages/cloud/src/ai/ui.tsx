@@ -11,6 +11,7 @@ export {
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
+  aiComposerChooseMaxBytes,
   aiComposerDraft,
   aiComposerFileAccept,
   aiComposerSendInput,

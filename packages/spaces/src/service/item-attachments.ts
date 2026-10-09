@@ -1,3 +1,4 @@
+import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 import { sql } from "bun";
 import {
   attachmentMediaType,
@@ -59,6 +60,8 @@ export const upload = async (params: {
     return { ok: false, error: "File exceeds 10 MB limit", status: 400 };
   }
 
+  const kind = INLINE_IMAGE_TYPES.has(mimeType) ? "image" : "file";
+  const content = kind === "image" ? stripImageMetadata(params.content) : params.content;
   const result = await withShortId("attachment", (shortId) =>
     sql.begin(async (tx): Promise<MutationResult<AttachmentRow>> => {
       const [item] = await tx<{ id: string; space_id: string; starts_at: Date | null; ends_at: Date | null }[]>`
@@ -83,8 +86,8 @@ export const upload = async (params: {
         INSERT INTO spaces.item_attachments
           (short_id, item_id, filename, mime_type, size_bytes, kind, content, created_by)
         VALUES
-          (${shortId}, ${params.itemId}::uuid, ${filename}, ${mimeType}, ${params.content.byteLength},
-           ${INLINE_IMAGE_TYPES.has(mimeType) ? "image" : "file"}, ${params.content}, ${params.userId}::uuid)
+          (${shortId}, ${params.itemId}::uuid, ${filename}, ${mimeType}, ${content.byteLength},
+           ${kind}, ${content}, ${params.userId}::uuid)
         RETURNING short_id, item_id, filename, mime_type, size_bytes, kind, created_at
       `;
       await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });

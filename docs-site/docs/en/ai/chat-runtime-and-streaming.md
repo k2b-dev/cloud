@@ -211,6 +211,20 @@ treats a provider `stop` as
 a completed turn; it does not infer unfinished work from model text or trigger
 language-dependent automatic retries.
 
+### Conversation titles
+
+A title given at creation, such as the localized "New chat" of the web chat,
+stays a default title. The first message's text replaces it, and enrichment may
+rename it. Renaming through `PATCH /api/ai/conversations/:id` marks the title as
+the user's (`titleSource: "user"`). Neither the first message nor enrichment
+replaces that title, for web and API clients alike. Renaming to the current title
+changes nothing.
+
+The CLI is one consumer of this rule. `--title` on `cld assistant -p` and
+`cld assistant chats create` creates the chat and then renames it through this
+endpoint. The CLI trims the title and checks the 1 to 120 character limit before
+creating anything. The exact title `New chat` keeps automatic naming.
+
 ## Chat route groups
 
 | Group | Purpose |
@@ -268,6 +282,16 @@ Repeated execution failures end the turn as failed. Set concurrency for the
 deployment, not per request.
 
 ## Stream state
+
+In text output, `cld assistant -p` and `cld assistant turns watch` separate
+non-blank assistant text blocks with a blank line. Reconnects and interactive
+approvals print only new text and do not repeat a tool's unchanged status. JSON
+result text uses the same separators. JSONL `text_delta` events carry each
+block's new text once under the block ID that first carried it, without
+separators. `turn_finished` carries the complete text, also when the turn ended
+during a reconnect. Tool progress and approval matching use canonical capability
+IDs such as `spaces.task.create`. Persisted provider tool names stay unchanged;
+hashed names that cannot be decoded retain their stored name.
 
 Assistant renders capability table presentation metadata in both web chat and
 text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,

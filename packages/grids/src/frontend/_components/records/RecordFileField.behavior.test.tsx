@@ -1,9 +1,25 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
+import type { ChooseFilesOptions } from "@k2b/cloud/browser/files";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicField, PublicGridFile } from "../../../api/public-dto";
 
 const domTest = isServer ? test.skip : test;
+
+/** The shared chooser stands in for "This device" and every Cloud app; each call answers with the next result. */
+const choices: { options: ChooseFilesOptions; files: File[] }[] = [];
+let nextChoice: File[] = [];
+// "Save to Files" is not under test here; its own tests cover it.
+mock.module("@k2b/cloud/browser/files", () => ({
+  SAVE_FILES_ICON: "ti ti-folder-down",
+  SaveFilesButton: () => null,
+  saveFiles: async () => [],
+  saveFilesLabel: () => "Save to…",
+  chooseFiles: async (options: ChooseFilesOptions) => {
+    choices.push({ options, files: nextChoice });
+    return nextChoice;
+  },
+}));
 
 const field: PublicField = {
   id: "FIELD1",
@@ -92,6 +108,69 @@ domTest("a file field takes only as many dropped files as it has room for and na
     await Bun.sleep(30);
     expect(full.defaultPrevented).toBe(true);
     expect(uploads).toBe(1);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+domTest("Upload and Replace choose through the shared chooser and keep the field's upload path", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const attached = [stored("front.png")];
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.body instanceof FormData) {
+        const file = init.body.get("file");
+        requests.push(`${init.method} ${String(input)} ${file instanceof File ? file.name : "?"}`);
+        return Response.json({});
+      }
+      return Response.json({ items: attached });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: RecordFileField } = await import("./RecordFileField");
+  const dispose = render(
+    () => (
+      <RecordFileField
+        tableId="TABLE1"
+        recordId="RECORD1"
+        field={{ ...field, config: { accept: ["image/png", "application/pdf"] } }}
+        canWrite
+        initialFiles={[...attached]}
+        endpoint="/api/files/FIELD1"
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(0);
+    choices.length = 0;
+    const button = (label: string) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+        (candidate) => candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
+      )!;
+
+    // Cancelling the chooser uploads nothing.
+    nextChoice = [];
+    button("Upload").click();
+    await Bun.sleep(10);
+    expect(choices.map((choice) => choice.options)).toEqual([{ accept: "image/png,application/pdf" }]);
+    expect(requests).toEqual([]);
+
+    // A file from this device or from a Cloud app goes to the same endpoint as before.
+    nextChoice = [new File(["%PDF"], "offer.pdf", { type: "application/pdf" })];
+    button("Upload").click();
+    await Bun.sleep(30);
+    expect(requests).toEqual(["POST /api/files/FIELD1 offer.pdf"]);
+
+    nextChoice = [new File(["png"], "front-v2.png", { type: "image/png" })];
+    button("Replace front.png").click();
+    await Bun.sleep(30);
+    expect(choices.at(-1)?.options).toEqual({ accept: "image/png,application/pdf" });
+    expect(requests.at(-1)).toBe("PUT /api/files/FIELD1/FILE01 front-v2.png");
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
