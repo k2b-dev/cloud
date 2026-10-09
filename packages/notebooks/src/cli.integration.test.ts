@@ -341,6 +341,20 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
       const frontMatter = await cld(["notebooks", "edit", file, "--replace-lines", "1:1", "--content", "# Rocky Linux VM"]);
       expect(frontMatter.exitCode).toBe(1);
       expect(frontMatter.stderr).toContain("front matter");
+      // `cat --numbered` on the file shows the same line numbers.
+      const numbered = await cld(["notebooks", "cat", file, "--numbered"]);
+      expect(numbered.stdout).toContain(`${String(stepsLine).padStart(4)} | Steps, edited by line.\n`);
+
+      // After a server change, file lines from the last pull no longer name the same note lines: the edit is refused.
+      const local = await readFile(file, "utf8");
+      await cldJson(["notebooks", "edit", entry.id, "--append", "--content", "Server outro."]);
+      const changed = await cldJson<{ content: string }>(["notebooks", "cat", entry.id]);
+      const stale = await cld(["notebooks", "edit", file, "--replace-lines", `${stepsLine}:${stepsLine}`, "--content", "Stale edit."]);
+      expect(stale.exitCode).toBe(1);
+      expect(stale.stderr).toContain("changed elsewhere");
+      expect((await cldJson<{ content: string }>(["notebooks", "cat", entry.id])).content).toBe(changed.content);
+      expect(await readFile(file, "utf8")).toBe(local);
+      expect((await cld(["notebooks", "pull", mirror])).exitCode).toBe(0);
 
       // Editing the H1, file line 6 below the 5 front matter lines, renames the file.
       await cldJson(["notebooks", "edit", file, "--replace-lines", "6:6", "--content", "# Rocky Linux VM"]);

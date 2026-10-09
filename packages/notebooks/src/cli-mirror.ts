@@ -165,6 +165,20 @@ export const fileLinesToNoteLines = (operation: NoteEditOperation, frontMatterLi
   }
 };
 
+/** Last line that a line edit names; null for edits without line numbers. */
+export const lastEditLine = (operation: NoteEditOperation): number | null => {
+  switch (operation.kind) {
+    case "replace-lines":
+    case "delete-lines":
+      return operation.endLine;
+    case "insert-after-line":
+    case "insert-before-line":
+      return operation.line;
+    default:
+      return null;
+  }
+};
+
 const safeFileName = (filename: string): string =>
   filename
     .normalize("NFKD")
@@ -273,6 +287,20 @@ export const localFileState = async (
       ? noteContentHash(restoreAttachmentLinks(stripFrontMatter(text), depthOf(note.path))) === note.contentHash
       : noteContentHash(text) === note.fileHash;
   return { state: clean ? "clean" : "modified", text };
+};
+
+/** Front matter lines that pull writes above every note. */
+export const PULLED_FRONT_MATTER_LINES = frontMatterLineCount(
+  renderMirrorFile({ id: "Ab12Cd", title: "Note", updatedAt: "2026-01-01T00:00:00.000Z" }, "", "note.md", new Map(), new Map()),
+);
+
+/**
+ * Lines above note line 1 in the mirror file that holds `content`: the front matter of the local file while it holds
+ * exactly this content, otherwise the front matter that pull writes for it. A file line is a note line plus this.
+ */
+export const mirrorLineOffset = async (root: string, entry: ManifestNote, content: string): Promise<number> => {
+  const local = entry.contentHash === noteContentHash(content) ? await localFileState(root, entry) : null;
+  return local?.state === "clean" && local.text !== undefined ? frontMatterLineCount(local.text) : PULLED_FRONT_MATTER_LINES;
 };
 
 // ==========================

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags } from "@k2b/cloud/cli";
@@ -62,7 +62,7 @@ const noteFixture = {
   lockedAt: null,
 };
 
-const editingServer = () => {
+const editingServer = (note: typeof noteFixture = noteFixture) => {
   const writes: unknown[] = [];
   const server = Bun.serve({
     port: 0,
@@ -74,7 +74,7 @@ const editingServer = () => {
         return Response.json({ ...notebookFixture, ...body });
       }
       if (path === "/api/notebooks/wiki01") return Response.json(notebookFixture);
-      return Response.json(noteFixture);
+      return Response.json(note);
     },
   });
   servers.push(server);
@@ -168,11 +168,11 @@ test("rejects malformed edit line selectors instead of truncating them", async (
   expect(writes).toEqual([]);
 });
 
-/** A pulled mirror of `noteFixture` as `handbook.md`, whose 5 front matter lines put note line 1 at file line 6. */
-const pulledMirror = async (server: string) => {
+/** A mirror with `note` pulled as `handbook.md`, whose 5 front matter lines put note line 1 at file line 6. */
+const pulledMirror = async (server: string, note: typeof noteFixture = noteFixture) => {
   const root = await mkdtemp(join(tmpdir(), "cld-notebooks-mirror-"));
   const file = join(root, "handbook.md");
-  const text = renderMirrorFile(noteFixture, noteFixture.contentMd, "handbook.md", new Map(), new Map());
+  const text = renderMirrorFile(note, note.contentMd, "handbook.md", new Map(), new Map());
   await writeFile(file, text);
   await writeManifest(root, {
     version: 1,
@@ -180,11 +180,11 @@ const pulledMirror = async (server: string) => {
     notebook: { id: notebookFixture.id, name: notebookFixture.name },
     notes: [
       {
-        id: noteFixture.id,
+        id: note.id,
         path: "handbook.md",
-        contentHash: noteContentHash(noteFixture.contentMd),
+        contentHash: noteContentHash(note.contentMd),
         fileHash: noteContentHash(text),
-        updatedAt: noteFixture.updatedAt,
+        updatedAt: note.updatedAt,
       },
     ],
   });
@@ -212,6 +212,17 @@ test("line edits through a mirror file use the line numbers of the file", async 
     expect(frontMatter.stderr).toContain("Lines 1-5 of handbook.md are its front matter");
     expect(frontMatter.stderr).toContain("starts at line 6");
 
+    // The file has 10 lines; a range past them is reported in file lines, not in the note lines it maps to.
+    expect(await edited("--insert-after-line", "10", "--content", "End")).toBe("# Handbook\n\n:::toc\n:::\nEnd");
+    for (const args of [
+      ["--replace-lines", "9:11", "--content", "Body"],
+      ["--insert-before-line", "11", "--content", "Body"],
+    ]) {
+      const outside = await edit(...args);
+      expect(outside.exitCode).toBe(1);
+      expect(outside.stderr).toContain("Line 11 is outside handbook.md, which has 10 lines.");
+    }
+
     const otherHash = await edit("--replace-lines", "8:9", "--content", "Body", "--if-content-hash", noteContentHash("other"));
     expect(otherHash.exitCode).toBe(1);
     expect(otherHash.stderr).toContain("cld notebooks cat note01 --numbered");
@@ -227,6 +238,72 @@ test("line edits through a mirror file use the line numbers of the file", async 
     expect(missing.exitCode).toBe(1);
     expect(missing.stderr).toContain("handbook.md is missing");
     expect(writes).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cat through a mirror file numbers lines as edit takes them for that file", async () => {
+  const note = { ...noteFixture, contentMd: "# Handbook\n\n@tasks\n- [ ] Restore testen\n- [ ] Backup prüfen\n\nEnde\n" };
+  const { server } = editingServer(note);
+  const { root, file, text } = await pulledMirror(server, note);
+  try {
+    const cat = async (...args: string[]) => {
+      const result = await runCli(server, ["notebooks", "cat", ...args]);
+      expect(result.stderr).toBe("");
+      return result.stdout;
+    };
+    const edited = async (...args: string[]) => {
+      const result = await runCli(server, ["--json", "notebooks", "edit", file, ...args, "--dry-run"]);
+      expect(result.stderr).toBe("");
+      return JSON.parse(result.stdout) as { content: string };
+    };
+
+    // The number --numbered shows for a line is its line in the file, and edit changes exactly that line.
+    const shown = (await cat(file, "--numbered")).split("\n").find((line) => line.endsWith("| - [ ] Backup prüfen"))!;
+    const line = Number.parseInt(shown, 10);
+    expect(line).toBe(text.split("\n").indexOf("- [ ] Backup prüfen") + 1);
+    expect((await edited("--replace-lines", `${line}:${line}`, "--content=- [x] Backup prüfen")).content).toBe(
+      note.contentMd.replace("- [ ] Backup prüfen", "- [x] Backup prüfen"),
+    );
+
+    // Block lines from --blocks, --json, and --block --json are file lines too.
+    const range = (await cat(file, "--blocks")).trim().split(" ")[2]!;
+    expect(range).toBe("9:10");
+    expect(JSON.parse(await cat(file, "--json"))).toMatchObject({
+      firstLine: 6,
+      lineCount: 8,
+      blocks: [{ name: "tasks", line: 8, startLine: 9, endLine: 10 }],
+    });
+    expect(JSON.parse(await cat(file, "--block", "tasks", "--json")).block).toMatchObject({ startLine: 9, endLine: 10 });
+    // The edit result counts the same way, ready for the next edit through the file.
+    expect(await edited("--replace-lines", range, "--content=- [x] Alles erledigt")).toMatchObject({
+      content: "# Handbook\n\n@tasks\n- [x] Alles erledigt\n\nEnde\n",
+      firstLine: 6,
+      blocks: [{ name: "tasks", startLine: 9, endLine: 9 }],
+    });
+
+    // A note ID keeps note lines.
+    expect(await cat("note01", "--numbered")).toStartWith("   1 | # Handbook\n");
+    expect(JSON.parse(await cat("note01", "--json"))).toMatchObject({ firstLine: 1, blocks: [{ startLine: 4, endLine: 5 }] });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("line edits through a mirror file fail when the note changed after the pull", async () => {
+  const live = { ...noteFixture, contentMd: "# Handbook\n\nAdded on the server.\n\n:::toc\n:::\n" };
+  const { server, writes } = editingServer(live);
+  const { root, file, text } = await pulledMirror(server);
+  try {
+    // File lines 8:9 still name the pulled `:::toc` block, but the server copy moved it: the pulled hash refuses the edit.
+    const stale = await runCli(server, ["notebooks", "edit", file, "--replace-lines", "8:9", "--content", "Body", "--dry-run"]);
+    expect(stale.exitCode).toBe(1);
+    expect(stale.stderr).toContain("changed elsewhere");
+    expect(writes).toEqual([]);
+    expect(await readFile(file, "utf8")).toBe(text);
+    // cat numbers the live content as the pull that the error asks for will write it.
+    expect((await runCli(server, ["notebooks", "cat", file, "--numbered"])).stdout).toContain("   8 | Added on the server.\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
