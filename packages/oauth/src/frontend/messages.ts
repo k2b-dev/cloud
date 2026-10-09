@@ -169,9 +169,9 @@ export const oauthMessages = i18n.define({
       deviceOwnCodeWarning:
         "Only continue if you started this sign-in yourself. Never enter a code that someone else sent you or asked you to enter.",
       deviceApprovedTitle: "Device connected",
-      deviceApprovedBody: "You can close this page and return to your device.",
+      deviceApprovedBody: "You can close this tab now.",
       deviceDeniedTitle: "Access denied",
-      deviceDeniedBody: "The device was not connected. You can close this page.",
+      deviceDeniedBody: "The device was not connected. You can close this tab now.",
       deviceExpiredTitle: "Request no longer valid",
       deviceExpiredBody: "This sign-in request expired or was already answered. Start the sign-in on your device again.",
       deviceSessionRequired: "Approving a device requires a browser sign-in. API keys and access tokens cannot approve devices.",
@@ -345,9 +345,9 @@ export const oauthMessages = i18n.define({
       deviceOwnCodeWarning:
         "Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast. Gib niemals einen Code ein, den dir jemand geschickt hat oder um dessen Eingabe du gebeten wurdest.",
       deviceApprovedTitle: "Gerät verbunden",
-      deviceApprovedBody: "Du kannst diese Seite schließen und zu deinem Gerät zurückkehren.",
+      deviceApprovedBody: "Du kannst diesen Tab jetzt schließen.",
       deviceDeniedTitle: "Zugriff abgelehnt",
-      deviceDeniedBody: "Das Gerät wurde nicht verbunden. Du kannst diese Seite schließen.",
+      deviceDeniedBody: "Das Gerät wurde nicht verbunden. Du kannst diesen Tab jetzt schließen.",
       deviceExpiredTitle: "Anfrage nicht mehr gültig",
       deviceExpiredBody:
         "Diese Anmeldeanfrage ist abgelaufen oder wurde bereits beantwortet. Starte die Anmeldung auf deinem Gerät erneut.",

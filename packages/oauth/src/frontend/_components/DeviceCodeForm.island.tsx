@@ -17,12 +17,11 @@ const DeviceCodeForm = (props: { code?: string; error?: string }) => {
   const [code, setCode] = createSignal(formatDeviceCodeInput(props.code ?? ""));
 
   return (
-    <form method="get" action="/oauth/device" class="flex flex-col gap-3">
+    <form method="get" action="/oauth/device" class="flex flex-col gap-4">
       <TextInput
         name="user_code"
         label={t().deviceCodeLabel}
         placeholder="XXXX-XXXX"
-        icon="ti ti-keyboard"
         value={code}
         onValueChange={(value) => setCode(formatDeviceCodeInput(value))}
         error={props.error}
@@ -34,7 +33,9 @@ const DeviceCodeForm = (props: { code?: string; error?: string }) => {
         monospace
         required
       />
-      <Button type="submit">{t().deviceContinue}</Button>
+      <Button type="submit" size="lg" class="w-full">
+        {t().deviceContinue}
+      </Button>
     </form>
   );
 };

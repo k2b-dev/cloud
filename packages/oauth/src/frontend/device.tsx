@@ -1,11 +1,11 @@
 /** @jsxImportSource solid-js */
 
 import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { Layout } from "@k2b/cloud/ssr";
 import type { Context } from "hono";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";
-import { DeviceApproval, type DeviceApprovalView } from "./_components/DeviceApproval";
+import { AuthorizationPage } from "./_components/AuthorizationPage";
+import { DeviceApproval, type DeviceApprovalView, deviceResultTitle } from "./_components/DeviceApproval";
 import { oauthMessages } from "./messages";
 
 const MAX_CODE_INPUT_LENGTH = 64;
@@ -68,9 +68,11 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
 export default ssr<AuthContext>(async (c) => {
   const { t } = oauthMessages.resolve([getLocale(c)]);
   const view = await resolveDeviceView(c);
+  // The tab names the task until the request has an answer, then the answer.
+  const title = view.kind === "result" ? deviceResultTitle(view.outcome, t) : t.deviceTitle;
   return () => (
-    <Layout c={c} title={[{ title: t.deviceTitle }]}>
+    <AuthorizationPage c={c} title={title}>
       <DeviceApproval view={view} />
-    </Layout>
+    </AuthorizationPage>
   );
 });
