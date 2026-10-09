@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import type { AccessEntry } from "@k2b/cloud/contracts/shared";
+import type { AccessEntry, Principal } from "@k2b/cloud/contracts/shared";
 import { delegateEvents, isServer, render } from "solid-js/web";
+import { precedenceScenarios, type ScenarioPrincipal } from "@/access-precedence.test-fixture";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
@@ -89,56 +90,10 @@ domTest("the base access editor turns read-only once a change costs the person M
   }
 });
 
-const entry = (
-  id: string,
-  principal: AccessEntry["principal"],
-  permission: AccessEntry["permission"],
-  displayName: string,
-): AccessEntry => ({
-  id,
-  principal,
-  permission,
-  createdAt: "2026-10-06T00:00:00.000Z",
-  displayName,
-});
-const qdt = { type: "user", userId: "user-qdt" } as const;
-const lym = { type: "user", userId: "user-lym" } as const;
-const staff = { type: "group", groupId: "group-staff" } as const;
-const interns = { type: "group", groupId: "group-interns" } as const;
+const scenarioPrincipal = ({ type, name }: ScenarioPrincipal): Principal =>
+  type === "user" ? { type, userId: name } : { type, groupId: name };
 
-// The same grants as access-last-manager.integration.test.ts, where the service refuses exactly these rows.
-const precedenceCases: { name: string; entries: AccessEntry[]; locked: string[] }[] = [
-  {
-    name: "a duplicate none grant shadows the second manager",
-    entries: [
-      entry("qdt", qdt, "admin", "Quentin Dorn"),
-      entry("lym", lym, "admin", "Lya Meyer"),
-      entry("lym-deny", lym, "none", "Lya Meyer (denied)"),
-    ],
-    locked: ["qdt"],
-  },
-  {
-    name: "a group deny shadows the group's own Manage grant",
-    entries: [
-      entry("qdt", qdt, "admin", "Quentin Dorn"),
-      entry("staff", staff, "admin", "Staff"),
-      entry("staff-deny", staff, "none", "Staff (denied)"),
-    ],
-    locked: ["qdt"],
-  },
-  {
-    name: "a deny for another group shadows nothing",
-    entries: [entry("staff", staff, "admin", "Staff"), entry("interns-deny", interns, "none", "Interns")],
-    locked: ["staff"],
-  },
-  {
-    name: "two unshadowed managers",
-    entries: [entry("qdt", qdt, "admin", "Quentin Dorn"), entry("lym", lym, "admin", "Lya Meyer")],
-    locked: [],
-  },
-];
-
-for (const scenario of precedenceCases) {
+for (const scenario of precedenceScenarios) {
   domTest(`the base access editor locks exactly the rows the service refuses: ${scenario.name}`, async () => {
     const dom = createDomTestHarness();
     installPopoverApi(dom);
@@ -146,23 +101,31 @@ for (const scenario of precedenceCases) {
     // Group rows load their members; the directory withholds them here.
     globalThis.fetch = Object.assign(async () => new Response(null, { status: 403 }), { preconnect: originalFetch.preconnect });
     const { ScopedPermissionEditor } = await import("./ScopedPermissionEditor");
+    const entries: AccessEntry[] = scenario.grants.map((grant) => ({
+      id: grant.key,
+      principal: scenarioPrincipal(grant.principal),
+      permission: grant.permission,
+      createdAt: "2026-10-06T00:00:00.000Z",
+      displayName: grant.principal.name,
+    }));
     const dispose = render(
-      () => <ScopedPermissionEditor scope={{ type: "base", id: "BASE01" }} initialEntries={scenario.entries} canEdit />,
+      () => <ScopedPermissionEditor scope={{ type: "base", id: "BASE01" }} initialEntries={entries} canEdit />,
       dom.root,
     );
-    const rowOf = (name: string) =>
-      Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
-        row.querySelector(`button[aria-label="Remove ${name}"]`),
-      )!;
+    // The editor keeps the order of its entries, and two grants of one principal share a name.
+    const rows = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
     try {
-      const locked = scenario.entries
-        .filter((item) => rowOf(item.displayName!).querySelector<HTMLButtonElement>("button[aria-label^='Remove ']")!.disabled)
+      expect(rows()).toHaveLength(entries.length);
+      const locked = entries
+        .filter((_, index) => rows()[index]!.querySelector<HTMLButtonElement>("button[aria-label^='Remove ']")!.disabled)
         .map((item) => item.id);
       expect(locked).toEqual(scenario.locked);
-      for (const item of scenario.entries.filter((candidate) => candidate.permission === "admin")) {
-        const lower = Array.from(rowOf(item.displayName!).querySelectorAll<HTMLButtonElement>("[role=menuitemradio]")).filter(
+      for (const [index, item] of entries.entries()) {
+        if (item.permission !== "admin") continue;
+        const lower = Array.from(rows()[index]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]")).filter(
           (option) => !option.textContent?.startsWith("Manage"),
         );
+        expect(lower.length).toBeGreaterThan(0);
         expect(lower.every((option) => option.disabled)).toBe(scenario.locked.includes(item.id));
       }
     } finally {

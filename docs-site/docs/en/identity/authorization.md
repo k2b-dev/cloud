@@ -476,10 +476,10 @@ authority, and its `LAST_MANAGER` message reaches the person as an error.
 
 If your service drops shadowed entries before the check, pass the same function
 as `effectiveEntries`. The editor calls it with its current entries and counts
-managers only among the entries it returns, so it locks exactly the row whose
-change the service refuses. Without it, a person and a manager whose `admin` a
-same-principal `none` overrides look like two managers: the editor offers to
-lower the person, and the service refuses.
+managers only among the entries it returns; when exactly one remains, it locks
+that row. Without it, a person and a manager whose `admin` a same-principal
+`none` overrides look like two managers: the editor offers to lower the person,
+and the service refuses.
 
 ```tsx
 <PermissionEditor
@@ -491,13 +491,23 @@ lower the person, and the service refuses.
 />
 ```
 
-Pass the editor every entry that can count as a manager. Agents and standalone
-service accounts manage a resource like people do, so they keep their row and
-their kind label. Hide only entries that never count: an editor next to
+The lock matches the service's refusal when only a `none` shadows other
+entries, as in Grids. The editor never offers `none`, so a change to another
+row cannot hide the remaining manager, and lowering or removing that manager
+brings no other one into effect. Under other rules, for example when the latest
+of two `admin` grants wins, the editor can lock a row whose change the service
+accepts.
+
+Pass the editor every entry that can count as a manager, and, with
+`effectiveEntries`, every entry that can shadow one, such as a `none`. Agents
+and standalone service accounts manage a resource like people do, so they keep
+their row and their kind label. Hide only entries that do neither: an editor
+next to
 [`ResourceApiKeys`](/en/docs/identity/resource-api-keys#add-the-api-key-ui)
 hides the resource-bound entries that the key list manages. An editor that hid
 an agent with “Manage” would lock the person who manages next to it, although
-the service accepts their change.
+the service accepts their change. One that hid a shadowing `none` would count
+the manager it hides and offer a change the service refuses.
 
 Rows for all signed-in users and for the public always show the editor's
 localized label, whatever `displayName` the entry carries.
