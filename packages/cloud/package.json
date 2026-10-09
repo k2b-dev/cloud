@@ -55,6 +55,7 @@
     "./services": "./src/services/index.ts",
     "./services/image-metadata": "./src/services/image-metadata.ts",
     "./services/document-extraction": "./src/services/document-extraction.ts",
+    "./services/outbox": "./src/services/outbox.ts",
     "./services/ipa/service-account": null,
     "./services/*": "./src/services/*",
     "./ai": "./src/ai/index.ts",

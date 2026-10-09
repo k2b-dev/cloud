@@ -1,18 +1,45 @@
 import { expect, test } from "bun:test";
 import { request } from "node:http";
+import { resolvePublicNetworkAddresses } from "./network-security";
 import { type PublicHttpInput, requestPublicHttps } from "./public-http";
 
 const base = { method: "GET", headers: { authorization: "fixture-token" }, maxBytes: 1024, signal: new AbortController().signal };
 test("public HTTP blocks local addresses and credentials before opening a connection", async () => {
+  for (const url of ["http://example.com", "https://user:pass@example.com"])
+    await expect(requestPublicHttps({ ...base, url })).rejects.toThrow("HTTPS_REQUIRED");
   for (const url of [
-    "http://example.com",
-    "https://user:pass@example.com",
     "https://127.0.0.1",
     "https://[::1]",
     "https://169.254.169.254",
     "https://localhost",
+    "https://metadata.google.internal",
+    "https://db.cluster.internal",
   ])
-    await expect(requestPublicHttps({ ...base, url })).rejects.toBeInstanceOf(Error);
+    await expect(requestPublicHttps({ ...base, url })).rejects.toThrow(/not allowed|private or reserved/);
+  await expect(requestPublicHttps({ ...base, url: "https://example.com", maxBytes: 0.5 })).rejects.toThrow("INVALID_BYTE_LIMIT");
+});
+test("a public name with any private DNS answer never opens a connection", async () => {
+  let requests = 0;
+  for (const answers of [
+    [{ address: "10.0.0.7", family: 4 }],
+    [
+      { address: "93.184.215.14", family: 4 },
+      { address: "::ffff:169.254.169.254", family: 6 },
+    ],
+  ])
+    await expect(
+      requestPublicHttps(
+        { ...base, url: "https://preview.example.com/page" },
+        {
+          resolve: (hostname) => resolvePublicNetworkAddresses(hostname, async () => answers),
+          request: (options, callback) => {
+            requests++;
+            return request(options, callback);
+          },
+        },
+      ),
+    ).rejects.toThrow("private or reserved");
+  expect(requests).toBe(0);
 });
 test("pinned transport preserves HTTP failures and bytes, never redirects, and limits responses", async () => {
   const received: Array<{ path: string; authorization: string | null; host: string | null }> = [];

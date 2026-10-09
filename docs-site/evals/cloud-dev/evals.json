@@ -225,6 +225,18 @@
         "Malformed recognized containers return 422 and tests fail when stripping is removed.",
         "Documentation identifies unsupported formats that keep metadata and preserves Files originals."
       ]
+    },
+    {
+      "id": 20,
+      "prompt": "Our inventory application should show a preview for a supplier link that a person pastes into an item note, and report every stock change to the supplier's ERP API even when the process crashes right after the change is saved.",
+      "expected_output": "Fetches the pasted link only on the server through requestPublicHttps with a short deadline, a small byte limit, no redirects, and a cache; writes the ERP report as an outbox row in the stock transaction and delivers it with createPgOutbox, idempotently keyed by the row ID and ordered per item; and verifies refused internal addresses and a retried delivery.",
+      "files": [],
+      "expectations": [
+        "The link preview never uses fetch() on the pasted URL; it uses requestPublicHttps with a deadline and maxBytes and treats the response as untrusted.",
+        "The ERP report is written in the same transaction as the stock change and delivered after commit through createPgOutbox, not sent inside the transaction or fire-and-forget.",
+        "Delivery is idempotent through the row ID, keeps per-item order, and decides which ERP answers are final instead of retrying them forever.",
+        "Verification covers a private or internal link address and a failed delivery that is retried."
+      ]
     }
   ]
 }

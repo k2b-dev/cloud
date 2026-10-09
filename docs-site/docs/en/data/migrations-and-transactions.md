@@ -5,7 +5,7 @@ section: Data
 order: 420
 description: Evolve application schemas safely and keep related writes atomic.
 tags: [data, postgres, migrations, transactions]
-updated: 2026-10-03
+updated: 2026-10-09
 ---
 
 # Migrations and transactions
@@ -221,11 +221,175 @@ inside it.
 Send notifications, publish to topics, and run other external effects after
 the domain transaction commits.
 
-If the side effect must be recovered after a crash, store an outbox or durable
-job request in the same transaction. A worker can deliver it later. Updates to
-the application's open tabs work this way: write them in the transaction with
-[Live updates](/en/docs/automation/live-updates), and the platform publishes
-them after the commit.
+If the side effect must be recovered after a crash, write it as an outbox row
+in the same transaction and deliver it after the commit. A rollback then writes
+nothing, and a commit delivers the effect even when the process stops right
+after it.
+
+- Updates to the application's own open tabs: write them with
+  [Live updates](/en/docs/automation/live-updates). The platform owns their
+  outbox and publishes them.
+- Any other effect, such as a call to an external API or a job that must not
+  be lost: keep an outbox table in the application's schema and deliver it
+  with `createPgOutbox()`.
+
+## Deliver an outbox
+
+`createPgOutbox()` from `@k2b/cloud/services/outbox` publishes the rows of an
+application's outbox table. Every replica runs one dispatcher; together they
+deliver each row at least once, in order per key, and delete it once it is
+published.
+
+### Create the table
+
+```sql
+CREATE TABLE IF NOT EXISTS inventory.stock_reports (
+  seq             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id              UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  item_id         UUID NOT NULL,
+  delta           INT NOT NULL,
+  attempts        INT NOT NULL DEFAULT 0,
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  claimed_until   TIMESTAMPTZ,
+  last_error      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS inventory_stock_reports_busy
+ON inventory.stock_reports (item_id)
+WHERE claimed_until IS NOT NULL OR attempts > 0;
+```
+
+- `id`, `attempts`, `next_attempt_at`, `claimed_until`, and `last_error` are
+  required with these types. The dispatcher maintains them; a writer leaves
+  them at their defaults.
+- An ordering column, here `item_id`, holds the key whose rows are published
+  in order. Use the resource whose effects must not overtake each other.
+- A sequence column, here `seq`, orders the rows. An identity column numbers
+  them in insertion order, which is commit order when the writers of a key
+  lock the same row before they insert.
+- The other columns are the effect's data. The dispatcher passes the whole
+  row to `publish`.
+- Claims stay proportional to the batch, not to the backlog, with an index on
+  the sequence column, here the primary key, and the partial index on the
+  ordering column above. With `where`, put its columns first in both indexes.
+
+Table and column names are lowercase SQL identifiers, and the table may name
+its schema. `createPgOutbox()` throws `Invalid outbox table` or `Invalid outbox
+… column` for anything else, before it sends a query.
+
+### Write the row in the transaction
+
+```ts
+const reported = await sql.begin(async (tx) => {
+  const [item] = await tx`UPDATE inventory.items SET quantity = quantity + ${delta} WHERE id = ${itemId}::uuid RETURNING id`;
+  if (!item) return false;
+  await tx`INSERT INTO inventory.stock_reports (item_id, delta) VALUES (${itemId}::uuid, ${delta})`;
+  return true;
+});
+if (reported) void stockReports.notify();
+```
+
+The `UPDATE` comes first. It locks the item, so the reports of one item get
+their `seq` in commit order, and an unknown item reports nothing. `notify()`
+after the commit publishes now. Without it, the row waits for the next pass,
+which runs every `reconcileIntervalMs`.
+
+### Define the dispatcher
+
+```ts
+import { requestPublicHttps } from "@k2b/cloud/services";
+import { createPgOutbox } from "@k2b/cloud/services/outbox";
+
+type StockReport = { id: string; attempts: number; item_id: string; delta: number };
+
+export const stockReports = createPgOutbox<StockReport>({
+  table: "inventory.stock_reports",
+  name: "inventory:stock-reports",
+  orderBy: "item_id",
+  sequence: "seq",
+  reconcileIntervalMs: 10_000,
+  publish: async (report) => {
+    const response = await requestPublicHttps({
+      url: "https://erp.example.com/stock-movements",
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": report.id },
+      body: new TextEncoder().encode(JSON.stringify({ itemId: report.item_id, delta: report.delta })),
+      maxBytes: 16 * 1024,
+      signal: AbortSignal.timeout(10_000),
+    });
+    // Retry what may succeed later; any other answer is final and removes the row.
+    if (response.status === 429 || response.status >= 500) throw new Error(`ERP answered ${response.status}`);
+  },
+});
+```
+
+| Option | Meaning |
+| --- | --- |
+| `table` | The outbox table, usually with its schema |
+| `name` | Log source of the dispatcher's warnings |
+| `publish(row)` | Delivers one row. Resolving deletes the row; throwing schedules a retry. |
+| `orderBy` | Ordering column: rows with the same value are published in `sequence` order |
+| `sequence` | Column that orders the rows |
+| `reconcileIntervalMs` | How often a started dispatcher looks for due rows |
+| `where` | Optional fixed column values, such as `{ kind: "erp" }`, so several dispatchers share one table |
+| `claimMs` | How long a claimed batch belongs to one replica; default 30 seconds |
+| `batchSize` | Rows claimed at a time; default 100 |
+
+Start the dispatcher with the application and stop it before the application
+releases its connections:
+
+```ts
+export default await app.start({
+  fetch: router.fetch,
+  lifecycle: {
+    setup: migrate,
+    start: async () => stockReports.start(),
+    stop: () => stockReports.stop(),
+  },
+});
+```
+
+`start()` runs one pass at once and then one every `reconcileIntervalMs`.
+`stop()` ends the timer and waits for the pass in flight. `notify()` runs a
+pass and logs a failure as `Outbox reconcile failed`; `reconcile()` runs the
+same pass, returns the number of rows it handled, and throws. A call while a
+pass runs joins it, and the pass continues until no row is due. The
+dispatcher's `claim()` and `dispatch()` are internal and can change without
+notice.
+
+### Know the guarantees
+
+- **At least once.** Published rows are deleted when their batch ends. A crash
+  before that publishes them again, and so does a batch that outlives
+  `claimMs`: it starts no further `publish`, and the next claim, on any
+  replica, takes the rows that are still in the table. Make `publish`
+  idempotent: pass the row's `id` as the idempotency key to the receiver. Keep
+  a batch within `claimMs`: bound `publish` with a deadline, and lower
+  `batchSize` for a slow receiver.
+- **In order per key.** The dispatcher publishes the committed rows of one key
+  in `sequence` order, and different keys in parallel. A row waits while an
+  earlier row of its key is claimed or waits for its retry, so a failing row
+  holds back its key and no other. A repeated row can arrive after a later row
+  of its key; its idempotency key lets the receiver drop it.
+- **Commit order needs a shared lock.** When the writers of a key lock the
+  same row before they insert, as the `UPDATE` above does, `sequence` order is
+  commit order. Without that lock, a transaction that commits late can carry
+  the lower `seq`, and its row follows the rows of its key that were published
+  before the commit.
+- **Retries without end.** A failed row keeps its place and is tried again
+  after 2, 4, 8, and up to 256 seconds. Its `attempts` and `last_error`, the
+  first 1,000 characters of the error message, stay in the row, and the
+  dispatcher logs `Outbox delivery failed` under `name`. Nothing gives up, so
+  `publish` decides what is final: resolve for an answer that a retry cannot
+  change, and record it where the application needs it.
+- **Nothing kept after delivery.** A published row is deleted. The table holds
+  only pending effects, and its size is the backlog.
+- **Replicas take turns.** One claim of a table and `where` runs at a time,
+  and it takes at most `batchSize` rows. A claim that stalls for `claimMs`
+  gives up its turn.
+
+Keep secrets out of thrown error messages: `last_error` stores them in the
+table.
 
 Continue with [Jobs and queues](/en/docs/automation/jobs-and-queues) and
 [Notifications](/en/docs/platform/notifications).

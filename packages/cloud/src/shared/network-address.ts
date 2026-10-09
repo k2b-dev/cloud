@@ -65,6 +65,7 @@ const UNSAFE_IPV6_RANGES: ReadonlyArray<readonly [bigint, number]> = [
   [ipv6ToBigInt("2001:2::")!, 48],
   [ipv6ToBigInt("2001:db8::")!, 32],
   [ipv6ToBigInt("2002::")!, 16],
+  [ipv6ToBigInt("3fff::")!, 20],
   [ipv6ToBigInt("fc00::")!, 7],
   [ipv6ToBigInt("fe80::")!, 10],
   [ipv6ToBigInt("fec0::")!, 10],
