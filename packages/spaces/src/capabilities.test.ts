@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -224,7 +224,10 @@ const weeklyTemplate: SpaceItemTemplate = {
   updatedAt: createdAt,
 };
 
-afterEach(() => mock.restore());
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 
 test("checklist updates require a change and preserve explicit false", () => {
   expect(TaskChecklistUpdateInputSchema.safeParse({ itemId, entryId: "Chk001" }).success).toBeFalse();
@@ -303,6 +306,36 @@ test("full item pages fit the envelope and expose inactivity plus readable colum
   expect(result.data.page?.hasMore).toBeTrue();
   expect(list.mock.calls[0]?.[0].filter.activity).toBe("inactive");
 });
+
+test.each(["UTC", "Europe/Berlin"])(
+  "task list derives overdue in the configured %s timezone even without a deadline filter",
+  async (timeZone) => {
+    setSystemTime(new Date("2026-10-09T08:00:00Z"));
+    spyOn(settings, "get").mockResolvedValue(timeZone);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    spyOn(spacesService.column, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false });
+    const past = { ...task, deadline: "2026-10-08T15:00:00Z" };
+    const list = spyOn(spacesService.item, "listFiltered").mockResolvedValue({
+      items: [
+        past,
+        { ...past, completedAt: "2026-10-08T16:00:00Z" },
+        { ...past, deadline: "2026-10-09T06:00:00Z" },
+        { ...past, deadline: "2026-10-08T22:30:00Z" },
+        { ...past, deadline: null },
+      ],
+      total: 5,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    });
+    const result = await spacesCapabilities.queries["task.list"].run(TaskListInputSchema.parse({ spaceId }), userContext);
+    if (!result.ok) throw new Error("Expected task list");
+    const envelope = capabilityResultSchema(TaskListDataSchema).parse(result.data);
+    expect(envelope.data.map((item) => item.overdue)).toEqual([true, false, false, timeZone === "UTC", false]);
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ dateConfig: expect.objectContaining({ timeZone }) }));
+  },
+);
 
 test("checklist changes keep task ownership and reject read-only actors before writing", async () => {
   spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
@@ -570,6 +603,7 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
 };
 
 beforeEach(() => {
+  spyOn(settings, "get").mockResolvedValue("UTC");
   const requiredPublicId = (table: ResourceTable, internalId: string): string => {
     const value = publicIds[table].get(internalId);
     if (!value) throw new Error(`Missing ${table} public ID for ${internalId}`);
@@ -1871,6 +1905,7 @@ describe("spaces capabilities", () => {
       descriptionPreview: "d".repeat(1000),
       descriptionTruncated: true,
       deadline: null,
+      overdue: false,
       estimatedDurationMinutes: null,
       activeBlockerCount: 0,
       priority: "urgent" as const,
@@ -1901,6 +1936,7 @@ describe("spaces capabilities", () => {
       ({
         kind: _kind,
         deadline: _deadline,
+        overdue: _overdue,
         estimatedDurationMinutes: _estimatedDurationMinutes,
         activeBlockerCount: _activeBlockerCount,
         priority: _priority,

@@ -308,6 +308,9 @@ filters. Inactive means no task activity for 30 days. Deadline windows use the
 configured application timezone, matching the overview. `task.list` and
 `event.list` accept `activity` and
 `deadlineFilter`; lists include readable column names when available.
+`task.list` and `task.focus` entries carry `overdue`, true only for an open
+task whose deadline lies before today in the application timezone; completed
+tasks are never overdue. Use this flag instead of comparing `deadline` yourself.
 
 For actual calendar occurrences, use `event.agenda` with offset-aware `from`
 and `to` timestamps. The interval includes its start and excludes its end,

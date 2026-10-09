@@ -35,8 +35,8 @@ import {
   CreateWormholeSchema,
   ErrorResponseSchema,
   GrantAccessSchema,
+  ItemFilterResponseSchema,
   ItemFilterSchema,
-  ItemListResultSchema,
   ItemTemplateDraftQuerySchema,
   ItemTemplateDraftSchema,
   ItemTemplateKindSchema,
@@ -129,6 +129,7 @@ import {
   resolveSpacePublicIds,
 } from "../service/public-resources";
 import * as taskWork from "../service/task-work";
+import { isTaskOverdue } from "../task-overdue";
 import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "../work-contracts";
 import legacyLiveRoutes from "../ws";
 
@@ -2297,7 +2298,7 @@ const app = new Hono<AuthContext>()
       description: "List items with filtering, sorting, and pagination support.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(ItemListResultSchema, "Filtered items with pagination"),
+        200: jsonResponse(ItemFilterResponseSchema, "Filtered items with pagination"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Space not found"),
       },
@@ -2313,13 +2314,15 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const resolvedFilter = await resolveItemFilter(spaceId!, filter);
       if (!resolvedFilter.ok) return respond(c, resolvedFilter);
+      const dateConfig = getDateConfig(c);
       const result = await spacesService.item.listFiltered({
         spaceId: spaceId!,
         filter: resolvedFilter.data,
         currentUserId: user?.id,
-        dateConfig: getDateConfig(c),
+        dateConfig,
       });
-      return respond(c, ok({ ...result, items: await projectItems(result.items) }));
+      const items = await projectItems(result.items);
+      return respond(c, ok({ ...result, items: items.map((item) => ({ ...item, overdue: isTaskOverdue(item, dateConfig) })) }));
     },
   )
 

@@ -3,6 +3,7 @@ import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { ItemFilterResponseSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import * as columnsService from "../service/columns";
 import spacesApi from ".";
@@ -141,6 +142,12 @@ suite("Spaces automatic Kanban columns", () => {
       }
 
       // Board buckets: a task an automatic column gathers shows only there, Blocked before Overdue.
+      const allResponse = await member(`${base}/items/filter`, { method: "POST", body: { status: "all" } });
+      expect(allResponse.status).toBe(200);
+      const allItems = ItemFilterResponseSchema.parse(await allResponse.json()).items;
+      expect(allItems.find((entry) => entry.id === overdue.short_id)?.overdue).toBeTrue();
+      expect(allItems.find((entry) => entry.id === finished.short_id)?.overdue).toBeFalse();
+      expect(allItems.find((entry) => entry.id === plain.short_id)?.overdue).toBeFalse();
       const listed = async (filter: Record<string, unknown>) => {
         const response = await member(`${base}/items/filter`, { method: "POST", body: { sort: "title", ...filter } });
         expect(response.status).toBe(200);

@@ -14,6 +14,7 @@ import {
 import { buildSpaceItemHref } from "./routes";
 import { spacesService } from "./service";
 import { spacesPublicResources } from "./service/public-resources";
+import { isTaskOverdue } from "./task-overdue";
 
 type WorkContext = { subject: AccessSubject; boundSpaceId?: string | null; spaceId?: string; dateConfig?: DateContext };
 const page = (offset: number, count: number, limit: number) => capabilityPage(count > limit ? encodeWorkCursor(offset + limit) : undefined);
@@ -53,6 +54,7 @@ export const runTaskFocus = async (input: z.infer<typeof TaskFocusInputSchema>, 
       columnId: item.columnId,
       columnName: rows[index]!.columnName?.slice(0, 200) ?? null,
       deadline: item.deadline,
+      overdue: isTaskOverdue(item, context.dateConfig),
       priority: item.priority,
       activeBlockerCount: item.activeBlockerCount ?? 0,
       href: buildSpaceItemHref(item.spaceId, item.id),

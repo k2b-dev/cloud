@@ -6,6 +6,7 @@ import {
   CreateSpaceSchema,
   CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
+  ItemFilterResponseSchema,
   ItemFilterSchema,
   isPlayableVideoType,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
@@ -14,6 +15,7 @@ import {
   ReorderColumnsSchema,
   ReorderWormholesSchema,
   SpaceItemAttachmentSchema,
+  SpaceItemSchema,
   UpdateItemSchema,
   UpdateTaskChecklistEntrySchema,
   UpdateWormholeSchema,
@@ -24,6 +26,14 @@ const END = "2026-06-01T10:00:00.000Z";
 const BEFORE_START = "2026-06-01T08:00:00.000Z";
 const columnId = "Col001";
 const wormholeId = "Whl001";
+
+test("filtered item responses require overdue without changing the shared item schema", () => {
+  const overdue = ItemFilterResponseSchema.shape.items.element.shape.overdue;
+  expect(overdue.parse(true)).toBeTrue();
+  expect(overdue.parse(false)).toBeFalse();
+  for (const invalid of [undefined, null, "false", 0]) expect(overdue.safeParse(invalid).success).toBeFalse();
+  expect("overdue" in SpaceItemSchema.shape).toBeFalse();
+});
 
 describe("Spaces contract time ranges", () => {
   test("accepts valid create, update, calendar, and overlap ranges", () => {

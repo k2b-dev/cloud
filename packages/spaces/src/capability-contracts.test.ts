@@ -28,6 +28,14 @@ test("task and event lists require a nonnegative integer assignee total", () => 
   }
 });
 
+test("task lists require an overdue boolean without extending event lists", () => {
+  const overdue = TaskListItemDataSchema.shape.overdue;
+  expect(overdue.parse(true)).toBeTrue();
+  expect(overdue.parse(false)).toBeFalse();
+  for (const invalid of [undefined, null, "false", 0]) expect(overdue.safeParse(invalid).success).toBeFalse();
+  expect("overdue" in EventListItemDataSchema.shape).toBeFalse();
+});
+
 test("reverse dependency pages default to the existing 100-entry result limit", () => {
   expect(TaskDependentListInputSchema.parse({ itemId: "Itm001" })).toEqual({ itemId: "Itm001", limit: 100 });
   expect(TaskDependentListInputSchema.safeParse({ itemId: "Itm001", limit: 101 }).success).toBeFalse();

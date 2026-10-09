@@ -1,12 +1,21 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
-import { decodeWorkCursor, EventAgendaDataSchema, EventAgendaInputSchema, TaskFocusInputSchema } from "./capability-work-contracts";
+import {
+  decodeWorkCursor,
+  EventAgendaDataSchema,
+  EventAgendaInputSchema,
+  TaskFocusDataSchema,
+  TaskFocusInputSchema,
+} from "./capability-work-contracts";
 import { boundedWorkPage, runEventAgenda, runTaskFocus } from "./capability-work-queries";
-import type { CalendarItem } from "./contracts";
+import type { CalendarItem, SpaceItem } from "./contracts";
 import { spacesService } from "./service";
 import { spacesPublicResources } from "./service/public-resources";
 
-afterEach(() => mock.restore());
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 test("byte-limited work pages advance by the actual retained row count", () => {
   const rows = Array.from({ length: 100 }, (_, id) => ({ id, label: "\u0001".repeat(500), title: "\u0001".repeat(500) }));
   const result = boundedWorkPage(rows, 0, 100);
@@ -41,6 +50,49 @@ test("focus forwards filters and permission context before limiting the page", a
     }),
   );
   expect(result).toEqual({ data: [], page: { hasMore: false } });
+});
+
+test.each(["UTC", "Europe/Berlin"])("focus derives overdue using its %s date context", async (timeZone) => {
+  setSystemTime(new Date("2026-10-09T08:00:00Z"));
+  const task: SpaceItem = {
+    id: "Item01",
+    spaceId: "Space1",
+    columnId: "Col001",
+    title: "Send invitations",
+    description: null,
+    location: null,
+    url: null,
+    startsAt: null,
+    endsAt: null,
+    allDay: false,
+    deadline: "2026-10-08T15:00:00Z",
+    estimatedDurationMinutes: null,
+    activeBlockerCount: 0,
+    priority: null,
+    recurrence: null,
+    recurringEventId: null,
+    recurrenceId: null,
+    rank: "1024",
+    completedAt: null,
+    createdBy: context.subject.userId,
+    createdAt: "2026-10-01T08:00:00Z",
+    updatedAt: "2026-10-01T08:00:00Z",
+  };
+  const items = [
+    task,
+    { ...task, completedAt: "2026-10-08T16:00:00Z" },
+    { ...task, deadline: "2026-10-09T06:00:00Z" },
+    { ...task, deadline: "2026-10-08T22:30:00Z" },
+    { ...task, deadline: null },
+  ];
+  const search = spyOn(spacesService.item, "searchAcross").mockResolvedValue(
+    items.map((item) => ({ item, space: { id: "Space1", name: "Team" }, columnName: "Open" })),
+  );
+  spyOn(spacesPublicResources, "projectItems").mockResolvedValue(items);
+  const result = await runTaskFocus(TaskFocusInputSchema.parse({}), { ...context, dateConfig: { timeZone } });
+  const data = TaskFocusDataSchema.parse(result.data);
+  expect(data.map((item) => item.overdue)).toEqual([true, false, false, timeZone === "UTC", false]);
+  expect(search).toHaveBeenCalledWith(expect.objectContaining({ dateConfig: { timeZone }, status: "open" }));
 });
 test("agenda retains series identity, occurrence deep links and pagination", async () => {
   const occurrence: CalendarItem = {
