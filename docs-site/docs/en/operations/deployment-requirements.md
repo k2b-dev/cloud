@@ -410,6 +410,26 @@ for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshootin
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
 
+### Update browser notifications for grouping and badges
+
+Deploy the updated platform package and Core together to enable
+[grouped browser notifications and app badges](/en/docs/platform/notifications#browser-delivery).
+No database migration or configuration change is required.
+
+The browser checks for the new worker when a Cloud page is next loaded or
+reloaded, and at the latest during a push or notification click once 24 hours
+have passed since the last check. Its existing `skipWaiting()` and
+`clients.claim()` lifecycle activates the new worker without waiting for tabs
+to close. Already-shown notifications are unaffected. Older workers
+ignore the optional group and badge fields until they update; existing
+ungrouped notifications keep their behavior. Already-queued browser deliveries
+without these fields remain valid.
+
+Reload a Cloud page first, then verify that two notifications with the same group
+replace each other on one registered device. Check badges in a browser that
+supports the Badging API; lack of badge support must not prevent notification
+display.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
