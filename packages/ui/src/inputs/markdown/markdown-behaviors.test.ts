@@ -107,6 +107,15 @@ describe("markdown editor helpers", () => {
     const opening = textarea("```\na", 2);
     toggleCodeBlock(opening);
     expect(opening.value).toBe("a");
+
+    // A selection that holds a fence gets a longer one, and a second press restores it.
+    const nested = "Intro\n```ts\nx\n```";
+    const withFence = textarea(nested, 0, nested.length);
+    toggleCodeBlock(withFence);
+    expect(withFence.value).toBe(`\`\`\`\`\n${nested}\n\`\`\`\``);
+    expect([withFence.selectionStart, withFence.selectionEnd]).toEqual([5, 5 + nested.length]);
+    toggleCodeBlock(withFence);
+    expect(withFence.value).toBe(nested);
   });
 
   test("italic uses `*`, which also works inside a word, and leaves a bold `**` pair alone", () => {
@@ -214,5 +223,10 @@ describe("markdown editor helpers", () => {
     expect(open("```\nx\n``` not closed")).toEqual({ start: 0, marker: "```" });
     expect(open("> ```\n> quoted")).toEqual({ start: 0, marker: "```" });
     expect(open("> ```\n> quoted\n> ```")).toBeNull();
+    // A block in a quote ends with the quote.
+    expect(open("> ```\n> quoted\n\nprose")).toBeNull();
+    expect(open("> ```\n> quoted\nprose")).toBeNull();
+    expect(open("> > ```\n> > deep\n> shallower")).toBeNull();
+    expect(open("> ```\n> quoted\n> > deeper")).toEqual({ start: 0, marker: "```" });
   });
 });

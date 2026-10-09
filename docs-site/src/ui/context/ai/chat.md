@@ -451,7 +451,8 @@ field; in the default variant, in the footer.
   fits, and the row never scrolls. The buttons write Markdown into the field
   and keep the selection.
   Every button except Link removes its formatting on a second press; inside a
-  fenced block, Code block removes that block's fences. Ctrl/⌘+B, I, and E, and
+  fenced block, Code block removes that block's fences, and a selection that
+  already holds a fence gets a longer one. Ctrl/⌘+B, I, and E, and
   Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
 - **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
   and an `insert` function that puts the chosen text at the caret. Touch-only

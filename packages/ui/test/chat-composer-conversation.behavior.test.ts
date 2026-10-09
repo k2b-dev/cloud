@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { createComponent, createSignal, mergeProps } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import type { ChatComposerProps } from "../src/chat/ChatComposer";
-import type { ChatDictationState, ChatSubmitInput } from "../src/chat/types";
+import type { ChatDictationState, ChatMention, ChatSubmitInput } from "../src/chat/types";
 import { createDomTestHarness } from "./dom";
 
 let touchOnly = false;
@@ -456,5 +456,40 @@ test("the conversation row leaves out the assistant prompt's footer controls", a
   expect(composer.dom.root.querySelector("footer")).toBeNull();
   expect(composer.button("Context action")).toBeNull();
   expect(composer.dom.root.textContent).not.toContain("footer tools");
+  composer.done();
+});
+
+test("a rejected submission keeps the mentions typed meanwhile on their text, also when the application moves them", async () => {
+  const { reconcileChatMentions } = await import("../src/chat/composer-document");
+  let reject: (error: Error) => void = () => {};
+  const [draft, setDraft] = createSignal("Hello");
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  // As the Assistant does: a text change moves the mentions along with it.
+  const change = (value: string) => {
+    setMentions(reconcileChatMentions(draft(), value, mentions()));
+    setDraft(value);
+  };
+  const composer = await mount("", {
+    get value() {
+      return draft();
+    },
+    onValueChange: change,
+    get mentions() {
+      return mentions();
+    },
+    onMentionsChange: setMentions,
+    onSubmit: () => new Promise<void>((_, fail) => (reject = fail)),
+    onError: () => {},
+  });
+  expect(composer.press({})).toBe(true);
+  await composer.settle();
+  expect(draft()).toBe("");
+  change("Reference");
+  setMentions([{ start: 0, end: 9, attachment: { id: "r", name: "Reference" } }]);
+  reject(new Error("offline"));
+  await composer.settle();
+  await composer.settle();
+  expect(draft()).toBe("Hello\nReference");
+  expect(mentions().map(({ start, end }) => [start, end])).toEqual([[6, 15]]);
   composer.done();
 });

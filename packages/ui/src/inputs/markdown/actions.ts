@@ -130,8 +130,11 @@ export const toggleCodeBlock = (textarea: HTMLTextAreaElement): void => {
     return;
   }
   const body = lines.join("\n");
-  replaceRange(textarea, start, end, `\`\`\`\n${body}\n\`\`\``);
-  textarea.setSelectionRange(start + 4, start + 4 + body.length);
+  // A fence in the selection would close a ``` block early, so the new block's fence is longer than any of them.
+  const longest = Math.max(0, ...lines.map((line) => /^(?:[ \t]*>)*[ \t]*(`{3,})/.exec(line)?.[1]!.length ?? 0));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  replaceRange(textarea, start, end, `${fence}\n${body}\n${fence}`);
+  textarea.setSelectionRange(start + fence.length + 1, start + fence.length + 1 + body.length);
 };
 
 export const toggleQuote = (textarea: HTMLTextAreaElement): void => togglePrefix(textarea, "> ");

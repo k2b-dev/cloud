@@ -506,15 +506,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         },
         perform: () => props.onSubmit(input),
         restore: () => {
-          // Text typed while the submission ran stays, after the returned draft.
+          // Text typed while the submission ran stays, after the returned draft. Its mentions are read first, because
+          // an application may already move them when the text changes.
           const typed = props.value;
+          const typedMentions = mentions();
           const shift = previousValue.length + 1;
           props.onValueChange(typed ? `${previousValue}\n${typed}` : previousValue);
           props.onMentionsChange?.(
             typed
               ? [
                   ...previousMentions,
-                  ...mentions().map((mention) => ({ ...mention, start: mention.start + shift, end: mention.end + shift })),
+                  ...typedMentions.map((mention) => ({ ...mention, start: mention.start + shift, end: mention.end + shift })),
                 ]
               : previousMentions,
           );
