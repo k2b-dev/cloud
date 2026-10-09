@@ -9,6 +9,8 @@ export type RailApp = {
   defaultVisible: boolean;
   description?: string;
   accent?: string;
+  /** The app's `nav.badge` endpoint. */
+  badge?: string;
 };
 export type RailLink = Omit<RailApp, "defaultVisible"> & { exact?: boolean };
 

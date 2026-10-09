@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -12,6 +12,10 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
+const { person } = await import("../_internal/define-app.fixture");
+const railSnapshot = await import("../services/rail-snapshot");
+const settingsMiddleware = await import("../server/middleware/settings");
+const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
 const { useLocale } = await import("@k2b/ui");
@@ -33,6 +37,25 @@ const legalApp = {
   legalLinks: [{ label: "Imprint", href: "/legal/imprint" }],
   presentation: { baseLocale: "en", translations: { de: { legalLinks: { "/legal/imprint": "Impressum" } } } },
 };
+
+const badgeApps = [
+  {
+    id: "chat-probe",
+    name: "Chat probe",
+    icon: "ti ti-message",
+    description: "Counts unread messages",
+    routes: ["/app/chat-probe", "/api/chat-probe"],
+    nav: { href: "/app/chat-probe", section: "primary", badge: "/api/chat-probe/badge" },
+  },
+  {
+    id: "mail-probe",
+    name: "Mail probe",
+    icon: "ti ti-mail",
+    description: "Declares no badge",
+    routes: ["/app/mail-probe"],
+    nav: { href: "/app/mail-probe", section: "primary" },
+  },
+];
 
 const server = new Hono()
   .use("*", async (c, next) => {
@@ -66,6 +89,17 @@ const server = new Hono()
           children: "Anonymous content",
         });
     }),
+  )
+  .get(
+    "/signed-in",
+    async (c, next) => {
+      c.set("runtime" as never, { apps: badgeApps } as never);
+      c.set("user" as never, person as never);
+      await next();
+    },
+    ...app.ssr(
+      (c) => () => createComponent(Layout, { c: c as unknown as LayoutContextArg, title: "Badges", children: "Signed-in content" }),
+    ),
   )
   .get(
     "/minimal/:mode",
@@ -156,6 +190,31 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("layout-rail-navigation");
     expect(html).not.toContain('data-layout-authenticated="true"');
     expect(html).not.toContain('href="/me"');
+  });
+
+  test("hands the rail and the app grid each app's badge route but renders no count on the server", async () => {
+    // The signed-in shell preloads the person's rail and announcements; neither matters for badges.
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    ];
+    let status: number;
+    let html: string;
+    try {
+      const response = await server.request("/signed-in", { headers: { "Accept-Language": "en" } });
+      status = response.status;
+      html = await response.text();
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(status).toBe(200);
+    const embedded = (id: string) => JSON.parse(html.match(new RegExp(`<script id="${id}" type="application/json">(.*?)</script>`))![1]!);
+    const badges = (apps: { id: string; badge?: string }[]) => Object.fromEntries(apps.map((entry) => [entry.id, entry.badge ?? null]));
+    const expected = { "chat-probe": "/api/chat-probe/badge", "mail-probe": null };
+    expect(badges(embedded("cloud-rail-data").apps)).toEqual(expected);
+    expect(badges(embedded("cloud-app-launchpad-data").apps)).toEqual(expected);
+    expect(html).toContain('aria-label="Chat probe"');
+    expect(html).not.toContain("cloud-app-badge");
   });
 
   test("ends minimal pages with legal links and labeled language and theme settings", async () => {

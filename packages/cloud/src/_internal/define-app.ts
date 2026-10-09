@@ -144,6 +144,13 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
     section: "primary" | "more" | "hidden";
     requiresAuth?: boolean;
     requiresRoles?: Role[];
+    /**
+     * Same-origin path of a `GET` route this app serves below one of its
+     * `routes`. After the page loads, the shell reads it with the person's
+     * session and shows the returned `AppNavBadge` count on the app's icon in
+     * the rail and the app grid. Protect it like any other route.
+     */
+    badge?: string;
   };
   /**
    * Settings owned by this app, declared as a map of dotted-key → definition.
@@ -357,6 +364,21 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
   return { href: `/pwa/${opts.id}`, requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined };
 };
 
+/** The badge route is read by the browser through the gateway, so it must be one of this app's own paths. */
+const validateAppNavBadge = (opts: Pick<AppOptions, "id" | "routes" | "nav">): void => {
+  const badge = opts.nav?.badge;
+  if (badge === undefined) return;
+  // Ownership is checked on the path the browser actually requests, after dot segments.
+  const path = new URL(badge, "https://cloud.invalid").pathname;
+  const owned =
+    /^\/(?![\/\\])[^\\\s]*$/.test(badge) &&
+    opts.routes.some((route) => {
+      const prefix = canonicalRoute(route);
+      return prefix === "/" || path === prefix || path.startsWith(`${prefix}/`);
+    });
+  if (!owned) throw new Error(`App "${opts.id}" declares nav.badge "${badge}"; it must be a same-origin path below one of its routes`);
+};
+
 export const defineApp = <
   const S extends AppSettingsMap = {},
   const N extends NotificationDefinitionMap = {},
@@ -369,6 +391,7 @@ export const defineApp = <
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
   const pwaPart = validateAppPwaPart(opts);
+  validateAppNavBadge(opts);
 
   // ── 0. Register declared settings into the runtime registry ──────────
   // SETTINGS_MAP is the single source of truth for validation in store.ts
@@ -574,6 +597,7 @@ export const defineApp = <
                 section: meta.nav?.section ?? "hidden",
                 requiresAuth: meta.nav?.requiresAuth,
                 requiresRoles: meta.nav?.requiresRoles,
+                badge: meta.nav?.badge,
                 adminHref: meta.adminHref,
               }
             : undefined,

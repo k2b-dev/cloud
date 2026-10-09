@@ -46,6 +46,13 @@ describe("validateAppRegistryEntry", () => {
     expect(validateAppRegistryEntry({ ...valid, pwa: "/pwa/core" })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: "user" } })).toContain("pwa.requiresRoles");
   });
+  test("accepts a navigation badge only as a same-origin path", () => {
+    const nav = { href: "/", section: "primary" };
+    expect(validateAppRegistryEntry({ ...valid, nav: { ...nav, badge: "/api/core/badge" } })).toBeNull();
+    for (const badge of [7, "api/core/badge", "//evil.example/badge", "https://evil.example/badge", "/api/core/ badge"]) {
+      expect(validateAppRegistryEntry({ ...valid, nav: { ...nav, badge } })).toBe("nav.badge must be a same-origin path");
+    }
+  });
   test("rejects a relative Help route", () =>
     expect(
       validateAppRegistryEntry({

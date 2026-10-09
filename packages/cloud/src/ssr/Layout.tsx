@@ -61,6 +61,7 @@ function buildNavLinks(
       match: resolveNavMatch(app) ?? app.nav.href.split("?")[0] ?? app.nav.href,
       description: app.description,
       accent: app.appearance?.accent,
+      badge: app.nav.badge,
     } satisfies LayoutAppLink,
   }));
   const primary = links.filter((entry) => entry.section === "primary").map((entry) => entry.link);
@@ -75,6 +76,7 @@ function buildNavLinks(
       match: "/admin",
       description: t.platformAdministration,
       accent: undefined,
+      badge: undefined,
     });
   }
   return { primary, more };
@@ -166,6 +168,7 @@ export default function Layout(props: LayoutProps) {
     href: app.href,
     description: app.description,
     accent: app.accent,
+    badge: app.badge,
   }));
   const searchLinks = navigationSearchItems(
     runtime.apps,

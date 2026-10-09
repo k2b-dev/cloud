@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-07
+updated: 2026-10-09
 ---
 
 # API surface
@@ -205,6 +205,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `defineLive`: live updates written in the transaction that makes the change; `routes(channels)` serves them over one socket per application with access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
+| `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |

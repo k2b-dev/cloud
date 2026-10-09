@@ -7,6 +7,9 @@ const isString = (value: unknown): value is string => typeof value === "string";
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
 const isStringRecord = (value: unknown): value is Record<string, string> => isRecord(value) && Object.values(value).every(isString);
 
+/** An absolute path on the current origin: one leading slash, no backslash or whitespace. */
+const SAME_ORIGIN_PATH = /^\/(?![\/\\])[^\\\s]*$/;
+
 const invalid = (path: string, expected: string): string => `${path} must be ${expected}`;
 
 export const validateAppRegistryEntry = (value: unknown): string | null => {
@@ -61,6 +64,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (value.nav.requiresRoles !== undefined && !isStringArray(value.nav.requiresRoles)) {
       return invalid("nav.requiresRoles", "an array of strings");
     }
+    if (value.nav.badge !== undefined && (!isString(value.nav.badge) || !SAME_ORIGIN_PATH.test(value.nav.badge))) {
+      return invalid("nav.badge", "a same-origin path");
+    }
   }
   if (value.adminNav !== undefined) {
     if (
@@ -98,7 +104,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
           !link.label.trim() ||
           (link.description !== undefined && !isString(link.description)) ||
           !isString(link.href) ||
-          !/^\/(?![\/\\])[^\\\s]*$/.test(link.href) ||
+          !SAME_ORIGIN_PATH.test(link.href) ||
           (link.icon !== undefined && !isString(link.icon)) ||
           (link.keywords !== undefined && !isStringArray(link.keywords)),
       )

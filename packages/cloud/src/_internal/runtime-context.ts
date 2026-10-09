@@ -55,6 +55,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
             // Registry stores roles as serialized strings; the source type is
             // Role[] and round-trip is value-preserving.
             requiresRoles: e.nav.requiresRoles as Role[] | undefined,
+            badge: e.nav.badge,
           }
         : undefined,
       help: e.help ? { ...e.help } : undefined,
