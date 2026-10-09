@@ -173,16 +173,29 @@ const checkJob = (state: State, source: Source, root: string, id: string, job: J
     if (hub) state.findings.push(dockerHubFinding(state, source, hub, image, jobStart));
   }
 
-  for (const step of job.steps)
+  for (const step of job.steps) {
+    const uses = step.uses ?? "";
+    const finding = (message: string) =>
+      state.findings.push({ file: source.file, line: lineOf(source.text, uses, jobStart), message: `job ${id}: ${message}` });
+    const hub = uses.startsWith("docker://") ? dockerHubImage(uses.slice("docker://".length)) : undefined;
+    if (hub) state.findings.push(dockerHubFinding(state, source, hub, uses, jobStart));
     if (
-      step.uses?.startsWith("docker/setup-buildx-action@") &&
+      uses.startsWith("docker/setup-buildx-action@") &&
       !String(step.with?.["driver-opts"] ?? "").includes(`image=${mirror}moby/buildkit:`)
     )
-      state.findings.push({
-        file: source.file,
-        line: lineOf(source.text, step.uses, jobStart),
-        message: `job ${id}: docker/setup-buildx-action pulls moby/buildkit from Docker Hub; set driver-opts to image=${mirror}<its entry in ${listPath}>`,
-      });
+      finding(
+        `docker/setup-buildx-action pulls moby/buildkit from Docker Hub; set driver-opts to image=${mirror}<its entry in ${listPath}>`,
+      );
+    // BuildKit's default SBOM generator is docker/buildkit-syft-scanner from Docker Hub.
+    const sbom = String(step.with?.sbom ?? "false");
+    const attests = String(step.with?.attests ?? "");
+    if (
+      uses.startsWith("docker/build-push-action@") &&
+      (sbom !== "false" || attests.includes("type=sbom")) &&
+      !`${sbom},${attests}`.includes(`generator=${mirror}`)
+    )
+      finding(`the SBOM attestation pulls its generator from Docker Hub; set sbom to generator=${mirror}<its entry in ${listPath}>`);
+  }
 };
 
 const checkWorkflow = (state: State, source: Source, root: string) => {
@@ -221,11 +234,13 @@ const repositoryFiles = (root: string): string[] => {
  * CI, the release workflows and the image builds never pull from Docker Hub,
  * whose anonymous pull limit failed CI runs. Each Docker Hub image is pinned in
  * .github/mirror-images.txt and comes from the public GHCR mirror: service
- * containers, BuildKit and Dockerfiles name the mirror at exactly the listed
- * digest, and a job that starts a Docker Hub image by name (`docker run`,
- * Compose) first pulls it through .github/pull-images.sh. A TypeScript script
- * or fixture may name the mirror at the listed digest; a Docker Hub name in one
- * is out of reach here, and its CI job pulls it through pull-images.sh.
+ * containers, `docker://` steps, BuildKit, the SBOM generator and Dockerfiles
+ * name the mirror at exactly the listed digest, and a job that starts a Docker
+ * Hub image by name (`docker run`, Compose) first pulls it through
+ * .github/pull-images.sh. A TypeScript script or fixture may name the mirror
+ * at the listed digest; a Docker Hub name in one is out of reach here, because
+ * nothing here knows which job runs the file, so that job's pull-images.sh
+ * call has to list it.
  */
 export const rule: Rule = {
   name: "mirror-images",

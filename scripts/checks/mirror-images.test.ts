@@ -87,6 +87,13 @@ test("rejects Docker Hub images that a workflow job would pull directly", async 
         "          docker run --rm nats:2.14.3-alpine",
         "          docker pull redis:7",
         "          docker compose -f compose.test.yml up -d",
+        "      - uses: docker://alpine:3.20",
+        "      - uses: docker/build-push-action@0000000000000000000000000000000000000000 # v7",
+        "        with:",
+        "          sbom: true",
+        "      - uses: docker/build-push-action@1111111111111111111111111111111111111111 # v7",
+        "        with:",
+        "          attests: type=sbom",
         "",
       ].join("\n"),
     ),
@@ -99,8 +106,34 @@ test("rejects Docker Hub images that a workflow job would pull directly", async 
     ".github/workflows/ci.yml:8 postgres:17-alpine would be pulled from Docker Hub; add it to .github/mirror-images.txt and pull it from the mirror",
     `.github/workflows/ci.yml:13 nats:2.14.3-alpine would be pulled from Docker Hub; use ${nats}`,
     ".github/workflows/ci.yml:15 job test: docker/setup-buildx-action pulls moby/buildkit from Docker Hub; set driver-opts to image=ghcr.io/k2b-dev/mirror/<its entry in .github/mirror-images.txt>",
+    ".github/workflows/ci.yml:21 alpine:3.20 would be pulled from Docker Hub; add it to .github/mirror-images.txt and pull it from the mirror",
+    ".github/workflows/ci.yml:22 job test: the SBOM attestation pulls its generator from Docker Hub; set sbom to generator=ghcr.io/k2b-dev/mirror/<its entry in .github/mirror-images.txt>",
+    ".github/workflows/ci.yml:25 job test: the SBOM attestation pulls its generator from Docker Hub; set sbom to generator=ghcr.io/k2b-dev/mirror/<its entry in .github/mirror-images.txt>",
     ".github/mirror-images.txt:2 no workflow or Dockerfile uses nats:2.14.3-alpine; remove it from the list",
   ]);
+});
+
+test("accepts docker:// steps and an SBOM generator from the mirror", async () => {
+  const scanner = `ghcr.io/k2b-dev/mirror/docker/buildkit-syft-scanner:1.12.0@${digest("c")}`;
+  expect(
+    await findings({
+      ".github/mirror-images.txt": `nats:2.14.3-alpine@${digest("a")}\ndocker/buildkit-syft-scanner:1.12.0@${digest("c")}\n`,
+      ".github/workflows/release.yml": workflow(
+        [
+          "    steps:",
+          `      - uses: docker://${nats}`,
+          "      - uses: docker/build-push-action@0000000000000000000000000000000000000000 # v7",
+          "        with:",
+          `          sbom: generator=${scanner}`,
+          "      - uses: docker/build-push-action@1111111111111111111111111111111111111111 # v7",
+          "        with:",
+          "          sbom: false",
+          "          attests: type=provenance,mode=max",
+          "",
+        ].join("\n"),
+      ),
+    }),
+  ).toEqual([]);
 });
 
 test("rejects malformed and unused list entries and mirror references that are not listed", async () => {

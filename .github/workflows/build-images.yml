@@ -89,7 +89,8 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           provenance: mode=max
-          sbom: true
+          # The SBOM generator from the mirror; BuildKit's default pulls it from Docker Hub.
+          sbom: generator=ghcr.io/k2b-dev/mirror/docker/buildkit-syft-scanner:1.12.0@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
           labels: |
             org.opencontainers.image.title=${{ matrix.image.image }}
             org.opencontainers.image.version=${{ inputs.version }}

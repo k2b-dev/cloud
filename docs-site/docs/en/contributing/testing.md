@@ -465,11 +465,14 @@ Run the same commands locally before opening a pull request.
 
 An integration suite that starts its own container needs only Docker and its
 `CLOUD_TEST_*` targets, so it runs in the gate as well; the Files
-stable-reference suite starts a private Filegate this way. The integration job
-pulls such images first through `.github/pull-images.sh`, with retries, because
-`docker run` does not retry a failed pull. When you add a suite like this or
-change its image, add the image to that pull step in
-`.github/workflows/ci.yml` and `.github/workflows/nightly.yml`.
+stable-reference suite starts a private Filegate this way, and the Assistant
+artifact suite a disposable PostgreSQL. The integration job pulls such images
+first through `.github/pull-images.sh`, with retries, because `docker run` does
+not retry a failed pull. When you add a suite like this or change its image,
+add the image to that pull step in `.github/workflows/ci.yml` and
+`.github/workflows/nightly.yml`. The `mirror-images` check cannot see which job
+runs a test file, so it does not report a missing image there; without it, the
+job pulls a Docker Hub image from Docker Hub.
 
 ### Where CI images come from
 
@@ -478,9 +481,9 @@ Every Docker Hub image that CI, the release workflows, or the image builds use
 is pinned by digest in `.github/mirror-images.txt` and comes from the public
 mirror `ghcr.io/k2b-dev/mirror/<name>:<tag>`, which serves the same digest:
 
-- Service containers, the `docker/setup-buildx-action` BuildKit image, and the
-  `# syntax=` and `FROM` lines of every Dockerfile name the mirror reference,
-  for example
+- Service containers, the `docker/setup-buildx-action` BuildKit image, the
+  SBOM generator of the release image builds, and the `# syntax=` and `FROM`
+  lines of every Dockerfile name the mirror reference, for example
   `ghcr.io/k2b-dev/mirror/postgres:17-alpine@sha256:…`.
 - Steps and test fixtures that start an image by its Docker Hub name, such as
   `docker run nats:2.14.3-alpine`, Compose, or the Files Filegate suites, get
@@ -491,15 +494,18 @@ mirror `ghcr.io/k2b-dev/mirror/<name>:<tag>`, which serves the same digest:
 
 The `mirror` job in `ci.yml` runs `.github/mirror-images.sh` before every job
 that pulls an image. It copies each listed image whose digest the mirror does
-not serve yet, with its manifest list unchanged, and checks that every mirror
-package can be pulled without credentials. The same workflow,
-`mirror-images.yml`, also runs weekly and on demand. A new package created by
-the first copy must be public; if the check reports that it is not, change its
-visibility in the package settings on GitHub once.
+not serve yet, unchanged, and checks that every listed digest can be pulled
+without credentials. Consumers pull by digest, so the mirror's tags are only
+labels. Registry requests are retried, and an image that still fails does not
+stop the others. The same workflow, `mirror-images.yml`, also runs weekly and
+on demand. A new package created by the first copy must be public; if the
+check reports that it is not, change its visibility in the package settings on
+GitHub once.
 
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
-Docker Hub image directly, when a mirror reference does not carry the digest
-from the list, and when a list entry is no longer used.
+Docker Hub image directly, including through BuildKit's default SBOM generator,
+when a mirror reference does not carry the digest from the list, and when a
+list entry is no longer used.
 
 To add or bump an image:
 
@@ -523,7 +529,9 @@ fails on a new digest until a maintainer runs the `Mirror images` workflow on a
 branch of this repository with the same list. Dependabot does not update Docker
 images in this repository; bump them through the list.
 
-To try the copy against a local registry:
+To try the copy against a local registry, log in to Docker Hub first: the
+script copies every listed image, which takes more manifest requests than
+Docker Hub allows anonymous clients.
 
 ```bash
 docker run --detach --rm --name mirror-registry --publish 127.0.0.1:5000:5000 registry:2
