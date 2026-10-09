@@ -39,9 +39,20 @@ test("resolution uses configured public origin, validates input, and never calls
   expect(() => resolveCommandLink("demo", command, { injected: true }, {}, "https://cloud.example.test")).toThrow();
 });
 test("return destinations reject off-site URLs and browser URL normalization tricks", () => {
-  for (const value of ["https://evil.test", "//evil.test", "/\\evil.test", "/\n/evil.test", "javascript:alert(1)"]) {
+  for (const value of [
+    "https://evil.test",
+    "//evil.test",
+    "/\\evil.test",
+    "/\n/evil.test",
+    "javascript:alert(1)",
+    "/.//evil.test/x",
+    "/%2e//evil.test",
+    "/app/..//evil.test",
+  ]) {
     expect(CommandPathSchema.safeParse(value).success).toBe(false);
   }
   expect(CommandPathSchema.safeParse("/app/contacts?contact=AbCd12#details").success).toBe(true);
+  expect(CommandPathSchema.safeParse("/app/files//nested").success).toBe(true);
+  expect(() => commandPath("/app/..//evil.test", "demo.compose", {})).toThrow();
   expect(() => commandPath("/app/demo", "demo.compose", { text: "x".repeat(9000) })).toThrow();
 });

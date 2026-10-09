@@ -11,19 +11,27 @@ const getUserBackedActor = (c: Context<AuthContext>) => {
 
 /**
  * The protected request's URL from Traefik's X-Forwarded-* headers, or the
- * fallback for direct and local calls. A URI that resolves to another host,
- * such as `//other.example/x`, returns to the protected host's root instead.
+ * fallback for direct and local calls and for a host value that is not a plain
+ * host. A URI that resolves to another host, such as `//other.example/x`, or
+ * does not parse returns to the protected host's root instead.
  */
 export const forwardedRequestUrl = (headers: Headers, fallback: string): string => {
   const host = headers.get("X-Forwarded-Host");
   if (!host) return fallback;
+  let origin: URL;
+  try {
+    origin = new URL(`${headers.get("X-Forwarded-Proto") ?? "https"}://${host}`);
+  } catch {
+    return fallback;
+  }
+  // Userinfo, a path, a query, or a fragment in the host or proto value would pick the origin.
+  if (origin.href !== `${origin.origin}/`) return fallback;
   const uri = headers.get("X-Forwarded-Uri") ?? "/";
   try {
-    const origin = new URL(`${headers.get("X-Forwarded-Proto") ?? "https"}://${host}`);
     const url = new URL(uri.startsWith("/") ? uri : `/${uri}`, origin);
     return url.origin === origin.origin ? url.href : origin.href;
   } catch {
-    return fallback;
+    return origin.href;
   }
 };
 
