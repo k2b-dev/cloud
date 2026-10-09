@@ -195,14 +195,45 @@ describe("AI HTTP input helpers", () => {
       });
 
       test("accepts an older client's full list and preserves known tool order", () => {
-        const knownIds: AiClientToolId[] = ["local_bash", ...CODE_RUNTIME_TOOL_NAMES];
-        expect(schema.parse({ ...input, clientToolIds: knownIds }).clientToolIds).toEqual(knownIds);
-        expect(schema.parse({ ...input, clientToolIds: ["code_interact", ...knownIds] }).clientToolIds).toEqual(knownIds);
+        expect(
+          schema.parse({
+            ...input,
+            clientToolIds: [
+              "local_bash",
+              "code_run",
+              "code_action",
+              "code_inspect",
+              "code_interact",
+              "code_stop",
+              "code_open",
+              "code_export",
+              "code_present",
+              "code_secret",
+            ],
+          }).clientToolIds,
+        ).toEqual([
+          "local_bash",
+          "code_run",
+          "code_action",
+          "code_inspect",
+          "code_stop",
+          "code_open",
+          "code_export",
+          "code_present",
+          "code_secret",
+        ]);
         expect(schema.parse({ ...input, clientToolIds: ["code_secret", "retired_tool", "code_run", "local_bash"] }).clientToolIds).toEqual([
           "code_secret",
           "code_run",
           "local_bash",
         ]);
+      });
+
+      test("accepts advertisements longer than the previous ten-item cap", () => {
+        const knownIds: AiClientToolId[] = ["local_bash", ...CODE_RUNTIME_TOOL_NAMES];
+        const clientToolIds = ["code_interact", "future_tool", ...knownIds];
+        expect(clientToolIds.length).toBeGreaterThan(10);
+        expect(schema.parse({ ...input, clientToolIds }).clientToolIds).toEqual(knownIds);
       });
 
       test("accepts absent, empty, and unknown-only advertisements", () => {
@@ -224,23 +255,10 @@ describe("AI HTTP input helpers", () => {
       });
 
       test("bounds names and rejects malformed or non-string IDs", () => {
-        expect(schema.parse({ ...input, clientToolIds: ["a".repeat(64)] }).clientToolIds).toEqual([]);
-        for (const id of [
-          "a".repeat(65),
-          "",
-          "Code_run",
-          "code-run",
-          "code.run",
-          "code run",
-          " code_run",
-          "code_run\n",
-          "1tool",
-          "_tool",
-          "töol",
-          123,
-          null,
-          {},
-        ]) {
+        for (const id of ["a".repeat(64), "Code_run", "code-run", "local-shell", "1tool", "_tool"]) {
+          expect(schema.parse({ ...input, clientToolIds: [id] }).clientToolIds).toEqual([]);
+        }
+        for (const id of ["a".repeat(65), "", "code.run", "code run", " code_run", "code_run\n", "töol", 123, null, {}]) {
           expect(() => schema.parse({ ...input, clientToolIds: [id] })).toThrow();
         }
       });

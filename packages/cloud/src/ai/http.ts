@@ -122,15 +122,11 @@ export type AiTurnContentPart = z.infer<typeof AiUserContentPartSchema>;
 
 export const AiClientToolIdSchema = z.enum(["local_bash", ...CODE_RUNTIME_TOOL_NAMES] satisfies [AiClientToolId, ...AiClientToolId[]]);
 
-// Allow retired tools in older clients' lists while bounding name text to 4 KiB.
+// Names use aiCapabilityToolName's provider grammar and 64-character limit. The 64-item cap matches allowedTools, with headroom
+// for retired and not-yet-known names; 64 names × 64 ASCII characters bounds advertised name text to 4 KiB.
 const AI_CLIENT_TOOL_MAX_ITEMS = 64;
 const AiClientToolIdsSchema = z
-  .array(
-    z
-      .string()
-      .max(64)
-      .regex(/^[a-z][a-z0-9_]*$/),
-  )
+  .array(z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/))
   .max(AI_CLIENT_TOOL_MAX_ITEMS)
   .refine((ids) => new Set(ids).size === ids.length, "Client tool IDs must be unique")
   .transform((ids) => ids.filter((id): id is AiClientToolId => AiClientToolIdSchema.safeParse(id).success));

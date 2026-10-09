@@ -527,10 +527,9 @@ clients without a code host, and scheduled tasks never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working
 after a tool is retired. Turn and draft submissions accept at most 64 distinct
-names, each at most 64 characters, starting with a lowercase ASCII letter and
-containing only lowercase ASCII letters, digits, or underscores. Duplicates,
-too many names, and malformed names are rejected. Clients without an execution
-host should omit this option.
+names, each 1 to 64 ASCII letters, digits, underscores, or hyphens (the tool-name
+limit model providers share). Duplicates, too many names, and malformed names
+are rejected. Clients without an execution host should omit this option.
 
 Handlers receive `name`, `args`, `callId`, `turnId`, and `conversationId`. Capture
 that conversation identity for asynchronous work instead of using whichever

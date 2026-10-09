@@ -13,6 +13,7 @@ import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
 import { __aiRoutesTest, aiRoutes } from "./routes";
+import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
@@ -71,6 +72,41 @@ suite("global AI conversation boundaries", () => {
       expect((await aiFileStore.read({ conversationId: chat.id, path: "/photo.jpg" }))?.bytes).toEqual(jpeg);
       expect((await upload(input.subarray(0, 30))).status).toBe(422);
     } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test("filters unknown client tools before submitting a saved draft", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const submissions: Parameters<typeof aiRuntime.submitAiChatTurn>[0][] = [];
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) => {
+      submissions.push(submission);
+      throw new Error("Submission stopped by test");
+    });
+    try {
+      const saved = await aiConversations.saveDraft({
+        conversationId: chat.id,
+        ownerUserId: userId,
+        expectedRevision: chat.draft.revision,
+        content: [{ type: "text", text: "Test the app" }],
+      });
+      expect(saved.ok).toBe(true);
+      if (!saved.ok) throw new Error("Draft save failed");
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/turns`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await createTestSession(userId)}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ draftRevision: saved.draft.revision, clientToolIds: ["code_interact", "code_run"] }),
+      });
+      expect(response.status).toBe(500);
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0]?.clientToolIds).toEqual(["code_run"]);
+    } finally {
+      submit.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
