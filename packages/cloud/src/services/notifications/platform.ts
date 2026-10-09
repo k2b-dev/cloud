@@ -198,6 +198,8 @@ const prepareChannel = async (input: {
 
   try {
     const emailPresentation = input.channel === "email" ? await input.emailPresentation?.() : undefined;
+    const { preview: _preview, ...otherPresentation } = input.presentation;
+    const presentation = input.channel === "browser" ? input.presentation : otherPresentation;
     return await Promise.all(
       destinations.map(async (destination) => ({
         channel: input.channel,
@@ -205,7 +207,7 @@ const prepareChannel = async (input: {
         destinationKey: destination.key,
         destinationLabel: destination.label,
         payloadEncrypted: await encryptSecret(
-          driver.createPayload({ presentation: input.presentation, email: emailPresentation, destination, event: input.event }),
+          driver.createPayload({ presentation, email: emailPresentation, destination, event: input.event }),
         ),
         required: input.required,
         routePriority: input.routePriority,

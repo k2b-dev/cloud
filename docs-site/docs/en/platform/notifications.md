@@ -251,6 +251,10 @@ It shortens long text at a grapheme boundary to at most 200 code units,
 including a single `…`; emoji and combining characters remain intact. A
 grapheme cut by the input bound is omitted. Empty previews are omitted, and
 long message text is shortened rather than rejected.
+If the preview would make the encrypted push message larger than 4,096 bytes,
+the size every push service must accept
+([RFC 8030](https://www.rfc-editor.org/rfc/rfc8030#section-7.2)), Cloud omits
+the preview and the notification arrives with its title only.
 
 Preview text is shown by the operating system, including on the lock screen
 and in notification centres, and may be mirrored to paired devices. It travels
@@ -258,9 +262,15 @@ through the browser vendor's push service encrypted for the subscription
 ([RFC 8291](https://www.rfc-editor.org/rfc/rfc8291)); the push service sees
 timing and size, but not the text. Cloud keeps the preview only inside the
 encrypted delivery payload until the attempt succeeds or fails permanently,
-never on the event or in history. Email ignores it. Send a preview only when
-the recipient may read the content at delivery time, and give operators and
-people a way to turn previews off where content is sensitive.
+never on the event or in history. Only the browser channel receives `preview`;
+email and deployment channels never see it.
+
+The preview is fixed when `send()` runs. Cloud does not check access again
+before a queued, retried, or fallback browser delivery. After the push service
+accepts a push, Cloud cannot recall or change it. An offline device receives it
+when it reconnects, up to 24 hours later. Decide as late as possible before
+`send()` whether the recipient may read the content, and offer operators a
+setting to turn previews off where content is sensitive.
 
 Set `group` in `render()` to replace notifications for the same subject on each
 device. Cloud prefixes the key with the application's ID: `inventory` and
@@ -280,10 +290,10 @@ The device applies a badge only when it was rendered at or after the last badge
 it applied. Badge support is optional: unsupported browsers and rejected badge
 requests silently leave it absent or unchanged, and the notification still appears.
 The badge belongs to the installed Cloud application, so applications that
-set it must decide which count to use. Email ignores `group`, `badge`, and
-`preview`. These fields are not stored on the notification event; they travel
-only in the browser delivery payload. The presentation `body` still stays out
-of that payload; applications opt into notification text through `preview`.
+set it must decide which count to use. Email ignores `group` and `badge`.
+None of `group`, `badge`, and `preview` is stored on the notification event.
+The presentation `body` still stays out of the browser payload; applications
+opt into notification text through `preview`.
 
 Without an active endpoint, Cloud records `no_endpoint` for that browser
 delivery. A later configured recommended channel can still receive the event.
@@ -398,8 +408,10 @@ const unregisterSms = registerNotificationChannel(smsDriver);
 ```
 
 A driver resolves destinations, builds a persisted provider payload, and
-delivers that payload. `deliver(payload, context)` receives an optional second
-argument with `deliveryId` and, during worker processing, an abort `signal`.
+delivers that payload. Drivers receive the presentation without `preview`,
+which Cloud reserves for browser notifications. `deliver(payload, context)`
+receives an optional second argument with `deliveryId` and, during worker
+processing, an abort `signal`.
 For an email recovery, it also includes the persisted `outgoingMailId`.
 Existing drivers may keep returning `void` to indicate delivery. A driver that
 hands work to a durable provider may return `{ status: "pending", retryAfterMs,

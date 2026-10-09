@@ -73,6 +73,19 @@ test("browser delivery carries localized previews, namespaces groups, and preser
       assert.equal("body" in payload, false);
       assert.equal("body" in JSON.parse(sent.at(-1).payload), false);
     }
+    const cjkPreview = "字".repeat(200);
+    const longInput = { ...input, presentation: { ...input.presentation, targetHref: "/app/inventory?q=" + "a".repeat(3_300) } };
+    const longPlain = driver.createPayload(longInput);
+    const longPayload = driver.createPayload({ ...longInput, presentation: { ...longInput.presentation, preview: cjkPreview } });
+    assert.deepEqual(longPayload, longPlain);
+    assert.equal("preview" in longPayload, false);
+    await driver.deliver(longPayload);
+    assert.equal("preview" in JSON.parse(sent.at(-1).payload), false);
+    const shortPayload = driver.createPayload({ ...input, presentation: { ...input.presentation, preview: cjkPreview } });
+    assert.deepEqual(shortPayload, { ...plain, preview: cjkPreview });
+    await driver.deliver(shortPayload);
+    assert.equal(JSON.parse(sent.at(-1).payload).preview, cjkPreview);
+    assert.ok(Buffer.byteLength(sent.at(-1).payload, "utf8") <= 3_993);
     const groupedStart = sent.length;
     for (const [appId, id, badge] of [
       ["inventory", eventId, 3], ["inventory", crypto.randomUUID(), 0], ["other", crypto.randomUUID(), 2],

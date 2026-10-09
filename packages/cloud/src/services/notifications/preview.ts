@@ -6,9 +6,9 @@ export const normalizeNotificationPreview = (value: string): string | undefined 
   let prefix = value.slice(0, PREVIEW_INPUT_LIMIT);
   const clipped = value.length > prefix.length;
   if (clipped) {
-    // The final grapheme may continue beyond the bounded prefix. Omit it.
-    const last = segmenter.segment(prefix).containing(prefix.length - 1);
-    if (last) prefix = prefix.slice(0, last.index);
+    // A boundary at or before the bound depends on at most one following code point (two UTF-16 units).
+    const last = segmenter.segment(value.slice(0, PREVIEW_INPUT_LIMIT + 2)).containing(PREVIEW_INPUT_LIMIT - 1);
+    if (last && last.index + last.segment.length > PREVIEW_INPUT_LIMIT) prefix = prefix.slice(0, last.index);
   }
   const text = prefix.replace(/[\s\p{Cc}]+/gu, " ").trim();
   if (!text) return undefined;

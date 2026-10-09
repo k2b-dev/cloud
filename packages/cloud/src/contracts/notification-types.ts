@@ -31,7 +31,7 @@ export const validateNotificationTargetHref = (value: string): `/${string}` => {
 export type NotificationPresentation = {
   title: string;
   body?: string;
-  /** Short text shown in the browser/OS notification, including the lock screen. Browser push only; email and history ignore it. */
+  /** Short text shown in the browser/OS notification, including the lock screen. Cloud passes it only to the browser channel; email, deployment channels, and notification history never receive it. */
   preview?: string;
   /** Stable app-chosen browser group key, namespaced by Cloud per application. */
   group?: string;

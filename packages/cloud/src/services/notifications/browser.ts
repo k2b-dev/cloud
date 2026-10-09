@@ -30,6 +30,21 @@ type BrowserDeliveryPayload = {
   createdAt?: number;
 };
 
+// RFC 8030 section 7.2 guarantees 4,096 bytes; aes128gcm adds a header, tag, and padding delimiter.
+const WEB_PUSH_PLAINTEXT_BUDGET = 4_096 - 86 - 16 - 1;
+
+const browserPushMessage = (payload: BrowserDeliveryPayload): string =>
+  JSON.stringify({
+    type: "cloud-notification",
+    eventId: payload.eventId,
+    title: payload.title,
+    ...(payload.preview !== undefined ? { preview: payload.preview } : {}),
+    targetHref: payload.targetHref,
+    ...(payload.group !== undefined ? { group: payload.group } : {}),
+    ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
+    ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}),
+  });
+
 const BrowserDeliveryPayloadSchema = z.object({
   endpointId: z.uuid(),
   subscription: BrowserPushSubscriptionSchema,
@@ -160,7 +175,7 @@ const browserDriver = {
         ? undefined
         : notificationGroupTag(event.definitionId.slice(0, event.definitionId.lastIndexOf(".")), presentation.group);
     if (group === null) throw new Error("Invalid notification group tag");
-    return BrowserDeliveryPayloadSchema.parse({
+    const payload = BrowserDeliveryPayloadSchema.parse({
       endpointId: context.endpointId,
       subscription: context.subscription,
       eventId: event.id,
@@ -171,6 +186,11 @@ const browserDriver = {
       ...(presentation.badge !== undefined ? { badge: presentation.badge } : {}),
       ...(presentation.group !== undefined || presentation.badge !== undefined ? { createdAt: Date.now() } : {}),
     });
+    if (payload.preview !== undefined && Buffer.byteLength(browserPushMessage(payload), "utf8") > WEB_PUSH_PLAINTEXT_BUDGET) {
+      const { preview: _preview, ...titleOnlyPayload } = payload;
+      return titleOnlyPayload;
+    }
+    return payload;
   },
   deliver: async (value: unknown) => {
     const payload: BrowserDeliveryPayload = BrowserDeliveryPayloadSchema.parse(value);
@@ -188,24 +208,11 @@ const browserDriver = {
     }
     await ensureWebPushConfigured();
     try {
-      await sendPinnedWebPush(
-        payload.subscription,
-        JSON.stringify({
-          type: "cloud-notification",
-          eventId: payload.eventId,
-          title: payload.title,
-          ...(payload.preview !== undefined ? { preview: payload.preview } : {}),
-          targetHref: payload.targetHref,
-          ...(payload.group !== undefined ? { group: payload.group } : {}),
-          ...(payload.badge !== undefined ? { badge: payload.badge } : {}),
-          ...(payload.createdAt !== undefined ? { createdAt: payload.createdAt } : {}),
-        }),
-        {
-          TTL: 24 * 60 * 60,
-          urgency: "normal",
-          topic: createHash("sha256").update(payload.eventId).digest("base64url").slice(0, 32),
-        },
-      );
+      await sendPinnedWebPush(payload.subscription, browserPushMessage(payload), {
+        TTL: 24 * 60 * 60,
+        urgency: "normal",
+        topic: createHash("sha256").update(payload.eventId).digest("base64url").slice(0, 32),
+      });
     } catch (error) {
       const statusCode = error && typeof error === "object" && "statusCode" in error ? Number(error.statusCode) : null;
       if (statusCode === 404 || statusCode === 410) {
