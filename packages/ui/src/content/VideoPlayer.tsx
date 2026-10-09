@@ -90,14 +90,15 @@ export function VideoPlayer(props: VideoPlayerProps) {
     });
   });
 
-  // A media fragment makes the engine start where the address continues, so no seek of the player's own competes with
-  // it: WebKit drops a seek that arrives while the fragment's is under way. Safari on iOS shows no frame before playback
-  // without a poster; a fragment just after the beginning makes it load and show the first one.
+  // A media fragment makes the engine start where a renewed address continues, so no seek of the player's own competes
+  // with it: WebKit drops a seek that arrives while the fragment's is under way. It replaces a fragment the renewed
+  // address brings, which would start the engine at another point. Safari on iOS shows no frame before playback without
+  // a poster; a fragment just after the beginning makes it load and show the first one.
   const videoSource = () => {
     const src = source();
-    if (!src || src.includes("#")) return src ?? undefined;
-    if (start() > 0) return `${src}#t=${start().toFixed(3)}`;
-    return props.poster ? src : `${src}#t=0.001`;
+    if (!src) return undefined;
+    if (start() > 0) return `${src.replace(/#.*$/, "")}#t=${start().toFixed(3)}`;
+    return src.includes("#") || props.poster ? src : `${src}#t=0.001`;
   };
 
   const giveUp = () => {
@@ -138,7 +139,8 @@ export function VideoPlayer(props: VideoPlayerProps) {
     if (element.videoWidth === 0 && element.videoHeight === 0) return giveUp();
     if (!renewal || renewal.loaded) return;
     renewal.loaded = true;
-    // Only an address that brings its own fragment does not start at the point by itself.
+    // WebKit applies the fragment only once it has a frame, so it may still stand at the beginning here; the player
+    // seeks to the same point, and the fragment's seek that follows lands there too.
     if (renewal.time > 0 && Math.abs(element.currentTime - renewal.time) > RESUME_TOLERANCE) element.currentTime = renewal.time;
     element.playbackRate = renewal.rate;
     if (renewal.playing) void element.play().catch(() => undefined);
