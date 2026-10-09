@@ -47,6 +47,18 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 - **Spalten umsortieren:** Personen mit Schreibzugriff ziehen einen Spaltenkopf mit Maus oder Stift an eine neue Stelle oder verschieben die Spalte über das Menü **⋯** im Kopf nach links oder rechts. Auf einem Touchscreen scrollt eine Wischbewegung über den Kopf das Board; nutze dort das Menü **⋯**. Die Reihenfolge ändert sich für alle im Space und umfasst die automatischen Spalten; die Liste unter **Status** in den Einstellungen zeigt dieselbe Reihenfolge.
 :::
 
+## Planen in der Monatsansicht {icon="calendar-month"}
+
+:::reference
+- **Werkzeugleiste:** Die Filter **Umfang**, **Priorität**, **Status** und **Tags** und die Zahl der angezeigten Einträge stehen direkt hinter dem Monatsnamen, in jeder Kalenderansicht. Ist der Kalender schmaler, zeigen die Filter nur ihr Symbol oder rücken in eine eigene Zeile.
+- **Tage auswählen:** Ein Klick oder Tippen wählt einen Tag aus und verlässt den Monat nie. Ziehe über mehrere Tage oder halte die **Umschalttaste** beim Klicken oder bei den Pfeiltasten, um mehrere auszuwählen. Die Pfeiltasten verschieben die Auswahl, **Bild auf** und **Bild ab** wechseln den Monat, **Esc** hebt die Auswahl auf.
+- **Auf der Auswahl erstellen:** Nach einem Klick wartet neben dem Tag ein kleines Formular **Neuer Eintrag**, ohne die Tastatur zu übernehmen: Tippe einfach los oder drücke **Tab**, um es auszufüllen. Nach dem Ziehen über Tage, einem Doppelklick, der **Eingabetaste** oder **N** öffnet es sich bereit für den Titel, auf dem Handy mit einem zweiten Tippen auf den ausgewählten Tag. Wähle **Termin**, **Ganztägig** oder **Aufgabe**; die Zeile daneben sagt, wann. Die **Eingabetaste** legt an, **Mit Details** öffnet das volle Formular, **Esc** oder ein Klick daneben bricht ab. Ziehen über mehrere Tage legt einen ganztägigen Termin über alle an. **Neuer Termin** in der Werkzeugleiste öffnet das volle Formular für die ausgewählten Tage.
+- **Menü:** Ein Rechtsklick, auf dem Handy langes Drücken, oder **Umschalt+F10** auf einen Tag oder die ausgewählten Tage bietet **Neuer Termin**, **Neuer ganztägiger Termin** und **Neue Aufgabe mit Fälligkeit** für diese Tage an, danach **Tag öffnen** und **Woche öffnen**.
+- **Einen Tag oder eine Woche öffnen:** Wähle einen Tag aus und dann **Tag** oder **Woche** in der Ansichtsauswahl, nutze **Tag öffnen** im Menü oder in der Tagesliste, oder klicke auf eine Kalenderwoche.
+- **Lange Termine:** Ein Termin über mehrere Tage ist pro Wochenzeile ein Balken mit seinem Titel. Wo eine Wochenzeile ihn abschneidet, ist sein Ende abgerissen, und wenn Platz ist, steht dort, wo er weitergeht, zum Beispiel **bis 13.** oder **seit 7.** Die nächste Zeile führt ihn fort, und zeigst du auf einen Teil, leuchten die anderen mit.
+- **Volle Tage:** Jeder Tag zeigt so viele Einträge, wie in seine Höhe passen; **+N weitere** zählt den Rest und öffnet den ganzen Tag, ebenso die **Leertaste** auf einem ausgewählten Tag.
+:::
+
 ## Farben im Kalender {icon="palette"}
 
 :::reference

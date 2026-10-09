@@ -86,6 +86,8 @@ export type GestureMenuProps = {
   sheetTop?: (close: () => void) => JSX.Element;
   /** Tab order of the element. A list that moves focus between its rows itself passes -1. */
   tabIndex?: number;
+  /** Runs before the menu or the sheet shows its items, for example to select what was pressed. */
+  onOpen?: () => void;
   class?: string;
 };
 
@@ -218,6 +220,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   const openSheet = () => {
     if (sheetOpen || !active()) return;
     sheetOpen = true;
+    props.onOpen?.();
     const current = locale();
     let chosen: (() => void) | undefined;
     const choose = (action: () => void) => {
@@ -452,7 +455,14 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   });
 
   return (
-    <ContextMenu items={props.items} label={props.label} tabIndex={props.tabIndex} disabled={!active()} class={props.class}>
+    <ContextMenu
+      items={props.items}
+      label={props.label}
+      tabIndex={props.tabIndex}
+      disabled={!active()}
+      onOpen={props.onOpen}
+      class={props.class}
+    >
       <div
         ref={surface}
         class="k2b-gesture-menu"

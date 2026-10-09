@@ -3534,6 +3534,7 @@
     .k2b-disclosure,
     .k2b-choice-popover,
     .k2b-date-popover,
+    .k2b-calendar-popover,
     .k2b-dropdown__menu
   ) {
   --k2b-field-surface: initial;
