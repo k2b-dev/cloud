@@ -149,6 +149,12 @@ must match completely, and array order matters. There are no wildcards,
 implicit parent-resource checks, or expressions. A notebook restriction cannot
 be inferred from a capability that only accepts a note ID.
 
+Background runs discover and load only capabilities their mandate policy and
+task grants can permit. Previously loaded tools outside that scope stay
+unavailable. Discovery ignores fixed inputs; Core checks them on every call.
+If the mandate cannot be read, has changed, or its policy is invalid, the run
+stops before the model starts and the task needs attention.
+
 Core checks the current mandate revision, grant pair, fixed values, and live
 capability approval mode before every invocation. The target application still
 checks the user's current resource permissions. Only actions with `approval:
@@ -159,8 +165,11 @@ interactive approvals do not authorize background work.
 Changing grants updates the mandate revision, invalidating older runs' authority.
 The agent can inspect a failed run and propose revised grants in the normal chat;
 expanding the scope requires a new reviewed task update. A worker cannot grant
-itself more authority. When a direct capability call lacks authority, the run
-fails with an actionable task failure, not a pending browser dialog. Scheduled
+itself more authority. A capability call rejected by the grants or fixed inputs
+returns a tool error so the model can continue with granted tools or explain
+what is missing. The task needs attention when its mandate is unavailable, paused, revoked, expired, or changed,
+when the target app rejects the sponsor with HTTP 401 or 403, when an action's
+outcome is unknown, or when approval or a browser is required. Scheduled
 turns also run the server-run Code Mode tools under the same task-scoped
 authority. Inside that code, a missing grant, revoked authority, or a call that
 needs an approval returns an error to the agent instead of failing the run; see

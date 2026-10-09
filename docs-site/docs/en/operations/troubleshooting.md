@@ -150,6 +150,16 @@ profile still uses an `assistant` CLI plugin from an earlier release. Run
 `cld plugins update assistant` for that profile; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
 
+## Scheduled AI tasks need attention
+
+Scheduled runs discover and load app capabilities only within their mandate
+policy and task grants. A call rejected by a grant or fixed input returns a tool
+error and lets the model continue. Check a task marked `needs_attention` for
+unavailable or changed mandate authority, a target app denying the sponsor,
+an unknown action outcome, or an operation requiring approval or a browser.
+Review the task's grants in the normal chat before changing its scope. See
+[Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
+
 ## AI turns stop using tools before they finish
 
 A turn answers without further tools in the last tenth of its run time limit,

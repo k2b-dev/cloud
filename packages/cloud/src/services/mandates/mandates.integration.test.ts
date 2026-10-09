@@ -79,7 +79,11 @@ suite("mandates", () => {
       input: { noteId: "note-a", content: "summary" },
     };
     expect((await mandates.validateIssueAuthority(input)).ok).toBe(true);
-    expect((await mandates.validateIssueAuthority({ ...input, input: { noteId: "note-b" } })).ok).toBe(false);
+    const denied = await mandates.validateIssueAuthority({ ...input, input: { noteId: "note-b" } });
+    expect(denied).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN", status: 403, message: "Mandate policy does not allow this operation" },
+    });
     expect((await mandates.validateIssueAuthority({ ...input, capabilityApproval: "always", actionApproval: "approved" })).ok).toBe(false);
     const updated = await mandates.updatePolicy({
       mandateId: created.data.id,
@@ -89,7 +93,7 @@ suite("mandates", () => {
     });
     expect(updated.ok).toBe(true);
     if (!updated.ok) return;
-    expect((await mandates.validateIssueAuthority(input)).ok).toBe(false);
+    expect(await mandates.validateIssueAuthority(input)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
     const next = { ...input, expectedRevision: updated.data.revision, input: { noteId: "note-b" } };
     expect((await mandates.validateIssueAuthority(next)).ok).toBe(true);
     await mandates.revoke({
@@ -98,7 +102,7 @@ suite("mandates", () => {
       authority: interactive(),
       reason: "Test revocation",
     });
-    expect((await mandates.validateIssueAuthority(next)).ok).toBe(false);
+    expect(await mandates.validateIssueAuthority(next)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 
   test("enforces one mandate per workload and current subjects", async () => {

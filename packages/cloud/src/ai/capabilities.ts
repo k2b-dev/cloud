@@ -14,6 +14,7 @@ import {
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
 import { createHelpReader, type HelpReaderFactory } from "../services/help";
+import { type MandatePolicyV1, mandatePolicyCanPermitCapability } from "../services/mandates/policy";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { recordRejectedAiCapability } from "./capability-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
@@ -76,7 +77,7 @@ export type AiRememberableCapabilityApprovals = ReadonlyMap<string, string>;
  * Why `load_tools` could not make a requested name callable:
  * - `unknown`: no tool has this exact name;
  * - `not_offered_in_turn`: the tool exists, but this turn's client or task does not provide it;
- * - `not_allowed`: the conversation's fixed tool scope excludes it;
+ * - `not_allowed`: the conversation's fixed tool scope or task grants exclude it;
  * - `app_offline`: the app operation is not in the live registry now.
  */
 export const AI_TOOL_UNAVAILABLE_REASONS = ["unknown", "not_offered_in_turn", "not_allowed", "app_offline"] as const;
@@ -475,8 +476,8 @@ export const createAiToolMetaTools = (input: {
   store: ToolStateStore;
   maxLoadedTools?: number;
   unavailableLoadedNames?: readonly string[];
-  /** False when this turn offers no app operations at all. */
-  appOperationsOffered?: boolean;
+  /** Whether this turn offers app operations, offers none, or its fixed scope or task grants exclude all of them. */
+  appOperations?: "not_offered" | "not_allowed" | "offered";
   /** Why a requested name that is not in `catalog` cannot be loaded; defaults to `unknown`. */
   unavailableReason?: (name: string) => AiToolUnavailableReason;
 }): AiRuntimeTool[] => {
@@ -494,9 +495,11 @@ export const createAiToolMetaTools = (input: {
   const liveAppDirectory =
     directoryEntries.length > 0
       ? ` Live capability apps: ${directoryEntries.join(", ")}${hiddenAppCount > 0 ? `, and ${hiddenAppCount} more` : ""}.`
-      : input.appOperationsOffered === false
+      : input.appOperations === "not_offered"
         ? " App operations are not offered in this turn."
-        : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
+        : input.appOperations === "not_allowed"
+          ? " This chat's tool scope or task grants allow no app operations. Do not search for app operations in this turn; continue with the available tools or tell the user which grant is missing."
+          : " No Cloud app publishes operations right now. Do not search for app operations again in this turn; tell the user which app is not reachable instead of claiming a permanent product limitation.";
   const unavailableLoadedNames = input.unavailableLoadedNames ?? [];
   const unavailableLoadedNotice =
     unavailableLoadedNames.length > 0
@@ -542,7 +545,7 @@ export const createAiToolMetaTools = (input: {
   const load = defineAiTool({
     name: "load_tools",
     description:
-      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope excludes it; app_offline means its app is not reachable now. For the last three, do not search or load the name again in this turn.",
+      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first. Call each loaded tool by the `call` name returned for it. `unavailable` gives a reason per name: unknown means no tool has this exact name, so look it up once with search_tools instead of guessing; not_offered_in_turn means this client or task does not provide the tool; not_allowed means this chat's fixed tool scope or task grants exclude it; app_offline means its app is not reachable now. For the last three, do not search or load the name again in this turn.",
     inputSchema: z.object({ names: z.array(z.string().trim().min(1)).min(1).max(25) }).strict(),
     outputSchema: z
       .object({
@@ -689,6 +692,8 @@ export const createAiToolResolver =
     actor: RequestActor;
     staticTools: AiRuntimeTool[];
     allowedTools?: readonly string[] | null;
+    /** Undefined for interactive runs; null fails closed when a background mandate cannot be loaded. */
+    mandatePolicy?: MandatePolicyV1 | null;
     /** Built-in tools that exist but that this turn does not offer, such as client tools its client did not declare or tools outside `allowedTools`. */
     unofferedTools?: readonly string[];
     runtimeContext?: Omit<AiToolPreparationContext, "actor" | "conversationId">;
@@ -725,7 +730,19 @@ export const createAiToolResolver =
     }
     const allowed = input.allowedTools == null ? null : new Set(input.allowedTools);
     const fullCapabilityCatalog = buildAiCapabilityCatalog(registry, input.locale);
-    const capabilityCatalog = fullCapabilityCatalog.filter((entry) => !allowed || allowed.has(entry.name));
+    const mandateAllows = (entry: AiCapabilityCatalogEntry) =>
+      input.mandatePolicy === undefined ||
+      (input.mandatePolicy !== null &&
+        mandatePolicyCanPermitCapability(input.mandatePolicy, {
+          appId: entry.appId,
+          capabilityId: entry.operation.localId,
+          kind: entry.kind,
+          approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+        }));
+    const mandateExcluded = new Set(
+      fullCapabilityCatalog.filter((entry) => !mandateAllows(entry)).flatMap((entry) => [entry.name, entry.providerName]),
+    );
+    const capabilityCatalog = fullCapabilityCatalog.filter((entry) => (!allowed || allowed.has(entry.name)) && mandateAllows(entry));
     const helpTools = input.help ? createAiHelpTools(input.help, input.locale) : [];
     const resourceTool =
       input.execute && (capabilityCatalog.length > 0 || input.staticTools.some((tool) => tool.def.name === "code_read"))
@@ -753,24 +770,33 @@ export const createAiToolResolver =
     // App operation IDs always contain a dot; built-in names never do.
     const unavailableReason = (requested: string): AiToolUnavailableReason => {
       const name = loadedByProviderName.get(requested) ?? requested;
+      if (mandateExcluded.has(name)) return "not_allowed";
       if (allowed && outOfScope.has(name) && !allowed.has(name)) return "not_allowed";
       if (unoffered.has(name)) return "not_offered_in_turn";
       if (!name.includes(".")) return "unknown";
       if (!input.listRegistry) return "not_offered_in_turn";
       return liveRegistry === null || persistedLoadedNames.includes(name) ? "app_offline" : "unknown";
     };
+    // Independent of which apps are live: the fixed scope or task grants name no app operation at all.
+    const scopeExcludesAppOperations =
+      input.mandatePolicy === null ||
+      (input.mandatePolicy?.grants !== undefined && !input.mandatePolicy.grants.some((grant) => "appId" in grant)) ||
+      (allowed !== null && ![...allowed].some((name) => name.includes(".")));
     const eagerNames = new Set(builtIns.map((tool) => tool.def.name).filter((name) => !CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(name)));
     const activeBuiltIns = builtIns.filter((tool) => eagerNames.has(tool.def.name) || loadedNames.includes(tool.def.name));
     const runtimeTools = [
       ...createAiToolMetaTools({
-        apps: allowed ? registry.filter((app) => capabilityCatalog.some((entry) => entry.appId === app.appId)) : registry,
+        apps:
+          allowed || input.mandatePolicy !== undefined
+            ? registry.filter((app) => capabilityCatalog.some((entry) => entry.appId === app.appId))
+            : registry,
         catalog,
         eagerNames,
         conversationId: input.conversationId,
         store: input.store,
         maxLoadedTools: input.maxLoadedTools,
         unavailableLoadedNames,
-        appOperationsOffered: Boolean(input.listRegistry),
+        appOperations: !input.listRegistry ? "not_offered" : scopeExcludesAppOperations ? "not_allowed" : "offered",
         unavailableReason,
       }),
       ...activeBuiltIns,

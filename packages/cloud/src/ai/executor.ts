@@ -5,6 +5,8 @@ import type { CapabilityActionReview } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
 import { createHelpReader } from "../services/help";
 import { logger } from "../services/logging";
+import { getMandate } from "../services/mandates";
+import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
 import { normalizeLocale } from "../shared/locale";
 import {
@@ -16,11 +18,11 @@ import {
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { createAiToolResolver, createRunToolStore } from "./capabilities";
+import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
-import { aiChatTasks } from "./chat-tasks";
+import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
 import { createCloudAiCodeTools, createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
@@ -988,6 +990,52 @@ export class AiTurnExecutor {
 
     const appliedSteers: AiTurnSteer[] = [];
 
+    let mandatePolicy: MandatePolicyV1 | null | undefined;
+    if (config.background && config.mandate) {
+      mandatePolicy = null;
+      try {
+        const mandate = await getMandate(config.mandate.id);
+        if (mandate && mandate.state === "active" && mandate.revision === config.mandate.revision) {
+          mandatePolicy = mandate.policy;
+        } else {
+          backgroundError = "Scheduled task mandate is unavailable or changed; recreate or update the task.";
+        }
+      } catch {
+        backgroundError = "Scheduled task mandate could not be loaded; retry or update the task.";
+      }
+    }
+    if (backgroundError) {
+      signal.removeEventListener("abort", onSignal);
+      await this.finalize(
+        conversationId,
+        turnId,
+        pipeline,
+        "failed",
+        { error: { code: "not_allowed" }, detail: backgroundError, message: backgroundError },
+        "chat",
+        promptLocale,
+      );
+      return;
+    }
+    const authorizeBackground =
+      config.background && config.mandate
+        ? async (entry: AiCapabilityCatalogEntry, args: unknown) => {
+            try {
+              await aiChatTasks.authorizeCapability({
+                mandate: config.mandate!,
+                appId: entry.appId,
+                capabilityId: entry.operation.localId,
+                kind: entry.kind,
+                input: args,
+                approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+              });
+            } catch (error) {
+              if (!(error instanceof AiChatTaskAuthorityError && error.code === "MANDATE_POLICY_DENIED"))
+                backgroundError = error instanceof Error ? error.message : "Background capability access denied";
+              throw error;
+            }
+          }
+        : undefined;
     const toolStore = config.background ? createRunToolStore(await aiConversations.getLoadedTools({ conversationId })) : aiConversations;
     const tools = toolActor
       ? createAiToolResolver({
@@ -995,6 +1043,7 @@ export class AiTurnExecutor {
           actor: capabilityAuthority?.actor ?? toolActor,
           staticTools: activeTools,
           allowedTools,
+          mandatePolicy,
           unofferedTools,
           runtimeContext: dynamicToolRuntimeContext,
           store: toolStore,
@@ -1020,25 +1069,7 @@ export class AiTurnExecutor {
                   }),
               }
             : {}),
-          ...(config.background && config.mandate
-            ? {
-                authorizeBackground: async (entry, args) => {
-                  try {
-                    await aiChatTasks.authorizeCapability({
-                      mandate: config.mandate!,
-                      appId: entry.appId,
-                      capabilityId: entry.operation.localId,
-                      kind: entry.kind,
-                      input: args,
-                      approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-                    });
-                  } catch (error) {
-                    backgroundError = error instanceof Error ? error.message : "Background capability access denied";
-                    throw error;
-                  }
-                },
-              }
-            : {}),
+          authorizeBackground,
           onReview: (callId, review) => {
             capabilityActionReviews.set(callId, review);
             if (review.approvalScope) rememberableCapabilityApprovals.set(callId, review.approvalScope);
@@ -1047,16 +1078,7 @@ export class AiTurnExecutor {
             ? {
                 execute: async (entry, args, context) => {
                   try {
-                    if (config.background && config.mandate) {
-                      await aiChatTasks.authorizeCapability({
-                        mandate: config.mandate,
-                        appId: entry.appId,
-                        capabilityId: entry.operation.localId,
-                        kind: entry.kind,
-                        input: args,
-                        approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
-                      });
-                    }
+                    await authorizeBackground?.(entry, args);
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,

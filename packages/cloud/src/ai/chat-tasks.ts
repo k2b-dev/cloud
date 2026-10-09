@@ -4,6 +4,7 @@ import { getCapability } from "../_internal/registry";
 import { logger } from "../services/logging";
 import {
   createMandate,
+  MANDATE_POLICY_DENIED_MESSAGE,
   type Mandate,
   type MandatePolicyV1,
   MandatePolicyV1Schema,
@@ -88,7 +89,14 @@ export class AiChatTaskIdempotencyConflictError extends Error {
 }
 
 class AiChatTaskCreateRace extends Error {}
-class AiChatTaskAuthorityError extends Error {}
+export class AiChatTaskAuthorityError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 const log = logger("ai:chat-tasks");
 
 type OccurrenceRow = {
@@ -497,10 +505,15 @@ export const aiChatTasks = {
       input: input.input,
       capabilityApproval: input.approval,
     });
-    if (!result.ok)
+    if (!result.ok) {
+      const policyDenied = result.error.code === "FORBIDDEN" && result.error.message === MANDATE_POLICY_DENIED_MESSAGE;
       throw new AiChatTaskAuthorityError(
-        `Background task cannot call ${input.appId}.${input.capabilityId}: ${result.error.message}. Check the task grants and fixed inputs in the normal chat; this run cannot expand them.`,
+        policyDenied
+          ? `This task's grants do not allow ${input.appId}.${input.capabilityId} with these inputs; continue with the granted tools or explain what is missing.`
+          : `Background task cannot call ${input.appId}.${input.capabilityId}: ${result.error.message}. Check the task grants and fixed inputs in the normal chat; this run cannot expand them.`,
+        policyDenied ? "MANDATE_POLICY_DENIED" : result.error.code,
       );
+    }
   },
   list: async (input: {
     userId: string;

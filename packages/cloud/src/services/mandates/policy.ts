@@ -246,3 +246,23 @@ export const mandatePolicyAllows = (
   if (policy.actions === "require_approval") return input.actionApproval === "approved";
   return true;
 };
+
+/** Discovery ignores fixed inputs: at least one unattended call must fit the policy. */
+export const mandatePolicyCanPermitCapability = (
+  policy: MandatePolicyV1,
+  input: { appId: string; capabilityId: string; kind: "query" | "action"; approval?: "none" | "rememberable" | "always" },
+): boolean => {
+  const call = {
+    appId: input.appId,
+    operation: `capability.${input.kind === "query" ? "query" : "action.run"}:${input.capabilityId}`,
+    actionApproval: "none" as const,
+    capabilityApproval: input.approval,
+  };
+  if (policy.grants === undefined) return mandatePolicyAllows(policy, call);
+  return policy.grants.some(
+    (grant) =>
+      "appId" in grant &&
+      capabilityGrantAllows(grant, { ...input, input: grant.fixedInput }) &&
+      mandatePolicyAllows(policy, { ...call, input: grant.fixedInput }),
+  );
+};

@@ -1,12 +1,19 @@
 import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
+import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { compileCapabilities } from "../_internal/capabilities";
+import * as registry from "../_internal/registry";
 import type { User } from "../contracts";
+import { defineCapabilities } from "../contracts/capabilities";
+import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
+import { type CapabilityGrant, mandates } from "../services/mandates";
 import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import * as capabilityExecution from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
@@ -302,6 +309,207 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  test.each([
+    { mode: "direct", revoke: false },
+    { mode: "resource", revoke: false },
+    { mode: "direct", revoke: "during" },
+    { mode: "resource", revoke: "during" },
+    { mode: "direct", revoke: "before" },
+  ] as const)("background capability authorization: %j", async ({ mode, revoke }) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({
+      ownerUserId: userId,
+      preloadTools: ["spaces.space.read", "spaces.space.list", ...(mode === "resource" ? ["read_cloud_resource"] : [])],
+    });
+    const requestSchema = z.object({
+      messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
+      tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
+    });
+    const requests: z.infer<typeof requestSchema>[] = [];
+    const ids = ["space.search", "space.list", "task.list", "task.focus"];
+    const compiled = compileCapabilities(
+      "spaces",
+      defineCapabilities({
+        protocolVersion: 2,
+        types: mode === "resource" ? { space: { title: "Space", description: "One space.", reader: "space.list" } } : {},
+        queries: Object.fromEntries(
+          [...ids, "space.read"].map((id) => [
+            id,
+            {
+              title: "List spaces",
+              description: "List spaces.",
+              input:
+                mode === "resource" && id === "space.list"
+                  ? z.object({ id: z.string().describe("Exact space ID.") }).strict()
+                  : z.object({ status: z.enum(["open", "done"]).optional().describe("Space status.") }).strict(),
+              data: z.array(z.object({ id: z.string() })),
+              openWorld: false,
+              run: async () => ok({ data: [] }),
+            },
+          ]),
+        ),
+      }),
+    );
+    const spacesEntry: CapabilityRegistryEntry = {
+      appId: "spaces",
+      appName: "Spaces",
+      appDescription: "Shared spaces",
+      appIcon: "ti ti-box",
+      appAccent: "#0f766e",
+      endpoint: "http://spaces.invalid/api/_internal/capabilities/v1",
+      manifest: compiled.manifest,
+    };
+    // Task grant validation and executor discovery must use the same fixture.
+    const getCapabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (appId) =>
+      appId === spacesEntry.appId ? spacesEntry : null,
+    );
+    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([spacesEntry]);
+    const executeSpy = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: [] });
+    try {
+      const fixedInput: Record<string, string> = {};
+      fixedInput[mode === "direct" ? "status" : "id"] = mode === "direct" ? "open" : "fixed";
+      const task = await aiChatTasks.create({
+        userId,
+        chatId: conversation.shortId,
+        prompt: "Summarize spaces",
+        grants: ids.map<CapabilityGrant>((capabilityId) => ({
+          appId: "spaces",
+          capabilityId,
+          kind: "query",
+          fixedInput: capabilityId === "space.list" ? fixedInput : {},
+        })),
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      });
+      if (!task?.mandateId) throw new Error("Expected scheduled task mandate");
+      const occurrence = await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: new Date().toISOString(),
+        trigger: "manual",
+        requestKey: `scope:${task.id}`,
+      });
+      if (!occurrence) throw new Error("Expected occurrence");
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: task.prompt,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default", appTools: true },
+        },
+        userMessage: userMessage(task.prompt),
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Expected background run");
+      const mandate = await mandates.get(task.mandateId);
+      expect(mandate?.state).toBe("active");
+      if (revoke === "before") {
+        if (!mandate) throw new Error("Expected mandate");
+        const result = await mandates.revoke({
+          mandateId: mandate.id,
+          expectedRevision: mandate.revision,
+          authority: { kind: "interactive", userId },
+          reason: "Revoked before the run",
+        });
+        expect(result.ok).toBe(true);
+      }
+      completionQueue = [
+        toolCallCompletion("load-denied", "load_tools", { names: ["spaces.space.read"] }),
+        mode === "direct"
+          ? toolCallCompletion("fixed-denied", "spaces__query__space_dot_list", { status: "done" })
+          : toolCallCompletion("fixed-denied", "read_cloud_resource", { type: "spaces.space", id: "other" }),
+        toolCallCompletion("granted", "spaces__query__space_dot_list", mode === "direct" ? { status: "open" } : { id: "fixed" }),
+        textCompletion("Completed using the granted tools"),
+      ];
+      onCompletionRequest = async (body) => {
+        requests.push(requestSchema.parse(body));
+        if (revoke === "during" && requests.length === 2) {
+          if (!mandate) throw new Error("Expected mandate");
+          const result = await mandates.revoke({
+            mandateId: mandate.id,
+            expectedRevision: mandate.revision,
+            authority: { kind: "interactive", userId },
+            reason: "Revoked during the run",
+          });
+          expect(result.ok).toBe(true);
+        }
+      };
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: delivered.turnId,
+        leaseOwner: "mandate-scope-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected claim");
+      await createExecutor("mandate-scope-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: delivered.turnId,
+        claim,
+        signal: new AbortController().signal,
+      });
+      if (revoke === "before") {
+        expect(requests).toHaveLength(0);
+        expect(executeSpy).not.toHaveBeenCalled();
+        const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
+        expect(turn?.status).toBe("failed");
+        expect(turn?.error).toContain("Scheduled task mandate is unavailable or changed");
+        const [stored] = await sql<{ meta: unknown }[]>`
+          SELECT meta FROM ai.task_messages WHERE loop_id = ${delivered.turnId} ORDER BY seq DESC LIMIT 1
+        `;
+        expect(stored?.meta).toMatchObject({ turnError: { code: "not_allowed" } });
+        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "failed", error: turn?.error });
+        expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("needs_attention");
+        return;
+      }
+      expect(requests).toHaveLength(4);
+      expect(requests[0]?.tools?.map((tool) => tool.function.name)).not.toContain("spaces__query__space_dot_read");
+      const loadResult = JSON.parse(String(requests[1]?.messages.find((message) => message.role === "tool")?.content));
+      expect(loadResult).toMatchObject({ loaded: [], unavailable: [{ name: "spaces.space.read", reason: "not_allowed" }] });
+      if (revoke === "during") {
+        expect(JSON.stringify(requests[2]?.messages)).toContain("Mandate is not active");
+        expect(executeSpy).not.toHaveBeenCalled();
+        const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
+        expect(turn?.status).toBe("failed");
+        expect(turn?.error).toContain("Mandate is not active");
+        const [stored] = await sql<{ meta: unknown }[]>`
+          SELECT meta FROM ai.task_messages WHERE loop_id = ${delivered.turnId} ORDER BY seq DESC LIMIT 1
+        `;
+        expect(stored?.meta).toMatchObject({ turnError: { code: "not_allowed" } });
+        await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "failed", error: "Mandate is not active" });
+        expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("needs_attention");
+        return;
+      }
+      expect(JSON.stringify(requests[2]?.messages)).toContain("This task's grants do not allow spaces.space.list");
+      expect(JSON.stringify(requests[2]?.messages)).toContain("continue with the granted tools");
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({
+        entry: { name: "spaces.space.list" },
+        args: mode === "direct" ? { status: "open" } : { id: "fixed" },
+      });
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId }))?.status).toBe("completed");
+      await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" });
+      expect((await aiChatTasks.get({ userId, taskId: task.shortId }))?.state).toBe("active");
+      expect((await mandates.get(task.mandateId))?.state).toBe("active");
+      expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual([
+        "spaces.space.read",
+        "spaces.space.list",
+        ...(mode === "resource" ? ["read_cloud_resource"] : []),
+      ]);
+    } finally {
+      getCapabilitySpy.mockRestore();
+      registrySpy.mockRestore();
+      executeSpy.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   beforeAll(async () => {
     await migrateCloudAi();
   });
