@@ -9270,7 +9270,7 @@
   cursor: pointer;
 }
 
-.k2b-ui .k2b-chat-composer__hint-action:hover {
+.k2b-ui .k2b-chat-composer__hint-action:hover:not(:disabled) {
   color: var(--k2b-action-hover);
 }
 
@@ -9334,6 +9334,12 @@
     content: "";
     position: absolute;
     inset: -0.4375rem 0;
+  }
+
+  /* The formatting row scrolls sideways. Its padding holds those taller tap areas, so it never scrolls up and down. */
+  .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__format {
+    margin-block: -0.4375rem;
+    padding-block: 0.4375rem;
   }
 }
 

@@ -58,6 +58,8 @@ render(
             onSubmit: ({ text }) => {
               window.sent.push(text);
               setItems((current) => [...current, { id: "s" + current.length, text }]);
+              // A server round trip, as an application that waits for its request.
+              if (options.submitDelay) return new Promise((done) => setTimeout(done, options.submitDelay));
             },
             fileSelection: { onSelect: () => {} },
             formatting: true,
@@ -104,7 +106,7 @@ afterAll(async () => {
 const height = 800;
 
 const open = async (
-  options: { width?: number; locale?: "en" | "de"; dark?: boolean } = {},
+  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const width = options.width ?? 720;
@@ -239,6 +241,29 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     await page.close();
   }, 30_000);
 
+  test("a submission that waits for the server keeps the field focused and editable", async () => {
+    const page = await open({ submitDelay: 200 });
+    const field = page.locator("textarea").first();
+    await field.click();
+    await field.evaluate((element) => {
+      (window as unknown as { focusEvents: string[] }).focusEvents = [];
+      for (const type of ["blur", "focus"]) {
+        element.addEventListener(type, () => (window as unknown as { focusEvents: string[] }).focusEvents.push(type));
+      }
+    });
+    await page.keyboard.type("Hello");
+    await page.keyboard.press("Enter");
+    // Typed while the request runs.
+    await page.keyboard.type("next");
+    expect(await field.evaluate((element) => (element as HTMLTextAreaElement).disabled)).toBe(false);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => (window as unknown as { sent: string[] }).sent)).toEqual(["Hello"]);
+    expect(await field.inputValue()).toBe("next");
+    expect(await page.evaluate(() => (window as unknown as { focusEvents: string[] }).focusEvents)).toEqual([]);
+    expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+    await page.close();
+  }, 30_000);
+
   test("Aa, hints and dictation states change neither the composer's height nor the place of a control", async () => {
     for (const width of [720, 360]) {
       const page = await open({ width });
@@ -277,6 +302,27 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     );
     expect(widths.length).toBeGreaterThanOrEqual(5);
     for (const width of widths) expect(width).toBe(44);
+
+    // The formatting row scrolls sideways only, and its buttons keep their taller tap areas.
+    const before = await layout(page);
+    await page.locator('button[aria-label="Formatting"]').tap();
+    await frames(page, 2);
+    expect(await layout(page)).toEqual(before);
+    const format = await page.evaluate(() => {
+      const group = document.querySelector<HTMLElement>(".k2b-chat-composer__format")!;
+      group.scrollTop = 20;
+      const bold = group.querySelector("button")!.getBoundingClientRect();
+      const tap = document.elementFromPoint(bold.left + bold.width / 2, bold.top - 6);
+      return {
+        scrollTop: group.scrollTop,
+        tall: group.scrollHeight - group.clientHeight,
+        wide: group.scrollWidth > group.clientWidth,
+        fade: group.dataset.scrollFade,
+        tapsBold: tap?.getAttribute("aria-label"),
+      };
+    });
+    expect(format).toEqual({ scrollTop: 0, tall: 0, wide: true, fade: "bottom", tapsBold: "Bold (Ctrl/Cmd+B)" });
+    await page.locator('button[aria-label="Formatting"]').tap();
 
     const field = page.locator("textarea").first();
     await field.tap();

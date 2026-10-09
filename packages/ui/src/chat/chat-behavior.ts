@@ -68,9 +68,6 @@ export const executeChatAction = async (action: ChatAction): Promise<void> => {
   await action.onSelect();
 };
 
-/** Whether `caret` sits inside a fenced code block that opened before it and is not closed yet. */
-export const isInsideCodeFence = (text: string, caret: number): boolean => (text.slice(0, caret).match(/^\s*```/gm)?.length ?? 0) % 2 === 1;
-
 export type ChatEnterKey = { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean };
 
 /**

@@ -1,4 +1,5 @@
 import { replaceTextareaRange as replaceRange } from "../editor-dom";
+import { closesCodeFence, openCodeFence } from "./code-zone";
 
 const lineAt = (value: string, position: number): { lineStart: number; lineEnd: number; line: string } => {
   const lineStart = value.lastIndexOf("\n", position - 1) + 1;
@@ -23,16 +24,25 @@ const selectedLineRange = (textarea: HTMLTextAreaElement): { start: number; end:
 const toggleInlineWrap = (textarea: HTMLTextAreaElement, marker: string, placeholder: string): void => {
   const { value, selectionStart, selectionEnd } = textarea;
   const markerLength = marker.length;
+  // A one-character marker never takes half of a doubled one, so italic `*` leaves bold `**` alone.
+  const doubled = (text: string, from: number, step: 1 | -1) =>
+    markerLength === 1 && text[from] === marker && text[from + step] === marker && text[from + 2 * step] !== marker;
   const before = value.slice(Math.max(0, selectionStart - markerLength), selectionStart);
   const after = value.slice(selectionEnd, selectionEnd + markerLength);
-  if (before === marker && after === marker) {
+  if (before === marker && after === marker && !doubled(value, selectionStart - 1, -1) && !doubled(value, selectionEnd, 1)) {
     replaceRange(textarea, selectionStart - markerLength, selectionEnd + markerLength, value.slice(selectionStart, selectionEnd));
     textarea.setSelectionRange(selectionStart - markerLength, selectionEnd - markerLength);
     return;
   }
 
   const selected = value.slice(selectionStart, selectionEnd);
-  if (selected.length >= markerLength * 2 && selected.startsWith(marker) && selected.endsWith(marker)) {
+  if (
+    selected.length >= markerLength * 2 &&
+    selected.startsWith(marker) &&
+    selected.endsWith(marker) &&
+    !doubled(selected, 0, 1) &&
+    !doubled(selected, selected.length - 1, -1)
+  ) {
     const stripped = selected.slice(markerLength, -markerLength);
     replaceRange(textarea, selectionStart, selectionEnd, stripped);
     textarea.setSelectionRange(selectionStart, selectionStart + stripped.length);
@@ -95,13 +105,28 @@ export const toggleHeading = (textarea: HTMLTextAreaElement, level: 1 | 2 | 3): 
 
 export const toggleBulletList = (textarea: HTMLTextAreaElement): void => togglePrefix(textarea, "- ");
 
-/** Puts the selected lines between ``` fences, or removes the fences when the selection is exactly one fenced block. */
+/** Puts the selected lines between ``` fences. Inside a fenced block, from its opening line on, it removes that block's fences. */
 export const toggleCodeBlock = (textarea: HTMLTextAreaElement): void => {
+  const { value } = textarea;
   const { start, end, lines } = selectedLineRange(textarea);
-  if (lines.length >= 2 && /^```/.test(lines[0]!) && lines[lines.length - 1]!.trim() === "```") {
-    const body = lines.slice(1, -1).join("\n");
-    replaceRange(textarea, start, end, body);
-    textarea.setSelectionRange(start, start + body.length);
+  const open = openCodeFence(value, lineAt(value, start).lineEnd);
+  if (open) {
+    const bodyStart = Math.min(lineAt(value, open.start).lineEnd + 1, value.length);
+    // An unclosed block runs to the end of the text.
+    let bodyEnd = value.length;
+    let blockEnd = value.length;
+    for (let lineStart = bodyStart; lineStart < value.length; ) {
+      const { lineEnd, line } = lineAt(value, lineStart);
+      if (closesCodeFence(line, open.marker)) {
+        bodyEnd = Math.max(bodyStart, lineStart - 1);
+        blockEnd = lineEnd;
+        break;
+      }
+      lineStart = lineEnd + 1;
+    }
+    const body = value.slice(bodyStart, bodyEnd);
+    replaceRange(textarea, open.start, blockEnd, body);
+    textarea.setSelectionRange(open.start, open.start + body.length);
     return;
   }
   const body = lines.join("\n");

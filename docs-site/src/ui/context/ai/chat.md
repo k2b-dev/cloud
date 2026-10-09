@@ -412,11 +412,16 @@ the assistant prompt's behavior.
   while it has content.
 - **Enter:** `sendKey="enter"` (the default) sends on Enter and breaks the
   line on Shift+Enter; `sendKey="mod-enter"` breaks the line on Enter. Ctrl/⌘+Enter
-  always sends. In both modes, Enter breaks the line while the caret is inside
-  an open fenced code block and on touch-only devices, where Send sends, and
-  it never sends during IME input. The application stores the person's choice.
+  always sends, also while command suggestions are open; there, Enter and Tab
+  pick a suggestion. In both modes, Enter breaks the line while the caret is
+  inside an open fenced code block (with backticks or tildes, also in a quote)
+  and on touch-only devices, where Send sends. It never sends during IME input,
+  including the Enter that confirms a conversion. The application stores the
+  person's choice.
 - **Focus:** pressing Send or another composer button keeps the field
-  focused, so a phone's keyboard stays open.
+  focused, so a phone's keyboard stays open. The field also stays editable
+  while an asynchronous `onSubmit` runs. If the submission is rejected, the
+  draft comes back in front of anything typed in the meantime.
 
 `sendKey` also works without the conversation variant: `"mod-enter"` there
 breaks the line on Enter and sends on Ctrl/⌘+Enter.
@@ -428,8 +433,10 @@ These work in both variants and keep fixed places in the footer.
 - **`formatting`** adds "Aa". It shows Bold, Italic, Strikethrough, Code,
   Code block, Bullet list, Quote, and Link in the free space of the footer
   row, which scrolls sideways when the row is narrow. The composer's height
-  and every other control stay where they are. The buttons write Markdown
-  into the field and keep the selection. Ctrl/⌘+B, I, and E, and
+  and every other control stay where they are; faded edges show that the row
+  scrolls. The buttons write Markdown into the field and keep the selection.
+  Every button except Link removes its formatting on a second press; inside a
+  fenced block, Code block removes that block's fences. Ctrl/⌘+B, I, and E, and
   Ctrl/⌘+Shift+X and 8 do the same while `formatting` is set.
 - **`emoji`** adds an emoji button. `onOpen` receives the button as `anchor`
   and an `insert` function that puts the chosen text at the caret. Touch-only
@@ -437,14 +444,16 @@ These work in both variants and keep fixed places in the footer.
 - **`microphone`** adds a microphone before Send. Dictation comes first: a
   tap calls `onDictate`, which starts or stops the application's live
   dictation. Holding the microphone for half a second calls `onVoiceMessage`
-  instead, and the small menu next to it offers both, so keyboard and screen
-  reader users reach each action. Without `onDictate`, a tap opens that menu.
-  Omit `onVoiceMessage` where the browser cannot record.
+  instead, unless the composer was disabled during the press. The small menu
+  next to it offers both, so keyboard and screen reader users reach each
+  action. Without `onDictate`, a tap opens that menu; a key press also moves
+  the focus into it. Omit `onVoiceMessage` where the browser cannot record.
 
 Pass the dictation state as `microphone.dictation`. The composer shows it at
 fixed places: the microphone turns into Stop while `listening` and waits
 while `refining`, and the hint line says what happens. With `refined`,
-the hint line offers "Restore original", which calls `onRestoreOriginal`.
+the hint line offers "Restore original", which calls `onRestoreOriginal` and is
+disabled whenever the microphone is.
 `unrefined` and `interrupted` keep the text and say so. The application owns
 the audio, the transcription, the text it writes into the draft, and when a
 state ends; the composer never records or sends anything itself.

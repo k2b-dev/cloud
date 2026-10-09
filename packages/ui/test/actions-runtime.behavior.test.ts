@@ -363,6 +363,55 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("moves the focus into a controlled menu that a key on its trigger opened, and keeps it on a programmatic open", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { Dropdown } = await import("../src/actions/Dropdown");
+    const [open, setOpen] = createSignal(false);
+
+    const dispose = render(
+      () =>
+        createComponent(Dropdown.Root, {
+          get open() {
+            return open();
+          },
+          onOpenChange: setOpen,
+          items: [
+            { label: "Rename", action: () => {} },
+            { label: "Archive", action: () => {} },
+          ],
+          get children() {
+            return createComponent(Dropdown.Trigger, { label: "Project actions", children: "Open" });
+          },
+        }),
+      dom.root,
+    );
+
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")!;
+    const items = () => Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='menuitem']"));
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter" }));
+    await flush();
+    expect(open()).toBe(true);
+    expect(dom.document.activeElement).toBe(items()[0] ?? null);
+
+    setOpen(false);
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowUp" }));
+    await flush();
+    expect(dom.document.activeElement).toBe(items()[1] ?? null);
+
+    // The owner opening it keeps the focus where it is.
+    setOpen(false);
+    trigger.focus();
+    setOpen(true);
+    await flush();
+    expect(dom.document.activeElement).toBe(trigger);
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("keeps FilterChip option identity and exposes live checkbox and radio state", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();

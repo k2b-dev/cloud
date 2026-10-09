@@ -3,7 +3,6 @@ import {
   conversationEnterAction,
   executeChatAction,
   isChatNearBottom,
-  isInsideCodeFence,
   nextChatCommandIndex,
   reportChatFailure,
   restoredChatScrollTop,
@@ -179,14 +178,5 @@ describe("conversation Enter", () => {
       expect(conversationEnterAction(key({ ctrlKey: true }), context)).toBe("send");
       expect(conversationEnterAction(key({ metaKey: true }), context)).toBe("send");
     }
-  });
-
-  test("finds an open fenced code block before the caret", () => {
-    expect(isInsideCodeFence("Look:\n```ts\nconst a = 1;", 22)).toBe(true);
-    expect(isInsideCodeFence("```\na\n```", 9)).toBe(false);
-    expect(isInsideCodeFence("```\na\n```\n  ```\n", 15)).toBe(true);
-    expect(isInsideCodeFence("inline ``` not a fence", 22)).toBe(false);
-    // Only the text before the caret counts.
-    expect(isInsideCodeFence("```\nopen", 0)).toBe(false);
   });
 });

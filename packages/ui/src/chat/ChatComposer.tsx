@@ -16,17 +16,12 @@ import { Tooltip } from "../feedback/Tooltip";
 import { replaceTextareaRange } from "../inputs/editor-dom";
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleCodeBlock, toggleInlineMarker, toggleQuote } from "../inputs/markdown/actions";
+import { openCodeFence } from "../inputs/markdown/code-zone";
 import { SelectChip } from "../inputs/SelectChip";
 import { type UiMessages, useUiMessages } from "../intl/messages";
+import { createScrollFade } from "../layout/scroll-fade";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
-import {
-  conversationEnterAction,
-  executeChatAction,
-  isInsideCodeFence,
-  nextChatCommandIndex,
-  reportChatFailure,
-  runChatSubmission,
-} from "./chat-behavior";
+import { conversationEnterAction, executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
 import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
 import type {
   ChatAction,
@@ -163,7 +158,7 @@ const insertComposerLink = (textarea: HTMLTextAreaElement): void => {
 
 const formatTools: readonly FormatTool[] = [
   { id: "bold", icon: "ti ti-bold", label: (m) => m.boldShortcut, run: (textarea) => toggleInlineMarker(textarea, "**"), key: "b" },
-  { id: "italic", icon: "ti ti-italic", label: (m) => m.italicShortcut, run: (textarea) => toggleInlineMarker(textarea, "_"), key: "i" },
+  { id: "italic", icon: "ti ti-italic", label: (m) => m.italicShortcut, run: (textarea) => toggleInlineMarker(textarea, "*"), key: "i" },
   {
     id: "strikethrough",
     icon: "ti ti-strikethrough",
@@ -209,12 +204,19 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let textareaRef: HTMLTextAreaElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
   let measureRef: HTMLTextAreaElement | undefined;
+  let microphoneRef: HTMLDivElement | undefined;
+  let formatRef: HTMLDivElement | undefined;
   let sawRunning = props.state === "running";
   const conversation = () => props.variant === "conversation";
   const [formattingOpen, setFormattingOpen] = createSignal(false);
   const [microphoneMenuOpen, setMicrophoneMenuOpen] = createSignal(false);
   const dictation = () => props.microphone?.dictation ?? null;
   const showHint = () => conversation() || dictation() !== null || hasContent(hint.toArray());
+  // Faded edges show that a narrow formatting row scrolls to more buttons.
+  createScrollFade(
+    () => formatRef,
+    () => Boolean(props.formatting && formattingOpen()),
+  );
 
   const state = () => props.state ?? "idle";
   const running = () => state() === "running";
@@ -341,7 +343,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
   };
   const selectedCommand = () => commandMatches()[selectedCommandIndex()];
-  const blocked = () => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles() || submitting());
+  const busy = () => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles());
+  const blocked = () => busy() || submitting();
+  /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
+  const editBlocked = () => (conversation() ? busy() : blocked());
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   const canSubmit = () => !blocked() && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
@@ -508,8 +513,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         },
         perform: () => props.onSubmit(input),
         restore: () => {
-          props.onValueChange(previousValue);
-          props.onMentionsChange?.(previousMentions);
+          // Text typed while the submission ran stays, after the returned draft.
+          const typed = props.value;
+          const shift = previousValue.length + 1;
+          props.onValueChange(typed ? `${previousValue}\n${typed}` : previousValue);
+          props.onMentionsChange?.(
+            typed
+              ? [
+                  ...previousMentions,
+                  ...mentions().map((mention) => ({ ...mention, start: mention.start + shift, end: mention.end + shift })),
+                ]
+              : previousMentions,
+          );
           if (intent !== "steer") setAttachments(previousAttachments);
         },
         onError: props.onError,
@@ -566,7 +581,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.isComposing || composing()) return;
+    // WebKit ends the composition before the keydown of the Enter that confirms it; that keydown keeps keyCode 229.
+    if (event.isComposing || event.keyCode === 229 || composing()) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
       restoreHistory(event.shiftKey ? 1 : -1);
@@ -579,7 +595,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         setSelectedCommandIndex((index) => nextChatCommandIndex(index, matches.length, event.key === "ArrowUp" ? -1 : 1));
         return;
       }
-      if ((event.key === "Enter" || event.key === "Tab") && matches.length > 0) {
+      // Ctrl/⌘+Enter sends, also while suggestions are open.
+      if ((event.key === "Tab" || (event.key === "Enter" && !event.ctrlKey && !event.metaKey)) && matches.length > 0) {
         event.preventDefault();
         const command = selectedCommand();
         if (command) void executeCommand(command);
@@ -602,7 +619,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       const action = conversationEnterAction(event, {
         sendKey: props.sendKey ?? "enter",
         touchOnly: isTouchOnly(),
-        inCodeBlock: isInsideCodeFence(props.value, textareaRef?.selectionStart ?? props.value.length),
+        inCodeBlock: openCodeFence(props.value, textareaRef?.selectionStart ?? props.value.length) !== null,
       });
       if (action === "send") {
         event.preventDefault();
@@ -618,7 +635,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
 
   const insertText = (text: string) => {
-    if (!textareaRef || blocked()) return;
+    if (!textareaRef || editBlocked()) return;
     replaceTextareaRange(textareaRef, textareaRef.selectionStart, textareaRef.selectionEnd, text);
   };
 
@@ -740,6 +757,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                       <button
                         type="button"
                         class="k2b-chat-composer__hint-action"
+                        disabled={microphoneDisabled()}
                         onMouseDown={keepFieldFocus}
                         onClick={() => reportChatFailure(restore(), props.onError)}
                       >
@@ -839,7 +857,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
             rows={1}
             value={props.value}
-            disabled={blocked()}
+            disabled={editBlocked()}
             enterkeyhint={conversation() ? "enter" : undefined}
             placeholder={
               props.placeholder ??
@@ -954,7 +972,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         class="k2b-chat-composer__icon-action k2b-chat-composer__emoji"
                         aria-label={messages().insertEmoji}
                         content={messages().insertEmoji}
-                        disabled={blocked()}
+                        disabled={editBlocked()}
                         onMouseDown={keepFieldFocus}
                         onClick={(event) => {
                           const anchor = event.currentTarget;
@@ -989,7 +1007,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                   </Show>
                   {props.modelDetails}
                   <Show when={props.formatting && formattingOpen()}>
-                    <div id={formatGroupId} class="k2b-chat-composer__format" role="group" aria-label={messages().composerFormatting}>
+                    <div
+                      ref={formatRef}
+                      id={formatGroupId}
+                      class="k2b-chat-composer__format"
+                      role="group"
+                      aria-label={messages().composerFormatting}
+                      data-scroll-fade-mode="both"
+                      data-scroll-fade-axis="horizontal"
+                    >
                       <For each={formatTools}>
                         {(tool) => (
                           <Tooltip.Trigger
@@ -997,7 +1023,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                             class="k2b-chat-composer__icon-action"
                             aria-label={tool.label(messages())}
                             content={tool.label(messages())}
-                            disabled={blocked()}
+                            disabled={editBlocked()}
                             onMouseDown={keepFieldFocus}
                             onClick={() => {
                               if (textareaRef) tool.run(textareaRef);
@@ -1034,7 +1060,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                   {props.submitTools}
                   <Show when={props.microphone?.onDictate || props.microphone?.onVoiceMessage ? props.microphone : undefined}>
                     {(microphone) => (
-                      <div class="k2b-chat-composer__microphone">
+                      <div ref={microphoneRef} class="k2b-chat-composer__microphone">
                         <Tooltip.Trigger
                           type="button"
                           class="k2b-chat-composer__icon-action k2b-chat-composer__microphone-button"
@@ -1042,6 +1068,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                           disabled={microphoneDisabled()}
                           aria-pressed={microphone().onDictate ? dictation() === "listening" : undefined}
                           aria-haspopup={microphone().onDictate ? undefined : "menu"}
+                          aria-expanded={microphone().onDictate ? undefined : microphoneMenuOpen()}
                           // A toggle keeps its name; the pressed state says that dictation runs.
                           aria-label={microphone().onDictate ? messages().dictate : messages().recordVoiceMessage}
                           content={
@@ -1061,8 +1088,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                             const record = microphone().onVoiceMessage;
                             if (event.button !== 0 || !record || dictation() === "listening") return;
                             holdTimer = setTimeout(() => {
+                              // The composer may have become blocked, or recording withdrawn, during the press.
+                              const current = props.microphone?.onVoiceMessage;
+                              if (!current || microphoneDisabled()) return;
                               held = true;
-                              reportChatFailure(record, props.onError);
+                              reportChatFailure(current, props.onError);
                             }, microphoneHoldMs);
                           }}
                           onPointerUp={releaseHold}
@@ -1075,8 +1105,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                               if (event.detail > 0) return;
                             }
                             const dictate = microphone().onDictate;
-                            if (dictate) reportChatFailure(dictate, props.onError);
-                            else setMicrophoneMenuOpen(true);
+                            if (dictate) {
+                              reportChatFailure(dictate, props.onError);
+                              return;
+                            }
+                            setMicrophoneMenuOpen(true);
+                            // From the keyboard it opens the menu like a menu button: the focus moves to the first item.
+                            if (event.detail === 0) {
+                              queueMicrotask(() => microphoneRef?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus());
+                            }
                           }}
                         >
                           <i

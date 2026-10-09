@@ -469,6 +469,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   let menuRef: HTMLDivElement | undefined;
   let triggerRing = true;
   let mounted = false;
+  /** Where a key on the trigger asked the focus to go; a controlled menu opens later, in its owner's update. */
+  let keyFocus: "first" | "last" | false = false;
   let viewportListenersAttached = false;
   let resizeObserver: ResizeObserver | undefined;
 
@@ -569,14 +571,16 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         focusMenuItem(menuRef, event.key === "ArrowUp" ? -1 : 0);
         return;
       }
-      requestOpen(true, event.key === "ArrowUp" ? "last" : "first");
+      keyFocus = event.key === "ArrowUp" ? "last" : "first";
+      requestOpen(true, keyFocus);
+      keyFocus = false;
     },
   };
 
   createEffect(() => {
     const controlled = props.open;
     if (!mounted || controlled === undefined || !menuRef) return;
-    if (controlled && !menuRef.matches(":popover-open")) open(false);
+    if (controlled && !menuRef.matches(":popover-open")) open(keyFocus);
     if (!controlled && menuRef.matches(":popover-open")) close(false);
   });
   createEffect(() => {
