@@ -63,7 +63,10 @@ and 12rem minimum width. Trigger styling is configured separately.
 Both components accept `DropdownItem[]`. An item is one of:
 
 - an action with `label`, optional `icon`, and `action`;
-- a link with `label`, `href`, and optional `external`;
+- a link with `label`, `href`, and optional `external`; with an `action` as
+  well, a plain click runs the action instead of following the link, while
+  modified clicks, a middle click, and the link's context menu keep the link,
+  for example for an in-app panel that also has its own address;
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
 - a section with optional `sectionLabel` and nested actions or choices.
 
@@ -130,7 +133,7 @@ type DropdownAction =
   | (DropdownActionBase & {
       href: string;
       external?: boolean;
-      action?: never;
+      action?: () => void;
     })
   | (DropdownActionBase & {
       disabled: true;

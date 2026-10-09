@@ -130,6 +130,49 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("runs a link row's action on a plain click and leaves modified clicks to the link", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { Dropdown } = await import("../src/actions/Dropdown");
+    const opened: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Dropdown.Root, {
+          items: [
+            { label: "Weekly review", href: "/events/review", action: () => opened.push("review") },
+            { label: "Docs", href: "/docs" },
+          ],
+          get children() {
+            return createComponent(Dropdown.Trigger, { label: "More", children: "+2" });
+          },
+        }),
+      dom.root,
+    );
+    const click = (link: HTMLAnchorElement, modifiers: { ctrlKey?: boolean } = {}) => {
+      const event = new dom.window.MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers }) as unknown as MouseEvent;
+      link.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const menu = () => dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")!;
+
+    trigger.click();
+    await flush();
+    const review = dom.root.querySelector<HTMLAnchorElement>('a[href="/events/review"]')!;
+    expect(click(review)).toBe(true);
+    expect(opened).toEqual(["review"]);
+    expect(menu()?.matches(":popover-open")).toBe(false);
+
+    trigger.click();
+    await flush();
+    expect(click(review, { ctrlKey: true })).toBe(false);
+    expect(click(dom.root.querySelector<HTMLAnchorElement>('a[href="/docs"]')!)).toBe(false);
+    expect(opened).toEqual(["review"]);
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("keeps split button primary and menu actions independent", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();
