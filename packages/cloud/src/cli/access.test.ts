@@ -74,7 +74,7 @@ const tableSummary = (rows: Record<string, unknown>[] | undefined) =>
 
 const createModule = (
   state: { entries: AccessEntry[]; grants: Principal[]; updates: string[]; revokes: string[] },
-  options: { allowAuthenticated?: boolean; allowServiceAccounts?: boolean } = {},
+  options: { allowAuthenticated?: boolean; allowServiceAccounts?: boolean; scopes?: readonly [string, ...string[]] } = {},
 ) =>
   defineCliCommands({
     name: "demo",
@@ -84,16 +84,17 @@ const createModule = (
       resourceArgLabel: "demo",
       allowAuthenticated: options.allowAuthenticated,
       allowServiceAccounts: options.allowServiceAccounts,
+      scopes: options.scopes,
       resolveResource: async (_ctx, args) => ({ id: args[0] ?? "default", label: args[0] ?? "default" }),
       list: async () => state.entries,
-      grant: async (_ctx, _resource, principal, permission) => {
+      grant: async (_ctx, _resource, principal, permission, scope) => {
         state.grants.push(principal);
-        const entry: AccessEntry = { ...userEntry(permission), id: "new-access", principal };
+        const entry: AccessEntry = { ...userEntry(permission), id: "new-access", principal, ...(scope ? { scope } : {}) };
         state.entries.push(entry);
         return entry;
       },
-      update: async (_ctx, _resource, id, permission) => {
-        state.updates.push(`${id}:${permission}`);
+      update: async (_ctx, _resource, id, permission, scope) => {
+        state.updates.push(`${id}:${permission}${scope ? `:${scope}` : ""}`);
         state.entries = state.entries.map((entry) => (entry.id === id ? { ...entry, permission } : entry));
       },
       revoke: async (_ctx, _resource, id) => {
@@ -210,6 +211,48 @@ describe("access CLI helper", () => {
 
     expect(state.grants).toEqual([{ type: "user", userId }]);
     expect(state.updates).toEqual([]);
+  });
+
+  test("a resource with scopes grants, moves, and lists grants on part of it", async () => {
+    const state = { entries: [] as AccessEntry[], grants: [] as Principal[], updates: [] as string[], revokes: [] as string[] };
+    const mod = createModule(state, { scopes: ["mailbox", "assigned"] });
+    const grant = createContext(["access", "grant", "resource-a"], { user: userId, permission: "read", scope: "assigned" }, () =>
+      Response.json({}),
+    );
+    await mod.run(grant.ctx);
+    expect(state.entries.map((entry) => entry.scope)).toEqual(["assigned"]);
+    expect(grant.lines).toEqual(["Granted read (assigned) on resource-a to Valentin Kolb."]);
+
+    const list = createContext(["access", "list", "resource-a"], {}, () => Response.json({}));
+    state.entries.push({ ...userEntry("admin"), id: "owner", principal: { type: "user", userId: accessId }, displayName: "Owner" });
+    await mod.run(list.ctx);
+    expect(list.tables[0]?.map((row) => `${row.principal} | ${row.permission} | ${row.scope}`)).toEqual([
+      "Owner | admin | mailbox",
+      "Valentin Kolb | read | assigned",
+    ]);
+
+    // Without --scope a change keeps the grant's scope; the adapter decides what that means.
+    const keep = createContext(["access", "set", "resource-a"], { "access-id": "new-access", permission: "write" }, () =>
+      Response.json({}),
+    );
+    await mod.run(keep.ctx);
+    const move = createContext(["access", "set", "resource-a"], { "access-id": "new-access", permission: "read", scope: "mailbox" }, () =>
+      Response.json({}),
+    );
+    await mod.run(move.ctx);
+    expect(state.updates).toEqual(["new-access:write", "new-access:read:mailbox"]);
+
+    const invalid = createContext(["access", "grant", "resource-a"], { user: userId, permission: "read", scope: "folder" }, () =>
+      Response.json({}),
+    );
+    await expect(mod.run(invalid.ctx)).rejects.toThrow("Scope must be one of: mailbox, assigned.");
+  });
+
+  test("a resource without scopes offers no --scope flag", async () => {
+    const mod = createModule({ entries: [], grants: [], updates: [], revokes: [] });
+    const { ctx, lines } = createContext(["access", "grant"], { help: true }, () => Response.json({}));
+    await mod.run(ctx);
+    expect(lines.join("\n")).not.toContain("--scope");
   });
 
   test("revoke requires explicit confirmation", async () => {

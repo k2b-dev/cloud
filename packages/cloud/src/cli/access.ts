@@ -28,10 +28,24 @@ export type AccessCommandAdapter<TResource extends AccessResource> = {
   resourceArgDescription?: string;
   resolveResource: AccessCommandResourceResolver<TResource>;
   list: (ctx: CloudCliContext, resource: TResource) => Promise<AccessEntry[]>;
-  grant: (ctx: CloudCliContext, resource: TResource, principal: Principal, permission: AccessPermission) => Promise<AccessEntry>;
-  update: (ctx: CloudCliContext, resource: TResource, accessId: string, permission: AccessPermission) => Promise<void>;
+  /** `scope` is one of `scopes`, or undefined when the command line names none. */
+  grant: (
+    ctx: CloudCliContext,
+    resource: TResource,
+    principal: Principal,
+    permission: AccessPermission,
+    scope?: string,
+  ) => Promise<AccessEntry>;
+  /** `scope` is one of `scopes`, or undefined to keep the grant's scope. */
+  update: (ctx: CloudCliContext, resource: TResource, accessId: string, permission: AccessPermission, scope?: string) => Promise<void>;
   revoke: (ctx: CloudCliContext, resource: TResource, accessId: string) => Promise<void>;
   allowedPermissions?: readonly AccessPermission[];
+  /**
+   * Parts of the resource a grant can cover, as the resource's access API names them in `scope`:
+   * the whole resource first (shown for entries without a scope), then narrower parts. Adds
+   * `--scope` to `grant` and `set` and a SCOPE column to `list`.
+   */
+  scopes?: readonly [string, ...string[]];
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
   allowServiceAccounts?: boolean;
@@ -243,7 +257,7 @@ const entryTypeLabel = (entry: AccessEntry): string => {
 };
 
 // Resource-bound service accounts back resource API keys, which are managed with those keys.
-const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: boolean } = {}) =>
+const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: boolean; scopes?: readonly string[] } = {}) =>
   entries
     .filter((entry) => options.includeServiceAccounts || entry.serviceAccountKind !== "resource_bound")
     .sort((a, b) => {
@@ -256,6 +270,7 @@ const accessRows = (entries: AccessEntry[], options: { includeServiceAccounts?: 
       principal: entryDisplayName(entry),
       type: entryTypeLabel(entry),
       permission: entry.permission,
+      scope: entry.scope ?? options.scopes?.[0] ?? "",
       createdAt: entry.createdAt,
     }));
 
@@ -269,7 +284,7 @@ const printStructured = (ctx: CloudCliContext, value: unknown): boolean => {
 export const printAccessEntries = (
   ctx: CloudCliContext,
   entries: AccessEntry[],
-  options: { includeServiceAccounts?: boolean; jsonValue?: unknown } = {},
+  options: { includeServiceAccounts?: boolean; jsonValue?: unknown; scopes?: readonly string[] } = {},
 ) => {
   if (printStructured(ctx, options.jsonValue ?? entries)) return;
   const rows = accessRows(entries, options);
@@ -281,6 +296,7 @@ export const printAccessEntries = (
     { key: "principal", label: "PRINCIPAL" },
     { key: "type", label: "TYPE" },
     { key: "permission", label: "PERMISSION" },
+    ...(options.scopes ? [{ key: "scope" as const, label: "SCOPE" }] : []),
     { key: "accessId", label: "ACCESS ID" },
   ]);
 };
@@ -349,6 +365,19 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
     includeServiceAccountFlag: adapter.allowServiceAccounts === true,
   };
   const resolve = (ctx: CloudCliContext, args: string[]) => adapter.resolveResource(ctx, args);
+  const scopeFlag: { scope?: ReturnType<typeof flag.string> } = adapter.scopes
+    ? {
+        scope: flag.string({
+          description: `Part of the ${adapter.resourceLabel} the grant covers. Allowed: ${adapter.scopes.join(", ")}`,
+        }),
+      }
+    : {};
+  const scopeSuffix = (scope: string | undefined): string => (scope && scope !== adapter.scopes?.[0] ? ` (${scope})` : "");
+  const scopeOf = (flags: { scope?: string }): string | undefined => {
+    if (flags.scope === undefined) return undefined;
+    if (!adapter.scopes?.includes(flags.scope)) throw new Error(`Scope must be one of: ${adapter.scopes?.join(", ") ?? "none"}.`);
+    return flags.scope;
+  };
   const resourceArgs = {
     args: arg.rest({
       valueLabel: adapter.resourceArgLabel ?? adapter.resourceLabel,
@@ -374,6 +403,7 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       printAccessEntries(ctx, entries, {
         includeServiceAccounts: flags.includeServiceAccounts,
         jsonValue: { resource, entries },
+        scopes: adapter.scopes,
       });
     },
   });
@@ -385,16 +415,18 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
     flags: {
       ...principalFlags(principalFlagOptions),
       permission: flag.enum(allowed, { required: true, description: `Permission to grant. Allowed: ${allowed.join(", ")}` }),
+      ...scopeFlag,
     },
     examples: adapter.examples?.grant,
     async run({ ctx, args, flags }) {
       const resource = await resolve(ctx, args.args);
       const permission = flags.permission as AccessPermission;
       assertAllowedPermission(permission, allowed);
+      const scope = scopeOf(flags);
       const principal = await resolveAccessPrincipal(ctx, flags as PrincipalFlags, adapter);
-      const entry = await adapter.grant(ctx, resource, principal, permission);
+      const entry = await adapter.grant(ctx, resource, principal, permission, scope);
       if (!printStructured(ctx, { resource, entry }))
-        ctx.print(`Granted ${permission} on ${resource.label} to ${entryDisplayName(entry)}.`);
+        ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry)}.`);
     },
   });
 
@@ -407,17 +439,19 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       ...principalFlags(principalFlagOptions),
       ...accessIdFlag,
       permission: flag.enum(allowed, { required: true, description: `Permission to set. Allowed: ${allowed.join(", ")}` }),
+      ...scopeFlag,
     },
     examples: adapter.examples?.set,
     async run({ ctx, args, flags }) {
       const resource = await resolve(ctx, args.args);
       const permission = flags.permission as AccessPermission;
       assertAllowedPermission(permission, allowed);
+      const scope = scopeOf(flags);
 
       if (flags.accessId) {
-        await adapter.update(ctx, resource, flags.accessId, permission);
-        if (!printStructured(ctx, { resource, accessId: flags.accessId, permission, action: "updated" })) {
-          ctx.print(`Updated ${flags.accessId} to ${permission} on ${resource.label}.`);
+        await adapter.update(ctx, resource, flags.accessId, permission, scope);
+        if (!printStructured(ctx, { resource, accessId: flags.accessId, permission, scope, action: "updated" })) {
+          ctx.print(`Updated ${flags.accessId} to ${permission}${scopeSuffix(scope)} on ${resource.label}.`);
         }
         return;
       }
@@ -426,15 +460,15 @@ export const createAccessCommands = <TResource extends AccessResource>(adapter: 
       const entries = await adapter.list(ctx, resource);
       const existing = entries.find((entry) => principalKey(entry.principal) === principalKey(principal));
       if (existing) {
-        await adapter.update(ctx, resource, existing.id, permission);
-        if (!printStructured(ctx, { resource, accessId: existing.id, permission, action: "updated" })) {
-          ctx.print(`Updated ${entryDisplayName(existing)} to ${permission} on ${resource.label}.`);
+        await adapter.update(ctx, resource, existing.id, permission, scope);
+        if (!printStructured(ctx, { resource, accessId: existing.id, permission, scope, action: "updated" })) {
+          ctx.print(`Updated ${entryDisplayName(existing)} to ${permission}${scopeSuffix(scope)} on ${resource.label}.`);
         }
         return;
       }
-      const entry = await adapter.grant(ctx, resource, principal, permission);
+      const entry = await adapter.grant(ctx, resource, principal, permission, scope);
       if (!printStructured(ctx, { resource, entry, action: "created" })) {
-        ctx.print(`Granted ${permission} on ${resource.label} to ${entryDisplayName(entry)}.`);
+        ctx.print(`Granted ${permission}${scopeSuffix(scope)} on ${resource.label} to ${entryDisplayName(entry)}.`);
       }
     },
   });
