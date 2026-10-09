@@ -21,7 +21,7 @@ const snapshot = (date: string): Extract<SpacesViewSnapshot, { kind: "calendar" 
   kind: "calendar",
   view: "month",
   date: `${date}T00:00:00.000Z`,
-  filter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [] },
+  filter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [], colorBy: "tag" },
   items: [],
   weather: {},
 });
@@ -208,6 +208,57 @@ describe("Spaces enhanced calendar navigation", () => {
     requests.at(-1)!.result.reject(new Error("History failed after selection"));
     await flush();
     expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(`${january}&item=AfterBack&occurrence=Occurrence`);
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("changes the color choice in the URL without loading or blanking calendar data", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", BASE);
+    const requests: Array<{ href: string; result: ReturnType<typeof deferred<Extract<SpacesViewSnapshot, { kind: "calendar" }>>> }> = [];
+    mock.module("../src/frontend/[id]/_components/workspace/view-query", () => ({
+      SpacesViewUnavailableError: class extends Error {},
+      loadSpacesViewSnapshot: (href: string) => {
+        const result = deferred<Extract<SpacesViewSnapshot, { kind: "calendar" }>>();
+        requests.push({ href, result });
+        return result.promise;
+      },
+    }));
+    const { useSpacesCalendarQuery } = await import("../src/frontend/[id]/_components/workspace/calendar-query");
+    const loaded = { ...snapshot("2026-08-01"), items: [{ id: "Event1" }] } as unknown as Extract<SpacesViewSnapshot, { kind: "calendar" }>;
+
+    let navigation!: ReturnType<typeof useSpacesCalendarQuery>;
+    const dispose = render(() => {
+      navigation = useSpacesCalendarQuery({ spaceId: SPACE_ID, initialSource: BASE, initialSnapshot: loaded });
+      return dom.document.createTextNode("");
+    }, dom.root);
+
+    const byPerson = `${BASE}&ccolor=person`;
+    navigation.open(byPerson, { replace: true });
+    await flush();
+    expect(requests).toHaveLength(0);
+    expect(navigation.current().filter.colorBy).toBe("person");
+    expect(navigation.current().items).toHaveLength(1);
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(byPerson);
+
+    // A data navigation keeps the choice: the loaded snapshot never carries it, the committed URL does.
+    const september = `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01&ccolor=person`;
+    navigation.navigateHref(september);
+    await flush();
+    expect(requests.map((request) => request.href)).toEqual([`/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01`]);
+    expect(navigation.current().filter.colorBy).toBe("person");
+    requests[0]!.result.resolve(snapshot("2026-09-01"));
+    await flush();
+    expect(navigation.current().filter.colorBy).toBe("person");
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(september);
+
+    // Back to the same data with another choice follows the history entry.
+    dom.window.history.pushState(null, "", `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01&ccolor=status`);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    expect(requests).toHaveLength(1);
+    expect(navigation.current().filter.colorBy).toBe("status");
 
     dispose();
     dom.cleanup();

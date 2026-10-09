@@ -25,7 +25,11 @@ export type CalendarEvent = {
   dataSpaceItemId?: string;
   meta?: string;
   description?: string;
-  display?: "event" | "background";
+  /**
+   * `marker` draws a point in time, such as a deadline, as a colored marker
+   * beside its title instead of a filled band.
+   */
+  display?: "event" | "background" | "marker";
   location?: string;
   calendarName?: string;
   attendees?: CalendarAttendee[];
@@ -364,7 +368,12 @@ const EventChip = (props: {
     });
   const defaultContent = (
     <>
-      <span class="k2b-calendar-event__title">{props.event.title}</span>
+      <span class="k2b-calendar-event__title">
+        <Show when={props.event.display === "marker"}>
+          <span class="k2b-calendar-event__marker" aria-hidden="true" />
+        </Show>
+        {props.event.title}
+      </span>
       <Show when={showTime()}>
         <span class="k2b-calendar-event__meta">{timeLabel()}</span>
       </Show>

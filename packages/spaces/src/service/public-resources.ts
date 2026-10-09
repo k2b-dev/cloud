@@ -350,11 +350,15 @@ export const projectWormholeDestinations = async <T extends SpaceWormholeDestina
 
 export const projectCalendarItems = async <T extends CalendarItem>(items: T[]): Promise<T[]> => {
   const baseIds = items.map((item) => item.id.split(":", 1)[0] ?? item.id);
-  const [itemIds, spaceIds, recurringIds, tagIds] = await Promise.all([
+  const [itemIds, spaceIds, columnIds, recurringIds, tagIds] = await Promise.all([
     shortIds("items", baseIds),
     shortIds(
       "spaces",
       items.map((item) => item.spaceId),
+    ),
+    shortIds(
+      "columns",
+      items.map((item) => item.columnId),
     ),
     shortIds(
       "items",
@@ -371,6 +375,7 @@ export const projectCalendarItems = async <T extends CalendarItem>(items: T[]): 
       ...item,
       id: `${required(itemIds, baseIds[index]!)}${suffix}`,
       spaceId: required(spaceIds, item.spaceId),
+      columnId: required(columnIds, item.columnId),
       recurringEventId: item.recurringEventId ? required(recurringIds, item.recurringEventId) : null,
       tags: item.tags?.map((tag) => ({
         ...tag,

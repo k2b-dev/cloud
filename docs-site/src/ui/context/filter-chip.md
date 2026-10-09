@@ -25,6 +25,10 @@ Each section chooses its selection behavior:
 
 - the default is single-select within that section;
 - `multiple: true` allows several values from that section;
+- `layout: "row"` sets a few short single-select options side by side as one
+  segmented row (see [menus](/en/ui/actions/menus#items-and-sections)); the row
+  always keeps one choice, so selecting the chosen option again changes
+  nothing;
 - selections from other sections stay intact;
 - option values must be unique across all sections.
 
@@ -54,6 +58,7 @@ type FilterChipSection = {
   label?: string;
   options: readonly FilterChipOption[];
   multiple?: boolean;
+  layout?: "row";
 };
 
 type FilterChipOption = {
@@ -64,7 +69,9 @@ type FilterChipOption = {
 };
 ```
 
-Use section labels when the dropdown combines different filter dimensions. Icons suit single-select status choices. Colors can identify tags or categories.
+Use section labels when the dropdown combines different filter dimensions. Icons suit single-select status choices. Colors can identify tags or categories. A row section suits a short display choice that belongs with the filters, such as what a color shows, without a control of its own in the toolbar.
+
+The menu shows up to 32rem (and at most 80 % of the viewport height) before it scrolls, so several labelled sections stay visible at once.
 
 ## Clear and reset
 

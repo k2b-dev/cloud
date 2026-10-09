@@ -14,6 +14,8 @@ export type FilterChipSection = {
   label?: string;
   options: readonly FilterChipOption[];
   multiple?: boolean;
+  /** `row` sets a few short single-select options side by side as one segmented row that always keeps one choice. */
+  layout?: "row";
 };
 
 export type FilterChipProps = {
@@ -61,6 +63,8 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
       emit(selected(value) ? current.filter((entry) => entry !== value) : [...current, value]);
       return;
     }
+    // A segmented row always keeps one choice, like a SegmentedControl.
+    if (section.layout === "row" && selected(value)) return;
     const sectionValues = new Set(section.options.map((option) => option.value));
     const otherValues = current.filter((entry) => !sectionValues.has(entry));
     emit(selected(value) ? otherValues : [...otherValues, value]);
@@ -80,7 +84,7 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
         icon: !section.multiple ? option.icon : undefined,
         label: option.label,
       }));
-      if (section.label) result.push({ sectionLabel: section.label, items });
+      if (section.label || section.layout) result.push({ sectionLabel: section.label, layout: section.layout, items });
       else result.push(...items);
     }
     return result;

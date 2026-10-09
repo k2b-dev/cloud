@@ -2,12 +2,18 @@ import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import { AssignedToFilterSchema, ItemTypeSchema, PrioritySchema } from "@/contracts";
 
+/** What an item's calendar color shows; `tag` is the default. */
+export const CalendarColorBySchema = z.enum(["tag", "status", "priority", "person"]);
+export type CalendarColorBy = z.infer<typeof CalendarColorBySchema>;
+
 export const CalendarFilterSchema = z.object({
   type: ItemTypeSchema,
   assignedTo: AssignedToFilterSchema,
   priorities: z.array(PrioritySchema),
   columnIds: z.array(z.string()),
   tagIds: z.array(z.string()),
+  /** Presentation only: the server ignores it, and a change re-colors the loaded items without a reload. */
+  colorBy: CalendarColorBySchema,
 });
 
 export type CalendarFilter = z.infer<typeof CalendarFilterSchema>;
@@ -18,6 +24,7 @@ export const defaultCalendarFilter: CalendarFilter = {
   priorities: [],
   columnIds: [],
   tagIds: [],
+  colorBy: "tag",
 };
 
 const PARAMS = {
@@ -26,7 +33,14 @@ const PARAMS = {
   priorities: "cpriority",
   columns: "ccolumns",
   tags: "ctags",
+  colorBy: "ccolor",
 } as const;
+
+/** The URL parameter of the color choice, which needs no new calendar data. */
+export const CALENDAR_COLOR_PARAM = PARAMS.colorBy;
+
+export const parseCalendarColorBy = (url: URL): CalendarColorBy =>
+  CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(url.searchParams.get(PARAMS.colorBy));
 
 const values = (url: URL, key: string) => url.searchParams.get(key)?.split(",").filter(Boolean) ?? [];
 const isCalendarView = (value: string | null): value is "day" | "week" | "month" | "year" =>
@@ -39,6 +53,7 @@ export const parseCalendarFilter = (url: URL): CalendarFilter => ({
   priorities: z.array(PrioritySchema).catch([]).parse(values(url, PARAMS.priorities)),
   columnIds: values(url, PARAMS.columns),
   tagIds: values(url, PARAMS.tags),
+  colorBy: parseCalendarColorBy(url),
 });
 
 /** Mirrors the server's safe calendar route defaults for immediate client previews. */
@@ -58,4 +73,5 @@ export const writeCalendarFilter = (url: URL, filter: CalendarFilter): void => {
   if (filter.priorities.length > 0) url.searchParams.set(PARAMS.priorities, filter.priorities.join(","));
   if (filter.columnIds.length > 0) url.searchParams.set(PARAMS.columns, filter.columnIds.join(","));
   if (filter.tagIds.length > 0) url.searchParams.set(PARAMS.tags, filter.tagIds.join(","));
+  if (filter.colorBy !== defaultCalendarFilter.colorBy) url.searchParams.set(PARAMS.colorBy, filter.colorBy);
 };

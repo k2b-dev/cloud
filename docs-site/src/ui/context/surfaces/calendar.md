@@ -37,8 +37,11 @@ supports an application-defined calendar color.
 
 Optional event detail includes `meta`, `description`, `location`,
 `calendarName`, attendees, resources, and recurrence metadata. `display:
-"background"` renders a non-interactive time range. `href` or
-`getEventHref` makes an event a canonical link.
+"background"` renders a non-interactive time range. `display: "marker"` draws
+a point in time, such as a deadline, as a small colored marker beside its title
+on the plain surface instead of a filled band; hover and selection tint it like
+an event, and a custom `renderEvent` output replaces the default marker.
+`href` or `getEventHref` makes an event a canonical link.
 
 `description` is optional plain text. The default timed-event card shows up to
 two lines when its duration is at least 90 minutes; compact, all-day, and
@@ -138,7 +141,7 @@ type CalendarRecurrence = {
 type CalendarEvent = {
   id: string; title: string; start: Date | string; end?: Date | string; allDay?: boolean;
   color?: CalendarEventColor; colorHex?: string; href?: string; dataSpaceItemId?: string; meta?: string;
-  description?: string; display?: "event" | "background"; location?: string; calendarName?: string;
+  description?: string; display?: "event" | "background" | "marker"; location?: string; calendarName?: string;
   attendees?: CalendarAttendee[]; resources?: CalendarResource[]; recurrence?: CalendarRecurrence;
 };
 

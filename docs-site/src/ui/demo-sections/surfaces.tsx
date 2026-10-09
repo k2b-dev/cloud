@@ -718,7 +718,7 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
     { id: "review", title: "Design review", start: at(5, 10), end: at(5, 11, 30), color: "cyan" },
     { id: "handover", title: "Ops handover", start: at(9, 8, 30), end: at(9, 9, 15), color: "zinc" },
     { id: "focus", title: "Focus block", start: at(9, 9), end: at(9, 12), color: "blue" },
-    { id: "checklist", title: "Launch checklist", start: at(12), end: at(13), allDay: true, color: "amber" },
+    { id: "checklist", title: "Launch checklist", start: at(12), end: at(13), allDay: true, color: "amber", display: "marker" },
     { id: "launch", title: "Product launch", start: at(12), end: at(13), allDay: true, color: "red" },
     { id: "standup", title: "Team stand-up", start: at(12, 9), end: at(12, 10), color: "emerald" },
     {

@@ -106,6 +106,24 @@ describe("@k2b/ui Cloud content contract", () => {
       }),
     );
     expect(shortEventHtml).toContain('data-short="true"');
+    const markerHtml = renderToString(() =>
+      createComponent(Calendar, {
+        date: "2026-07-15T12:00:00Z",
+        events: [
+          { id: "due", title: "Submit report", start: "2026-07-15", allDay: true, display: "marker", colorHex: "#8b5cf6" },
+          { id: "band", title: "Offsite", start: "2026-07-15", allDay: true, colorHex: "#8b5cf6" },
+        ],
+        view: "month",
+        timeZone: "UTC",
+      }),
+    );
+    expect(markerHtml).toMatch(
+      /data-display="marker"[^>]*>(?:<!--[^>]*-->)*<span class="k2b-calendar-event__title">(?:<!--[^>]*-->)*<span class="k2b-calendar-event__marker" aria-hidden="true">/,
+    );
+    expect(markerHtml.match(/k2b-calendar-event__marker/g)).toHaveLength(1);
+    expect(contentCss).toMatch(/\.k2b-calendar-event\[data-display="marker"\] \{\s*background: transparent;/);
+    // Hover and selection come later in the sheet, so a marker still tints like an event.
+    expect(contentCss.indexOf('[data-display="marker"]')).toBeLessThan(contentCss.indexOf('.k2b-calendar-event[data-selected="true"] {'));
     const describedEventHtml = renderToString(() =>
       createComponent(Calendar, {
         date: "2026-07-15T12:00:00Z",

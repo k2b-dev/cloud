@@ -4,6 +4,7 @@ import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   type CalendarEvent,
+  type CalendarEventRenderContext,
   type CalendarEventTimeChange,
   Calendar as CoreCalendar,
   dialogCore,
@@ -13,9 +14,17 @@ import {
   panelDialogOptions,
   toast,
 } from "@k2b/ui";
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySchema, type Recurrence, type SpaceItem } from "@/contracts";
+import {
+  AssignedToFilterSchema,
+  type CalendarItem,
+  ItemTypeSchema,
+  PrioritySchema,
+  type Recurrence,
+  type SpaceColumn,
+  type SpaceItem,
+} from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
@@ -23,7 +32,9 @@ import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
-import { type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
+import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
+import { CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
+import { CalendarItemContent } from "./ItemContent";
 import type { CalendarProps, CalendarView } from "./types";
 
 const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
@@ -54,14 +65,9 @@ const buildCalendarHref = (
   return `${url.pathname}?${url.searchParams.toString()}`;
 };
 
-const priorityColor = (item: CalendarItem) => {
-  if (!item.deadline || item.startsAt) return undefined;
-  if (item.priority === "urgent" || item.priority === "high") return "red";
-  return "amber";
-};
-
 const toCalendarEvent = (
   item: CalendarItem,
+  columns: SpaceColumn[],
   baseUrl: string,
   view: CalendarView,
   date: Date,
@@ -69,7 +75,7 @@ const toCalendarEvent = (
   dateConfig?: DateContext,
 ): CalendarEvent => {
   const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
-  const isDeadline = Boolean(item.deadline && !item.startsAt);
+  const isDeadline = isCalendarTask(item);
   const detailItemId = item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id;
   const occurrenceId = item.recurrenceId ?? undefined;
   return {
@@ -79,8 +85,8 @@ const toCalendarEvent = (
     start: eventStart(item),
     end: eventEnd(item),
     allDay: item.allDay || !item.startsAt,
-    color: priorityColor(item),
-    colorHex: isDeadline ? undefined : (item.tags?.[0]?.color ?? "#0ea5e9"),
+    colorHex: calendarItemColors(item, filter.colorBy, columns).color,
+    display: isDeadline ? "marker" : undefined,
     href: buildCalendarHref(baseUrl, view, date, filter, detailItemId, occurrenceId, dateConfig),
     dataSpaceItemId: detailItemId,
     calendarName: item.spaceName,
@@ -200,10 +206,24 @@ export default function Calendar(props: CalendarProps) {
   });
   const events = () =>
     props.items.map((item) => {
-      const event = toCalendarEvent(item, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
+      const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
       const optimistic = optimisticTimes()[item.id];
       return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
     });
+  const itemsById = createMemo(() => new Map(props.items.map((item) => [item.id, item])));
+  const renderEvent = (event: CalendarEvent, context: CalendarEventRenderContext) => {
+    const item = itemsById().get(event.id);
+    if (!item) return undefined;
+    return (
+      <CalendarItemContent
+        event={event}
+        context={context}
+        task={isCalendarTask(item)}
+        flag={isCalendarFlagged(item) ? { label: item.priority === "urgent" ? t.urgent : t.high } : null}
+        extra={calendarItemColors(item, props.filter.colorBy, props.columns).extra}
+      />
+    );
+  };
   const clearOptimisticTime = (eventId: string) => {
     const current = optimisticTimes();
     if (!(eventId in current)) return;
@@ -248,6 +268,7 @@ export default function Calendar(props: CalendarProps) {
       options: props.tags.map((tag) => ({ value: tag.id, label: tag.name, color: tag.color })),
     },
   ];
+  // The color choice is one row of this menu: it changes no data, and the toolbar has no room for another control.
   const scopeOptions: FilterChipSection[] = [
     {
       label: t.type,
@@ -264,6 +285,16 @@ export default function Calendar(props: CalendarProps) {
         { value: "assigned:assigned", label: t.assigned, icon: "ti ti-user-check" },
         { value: "assigned:me", label: t.me, icon: "ti ti-user" },
         { value: "assigned:unassigned", label: t.unassigned, icon: "ti ti-user-off" },
+      ],
+    },
+    {
+      label: t.colorBy,
+      layout: "row",
+      options: [
+        { value: "color:tag", label: t.tag },
+        { value: "color:status", label: t.status },
+        { value: "color:priority", label: t.priority },
+        { value: "color:person", label: t.person },
       ],
     },
   ];
@@ -548,15 +579,21 @@ export default function Calendar(props: CalendarProps) {
               label={t.scope}
               icon="ti ti-filter"
               options={scopeOptions}
-              value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`]}
-              defaultValue={[`type:${defaultCalendarFilter.type}`, `assigned:${defaultCalendarFilter.assignedTo}`]}
+              value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`, `color:${props.filter.colorBy}`]}
+              defaultValue={[
+                `type:${defaultCalendarFilter.type}`,
+                `assigned:${defaultCalendarFilter.assignedTo}`,
+                `color:${defaultCalendarFilter.colorBy}`,
+              ]}
               isActive={props.filter.type !== defaultCalendarFilter.type || props.filter.assignedTo !== defaultCalendarFilter.assignedTo}
               onValueChange={(values) => {
                 const type = values.find((value) => value.startsWith("type:"))?.slice(5);
                 const assignedTo = values.find((value) => value.startsWith("assigned:"))?.slice(9);
+                const colorBy = values.find((value) => value.startsWith("color:"))?.slice(6);
                 setFilter({
                   type: ItemTypeSchema.catch(defaultCalendarFilter.type).parse(type),
                   assignedTo: AssignedToFilterSchema.catch(defaultCalendarFilter.assignedTo).parse(assignedTo),
+                  colorBy: CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(colorBy),
                 });
               }}
             />
@@ -598,6 +635,7 @@ export default function Calendar(props: CalendarProps) {
           buildCalendarHref(props.baseUrl, view as CalendarView, date, props.filter, undefined, undefined, props.dateConfig)
         }
         getEventHref={(event) => event.href}
+        renderEvent={renderEvent}
         selectedEventId={props.selectedItemId}
         onNavigateHref={props.onNavigateHref}
         onPrefetch={props.onPrefetch}

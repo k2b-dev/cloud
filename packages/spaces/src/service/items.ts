@@ -99,6 +99,7 @@ type DbItem = {
 type DbCalendarItem = {
   id: string;
   space_id: string;
+  column_id: string;
   space_name: string;
   space_color: string;
   title: string;
@@ -1103,9 +1104,10 @@ type DbItemAcross = DbItem & {
   column_name: string;
 };
 
-const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[] = []): CalendarItem => ({
+const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[], assignees: SpaceItemAssignee[]): CalendarItem => ({
   id: r.id,
   spaceId: r.space_id,
+  columnId: r.column_id,
   spaceName: r.space_name,
   spaceColor: r.space_color,
   title: r.title,
@@ -1121,6 +1123,7 @@ const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[] = []): CalendarItem 
   recurringEventId: r.recurring_event_id,
   recurrenceId: r.recurrence_id?.toISOString() ?? null,
   tags,
+  assignees,
 });
 
 const calendarRowToRecurringEvent = (item: CalendarItem): (RecurringEvent & { calendarItem: CalendarItem }) | null => {
@@ -1161,6 +1164,7 @@ const expandedToCalendarItem = (event: ExpandedRecurringEvent & { calendarItem?:
     return {
       id: event.id,
       spaceId: "",
+      columnId: "",
       spaceName: "",
       spaceColor: "#3b82f6",
       title: event.title,
@@ -1177,6 +1181,7 @@ const expandedToCalendarItem = (event: ExpandedRecurringEvent & { calendarItem?:
       recurrenceId: event.recurringInstance?.recurrenceId ?? null,
       isRecurringInstance: !!event.recurringInstance,
       tags: [],
+      assignees: [],
     };
   }
 
@@ -2396,7 +2401,7 @@ export const listCalendar = async (
         AND ${bindingMatch}
         AND ${requestedSpaceMatch}
     )
-    SELECT i.id, i.space_id, s.name as space_name, s.color as space_color,
+    SELECT i.id, i.space_id, i.column_id, s.name as space_name, s.color as space_color,
            i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.priority,
            i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id
     FROM spaces.items i
@@ -2446,8 +2451,9 @@ export const listCalendar = async (
     throw new CalendarReadLimitError("Calendar source limit exceeded; narrow the date range or select one Space.");
   }
 
-  const tagsByItemId = await getTagsByItemIds(rows.map((row) => row.id));
-  const items = rows.map((row) => mapCalendarRow(row, tagsByItemId.get(row.id) ?? []));
+  const rowIds = rows.map((row) => row.id);
+  const [tagsByItemId, assigneesByItemId] = await Promise.all([getTagsByItemIds(rowIds), getAssigneesByItemIds(rowIds)]);
+  const items = rows.map((row) => mapCalendarRow(row, tagsByItemId.get(row.id) ?? [], assigneesByItemId.get(row.id) ?? []));
   const recurringEvents = items
     .map(calendarRowToRecurringEvent)
     .filter((event): event is RecurringEvent & { calendarItem: CalendarItem } => !!event);
