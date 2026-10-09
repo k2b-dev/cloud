@@ -42,7 +42,7 @@ export const rule: Rule = {
   description: "Application facade, service module, capability, and API conventions",
   run: async ({ workspaceRoot }) => {
     const packagesRoot = join(workspaceRoot, "packages");
-    const nonAppPackages = new Set(["cloud", "ui"]);
+    const nonAppPackages = new Set(["cloud", "ui", "ssr"]);
     const appNames = packageIds(workspaceRoot).filter((name) => !nonAppPackages.has(name) && isDirectory(join(packagesRoot, name, "src")));
     const findings: Finding[] = [];
     const report = (file: string, message: string) => findings.push({ file, message });
