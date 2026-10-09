@@ -1,10 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { OutboundEvent, ProviderRequest, StoreEntry } from "@k2b/nessi";
 import { nessi } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { z } from "zod";
 import type { RequestActor } from "../server";
+import { coreSettings } from "../services";
 import { aiToolAllowsAlways, aiToolApprovalScope, aiToolNeedsApproval } from "./approvals";
+import { aiChatAccessSubject } from "./assistant-models";
+import * as credentials from "./credentials";
 import {
   CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
   CloudAiCardInputSchema,
@@ -16,8 +19,36 @@ import {
   createConfiguredDefaultCloudAiTools,
   createDefaultCloudAiTools,
 } from "./default-tools";
+import { aiModelAccess } from "./model-access";
 import { AiTurnActionSchema } from "./runtime";
+import * as settings from "./settings";
 import { aiToolPromptHints, defineAiTool, prepareAiTools } from "./tools";
+import type { AiModelProfile } from "./types";
+
+afterEach(() => mock.restore());
+
+const configureAudio = async () => {
+  const audio: AiModelProfile = {
+    id: "speech",
+    label: "Speech",
+    provider: "openai-compatible",
+    model: "whisper",
+    baseURL: "https://example.invalid/v1",
+    enabled: true,
+    capabilities: ["transcription"],
+    dataBoundary: "private",
+  };
+  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
+  const state = await settings.resolveAiSettingsStateFromRaw({
+    enabled: true,
+    defaultModelId: chat.id,
+    profilesJson: JSON.stringify([chat, audio]),
+  });
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+  spyOn(coreSettings, "get").mockResolvedValue(audio.id);
+  spyOn(credentials, "getAiCredential").mockResolvedValue(null);
+  spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+};
 
 const actor = {
   kind: "user",
@@ -224,8 +255,9 @@ describe("AI tools", () => {
   });
 
   test("adds Firecrawl web tools only when configured", async () => {
-    const withoutWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "" });
-    const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret" });
+    await configureAudio();
+    const withoutWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "", accessSubject: aiChatAccessSubject(actor) });
+    const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret", accessSubject: aiChatAccessSubject(actor) });
 
     expect(withoutWeb.some((tool) => tool.def.name.startsWith("web_"))).toBe(false);
     expect(withWeb.filter((tool) => tool.def.name.startsWith("web_")).map((tool) => tool.def.name)).toEqual(["web_search", "web_extract"]);

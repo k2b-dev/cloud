@@ -264,7 +264,9 @@ const app = new Hono<AuthContext>()
           ? t.cityForecastUnavailable
           : result.error.code === "BAD_INPUT"
             ? t.cityQueryRequired
-            : t.fetchWeatherFailed;
+            : result.error.code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED"
+              ? t.citySearchNotConfigured
+              : t.fetchWeatherFailed;
       return respond(c, fail({ ...result.error, message }));
     },
   )
@@ -297,7 +299,12 @@ const app = new Hono<AuthContext>()
         if (!result.ok) {
           return fail({
             ...result.error,
-            message: result.error.code === "BAD_INPUT" ? t.onlyGermanCitySearch : t.locationSearchUnavailable,
+            message:
+              result.error.code === "BAD_INPUT"
+                ? t.onlyGermanCitySearch
+                : result.error.code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED"
+                  ? t.citySearchNotConfigured
+                  : t.locationSearchUnavailable,
           });
         }
         return ok(result.data.items);

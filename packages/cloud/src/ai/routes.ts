@@ -22,7 +22,7 @@ import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import type { AiToolApprovalContext } from "./approvals";
-import { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
+import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { getAiChatQuotas } from "./chat-quotas";
@@ -58,7 +58,6 @@ import {
   queuedMessageAccepted,
   updateQueuedMessage,
 } from "./message-queue";
-import { aiModelAccess } from "./model-access";
 import { personalAiModelPolicy } from "./personal-agent";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
@@ -84,7 +83,6 @@ import { aiConversations } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolPromptHints } from "./tools";
-import { resolveAiAudioModel } from "./transcription";
 import type { AiConversation, AiModelPolicy, AiTurn } from "./types";
 
 /** Everything a resolved, authorized request needs to run against the shared runtime. */
@@ -420,7 +418,10 @@ export const aiRoutes = (() => {
         const skillCatalog = selectAiSkillCatalog(availableSkills, previewProfile?.contextWindow ?? 0, "");
         const tools = toolsSupported
           ? [
-              ...(await createConfiguredDefaultCloudAiTools()),
+              ...(await createConfiguredDefaultCloudAiTools({
+                accessSubject: c.get("accessSubject"),
+                allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries,
+              })),
               ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
               ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"))] : []),
               ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"))] : []),
@@ -526,7 +527,14 @@ export const aiRoutes = (() => {
             return respond(c, fail(err.internal("The live capability catalog is unavailable.")));
           }
         }
-        const builtInNames = new Set((await createConfiguredDefaultCloudAiTools()).map((tool) => tool.def.name));
+        const builtInNames = new Set(
+          (
+            await createConfiguredDefaultCloudAiTools({
+              accessSubject: c.get("accessSubject"),
+              allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries,
+            })
+          ).map((tool) => tool.def.name),
+        );
         const preloadTools = (body.preloadTools ?? []).map((requested) => {
           if ("name" in requested) return builtInNames.has(requested.name) ? requested.name : null;
           return (
@@ -1178,11 +1186,7 @@ export const aiRoutes = (() => {
             conversationId: conversation.id,
             userId: ctx.ownerUserId,
             bytes: new Uint8Array(await file.arrayBuffer()),
-            resolveModel: async () => {
-              const model = await resolveAiAudioModel({ allowedDataBoundaries: ctx.modelPolicy.allowedDataBoundaries });
-              await aiModelAccess.assertAllowed(model.profile.id, c.get("accessSubject"));
-              return model;
-            },
+            resolveModel: () => resolveAssistantAudioModel(c.get("accessSubject"), ctx.modelPolicy.allowedDataBoundaries),
           });
           await enqueueAiDictation(dictation.id).catch(() => undefined); // The DB sweep heals failed delivery.
           return respond(c, ok(dictation));

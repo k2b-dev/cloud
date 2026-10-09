@@ -1,7 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { coreSettings } from "../services";
+import * as credentials from "./credentials";
 import { createAiProvider } from "./provider";
+import * as settings from "./settings";
 import { parseAiModelProfiles, resolveAiSettingsStateFromRaw, selectAiModelProfile, validateAiSettingsConfiguration } from "./settings";
-import { createAiTranscriptionProvider, describeTranscriptionFailure } from "./transcription";
+import { createAiTranscriptionProvider, describeTranscriptionFailure, resolveAiAudioModel } from "./transcription";
 import type { AiModelProfile } from "./types";
 
 const audio: AiModelProfile = {
@@ -105,3 +108,69 @@ test("classifies provider failures without storing response bodies", () => {
   expect(describeTranscriptionFailure(new Error("secret"), "configuration").message).not.toContain("secret");
   expect(describeTranscriptionFailure(new Error("secret"), "provider", true).code).toBe("transcription_aborted");
 });
+
+afterEach(() => mock.restore());
+
+for (const [name, enabled, modelId, profile, boundaries, expected] of [
+  ["missing selection", true, "", audio, undefined, "no audio model is configured"],
+  ["AI disabled", false, audio.id, audio, undefined, "AI is disabled"],
+  ["missing credentials", true, audio.id, { ...audio, provider: "openai" }, undefined, "credentials"],
+  ["forbidden boundary", true, audio.id, audio, ["hosted"], "data boundary"],
+  ["incompatible profile", true, audio.id, { ...audio, capabilities: ["streaming"] }, undefined, "transcription"],
+] satisfies Array<[string, boolean, string, AiModelProfile, AiModelProfile["dataBoundary"][] | undefined, string]>) {
+  test(`audio configuration failure explains ${name} and administrator recovery`, async () => {
+    const state = await resolveAiSettingsStateFromRaw({ enabled, defaultModelId: chat.id, profilesJson: JSON.stringify([chat, profile]) });
+    spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+    spyOn(coreSettings, "get").mockResolvedValue(modelId);
+    spyOn(credentials, "getAiCredential").mockResolvedValue(null);
+    let failure: unknown;
+    try {
+      await resolveAiAudioModel({ allowedDataBoundaries: boundaries });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    if (!(failure instanceof Error)) throw new Error("Expected configuration failure");
+    expect(failure.message).toContain(expected);
+    expect(failure.message).toContain("administrator");
+    const classified = describeTranscriptionFailure(failure, "configuration");
+    expect(classified.code).toBe("transcription_configuration_failed");
+    expect(classified.message).toBe(failure.message);
+  });
+}
+
+test("unknown configuration failures are sanitized and point to administrator setup", () => {
+  const failure = describeTranscriptionFailure(new Error("private configuration secret"), "configuration");
+  expect(failure.code).toBe("transcription_configuration_failed");
+  expect(failure.message).toContain("administrator");
+  expect(failure.message).toContain("AI settings");
+  expect(failure.message).not.toContain("secret");
+});
+
+for (const [name, defaultModelId, profile, expected] of [
+  ["missing default model", "", chat, "AI is enabled but no valid default model profile is configured."],
+  ["disabled default model", chat.id, { ...chat, enabled: false }, 'Default AI model "chat" must be an enabled text model.'],
+  ["missing default credential", chat.id, { ...chat, provider: "openai" }, 'Default AI model "chat" is missing provider credentials.'],
+] satisfies Array<[string, string, AiModelProfile, string]>) {
+  test(`audio configuration preserves the specific settings cause: ${name}`, async () => {
+    const state = await resolveAiSettingsStateFromRaw({
+      enabled: true,
+      defaultModelId,
+      profilesJson: JSON.stringify([profile, audio]),
+    });
+    expect(state.ok).toBe(false);
+    if (state.ok) throw new Error("Expected invalid AI settings");
+    spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+    let failure: unknown;
+    try {
+      await resolveAiAudioModel();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: "transcription_configuration_failed",
+      message: `Audio transcription is not available: ${expected} An administrator can fix this in the AI settings.`,
+      aiError: state.error,
+    });
+  });
+}

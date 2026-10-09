@@ -69,6 +69,13 @@ cld capabilities query weather forecast.get \
   --json
 ```
 
+City search requires a Geo API URL in Weather settings. If it is empty,
+`weather.city.search` returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500) and
+asks an administrator to configure it. A Geo service failure returns
+`WEATHER_CITY_SEARCH_UNAVAILABLE` (500). In both cases, forecasts still work
+with known coordinates: call `weather.forecast.current` or
+`weather.forecast.get` with `source.kind = "coordinates"`, as shown above.
+
 Run `cld capabilities catalog --json` to inspect the live schemas and safety
 metadata. Run `cld capabilities query --help` for the current invocation
 syntax. Capability calls use the current profile and do not bypass application

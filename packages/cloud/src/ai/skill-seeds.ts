@@ -258,6 +258,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 
 - For a saved place, use location search or list and pass the returned location ID to \`weather.forecast.current\` for current conditions or \`weather.forecast.get\` for hourly and daily outlooks.
 - For an unsaved German city, use \`weather.city.search\`, choose an unambiguous candidate, and pass its coordinates directly to a forecast. Save it with \`weather.location.create\` only when the user asks.
+- If city search is unavailable, use known coordinates with \`weather.forecast.current\` or \`weather.forecast.get\` and \`source.kind = "coordinates"\`; an administrator can configure the Geo API URL in Weather settings.
 - If multiple city candidates remain plausible, ask which one instead of choosing silently. Delete a saved location only when explicitly requested.
 
 ## Reporting defaults
@@ -533,7 +534,7 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     references: [{ path: "references/calendar-mail.md", content: CLOUD_SPACES_CALENDAR_REFERENCE }],
   },
   {
-    version: 1,
+    version: 2,
     key: "weather:cloud-weather",
     name: "cloud-weather",
     description:

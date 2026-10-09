@@ -242,6 +242,16 @@ describe("Cloud AI Skill seeds", () => {
     expect(spaces?.instructions).toContain("3 of 11");
   });
 
+  test("Weather seed upgrades instructions with the coordinates fallback", async () => {
+    const seed = spyOn(aiSkills, "seedOnce").mockResolvedValue();
+    await seedCloudAiSkills();
+    const weather = seed.mock.calls.map(([input]) => input).find((input) => input.key === "weather:cloud-weather");
+    expect(weather?.version).toBe(2);
+    expect(weather?.instructions).toContain(
+      'If city search is unavailable, use known coordinates with `weather.forecast.current` or `weather.forecast.get` and `source.kind = "coordinates"`',
+    );
+  });
+
   test("Grids skill uses canonical Help and names only declared capabilities", async () => {
     const grids = getBuiltinAiSkillTemplate("cloud-grids")!;
     expect(grids.version).toBe(7);

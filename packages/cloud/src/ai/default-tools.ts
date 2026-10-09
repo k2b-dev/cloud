@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { AccessSubject } from "../server";
+import { resolveAssistantAudioModel } from "./assistant-models";
 import { createCloudAiTranscribeAudioTool } from "./audio-tool";
 import {
   CODE_RUNTIME_TOOL_NAMES,
@@ -198,6 +200,7 @@ export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
 
 export const createConfiguredDefaultCloudAiTools = async (config?: {
   firecrawlApiKey?: string | null;
+  accessSubject?: AccessSubject | null;
   fetch?: typeof fetch;
   allowedDataBoundaries?: AiDataBoundary[];
 }) => {
@@ -213,8 +216,12 @@ export const createConfiguredDefaultCloudAiTools = async (config?: {
     createCloudAiPresentTool(),
     createCloudAiCalculateTool(),
     createCloudAiViewImageTool(),
-    createCloudAiTranscribeAudioTool(),
   ];
+  const audioModelConfigured = await resolveAssistantAudioModel(config?.accessSubject ?? null, config?.allowedDataBoundaries).then(
+    () => true,
+    () => false,
+  );
+  if (audioModelConfigured) tools.push(createCloudAiTranscribeAudioTool());
   const firecrawlConfigured =
     config && "firecrawlApiKey" in config ? Boolean(config.firecrawlApiKey?.trim()) : await isCloudAiFirecrawlConfigured();
   if (firecrawlConfigured) {
