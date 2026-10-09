@@ -190,7 +190,7 @@ const result = await prompts.dialog<"publish" | "draft">(
 
 For a bare surface, the caller owns all visible panel structure. `DialogHeader` remains available for that structure. A prompt opened from inside another prompt is stacked above it; the underlying Solid state stays mounted until the nested prompt closes.
 
-A bare frame takes the height of its content, up to the dialog's height budget; only `size: "full"` gives it a fixed height. Content that needs a fixed height, such as a settings modal, sets that height itself, for example `height: min(86dvh, 40rem)`, and does not use a percentage of the frame: a percentage of a height that depends on the content has nothing to resolve against, and Safari on iPadOS then collapses the dialog to nothing.
+A bare frame takes the height of its content, up to the dialog's height budget; only `size: "full"` gives it a fixed height. Content that needs a fixed height, such as a settings modal, sets that height itself, for example `height: min(86dvh, 40rem)`. A percentage such as `h-full` does not fill the dialog: the frame's height depends on the content, so the percentage has nothing to resolve against and the content keeps its own height.
 
 ```tsx
 await prompts.dialog<void>(
