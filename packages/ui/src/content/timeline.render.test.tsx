@@ -31,7 +31,7 @@ const render = (locale: string, extra: Partial<Props> = {}) =>
       },
     }),
   );
-const decode = (html: string) => html.replaceAll("&amp;", "&").replaceAll("&#39;", "'");
+const decode = (html: string) => html.replaceAll("&#39;", "'").replaceAll("&amp;", "&");
 const headings = (html: string) => [...html.matchAll(/<h3[^>]*>(.*?)<\/h3>/g)].map((match) => match[1]!.replace(/<[^>]+>/g, " ").trim());
 
 describe("Timeline", () => {
