@@ -143,10 +143,11 @@ const serverBody = (url: URL) => {
       }),
       columns,
       tags,
-      initialState: { view, date: route.date, filter: route.filter, range: rangeOf(view, route.date), items, weather: {} },
+      initialState: { view, date: route.date, filter: route.filter, range: rangeOf(view, route.date), items, weather: {}, tray: null },
       selectedItemId: url.searchParams.get("item") ?? "",
       dateConfig,
       canWrite: true,
+      currentUserId: "99999999-9999-4999-8999-999999999999",
     }),
   );
 };

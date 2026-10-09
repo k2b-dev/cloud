@@ -151,11 +151,15 @@ export function parseFilterFromUrl(url: URL): FilterState {
  * Only includes non-default values to keep URLs clean.
  */
 export function buildFilterUrl(baseUrl: string, filter: Partial<FilterState>, current: FilterState): string {
-  const merged = { ...current, ...filter };
   const { path, preserved } = collectPreservedParams(baseUrl);
   const params = new URLSearchParams(preserved);
+  writeFilterParams(params, { ...current, ...filter });
+  const queryString = params.toString();
+  return queryString ? `${path}?${queryString}` : path;
+}
 
-  // Only add non-default values
+/** Writes the non-default values of a filter, so URLs stay clean. */
+export function writeFilterParams(params: URLSearchParams, merged: FilterState): void {
   if (merged.type !== defaultFilter.type) params.set(QueryParams.TYPE, merged.type);
   if (merged.status !== defaultFilter.status) params.set(QueryParams.STATUS, merged.status);
   if (merged.activity !== defaultFilter.activity) params.set(QueryParams.ACTIVITY, merged.activity);
@@ -169,9 +173,6 @@ export function buildFilterUrl(baseUrl: string, filter: Partial<FilterState>, cu
   if (merged.sortDesc) params.set(QueryParams.SORT_DESC, "true");
   if (merged.groupBy !== defaultFilter.groupBy) params.set(QueryParams.GROUP_BY, merged.groupBy);
   if (merged.page > 1) params.set(QueryParams.PAGE, String(merged.page));
-
-  const queryString = params.toString();
-  return queryString ? `${path}?${queryString}` : path;
 }
 
 /**

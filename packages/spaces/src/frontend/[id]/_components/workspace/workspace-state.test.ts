@@ -353,6 +353,25 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       expect(calls).not.toContain("weather.get");
     });
 
+    test("loads the tray with the strip, and not for a week the strip adds while the reader scrolls", async () => {
+      const request = {
+        user: { id: USER_ID, roles: ["user" as const] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&cv=timeline&cd=2026-10-08`,
+        dateConfig: { timeZone: "Europe/Berlin", locale: "de" },
+      };
+      const strip = await loadSpacesViewSnapshot(request);
+      expect(listedFilters.map((filter) => filter.deadlineFilter)).toEqual(["overdue", "none"]);
+      expect(strip).toMatchObject({ kind: "calendar", tray: { overdue: { total: 1 }, undated: { total: 1 } } });
+
+      listedFilters = [];
+      const week = { from: "2026-10-15T22:00:00.000Z", to: "2026-10-22T22:00:00.000Z" };
+      const block = await loadSpacesViewSnapshot({ ...request, timelineRange: week, includeTray: false });
+      expect(listedFilters).toEqual([]);
+      expect(block).toMatchObject({ kind: "calendar", range: week, tray: null });
+    });
+
     test("loads one generated occurrence with an occurrence-scoped comment target", async () => {
       const recurrenceId = "2026-07-17T09:00:00.000Z";
       loadedItem = {

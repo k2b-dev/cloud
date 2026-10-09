@@ -10,8 +10,8 @@ export const loadSpacesViewSnapshot = async (
   href: string,
   signal: AbortSignal,
   locale?: string,
-  /** The timeline's range to load instead of its first window. */
-  range?: TimelineRange,
+  /** The timeline's range to load instead of its first window; a week loaded while the reader scrolls leaves out the tray. */
+  range?: TimelineRange & { includeTray?: "false" },
 ): Promise<SpacesViewSnapshot> => {
   const { t } = spaceMessages.resolve(locale ? [locale] : []);
   const response = await apiClient.workspace.view.$get({ query: { href, ...range } }, { init: { signal } });

@@ -21,6 +21,7 @@ import {
 import { SpaceUserSettingsSchema } from "@/settings-context";
 import { TaskWorkSchema } from "../../../../work-contracts";
 import { type CalendarFilter, CalendarFilterSchema, writeCalendarFilter } from "../calendar/filter";
+import { TIMELINE_TRAY_SIZE } from "../calendar/timeline";
 import { boardFilter, buildFilterUrl, type parseFilterFromUrl, QueryParams } from "../filter/types";
 
 type FilterState = ReturnType<typeof parseFilterFromUrl>;
@@ -38,6 +39,14 @@ const CalendarViewSchema = z.enum(["day", "week", "month", "year", "timeline"]);
 /** The time range a calendar snapshot loaded items for; the timeline extends it while the reader scrolls. */
 const CalendarRangeSchema = z.object({ from: z.string().datetime(), to: z.string().datetime() });
 const DayWeatherSchema = z.object({ tempMin: z.number(), tempMax: z.number(), icon: z.string() });
+/** One part of the tray below the timeline: its first tasks and how many it holds in all. */
+const TimelineTrayListSchema = z.object({
+  items: z.array(SpaceItemSchema).max(TIMELINE_TRAY_SIZE),
+  total: z.number().int().nonnegative(),
+});
+/** Tasks the timeline has no place for; null outside the timeline and while the calendar shows only events. */
+const TimelineTraySchema = z.object({ overdue: TimelineTrayListSchema, undated: TimelineTrayListSchema }).nullable();
+export type TimelineTray = NonNullable<z.infer<typeof TimelineTraySchema>>;
 
 const KanbanBucketInitialSchema = z.object({
   key: z.string(),
@@ -99,6 +108,7 @@ export const SpacesViewSnapshotSchema = z.discriminatedUnion("kind", [
     range: CalendarRangeSchema,
     items: z.array(CalendarItemSchema),
     weather: z.record(z.string(), DayWeatherSchema),
+    tray: TimelineTraySchema,
   }),
 ]);
 export type SpacesViewSnapshot = z.infer<typeof SpacesViewSnapshotSchema>;
@@ -129,6 +139,7 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     calendarRange: CalendarRangeSchema,
     calendarItems: z.array(CalendarItemSchema),
     calendarWeather: z.record(z.string(), DayWeatherSchema),
+    calendarTray: TimelineTraySchema,
     selectedItemDetail: SpaceItemDetailSchema.nullable(),
     wormholes: z.array(SpaceWormholeSchema),
   }),
