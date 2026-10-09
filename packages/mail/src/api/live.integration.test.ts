@@ -146,7 +146,7 @@ suite("Mail live channel", () => {
       expect([...admitted].sort()).toEqual([...allowedByApi].sort());
     }
     expect([...(await mailLiveChannels.mailbox.authorize(shared.id, viewers))].sort()).toEqual([reader.id, member.id].sort());
-    expect(await mailLiveChannels.mailbox.keys({ mailbox: "Zz9999" })).toBeNull();
+    expect(await mailLiveChannels.mailbox.keys({ mailbox: "Zz9999" }, reader)).toBeNull();
   });
 
   test("API keys read on the socket what their binding and scopes let them read on the API", async () => {

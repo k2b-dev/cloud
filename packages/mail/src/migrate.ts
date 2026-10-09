@@ -114,6 +114,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     $$
   `.simple();
   await addCommandQueuePosition(tx);
+  await addConversationAssignees(tx);
+  await addAssignedOnlyMailboxAccess(tx);
   await writeLiveUpdatesToPlatformOutbox(tx);
   // A message only some recipients accepted keeps needing attention for the others while its Sent
   // copy is retried: the flag marks that retry next to the partial outcome, and the index lets the
@@ -126,12 +128,62 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
 };
 
 /**
+ * The people a conversation is assigned to; a conversation can have several. The table replaces
+ * `mail.conversations.assignee_user_id`: its first start copies every existing assignment once,
+ * when it creates the table. Mail keeps that column at the earliest remaining assignee, so an
+ * older Mail image still starts on this database and shows one of the assignees.
+ */
+const addConversationAssignees = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    DO $$
+    BEGIN
+      IF to_regclass('mail.conversation_assignees') IS NULL THEN
+        CREATE TABLE mail.conversation_assignees (
+          conversation_id uuid NOT NULL REFERENCES mail.conversations(id) ON DELETE CASCADE,
+          user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+          assigned_at timestamp with time zone DEFAULT now() NOT NULL,
+          CONSTRAINT conversation_assignees_pkey PRIMARY KEY (conversation_id, user_id)
+        );
+        CREATE INDEX conversation_assignees_user_idx ON mail.conversation_assignees USING btree (user_id, conversation_id);
+        INSERT INTO mail.conversation_assignees (conversation_id, user_id, assigned_at)
+        SELECT id, assignee_user_id, updated_at
+        FROM mail.conversations
+        WHERE assignee_user_id IS NOT NULL;
+      END IF;
+    END
+    $$
+  `.simple();
+};
+
+/**
+ * Grants that cover only the conversations assigned to a person, next to the mailbox-wide grants in
+ * `mail.mailbox_access`. They live in a table of their own on purpose: an older Mail image reads
+ * only `mail.mailbox_access`, so it grants these people nothing instead of the whole mailbox.
+ */
+const addAssignedOnlyMailboxAccess = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.mailbox_assigned_access (
+      mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+      access_id uuid NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
+      CONSTRAINT mailbox_assigned_access_pkey PRIMARY KEY (mailbox_id, access_id)
+    )
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS mailbox_assigned_access_access_idx ON mail.mailbox_assigned_access USING btree (access_id, mailbox_id)
+  `.simple();
+};
+
+/**
  * Mail's one writer of live updates, called by the trigger on `mail.activity_events` and by
  * changes that record no activity. It writes to Core's platform outbox and joins the updates of
  * one conversation, or of the whole mailbox, in one transaction. It keeps the signature of the
  * function that wrote to Mail's former table, so the replicas of an older image that still run
  * during a rollout write their updates here too; the uuid it returns is always NULL.
  * The baseline does not create it, so a fresh installation and an upgraded one get this body.
+ *
+ * People who may read only the conversations assigned to them never follow the mailbox key, which
+ * names every conversation. An update of a conversation also goes to the key `<mailbox>:<user>` of
+ * each of its assignees, and an update of the whole mailbox, which names none, to `<mailbox>:assigned`.
  */
 const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> => {
   await tx`
@@ -159,6 +211,31 @@ const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> =>
         ),
         target_mailbox_id::text || ':' || COALESCE(conversation_short_id, '')
       );
+      IF conversation_short_id IS NULL THEN
+        PERFORM events.enqueue(
+          gen_random_uuid(),
+          'mail',
+          'live',
+          target_mailbox_id::text || ':assigned',
+          jsonb_build_object('v', 1, 'k', target_mailbox_id::text || ':assigned', 'd', jsonb_build_object('conversationId', NULL)),
+          target_mailbox_id::text || ':assigned:'
+        );
+      ELSE
+        PERFORM events.enqueue(
+          gen_random_uuid(),
+          'mail',
+          'live',
+          target_mailbox_id::text || ':' || assignee.user_id::text,
+          jsonb_build_object(
+            'v', 1,
+            'k', target_mailbox_id::text || ':' || assignee.user_id::text,
+            'd', jsonb_build_object('conversationId', conversation_short_id)
+          ),
+          target_mailbox_id::text || ':' || assignee.user_id::text || ':' || conversation_short_id
+        )
+        FROM mail.conversation_assignees assignee
+        WHERE assignee.conversation_id = target_conversation_id;
+      END IF;
       RETURN NULL;
     END;
     $$

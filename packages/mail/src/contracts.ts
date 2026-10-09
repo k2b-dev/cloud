@@ -1,4 +1,4 @@
-import { CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import { CloudResourceViewSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
 import type {
   WorkflowDiagnostic as KernelWorkflowDiagnostic,
   WorkflowBoundPlan,
@@ -345,6 +345,18 @@ export const relatedConversationQuerySchema = z
   .strict();
 export const searchBackendSchema = z.enum(["auto", "postgres", "pg_textsearch"]);
 export type SearchBackend = z.infer<typeof searchBackendSchema>;
+
+/**
+ * Where a mailbox grant applies. `mailbox` (the default) covers every conversation; `assigned`
+ * covers only the conversations assigned to the person and allows `read` or `write`.
+ */
+export const mailboxAccessScopeSchema = z
+  .enum(["mailbox", "assigned"])
+  .describe("`mailbox` covers every conversation; `assigned` only the conversations assigned to the person, with read or write.");
+export const mailboxGrantAccessSchema = GrantAccessSchema.extend({ scope: mailboxAccessScopeSchema.optional() });
+export const mailboxUpdateAccessSchema = UpdateAccessSchema.extend({
+  scope: mailboxAccessScopeSchema.optional().describe("The scope after the change; omitted keeps the grant's scope."),
+});
 
 export const automaticReplyManagementPermissionSchema = z.enum(["write", "admin"]);
 export type AutomaticReplyManagementPermission = z.infer<typeof automaticReplyManagementPermissionSchema>;

@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { CloudResourceRefSchema, ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
@@ -57,6 +57,8 @@ import {
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
+  mailboxGrantAccessSchema,
+  mailboxUpdateAccessSchema,
   mailCommandInputSchema,
   mailCommandOutcomeSchema,
   mailCommandOutcomesInputSchema,
@@ -1264,7 +1266,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxAccess.listMailboxAccess(requestContext(c), internalMailboxId(c))),
   )
-  .post("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", GrantAccessSchema), async (c) => {
+  .post("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", mailboxGrantAccessSchema), async (c) => {
     const input = await internalInput(c, c.req.valid("json"));
     if (input.permission === "none") return respondPublic(c, fail(err.badInput("Access permission cannot be none")));
     return respondPublic(
@@ -1274,19 +1276,20 @@ const mailOperationsApi = new Hono<MailApiContext>()
         mailboxId: internalMailboxId(c),
         principal: input.principal,
         permission: input.permission,
+        scope: input.scope,
       }),
     );
   })
   .patch(
     "/mailboxes/:mailboxId/access/:accessId",
     v("param", mailboxAndIdParamSchema("accessId", z.uuid())),
-    v("json", UpdateAccessSchema),
+    v("json", mailboxUpdateAccessSchema),
     async (c) => {
       const params = internalParams(c, c.req.valid("param")) as {
         mailboxId: string;
         accessId: string;
       };
-      const { permission } = await internalInput(c, c.req.valid("json"));
+      const { permission, scope } = await internalInput(c, c.req.valid("json"));
       if (permission === "none") return respondPublic(c, fail(err.badInput("Use DELETE to revoke access")));
       return respondPublic(
         c,
@@ -1294,6 +1297,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
           context: requestContext(c),
           ...params,
           permission,
+          scope,
         }),
       );
     },
@@ -2886,7 +2890,7 @@ const adminApi = new Hono<MailApiContext>()
   .get("/admin/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxAccess.listMailboxAccessAsPlatformAdmin(requestContext(c), internalMailboxId(c))),
   )
-  .post("/admin/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", GrantAccessSchema), async (c) => {
+  .post("/admin/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", mailboxGrantAccessSchema), async (c) => {
     const input = await internalInput(c, c.req.valid("json"));
     if (input.permission === "none") return respondPublic(c, fail(err.badInput("Access permission cannot be none")));
     return respondPublic(
@@ -2896,16 +2900,17 @@ const adminApi = new Hono<MailApiContext>()
         mailboxId: internalMailboxId(c),
         principal: input.principal,
         permission: input.permission,
+        scope: input.scope,
       }),
     );
   })
   .patch(
     "/admin/mailboxes/:mailboxId/access/:accessId",
     v("param", mailboxAndIdParamSchema("accessId", z.uuid())),
-    v("json", UpdateAccessSchema),
+    v("json", mailboxUpdateAccessSchema),
     async (c) => {
       const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; accessId: string };
-      const { permission } = await internalInput(c, c.req.valid("json"));
+      const { permission, scope } = await internalInput(c, c.req.valid("json"));
       if (permission === "none") return respondPublic(c, fail(err.badInput("Use DELETE to revoke access")));
       return respondPublic(
         c,
@@ -2913,6 +2918,7 @@ const adminApi = new Hono<MailApiContext>()
           context: requestContext(c),
           ...params,
           permission,
+          scope,
         }),
       );
     },

@@ -1,7 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MailExecutionOperation, SenderAuthenticationPolicy } from "../contracts";
-import { requireMailboxPermission } from "./access";
+import { type MailboxAccess, requireMailboxAccess, requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
 
 type SqlClient = typeof sql;
@@ -87,6 +87,11 @@ export type ResolvedMailExecution = {
     folders: Record<string, string[]>;
     resolvedAt: string;
   };
+  /**
+   * What the actor may see, for an actor operation that asked for `conversationScoped`; mailbox-wide
+   * otherwise. Every caller that passes `conversationScoped` restricts its rows with it.
+   */
+  access: MailboxAccess | null;
 };
 
 const requiredPermission = (operation: MailExecutionOperation): "read" | "write" | null => {
@@ -99,16 +104,20 @@ const authorizeExecution = async (params: {
   mailboxId: string;
   operation: MailExecutionOperation;
   context?: MailRequestContext | null;
+  conversationScoped?: boolean;
   db: SqlClient;
-}): Promise<Result<void>> => {
+}): Promise<Result<MailboxAccess | null>> => {
   const permission = requiredPermission(params.operation);
-  if (!permission) return ok();
+  if (!permission) return ok(null);
   if (!params.context) return fail(err.unauthenticated());
+  if (params.conversationScoped) {
+    return requireMailboxAccess(params.context, params.mailboxId, permission, params.db);
+  }
   const allowed = await requireMailboxPermission(params.context, params.mailboxId, permission, params.db);
-  return allowed.ok ? ok() : allowed;
+  return allowed.ok ? ok({ scope: "mailbox", permission: allowed.data as MailboxAccess["permission"] }) : allowed;
 };
 
-const localExecution = (mailboxId: string, remoteResourceId: string | null): ResolvedMailExecution => ({
+const localExecution = (mailboxId: string, remoteResourceId: string | null, access: MailboxAccess | null): ResolvedMailExecution => ({
   mailboxId,
   remoteResourceId,
   bindingId: null,
@@ -118,6 +127,7 @@ const localExecution = (mailboxId: string, remoteResourceId: string | null): Res
   localOnly: true,
   sentDelivery: null,
   rightsSnapshot: { folders: {}, resolvedAt: new Date().toISOString() },
+  access,
 });
 
 type SenderSelection = {
@@ -216,6 +226,7 @@ const resolvedExecution = (params: {
   operation: MailExecutionOperation;
   senderSentFolderId: string | null;
   selected: BindingCandidate;
+  access: MailboxAccess | null;
 }): ResolvedMailExecution => ({
   mailboxId: params.mailboxId,
   remoteResourceId: params.remoteResourceId,
@@ -239,6 +250,7 @@ const resolvedExecution = (params: {
     folders: Object.fromEntries(Object.entries(params.selected.folders).map(([folderId, folder]) => [folderId, [...folder.rights]])),
     resolvedAt: new Date().toISOString(),
   },
+  access: params.access,
 });
 
 export const resolveMailExecution = async (params: {
@@ -249,11 +261,17 @@ export const resolveMailExecution = async (params: {
   requiredRights?: string[];
   folderRequirements?: Array<{ folderId: string; rights: string[] }>;
   senderIdentityId?: string | null;
+  /**
+   * Accept access to assigned conversations only, besides mailbox-wide access. The caller then
+   * restricts every row it reads or changes to `access` of the result.
+   */
+  conversationScoped?: boolean;
   db?: SqlClient;
 }): Promise<Result<ResolvedMailExecution>> => {
   const db = params.db ?? sql;
   const authorized = await authorizeExecution({ ...params, db });
   if (!authorized.ok) return authorized;
+  const access = authorized.data;
 
   const [mailbox] = await db<DbMailboxExecution[]>`
     SELECT
@@ -280,10 +298,12 @@ export const resolveMailExecution = async (params: {
       !mailbox.sync_enabled || mailbox.remote_resource_status === "paused"
         ? "Mailbox transport is paused"
         : `Mailbox transport is unavailable${mailbox.health_reason ? `: ${mailbox.health_reason}` : ""}`;
-    return localReadAllowed ? ok(localExecution(params.mailboxId, mailbox.remote_resource_id)) : fail(err.forbidden(message));
+    return localReadAllowed ? ok(localExecution(params.mailboxId, mailbox.remote_resource_id, access)) : fail(err.forbidden(message));
   }
   if (!mailbox.remote_resource_id || !mailbox.scope_fingerprint) {
-    return localReadAllowed ? ok(localExecution(params.mailboxId, null)) : fail(err.forbidden("An active provider binding is required"));
+    return localReadAllowed
+      ? ok(localExecution(params.mailboxId, null, access))
+      : fail(err.forbidden("An active provider binding is required"));
   }
 
   const sender = await loadSenderSelection({ ...params, db });
@@ -348,7 +368,7 @@ export const resolveMailExecution = async (params: {
 
   if (!selected) {
     return localReadAllowed
-      ? ok(localExecution(params.mailboxId, mailbox.remote_resource_id))
+      ? ok(localExecution(params.mailboxId, mailbox.remote_resource_id, access))
       : fail(err.forbidden("No eligible provider binding has the required current rights"));
   }
 
@@ -359,6 +379,7 @@ export const resolveMailExecution = async (params: {
       operation: params.operation,
       senderSentFolderId: sender.data.sentFolderId,
       selected,
+      access,
     }),
   );
 };
