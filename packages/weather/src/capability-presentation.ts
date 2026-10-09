@@ -14,7 +14,7 @@ export const weatherCapabilityPresentation: CapabilityPresentationCatalog = {
         "city.search": {
           title: "Suche deutsche Städte",
           description:
-            'Spezialisierter Geokodierungspfad: Finden Sie deutsche Städtekandidaten und Koordinaten. Um einen Ort zu speichern, kopieren Sie den gewählten Namen, optionales Bundesland, Breiten- und Längengrad in „Wetterort speichern“. Stadtergebnisse sind nicht weather.location refs. Wenn die Städtesuche nicht verfügbar ist, verwende forecast.current oder forecast.get mit source.kind = "coordinates" und bekannten Koordinaten.',
+            'Spezialisierter Geokodierungspfad: Finden Sie deutsche Städtekandidaten und Koordinaten. Um einen Ort zu speichern, kopieren Sie den gewählten Namen, optionales Bundesland, Breiten- und Längengrad in „Wetterort speichern“. Stadtergebnisse sind nicht weather.location refs. Wenn die Städtesuche nicht verfügbar ist, verwenden Sie forecast.current oder forecast.get mit source.kind = "coordinates" und bekannten Koordinaten.',
           input: {
             query: "Deutscher Städtename zum Geokodieren; Dies durchsucht Städtekandidaten, nicht gespeicherte Orte.",
             limit: "Maximale Anzahl zurückkehrender Stadtkandidaten.",

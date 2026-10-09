@@ -2,8 +2,9 @@ import type { AccessSubject, RequestActor } from "../server";
 import { aiModelAccess } from "./model-access";
 import { personalAiModelPolicy } from "./personal-agent";
 import { listAiModels, toPublicAiSettingsState } from "./settings";
-import { resolveAiAudioModel } from "./transcription";
-import type { AiChatTurnRunConfig, AiModelPolicy, AiSettingsError } from "./types";
+import { type AiResolvedAudioModel, AiTranscriptionError, resolveAiAudioModel } from "./transcription";
+import type { AiChatTurnRunConfig, AiDataBoundary, AiModelPolicy, AiSettingsError } from "./types";
+import { isAiSettingsError } from "./validate";
 
 export const aiChatAccessSubject = (actor: RequestActor | undefined): AccessSubject | null => {
   if (!actor) return null;
@@ -20,14 +21,34 @@ export const isAssistantChatTurn = (config: AiChatTurnRunConfig): boolean => con
 export const listAssistantAiModels = async (subject: AccessSubject | null, policy: AiModelPolicy = personalAiModelPolicy) =>
   aiModelAccess.filterModels(await listAiModels(policy), subject);
 
+/** The one audio check behind the composer microphone, dictation, and offering and running transcribe_audio. */
+export const resolveAssistantAudioModel = async (
+  subject: AccessSubject | null,
+  allowedDataBoundaries?: AiDataBoundary[],
+): Promise<AiResolvedAudioModel> => {
+  const model = await resolveAiAudioModel({ allowedDataBoundaries });
+  try {
+    await aiModelAccess.assertAllowed(model.profile.id, subject);
+  } catch (error) {
+    if (!isAiSettingsError(error) || error.aiError.code !== "model_access_denied") throw error;
+    throw Object.assign(
+      new AiTranscriptionError(
+        "transcription_access_denied",
+        "Audio transcription is not available to you: you do not have access to the audio model. An administrator can grant access in the AI settings.",
+      ),
+      { aiError: error.aiError },
+    );
+  }
+  return model;
+};
+
 export const assistantAiSettingsState = async (subject: AccessSubject | null) => {
   const [status, models, audioModelConfigured] = await Promise.all([
     toPublicAiSettingsState(personalAiModelPolicy.allowedDataBoundaries),
     listAssistantAiModels(subject),
     (async () => {
       try {
-        const model = await resolveAiAudioModel({ allowedDataBoundaries: personalAiModelPolicy.allowedDataBoundaries });
-        await aiModelAccess.assertAllowed(model.profile.id, subject);
+        await resolveAssistantAudioModel(subject, personalAiModelPolicy.allowedDataBoundaries);
         return true;
       } catch {
         return false;

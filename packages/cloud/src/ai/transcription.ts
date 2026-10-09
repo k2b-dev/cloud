@@ -42,9 +42,7 @@ export const resolveAiAudioModel = async (
     throw Object.assign(
       new AiTranscriptionError(
         "transcription_configuration_failed",
-        state.error.code === "missing_provider_credential"
-          ? "Audio transcription is not available: the default AI model is missing provider credentials. An administrator can add the provider API key in the AI settings."
-          : "Audio transcription is not set up: the AI model configuration is invalid. An administrator can configure enabled model profiles in the AI settings.",
+        `Audio transcription is not available: ${state.error.message} An administrator can fix this in the AI settings.`,
       ),
       { aiError: state.error },
     );

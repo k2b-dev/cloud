@@ -146,3 +146,31 @@ test("unknown configuration failures are sanitized and point to administrator se
   expect(failure.message).toContain("AI settings");
   expect(failure.message).not.toContain("secret");
 });
+
+for (const [name, defaultModelId, profile, expected] of [
+  ["missing default model", "", chat, "AI is enabled but no valid default model profile is configured."],
+  ["disabled default model", chat.id, { ...chat, enabled: false }, 'Default AI model "chat" must be an enabled text model.'],
+  ["missing default credential", chat.id, { ...chat, provider: "openai" }, 'Default AI model "chat" is missing provider credentials.'],
+] satisfies Array<[string, string, AiModelProfile, string]>) {
+  test(`audio configuration preserves the specific settings cause: ${name}`, async () => {
+    const state = await resolveAiSettingsStateFromRaw({
+      enabled: true,
+      defaultModelId,
+      profilesJson: JSON.stringify([profile, audio]),
+    });
+    expect(state.ok).toBe(false);
+    if (state.ok) throw new Error("Expected invalid AI settings");
+    spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+    let failure: unknown;
+    try {
+      await resolveAiAudioModel();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: "transcription_configuration_failed",
+      message: `Audio transcription is not available: ${expected} An administrator can fix this in the AI settings.`,
+      aiError: state.error,
+    });
+  });
+}

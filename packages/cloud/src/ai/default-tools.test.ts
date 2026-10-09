@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { coreSettings } from "../services";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { aiModelAccess } from "./model-access";
 import * as settings from "./settings";
 import { aiToolPromptHints } from "./tools";
 import type { AiModelProfile } from "./types";
@@ -17,6 +18,8 @@ const audio: AiModelProfile = {
   dataBoundary: "private",
 };
 const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
+const subject = { type: "user" as const, userId: "user" };
+const accessError = Object.assign(new Error("Model access denied"), { aiError: { code: "model_access_denied" } });
 
 afterEach(() => mock.restore());
 
@@ -29,9 +32,14 @@ const configure = async (modelId: string, profile = audio, enabled = true) => {
   spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
   spyOn(coreSettings, "get").mockResolvedValue(modelId);
   spyOn(credentials, "getAiCredential").mockResolvedValue(null);
+  spyOn(aiModelAccess, "assertAllowed").mockImplementation(async (_id, accessSubject) => {
+    if (!accessSubject) throw accessError;
+  });
 };
 
-const hasAudio = async (config: Parameters<typeof createConfiguredDefaultCloudAiTools>[0] = { firecrawlApiKey: "" }) => {
+const hasAudio = async (
+  config: Parameters<typeof createConfiguredDefaultCloudAiTools>[0] = { firecrawlApiKey: "", accessSubject: subject },
+) => {
   const tools = await createConfiguredDefaultCloudAiTools(config);
   const offered = tools.some((tool) => tool.def.name === "transcribe_audio");
   expect(aiToolPromptHints(tools).some((hint) => hint.name === "transcribe_audio")).toBe(offered);
@@ -39,12 +47,6 @@ const hasAudio = async (config: Parameters<typeof createConfiguredDefaultCloudAi
 };
 
 describe("configured audio tools", () => {
-  test("supports explicit audio availability overrides without reading settings", async () => {
-    const read = spyOn(settings, "readAiSettingsState");
-    expect(await hasAudio({ firecrawlApiKey: "", audioModelConfigured: false })).toBe(false);
-    expect(await hasAudio({ firecrawlApiKey: "", audioModelConfigured: true })).toBe(true);
-    expect(read).not.toHaveBeenCalled();
-  });
   test("omits audio and its prompt hint when no audio model is selected", async () => {
     await configure("  ");
     expect(await hasAudio()).toBe(false);
@@ -53,7 +55,18 @@ describe("configured audio tools", () => {
     await configure(audio.id);
     const providerFetch = spyOn(globalThis, "fetch");
     expect(await hasAudio()).toBe(true);
+    expect(aiModelAccess.assertAllowed).toHaveBeenCalledWith(audio.id, subject);
     expect(providerFetch).not.toHaveBeenCalled();
+  });
+  test("omits audio and its prompt hint when Assistant access is denied", async () => {
+    await configure(audio.id);
+    const access = spyOn(aiModelAccess, "assertAllowed").mockRejectedValue(accessError);
+    expect(await hasAudio()).toBe(false);
+    expect(access).toHaveBeenCalledWith(audio.id, subject);
+  });
+  test("omits audio when no access subject is supplied", async () => {
+    await configure(audio.id);
+    expect(await hasAudio({ firecrawlApiKey: "" })).toBe(false);
   });
   test("omits missing, disabled, incompatible, and credential-less audio profiles", async () => {
     for (const profile of [
@@ -72,8 +85,8 @@ describe("configured audio tools", () => {
     expect(await hasAudio()).toBe(false);
     mock.restore();
     await configure(audio.id);
-    expect(await hasAudio({ firecrawlApiKey: "", allowedDataBoundaries: ["hosted"] })).toBe(false);
-    expect(await hasAudio({ firecrawlApiKey: "", allowedDataBoundaries: ["private"] })).toBe(true);
+    expect(await hasAudio({ firecrawlApiKey: "", accessSubject: subject, allowedDataBoundaries: ["hosted"] })).toBe(false);
+    expect(await hasAudio({ firecrawlApiKey: "", accessSubject: subject, allowedDataBoundaries: ["private"] })).toBe(true);
   });
 });
 

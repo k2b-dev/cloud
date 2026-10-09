@@ -534,7 +534,7 @@ const BUILTIN_CLOUD_AI_SKILLS: AiSkillTemplate[] = [
     references: [{ path: "references/calendar-mail.md", content: CLOUD_SPACES_CALENDAR_REFERENCE }],
   },
   {
-    version: 1,
+    version: 2,
     key: "weather:cloud-weather",
     name: "cloud-weather",
     description:
