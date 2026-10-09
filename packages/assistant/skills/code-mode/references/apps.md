@@ -200,16 +200,19 @@ A chat file: inspect it, use `code_file_copy` to put it into app storage, read i
 with `cloud.files.read`, and replay it with `upload` and `reload`. `upload.file`
 is the chat path/name or an app-relative source path such as `samples/x.csv`.
 
-The check fails on errors, also on a JavaScript error message the app caught and
-shows in the page. It warns about rows whose siblings sit at different heights,
-in the app and in the HTML of every PDF before it is printed, with the CSS that
-fixes them, and about values such as `NaN` or `undefined` on screen. Fix those
-warnings as well.
+The check fails on errors, also on a JavaScript error message such as "Cannot
+read properties of null" that the app shows in an alert or status message. It
+warns about rows whose siblings sit at different heights, in the app and in the
+HTML of every PDF before it is printed, with the CSS that fixes them, about
+values such as `NaN` or `undefined` on screen, and about error text elsewhere.
+Fix those warnings as well; error text that is content, such as a log entry, may
+stay.
 
 `passed` only means not broken. Call `view_image` with `review.prompt` for every
 path in `review.paths`: the desktop-start, desktop and mobile screenshots and
-every PDF. Screenshots show the whole page up to 2000 px; `cropped` marks a longer
-one. "Choose File" and US date formats come from the test browser, not the app.
+every PDF of the desktop run. Screenshots show the whole page up to 2000 px;
+`cropped` marks a longer one. "Choose File" and US date formats come from the
+test browser, not the app.
 
 For the todo example, write `steps.json`:
 

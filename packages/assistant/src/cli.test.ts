@@ -1424,7 +1424,7 @@ test.each(["explicit", "temporary"])("code check saves every chat output locally
       { view: "desktop", theme: "light", path: `/files/hash/${files[1]}`, cropped: false },
       { view: "mobile", theme: "dark", path: `/files/hash/${files[2]}`, cropped: false },
     ],
-    downloads: [{ name: "../export.csv", type: "text/csv", size: 3, path: `/files/hash/${files[3]}` }],
+    downloads: [{ name: "../export.csv", type: "text/csv", size: 3, path: `/files/hash/${files[3]}`, view: "mobile" }],
   });
   const requests: string[] = [];
   const { ctx, stdout } = createContext(

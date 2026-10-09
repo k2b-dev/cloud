@@ -397,12 +397,14 @@ test("siblings offset in one row and captions out of line warn with a concrete f
     `<main><h1>Quote</h1>
     <div class="position"><label>Description<input></label><label>Quantity<input></label><div class="line"><span>Line total</span><strong>12,00 €</strong></div><button type="button">Remove</button></div>
     <div class="totals"><div><span>Net</span><strong>319,98 €</strong></div></div>
-    <div class="actions"><button type="button">Edit</button><button type="button">Delete</button></div></main>`,
+    <div class="actions"><button type="button">Edit</button><button type="button">Delete</button></div>
+    <div><strong>Anna</strong><span>Admin</span></div></main>`,
     "",
     [{ action: "click", target: { role: "button", name: "Edit" } }],
     `.position{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:12px;align-items:end}.position>*{margin:0}
     .line{display:flex;flex-direction:column;gap:12px;padding-bottom:9px;text-align:right}
-    .totals>div{display:flex;justify-content:space-between}.actions{display:flex;gap:8px}`,
+    .totals>div{display:flex;justify-content:space-between}.actions{display:flex;gap:8px}
+    main>div:last-child{display:flex;align-items:center;gap:12px}`,
   );
   const desktop = report.issues.filter((issue) => issue.kind === "misaligned" && issue.view === "desktop");
   expect(desktop.every((issue) => issue.severity === "warning")).toBe(true);
@@ -415,17 +417,23 @@ test("siblings offset in one row and captions out of line warn with a concrete f
         /^button "Delete" sits 16px lower than button "Edit" in one row of div\.actions \(flex\).*`div\.actions > \* \{ margin: 0 \}`/,
       ),
       expect.stringMatching(
-        /^The caption of div\.line "Line total 12,00 €" starts \d+px higher than the field captions beside it in one row of div\.position \(grid\)/,
+        /^The caption of div\.line "Line total 12,00 €" sits \d+px higher than the field captions beside it in one row of div\.position \(grid\)/,
+      ),
+      // `main > div > *` would also reset the spacing inside .position, .totals and .actions.
+      expect.stringMatching(
+        /^span "Admin" sits 8px lower than strong "Anna" in one row of main > div \(flex\).*give the row its own class and add `\.that-class > \* \{ margin: 0 \}`\.$/,
       ),
     ]),
   );
   expect(report.passed).toBe(true);
 }, 60000);
 
-test("intentional alignment does not warn: base helpers, baseline, centered headers, wrapped rows, spans and auto margins", async () => {
+test("intentional alignment does not warn: base helpers, wrapped captions, baseline, centered headers, wrapped rows, spans, auto margins and margins that line up with a field", async () => {
   const { report } = await check(
     `<main><header class="row"><div><h1>Expenses</h1><p class="muted">Submit and approve</p></div><button type="button" class="primary">Export</button></header>
     <form class="row"><label>Name<input></label><label>City<input></label><button>Add</button></form>
+    <form class="row narrow"><label>Date<input type="date"></label><label>Kilometres driven for the trip, both directions<input></label><label>Amount<input></label><button>Save</button></form>
+    <form class="add"><label>Name<input></label><label>Email<input></label><button>Invite</button></form>
     <div class="grid"><div class="stat"><span>Open requests this month</span><strong>2</strong></div><div class="stat"><span>Pending</span><strong>62,40 €</strong></div><div class="stat"><span>Approved</span><strong>49,90 €</strong></div></div>
     <div class="baseline"><span class="big">Total</span><span>small</span><small>note</small></div>
     <div class="wrap">${Array.from({ length: 14 }, (_, i) => `<span style="height:${20 + (i % 3) * 10}px">Item ${i + 1}</span>`).join("")}</div>
@@ -440,7 +448,9 @@ test("intentional alignment does not warn: base helpers, baseline, centered head
     .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:300px}.wrap>*{margin:0}
     .split{display:grid;grid-template-columns:1fr 1fr;gap:8px}.split>*{margin:0}.split aside{grid-row:span 2}
     .pushed{display:flex;height:80px;gap:8px}.pushed>*{margin:0}.pushed .end{margin-top:auto}
-    .pairs>div{display:flex;justify-content:space-between}.pairs>div>*{margin:0}.nudge{margin-top:3px}`,
+    .pairs>div{display:flex;justify-content:space-between}.pairs>div>*{margin:0}.nudge{margin-top:3px}
+    .narrow{max-width:720px}.add{display:flex;align-items:flex-start;gap:12px}.add>*{margin:0}
+    .add>button{margin-top:calc(.8125rem * 1.55 + .25rem)}`,
   );
   expect(report.issues.filter((issue) => issue.kind === "misaligned")).toEqual([]);
   expect(report.passed).toBe(true);
@@ -470,6 +480,37 @@ test("a caught error shown in the page fails the check; broken values warn", asy
   expect(report.issues).toContainEqual(
     expect.objectContaining({ kind: "shown-value", severity: "warning", message: expect.stringContaining('"Total: NaN €"') }),
   );
+}, 60000);
+
+test("error text the app shows as content, or as an input error, warns without failing", async () => {
+  const { report } = await check(
+    `<main><h1>Failed jobs</h1><table><thead><tr><th>Job</th><th>Error</th></tr></thead>
+    <tbody><tr><td>Sync</td><td>TypeError: Cannot read properties of undefined (reading 'id')</td></tr></tbody></table>
+    <form><label>Import<textarea name=json>{"a":}</textarea></label><button>Check</button></form><p role=alert hidden></p></main>`,
+    `const form = document.querySelector('form'), alert = document.querySelector('[role=alert]');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      try { JSON.parse(form.elements.json.value); } catch (error) { alert.textContent = String(error); alert.hidden = false; }
+    });`,
+    [{ action: "click", target: { role: "button", name: "Check" } }],
+  );
+  expect(report.passed).toBe(true);
+  const shown = report.issues.filter((issue) => issue.kind.startsWith("shown-"));
+  for (const view of ["desktop", "mobile"]) {
+    expect(shown).toContainEqual(
+      expect.objectContaining({ kind: "shown-error", severity: "warning", view, message: expect.stringContaining("reading 'id'") }),
+    );
+    expect(shown).toContainEqual(
+      expect.objectContaining({
+        kind: "shown-error",
+        severity: "warning",
+        view,
+        message: expect.stringMatching(/^After step 1: .*SyntaxError: /),
+      }),
+    );
+  }
+  // The quoted error contains "undefined"; it is not reported again as a broken value.
+  expect(shown.filter((issue) => issue.kind === "shown-value")).toEqual([]);
 }, 60000);
 
 test("errors thrown in event handlers and unhandled rejections fail the check", async () => {
@@ -503,6 +544,13 @@ test("screenshots cover the whole page up to the height limit", async () => {
   expect(long.report.screenshots.every((shot) => shot.cropped)).toBe(true);
 }, 90000);
 
+test("a page sized in viewport units is measured again after the screenshot viewport grows", async () => {
+  // 150vh is 1200 px at 800 px, but 2000 px once the viewport grows to fit it: the end marker then lies below.
+  const { report, saved } = await check("<main><h1>Tall</h1><section style='height:150vh'>Hero</section><p>End marker</p></main>");
+  expect(pngHeight(saved.get("desktop-light.png"))).toBe(CHECK_LIMITS.screenshotHeight);
+  expect(report.screenshots.every((shot) => shot.cropped)).toBe(true);
+}, 60000);
+
 test("PDF HTML is measured at its printed width before it is rendered", async () => {
   const { report } = await check(
     "<main><h1>Report</h1><button type=button>PDF</button><p role=status></p></main>",
@@ -530,4 +578,24 @@ test("PDF HTML is measured at its printed width before it is rendered", async ()
       message: expect.stringContaining('The PDF shows a broken value: "Total: NaN €"'),
     }),
   );
+}, 60000);
+
+test("PDF HTML is measured with print media, as the renderer prints it", async () => {
+  const { report } = await check(
+    "<main><h1>Report</h1><button type=button>PDF</button><p role=status></p></main>",
+    `document.querySelector('button').addEventListener('click', async () => {
+      await cloud.pdf.render({
+        html: cloud.html\`<style>.sign,.dates{display:flex;gap:32px}.dates>*{margin:0}
+        @media print{.sign>*{margin:0}}@media screen{.dates>:last-child{margin-top:24px}}</style>
+        <h1>Travel expenses</h1><nav>Cannot read properties of undefined (reading 'total')</nav>
+        <div class="sign"><div><p>Place, date</p></div><div><p>Signature</p></div></div>
+        <div class="dates"><p>From</p><p>To</p></div>\`,
+      });
+      document.querySelector('[role=status]').textContent = 'PDF ready';
+    });`,
+    [{ action: "click", target: { role: "button", name: "PDF" } }],
+  );
+  expect(report.aria).toContain("PDF ready");
+  // The row fix applies in print, the screen-only offset does not, and print hides the navigation text.
+  expect(report.issues.filter((issue) => issue.kind.startsWith("pdf-"))).toEqual([]);
 }, 60000);

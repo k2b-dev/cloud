@@ -3,7 +3,7 @@
 import axe from "axe-core";
 import { z } from "zod";
 import { CheckTarget, matchTarget } from "./check-contracts";
-import { misalignedRows, shownProblems } from "./check-layout";
+import { misalignedRows, shownProblems, shownText } from "./check-layout";
 
 // axe 4.11 ships this runtime API but omits it from its public Aria declaration.
 // Describe that exact dependency surface instead of casting away the type.
@@ -13,7 +13,7 @@ declare module "axe-core" {
   }
 }
 const Request = z.object({
-  op: z.enum(["locate", "focus", "set", "select", "upload", "measure", "shown", "axe", "aria", "settle"]),
+  op: z.enum(["locate", "focus", "set", "select", "upload", "measure", "height", "shown", "axe", "aria", "settle"]),
   target: CheckTarget.optional(),
   value: z.string().optional(),
   name: z.string().optional(),
@@ -66,6 +66,7 @@ const directText = (node: Element) =>
     .trim()
     .replace(/\s+/g, " ")
     .slice(0, 100);
+const pageHeight = () => Math.ceil(document.documentElement.getBoundingClientRect().height);
 export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
   const input = Request.parse(raw);
   if (input.op === "settle") {
@@ -73,7 +74,8 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
     return null;
   }
   // Cheap enough to run after every step: a caught error shown in the page may be gone by the end.
-  if (input.op === "shown") return shownProblems(document.body.innerText);
+  if (input.op === "shown") return shownProblems(shownText(document.body));
+  if (input.op === "height") return pageHeight();
   if (input.op === "axe") {
     const results = await axe.run(document, { runOnly: ["wcag2a", "wcag2aa", "wcag21aa", "best-practice"], resultTypes: ["violations"] });
     return results.violations.map((v) => ({
@@ -150,7 +152,7 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
         .slice(0, 20);
       const scrolling = document.scrollingElement ?? document.documentElement;
       return {
-        height: Math.ceil(document.documentElement.getBoundingClientRect().height),
+        height: pageHeight(),
         empty: !document.body.innerText.trim() && !all.some((el) => el.matches("svg,canvas,img,input,button")),
         overflowX: scrolling.scrollWidth > scrolling.clientWidth + 1,
         wide: all
@@ -164,7 +166,7 @@ export async function inspectApp(raw: unknown, settle: () => Promise<void>) {
           .slice(0, 20),
         interactive: controls.some((el) => !el.matches('a[href],[role="link"]')),
         password: !!document.querySelector('input[type="password"]'),
-        layout: [...misalignedRows(document.body), ...shownProblems(document.body.innerText)],
+        layout: [...misalignedRows(document.body), ...shownProblems(shownText(document.body))],
         untyped: [...document.forms].some((form) => form.querySelectorAll("button:not([type])").length > 1),
       };
     });

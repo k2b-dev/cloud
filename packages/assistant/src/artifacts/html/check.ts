@@ -137,7 +137,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
             .replace(/^\.+/, "")
             .slice(0, 180) || "download";
         const path = await save(`${view}-${ordinal}-${safe}`, bytes, type || "application/octet-stream");
-        downloads.push({ name, type, size: bytes.byteLength, path });
+        downloads.push({ name, type, size: bytes.byteLength, path, view });
       });
       signal.throwIfAborted();
       await driver.initialize(page);
@@ -201,11 +201,15 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
       const shot = async (name: "desktop-start" | "desktop" | "mobile", pageHeight: number) => {
         signal.throwIfAborted();
         const viewport = page.viewportSize()!;
-        const height = Math.min(Math.max(viewport.height, pageHeight), CHECK_LIMITS.screenshotHeight);
+        let height = viewport.height,
+          full = pageHeight;
         try {
-          if (height > viewport.height) {
+          // A taller viewport grows layouts sized in viewport units, so measure again, and grow at most once more.
+          for (let round = 0; round < 2 && full > height && height < CHECK_LIMITS.screenshotHeight; round++) {
+            height = Math.min(full, CHECK_LIMITS.screenshotHeight);
             await page.setViewportSize({ width: viewport.width, height });
             await settle();
+            full = z.number().parse(await command({ op: "height" }));
           }
           await page.mouse.move(0, 0);
           signal.throwIfAborted();
@@ -214,7 +218,7 @@ export async function runHtmlCheck(driver: CheckDriver): Promise<CheckReport> {
             view: name,
             theme: viewTheme,
             path: await save(`${name}-${viewTheme}.png`, new Uint8Array(bytes), "image/png"),
-            cropped: pageHeight > height,
+            cropped: full > height,
           });
         } finally {
           if (height > viewport.height) await page.setViewportSize(viewport);

@@ -47,6 +47,7 @@ export const CheckReport = z.object({
         type: z.string().max(200),
         size: z.number().int().nonnegative().max(LIMITS.inputFileBytes),
         path: z.string().max(1000),
+        view: z.enum(["desktop", "mobile"]),
       }),
     )
     .max(LIMITS.files),
@@ -115,10 +116,11 @@ export function readCheckSteps(files: ArtifactSource["files"]) {
 }
 const STEP_FORMS =
   'Steps are {"action":"click"|"check"|"uncheck","target":T}, {"action":"fill"|"select","target":T,"value":"…"}, {"action":"press","value":"Enter","target"?:T}, {"action":"upload","target":T,"file":"…"} or {"action":"reload"}; T is {"role":"button","name":"Save"}, {"label":"…"} or {"text":"…"}.';
-/** What is wrong with `steps.json`, worded for the agent that wrote it; null when it is valid or absent. */
+/** What is wrong with `steps.json`, worded for the agent that wrote it; null when it is valid, empty or absent. */
 export function stepsProblem(files: ArtifactSource["files"]): string | null {
   const text = files.find((file) => file.path === "steps.json")?.content;
-  if (text === undefined) return null;
+  // An empty file means no steps, as in readCheckSteps.
+  if (!text) return null;
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -208,6 +210,12 @@ function clipJson(text: string, bytes: number) {
 /** What the agent asks `view_image` about every screenshot and PDF, so it looks for defects instead of describing content. */
 export const CHECK_REVIEW_PROMPT =
   'Review this rendering of an app or document for visible defects only, and say where each one is: elements of one row, or a label and its value, at different heights; text or controls cut off, overlapping or doubled; a visible error message, a raw value such as undefined, NaN or [object Object], or a wrong singular or plural; an empty or placeholder state where content belongs; cramped spacing. Do not judge contrast or the flat, borderless style; the check measures contrast itself. Answer "No visible defects" only when there are none.';
+/** Every PDF of the desktop run; the phone run repeats the same steps, so only its PDFs with other names add a look. */
+function reviewPdfs(downloads: CheckReport["downloads"]) {
+  const pdfs = downloads.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name));
+  const desktop = new Set(pdfs.filter((file) => file.view === "desktop").map((file) => file.name));
+  return pdfs.filter((file) => file.view === "desktop" || !desktop.has(file.name)).map((file) => file.path);
+}
 export function modelCheckReport(report: CheckReport) {
   const issues: CheckIssue[] = [];
   const base = {
@@ -215,16 +223,7 @@ export function modelCheckReport(report: CheckReport) {
     issues,
     review: {
       prompt: CHECK_REVIEW_PROMPT,
-      paths: [
-        ...report.screenshots.map((shot) => shot.path),
-        // Desktop and phone usually create the same PDF; one look per file name is enough.
-        ...new Map(
-          report.downloads
-            .filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name))
-            .map((file) => [file.name, file.path] as const)
-            .reverse(),
-        ).values(),
-      ],
+      paths: [...report.screenshots.map((shot) => shot.path), ...reviewPdfs(report.downloads)],
     },
     aria: boundAria(report.aria),
     contentTrust:

@@ -50,7 +50,8 @@ not certify accessibility.
 In Studio Apps the document gets the base stylesheet of [HTML apps](apps.md)
 first, so a custom flex or grid row, such as two signature columns, needs
 `> * { margin: 0 }`. `code_check` lays out the HTML of every PDF the steps create
-and warns when siblings of one row sit at different heights.
+as it prints, with print media, and warns when siblings of one row sit at
+different heights.
 
 Charts render in Cloud light colors through a shared chart stylesheet. Your HTML may include `<style>`; header and footer are separate documents with their own CSS. Scripts, redirects, frames and outbound
 resources are blocked. MathML (`math`) and the SVG elements `foreignObject` and

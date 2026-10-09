@@ -17,11 +17,12 @@ type Edge = "start" | "end" | "center";
 type Item = { element: Element; edge: Edge; outer: number; inner: number };
 
 const clip = (text: string, length: number) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
-const text = (element: Element) => {
-  // Elements of a PDF layout frame belong to that frame's realm.
+/** Rendered text with its line breaks. Elements of a PDF layout frame belong to that frame's realm. */
+const rendered = (element: Element) => {
   const Html = element.ownerDocument.defaultView?.HTMLElement ?? HTMLElement;
-  return ((element instanceof Html ? element.innerText : element.textContent) ?? "").trim().replace(/\s+/g, " ");
+  return (element instanceof Html ? element.innerText : element.textContent) ?? "";
 };
+const text = (element: Element) => rendered(element).trim().replace(/\s+/g, " ");
 
 /** `tag#id` or `tag.class`. */
 function nameOf(element: Element) {
@@ -36,11 +37,26 @@ function nameOf(element: Element) {
   );
 }
 
-/** The element's name, with parents until one has an id or class, for a CSS hint the agent can paste. */
+/** The element's name, with parents until one has an id or class. */
 function selectorOf(element: Element, depth = 0): string {
   const parent = element.parentElement;
   if (element.id || element.classList.length || !parent || parent === element.ownerDocument.body || depth >= 2) return nameOf(element);
   return `${selectorOf(parent, depth + 1)} > ${nameOf(element)}`;
+}
+
+const ROW = /^(?:inline-)?(?:flex|grid)$/;
+/**
+ * The margin reset for a row's children. The selector is pasted only when an id or class anchors it and every
+ * element it matches is a row; `main > div` would also remove the spacing inside every other block of the page.
+ */
+function resetHint(selector: string, root: Element, view: Window) {
+  let rows = false;
+  try {
+    rows =
+      /[#.]/.test(selector) &&
+      [...root.ownerDocument.querySelectorAll(selector)].every((element) => ROW.test(view.getComputedStyle(element).display));
+  } catch {}
+  return rows ? `add \`${selector} > * { margin: 0 }\`` : "give the row its own class and add `.that-class > * { margin: 0 }`";
 }
 
 /** An item of a named row: its own name and visible text. */
@@ -101,28 +117,56 @@ function rows(container: Element, style: CSSStyleDeclaration, view: Window): Ite
   return groups.filter((group) => group.length > 1);
 }
 
-/** Top of the first rendered text line, when more content sits below it in the same cell (a caption over a field or value). */
-function captionTop(cell: Element, view: Window): number | null {
+const FIELD = "input:not([type=checkbox],[type=radio],[type=hidden]),select,textarea";
+const CONTROL = `${FIELD},button`;
+
+/**
+ * The caption over a field or value in a cell: the top of its first rendered line and the bottom of its last one,
+ * the line right above the field. Null when nothing sits below the first line.
+ */
+function captionOf(cell: Element, view: Window): { top: number; bottom: number } | null {
   const document = cell.ownerDocument;
   const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => (node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
   });
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+  const nodes: Node[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+  const lines = (node: Node) => {
     const range = document.createRange();
     range.selectNodeContents(node);
-    const line = range.getClientRects()[0];
-    if (!line?.height) continue;
-    const below = [...cell.querySelectorAll("*")].some((element) => {
+    return [...range.getClientRects()].filter((line) => line.height > 0);
+  };
+  for (const [index, node] of nodes.entries()) {
+    const line = lines(node)[0];
+    if (!line) continue;
+    const below = [...cell.querySelectorAll("*")].filter((element) => {
       if (element.contains(node)) return false;
       const box = element.getBoundingClientRect();
       return box.height > 0 && box.top >= line.bottom - 1 && view.getComputedStyle(element).visibility === "visible";
     });
-    return below ? line.top : null;
+    if (!below.length) return null;
+    // The caption ends above the field, or above the first content below its first line.
+    const field = cell.querySelector(FIELD);
+    const end = field ? field.getBoundingClientRect().top : Math.min(...below.map((element) => element.getBoundingClientRect().top));
+    let bottom = line.bottom;
+    for (const later of nodes.slice(index))
+      for (const rect of lines(later)) if (rect.bottom <= end + 1) bottom = Math.max(bottom, rect.bottom);
+    return { top: line.top, bottom };
   }
   return null;
 }
 
-const FIELD = "input:not([type=checkbox],[type=radio],[type=hidden]),select,textarea";
+/** A margin that lines an item up with a field or button in another item of its row is placed on purpose. */
+function linedUp(moved: Item, group: Item[]) {
+  const edge = (box: DOMRect) => (moved.edge === "start" ? box.top : moved.edge === "end" ? box.bottom : (box.top + box.bottom) / 2);
+  return group.some(
+    ({ element }) =>
+      element !== moved.element &&
+      [element, ...element.querySelectorAll(CONTROL)].some(
+        (control) => control.matches(CONTROL) && Math.abs(edge(control.getBoundingClientRect()) - moved.inner) <= 1,
+      ),
+  );
+}
 
 /**
  * Siblings in one flex row or grid row whose boxes are offset vertically, and
@@ -148,7 +192,7 @@ export function misalignedRows(root: Element): LayoutFinding[] {
     const selector = selectorOf(container);
     const name = `${selector} (${flex ? "flex" : "grid"})`;
     let worst: { offset: number; moved: Item; other: Item } | undefined;
-    let caption: { offset: number; cell: Element; higher: boolean } | undefined;
+    let caption: { offset: number; cell: Element; higher: boolean; edge: Edge } | undefined;
     for (const group of rows(container, style, view)) {
       const lowest = group.reduce((a, b) => (b.inner - b.outer > a.inner - a.outer ? b : a));
       const highest = group.reduce((a, b) => (b.inner - b.outer < a.inner - a.outer ? b : a));
@@ -156,21 +200,26 @@ export function misalignedRows(root: Element): LayoutFinding[] {
       if (offset >= MISALIGNED_PX && offset > (worst?.offset ?? 0)) {
         // The item with the larger margin on the aligned side is the one that moved.
         const moved = Math.abs(lowest.inner - lowest.outer) >= Math.abs(highest.inner - highest.outer) ? lowest : highest;
-        worst = { offset, moved, other: moved === lowest ? highest : lowest };
+        if (!linedUp(moved, group)) worst = { offset, moved, other: moved === lowest ? highest : lowest };
       }
-      // Captions: at least two fields agree on where their caption starts; another captioned cell does not.
+      // Captions: at least two fields agree on where their caption sits; another captioned cell does not.
       if (group.filter(({ element }) => element.matches(FIELD) || element.querySelector(FIELD)).length < 2) continue;
+      // A row aligned at the end lines up the last caption line above each field, so a wrapped caption starts higher.
+      const edge = group[0]!.edge;
       const cells = group.flatMap(({ element }) => {
-        const top = captionTop(element, view);
-        return top === null ? [] : [{ element, top, field: element.matches(FIELD) || !!element.querySelector(FIELD) }];
+        const found = captionOf(element, view);
+        if (!found) return [];
+        return [
+          { element, at: edge === "end" ? found.bottom : found.top, field: element.matches(FIELD) || !!element.querySelector(FIELD) },
+        ];
       });
       const fields = cells.filter((cell) => cell.field);
-      const reference = fields.find((cell) => fields.filter((other) => Math.abs(other.top - cell.top) <= 1).length >= 2);
+      const reference = fields.find((cell) => fields.filter((other) => Math.abs(other.at - cell.at) <= 1).length >= 2);
       if (!reference) continue;
       for (const cell of cells) {
-        const offset = Math.abs(cell.top - reference.top);
+        const offset = Math.abs(cell.at - reference.at);
         if (offset >= MISALIGNED_PX && offset > (caption?.offset ?? 0))
-          caption = { offset, cell: cell.element, higher: cell.top < reference.top };
+          caption = { offset, cell: cell.element, higher: cell.at < reference.at, edge };
       }
     }
     if (worst) {
@@ -179,17 +228,17 @@ export function misalignedRows(root: Element): LayoutFinding[] {
         offsets,
         `offset ${selector}`,
         () =>
-          `${describe(moved.element)} sits ${Math.round(offset)}px ${moved.inner > other.inner ? "lower" : "higher"} than ${describe(other.element)} in one row of ${name}. A margin moves it, usually the flow spacing between siblings; add \`${selector} > * { margin: 0 }\`.`,
+          `${describe(moved.element)} sits ${Math.round(offset)}px ${moved.inner > other.inner ? "lower" : "higher"} than ${describe(other.element)} in one row of ${name}. A margin moves it, usually the flow spacing between siblings; ${resetHint(selector, root, view)}.`,
       );
     }
     // A moved sibling also moves its caption; the margin finding already names the cause.
     if (caption && !worst) {
-      const { cell, offset, higher } = caption;
+      const { cell, offset, higher, edge } = caption;
       note(
         captions,
         `caption ${selector}`,
         () =>
-          `The caption of ${describe(cell)} starts ${Math.round(offset)}px ${higher ? "higher" : "lower"} than the field captions beside it in one row of ${name}. Give every cell the same caption-over-value structure, or align the row at the start (\`align-items: start\`).`,
+          `The caption of ${describe(cell)} sits ${Math.round(offset)}px ${higher ? "higher" : "lower"} than the field captions beside it in one row of ${name}. Give every cell the same caption-over-value structure${edge === "start" ? "" : ", or align the row at the start (`align-items: start`)"}.`,
       );
     }
   }
@@ -199,8 +248,8 @@ export function misalignedRows(root: Element): LayoutFinding[] {
   }));
 }
 
-/** Messages a JavaScript engine writes, never text a person should read (Chromium, WebKit, Firefox). */
-const ENGINE_ERRORS = [
+/** Messages a JavaScript engine writes for a bug in the code, never text a person should read (Chromium, WebKit, Firefox). */
+const CODE_ERRORS = [
   /Cannot (?:read|set) propert(?:y|ies) of (?:null|undefined)/,
   /\b(?:null|undefined) is not an object\b/,
   /can't access property ["']/,
@@ -209,24 +258,51 @@ const ENGINE_ERRORS = [
   /Maximum call stack size exceeded/,
   /Assignment to constant variable/,
   /\b[\w$]+(?:\??\.[\w$]+)+ is not (?:a function|iterable)\b/,
-  /\b(?:TypeError|ReferenceError|SyntaxError|RangeError): /,
 ];
+/** Any engine error turned into text, such as `String(error)` of a failed `JSON.parse` in an import. */
+const ERROR_NAME = /\b(?:TypeError|ReferenceError|SyntaxError|RangeError): /;
 /** Values that only appear when code formats something that is missing. */
 const BROKEN_VALUES = /\[object Object\]|Invalid Date|(?<![\p{L}\p{N}_])(?:undefined|NaN)(?![\p{L}\p{N}_])/u;
+/** Where an app shows its own messages; a log or table that quotes an error is content. */
+const MESSAGES = "[role=alert],[role=status],[aria-live]:not([aria-live=off]),output";
 
-/** A caught exception or a broken value that reached the visible page. */
-export function shownProblems(visibleText: string, where = "The page"): LayoutFinding[] {
-  const lines = [...new Set(visibleText.split("\n").map((line) => line.trim().replace(/\s+/g, " ")))].filter(Boolean);
+/** The visible text of a document, and of its alert and status regions. */
+export function shownText(root: Element) {
+  return { page: rendered(root), messages: [...root.querySelectorAll(MESSAGES)].map(rendered).join("\n") };
+}
+
+const linesOf = (text: string) => [...new Set(text.split("\n").map((line) => line.trim().replace(/\s+/g, " ")))].filter(Boolean);
+
+/**
+ * A caught exception or a broken value that reached the visible page. A code-bug message in an alert or status
+ * region fails: the app caught an exception and showed it. Elsewhere, or as a bare error name, it may be content
+ * or an input error the app reports on purpose, so it warns.
+ */
+export function shownProblems(shown: { page: string; messages: string }, where = "The page"): LayoutFinding[] {
+  const lines = linesOf(shown.page);
+  // Hidden regions report their text as well; only what the page shows counts.
+  const messages = new Set(linesOf(shown.messages).filter((line) => lines.includes(line)));
   const findings: LayoutFinding[] = [];
-  const error = lines.find((line) => ENGINE_ERRORS.some((pattern) => pattern.test(line)));
-  if (error)
+  const bug = (line: string) => CODE_ERRORS.some((pattern) => pattern.test(line));
+  const engine = (line: string) => bug(line) || ERROR_NAME.test(line);
+  const caught = lines.find((line) => messages.has(line) && bug(line));
+  // The app's own messages first: a log table that quotes an error must not hide an input error shown later.
+  const quoted = caught ? undefined : (lines.find((line) => messages.has(line) && engine(line)) ?? lines.find(engine));
+  if (caught)
     findings.push({
       severity: "error",
       kind: "shown-error",
-      key: `shown-error ${error}`,
-      message: `${where} shows a JavaScript error: ${JSON.stringify(clip(error, 200))}. The app caught an exception and showed its message; fix the cause.`,
+      key: `shown-error ${caught}`,
+      message: `${where} shows a JavaScript error: ${JSON.stringify(clip(caught, 200))}. The app caught an exception and showed its message; fix the cause.`,
     });
-  const value = lines.find((line) => BROKEN_VALUES.test(line));
+  else if (quoted)
+    findings.push({
+      severity: "warning",
+      kind: "shown-error",
+      key: `shown-quoted ${quoted}`,
+      message: `${where} shows text that reads like a JavaScript error: ${JSON.stringify(clip(quoted, 200))}. If the app caught an exception, fix the cause or tell the person what went wrong in their words; content such as a log entry may stay.`,
+    });
+  const value = lines.find((line) => !engine(line) && BROKEN_VALUES.test(line));
   if (value)
     findings.push({
       severity: "warning",
