@@ -434,7 +434,8 @@ describe(`Spaces timeline in ${browserName}`, () => {
     // The week before has loaded in place, so the strip still shows the evening before the anchor day.
     const opened = await box(page, "Retr01");
     await page.locator(".k2b-timeline__viewport").evaluate((element) => element.scrollTo({ left: 0, behavior: "instant" }));
-    await idle(page);
+    // At the start the week of the kick-off loads, so weeks before the opening join the strip before the link is used.
+    await item(page, "Kick01").waitFor();
     await page.getByRole("radio", { name: "Zeitleiste" }).click();
     // Back to the opening evening, at most the 16 px the scroll leaves before it, wherever earlier weeks loaded since.
     await page.waitForFunction(

@@ -319,7 +319,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     if (!viewport) return;
     const [start, end] = visible();
     const target = px(time) - (align === "center" ? (end - start) / 2 : 16);
-    scrollBy(target - start, reducedMotion() ? "auto" : "smooth");
+    scrollBy(target - start, ownScrollBehavior());
   };
 
   // Keyboard: one tab stop, moved by the keys of the axis.
@@ -330,7 +330,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     setActive(id);
     const element = elementOf(id);
     element?.focus({ preventScroll: true });
-    element?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+    element?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: ownScrollBehavior() });
     if (message) announce(message);
   };
   const groupLabel = (group: TimelineGroup) => dayRange(group.firstKey, group.lastKey, longDayFormat());
@@ -442,6 +442,16 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     setResting(false);
     quietFrames = 0;
     if (!restFrame) restFrame = requestAnimationFrame(countQuiet);
+  };
+  /**
+   * How a scroll the timeline starts itself moves. A smooth one reports its first frame only later, and a write that
+   * keeps the view in place stops it, so it counts as scrolling from its start: days that load meanwhile wait until it
+   * arrives instead of cutting it short.
+   */
+  const ownScrollBehavior = (): ScrollBehavior => {
+    if (reducedMotion()) return "auto";
+    scrolled();
+    return "smooth";
   };
   const onTouchStart = (event: TouchEvent) => {
     const target = event.target;

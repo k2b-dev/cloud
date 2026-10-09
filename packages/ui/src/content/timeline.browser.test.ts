@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type axeCore from "axe-core";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { browserName, launchBrowser } from "../../test/browser";
+import type { TimelineController } from "./Timeline";
 
 // Axis choice, lanes, scrolling, and the reading position are layout results, so a real engine renders the shipped
 // stylesheet. The fixture loads a week around Thursday 8 October 2026, 14:20, Europe/Berlin. Each test drives real
@@ -81,6 +82,7 @@ render(
         window.toggled.push([item.id, checked]);
         setItems((current) => current.map((value) => (value.id === item.id ? { ...value, checked } : value)));
       },
+      controller: (controller) => (window.timeline = controller),
       onLoadEarlier: options.load
         ? () => {
             window.loads.push("earlier");
@@ -214,6 +216,7 @@ const inView = (page: Page, id: string) =>
     return rect.left >= port.left - 1 && rect.right <= port.right + 1 && rect.top >= port.top - 1 && rect.bottom <= port.bottom + 1;
   }, id);
 type Fixture = {
+  timeline: TimelineController;
   loads: string[];
   toggled: Array<[string, boolean]>;
   release: () => number;
@@ -523,6 +526,32 @@ describe(`@k2b/ui Timeline in ${browserName}`, () => {
       await page.waitForFunction((value) => document.querySelector(".k2b-timeline__viewport")!.scrollWidth > value, width);
       await frames(page, 4);
       expect((await probeStop(page)).drift).toBeLessThan(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("days that load as the strip starts to glide to a time wait until it arrives there", async () => {
+    const page = await open(desktop, { load: true });
+    try {
+      await nearStartWithLoadPending(page);
+      await frames(page, 12);
+      const width = await scrollWidth(page);
+      // The week before arrives before the smooth scroll reports its first frame; holding the view in place then would stop it.
+      await page.evaluate(() => {
+        const fixture = window as unknown as Fixture;
+        fixture.timeline.scrollToTime("2026-10-12T08:30:00+02:00");
+        fixture.release();
+      });
+      await page.waitForFunction((value) => document.querySelector(".k2b-timeline__viewport")!.scrollWidth > value, width);
+      await frames(page, 4);
+      // The time sits 16 px after the start of the view; Monday's stand-up there starts half its 3 px gap later.
+      const offset = await page.evaluate(
+        () =>
+          (document.querySelector('[data-entry-id="e11"]')?.getBoundingClientRect().left ?? Number.NaN) -
+          document.querySelector(".k2b-timeline__viewport")!.getBoundingClientRect().left,
+      );
+      expect(Math.abs(offset - 17.5)).toBeLessThan(1);
     } finally {
       await page.close();
     }

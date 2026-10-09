@@ -105,9 +105,10 @@ in a night or a fold at the start of the range, which spreads over other
 times once earlier days load, everything from the end of that night or fold
 stays in place.
 
-While the reader scrolls or has a finger on the strip, a change that would
-move what they see waits until the scroll rests: a scroll write can stop
-or fight touch momentum, as on iOS. Changes after the visible start, such as
+While the reader scrolls or has a finger on the strip, and while a smooth
+scroll the timeline started itself through the controller or keyboard focus
+runs, a change that would move what they see waits until the scroll rests: a
+scroll write can stop a smooth scroll or fight touch momentum, as on iOS. Changes after the visible start, such as
 days loading at the end or a checked task, apply at once. Return a promise to
 have the timeline wait for it before it asks again, and set `busy` while a
 load runs.
@@ -126,7 +127,8 @@ area around it, which then keeps the reading position too.
 
 The `controller` callback receives `scrollToTime(time, { align })` and
 `scrollToNow()`, for example for a "Today" button. Scrolling is smooth unless
-the reader prefers reduced motion.
+the reader prefers reduced motion, and days that load meanwhile do not stop
+it short of its target.
 
 ### Activation and checkboxes
 
