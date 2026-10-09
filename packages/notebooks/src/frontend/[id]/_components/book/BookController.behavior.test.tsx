@@ -57,6 +57,9 @@ describe("Book controller", () => {
     globalThis.fetch = Object.assign(
       (input: string | URL | Request, init?: RequestInit) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
+        // Only the notebook's own requests count: once the preview code loaded, the page's file-provider discovery
+        // asks the catalog when idle, at a moment no test controls.
+        if (!url.pathname.startsWith("/api/notebooks/")) return Promise.resolve(new Response(null, { status: 404 }));
         return new Promise<Response>((resolve) =>
           requests.push({ href: url.searchParams.get("href")!, path: url.pathname, signal: init?.signal, resolve }),
         );
