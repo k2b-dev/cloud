@@ -330,25 +330,42 @@ followed turn, the server checks the user's message and the latest messages of
 the chat with fixed word lists in English and German. When one case fits, it
 adds one short turn instruction that starts with "Offer once at the end":
 
-- the user corrects the format of the previous result for the second time in
-  a row, such as "as a table" and then "deadlines as DD.MM., overdue in bold":
-  a Skill offer;
+- the user corrects the format of a delivered result, such as a table or
+  list, for the second time in a row, such as "Bitte als Tabelle" and then
+  "Fast. Fristen bitte als TT.MM., überfällige fett": a Skill offer;
 - the user corrects the tone of a mail draft in the previous reply, such as
   "too stiff, write casually": an offer to remember the preference;
-- the user refers to earlier work, such as "like last week" or "as usual":
-  a Skill offer if the model finds and reuses that work.
+- the user refers to earlier work by time, such as "like last week" or "wie
+  letztes Mal": a Skill offer if the model finds and reuses that work.
+
+The checks prefer missing a case to inventing one, because the instruction
+states the case as a fact. A correction is a short follow-up that names a
+format and points back at the result, such as "bitte als", "instead", "sort
+them by", or "make it bold". Questions, new tasks that name a format ("Create
+a sales report as a table", "Füg eine Spalte Telefon hinzu"), and edits that
+only got a short confirmation do not count. Messages with attached files or
+Cloud items start new work; the file names are not read as text. A tone
+correction needs a tone phrase such as "zu steif", "too formal", or
+"lockerer", and a request for a new mail is not one. "Wie immer" or "as usual"
+do not count as earlier work, because they are just as often thanks or small
+talk.
 
 The server adds no instruction when the previous reply ended with a question
-or an offer, after the user said no to one in the chat, when the user's
-message, the chat, the user's memories, or the organization or Project
-instructions ask for no suggestions, or when the offer needs `skill-creator`
-or the memory tool and the turn does not have it. A message with attached files
-starts new work and does not count as a correction, and a Skill the user
-selected for the turn suppresses Skill offers. The instruction itself tells the
-model to skip the offer while it asks a question, waits for approval, or could
-not finish. Turns that continue after an approval and scheduled task runs get
-no instruction. The checks read at most one page of the current chat and only
-when the message alone could start a case.
+or an offer, after the user said no to one, when the message asks for only a
+short answer, when the user's messages, memories, or the organization or
+Project instructions ask for no suggestions, or when the offer needs
+`skill-creator` or the memory tool and the turn does not have it. A Skill the
+user selected for the turn suppresses Skill offers. The checks read at most
+one page of the current chat, about the last few turns, and only when the
+message alone could start a case; a decline or request older than that page
+is not seen. Messages the user sends while a turn runs count as part of that
+turn. Because word lists miss phrasings, the instruction itself repeats the
+limits: the model skips the offer when it ends with a question, waits for
+approval, or could not finish, when its previous reply already ended with an
+offer, when the user declined one in the chat, or when the user, their
+preferences, or instructions ask for no suggestions or only a short answer.
+Turns that continue after an approval and scheduled task runs get no
+instruction.
 
 After a yes to a Skill offer, the model loads `skill-creator` and drafts from
 the conversation. Its template first picks the lightest place: memory for a
@@ -590,11 +607,16 @@ there either. The preview in **Assistant settings > System prompt** and
   model leads with what the user already works with and leaves out apps
   without data for them, such as mail without a mailbox. When the server
   recognizes this question ("What can you do for me?", "Was kannst du für
-  mich tun?"), it adds a **Recent work** section: the number of the user's
-  other active chats with up to five recent titles, and up to eight distinct
-  Cloud items, such as Spaces or notes, that tools used in those chats. The
-  titles are untrusted data. Without that section the model first looks,
-  where its tools allow it, at the user's Spaces, recent chats, or files.
+  mich tun?"), alone or after a greeting, it adds a **Recent work** section:
+  the number of the user's other active chats with up to five titles, pinned
+  chats first, and up to eight distinct Cloud items, such as Spaces or notes,
+  that tools used in those other chats. The titles are untrusted data. The
+  section holds only Assistant data: it does not show which apps have data
+  for the user, so the model still checks an unlisted app before featuring
+  it. A question that quotes this one, such as "Translate: What can you do?",
+  or that comes with an attached file does not get the section. Without it
+  the model first looks, where its tools allow it, at the user's Spaces,
+  recent chats, or files.
 
 Scheduled task runs keep the global rules and give their result without these
 sections. If the platform template fails to render, the minimal fallback prompt

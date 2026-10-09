@@ -19,10 +19,11 @@ as "like last week". When one fits, the turn gets one short instruction to
 offer a Skill or to remember the preference once at the end, so models that
 skip the general Suggestions rules still make the offer. The tone case no
 longer requires a Skill to have shaped the result. A question such as "What
-can you do for me?" adds a bounded summary of the user's recent chats and of
-the Cloud items used in them. Suggestion limits, organization instructions,
-and a user's request for no suggestions still take precedence. No setting
-changes; scheduled task runs are unaffected. See
+can you do for me?" adds a bounded summary of the user's other chats and of
+the Cloud items used in them; it holds only Assistant data, not which apps
+have data for the user. Suggestion limits, organization instructions, and a
+user's request for no suggestions still take precedence, and the instruction
+repeats them. No setting changes; scheduled task runs are unaffected. See
 [Turn recurring work into a Skill](/en/docs/ai/files-projects-and-personalization#turn-recurring-work-into-a-skill).
 
 ## A failing island shows a notice instead of freezing

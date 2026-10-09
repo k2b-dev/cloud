@@ -679,6 +679,14 @@ suite("AI executor integration", () => {
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     let prompt = "";
     try {
+      await aiConversations.indexConversationResources({
+        conversationId: earlier.id,
+        resources: [{ ref: { type: "spaces.space", id: "S1" }, title: "Sales pipeline" }],
+      });
+      await aiConversations.indexConversationResources({
+        conversationId: conversation.id,
+        resources: [{ ref: { type: "notebooks.note", id: "N1" }, title: "Only in this chat" }],
+      });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
@@ -710,9 +718,10 @@ suite("AI executor integration", () => {
         signal: new AbortController().signal,
       });
       expect(prompt).toContain("# Recent work");
-      // The current chat is not part of the summary.
-      expect(prompt).toContain('Chats: 1; latest: \\"Weekly sales report\\"');
-      expect(prompt).toContain("Cloud items used in chats: none yet");
+      // The current chat and the items used in it are not part of the summary.
+      expect(prompt).toContain('Other chats: 1; pinned and recent: \\"Weekly sales report\\"');
+      expect(prompt).toContain('- \\"Sales pipeline\\" (spaces.space)');
+      expect(prompt).not.toContain("Only in this chat");
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id IN (${conversation.id}::uuid, ${earlier.id}::uuid)`;

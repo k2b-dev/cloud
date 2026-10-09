@@ -1149,20 +1149,21 @@ export class AiTurnExecutor {
       skillSubject,
       activeTools.some((tool) => tool.def.name === "load_skill"),
     );
-    const workingPlan = (await aiConversations.getConversation({ conversationId }))?.todoPlan;
+    const chat = await aiConversations.getConversation({ conversationId });
+    const workingPlan = chat?.todoPlan;
     const skillCatalogOffered = activeTools.some((tool) => tool.def.name === "load_skill");
     const skillCreatorAvailable = availableSkills.some((skill) => skill.name === "skill-creator");
     // Offer hints and the recent-work summary only guide a fresh turn a person follows; a resumed
     // attempt after an approval or a scheduled run gets neither.
     let guidance: AiTurnGuidance = {};
-    if (isFresh && !config.background && defaultToolSource && user) {
+    if (isFresh && !config.background && defaultToolSource && user && chat) {
       try {
         guidance = await loadAiTurnGuidance(
           {
-            conversationId,
+            chat,
             turnId,
             ownerUserId: user.id,
-            message: query,
+            input: config.input,
             instructions: [settings.globalInstructions, config.project?.instructions, memory?.text],
             skillOffers: skillCatalogOffered && skillCreatorAvailable && loadedSkills.length === 0,
             memoryOffers: memoryToolEnabled,
